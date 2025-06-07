@@ -245,6 +245,8 @@ pub fn is_input_independent_rec(
     ret
 }
 
+/// Whether the expression needs an input dataframe to produce a result
+/// A literal for instance doesn't need that.
 pub fn is_input_independent(
     expr_key: ExprNodeKey,
     expr_arena: &Arena<AExpr>,

@@ -15,6 +15,7 @@ pub mod negative_slice;
 pub mod ordered_union;
 pub mod reduce;
 pub mod select;
+pub mod shift;
 pub mod simple_projection;
 pub mod streaming_slice;
 pub mod with_row_index;

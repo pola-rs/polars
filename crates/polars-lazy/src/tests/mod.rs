@@ -201,3 +201,10 @@ pub(crate) fn get_df() -> DataFrame {
         .finish()
         .unwrap()
 }
+
+#[test]
+fn test_shift() -> DataFrame {
+    let lf = scan_foods_parquet(true);
+
+    lf.shift(3).collect()
+}

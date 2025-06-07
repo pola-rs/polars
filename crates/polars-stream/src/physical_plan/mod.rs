@@ -97,6 +97,11 @@ pub enum PhysNodeKind {
         selectors: Vec<ExprIR>,
         extend_original: bool,
     },
+    Shift {
+        input: PhysStream,
+        offset: i64,
+        fill_value: Option<ExprIR>,
+    },
 
     WithRowIndex {
         input: PhysStream,
@@ -322,6 +327,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
+            | PhysNodeKind::Shift { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GroupBy { input, .. } => {
                 rec!(input.node);
