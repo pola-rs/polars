@@ -203,8 +203,9 @@ pub(crate) fn get_df() -> DataFrame {
 }
 
 #[test]
-fn test_shift() -> DataFrame {
+fn test_shift_streaming() {
     let lf = scan_foods_parquet(true);
 
-    lf.shift(3).collect()
+    let out = lf.shift(3).with_new_streaming(true).collect().unwrap();
+    dbg!(out);
 }
