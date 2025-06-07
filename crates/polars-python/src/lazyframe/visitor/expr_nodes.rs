@@ -222,6 +222,7 @@ pub enum PyTemporalFunction {
     IsoYear,
     Quarter,
     Month,
+    DaysInMonth,
     Week,
     WeekDay,
     Day,
@@ -946,6 +947,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     TemporalFunction::IsoYear => (PyTemporalFunction::IsoYear,).into_py_any(py),
                     TemporalFunction::Quarter => (PyTemporalFunction::Quarter,).into_py_any(py),
                     TemporalFunction::Month => (PyTemporalFunction::Month,).into_py_any(py),
+                    TemporalFunction::DaysInMonth => {
+                        (PyTemporalFunction::DaysInMonth,).into_py_any(py)
+                    },
                     TemporalFunction::Week => (PyTemporalFunction::Week,).into_py_any(py),
                     TemporalFunction::WeekDay => (PyTemporalFunction::WeekDay,).into_py_any(py),
                     TemporalFunction::Day => (PyTemporalFunction::Day,).into_py_any(py),

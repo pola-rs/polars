@@ -24,6 +24,7 @@ pub enum TemporalFunction {
     IsoYear,
     Quarter,
     Month,
+    DaysInMonth,
     Week,
     WeekDay,
     Day,
@@ -88,7 +89,7 @@ impl TemporalFunction {
             Millennium | Century => mapper.with_dtype(DataType::Int8),
             Year | IsoYear => mapper.with_dtype(DataType::Int32),
             OrdinalDay => mapper.with_dtype(DataType::Int16),
-            Month | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
+            Month | Quarter | DaysInMonth | Week | WeekDay | Day | Hour | Minute | Second => {
                 mapper.with_dtype(DataType::Int8)
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
@@ -159,6 +160,7 @@ impl TemporalFunction {
             | T::IsoYear
             | T::Quarter
             | T::Month
+            | T::DaysInMonth
             | T::Week
             | T::WeekDay
             | T::Day
@@ -220,6 +222,7 @@ impl Display for TemporalFunction {
             IsoYear => "iso_year",
             Quarter => "quarter",
             Month => "month",
+            DaysInMonth => "days_in_month",
             Week => "week",
             WeekDay => "weekday",
             Day => "day",
@@ -303,6 +306,11 @@ pub(super) fn iso_year(s: &Column) -> PolarsResult<Column> {
 pub(super) fn month(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .month()
+        .map(|ca| ca.into_column())
+}
+pub(super) fn days_in_month(s: &Column) -> PolarsResult<Column> {
+    s.as_materialized_series()
+        .days_in_month()
         .map(|ca| ca.into_column())
 }
 pub(super) fn quarter(s: &Column) -> PolarsResult<Column> {
