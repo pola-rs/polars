@@ -109,7 +109,6 @@ impl DslBuilder {
         .into())
     }
 
-
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(

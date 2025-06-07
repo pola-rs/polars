@@ -6,6 +6,8 @@ use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
+#[cfg(feature = "fwf")]
+use polars_io::fwf::FwfReadOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -14,8 +16,6 @@ use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::ParquetOptions;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::slice_enum::Slice;
-#[cfg(feature = "fwf")]
-use polars_io::fwf::FwfReadOptions;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -42,7 +42,7 @@ bitflags::bitflags! {
 pub enum FileScan {
     #[cfg(feature = "csv")]
     Csv { options: CsvReadOptions },
-    
+
     #[cfg(feature = "fwf")]
     Fwf { options: FwfReadOptions },
 

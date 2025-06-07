@@ -10,10 +10,10 @@ pub mod catalog;
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
-#[cfg(feature = "fwf")]
-pub mod fwf;
 #[cfg(feature = "file_cache")]
 pub mod file_cache;
+#[cfg(feature = "fwf")]
+pub mod fwf;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 pub mod ipc;
 #[cfg(feature = "json")]

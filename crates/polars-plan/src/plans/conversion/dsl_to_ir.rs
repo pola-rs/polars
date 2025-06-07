@@ -260,9 +260,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .map_err(|e| e.context(failed_here!(csv scan)))?
                     },
                     #[cfg(feature = "fwf")]
-                    FileScan::Fwf { .. } => {
-                        file_info.expect("FileInfo should be set for Fwf")
-                    },
+                    FileScan::Fwf { .. } => file_info.expect("FileInfo should be set for Fwf"),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { options } => scans::ndjson_file_info(
                         &sources,

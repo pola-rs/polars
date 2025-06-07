@@ -6,7 +6,7 @@ use polars_core::config;
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::cloud::CloudOptions;
-use polars_io::fwf::{decode_fwf, get_field_width, Endianness, FwfReadOptions};
+use polars_io::fwf::{Endianness, FwfReadOptions, decode_fwf, get_field_width};
 use polars_plan::prelude::ScanSource;
 use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
@@ -23,8 +23,6 @@ use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
-
-
 
 impl FileReaderBuilder for Arc<FwfReadOptions> {
     fn reader_name(&self) -> &str {

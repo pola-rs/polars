@@ -1,14 +1,14 @@
-use std::{ops::Range, sync::Arc};
+use std::ops::Range;
+use std::sync::Arc;
 
-use arrow::types::{NativeType, f16};
 use arrow::array::{FixedSizeBinaryArray, FixedSizeListArray, PrimitiveArray};
 use arrow::datatypes::ArrowDataType;
-use polars_core::prelude::{CompatLevel, DataType, Field, Series, DataFrame, SchemaRef, SchemaExt};
-use polars_error::{polars_bail, PolarsResult};
+use arrow::types::{NativeType, f16};
+use polars_core::prelude::{CompatLevel, DataFrame, DataType, Field, SchemaExt, SchemaRef, Series};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -27,10 +27,10 @@ pub enum Endianness {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FwfReadOptions {
     schema: SchemaRef,
-    endianness:  Arc<Vec<Endianness>>,
+    endianness: Arc<Vec<Endianness>>,
 }
 
-impl FwfReadOptions{ 
+impl FwfReadOptions {
     pub fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
@@ -44,8 +44,6 @@ impl FwfReadOptions{
             .try_fold(0usize, |acc, width| width.map(|w| acc + w))
     }
 }
-
-
 
 pub fn get_field_width(field: &Field) -> PolarsResult<usize> {
     get_arrow_field_width(&field.dtype().to_physical().to_arrow(CompatLevel::newest()))
@@ -80,7 +78,7 @@ pub fn decode_fwf(
     range: Range<usize>,
     selected_cols: &[usize],
     offsets: &[usize],
-    widths:  &[usize],
+    widths: &[usize],
     row_size: &usize,
     endians: &[Endianness],
 ) -> PolarsResult<DataFrame> {
@@ -100,8 +98,6 @@ pub fn decode_fwf(
     }
     DataFrame::new_with_height(range.len(), columns)
 }
-
-
 
 pub fn decode_fwf_column(
     bytes: &[u8],
