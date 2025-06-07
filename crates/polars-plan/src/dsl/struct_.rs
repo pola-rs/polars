@@ -1,5 +1,5 @@
+use super::selector::is_regex_projection;
 use super::*;
-use crate::plans::conversion::is_regex_projection;
 
 /// Specialized expressions for Struct dtypes.
 pub struct StructNameSpace(pub(crate) Expr);
@@ -73,9 +73,6 @@ impl StructNameSpace {
                     } else {
                         this.field_by_names_impl(names)
                     })
-                },
-                Expr::Exclude(_, _) => {
-                    polars_bail!(InvalidOperation: "'exclude' not allowed in 'field'")
                 },
                 _ => Ok(e),
             })
