@@ -48,7 +48,7 @@ pub fn count_rows(
         let count: PolarsResult<usize> = match scan_type {
             #[cfg(feature = "csv")]
             FileScan::Csv { options } => count_all_rows_csv(sources, options),
-            #[cfg(feature = "csv")]
+            #[cfg(feature = "fwf")]
             FileScan::Fwf { options } => count_all_rows_fwf(sources, options),
             #[cfg(feature = "parquet")]
             FileScan::Parquet { .. } => count_rows_parquet(sources, cloud_options),
