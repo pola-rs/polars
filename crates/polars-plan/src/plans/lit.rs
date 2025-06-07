@@ -3,7 +3,6 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::hashing::hash_to_partition;
