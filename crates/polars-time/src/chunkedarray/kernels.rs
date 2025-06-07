@@ -53,6 +53,23 @@ macro_rules! to_temporal_unit {
             )) as ArrayRef
         }
     };
+
+    ($name: ident, $dt: ident, $expr: expr, $to_datetime_fn: expr,
+    $primitive_in: ty,
+    $primitive_out: ty,
+    $dtype_out:expr) => {
+        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
+            Box::new(unary(
+                arr,
+                |value| {
+                    $to_datetime_fn(value)
+                        .map(|$dt| $expr as $primitive_out)
+                        .unwrap_or(value as $primitive_out)
+                },
+                $dtype_out,
+            )) as ArrayRef
+        }
+    };
 }
 
 macro_rules! to_boolean_temporal_unit {
@@ -140,17 +157,15 @@ to_temporal_unit!(
     ArrowDataType::Int16
 );
 #[cfg(feature = "dtype-date")]
-pub(crate) fn date_to_days_in_month(arr: &PrimitiveArray<i32>) -> ArrayRef {
-    Box::new(unary(
-        arr,
-        |value| {
-            date32_to_datetime_opt(value)
-                .map(|dt| days_in_month(dt.year(), dt.month() as u8) as i8)
-                .unwrap_or(value as i8)
-        },
-        ArrowDataType::Int8,
-    )) as ArrayRef
-}
+to_temporal_unit!(
+    date_to_days_in_month,
+    dt,
+    days_in_month(dt.year(), dt.month() as u8),
+    date32_to_datetime_opt,
+    i32,
+    i8,
+    ArrowDataType::Int8
+);
 
 // Times
 #[cfg(feature = "dtype-time")]
@@ -274,38 +289,32 @@ to_boolean_temporal_unit!(
 );
 
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn datetime_to_days_in_month_ns(arr: &PrimitiveArray<i64>) -> ArrayRef {
-    Box::new(unary(
-        arr,
-        |value| {
-            timestamp_ns_to_datetime_opt(value)
-                .map(|dt| days_in_month(dt.year(), dt.month() as u8) as i8)
-                .unwrap_or(value as i8)
-        },
-        ArrowDataType::Int8,
-    )) as ArrayRef
-}
+to_temporal_unit!(
+    datetime_to_days_in_month_ns,
+    dt,
+    days_in_month(dt.year(), dt.month() as u8),
+    timestamp_ns_to_datetime_opt,
+    i64,
+    i8,
+    ArrowDataType::Int8
+);
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn datetime_to_days_in_month_us(arr: &PrimitiveArray<i64>) -> ArrayRef {
-    Box::new(unary(
-        arr,
-        |value| {
-            timestamp_us_to_datetime_opt(value)
-                .map(|dt| days_in_month(dt.year(), dt.month() as u8) as i8)
-                .unwrap_or(value as i8)
-        },
-        ArrowDataType::Int8,
-    )) as ArrayRef
-}
+to_temporal_unit!(
+    datetime_to_days_in_month_us,
+    dt,
+    days_in_month(dt.year(), dt.month() as u8),
+    timestamp_us_to_datetime_opt,
+    i64,
+    i8,
+    ArrowDataType::Int8
+);
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn datetime_to_days_in_month_ms(arr: &PrimitiveArray<i64>) -> ArrayRef {
-    Box::new(unary(
-        arr,
-        |value| {
-            timestamp_ms_to_datetime_opt(value)
-                .map(|dt| days_in_month(dt.year(), dt.month() as u8) as i8)
-                .unwrap_or(value as i8)
-        },
-        ArrowDataType::Int8,
-    )) as ArrayRef
-}
+to_temporal_unit!(
+    datetime_to_days_in_month_ms,
+    dt,
+    days_in_month(dt.year(), dt.month() as u8),
+    timestamp_ms_to_datetime_opt,
+    i64,
+    i8,
+    ArrowDataType::Int8
+);
