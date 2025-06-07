@@ -195,6 +195,7 @@ from polars.io import (
     read_parquet_metadata,
     read_parquet_schema,
     scan_csv,
+    scan_fwf,
     scan_delta,
     scan_iceberg,
     scan_ipc,
@@ -304,6 +305,7 @@ __all__ = [
     "read_parquet_metadata",
     "read_parquet_schema",
     "scan_csv",
+    "scan_fwf"
     "scan_delta",
     "scan_iceberg",
     "scan_ipc",

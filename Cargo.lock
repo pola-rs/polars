@@ -2953,6 +2953,7 @@ dependencies = [
  "polars-parquet",
  "polars-plan",
  "polars-sql",
+ "polars-stream",
  "polars-time",
  "polars-utils",
  "proptest",

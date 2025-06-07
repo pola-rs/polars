@@ -1,5 +1,5 @@
-from polars.io.fwf.functions import scan_csv
+from polars.io.fwf.functions import scan_fwf
 
 __all__ = [
-    "scan_csv",
+    "scan_fwf",
 ]

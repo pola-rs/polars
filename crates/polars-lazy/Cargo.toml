@@ -70,6 +70,7 @@ json = [
   "polars-stream?/json",
 ]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
+fwf = ["polars-io/fwf", "polars-plan/fwf", "polars-stream?/fwf"]
 temporal = [
   "dtype-datetime",
   "dtype-date",
@@ -291,6 +292,7 @@ test = [
   "rank",
   "round_series",
   "csv",
+  "fwf",
   "dtype-categorical",
   "cum_agg",
   "regex",
@@ -355,6 +357,7 @@ features = [
   "extract_groups",
   "fmt",
   "fused",
+  "fwf",
   "futures",
   "hist",
   "index_of",

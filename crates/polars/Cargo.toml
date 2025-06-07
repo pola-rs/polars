@@ -17,6 +17,7 @@ polars-error = { workspace = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
 polars-ops = { workspace = true, optional = true }
+polars-stream = { workspace = true, optional = true }
 polars-parquet = { workspace = true }
 polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
@@ -106,7 +107,7 @@ avro = ["polars-io", "polars-io/avro"]
 csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv", "new_streaming"]
 
 # support for arrows fwf file parsing
-fwf = ["polars-io", "polars-io/fwf", "polars-plan?/fwf", "new_streaming"]
+fwf = ["polars-io", "polars-io/fwf", "polars-plan/fwf", "polars-stream/fwf", "new_streaming"]
 
 
 # slower builds
@@ -251,6 +252,7 @@ test = [
   "rank",
   "round_series",
   "csv",
+  "fwf",
   "dtype-categorical",
   "cum_agg",
   "fmt",
@@ -379,6 +381,7 @@ hist = ["polars-ops/hist", "polars-lazy/hist"]
 
 docs-selection = [
   "csv",
+  "fwf",
   "json",
   "parquet",
   "ipc",
