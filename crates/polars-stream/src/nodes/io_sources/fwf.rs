@@ -253,7 +253,8 @@ impl FileReader for FwfFileReader {
 }
 impl FwfFileReader {
     fn _n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
-        Ok(self.total_rows.unwrap() as u32)
+        let out = self.total_rows.unwrap();
+        Ok(IdxSize::try_from(out).unwrap_or(IdxSize::MAX))
     }
 
     fn _row_position_after_slice(&mut self, pre_slice: Option<Slice>) -> PolarsResult<IdxSize> {
