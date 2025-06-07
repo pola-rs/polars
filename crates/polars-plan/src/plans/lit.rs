@@ -138,6 +138,9 @@ impl DynLiteralValue {
                 Ok(Scalar::from(s).cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Int(i) => {
+                #[cfg(not(feature = "dtype-i128"))]
+                let i: i64 = i.try_into().expect("activate dtype-i128 feature");
+
                 Ok(Scalar::from(i).cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Float(f) => {
