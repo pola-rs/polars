@@ -1847,12 +1847,13 @@ def test_tz_aware_with_timezone_directive(
 
 
 def test_local_time_zone_name() -> None:
-    ser = pl.Series(["2020-01-01 03:00ACST"]).str.strptime(
-        pl.Datetime, "%Y-%m-%d %H:%M%Z"
-    )
-    result = ser[0]
-    expected = datetime(2020, 1, 1, 3)
-    assert result == expected
+    with pytest.raises(
+        ComputeError,
+        match=r"The '%Z' format specifier \(timezone name\) is not supported for parsing datetime strings. Use '%z' \(UTC offset like '\+0100'\) instead.",
+    ):
+        pl.Series(["2020-01-01 03:00 ACST"]).str.strptime(
+            pl.Datetime, "%Y-%m-%d %H:%M %Z"
+        )
 
 
 def test_tz_aware_filter_lit() -> None:
