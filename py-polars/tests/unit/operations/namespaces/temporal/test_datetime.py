@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -787,9 +787,18 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
     assert result.collect_schema().dtypes() == expected_dtypes
 
 
-def test_is_leap_year() -> None:
-    assert pl.datetime_range(
-        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y", eager=True
+@pytest.mark.parametrize(
+    ("range_fn", "value_type", "kwargs"),
+    [
+        (pl.datetime_range, datetime, {"time_unit": "ns"}),
+        (pl.datetime_range, datetime, {"time_unit": "us"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms"}),
+        (pl.date_range,     date,     {}),
+    ]
+)
+def test_is_leap_year(range_fn: Callable, value_type: type, kwargs: dict) -> None:
+    assert range_fn(
+        value_type(1990, 1, 1), value_type(2004, 1, 1), "1y", **kwargs, eager=True
     ).dt.is_leap_year().to_list() == [
         False,
         False,
