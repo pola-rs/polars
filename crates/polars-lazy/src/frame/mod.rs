@@ -902,7 +902,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        self.collect_with_engine(Engine::InMemory)
+        let mut engine = Engine::InMemory;
+        #[cfg(feature = "new_streaming")]
+        if self.opt_state.contains(OptFlags::NEW_STREAMING) {
+            engine = Engine::Streaming
+        };
+        self.collect_with_engine(engine)
     }
 
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
