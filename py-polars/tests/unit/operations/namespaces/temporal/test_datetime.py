@@ -793,10 +793,12 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
         (pl.datetime_range, datetime, {"time_unit": "ns"}),
         (pl.datetime_range, datetime, {"time_unit": "us"}),
         (pl.datetime_range, datetime, {"time_unit": "ms"}),
-        (pl.date_range,     date,     {}),
-    ]
+        (pl.date_range, date, {}),
+    ],
 )
-def test_is_leap_year(range_fn: Callable, value_type: type, kwargs: dict) -> None:
+def test_is_leap_year(
+    range_fn: Callable[..., pl.Series], value_type: type, kwargs: dict[str, str]
+) -> None:
     assert range_fn(
         value_type(1990, 1, 1), value_type(2004, 1, 1), "1y", **kwargs, eager=True
     ).dt.is_leap_year().to_list() == [
