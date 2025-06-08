@@ -4,13 +4,18 @@ use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
 
 pub struct ShiftNode {
-    offset: i64,
+    column: StreamExpr,
+    offset: StreamExpr,
     fill_value: Option<StreamExpr>,
 }
 
 impl ShiftNode {
-    pub fn new(offset: i64, fill_value: Option<StreamExpr>) -> Self {
-        Self { offset, fill_value }
+    pub fn new(column: StreamExpr, offset: StreamExpr, fill_value: Option<StreamExpr>) -> Self {
+        Self {
+            column,
+            offset,
+            fill_value,
+        }
     }
 }
 

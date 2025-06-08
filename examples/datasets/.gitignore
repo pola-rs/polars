@@ -1,3 +1,5 @@
 *.parquet
 *.ipc
 *.ndjson
+busy
+finished

@@ -197,12 +197,15 @@ fn visualize_plan_rec(
         },
         PhysNodeKind::Shift {
             input,
+            column,
             offset,
             fill_value,
         } => {
+            let column = column.output_name();
+            let offset = offset.output_name();
             let s = if let Some(fv) = fill_value {
                 format!(
-                    "shift\\noffset: {offset:?}\\nfill_value: {}",
+                    "shift\\ncolumn: {column}\\noffset: {offset:?}\\nfill_value: {}",
                     fmt_exprs_to_label(&[fv.clone()], expr_arena, FormatExprStyle::NoAliases)
                 )
             } else {

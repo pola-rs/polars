@@ -99,7 +99,8 @@ pub enum PhysNodeKind {
     },
     Shift {
         input: PhysStream,
-        offset: i64,
+        column: ExprIR,
+        offset: ExprIR,
         fill_value: Option<ExprIR>,
     },
 
