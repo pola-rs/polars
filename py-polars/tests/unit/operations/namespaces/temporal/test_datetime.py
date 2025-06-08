@@ -861,26 +861,50 @@ def test_is_leap_year(
     ]
 
 
-def test_days_in_month() -> None:
-    # A non-leap year case
-    # - 1900 can be divided by 100 but not by 400, so it's not a leap year
-    # - 2025 cannot be divided by 4, so it's not a leap year
-    assert pl.datetime_range(
-        datetime(1900, 1, 1), datetime(1900, 12, 1), "1mo", eager=True
-    ).dt.days_in_month().to_list() == [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    assert pl.datetime_range(
-        datetime(2025, 1, 1), datetime(2025, 12, 1), "1mo", eager=True
-    ).dt.days_in_month().to_list() == [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-
-    # A leap year case
-    # - 2000 can be divided by 400, so it's a leap year
-    # - 2004 can be divided by 4 but not by 100, so it's a leap year
-    assert pl.datetime_range(
-        datetime(2000, 1, 1), datetime(2000, 12, 1), "1mo", eager=True
-    ).dt.days_in_month().to_list() == [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    assert pl.datetime_range(
-        datetime(2004, 1, 1), datetime(2004, 12, 1), "1mo", eager=True
-    ).dt.days_in_month().to_list() == [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+@pytest.mark.parametrize(
+    ("range_fn", "value_type", "kwargs"),
+    [
+        (pl.date_range, date, {}),
+        (pl.datetime_range, datetime, {"time_unit": "ns"}),
+        (pl.datetime_range, datetime, {"time_unit": "us"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms"}),
+    ],
+)
+@pytest.mark.parametrize(
+    ("start_ymd", "end_ymd", "feb_days"),
+    [
+        # Non-leap year cases
+        ((1900, 1, 1), (1900, 12, 1), 28),  # 1900 can be divided by 100 but not by 400
+        ((2025, 1, 1), (2025, 12, 1), 28),  # 2025 cannot be divided by 4
+        # Leap year cases
+        ((2000, 1, 1), (2000, 12, 1), 29),  # 2000 can be divided by 400
+        ((2004, 1, 1), (2004, 12, 1), 29),  # 2004 can be divided by 4 but not by 100
+    ],
+)
+def test_days_in_month(
+    range_fn: Callable[..., pl.Series],
+    value_type: type,
+    kwargs: dict[str, str],
+    start_ymd: tuple[int, int, int],
+    end_ymd: tuple[int, int, int],
+    feb_days: int,
+) -> None:
+    assert range_fn(
+        value_type(*start_ymd), value_type(*end_ymd), "1mo", **kwargs, eager=True
+    ).dt.days_in_month().to_list() == [
+        31,
+        feb_days,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ]
 
 
 def test_quarter() -> None:
