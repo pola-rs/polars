@@ -13,6 +13,7 @@ use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
+use crate::bitmap::utils::bytes_for;
 use crate::legacy::utils::FromTrustedLenIterator;
 use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
@@ -385,7 +386,8 @@ impl Bitmap {
                     let vec = chunk_iter_to_vec(chunks.chain(std::iter::once(remainder)));
                     MutableBitmap::from_vec(vec, data.length)
                 } else {
-                    MutableBitmap::from_vec(data.storage.as_ref().to_vec(), data.length)
+                    let len = bytes_for(data.length);
+                    MutableBitmap::from_vec(data.storage[0..len].to_vec(), data.length)
                 }
             },
             Either::Right(data) => data,
