@@ -132,23 +132,34 @@ impl ShiftNode {
                     .extract::<i64>()
                     .expect("type checked at dsl resolving");
 
-                buffer.push_back(first);
-                *shift_state = State::Init {
-                    buffer,
-                    offset,
-                    seq: 0,
-                };
-                Box::pin(self.eval(shift_state, receiver, sender, state)).await?
+                // Deal with the trivial case
+                if offset == 0 {
+                    let _ = sender.send(first).await;
+
+                    while let Ok(morsel) = receiver.recv().await {
+                        if sender.send(morsel).await.is_err() {
+                            break;
+                        }
+                    }
+                } else {
+                    buffer.push_back(first);
+                    *shift_state = State::Init {
+                        buffer,
+                        offset,
+                        seq: 0,
+                    };
+                    Box::pin(self.eval(shift_state, receiver, sender, state)).await?
+                }
             },
             State::Init {
                 buffer,
                 offset,
                 seq,
             } if *offset >= 0 => {
-                let offset = *offset;
+                let offset = *offset as usize;
 
                 // Buffer until the offset is reached.
-                while buffer.len() < ((offset as usize) * 2) {
+                while buffer.len() < offset {
                     if let Ok(next) = self.recv(receiver, state).await {
                         let next = next?;
 
@@ -158,8 +169,8 @@ impl ShiftNode {
                     }
                 }
 
-                let mut shifted = offset as usize;
-                while buffer.len() > shifted as _ && shifted > 0 {
+                let mut shifted = offset;
+                while buffer.len() >= shifted && shifted > 0 {
                     let mut morsel = buffer.pop_front();
                     let len = morsel.df().height();
 
@@ -189,7 +200,7 @@ impl ShiftNode {
                     }
                 }
 
-                let tail_shift = offset as usize;
+                let tail_shift = offset;
                 loop {
                     if buffer.len_after_pop_front() >= tail_shift {
                         let morsel = buffer.pop_front();
@@ -205,11 +216,13 @@ impl ShiftNode {
                     }
                 }
 
-                assert!(buffer.len_after_pop_front() < tail_shift);
-                let last_morsel = buffer.pop_front();
-                let len = tail_shift - buffer.len();
-                let last_morsel = last_morsel.map(|df| df.slice(0, len));
-                let _ = send_morsel(last_morsel, sender, seq).await;
+                if buffer.len() != tail_shift {
+                    assert!(buffer.len_after_pop_front() < tail_shift);
+                    let last_morsel = buffer.pop_front();
+                    let len = tail_shift - buffer.len();
+                    let last_morsel = last_morsel.map(|df| df.slice(0, len));
+                    let _ = send_morsel(last_morsel, sender, seq).await;
+                }
             },
             State::Init {
                 buffer: _,
