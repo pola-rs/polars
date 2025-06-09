@@ -13,6 +13,7 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import FLOAT_DTYPES
 from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
+from polars.polars import assert_series_equal_py
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
@@ -108,18 +109,11 @@ def assert_series_equal(
 
     _assert_correct_input_type(left, right)
 
-    if left.len() != right.len():
-        raise_assertion_error("Series", "length mismatch", left.len(), right.len())
-
-    if check_names and left.name != right.name:
-        raise_assertion_error("Series", "name mismatch", left.name, right.name)
-
-    if check_dtypes and left.dtype != right.dtype:
-        raise_assertion_error("Series", "dtype mismatch", left.dtype, right.dtype)
-
-    _assert_series_values_equal(
-        left,
-        right,
+    assert_series_equal_py(
+        left._s,
+        right._s,
+        check_dtypes=check_dtypes,
+        check_names=check_names,
         check_order=check_order,
         check_exact=check_exact,
         rtol=rtol,

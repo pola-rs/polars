@@ -1,9 +1,12 @@
+use polars_testing::asserts::{SeriesEqualOptions, assert_series_equal};
 use pyo3::prelude::*;
-use polars_testing::{assert_series_equal, SeriesEqualOptions};
+
+use crate::PySeries;
+use crate::error::PyPolarsErr;
 
 #[pyfunction]
 #[pyo3(signature = (left, right, *, check_dtypes, check_names, check_order, check_exact, rtol, atol, categorical_as_str))]
-fn assert_series_equal_py(
+pub fn assert_series_equal_py(
     left: &PySeries,
     right: &PySeries,
     check_dtypes: bool,
@@ -17,7 +20,7 @@ fn assert_series_equal_py(
     let left_series = &left.series;
     let right_series = &right.series;
 
-    let options = SeriesEqualOptions{
+    let options = SeriesEqualOptions {
         check_dtypes,
         check_names,
         check_order,
@@ -27,5 +30,5 @@ fn assert_series_equal_py(
         categorical_as_str,
     };
 
-    assert_series_equal(left_series, right_series, options).map_err(|e| e.into())
+    assert_series_equal(left_series, right_series, options).map_err(|e| PyPolarsErr::from(e).into())
 }
