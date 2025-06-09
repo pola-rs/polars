@@ -96,7 +96,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "data type mismatch")]
+    #[should_panic(expected = "dtype mismatch")]
     fn test_series_dtype_mismatch() {
         let s1 = Series::new("".into(), &[1, 2, 3]);
         let s2 = Series::new("".into(), &["1", "2", "3"]);
