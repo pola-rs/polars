@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 import polars as pl
@@ -195,3 +197,40 @@ def test_cross_join_concat_list_18587() -> None:
     expected = [[a, b, c] for a in vals for b in vals for c in vals]
 
     assert result["1"].to_list() == expected
+
+
+def test_datetime_broadcast_concat_list_23102() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamps": [
+                [datetime(2024, 1, 1).replace(tzinfo=None)],
+                [datetime(2024, 1, 2).replace(tzinfo=None)],
+            ]
+        },
+        schema={"timestamps": pl.List(pl.Datetime(time_unit="ms", time_zone=None))},
+    )
+
+    new_timestamp = pl.lit(
+        [
+            datetime(2024, 2, 1).replace(tzinfo=None),
+        ],
+        dtype=pl.List(pl.Datetime(time_unit="ms", time_zone=None)),
+    )
+
+    out = df.with_columns(pl.col("timestamps").list.concat(new_timestamp))
+    expected = pl.DataFrame(
+        {
+            "timestamps": [
+                [
+                    datetime(2024, 1, 1).replace(tzinfo=None),
+                    datetime(2024, 2, 1).replace(tzinfo=None),
+                ],
+                [
+                    datetime(2024, 1, 2).replace(tzinfo=None),
+                    datetime(2024, 2, 1).replace(tzinfo=None),
+                ],
+            ]
+        },
+        schema={"timestamps": pl.List(pl.Datetime(time_unit="ms", time_zone=None))},
+    )
+    assert_frame_equal(out, expected)
