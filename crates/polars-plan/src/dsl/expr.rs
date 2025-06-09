@@ -396,6 +396,22 @@ impl Expr {
         }
     }
 
+    pub fn extract_i64(&self) -> PolarsResult<i64> {
+        match self {
+            Expr::Literal(n) => n.extract_i64(),
+            Expr::Cast { expr, dtype, .. } => {
+                if dtype.is_integer() {
+                    expr.extract_i64()
+                } else {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                }
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+            },
+        }
+    }
+
     #[inline]
     pub fn map_unary(self, function: impl Into<FunctionExpr>) -> Self {
         Expr::n_ary(function, vec![self])
