@@ -27,7 +27,11 @@ enum State {
         seq: u64,
     },
     Negative {
+        // Rows to skip at the start of the DataFrame
+        // This state will be decremented until it reaches 0
+        // and we don't have to skip any rows anymore
         skip: usize,
+        // Nulls to append at the end of the DataFrame
         tail: usize,
         seq: u64,
     },
@@ -191,7 +195,8 @@ impl ShiftNode {
             } => {
                 let offset = *offset;
 
-                // Buffer until the offset is reached.
+                // 1. We need to offset the array by `offset` and insert nulls
+                // We first buffer until the offset is reached.
                 while buffer.len() < offset {
                     if let Ok(next) = self.recv(receiver, state).await {
                         let next = next?;
@@ -202,7 +207,9 @@ impl ShiftNode {
                     }
                 }
 
+                // 2. Then we ensure we insert the nulls (also in the middle of a morsel if needed)
                 let mut shifted = offset;
+                let tail_shift = offset;
                 while buffer.len() >= shifted && shifted > 0 {
                     let mut morsel = buffer.pop_front();
                     let len = morsel.df().height();
@@ -211,10 +218,12 @@ impl ShiftNode {
                     if len > shifted {
                         let shifted_morsel = morsel.clone().map(|df| df.shift_seq(shifted as _));
 
-                        let tail = morsel.map(|df| df.tail(Some(len - shifted)));
+                        let tail = morsel.map(|df| df.tail(Some(shifted)));
                         buffer.push_front(tail);
-
-                        morsel = shifted_morsel;
+                        // Don't immediately return.
+                        // It can be that this is the last morsel and it has to be sliced
+                        // In that case
+                        buffer.push_front(shifted_morsel);
                         shifted = 0;
                     }
                     // Return full morsel of nulls
@@ -226,16 +235,16 @@ impl ShiftNode {
                         buffer.push_front(morsel);
 
                         morsel = nulls;
-                    }
-
-                    if send_morsel(morsel, sender, seq).await.is_err() {
-                        break;
+                        if send_morsel(morsel, sender, seq).await.is_err() {
+                            break;
+                        }
                     }
                 }
 
-                let tail_shift = offset;
+                // 3. Now we have dealt with the starting 'offset'
+                // we can pump the remaining morsel through, until we have reached the tail offset
                 loop {
-                    if buffer.len_after_pop_front() >= tail_shift {
+                    if buffer.len_after_pop_front() > tail_shift {
                         let morsel = buffer.pop_front();
 
                         if send_morsel(morsel, sender, seq).await.is_err() {
@@ -249,10 +258,11 @@ impl ShiftNode {
                     }
                 }
 
-                if buffer.len() != tail_shift {
-                    assert!(buffer.len_after_pop_front() < tail_shift);
+                // 4. Deal with the tail by slicing the last morsel
+                // Slices last morsel lenght.
+                if buffer.len() > tail_shift {
+                    let len = buffer.len() - tail_shift;
                     let last_morsel = buffer.pop_front();
-                    let len = tail_shift - buffer.len();
                     let last_morsel = last_morsel.map(|df| df.slice(0, len));
                     let _ = send_morsel(last_morsel, sender, seq).await;
                 }
@@ -261,11 +271,10 @@ impl ShiftNode {
                 while let Ok(morsel) = self.recv(receiver, state).await {
                     let morsel = morsel?;
 
-                    if *skip == 0 {
-                        if send_morsel(morsel, sender, seq).await.is_err() {
-                            return Ok(());
-                        };
-                    } else {
+                    // 1. Deals with the boundary effects.
+                    // We 'skip' the initial row until we have reached the 'offset'.
+                    // After that we pump all morsel.
+                    if *skip != 0 {
                         let len = morsel.df().len();
 
                         if *skip >= len {
@@ -273,14 +282,23 @@ impl ShiftNode {
                         } else {
                             let morsel = morsel.map(|df| df.slice(*skip as _, usize::MAX));
 
+                            if morsel.df().is_empty() {
+                                continue;
+                            }
+
                             if send_morsel(morsel, sender, seq).await.is_err() {
                                 return Ok(());
                             };
                             *skip = 0;
                         }
                     }
+                    // 2. The non-boundary case, where we can pump morsels.
+                    else if send_morsel(morsel, sender, seq).await.is_err() {
+                        return Ok(());
+                    }
                 }
 
+                // 3. When all morsels are processed, pass a full-null morsel of 'offset' length.
                 let last_morsel = Morsel::new(
                     DataFrame::full_null(&self.output_schema, *tail),
                     Default::default(),
