@@ -101,7 +101,6 @@ pub enum PhysNodeKind {
         input: PhysStream,
         column: ExprIR,
         offset: ExprIR,
-        fill_value: Option<ExprIR>,
     },
 
     WithRowIndex {

@@ -199,18 +199,20 @@ fn visualize_plan_rec(
             input,
             column,
             offset,
-            fill_value,
         } => {
-            let column = column.output_name();
-            let offset = offset.output_name();
-            let s = if let Some(fv) = fill_value {
-                format!(
-                    "shift\\ncolumn: {column}\\noffset: {offset:?}\\nfill_value: {}",
-                    fmt_exprs_to_label(&[fv.clone()], expr_arena, FormatExprStyle::NoAliases)
+            let s = format!(
+                "shift\\nname: {}\\noffset: {}",
+                fmt_exprs_to_label(
+                    std::slice::from_ref(column),
+                    expr_arena,
+                    FormatExprStyle::NoAliases
+                ),
+                fmt_exprs_to_label(
+                    std::slice::from_ref(offset),
+                    expr_arena,
+                    FormatExprStyle::NoAliases
                 )
-            } else {
-                format!("shift\\noffset: {offset:?}",)
-            };
+            );
 
             (s, from_ref(input))
         },
