@@ -622,8 +622,8 @@ fn lower_exprs_with_ctx(
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
                 let (trans_input, trans_inner_expr) =
                     lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
-                let column = ExprIR::from_node(trans_inner_expr[0], &ctx.expr_arena);
-                let offset = ExprIR::from_node(trans_inner_expr[1], &ctx.expr_arena);
+                let column = ExprIR::from_node(trans_inner_expr[0], ctx.expr_arena);
+                let offset = ExprIR::from_node(trans_inner_expr[1], ctx.expr_arena);
 
                 let field = ctx.phys_sm[trans_input.node]
                     .output_schema
@@ -636,7 +636,6 @@ fn lower_exprs_with_ctx(
                         input: trans_input,
                         offset,
                         column,
-                        fill_value: None,
                     },
                 ));
 

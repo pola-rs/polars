@@ -2909,6 +2909,16 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(self.height(), col) }
     }
 
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with `Nones`.
+    ///
+    /// See the method on [Series](crate::series::SeriesTrait::shift) for more info on the `shift` operation.
+    #[must_use]
+    pub fn shift_seq(&self, periods: i64) -> Self {
+        let col = self._apply_columns(&|s| s.shift(periods));
+        unsafe { DataFrame::new_no_checks(self.height(), col) }
+    }
+
     /// Replace None values with one of the following strategies:
     /// * Forward fill (replace None with the previous value)
     /// * Backward fill (replace None with the next value)
