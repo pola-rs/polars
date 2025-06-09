@@ -1,43 +1,54 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
+use polars_core::schema::Schema;
+use polars_core::utils::Container;
 use polars_error::polars_ensure;
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::connector::{Receiver, Sender};
 use crate::expression::StreamExpr;
+use crate::morsel::SourceToken;
 
 pub struct ShiftNode {
     column: StreamExpr,
     offset: StreamExpr,
     state: State,
+    output_schema: Arc<Schema>,
 }
 
 #[derive(Default)]
 enum State {
     #[default]
     Uninit,
-    Init {
+    Positive {
         buffer: Buffer,
-        offset: i64,
+        offset: usize,
+        seq: u64,
+    },
+    Negative {
+        skip: usize,
+        tail: usize,
         seq: u64,
     },
 }
 
+// Keeps track of the total number rows in the buffers
 struct Buffer {
     inner: VecDeque<Morsel>,
-    len: usize,
+    rows: usize,
 }
 
 impl Buffer {
     fn new() -> Self {
         Self {
             inner: Default::default(),
-            len: 0,
+            rows: 0,
         }
     }
 
     fn len(&self) -> usize {
-        self.len
+        self.rows
     }
 
     fn len_after_pop_front(&self) -> usize {
@@ -50,7 +61,7 @@ impl Buffer {
     }
 
     fn add(&mut self, morsel: &mut Morsel) {
-        self.len += morsel.df().height();
+        self.rows += morsel.df().height();
         let _ = morsel.take_consume_token();
     }
 
@@ -64,11 +75,12 @@ impl Buffer {
     }
     fn pop_front(&mut self) -> Morsel {
         let morsel = self.inner.pop_front().unwrap();
-        self.len -= morsel.df().height();
+        self.rows -= morsel.df().height();
         morsel
     }
 }
 
+/// Send a morsel and update the MorselSeq
 async fn send_morsel(
     mut morsel: Morsel,
     sender: &mut Sender<Morsel>,
@@ -81,11 +93,12 @@ async fn send_morsel(
 }
 
 impl ShiftNode {
-    pub fn new(column: StreamExpr, offset: StreamExpr) -> Self {
+    pub fn new(column: StreamExpr, offset: StreamExpr, output_schema: Arc<Schema>) -> Self {
         Self {
             column,
             offset,
             state: State::Uninit,
+            output_schema,
         }
     }
 
@@ -142,21 +155,41 @@ impl ShiftNode {
                         }
                     }
                 } else {
-                    buffer.push_back(first);
-                    *shift_state = State::Init {
-                        buffer,
-                        offset,
-                        seq: 0,
-                    };
+                    if offset > 0 {
+                        buffer.push_back(first);
+                        *shift_state = State::Positive {
+                            buffer,
+                            offset: offset as _,
+                            seq: 0,
+                        };
+                    } else {
+                        let mut skip = -offset as usize;
+                        let tail = -offset as usize;
+                        let len = first.df().height();
+                        let mut seq = 0;
+
+                        if skip >= len {
+                            skip -= len
+                        } else {
+                            let morsel = first.map(|df| df.slice(skip as _, usize::MAX));
+
+                            if send_morsel(morsel, sender, &mut seq).await.is_err() {
+                                return Ok(());
+                            };
+                            skip = 0;
+                        }
+
+                        *shift_state = State::Negative { skip, tail, seq };
+                    }
                     Box::pin(self.eval(shift_state, receiver, sender, state)).await?
                 }
             },
-            State::Init {
+            State::Positive {
                 buffer,
                 offset,
                 seq,
-            } if *offset >= 0 => {
-                let offset = *offset as usize;
+            } => {
+                let offset = *offset;
 
                 // Buffer until the offset is reached.
                 while buffer.len() < offset {
@@ -189,7 +222,7 @@ impl ShiftNode {
                         shifted -= len;
                         let nulls = morsel
                             .clone()
-                            .map(|df| DataFrame::full_null(df.schema(), df.height()));
+                            .map(|df| DataFrame::full_null(&self.output_schema, df.height()));
                         buffer.push_front(morsel);
 
                         morsel = nulls;
@@ -224,12 +257,36 @@ impl ShiftNode {
                     let _ = send_morsel(last_morsel, sender, seq).await;
                 }
             },
-            State::Init {
-                buffer: _,
-                offset: _,
-                seq: _,
-            } => {
-                todo!()
+            State::Negative { skip, tail, seq } => {
+                while let Ok(morsel) = self.recv(receiver, state).await {
+                    let morsel = morsel?;
+
+                    if *skip == 0 {
+                        if send_morsel(morsel, sender, seq).await.is_err() {
+                            return Ok(());
+                        };
+                    } else {
+                        let len = morsel.df().len();
+
+                        if *skip >= len {
+                            *skip -= len
+                        } else {
+                            let morsel = morsel.map(|df| df.slice(*skip as _, usize::MAX));
+
+                            if send_morsel(morsel, sender, seq).await.is_err() {
+                                return Ok(());
+                            };
+                            *skip = 0;
+                        }
+                    }
+                }
+
+                let last_morsel = Morsel::new(
+                    DataFrame::full_null(&self.output_schema, *tail),
+                    Default::default(),
+                    SourceToken::new(),
+                );
+                let _ = send_morsel(last_morsel, sender, seq).await;
             },
         }
         Ok(())
