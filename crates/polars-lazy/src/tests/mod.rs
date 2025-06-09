@@ -12,6 +12,7 @@ mod predicate_queries;
 mod projection_queries;
 mod queries;
 mod schema;
+mod streaming_operations;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<IR>) {
     let expr_arena = Arena::with_capacity(16);
@@ -200,12 +201,4 @@ pub(crate) fn get_df() -> DataFrame {
         .into_reader_with_file_handle(file)
         .finish()
         .unwrap()
-}
-
-#[test]
-fn test_shift_streaming() {
-    let lf = scan_foods_parquet(true);
-
-    let out = lf.shift(3).with_new_streaming(true).collect().unwrap();
-    dbg!(out);
 }
