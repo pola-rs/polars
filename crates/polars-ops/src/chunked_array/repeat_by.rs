@@ -43,7 +43,7 @@ where
                 unsafe {
                     LargeListArray::from_iter_primitive_trusted_len(
                         iter,
-                        T::get_dtype().to_arrow(CompatLevel::newest()),
+                        T::get_static_dtype().to_arrow(CompatLevel::newest()),
                     )
                 }
             }))

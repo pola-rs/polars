@@ -474,25 +474,27 @@ def test_dataframe_from_repr() -> None:
     )
     assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.String, "other": pl.String}))
 
-    # empty frame with non-standard/blank 'null'
+    # empty frame with a non-standard/blank 'null' in numeric col
     df = cast(
         pl.DataFrame,
         pl.from_repr(
             """
-            ┌─────┬─────┐
-            │ c1  ┆ c2  │
-            │ --- ┆ --- │
-            │ i32 ┆ f64 │
-            ╞═════╪═════╡
-            │     │     │
-            └─────┴─────┘
+            ┌─────┬──────┐
+            │ c1  ┆  c2  │
+            │ --- ┆  --- │
+            │ i32 ┆  f64 │
+            ╞═════╪══════╡
+            │     │ NULL │
+            └─────┴──────┘
             """
         ),
     )
     assert_frame_equal(
         df,
         pl.DataFrame(
-            data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}, orient="row"
+            data=[(None, None)],
+            schema={"c1": pl.Int32, "c2": pl.Float64},
+            orient="row",
         ),
     )
 
@@ -583,6 +585,42 @@ def test_dataframe_from_repr() -> None:
         "ident": pl.String,
         "timestamp": pl.Datetime("us", "Asia/Tokyo"),
     }
+
+
+def test_dataframe_from_duckdb_repr() -> None:
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            # misc streaming stats
+            ┌────────────┬───────┬───────────────────┬───┬────────────────┬───────────────────┐
+            │   As Of    │ Rank  │ Year to Date Rank │ … │ Days In Top 10 │ Streaming Seconds │
+            │    date    │ int32 │      varchar      │   │     int16      │      int128       │
+            ├────────────┼───────┼───────────────────┼───┼────────────────┼───────────────────┤
+            │ 2025-05-09 │     1 │ 1                 │ … │             29 │  1864939402857430 │
+            │ 2025-05-09 │     2 │ 2                 │ … │             15 │   658937443590045 │
+            │ 2025-05-09 │     3 │ 3                 │ … │              9 │   267876522242076 │
+            └────────────┴───────┴───────────────────┴───┴────────────────┴───────────────────┘
+            """
+        ),
+    )
+    expected = pl.DataFrame(
+        {
+            "As Of": [date(2025, 5, 9), date(2025, 5, 9), date(2025, 5, 9)],
+            "Rank": [1, 2, 3],
+            "Year to Date Rank": ["1", "2", "3"],
+            "Days In Top 10": [29, 15, 9],
+            "Streaming Seconds": [1864939402857430, 658937443590045, 267876522242076],
+        },
+        schema={
+            "As Of": pl.Date,
+            "Rank": pl.Int32,
+            "Year to Date Rank": pl.String,
+            "Days In Top 10": pl.Int16,
+            "Streaming Seconds": pl.Int128,
+        },
+    )
+    assert_frame_equal(expected, df)
 
 
 def test_series_from_repr() -> None:
@@ -824,12 +862,12 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
         df.to_arrow(compat_level=newest)["bin_col"][0], pa.BinaryViewScalar
     )
 
-    assert len(df.write_ipc(None).getbuffer()) == 786
-    assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 914
-    assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 786
-    assert len(df.write_ipc_stream(None).getbuffer()) == 544
-    assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 672
-    assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 544
+    assert len(df.write_ipc(None).getbuffer()) == 738
+    assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 866
+    assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 738
+    assert len(df.write_ipc_stream(None).getbuffer()) == 520
+    assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 648
+    assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 520
 
 
 def test_df_pycapsule_interface() -> None:
@@ -900,3 +938,17 @@ def test_from_arrow_string_cache_20271() -> None:
 def test_to_arrow_empty_chunks_20627() -> None:
     df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
     assert df.to_arrow().shape == (1, 1)
+
+
+def test_arrow_c_array_object_no_unnest_23068() -> None:
+    class ArrowLike:
+        def __init__(self, pa_array: pa.Array) -> None:
+            self.pa_array = pa_array
+
+        def __arrow_c_array__(self, requested_schema: Any = None) -> Any:
+            return self.pa_array.__arrow_c_array__(requested_schema)
+
+    data = [1, 2, 3]
+    result = cast(pl.DataFrame, pl.from_arrow(ArrowLike(pa.array(data)))).to_series()
+    expected = pl.Series(data)
+    assert_series_equal(result, expected)

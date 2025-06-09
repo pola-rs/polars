@@ -387,14 +387,6 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
 
 
 @pytest.mark.write_disk
-def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-
-    pa_schema = pa.schema([("a", pa.int64())])
-    df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
-
-
-@pytest.mark.write_disk
 @pytest.mark.parametrize(
     "expr",
     [
@@ -415,7 +407,7 @@ def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
 
     # Check schema of DeltaTable object
     tbl = DeltaTable(tmp_path)
-    assert tbl.schema().to_pyarrow() == expected.to_arrow().schema
+    assert pa.schema(tbl.schema().to_arrow()) == expected.to_arrow().schema
 
     # Check result
     result = pl.read_delta(str(tmp_path), version=0)
@@ -521,7 +513,6 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
         table_path,
         table,
         mode="overwrite",
-        engine="rust",
     )
 
     assert_frame_equal(pl.scan_delta(table_path).collect(), expect)

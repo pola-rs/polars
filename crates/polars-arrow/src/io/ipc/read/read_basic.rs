@@ -16,8 +16,10 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     buffer: &mut Vec<T>,
     is_little_endian: bool,
 ) -> PolarsResult<()> {
-    // slow case where we must reverse bits
-    let mut slice = vec![0u8; length * size_of::<T>()];
+    // Slow case where we must reverse bits.
+    #[expect(clippy::slow_vector_initialization)] // Avoid alloc_zeroed, leads to syscall.
+    let mut slice = Vec::new();
+    slice.resize(length * size_of::<T>(), 0);
     reader.read_exact(&mut slice)?;
 
     let chunks = slice.chunks_exact(size_of::<T>());
@@ -269,7 +271,9 @@ fn read_compressed_bitmap<R: Read + Seek>(
     reader: &mut R,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
-    let mut buffer = vec![0; length.div_ceil(8)];
+    #[expect(clippy::slow_vector_initialization)] // Avoid alloc_zeroed, leads to syscall.
+    let mut buffer = Vec::new();
+    buffer.resize(length.div_ceil(8), 0);
 
     scratch.clear();
     scratch.try_reserve(bytes)?;

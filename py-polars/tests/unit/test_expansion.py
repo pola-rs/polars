@@ -71,13 +71,13 @@ def test_struct_name_resolving_15430() -> None:
     a = (
         q.with_columns(pl.col("a").struct.field("b"))
         .drop("a")
-        .collect(projection_pushdown=True)
+        .collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     )
 
     b = (
         q.with_columns(pl.col("a").struct[0])
         .drop("a")
-        .collect(projection_pushdown=True)
+        .collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     )
 
     assert a["b"].item() == "c"

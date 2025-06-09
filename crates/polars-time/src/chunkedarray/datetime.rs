@@ -175,7 +175,7 @@ pub trait DatetimeMethods: AsDatetime {
         nanosecond: &Int32Chunked,
         ambiguous: &StringChunked,
         time_unit: &TimeUnit,
-        time_zone: Option<&str>,
+        time_zone: Option<TimeZone>,
         name: PlSmallStr,
     ) -> PolarsResult<DatetimeChunked> {
         let ca: Int64Chunked = year
@@ -223,7 +223,7 @@ pub trait DatetimeMethods: AsDatetime {
             #[cfg(feature = "timezones")]
             Some(_) => {
                 let mut ca = ca.into_datetime(*time_unit, None);
-                ca = replace_time_zone(&ca, time_zone, ambiguous, NonExistent::Raise)?;
+                ca = replace_time_zone(&ca, time_zone.as_ref(), ambiguous, NonExistent::Raise)?;
                 ca
             },
             _ => {

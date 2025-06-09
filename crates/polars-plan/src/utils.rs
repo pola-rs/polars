@@ -49,7 +49,7 @@ pub(crate) fn is_scan(plan: &IR) -> bool {
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena
         .iter(current_node)
-        .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
+        .all(|(_node, e)| matches!(e, AExpr::Column(_)))
 }
 
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
@@ -95,27 +95,6 @@ pub(crate) fn is_column_independent(expr: &Expr) -> bool {
     })
 }
 
-/// Check if leaf expression returns a scalar
-#[cfg(feature = "is_in")]
-pub(crate) fn all_return_scalar(e: &Expr) -> bool {
-    match e {
-        Expr::Literal(lv) => lv.is_scalar(),
-        Expr::Function { options: opt, .. } => opt.flags.contains(FunctionFlags::RETURNS_SCALAR),
-        Expr::Agg(_) => true,
-        Expr::Column(_) | Expr::Wildcard => false,
-        _ => {
-            let mut empty = true;
-            for leaf in expr_to_leaf_column_exprs_iter(e) {
-                if !all_return_scalar(leaf) {
-                    return false;
-                }
-                empty = false;
-            }
-            !empty
-        },
-    }
-}
-
 pub fn has_null(current_expr: &Expr) -> bool {
     has_expr(
         current_expr,
@@ -129,7 +108,6 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSma
             // don't follow the partition by branch
             AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
             AExpr::Column(name) => return Ok(name.clone()),
-            AExpr::Alias(_, name) => return Ok(name.clone()),
             AExpr::Len => return Ok(get_len_name()),
             AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
             AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),
@@ -234,29 +212,6 @@ pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &PlSmallSt
         name
     } else {
         unreachable!()
-    }
-}
-
-/// If the leaf names match `current`, the node will be replaced
-/// with a renamed expression.
-pub(crate) fn rename_matching_aexpr_leaf_names(
-    node: Node,
-    arena: &mut Arena<AExpr>,
-    current: &str,
-    new_name: PlSmallStr,
-) -> Node {
-    let mut leaves = aexpr_to_column_nodes_iter(node, arena);
-
-    if leaves.any(|node| matches!(arena.get(node.0), AExpr::Column(name) if &**name == current)) {
-        // we convert to expression as we cannot easily copy the aexpr.
-        let mut new_expr = node_to_expr(node, arena);
-        new_expr = new_expr.map_expr(|e| match e {
-            Expr::Column(name) if &*name == current => Expr::Column(new_name.clone()),
-            e => e,
-        });
-        to_aexpr(new_expr, arena).expect("infallible")
-    } else {
-        node
     }
 }
 

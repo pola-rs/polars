@@ -97,6 +97,7 @@ def test_cat_to_dummies() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.
@@ -641,14 +642,17 @@ def test_categorical_fill_null_stringcache() -> None:
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_fast_unique_flag_from_arrow() -> None:
-    df = pl.DataFrame(
-        {
-            "colB": ["1", "2", "3", "4", "5", "5", "5", "5"],
-        }
-    ).with_columns([pl.col("colB").cast(pl.Categorical)])
+    with pl.StringCache():
+        df = pl.DataFrame(
+            {
+                "colB": ["1", "2", "3", "4", "5", "5", "5", "5"],
+            }
+        ).with_columns([pl.col("colB").cast(pl.Categorical)])
 
-    filtered = df.to_arrow().filter([True, False, True, True, False, True, True, True])
-    assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4  # type: ignore[union-attr]
+        filtered = df.to_arrow().filter(
+            [True, False, True, True, False, True, True, True]
+        )
+        assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4  # type: ignore[union-attr]
 
 
 @pytest.mark.usefixtures("test_global_and_local")
@@ -942,44 +946,49 @@ def test_perfect_group_by_19950() -> None:
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique() -> None:
-    s = pl.Series(["a", "b", None], dtype=pl.Categorical)
-    assert s.n_unique() == 3
-    assert s.unique().sort().to_list() == [None, "a", "b"]
+    with pl.StringCache():
+        s = pl.Series(["a", "b", None], dtype=pl.Categorical)
+        assert s.n_unique() == 3
+        assert s.unique().sort().to_list() == [None, "a", "b"]
 
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_20539() -> None:
-    df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})
-
-    result = (
-        df.cast({"letter": pl.Categorical})
-        .group_by("number")
-        .agg(
-            unique=pl.col("letter").unique(maintain_order=True),
-            unique_with_order=pl.col("letter").unique(maintain_order=True),
+    with pl.StringCache():
+        df = pl.DataFrame(
+            {"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]}
         )
-    )
 
-    assert result.sort("number").to_dict(as_series=False) == {
-        "number": [1, 2, 3],
-        "unique": [["a", "b"], ["b", "c"], ["c"]],
-        "unique_with_order": [["a", "b"], ["b", "c"], ["c"]],
-    }
+        result = (
+            df.cast({"letter": pl.Categorical})
+            .group_by("number")
+            .agg(
+                unique=pl.col("letter").unique(maintain_order=True),
+                unique_with_order=pl.col("letter").unique(maintain_order=True),
+            )
+        )
+
+        assert result.sort("number").to_dict(as_series=False) == {
+            "number": [1, 2, 3],
+            "unique": [["a", "b"], ["b", "c"], ["c"]],
+            "unique_with_order": [["a", "b"], ["b", "c"], ["c"]],
+        }
 
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_prefill() -> None:
-    # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
-    # test_compare_categorical_single
-    assert (pl.Series(["a"], dtype=pl.Categorical) < "a").to_list() == [False]
+    with pl.StringCache():
+        # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
+        # test_compare_categorical_single
+        assert (pl.Series(["a"], dtype=pl.Categorical) < "a").to_list() == [False]
 
-    # test_unique_categorical
-    a = pl.Series(["a"], dtype=pl.Categorical)
-    assert a.unique().to_list() == ["a"]
+        # test_unique_categorical
+        a = pl.Series(["a"], dtype=pl.Categorical)
+        assert a.unique().to_list() == ["a"]
 
-    s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
-    s = s.filter([True, False, True])
-    assert s.n_unique() == 2
+        s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
+        s = s.filter([True, False, True])
+        assert s.n_unique() == 2
 
 
 @pytest.mark.may_fail_auto_streaming  # not implemented

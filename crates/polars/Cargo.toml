@@ -32,7 +32,7 @@ either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }
 # used to run formal property testing
-proptest = { version = "1", default-features = false, features = ["std"] }
+proptest = { workspace = true }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
@@ -64,7 +64,7 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde", "polars-utils/serde", "ir_serde"]
+serde = ["polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
@@ -73,7 +73,7 @@ serde-lazy = [
   "polars-ops?/serde",
   "polars-utils/serde",
 ]
-parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
+parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet", "new_streaming"]
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
 aws = ["async", "cloud", "polars-io/aws"]
@@ -91,10 +91,10 @@ strings = ["polars-core/strings", "polars-lazy?/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy?/object", "polars-io/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct"]
+json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct", "new_streaming"]
 
 # support for arrows ipc file parsing
-ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc"]
+ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc", "new_streaming"]
 
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy?/ipc"]
@@ -103,7 +103,7 @@ ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy?/ipc"]
 avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing
-csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv"]
+csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv", "new_streaming"]
 
 # slower builds
 performant = [
@@ -114,7 +114,6 @@ performant = [
   "dtype-struct",
   "cse",
   "polars-ops/performant",
-  "streaming",
   "fused",
 ]
 
@@ -183,6 +182,7 @@ list_count = ["polars-ops/list_count", "polars-lazy?/list_count"]
 array_count = ["polars-ops/array_count", "polars-lazy?/array_count", "dtype-array"]
 list_drop_nulls = ["polars-lazy?/list_drop_nulls"]
 list_eval = ["polars-lazy?/list_eval", "polars-sql?/list_eval"]
+list_filter = ["polars-ops/list_filter", "polars-lazy?/list_filter"]
 list_gather = ["polars-ops/list_gather", "polars-lazy?/list_gather"]
 list_sample = ["polars-lazy?/list_sample"]
 list_sets = ["polars-lazy?/list_sets"]
@@ -195,6 +195,7 @@ merge_sorted = ["polars-lazy?/merge_sorted"]
 meta = ["polars-lazy?/meta"]
 mode = ["polars-ops/mode", "polars-lazy?/mode"]
 moment = ["polars-ops/moment", "polars-lazy?/moment"]
+new_streaming = ["polars-lazy?/new_streaming", "polars-core/dtype-categorical"]
 partition_by = ["polars-core/partition_by"]
 pct_change = ["polars-ops/pct_change", "polars-lazy?/pct_change"]
 peaks = ["polars-lazy/peaks"]
@@ -215,7 +216,6 @@ index_of = ["polars-lazy?/index_of"]
 search_sorted = ["polars-lazy?/search_sorted"]
 semi_anti_join = ["polars-lazy?/semi_anti_join", "polars-ops/semi_anti_join", "polars-sql?/semi_anti_join"]
 sign = ["polars-lazy?/sign"]
-streaming = ["polars-lazy?/streaming"]
 string_encoding = ["polars-ops/string_encoding", "polars-lazy?/string_encoding", "polars-core/strings"]
 string_pad = ["polars-lazy?/string_pad", "polars-ops/string_pad"]
 string_normalize = ["polars-lazy?/string_normalize", "polars-ops/string_normalize"]
@@ -237,7 +237,8 @@ unique_counts = ["polars-ops/unique_counts", "polars-lazy?/unique_counts"]
 zip_with = ["polars-core/zip_with"]
 
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
-polars_cloud = ["polars-lazy?/polars_cloud"]
+polars_cloud_client = ["polars-lazy?/polars_cloud_client"]
+polars_cloud_server = ["polars-lazy?/polars_cloud_server", "ir_serde"]
 ir_serde = ["polars-plan/ir_serde"]
 
 test = [
@@ -431,9 +432,8 @@ docs-selection = [
   "replace",
   "approx_unique",
   "unique_counts",
-  "polars_cloud",
+  "polars_cloud_client",
   "serde",
-  "ir_serde",
   "cloud",
   "async",
 ]
@@ -450,3 +450,6 @@ full = ["docs-selection", "performant", "fmt"]
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

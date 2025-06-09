@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import io
 from typing import TYPE_CHECKING
 
@@ -8,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars.io.plugins import register_io_source
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -126,4 +127,102 @@ This allows it to read into multiple rows.
     assert_series_equal(
         scan_lines(f).collect().to_series(),
         pl.Series("lines", text.splitlines(), pl.String()),
+    )
+
+
+def test_datetime_io_predicate_pushdown_21790() -> None:
+    recorded: dict[str, pl.Expr | None] = {"predicate": None}
+    df = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime.datetime(2024, 1, 1, 0),
+                datetime.datetime(2024, 1, 3, 0),
+            ]
+        }
+    )
+
+    def _source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        # capture the predicate passed in
+        recorded["predicate"] = predicate
+        inner_df = df.clone()
+        if with_columns is not None:
+            inner_df = inner_df.select(with_columns)
+        if predicate is not None:
+            inner_df = inner_df.filter(predicate)
+
+        yield inner_df
+
+    schema = {"timestamp": pl.Datetime(time_unit="ns")}
+    lf = register_io_source(io_source=_source, schema=schema)
+
+    cutoff = datetime.datetime(2024, 1, 4)
+    expr = pl.col("timestamp") < cutoff
+    filtered_df = lf.filter(expr).collect()
+
+    pushed_predicate = recorded["predicate"]
+    assert pushed_predicate is not None
+    assert_series_equal(filtered_df.to_series(), df.filter(expr).to_series())
+
+    # check the expression directly
+    dt_val, column_cast = pushed_predicate.meta.pop()
+    # Extract the datetime value from the expression
+    assert pl.DataFrame({}).select(dt_val).item() == cutoff
+
+    column = column_cast.meta.pop()[0]
+    assert column.meta == pl.col("timestamp")
+
+
+@pytest.mark.parametrize(("validate"), [(True), (False)])
+def test_reordered_columns_22731(validate: bool) -> None:
+    def my_scan() -> pl.LazyFrame:
+        schema = pl.Schema({"a": pl.Int64, "b": pl.Int64})
+
+        def source_generator(
+            with_columns: list[str] | None,
+            predicate: pl.Expr | None,
+            n_rows: int | None,
+            batch_size: int | None,
+        ) -> Iterator[pl.DataFrame]:
+            df = pl.DataFrame({"a": [1, 2, 3], "b": [42, 13, 37]})
+
+            if n_rows is not None:
+                df = df.head(min(n_rows, df.height))
+
+            maxrows = 1
+            if batch_size is not None:
+                maxrows = batch_size
+
+            while df.height > 0:
+                maxrows = min(maxrows, df.height)
+                cur = df.head(maxrows)
+                df = df.slice(maxrows)
+
+                if predicate is not None:
+                    cur = cur.filter(predicate)
+                if with_columns is not None:
+                    cur = cur.select(with_columns)
+
+                yield cur
+
+        return register_io_source(
+            io_source=source_generator, schema=schema, validate_schema=validate
+        )
+
+    expected_select = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]})
+    assert_frame_equal(my_scan().select("b", "a").collect(), expected_select)
+
+    expected_ri = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]}).with_row_index()
+    assert_frame_equal(
+        my_scan().select("b", "a").with_row_index().collect(),
+        expected_ri,
+    )
+
+    expected_with_columns = pl.DataFrame({"a": [1, 2, 3], "b": [42, 13, 37]})
+    assert_frame_equal(
+        my_scan().with_columns("b", "a").collect(), expected_with_columns
     )

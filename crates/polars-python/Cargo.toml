@@ -138,7 +138,6 @@ cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 
-streaming = ["polars/streaming"]
 meta = ["polars/meta"]
 index_of = ["polars/index_of"]
 search_sorted = ["polars/search_sorted"]
@@ -155,6 +154,7 @@ performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
+list_filter = ["polars/list_filter"]
 list_gather = ["polars/list_gather"]
 list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
@@ -206,6 +206,7 @@ operations = [
   "sign",
   "performant",
   "list_gather",
+  "list_filter",
   "list_count",
   "list_sets",
   "list_any_all",
@@ -245,10 +246,10 @@ io = [
 optimizations = [
   "cse",
   "polars/fused",
-  "streaming",
 ]
 
-polars_cloud = ["polars/polars_cloud", "polars/ir_serde"]
+polars_cloud_client = ["polars/polars_cloud_client"]
+polars_cloud_server = ["polars/polars_cloud_server"]
 
 # also includes simd
 nightly = ["polars/nightly"]
@@ -267,7 +268,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
-  "polars_cloud",
+  "polars_cloud_client",
   "new_streaming",
 ]
 
@@ -278,3 +279,6 @@ all = [
 default = [
   "all",
 ]
+
+[lints]
+workspace = true

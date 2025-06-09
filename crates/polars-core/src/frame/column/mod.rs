@@ -77,7 +77,14 @@ impl Column {
     }
 
     pub fn new_row_index(name: PlSmallStr, offset: IdxSize, length: usize) -> PolarsResult<Column> {
-        let length = IdxSize::try_from(length).unwrap_or(IdxSize::MAX);
+        let Ok(length) = IdxSize::try_from(length) else {
+            polars_bail!(
+                ComputeError:
+                "row index length {} overflows IdxSize::MAX ({})",
+                length,
+                IdxSize::MAX,
+            )
+        };
 
         if offset.checked_add(length).is_none() {
             polars_bail!(
@@ -1158,8 +1165,10 @@ impl Column {
         }
     }
 
-    pub fn explode(&self) -> PolarsResult<Column> {
-        self.as_materialized_series().explode().map(Column::from)
+    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Column> {
+        self.as_materialized_series()
+            .explode(skip_empty)
+            .map(Column::from)
     }
     pub fn implode(&self) -> PolarsResult<ListChunked> {
         self.as_materialized_series().implode()
@@ -1795,6 +1804,18 @@ impl Column {
             series = series.rechunk();
         }
         series.to_arrow(0, compat_level)
+    }
+
+    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Column> {
+        self.as_materialized_series()
+            .trim_lists_to_normalized_offsets()
+            .map(Column::from)
+    }
+
+    pub fn propagate_nulls(&self) -> Option<Column> {
+        self.as_materialized_series()
+            .propagate_nulls()
+            .map(Column::from)
     }
 }
 

@@ -13,13 +13,6 @@ pub trait PhysicalIoExpr: Send + Sync {
     /// Take a [`DataFrame`] and produces a boolean [`Series`] that serves
     /// as a predicate mask
     fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series>;
-
-    /// Can take &dyn Statistics and determine of a file should be
-    /// read -> `true`
-    /// or not -> `false`
-    fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
-        None
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -69,9 +62,10 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
-        // @NOTE: This is okay because we don't have Enums, Categoricals, or Decimals
+        // @TODO: Probably these unwraps should be removed.
         let series =
-            Series::from_arrow_chunks(self.column_name.clone(), vec![values.to_boxed()]).unwrap();
+            Series::from_chunk_and_dtype(self.column_name.clone(), values.to_boxed(), &self.dtype)
+                .unwrap();
         let column = series.into_column();
         let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
 
@@ -151,10 +145,6 @@ fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
         A::BinaryOwned(v) => P::Binary(v.into()),
         _ => return None,
     })
-}
-
-pub trait StatsEvaluator {
-    fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool>;
 }
 
 #[cfg(any(feature = "parquet", feature = "ipc"))]
@@ -468,7 +458,13 @@ pub struct ScanIOPredicate {
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub column_predicates: Arc<ColumnPredicates>,
+
+    /// Predicate parts only referring to hive columns.
+    pub hive_predicate: Option<Arc<dyn PhysicalIoExpr>>,
+
+    pub hive_predicate_is_full_predicate: bool,
 }
+
 impl ScanIOPredicate {
     pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
         if constant_columns.is_empty() {
@@ -516,70 +512,5 @@ impl ScanIOPredicate {
 impl fmt::Debug for ScanIOPredicate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("scan_io_predicate")
-    }
-}
-
-/// A collection of column stats with a known schema.
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone)]
-pub struct BatchStats {
-    schema: SchemaRef,
-    stats: Vec<ColumnStats>,
-    // This might not be available, as when pruning hive partitions.
-    num_rows: Option<usize>,
-}
-
-impl Default for BatchStats {
-    fn default() -> Self {
-        Self {
-            schema: Arc::new(Schema::default()),
-            stats: Vec::new(),
-            num_rows: None,
-        }
-    }
-}
-
-impl BatchStats {
-    /// Constructs a new [`BatchStats`].
-    ///
-    /// The `stats` should match the order of the `schema`.
-    pub fn new(schema: SchemaRef, stats: Vec<ColumnStats>, num_rows: Option<usize>) -> Self {
-        Self {
-            schema,
-            stats,
-            num_rows,
-        }
-    }
-
-    /// Returns the [`Schema`] of the batch.
-    pub fn schema(&self) -> &SchemaRef {
-        &self.schema
-    }
-
-    /// Returns the [`ColumnStats`] of all columns in the batch, if known.
-    pub fn column_stats(&self) -> &[ColumnStats] {
-        self.stats.as_ref()
-    }
-
-    /// Returns the [`ColumnStats`] of a single column in the batch.
-    ///
-    /// Returns an `Err` if no statistics are available for the given column.
-    pub fn get_stats(&self, column: &str) -> PolarsResult<&ColumnStats> {
-        self.schema.try_index_of(column).map(|i| &self.stats[i])
-    }
-
-    /// Returns the number of rows in the batch.
-    ///
-    /// Returns `None` if the number of rows is unknown.
-    pub fn num_rows(&self) -> Option<usize> {
-        self.num_rows
-    }
-
-    pub fn with_schema(&mut self, schema: SchemaRef) {
-        self.schema = schema;
-    }
-
-    pub fn take_indices(&mut self, indices: &[usize]) {
-        self.stats = indices.iter().map(|&i| self.stats[i].clone()).collect();
     }
 }

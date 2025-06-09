@@ -9,10 +9,13 @@
 pub mod batched_csv;
 #[cfg(feature = "catalog")]
 pub mod catalog;
-#[cfg(feature = "polars_cloud")]
-pub mod cloud;
+#[cfg(feature = "polars_cloud_client")]
+pub mod cloud_client;
+#[cfg(feature = "polars_cloud_server")]
+pub mod cloud_server;
 pub mod conversion;
 pub mod dataframe;
+pub mod dataset;
 pub mod datatypes;
 pub mod error;
 pub mod exceptions;
@@ -22,6 +25,7 @@ pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
 pub mod interop;
+pub mod io;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;

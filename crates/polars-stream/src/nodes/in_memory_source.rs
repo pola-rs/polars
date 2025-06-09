@@ -25,7 +25,7 @@ impl InMemorySourceNode {
 
 impl ComputeNode for InMemorySourceNode {
     fn name(&self) -> &str {
-        "in_memory_source"
+        "in-memory-source"
     }
 
     fn update_state(

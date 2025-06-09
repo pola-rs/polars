@@ -253,8 +253,10 @@ fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
         (DataType::Datetime(tu_l, tz_l), DataType::Datetime(tu_r, tz_r)) => {
             tu_l == tu_r
                 && (tz_l == tz_r
-                    || tz_r.is_some() && (tz_l.as_deref().unwrap_or("") == "*")
-                    || tz_l.is_some() && (tz_r.as_deref().unwrap_or("") == "*"))
+                    || match (tz_l, tz_r) {
+                        (Some(l), Some(r)) => TimeZone::eq_wildcard_aware(l, r),
+                        _ => false,
+                    })
         },
         // ...but otherwise require exact match
         _ => d1 == d2,
@@ -331,7 +333,9 @@ fn expand_struct_fields(
     names: &[PlSmallStr],
     exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
-    let first_name = names[0].as_ref();
+    let Some(first_name) = names.first() else {
+        return Ok(());
+    };
     if names.len() == 1 && first_name == "*" || is_regex_projection(first_name) {
         let Expr::Function { input, .. } = struct_expr else {
             unreachable!()

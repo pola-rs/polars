@@ -8,9 +8,10 @@ use std::borrow::Cow;
 use std::fmt;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
-pub use format::{ExprIRDisplay, IRDisplay};
+pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::unique_id::UniqueId;
 use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -61,7 +62,16 @@ pub enum IR {
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScan>,
         /// generic options that can be used for all file types.
-        file_options: Box<FileScanOptions>,
+        unified_scan_args: Box<UnifiedScanArgs>,
+        /// This used as part of a hack to prevent deadlocks when we run the in-memory engine with
+        /// scans dispatched to new-streaming. This ID is used as the ID of the CacheExec that
+        /// wraps this scan. It will not be needed once everything runs in new-streaming.
+        ///
+        /// We use this instead of the Arc-address of the ScanSources as it's possible to pass the
+        /// same set of ScanSources with different scan options.
+        ///
+        /// NOTE: This must be reset to a new ID during e.g. predicate / slice pushdown.
+        id: UniqueId,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -91,8 +101,8 @@ pub enum IR {
     },
     Cache {
         input: Node,
-        // Unique ID.
-        id: usize,
+        /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
+        id: UniqueId,
         /// How many hits the cache must be saved in memory.
         cache_hits: u32,
     },
@@ -112,7 +122,7 @@ pub enum IR {
         schema: SchemaRef,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
-        options: Arc<JoinOptions>,
+        options: Arc<JoinOptionsIR>,
     },
     HStack {
         input: Node,
@@ -184,11 +194,6 @@ impl IRPlan {
         }
     }
 
-    /// Extract the original logical plan if the plan is for the Streaming Engine
-    pub fn extract_streaming_plan(&self) -> Option<IRPlanRef> {
-        self.as_ref().extract_streaming_plan()
-    }
-
     pub fn describe(&self) -> String {
         self.as_ref().describe()
     }
@@ -217,22 +222,6 @@ impl<'a> IRPlanRef<'a> {
             lp_arena: self.lp_arena,
             expr_arena: self.expr_arena,
         }
-    }
-
-    /// Extract the original logical plan if the plan is for the Streaming Engine
-    pub fn extract_streaming_plan(self) -> Option<IRPlanRef<'a>> {
-        // @NOTE: the streaming engine replaces the whole tree with a MapFunction { Pipeline, .. }
-        // and puts the original plan somewhere in there. This is how we extract it. Disgusting, I
-        // know.
-        let IR::MapFunction { input: _, function } = self.root() else {
-            return None;
-        };
-
-        let FunctionIR::Pipeline { original, .. } = function else {
-            return None;
-        };
-
-        Some(original.as_ref()?.as_ref().as_ref())
     }
 
     pub fn display(self) -> format::IRDisplay<'a> {

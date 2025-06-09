@@ -12,7 +12,7 @@ use super::super::evaluate::{constant_evaluate, into_column};
 use super::super::{AExpr, BooleanFunction, Operator, OutputName};
 use crate::dsl::FunctionExpr;
 use crate::plans::predicates::get_binary_expr_col_and_lv;
-use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, rename_columns};
+use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
 use crate::prelude::FunctionOptions;
 
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and
@@ -185,8 +185,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         }
 
         match expr_arena.get(e) {
-            AExpr::Explode(_) => None,
-            AExpr::Alias(_, _) => None,
+            AExpr::Explode { .. } => None,
             AExpr::Column(_) => None,
             AExpr::Literal(_) => None,
             AExpr::BinaryExpr { left, op, right } => {
@@ -369,12 +368,17 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Agg(..) => None,
             AExpr::Ternary { .. } => None,
             AExpr::AnonymousFunction { .. } => None,
+            AExpr::Eval { .. } => None,
             AExpr::Function {
                 input, function, ..
             } => match function {
                 FunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
                     BooleanFunction::IsIn { nulls_equal } => {
+                        if !is_scalar_ae(input[1].node(), expr_arena) {
+                            return None;
+                        }
+
                         let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
@@ -395,14 +399,18 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 //      )
                                 let col = col.clone();
 
+                                let lv_node_exploded = expr_arena.add(AExpr::Explode {
+                                    expr: lv_node,
+                                    skip_empty: true,
+                                });
                                 let lv_min =
                                     expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
-                                        input: lv_node,
+                                        input: lv_node_exploded,
                                         propagate_nans: true,
                                     }));
                                 let lv_max =
                                     expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Max {
-                                        input: lv_node,
+                                        input: lv_node_exploded,
                                         propagate_nans: true,
                                     }));
 
@@ -424,7 +432,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let idx_zero = lv!(idx: 0);
                                 let col_has_no_nulls = eq!(col_nc, idx_zero);
 
-                                let lv_has_not_nulls = has_no_nulls!(lv_node);
+                                let lv_has_not_nulls = has_no_nulls!(lv_node_exploded);
                                 let null_case = or!(lv_has_not_nulls, col_has_no_nulls);
 
                                 let min_max_is_in = and!(null_case, expr);
@@ -568,10 +576,7 @@ fn aexpr_to_skip_batch_predicate_rec(
     let mut expr = expr_arena.add(AExpr::Function {
         input: vec![ExprIR::new(expr, OutputName::Alias(PlSmallStr::EMPTY))],
         function: FunctionExpr::Boolean(BooleanFunction::Not),
-        options: FunctionOptions {
-            collect_groups: crate::plans::ApplyOptions::ElementWise,
-            ..Default::default()
-        },
+        options: FunctionOptions::elementwise(),
     });
     for col in live_columns.keys() {
         let col_min = col!(min: col);

@@ -6,6 +6,8 @@ Miscellaneous
 .. autosummary::
    :toctree: api/
 
+    QueryOptFlags
+
     LazyFrame.cache
     LazyFrame.collect
     LazyFrame.collect_async

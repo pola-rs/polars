@@ -67,9 +67,24 @@ def test_write_missing_directory(write_method_name: str) -> None:
 
 def test_read_missing_file_path_truncated() -> None:
     content = "lskdfj".join(str(i) for i in range(25))
+
     with pytest.raises(
         FileNotFoundError,
-        match="\\.\\.\\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24",
+        match="\\.\\.\\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24 \\(set POLARS_VERBOSE=1 to see full path\\)",
+    ):
+        pl.read_csv(content)
+
+
+def test_read_missing_file_path_expanded_when_polars_verbose_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = "lskdfj".join(str(i) for i in range(25))
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    with pytest.raises(
+        FileNotFoundError,
+        match=content,
     ):
         pl.read_csv(content)
 

@@ -72,14 +72,14 @@ def test_sorted_nan_max_12931(descending: bool) -> None:
                 "x",
                 [
                     -0.0,
-                    0.0,
                     float("-nan"),
-                    float("nan"),
-                    1.0,
+                    0.0,
                     None,
+                    1.0,
+                    float("nan"),
                 ],
             ),
-            pl.Series("x", [None, 0.0, 1.0, float("nan")]),
+            pl.Series("x", [0.0, float("nan"), None, 1.0]),
         ),
         (
             # No nulls
@@ -87,24 +87,27 @@ def test_sorted_nan_max_12931(descending: bool) -> None:
                 "x",
                 [
                     -0.0,
-                    0.0,
                     float("-nan"),
-                    float("nan"),
+                    0.0,
                     1.0,
+                    float("nan"),
                 ],
             ),
-            pl.Series("x", [0.0, 1.0, float("nan")]),
+            pl.Series("x", [0.0, float("nan"), 1.0]),
         ),
     ],
 )
 def test_unique(s: pl.Series, expect: pl.Series) -> None:
-    out = s.unique()
+    out = s.unique(maintain_order=False)
+    assert_series_equal(expect, out, check_order=False)
+
+    out = s.unique(maintain_order=True)
     assert_series_equal(expect, out)
 
     out = s.n_unique()  # type: ignore[assignment]
     assert expect.len() == out
 
-    out = s.gather(s.arg_unique()).sort()
+    out = s.gather(s.arg_unique())
     assert_series_equal(expect, out)
 
 

@@ -5,6 +5,7 @@ mod binary;
 mod cast;
 mod column;
 mod count;
+mod eval;
 mod filter;
 mod gather;
 mod group_iter;
@@ -29,6 +30,7 @@ pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
+pub(crate) use eval::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use literal::*;
@@ -501,7 +503,7 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedScalar(c) => (c, groups),
             AggState::Literal(c) => (c, groups),
             AggState::AggregatedList(c) => {
-                let flattened = c.explode().unwrap();
+                let flattened = c.explode(false).unwrap();
                 let groups = groups.into_owned();
                 // unroll the possible flattened state
                 // say we have groups with overlapping windows:
@@ -552,7 +554,7 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                Cow::Owned(c.explode().unwrap())
+                Cow::Owned(c.explode(false).unwrap())
             },
             AggState::AggregatedScalar(c) => Cow::Borrowed(c),
             AggState::Literal(c) => Cow::Borrowed(c),
@@ -633,12 +635,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    /// Can take &dyn Statistics and determine of a file should be
-    /// read -> `true`
-    /// or not -> `false`
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        None
-    }
     fn is_literal(&self) -> bool {
         false
     }
@@ -671,11 +667,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr
             .evaluate(df, &state)
             .map(|c| c.take_materialized_series())
-    }
-
-    #[cfg(feature = "parquet")]
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        self.expr.as_stats_evaluator()
     }
 }
 

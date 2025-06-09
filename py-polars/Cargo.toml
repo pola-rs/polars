@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.27.1"
+version = "1.30.0"
 edition = "2021"
 
 [lib]
@@ -29,7 +29,8 @@ either = { workspace = true }
 # Features used in this crate
 ffi_plugin = ["polars-python/ffi_plugin"]
 csv = ["polars-python/csv"]
-polars_cloud = ["polars-python/polars_cloud"]
+polars_cloud_client = ["polars-python/polars_cloud_client"]
+polars_cloud_server = ["polars-python/polars_cloud_server"]
 object = ["polars-python/object"]
 clipboard = ["polars-python/clipboard"]
 sql = ["polars-python/sql"]
@@ -50,7 +51,6 @@ pct_change = ["polars-python/pct_change"]
 repeat_by = ["polars-python/repeat_by"]
 # also includes simd
 nightly = ["polars-python/nightly"]
-streaming = ["polars-python/streaming"]
 meta = ["polars-python/meta"]
 search_sorted = ["polars-python/search_sorted"]
 decompress = ["polars-python/decompress"]
@@ -64,6 +64,7 @@ timezones = ["polars-python/timezones"]
 cse = ["polars-python/cse"]
 merge_sorted = ["polars-python/merge_sorted"]
 list_gather = ["polars-python/list_gather"]
+list_filter = ["polars-python/list_filter"]
 list_count = ["polars-python/list_count"]
 array_count = ["polars-python/array_count"]
 binary_encoding = ["polars-python/binary_encoding"]
@@ -98,7 +99,7 @@ optimizations = ["polars-python/optimizations"]
 all = [
   "ffi_plugin",
   "csv",
-  "polars_cloud",
+  "polars_cloud_client",
   "object",
   "clipboard",
   "sql",
@@ -111,3 +112,6 @@ all = [
 ]
 
 default = ["all", "nightly"]
+
+[lints]
+workspace = true

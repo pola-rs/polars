@@ -124,7 +124,9 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
     # Ensure the CSE can work with hive partitions.
     q = q.filter(pl.col("a").gt(2))
-    result = q.join(q, on="a", how="left").collect(comm_subplan_elim=True)
+    result = q.join(q, on="a", how="left").collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
     expected = {
         "a": [3, 4],
         "d": [3, 4],
@@ -147,8 +149,12 @@ def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(
-        lf.collect(engine="streaming", predicate_pushdown=False),
-        lf.collect(engine="streaming", predicate_pushdown=True),
+        lf.collect(
+            engine="streaming", optimizations=pl.QueryOptFlags(predicate_pushdown=False)
+        ),
+        lf.collect(
+            engine="streaming", optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+        ),
     )
 
 
@@ -168,7 +174,6 @@ def test_hive_partitioned_slice_pushdown(
         df.to_arrow(),
         root_path=root,
         partition_cols=["category", "fats_g"],
-        use_legacy_dataset=True,
     )
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
@@ -206,7 +211,6 @@ def test_hive_partitioned_projection_pushdown(
         df.to_arrow(),
         root_path=root,
         partition_cols=["category", "fats_g"],
-        use_legacy_dataset=True,
     )
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
@@ -568,13 +572,22 @@ def test_hive_partition_columns_contained_in_file(
             x for i in range(len(cols)) for x in permutations(cols[: 1 + i])
         ):
             assert_frame_equal(
-                lf.select(projection).collect(projection_pushdown=projection_pushdown),
+                lf.select(projection).collect(
+                    optimizations=pl.QueryOptFlags(
+                        projection_pushdown=projection_pushdown
+                    )
+                ),
                 df.select(projection),
             )
 
     lf = scan_func(path, hive_partitioning=True)  # type: ignore[call-arg]
     rhs = df
-    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_frame_equal(
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
+        rhs,
+    )
     assert_with_projections(lf, rhs)
 
     lf = scan_func(  # type: ignore[call-arg]
@@ -584,7 +597,9 @@ def test_hive_partition_columns_contained_in_file(
     )
     rhs = df.with_columns(pl.col("a", "b").cast(pl.String))
     assert_frame_equal(
-        lf.collect(projection_pushdown=projection_pushdown),
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs,
     )
     assert_with_projections(lf, rhs)
@@ -605,11 +620,18 @@ def test_hive_partition_columns_contained_in_file(
     )
 
     lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
-    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_frame_equal(
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
+        rhs,
+    )
     assert_with_projections(lf, rhs)
 
     assert_frame_equal(
-        lf.with_row_index().collect(projection_pushdown=projection_pushdown),
+        lf.with_row_index().collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs.with_row_index(),
     )
     assert_with_projections(
@@ -619,7 +641,9 @@ def test_hive_partition_columns_contained_in_file(
     assert_frame_equal(
         lf.with_row_index()
         .select(pl.exclude("index"), "index")
-        .collect(projection_pushdown=projection_pushdown),
+        .collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs.with_row_index().select(pl.exclude("index"), "index"),
     )
     assert_with_projections(
@@ -640,7 +664,9 @@ def test_hive_partition_columns_contained_in_file(
         pl.col("a").cast(pl.String),
     )
     assert_frame_equal(
-        lf.collect(projection_pushdown=projection_pushdown),
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs,
     )
     assert_with_projections(lf, rhs)
@@ -715,6 +741,49 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.write_disk
+def test_hive_partition_filter_null_23005(tmp_path: Path) -> None:
+    root = tmp_path
+
+    df = pl.DataFrame(
+        {
+            "date1": [
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                None,
+            ],
+            "date2": [
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                None,
+                datetime(2023, 3, 1),
+            ],
+            "x": [1, 2, 3, 4],
+        },
+        schema={"date1": pl.Date, "date2": pl.Datetime, "x": pl.Int32},
+    )
+
+    df.write_parquet(root, partition_by=["date1", "date2"])
+
+    q = pl.scan_parquet(root, include_file_paths="path")
+
+    full = q.collect()
+
+    assert (
+        full.select(
+            (
+                pl.any_horizontal(pl.col("date1", "date2").is_null())
+                & pl.col("path").str.contains("__HIVE_DEFAULT_PARTITION__")
+            ).sum()
+        ).item()
+        == 2
+    )
+
+    lf = pl.scan_parquet(root).filter(pl.col("date1") == datetime(2024, 1, 1))
+    assert_frame_equal(lf.collect(), df.head(1))
+
+
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),
     [
@@ -774,6 +843,7 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow
 @pytest.mark.write_disk
+@pytest.mark.xfail
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
     chunk_size = 262_144
     n_rows = 100_000

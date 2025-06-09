@@ -54,7 +54,7 @@ where
         let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
         let n_failures = failure_mask.num_trues();
         if n_failures == 0 {
-            return Ok(out.into_series());
+            return Ok(out);
         }
 
         let some_failures = if ca.len() == 1 {
@@ -71,10 +71,10 @@ where
                 let base = base.get(0).unwrap();
                 some_failures
                     .get(0)
-                    .and_then(|s| T::Native::from_str_radix(s, base).err())
+                    .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
                     .map_or_else(
                         || unreachable!("failed to extract ParseIntError"),
-                        |e| format!("{}", e),
+                        |e| format!("{e}"),
                     )
             },
             _ => {
@@ -82,24 +82,24 @@ where
                 some_failures
                     .get(0)
                     .zip(base_failures.get(0))
-                    .and_then(|(s, base)| T::Native::from_str_radix(s, base).err())
+                    .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
                     .map_or_else(
                         || unreachable!("failed to extract ParseIntError"),
-                        |e| format!("{}", e),
+                        |e| format!("{e}"),
                     )
             },
         };
         polars_bail!(
             ComputeError:
             "strict integer parsing failed for {} value(s): {}; error message for the \
-             first shown value: '{}' (consider non-strict parsing)",
+            first shown value: '{}' (consider non-strict parsing)",
             n_failures,
             some_failures.into_series().fmt_list(),
             some_error_msg
         );
-    }
+    };
 
-    Ok(out.into_series())
+    Ok(out)
 }
 
 pub trait StringNameSpaceImpl: AsString {
@@ -349,7 +349,7 @@ pub trait StringNameSpaceImpl: AsString {
             })),
             Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
-                format!("Invalid regular expression: {}", e).into(),
+                format!("Invalid regular expression: {e}").into(),
             )),
         }
     }

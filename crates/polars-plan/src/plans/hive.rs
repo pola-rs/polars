@@ -1,36 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::predicates::{BatchStats, ColumnStats};
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
-pub struct HivePartitions {
-    /// Single value Series that can be used to run the predicate against.
-    /// They are to be broadcasted if the predicates don't filter them out.
-    stats: BatchStats,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone)]
 pub struct HivePartitionsDf(DataFrame);
-
-impl HivePartitions {
-    pub fn get_statistics(&self) -> &BatchStats {
-        &self.stats
-    }
-
-    pub fn materialize_partition_columns(&self) -> Vec<Series> {
-        self.stats
-            .column_stats()
-            .iter()
-            .map(|cs| cs.get_min_state().unwrap().clone())
-            .collect()
-    }
-}
 
 impl HivePartitionsDf {
     pub fn get_projection_schema_and_indices(
@@ -73,28 +50,6 @@ impl HivePartitionsDf {
 
     pub fn df(&self) -> &DataFrame {
         &self.0
-    }
-
-    /// Compatibility function. Should be removed later.
-    pub fn into_statistics(&self) -> Arc<Vec<HivePartitions>> {
-        let partitions: Vec<_> = (0..self.0.height())
-            .map(|i| {
-                let column_stats = self
-                    .0
-                    .get_columns()
-                    .iter()
-                    .map(|c| {
-                        ColumnStats::from_column_literal(
-                            c.as_materialized_series().slice(i as i64, 1),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-
-                let stats = BatchStats::new(self.schema().clone(), column_stats, None);
-                HivePartitions { stats }
-            })
-            .collect();
-        Arc::new(partitions)
     }
 
     pub fn schema(&self) -> &SchemaRef {

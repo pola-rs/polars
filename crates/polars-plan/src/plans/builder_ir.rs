@@ -53,7 +53,8 @@ impl<'a> IRBuilder<'a> {
 
     /// An escape hatch to add an `Expr`. Working with IR is preferred.
     pub fn add_expr(&mut self, expr: Expr) -> PolarsResult<ExprIR> {
-        to_expr_ir(expr, self.expr_arena)
+        let schema = self.lp_arena.get(self.root).schema(self.lp_arena);
+        to_expr_ir(expr, self.expr_arena, &schema)
     }
 
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
@@ -144,6 +145,49 @@ impl<'a> IRBuilder<'a> {
             let node = self.lp_arena.add(lp);
             Ok(IRBuilder::new(node, self.expr_arena, self.lp_arena))
         }
+    }
+
+    pub fn drop<I, S>(self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        I::IntoIter: ExactSizeIterator,
+        S: Into<PlSmallStr>,
+    {
+        let names = names.into_iter();
+        // if len == 0, no projection has to be done. This is a select all operation.
+        if names.size_hint().0 == 0 {
+            self
+        } else {
+            let mut schema = self.schema().as_ref().as_ref().clone();
+
+            for name in names {
+                let name: PlSmallStr = name.into();
+                schema.remove(&name);
+            }
+
+            let lp = IR::SimpleProjection {
+                input: self.root,
+                columns: Arc::new(schema),
+            };
+            let node = self.lp_arena.add(lp);
+            IRBuilder::new(node, self.expr_arena, self.lp_arena)
+        }
+    }
+
+    pub fn sort(
+        self,
+        by_column: Vec<ExprIR>,
+        slice: Option<(i64, usize)>,
+        sort_options: SortMultipleOptions,
+    ) -> Self {
+        let ir = IR::Sort {
+            input: self.root,
+            by_column,
+            slice,
+            sort_options,
+        };
+        let node = self.lp_arena.add(ir);
+        IRBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
     pub fn node(self) -> Node {
@@ -277,7 +321,7 @@ impl<'a> IRBuilder<'a> {
         other: Node,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
-        options: Arc<JoinOptions>,
+        options: Arc<JoinOptionsIR>,
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);

@@ -138,7 +138,11 @@ impl ZipNode {
 
 impl ComputeNode for ZipNode {
     fn name(&self) -> &str {
-        "zip"
+        if self.null_extend {
+            "zip-null-extend"
+        } else {
+            "zip"
+        }
     }
 
     fn update_state(
@@ -149,8 +153,6 @@ impl ComputeNode for ZipNode {
     ) -> PolarsResult<()> {
         assert!(send.len() == 1);
         assert!(recv.len() == self.input_heads.len());
-
-        let any_input_blocked = recv.contains(&PortState::Blocked);
 
         let mut all_broadcast = true;
         let mut all_done_or_broadcast = true;
@@ -183,26 +185,31 @@ impl ComputeNode for ZipNode {
 
         let all_output_sent = all_done_or_broadcast && !all_broadcast;
 
-        let new_recv_state = if send[0] == PortState::Done || all_output_sent {
+        // Are we completely done?
+        if send[0] == PortState::Done || all_output_sent {
             for input_head in &mut self.input_heads {
                 input_head.clear();
             }
             send[0] = PortState::Done;
-            PortState::Done
-        } else if send[0] == PortState::Blocked || any_input_blocked {
-            send[0] = if any_input_blocked {
+            recv.fill(PortState::Done);
+            return Ok(());
+        }
+
+        let num_inputs_blocked = recv.iter().filter(|r| **r == PortState::Blocked).count();
+        send[0] = if num_inputs_blocked > 0 {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
+
+        let num_total_blocked = num_inputs_blocked + (send[0] == PortState::Blocked) as usize;
+        for r in recv {
+            let num_others_blocked = num_total_blocked - (*r == PortState::Blocked) as usize;
+            *r = if num_others_blocked > 0 {
                 PortState::Blocked
             } else {
                 PortState::Ready
             };
-            PortState::Blocked
-        } else {
-            send[0] = PortState::Ready;
-            PortState::Ready
-        };
-
-        for r in recv {
-            *r = new_recv_state;
         }
         Ok(())
     }

@@ -31,7 +31,7 @@ impl StringNameSpace {
     /// Uses aho-corasick to find many patterns.
     ///
     /// # Arguments
-    /// - `patterns`: an expression that evaluates to an String column
+    /// - `patterns`: an expression that evaluates to a String column
     /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
     ///   When this option is enabled, searching will be performed without respect to case for
     ///   ASCII letters (a-z and A-Z) only.
@@ -260,7 +260,7 @@ impl StringNameSpace {
                 // @HACK. This needs to be done because literals still block predicate pushdown,
                 // but this should be an exception in the predicate pushdown.
                 if is_column_independent {
-                    options.collect_groups = ApplyOptions::ElementWise;
+                    options.set_elementwise();
                 }
                 options
             })

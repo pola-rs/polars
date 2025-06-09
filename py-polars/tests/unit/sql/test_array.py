@@ -232,9 +232,3 @@ def test_unnest_table_function_errors() -> None:
             match=r"UNNEST tables do not \(yet\) support WITH OFFSET|ORDINALITY",
         ):
             ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")
-
-        with pytest.raises(
-            SQLInterfaceError,
-            match="nested array literals are not currently supported",
-        ):
-            pl.sql_expr("[[1,2,3]] AS nested")

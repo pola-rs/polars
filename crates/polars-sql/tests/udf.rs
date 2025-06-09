@@ -34,11 +34,16 @@ impl FunctionRegistry for MyFunctionRegistry {
 fn test_udfs() -> PolarsResult<()> {
     let my_custom_sum = UserDefinedFunction::new(
         "my_custom_sum".into(),
-        vec![
-            Field::new("a".into(), DataType::Int32),
-            Field::new("b".into(), DataType::Int32),
-        ],
-        GetOutput::same_type(),
+        GetOutput::map_dtypes(|dtypes| {
+            // UDF is responsible for schema validation
+            let Ok([first, second]) = <[&DataType; 2]>::try_from(dtypes) else {
+                polars_bail!(SchemaMismatch: "expected two arguments")
+            };
+            if first != second {
+                polars_bail!(SchemaMismatch: "mismatched types")
+            }
+            Ok(first.clone())
+        }),
         move |c: &mut [Column]| {
             let first = c[0].as_materialized_series().clone();
             let second = c[1].as_materialized_series().clone();
@@ -62,19 +67,24 @@ fn test_udfs() -> PolarsResult<()> {
     assert!(res.is_ok());
 
     // schema is invalid so it will fail
-    assert!(
-        ctx.execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
-            .is_err()
-    );
+    assert!(matches!(
+        ctx.execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo"),
+        Err(PolarsError::SchemaMismatch(_))
+    ));
 
     // create a new UDF to be registered on the context
     let my_custom_divide = UserDefinedFunction::new(
         "my_custom_divide".into(),
-        vec![
-            Field::new("a".into(), DataType::Int32),
-            Field::new("b".into(), DataType::Int32),
-        ],
-        GetOutput::same_type(),
+        GetOutput::map_dtypes(|dtypes| {
+            // UDF is responsible for schema validation
+            let Ok([first, second]) = <[&DataType; 2]>::try_from(dtypes) else {
+                polars_bail!(SchemaMismatch: "expected two arguments")
+            };
+            if first != second {
+                polars_bail!(SchemaMismatch: "mismatched types")
+            }
+            Ok(first.clone())
+        }),
         move |c: &mut [Column]| {
             let first = c[0].as_materialized_series().clone();
             let second = c[1].as_materialized_series().clone();

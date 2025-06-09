@@ -12,18 +12,18 @@ pub(super) fn convert_functions(
     function: FunctionExpr,
     mut options: FunctionOptions,
     arena: &mut Arena<AExpr>,
-    ctx: &mut ConversionContext,
-) -> PolarsResult<Node> {
+    schema: &Schema,
+) -> PolarsResult<(Node, PlSmallStr)> {
     use FunctionExpr as F;
 
     // Return before converting inputs
     match function {
         // This can be created by col(*).is_null() on empty dataframes.
         F::Boolean(BooleanFunction::AllHorizontal) if input.is_empty() => {
-            return to_aexpr_impl(lit(true), arena, ctx);
+            return to_aexpr_impl(lit(true), arena, schema);
         },
         F::Boolean(BooleanFunction::AnyHorizontal) if input.is_empty() => {
-            return to_aexpr_impl(lit(false), arena, ctx);
+            return to_aexpr_impl(lit(false), arena, schema);
         },
         // Convert to binary expression as the optimizer understands those.
         // Don't exceed 128 expressions as we might stackoverflow.
@@ -34,7 +34,7 @@ pub(super) fn convert_functions(
                 if single {
                     expr = expr.cast(DataType::Boolean)
                 }
-                return to_aexpr_impl(expr, arena, ctx);
+                return to_aexpr_impl(expr, arena, schema);
             }
         },
         F::Boolean(BooleanFunction::AnyHorizontal) => {
@@ -44,14 +44,14 @@ pub(super) fn convert_functions(
                 if single {
                     expr = expr.cast(DataType::Boolean)
                 }
-                return to_aexpr_impl(expr, arena, ctx);
+                return to_aexpr_impl(expr, arena, schema);
             }
         },
         _ => {},
     }
 
     // Converts inputs
-    let e = to_expr_irs(input, arena)?;
+    let e = to_expr_irs(input, arena, schema)?;
 
     match function {
         #[cfg(feature = "diff")]
@@ -85,19 +85,17 @@ pub(super) fn convert_functions(
         polars_ensure!(&e[2].is_scalar(arena), ComputeError: "'fill_value' must be scalar value");
     }
 
-    if ctx.output_name.is_none() {
-        // Handles special case functions like `struct.field`.
-        if let Some(name) = function.output_name() {
-            ctx.output_name = name
-        } else {
-            set_function_output_name(&e, ctx, || format_pl_smallstr!("{}", &function));
-        }
-    }
+    // Handles special case functions like `struct.field`.
+    let output_name = match function.output_name().and_then(|v| v.into_inner()) {
+        Some(name) => name.clone(),
+        None if e.is_empty() => format_pl_smallstr!("{}", &function),
+        None => e[0].output_name().clone(),
+    };
 
     let ae_function = AExpr::Function {
         input: e,
         function,
         options,
     };
-    Ok(arena.add(ae_function))
+    Ok((arena.add(ae_function), output_name))
 }

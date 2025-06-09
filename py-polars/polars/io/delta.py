@@ -318,8 +318,8 @@ def scan_delta(
     if credential_provider_builder and (
         provider := credential_provider_builder.build_credential_provider()
     ):
-        credential_provider_creds = _get_credentials_from_provider_expiry_aware(
-            provider
+        credential_provider_creds = (
+            _get_credentials_from_provider_expiry_aware(provider) or {}
         )
 
     dl_tbl = _get_delta_lake_table(
@@ -342,7 +342,6 @@ def scan_delta(
         msg = "To make use of pyarrow_options, set use_pyarrow to True"
         raise ValueError(msg)
 
-    import pyarrow as pa
     from deltalake.exceptions import DeltaProtocolError
     from deltalake.table import (
         MAX_SUPPORTED_READER_VERSION,
@@ -371,10 +370,8 @@ def scan_delta(
             msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
             raise DeltaProtocolError(msg)
 
-    # Requires conversion through pyarrow table because there is no direct way yet to
-    # convert a delta schema into a polars schema
-    delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    polars_schema = from_arrow(pa.Table.from_pylist([], delta_schema)).schema  # type: ignore[union-attr]
+    delta_schema = dl_tbl.schema().to_arrow()
+    polars_schema = from_arrow(delta_schema.empty_table()).schema  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(
@@ -407,7 +404,7 @@ def scan_delta(
         file_uris,
         schema=main_schema,
         hive_schema=hive_schema if len(partition_columns) > 0 else None,
-        allow_missing_columns=True,
+        missing_columns="insert",
         hive_partitioning=len(partition_columns) > 0,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]

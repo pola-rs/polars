@@ -7,12 +7,12 @@ mod ir_to_dsl;
     feature = "ipc",
     feature = "parquet",
     feature = "csv",
-    feature = "json"
+    feature = "json",
+    feature = "python"
 ))]
 mod scans;
 mod stack_opt;
 
-use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 pub use dsl_to_ir::*;
@@ -27,7 +27,8 @@ use recursive::recursive;
     feature = "ipc",
     feature = "parquet",
     feature = "csv",
-    feature = "json"
+    feature = "json",
+    feature = "python"
 ))]
 pub use scans::*;
 mod functions;
@@ -69,17 +70,18 @@ impl IR {
                     predicate: _,
                     scan_type,
                     output_schema: _,
-                    file_options,
+                    unified_scan_args,
+                    id: _,
                 } = ir.clone()
                 else {
                     unreachable!()
                 };
 
                 DslPlan::Scan {
-                    sources: sources.clone(),
-                    file_info: Some(file_info.clone()),
-                    scan_type: scan_type.clone(),
-                    file_options: file_options.clone(),
+                    sources,
+                    file_info: Some(file_info),
+                    scan_type,
+                    unified_scan_args,
                     cached_ir: Arc::new(Mutex::new(Some(ir))),
                 }
             },
@@ -175,8 +177,10 @@ impl IR {
                 id,
                 cache_hits: _,
             } => {
-                let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache { input, id }
+                let input: Arc<DslPlan> = id
+                    .downcast_arc()
+                    .unwrap_or_else(|| Arc::new(convert_to_lp(input, lp_arena)));
+                DslPlan::Cache { input }
             },
             IR::GroupBy {
                 input,
@@ -220,7 +224,7 @@ impl IR {
                     predicates: Default::default(),
                     left_on,
                     right_on,
-                    options,
+                    options: Arc::new(JoinOptions::from(Arc::unwrap_or_clone(options))),
                 }
             },
             IR::HStack {
@@ -301,6 +305,17 @@ impl IR {
                             },
                         },
                         cloud_options: f.cloud_options,
+                        per_partition_sort_by: f.per_partition_sort_by.map(|sort_by| {
+                            sort_by
+                                .into_iter()
+                                .map(|s| SortColumn {
+                                    expr: s.expr.to_expr(expr_arena),
+                                    descending: s.descending,
+                                    nulls_last: s.descending,
+                                })
+                                .collect()
+                        }),
+                        finish_callback: f.finish_callback,
                     }),
                 };
                 DslPlan::Sink { input, payload }
@@ -329,29 +344,5 @@ impl IR {
             },
             IR::Invalid => unreachable!(),
         }
-    }
-}
-
-fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
-    let plan = lp_arena.get(lp_node);
-    let mut inputs: UnitVec<Node> = unitvec!();
-
-    // Used to get the schema of the input.
-    if is_scan(plan) {
-        inputs.push(lp_node);
-    } else {
-        plan.copy_inputs(&mut inputs);
-    };
-    inputs
-}
-
-fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    let inputs = get_input(lp_arena, lp_node);
-    if inputs.is_empty() {
-        // Files don't have an input, so we must take their schema.
-        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
-    } else {
-        let input = inputs[0];
-        lp_arena.get(input).schema(lp_arena)
     }
 }

@@ -67,7 +67,7 @@ impl Writeable {
                 use crate::cloud::BlockingCloudWriter;
 
                 if verbose {
-                    eprintln!("Writeable: try_new: cloud: {}", path)
+                    eprintln!("Writeable: try_new: cloud: {path}")
                 }
 
                 if path.starts_with("file://") {
@@ -106,7 +106,7 @@ impl Writeable {
                 );
 
                 if verbose {
-                    eprintln!("Writeable: try_new: forced async converted path: {}", path)
+                    eprintln!("Writeable: try_new: forced async converted path: {path}")
                 }
 
                 let writer = crate::pl_async::get_runtime()

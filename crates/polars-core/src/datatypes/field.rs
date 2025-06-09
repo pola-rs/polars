@@ -10,6 +10,7 @@ pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
     any(feature = "serde", feature = "serde-lazy"),
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Field {
     pub name: PlSmallStr,
     pub dtype: DataType,
@@ -139,14 +140,14 @@ impl DataType {
     }
 
     pub fn from_arrow_field(field: &ArrowField) -> DataType {
-        Self::from_arrow(&field.dtype, true, field.metadata.as_deref())
+        Self::from_arrow(&field.dtype, field.metadata.as_deref())
     }
 
     pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
-        Self::from_arrow(dt, true, None)
+        Self::from_arrow(dt, None)
     }
 
-    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool, md: Option<&Metadata>) -> DataType {
+    pub fn from_arrow(dt: &ArrowDataType, md: Option<&Metadata>) -> DataType {
         match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
@@ -172,7 +173,7 @@ impl DataType {
             },
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => {
-                DataType::Datetime(tu.into(), DataType::canonical_timezone(tz))
+                DataType::Datetime(tu.into(), TimeZone::opt_try_new(tz.clone()).unwrap())
             },
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
@@ -210,7 +211,7 @@ impl DataType {
                 ) {
                     DataType::Categorical(None, Default::default())
                 } else {
-                    Self::from_arrow(value_type, bin_to_view, None)
+                    Self::from_arrow(value_type, None)
                 }
             },
             #[cfg(feature = "dtype-struct")]
@@ -239,13 +240,15 @@ impl DataType {
                 DataType::String
             },
             ArrowDataType::BinaryView => DataType::Binary,
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
-                if bin_to_view {
-                    DataType::Binary
-                } else {
+            ArrowDataType::LargeBinary if md.is_some() => {
+                let md = md.unwrap();
+                if md.maintain_type() {
                     DataType::BinaryOffset
+                } else {
+                    DataType::Binary
                 }
             },
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             ArrowDataType::Map(inner, _is_sorted) => {
                 DataType::List(Self::from_arrow_field(inner).boxed())

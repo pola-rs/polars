@@ -2,6 +2,7 @@ use super::*;
 use crate::map;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum CategoricalFunction {
     GetCategories,
@@ -124,8 +125,7 @@ fn _get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
 fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(&StringChunked) -> ChunkedArray<T>,
-    ChunkedArray<T>: IntoSeries,
-    T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+    T: PolarsPhysicalType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
 {
     let ca = c.categorical()?;
     let (categories, phys) = _get_cat_phys_map(ca);
@@ -140,8 +140,7 @@ where
 fn apply_to_cats_binary<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(&BinaryChunked) -> ChunkedArray<T>,
-    ChunkedArray<T>: IntoSeries,
-    T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+    T: PolarsPhysicalType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
 {
     let ca = c.categorical()?;
     let (categories, phys) = _get_cat_phys_map(ca);

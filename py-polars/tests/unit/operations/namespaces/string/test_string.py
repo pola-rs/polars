@@ -10,7 +10,6 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
-    SchemaError,
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -1356,13 +1355,13 @@ def test_replace_many_invalid_inputs() -> None:
     with pytest.raises(ColumnNotFoundError, match="me"):
         df.select(pl.col("text").str.replace_many("me", "you"))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many(1, 2))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many([1], [2]))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many(["me"], None))
 
     with pytest.raises(TypeError):
@@ -1378,9 +1377,6 @@ def test_replace_many_invalid_inputs() -> None:
 
     with pytest.raises(ColumnNotFoundError, match="me"):
         s.str.replace_many("me", "you")  # type: ignore[arg-type]
-
-    with pytest.raises(SchemaError):
-        df.select(pl.col("text").str.replace_many(["me"], None))
 
     with pytest.raises(TypeError):
         df.select(pl.col("text").str.replace_many(["me"]))
@@ -2084,4 +2080,13 @@ def test_str_split_self_broadcast() -> None:
     assert_series_equal(
         pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
         pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
+    )
+
+
+def test_replace_many_mapping_in_list() -> None:
+    assert_series_equal(
+        pl.Series([["a", "b"]]).list.eval(
+            pl.element().replace_strict({"a": 1, "b": 2})
+        ),
+        pl.Series([[1, 2]]),
     )

@@ -12,7 +12,6 @@ use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 
 use super::*;
-use crate::reduce::partition::partition_mask;
 
 pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
@@ -278,6 +277,8 @@ impl Reducer for BinaryMaxReducer {
 pub struct BoolMinGroupedReduction {
     values: MutableBitmap,
     mask: MutableBitmap,
+    evicted_values: BitmapBuilder,
+    evicted_mask: BitmapBuilder,
 }
 
 impl GroupedReduction for BoolMinGroupedReduction {
@@ -315,51 +316,37 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Ok(())
     }
 
-    unsafe fn update_groups(
+    unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
-        group_idxs: &[IdxSize],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        // TODO: we should really implement a sum-as-other-type operation instead
-        // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let ca: &BooleanChunked = values.as_ref().as_ref();
+        let arr = ca.downcast_as_array();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                self.values
-                    .and_pos_unchecked(*g as usize, ov.unwrap_or(true));
-                self.mask.or_pos_unchecked(*g as usize, ov.is_some());
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let ov = arr.get_unchecked(*i as usize);
+                if g.should_evict() {
+                    self.evicted_values.push(self.values.get_unchecked(g.idx()));
+                    self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                    self.values.set_unchecked(g.idx(), ov.unwrap_or(true));
+                    self.mask.set_unchecked(g.idx(), ov.is_some());
+                } else {
+                    self.values.and_pos_unchecked(g.idx(), ov.unwrap_or(true));
+                    self.mask.or_pos_unchecked(g.idx(), ov.is_some());
+                }
             }
         }
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.values.len() == other.values.len());
-        assert!(self.mask.len() == other.mask.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, (v, o)) in group_idxs
-                .iter()
-                .zip(other.values.iter().zip(other.mask.iter()))
-            {
-                self.values.and_pos_unchecked(*g as usize, v);
-                self.mask.or_pos_unchecked(*g as usize, o);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -379,23 +366,13 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Ok(())
     }
 
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        let p_values = partition_mask(&self.values.freeze(), partition_sizes, partition_idxs);
-        let p_mask = partition_mask(&self.mask.freeze(), partition_sizes, partition_idxs);
-        p_values
-            .into_iter()
-            .zip(p_mask)
-            .map(|(values, mask)| {
-                Box::new(Self {
-                    values: values.into_mut(),
-                    mask: mask.into_mut(),
-                }) as _
-            })
-            .collect()
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            values: core::mem::take(&mut self.evicted_values).into_mut(),
+            mask: core::mem::take(&mut self.evicted_mask).into_mut(),
+            evicted_values: BitmapBuilder::new(),
+            evicted_mask: BitmapBuilder::new(),
+        })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
@@ -422,6 +399,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
 pub struct BoolMaxGroupedReduction {
     values: MutableBitmap,
     mask: MutableBitmap,
+    evicted_values: BitmapBuilder,
+    evicted_mask: BitmapBuilder,
 }
 
 impl GroupedReduction for BoolMaxGroupedReduction {
@@ -459,50 +438,37 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         Ok(())
     }
 
-    unsafe fn update_groups(
+    unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
-        group_idxs: &[IdxSize],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        // TODO: we should really implement a sum-as-other-type operation instead
-        // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let ca: &BooleanChunked = values.as_ref().as_ref();
+        let arr = ca.downcast_as_array();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                self.values
-                    .or_pos_unchecked(*g as usize, ov.unwrap_or(false));
-                self.mask.or_pos_unchecked(*g as usize, ov.is_some());
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let ov = arr.get_unchecked(*i as usize);
+                if g.should_evict() {
+                    self.evicted_values.push(self.values.get_unchecked(g.idx()));
+                    self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                    self.values.set_unchecked(g.idx(), ov.unwrap_or(false));
+                    self.mask.set_unchecked(g.idx(), ov.is_some());
+                } else {
+                    self.values.or_pos_unchecked(g.idx(), ov.unwrap_or(false));
+                    self.mask.or_pos_unchecked(g.idx(), ov.is_some());
+                }
             }
         }
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(other.values.len() == group_idxs.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, (v, o)) in group_idxs
-                .iter()
-                .zip(other.values.iter().zip(other.mask.iter()))
-            {
-                self.values.or_pos_unchecked(*g as usize, v);
-                self.mask.or_pos_unchecked(*g as usize, o);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -522,6 +488,15 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         Ok(())
     }
 
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            values: core::mem::take(&mut self.evicted_values).into_mut(),
+            mask: core::mem::take(&mut self.evicted_mask).into_mut(),
+            evicted_values: BitmapBuilder::new(),
+            evicted_mask: BitmapBuilder::new(),
+        })
+    }
+
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
@@ -535,25 +510,6 @@ impl GroupedReduction for BoolMaxGroupedReduction {
                 &DataType::Boolean,
             )
         })
-    }
-
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        let p_values = partition_mask(&self.values.freeze(), partition_sizes, partition_idxs);
-        let p_mask = partition_mask(&self.mask.freeze(), partition_sizes, partition_idxs);
-        p_values
-            .into_iter()
-            .zip(p_mask)
-            .map(|(values, mask)| {
-                Box::new(Self {
-                    values: values.into_mut(),
-                    mask: mask.into_mut(),
-                }) as _
-            })
-            .collect()
     }
 
     fn as_any(&self) -> &dyn Any {

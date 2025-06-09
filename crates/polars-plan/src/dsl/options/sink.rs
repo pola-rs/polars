@@ -3,7 +3,8 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use polars_core::error::{PolarsResult, to_compute_err};
+use polars_core::error::PolarsResult;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::scalar::Scalar;
 use polars_io::cloud::CloudOptions;
@@ -19,6 +20,7 @@ use crate::dsl::{AExpr, Expr, SpecialEq};
 /// Options that apply to all sinks.
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SinkOptions {
     /// Call sync when closing the file.
     pub sync_on_close: SyncOnCloseType,
@@ -69,6 +71,15 @@ impl SinkTarget {
         }
     }
 
+    #[cfg(not(feature = "cloud"))]
+    pub async fn open_into_writeable_async(
+        &self,
+        sink_options: &SinkOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Writeable> {
+        self.open_into_writeable(sink_options, cloud_options)
+    }
+
     #[cfg(feature = "cloud")]
     pub async fn open_into_writeable_async(
         &self,
@@ -87,6 +98,13 @@ impl SinkTarget {
             SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
                 memory_writer.lock().unwrap().take().unwrap(),
             )),
+        }
+    }
+
+    pub fn to_display_string(&self) -> String {
+        match self {
+            Self::Path(p) => p.display().to_string(),
+            Self::Dyn(_) => "dynamic-target".to_string(),
         }
     }
 }
@@ -136,7 +154,23 @@ impl<'de> serde::Deserialize<'de> for SinkTarget {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for SinkTarget {
+    fn schema_name() -> String {
+        "SinkTarget".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkTarget"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        PathBuf::json_schema(generator)
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FileSinkType {
     pub target: SinkTarget,
@@ -150,6 +184,7 @@ pub struct FileSinkType {
 pub enum SinkTypeIR {
     Memory,
     File(FileSinkType),
+    #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
     Partition(PartitionSinkTypeIR),
 }
 
@@ -234,21 +269,115 @@ pub enum PartitionTargetCallback {
     Python(polars_utils::python_function::PythonFunction),
 }
 
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct SinkWritten {
+    pub file_idx: usize,
+    pub part_idx: usize,
+    pub in_part_idx: usize,
+    pub keys: Vec<PartitionTargetContextKey>,
+    pub file_path: PathBuf,
+    pub full_path: PathBuf,
+    pub num_rows: usize,
+    pub file_size: usize,
+    pub gathered: Option<DataFrame>,
+}
+
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct SinkFinishContext {
+    pub written: Vec<SinkWritten>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SinkFinishCallback {
+    Rust(SpecialEq<Arc<dyn Fn(DataFrame) -> PolarsResult<()> + Send + Sync>>),
+    #[cfg(feature = "python")]
+    Python(polars_utils::python_function::PythonFunction),
+}
+
+impl SinkFinishCallback {
+    pub fn call(&self, df: DataFrame) -> PolarsResult<()> {
+        match self {
+            Self::Rust(f) => f(df),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::with_gil(|py| {
+                let converter =
+                    polars_utils::python_convert_registry::get_python_convert_registry();
+                let df = (converter.to_py.df)(Box::new(df) as Box<dyn std::any::Any>)?;
+                f.call1(py, (df,))?;
+                PolarsResult::Ok(())
+            }),
+        }
+    }
+}
+
 impl PartitionTargetCallback {
     pub fn call(&self, ctx: PartitionTargetContext) -> PolarsResult<SinkTarget> {
         match self {
             Self::Rust(f) => f(ctx),
             #[cfg(feature = "python")]
             Self::Python(f) => pyo3::Python::with_gil(|py| {
-                let sink_target = f.call1(py, (ctx,)).map_err(to_compute_err)?;
+                let sink_target = f.call1(py, (ctx,))?;
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
-                let sink_target =
-                    (converter.from_py.sink_target)(sink_target).map_err(to_compute_err)?;
+                let sink_target = (converter.from_py.sink_target)(sink_target)?;
                 let sink_target = sink_target.downcast_ref::<SinkTarget>().unwrap().clone();
                 PolarsResult::Ok(sink_target)
             }),
         }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SinkFinishCallback {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::Error;
+
+        #[cfg(feature = "python")]
+        if let Self::Python(v) = self {
+            return v.serialize(_serializer);
+        }
+
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SinkFinishCallback {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[cfg(feature = "python")]
+        {
+            Ok(Self::Python(
+                polars_utils::python_function::PythonFunction::deserialize(_deserializer)?,
+            ))
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            use serde::de::Error;
+            Err(D::Error::custom(
+                "cannot deserialize PartitionOutputCallback",
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for SinkFinishCallback {
+    fn schema_name() -> String {
+        "PartitionTargetCallback".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkFinishCallback"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
@@ -287,11 +416,44 @@ impl serde::Serialize for PartitionTargetCallback {
             return v.serialize(_serializer);
         }
 
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PartitionTargetCallback {
+    fn schema_name() -> String {
+        "PartitionTargetCallback".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PartitionTargetCallback"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SortColumn {
+    pub expr: Expr,
+    pub descending: bool,
+    pub nulls_last: bool,
+}
+
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SortColumnIR {
+    pub expr: ExprIR,
+    pub descending: bool,
+    pub nulls_last: bool,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
     pub base_path: Arc<PathBuf>,
@@ -300,9 +462,11 @@ pub struct PartitionSinkType {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariant,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+    pub per_partition_sort_by: Option<Vec<SortColumn>>,
+    pub finish_callback: Option<SinkFinishCallback>,
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkTypeIR {
     pub base_path: Arc<PathBuf>,
@@ -311,9 +475,12 @@ pub struct PartitionSinkTypeIR {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariantIR,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+    pub per_partition_sort_by: Option<Vec<SortColumnIR>>,
+    pub finish_callback: Option<SinkFinishCallback>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum SinkType {
     Memory,
@@ -322,6 +489,7 @@ pub enum SinkType {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PartitionVariant {
     MaxSize(IdxSize),
@@ -335,7 +503,7 @@ pub enum PartitionVariant {
     },
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PartitionVariantIR {
     MaxSize(IdxSize),
@@ -349,20 +517,41 @@ pub enum PartitionVariantIR {
     },
 }
 
+#[cfg(feature = "cse")]
 impl SinkTypeIR {
-    #[cfg(feature = "cse")]
     pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Memory => {},
             Self::File(f) => f.hash(state),
-            Self::Partition(f) => {
-                f.file_type.hash(state);
-                f.sink_options.hash(state);
-                f.variant.traverse_and_hash(expr_arena, state);
-                f.cloud_options.hash(state);
-            },
+            Self::Partition(f) => f.traverse_and_hash(expr_arena, state),
         }
+    }
+}
+
+#[cfg(feature = "cse")]
+impl PartitionSinkTypeIR {
+    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+        self.file_type.hash(state);
+        self.sink_options.hash(state);
+        self.variant.traverse_and_hash(expr_arena, state);
+        self.cloud_options.hash(state);
+        std::mem::discriminant(&self.per_partition_sort_by).hash(state);
+        if let Some(v) = &self.per_partition_sort_by {
+            v.len().hash(state);
+            for v in v {
+                v.traverse_and_hash(expr_arena, state);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "cse")]
+impl SortColumnIR {
+    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+        self.expr.traverse_and_hash(expr_arena, state);
+        self.descending.hash(state);
+        self.nulls_last.hash(state);
     }
 }
 
@@ -385,22 +574,6 @@ impl PartitionVariantIR {
                     key_expr.traverse_and_hash(expr_arena, state);
                 }
             },
-        }
-    }
-}
-
-impl SinkType {
-    pub(crate) fn is_cloud_destination(&self) -> bool {
-        match self {
-            Self::Memory => false,
-            Self::File(f) => {
-                let SinkTarget::Path(p) = &f.target else {
-                    return false;
-                };
-
-                polars_io::is_cloud_url(p.as_path())
-            },
-            Self::Partition(f) => polars_io::is_cloud_url(f.base_path.as_path()),
         }
     }
 }

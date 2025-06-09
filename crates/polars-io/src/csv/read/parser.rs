@@ -5,6 +5,7 @@ use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{POOL, config};
 use polars_error::feature_gated;
+use polars_utils::mmap::MMapSemaphore;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
@@ -14,10 +15,12 @@ use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
 use crate::path_utils::is_cloud_url;
+use crate::prelude::_csv_read_internal::find_starting_point;
 use crate::utils::compression::maybe_decompress_bytes;
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
+#[allow(clippy::too_many_arguments)]
 pub fn count_rows(
     path: &Path,
     separator: u8,
@@ -25,6 +28,9 @@ pub fn count_rows(
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
     has_header: bool,
+    skip_lines: usize,
+    skip_rows_before_header: usize,
+    skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
     let file = if is_cloud_url(path) || config::force_async() {
         feature_gated!("cloud", {
@@ -38,7 +44,7 @@ pub fn count_rows(
         polars_utils::open_file(path)?
     };
 
-    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+    let mmap = MMapSemaphore::new_from_file(&file).unwrap();
     let owned = &mut vec![];
     let reader_bytes = maybe_decompress_bytes(mmap.as_ref(), owned)?;
 
@@ -49,11 +55,15 @@ pub fn count_rows(
         comment_prefix,
         eol_char,
         has_header,
+        skip_lines,
+        skip_rows_before_header,
+        skip_rows_after_header,
     )
 }
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
+#[allow(clippy::too_many_arguments)]
 pub fn count_rows_from_slice_par(
     mut bytes: &[u8],
     separator: u8,
@@ -61,6 +71,9 @@ pub fn count_rows_from_slice_par(
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
     has_header: bool,
+    skip_lines: usize,
+    skip_rows_before_header: usize,
+    skip_rows_after_header: usize,
 ) -> PolarsResult<usize> {
     for _ in 0..bytes.len() {
         if bytes[0] != eol_char {
@@ -69,6 +82,26 @@ pub fn count_rows_from_slice_par(
 
         bytes = &bytes[1..];
     }
+
+    // Skip lines and jump past header
+
+    let start_offset = find_starting_point(
+        bytes,
+        quote_char,
+        eol_char,
+        // schema_len
+        // NOTE: schema_len is normally required to differentiate handling a leading blank line
+        // between case (a) when schema_len == 1 (as an empty string) vs case (b) when
+        // schema_len > 1 (as a blank line to be ignored).
+        // We skip blank lines, even when UFT8-BOM is present and schema_len == 1.
+        usize::MAX,
+        skip_lines,
+        skip_rows_before_header,
+        skip_rows_after_header,
+        comment_prefix,
+        has_header,
+    )?;
+    bytes = &bytes[start_offset..];
 
     const MIN_ROWS_PER_THREAD: usize = 1024;
     let max_threads = POOL.current_num_threads();
@@ -89,7 +122,7 @@ pub fn count_rows_from_slice_par(
     .unwrap_or(1);
 
     if n_threads == 1 {
-        return count_rows_from_slice(bytes, quote_char, comment_prefix, eol_char, has_header);
+        return count_rows_from_slice(bytes, quote_char, comment_prefix, eol_char, false);
     }
 
     let file_chunks: Vec<(usize, usize)> =
@@ -104,12 +137,13 @@ pub fn count_rows_from_slice_par(
                 .count()
         } else {
             CountLines::new(quote_char, eol_char).count(bytes).0
+                + bytes.last().is_some_and(|x| *x != b'\n') as usize
         }
     });
 
     let n: usize = POOL.install(|| iter.sum());
 
-    Ok(n - (has_header as usize))
+    Ok(n)
 }
 
 /// Read the number of rows without parsing columns
@@ -134,6 +168,7 @@ pub fn count_rows_from_slice(
             .count()
     } else {
         CountLines::new(quote_char, eol_char).count(bytes).0
+            + bytes.last().is_some_and(|x| *x != b'\n') as usize
     };
 
     Ok(n - (has_header as usize))
@@ -910,6 +945,8 @@ pub(super) fn skip_this_line_naive(input: &[u8], eol_char: u8) -> &[u8] {
 /// * `projection` - Indices of the columns to project.
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///   fields are written to the buffers. The UTF8 data will be parsed later.
+///
+/// Returns the number of bytes parsed successfully.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_lines(
     mut bytes: &[u8],

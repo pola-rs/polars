@@ -30,19 +30,19 @@ consider compiling with polars-bigidx feature (polars-u64-idx package on python)
 or set 'streaming'",
 ));
 
+#[cfg(feature = "cloud")]
+pub use async_impl::ParquetObjectStore;
 pub use options::{ParallelStrategy, ParquetOptions};
 use polars_error::{ErrString, PolarsError};
 pub use polars_parquet::arrow::read::infer_schema;
 pub use polars_parquet::read::FileMetadata;
 pub use read_impl::{create_sorting_map, try_set_sorted_flag};
-#[cfg(feature = "cloud")]
-pub use reader::ParquetAsyncReader;
-pub use reader::{BatchedParquetReader, ParquetReader};
+pub use reader::ParquetReader;
 pub use utils::materialize_empty_df;
 
 pub mod _internal {
     pub use super::mmap::to_deserializer;
-    pub use super::predicates::{collect_statistics_with_live_columns, read_this_row_group};
+    pub use super::predicates::collect_statistics_with_live_columns;
     pub use super::read_impl::{PrefilterMaskSetting, calc_prefilter_cost};
     pub use super::utils::ensure_matching_dtypes_if_found;
 }

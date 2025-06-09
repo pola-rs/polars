@@ -1,5 +1,5 @@
 #[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::parse_time_zone;
+use polars_core::datatypes::time_zone::parse_time_zone;
 use polars_core::prelude::*;
 use polars_ops::prelude::*;
 use polars_ops::series::SeriesMethods;

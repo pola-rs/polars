@@ -4,7 +4,8 @@ use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use self::compare_inner::TotalOrdInner;
 use super::*;
-use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
+use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, NonNull, TotalEqInner};
+use crate::chunked_array::ops::sort::arg_sort_multiple::arg_sort_multiple_impl;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
@@ -34,6 +35,10 @@ impl NullChunked {
                 len,
             ))],
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length as usize
     }
 }
 impl PrivateSeriesNumeric for NullChunked {
@@ -86,7 +91,7 @@ impl PrivateSeries for NullChunked {
         IntoTotalEqInner::into_total_eq_inner(self)
     }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
-        invalid_operation_panic!(into_total_ord_inner, self)
+        IntoTotalOrdInner::into_total_ord_inner(self)
     }
 
     fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -143,6 +148,17 @@ impl PrivateSeries for NullChunked {
     ) -> PolarsResult<()> {
         VecHash::vec_hash_combine(self, build_hasher, hashes)?;
         Ok(())
+    }
+
+    fn arg_sort_multiple(
+        &self,
+        by: &[Column],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        let vals = (0..self.len())
+            .map(|i| (i as IdxSize, NonNull(())))
+            .collect();
+        arg_sort_multiple_impl(vals, by, options)
     }
 }
 
@@ -334,6 +350,10 @@ impl SeriesTrait for NullChunked {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(self.clone())
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        ChunkNestingUtils::find_validity_mismatch(self, other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

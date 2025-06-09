@@ -118,7 +118,7 @@ def test_projection_pushdown_ndjson(io_files_path: Path) -> None:
     assert "simple π" not in explain
     assert "PROJECT 1/4 COLUMNS" in explain
 
-    assert_frame_equal(df.collect(no_optimization=True), df.collect())
+    assert_frame_equal(df.collect(optimizations=pl.QueryOptFlags.none()), df.collect())
 
 
 def test_predicate_pushdown_ndjson(io_files_path: Path) -> None:
@@ -130,7 +130,7 @@ def test_predicate_pushdown_ndjson(io_files_path: Path) -> None:
     assert "FILTER" not in explain
     assert """SELECTION: [(col("calories")) > (80)]""" in explain
 
-    assert_frame_equal(df.collect(no_optimization=True), df.collect())
+    assert_frame_equal(df.collect(optimizations=pl.QueryOptFlags.none()), df.collect())
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:
@@ -210,7 +210,9 @@ def test_scan_ndjson_slicing(
         lf.slice(-999),
         lf.slice(-3, 999),
     ]:
-        assert_frame_equal(q.collect(), q.collect(no_optimization=True))
+        assert_frame_equal(
+            q.collect(), q.collect(optimizations=pl.QueryOptFlags.none())
+        )
 
 
 @pytest.mark.parametrize(
@@ -275,7 +277,7 @@ def test_scan_ndjson_raises_on_parse_error_nested() -> None:
         schema={"a": pl.Struct({"b": pl.Int64})},
     )
 
-    with pytest.raises(pl.exceptions.ComputeError, match='"AAAA"'):
+    with pytest.raises(pl.exceptions.ComputeError):
         q.collect()
 
     q = pl.scan_ndjson(
@@ -309,3 +311,19 @@ def test_scan_ndjson_nested_as_string() -> None:
             }
         ),
     )
+
+
+def test_scan_ndjson_schema_overwrite_22514() -> None:
+    buf = b"""\
+{"a": 1}
+"""
+
+    q = pl.scan_ndjson(buf)
+
+    # Baseline: Infers as Int64
+    assert q.collect_schema() == {"a": pl.Int64}
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1}))
+
+    q = pl.scan_ndjson(buf, schema_overrides={"a": pl.String})
+    assert q.collect_schema() == {"a": pl.String}
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": "1"}))

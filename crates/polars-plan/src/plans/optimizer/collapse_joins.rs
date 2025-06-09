@@ -11,7 +11,7 @@ use polars_ops::frame::{IEJoinOptions, InequalityOperator};
 use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 
-use super::{AExpr, ExprOrigin, IR, JoinOptions, aexpr_to_leaf_names_iter};
+use super::{AExpr, ExprOrigin, IR, JoinOptionsIR, aexpr_to_leaf_names_iter};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::optimizer::join_utils::remove_suffix;
 use crate::plans::{ExprIR, MintermIter};
@@ -24,7 +24,12 @@ fn and_expr(left: Node, right: Node, expr_arena: &mut Arena<AExpr>) -> Node {
     })
 }
 
-pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+pub fn optimize(
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    streaming: bool,
+) {
     let mut predicates = Vec::with_capacity(4);
 
     // Partition to:
@@ -243,6 +248,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         *input_left,
                         *input_right,
                         schema.clone(),
+                        streaming,
                     );
 
                     lp_arena.swap(predicates[0].0, new_join);
@@ -267,10 +273,11 @@ fn insert_fitting_join(
     remaining_predicates: &[Node],
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    mut options: JoinOptions,
+    mut options: JoinOptionsIR,
     input_left: Node,
     input_right: Node,
     schema: SchemaRef,
+    streaming: bool,
 ) -> Node {
     debug_assert_eq!(eq_left_on.len(), eq_right_on.len());
     #[cfg(feature = "iejoin")]
@@ -345,9 +352,9 @@ fn insert_fitting_join(
             );
 
             let mut remaining_predicates = remaining_predicates;
-            if let Some(pred) = remaining_predicates
-                .take_if(|_| matches!(options.args.maintain_order, MaintainOrderJoin::None))
-            {
+            if let Some(pred) = remaining_predicates.take_if(|_| {
+                matches!(options.args.maintain_order, MaintainOrderJoin::None) && !streaming
+            }) {
                 options.options = Some(JoinTypeOptionsIR::Cross {
                     predicate: ExprIR::from_node(pred, expr_arena),
                 })

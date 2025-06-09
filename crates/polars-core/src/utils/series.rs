@@ -15,9 +15,52 @@ where
     f(&mut us)
 }
 
+pub fn is_deprecated_cast(input_dtype: &DataType, output_dtype: &DataType) -> bool {
+    use DataType as D;
+
+    #[allow(clippy::single_match)]
+    match (input_dtype, output_dtype) {
+        #[cfg(feature = "dtype-struct")]
+        (D::Struct(l_fields), D::Struct(r_fields)) => {
+            l_fields.len() != r_fields.len()
+                || l_fields
+                    .iter()
+                    .zip(r_fields.iter())
+                    .any(|(l, r)| l.name() != r.name() || is_deprecated_cast(l.dtype(), r.dtype()))
+        },
+        (D::List(input_dtype), D::List(output_dtype)) => {
+            is_deprecated_cast(input_dtype, output_dtype)
+        },
+        #[cfg(feature = "dtype-array")]
+        (D::Array(input_dtype, _), D::Array(output_dtype, _)) => {
+            is_deprecated_cast(input_dtype, output_dtype)
+        },
+        #[cfg(feature = "dtype-array")]
+        (D::List(input_dtype), D::Array(output_dtype, _))
+        | (D::Array(input_dtype, _), D::List(output_dtype)) => {
+            is_deprecated_cast(input_dtype, output_dtype)
+        },
+        _ => false,
+    }
+}
+
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
-    let failure_mask = !input.is_null() & output.is_null();
-    let failures = input.filter(&failure_mask)?;
+    // @Hack to deal with deprecated cast
+    // @2.0
+    if is_deprecated_cast(input.dtype(), output.dtype()) {
+        return Ok(());
+    }
+
+    let mut idxs = Vec::new();
+    input.find_validity_mismatch(output, &mut idxs);
+
+    // Base case. No strict casting failed.
+    if idxs.is_empty() {
+        return Ok(());
+    }
+
+    let num_failures = idxs.len();
+    let failures = input.take_slice(&idxs[..num_failures.min(10)])?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
         (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {
@@ -29,6 +72,9 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         (DataType::String, DataType::Enum(_, _)) => {
             "\n\nEnsure that all values in the input column are present in the categories of the enum datatype."
         },
+        _ if failures.len() < num_failures => {
+            "\n\nDid not show all failed cases as there were too many."
+        },
         _ => "",
     };
 
@@ -38,7 +84,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         input.dtype(),
         output.dtype(),
         output.name(),
-        failures.len(),
+        num_failures,
         input.len(),
         failures.fmt_list(),
         additional_info,

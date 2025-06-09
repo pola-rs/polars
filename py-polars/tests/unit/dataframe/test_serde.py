@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import pickle
 from datetime import date, datetime, timedelta
 from decimal import Decimal as D
+from multiprocessing.pool import ThreadPool
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -211,3 +213,10 @@ def test_df_serde_list_of_null_17230() -> None:
     ser = df.serialize(format="json")
     result = pl.DataFrame.deserialize(io.StringIO(ser), format="json")
     assert_frame_equal(result, df)
+
+
+def test_df_serialize_from_multiple_python_threads_22364() -> None:
+    df = pl.DataFrame({"A": [1, 2, 3, 4]})
+
+    with ThreadPool(4) as tp:
+        tp.map(pickle.dumps, [df] * 1_000)

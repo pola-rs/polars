@@ -128,10 +128,20 @@ Parquet
    :toctree: api/
 
    read_parquet
+   read_parquet_metadata
    read_parquet_schema
    scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
+
+.. currentmodule:: polars.io.parquet
+
+.. autosummary::
+   :toctree: api/
+
+   ParquetFieldOverwrites
+
+.. currentmodule:: polars
 
 PyArrow Datasets
 ~~~~~~~~~~~~~~~~
@@ -153,3 +163,12 @@ Configuration for cloud credential provisioning.
    CredentialProviderAWS
    CredentialProviderAzure
    CredentialProviderGCP
+
+Scan Cast Options
+~~~~~~~~~~~~~~~~~
+Configuration for type-casting during scans.
+
+.. autosummary::
+   :toctree: api/
+
+   ScanCastOptions

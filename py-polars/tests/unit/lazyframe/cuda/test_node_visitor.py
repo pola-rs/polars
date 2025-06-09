@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import time
 from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any, Callable
@@ -9,6 +10,8 @@ from polars._utils.wrap import wrap_df
 from polars.polars import _ir_nodes
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pandas as pd
 
 
@@ -134,3 +137,21 @@ def test_run_on_pandas() -> None:
         "pandas-scan",
         "pandas-join",
     ]
+
+
+def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
+    path = f"file://{tmp_path / 'data.parquet'}"
+
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(path)
+
+    q = pl.scan_parquet(path)
+
+    out: list[str] = q._ldf.visit().view_current_node().paths
+    assert len(out) == 1
+
+    assert out[0].startswith("file://")
+
+    # Windows fails because it turns everything into `\\`
+    if sys.platform != "win32":
+        assert out == [path]

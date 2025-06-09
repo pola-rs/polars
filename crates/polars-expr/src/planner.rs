@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -18,7 +19,7 @@ pub fn get_expr_depth_limit() -> PolarsResult<u16> {
     Ok(depth)
 }
 
-fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
+fn ok_checker(_i: usize, _state: &ExpressionConversionState) -> PolarsResult<()> {
     Ok(())
 }
 
@@ -41,14 +42,15 @@ pub(crate) fn create_physical_expressions_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr(e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()
@@ -75,14 +77,15 @@ pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr_inner(*e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()
@@ -170,7 +173,7 @@ fn create_physical_expr_inner(
             order_by,
             options,
         } => {
-            let mut function = *function;
+            let function = *function;
             state.set_window();
             let phys_function = create_physical_expr_inner(
                 function,
@@ -195,11 +198,6 @@ fn create_physical_expr_inner(
                 })
                 .transpose()?;
 
-            let mut out_name = None;
-            if let Alias(expr, name) = expr_arena.get(function) {
-                function = *expr;
-                out_name = Some(name.clone());
-            };
             let function_expr = node_to_expr(function, expr_arena);
             let expr = node_to_expr(expression, expr_arena);
 
@@ -239,7 +237,6 @@ fn create_physical_expr_inner(
                         group_by,
                         order_by,
                         apply_columns,
-                        out_name,
                         function: function_expr,
                         phys_function,
                         mapping: *mapping,
@@ -250,7 +247,6 @@ fn create_physical_expr_inner(
                 WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
                     function: function_expr,
                     phys_function,
-                    out_name,
                     options: options.clone(),
                     expr,
                 })),
@@ -264,6 +260,10 @@ fn create_physical_expr_inner(
             )))
         },
         BinaryExpr { left, op, right } => {
+            let output_field =
+                expr_arena
+                    .get(expression)
+                    .to_field(schema, Context::Default, expr_arena)?;
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
@@ -275,6 +275,7 @@ fn create_physical_expr_inner(
                 state.local.has_lit,
                 state.allow_threading,
                 is_scalar,
+                output_field,
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
@@ -461,6 +462,50 @@ fn create_physical_expr_inner(
                 is_scalar,
             )))
         },
+        Eval {
+            expr,
+            evaluation,
+            variant,
+        } => {
+            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME));
+            let is_scalar = is_scalar_ae(expression, expr_arena);
+            let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
+            let mut pd_group = ExprPushdownGroup::Pushable;
+            pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(schema, ctxt, expr_arena)?;
+            let non_aggregated_output_field =
+                expr_arena
+                    .get(expression)
+                    .to_field(schema, Context::Default, expr_arena)?;
+            let input_field = expr_arena.get(*expr).to_field(schema, ctxt, expr_arena)?;
+            let expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+
+            let element_dtype = variant.element_dtype(&input_field.dtype)?;
+            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let evaluation = create_physical_expr_inner(
+                *evaluation,
+                Context::Default,
+                expr_arena,
+                &Arc::new(eval_schema),
+                state,
+            )?;
+
+            Ok(Arc::new(EvalExpr::new(
+                expr,
+                evaluation,
+                *variant,
+                node_to_expr(expression, expr_arena),
+                state.allow_threading,
+                output_field,
+                non_aggregated_output_field.dtype,
+                is_scalar,
+                pd_group,
+                evaluation_is_scalar,
+                is_user_apply,
+            )))
+        },
         Function {
             input,
             function,
@@ -500,10 +545,13 @@ fn create_physical_expr_inner(
                 expr: node_to_expr(expression, expr_arena),
             }))
         },
-        Explode(expr) => {
+        Explode { expr, skip_empty } => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+            let skip_empty = *skip_empty;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| c[0].explode().map(Some),
+                move |c: &mut [polars_core::frame::column::Column]| {
+                    c[0].explode(skip_empty).map(Some)
+                },
             ) as Arc<dyn ColumnsUdf>);
 
             let field = expr_arena
@@ -514,22 +562,11 @@ fn create_physical_expr_inner(
                 vec![input],
                 function,
                 node_to_expr(expression, expr_arena),
-                FunctionOptions {
-                    collect_groups: ApplyOptions::GroupWise,
-                    ..Default::default()
-                },
+                FunctionOptions::groupwise(),
                 state.allow_threading,
                 schema.clone(),
                 field,
                 false,
-            )))
-        },
-        Alias(input, name) => {
-            let phys_expr = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(AliasExpr::new(
-                phys_expr,
-                name.clone(),
-                node_to_expr(*input, expr_arena),
             )))
         },
     }

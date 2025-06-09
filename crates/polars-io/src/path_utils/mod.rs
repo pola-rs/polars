@@ -47,7 +47,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
                 });
 
             if let Ok(v) = id {
-                std::env::temp_dir().join(format!("polars-{}/", v))
+                std::env::temp_dir().join(format!("polars-{v}/"))
             } else {
                 return Err(std::io::Error::other(
                     "could not load $USER or $HOME environment variables",
@@ -83,8 +83,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
 
                 if (perms.mode() % 0o1000) != 0o700 {
                     std::io::Result::Err(std::io::Error::other(format!(
-                        "permission mismatch: {:?}",
-                        perms
+                        "permission mismatch: {perms:?}"
                     )))
                 } else {
                     std::io::Result::Ok(())
@@ -112,9 +111,8 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
         std::io::Error::new(
             e.kind(),
             format!(
-                "error initializing temporary directory: {} \
-                 consider explicitly setting POLARS_TEMP_DIR",
-                e
+                "error initializing temporary directory: {e} \
+                 consider explicitly setting POLARS_TEMP_DIR"
             ),
         )
     })
@@ -197,11 +195,12 @@ impl HiveIdxTracker<'_> {
         if check_directory_level
             && ![usize::MAX, i].contains(&self.idx)
             // They could still be the same directory level, just with different name length
-            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
+            && (path_idx > 0 && paths[path_idx].parent() != paths[path_idx - 1].parent())
         {
             polars_bail!(
                 InvalidOperation:
-                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
+                "attempted to read from different directory levels with hive partitioning enabled: \
+                first path: {}, second path: {}",
                 paths[path_idx - 1].to_str().unwrap(),
                 paths[path_idx].to_str().unwrap(),
             )
@@ -312,9 +311,9 @@ pub fn expand_paths_hive(
 
             let format_path = |scheme: &str, bucket: &str, location: &str| {
                 if is_cloud {
-                    format!("{}://{}/{}", scheme, bucket, location)
+                    format!("{scheme}://{bucket}/{location}")
                 } else {
-                    format!("/{}", location)
+                    format!("/{location}")
                 }
             };
 
@@ -366,7 +365,7 @@ pub fn expand_paths_hive(
 
                                 async {
                                     let store = st;
-                                    store
+                                    let out = store
                                         .list(Some(&prefix))
                                         .try_filter_map(|x| async move {
                                             let out = (x.size > 0).then(|| {
@@ -381,8 +380,9 @@ pub fn expand_paths_hive(
                                             Ok(out)
                                         })
                                         .try_collect::<Vec<_>>()
-                                        .await
-                                        .map_err(to_compute_err)
+                                        .await?;
+
+                                    Ok(out)
                                 }
                             })
                             .await?;

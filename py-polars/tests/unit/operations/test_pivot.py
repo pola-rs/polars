@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PivotAgg, PolarsIntegerType
+    from polars._typing import PivotAgg, PolarsIntegerType, PolarsTemporalType
 
 
 def test_pivot() -> None:
@@ -391,12 +391,25 @@ def test_pivot_reinterpret_5907() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_pivot_temporal_logical_types() -> None:
-    date_lst = [datetime(_, 1, 1) for _ in range(1960, 1980)]
-
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ns"),
+        pl.Datetime("us"),
+        pl.Datetime("ms", time_zone="Asia/Shanghai"),
+        pl.Duration("ms"),
+        pl.Duration("us"),
+        pl.Duration("ns"),
+        pl.Time,
+    ],
+)
+def test_pivot_temporal_logical_types(dtype: PolarsTemporalType) -> None:
+    idx = pl.Series([7, 8, 9, 0, 1, 2, 3, 4]).cast(dtype)
     df = pl.DataFrame(
         {
-            "idx": date_lst[-3:] + date_lst[0:5],
+            "idx": idx,
             "foo": ["a"] * 3 + ["b"] * 5,
             "value": [0] * 8,
         }
@@ -404,16 +417,7 @@ def test_pivot_temporal_logical_types() -> None:
     assert df.pivot(
         index="idx", on="foo", values="value", aggregate_function=None
     ).to_dict(as_series=False) == {
-        "idx": [
-            datetime(1977, 1, 1, 0, 0),
-            datetime(1978, 1, 1, 0, 0),
-            datetime(1979, 1, 1, 0, 0),
-            datetime(1960, 1, 1, 0, 0),
-            datetime(1961, 1, 1, 0, 0),
-            datetime(1962, 1, 1, 0, 0),
-            datetime(1963, 1, 1, 0, 0),
-            datetime(1964, 1, 1, 0, 0),
-        ],
+        "idx": idx.to_list(),
         "a": [0, 0, 0, None, None, None, None, None],
         "b": [None, None, None, 0, 0, 0, 0, 0],
     }
@@ -423,7 +427,7 @@ def test_pivot_negative_duration() -> None:
     df1 = pl.DataFrame({"root": [date(2020, i, 15) for i in (1, 2)]})
     df2 = pl.DataFrame({"delta": [timedelta(days=i) for i in (-2, -1, 0, 1)]})
 
-    df = df1.join(df2, how="cross").with_columns(
+    df = df1.join(df2, how="cross", maintain_order="left_right").with_columns(
         pl.Series(name="value", values=range(len(df1) * len(df2)))
     )
     assert df.pivot(

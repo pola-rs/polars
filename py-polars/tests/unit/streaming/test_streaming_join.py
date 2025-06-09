@@ -260,7 +260,6 @@ def test_non_coalescing_streaming_left_join() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "c": ["j", "i"]})
 
     q = df1.join(df2, on="a", how="left", coalesce=False)
-    assert q.explain(engine="old-streaming").startswith("STREAMING")  # type: ignore[arg-type]
     assert_frame_equal(
         q.collect(engine="streaming"),
         pl.DataFrame(
@@ -294,17 +293,23 @@ def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
     join_cols = set(lf1.collect_schema()).intersection(set(lf2.collect_schema()))
     final_lf = lf1.join(lf2, on=list(join_cols), how="full", coalesce=True)
 
-    assert final_lf.collect(engine="old-streaming").to_dict(as_series=False) == {  # type: ignore[call-overload]
-        "value_at": [
-            datetime(2024, 1, 1, 0, 0),
-            datetime(2024, 2, 1, 0, 0),
-            datetime(2024, 3, 1, 0, 0),
-            datetime(2024, 4, 1, 0, 0),
-            datetime(2024, 5, 1, 0, 0),
-            datetime(2024, 6, 1, 0, 0),
-        ],
-        "value": [0, 1, 2, 3, 4, 5],
-    }
+    assert_frame_equal(
+        final_lf.collect(engine="streaming"),
+        pl.DataFrame(
+            {
+                "value_at": [
+                    datetime(2024, 1, 1, 0, 0),
+                    datetime(2024, 2, 1, 0, 0),
+                    datetime(2024, 3, 1, 0, 0),
+                    datetime(2024, 4, 1, 0, 0),
+                    datetime(2024, 5, 1, 0, 0),
+                    datetime(2024, 6, 1, 0, 0),
+                ],
+                "value": [0, 1, 2, 3, 4, 5],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_flush_join_and_operation_19040() -> None:
@@ -339,3 +344,16 @@ def test_full_coalesce_join_and_rename_15583() -> None:
         .collect(engine="streaming")
     )
     assert result["A"].to_list() == [1, 2, 3, 4, 5]
+
+
+def test_invert_order_full_join_22295() -> None:
+    lf = pl.LazyFrame(
+        {
+            "value_at": [datetime(2024, i + 1, 1) for i in range(6)],
+            "value": list(range(6)),
+        }
+    )
+
+    lf.join(lf, on=["value", "value_at"], how="full", coalesce=True).collect(
+        engine="streaming"
+    )

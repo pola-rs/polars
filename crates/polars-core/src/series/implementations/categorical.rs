@@ -175,7 +175,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .as_any_mut()
             .downcast_mut::<CategoricalChunked>()
             .unwrap();
-        self.0.append_owned(std::mem::take(other))
+        self.0.append_owned(other.take())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -306,6 +306,10 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::max_reduce(&self.0))
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.physical().find_validity_mismatch(other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

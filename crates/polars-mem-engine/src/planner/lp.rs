@@ -4,6 +4,7 @@ use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use self::expr_ir::OutputName;
@@ -208,7 +209,7 @@ fn create_physical_plan_impl(
     expr_arena: &mut Arena<AExpr>,
     state: &mut ConversionState,
     // Cache nodes in order of discovery
-    cache_nodes: &mut PlIndexMap<usize, Box<dyn Executor>>,
+    cache_nodes: &mut PlIndexMap<UniqueId, Box<executors::CacheExec>>,
     build_streaming_executor: Option<StreamingExecutorBuilder>,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
@@ -226,16 +227,7 @@ fn create_physical_plan_impl(
         };
     }
 
-    if let Some(build_func) = build_streaming_executor {
-        match lp_arena.get(root) {
-            Scan { scan_type, .. } if !matches!(scan_type.as_ref(), FileScan::Anonymous { .. }) => {
-                return build_func(root, lp_arena, expr_arena);
-            },
-            _ => {},
-        };
-    }
-
-    let logical_plan = if state.has_cache_parent {
+    let logical_plan = if state.has_cache_parent || matches!(lp_arena.get(root), IR::Scan { .. }) {
         lp_arena.get(root).clone()
     } else {
         lp_arena.take(root)
@@ -298,6 +290,7 @@ fn create_physical_plan_impl(
                                         .with_statistics(options.statistics)
                                         .with_row_group_size(options.row_group_size)
                                         .with_data_page_size(options.data_page_size)
+                                        .with_key_value_metadata(options.key_value_metadata.clone())
                                         .finish(&mut df)?;
                                 },
                                 #[cfg(feature = "ipc")]
@@ -445,15 +438,18 @@ fn create_physical_plan_impl(
             output_schema,
             scan_type,
             predicate,
-            mut file_options,
+            mut unified_scan_args,
+            id: scan_mem_id,
         } => {
-            file_options.pre_slice = if let Some((offset, len)) = file_options.pre_slice {
-                Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
+            unified_scan_args.pre_slice = if let Some(mut slice) = unified_scan_args.pre_slice {
+                *slice.len_mut() = _set_n_rows_for_scan(Some(slice.len())).unwrap();
+                Some(slice)
             } else {
-                _set_n_rows_for_scan(None).map(|x| (0, x))
+                _set_n_rows_for_scan(None)
+                    .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len })
             };
 
-            let mut state = ExpressionConversionState::new(true);
+            let mut expr_conversion_state = ExpressionConversionState::new(true);
 
             let mut create_skip_batch_predicate = false;
             #[cfg(feature = "parquet")]
@@ -476,7 +472,8 @@ fn create_physical_plan_impl(
                         &predicate,
                         expr_arena,
                         output_schema.as_ref().unwrap_or(&file_info.schema),
-                        &mut state,
+                        None, // hive_schema
+                        &mut expr_conversion_state,
                         create_skip_batch_predicate,
                         false,
                     )
@@ -484,61 +481,62 @@ fn create_physical_plan_impl(
                 .transpose()?;
 
             match *scan_type {
-                #[cfg(feature = "csv")]
-                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
-                    sources,
-                    file_info,
-                    options,
-                    predicate,
-                    file_options,
-                })),
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc {
-                    options,
-                    cloud_options,
-                    metadata,
-                } => Ok(Box::new(executors::IpcExec {
-                    sources,
-                    file_info,
-                    predicate,
-                    options,
-                    file_options: *file_options,
-                    hive_parts: hive_parts.map(|h| h.into_statistics()),
-                    cloud_options,
-                })),
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet {
-                    options,
-                    cloud_options,
-                    metadata,
-                } => Ok(Box::new(executors::ParquetExec::new(
-                    sources,
-                    file_info,
-                    hive_parts.map(|h| h.into_statistics()),
-                    predicate,
-                    options,
-                    cloud_options,
-                    file_options,
-                    metadata,
-                ))),
-                #[cfg(feature = "json")]
-                FileScan::NDJson { options, .. } => Ok(Box::new(executors::JsonExec::new(
-                    sources,
-                    options,
-                    file_options,
-                    file_info,
-                    predicate,
-                ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
                         predicate,
-                        file_options,
+                        unified_scan_args,
                         file_info,
                         output_schema,
-                        predicate_has_windows: state.has_windows,
+                        predicate_has_windows: expr_conversion_state.has_windows,
                     }))
                 },
+                #[allow(unreachable_patterns)]
+                _ => {
+                    // We wrap in a CacheExec so that the new-streaming scan gets called from the
+                    // CachePrefiller. This ensures it is called from outside of rayon to avoid
+                    // deadlocks.
+                    //
+                    // Note that we don't actually want it to be kept in memory after being used,
+                    // so we set the count to have it be dropped after a single use (or however
+                    // many times it is referenced after CSE (subplan)).
+                    state.has_cache_parent = true;
+                    state.has_cache_child = true;
+
+                    if !cache_nodes.contains_key(&scan_mem_id) {
+                        let build_func = build_streaming_executor
+                            .expect("invalid build. Missing feature new-streaming");
+
+                        let executor = build_func(root, lp_arena, expr_arena)?;
+
+                        cache_nodes.insert(
+                            scan_mem_id.clone(),
+                            Box::new(executors::CacheExec {
+                                input: Some(executor),
+                                id: scan_mem_id.clone(),
+                                // This is (n_hits - 1), because the drop logic is `fetch_sub(1) == 0`.
+                                count: 0,
+                                is_new_streaming_scan: true,
+                            }),
+                        );
+                    } else {
+                        // Already exists - this scan IR is under a CSE (subplan). We need to
+                        // increment the cache hit count here.
+                        let cache_exec = cache_nodes.get_mut(&scan_mem_id).unwrap();
+                        cache_exec.count = cache_exec.count.saturating_add(1);
+                    }
+
+                    Ok(Box::new(executors::CacheExec {
+                        id: scan_mem_id,
+                        // Rest of the fields don't matter - the actual node was inserted into
+                        // `cache_nodes`.
+                        input: None,
+                        count: Default::default(),
+                        is_new_streaming_scan: true,
+                    }))
+                },
+                #[allow(unreachable_patterns)]
+                _ => unreachable!(),
             }
         },
 
@@ -617,18 +615,20 @@ fn create_physical_plan_impl(
                 let input = recurse!(input, state)?;
 
                 let cache = Box::new(executors::CacheExec {
-                    id,
+                    id: id.clone(),
                     input: Some(input),
                     count: cache_hits,
+                    is_new_streaming_scan: false,
                 });
 
-                cache_nodes.insert(id, cache);
+                cache_nodes.insert(id.clone(), cache);
             }
 
             Ok(Box::new(executors::CacheExec {
                 id,
                 input: None,
                 count: cache_hits,
+                is_new_streaming_scan: false,
             }))
         },
         Distinct { input, options } => {
@@ -899,12 +899,90 @@ pub fn create_scan_predicate(
     predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
     schema: &Arc<Schema>,
+    hive_schema: Option<&Schema>,
     state: &mut ExpressionConversionState,
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
+    let mut predicate = predicate.clone();
+
+    let mut hive_predicate = None;
+    let mut hive_predicate_is_full_predicate = false;
+
+    #[expect(clippy::never_loop)]
+    loop {
+        let Some(hive_schema) = hive_schema else {
+            break;
+        };
+
+        let mut hive_predicate_parts = vec![];
+        let mut non_hive_predicate_parts = vec![];
+
+        for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
+            if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
+                .all(|name| hive_schema.contains(&name))
+            {
+                hive_predicate_parts.push(predicate_part)
+            } else {
+                non_hive_predicate_parts.push(predicate_part)
+            }
+        }
+
+        if hive_predicate_parts.is_empty() {
+            break;
+        }
+
+        if non_hive_predicate_parts.is_empty() {
+            hive_predicate_is_full_predicate = true;
+            break;
+        }
+
+        {
+            let mut iter = hive_predicate_parts.into_iter();
+            let mut node = iter.next().unwrap();
+
+            for next_node in iter {
+                node = expr_arena.add(AExpr::BinaryExpr {
+                    left: node,
+                    op: Operator::And,
+                    right: next_node,
+                });
+            }
+
+            hive_predicate = Some(create_physical_expr(
+                &ExprIR::from_node(node, expr_arena),
+                Context::Default,
+                expr_arena,
+                schema,
+                state,
+            )?)
+        }
+
+        {
+            let mut iter = non_hive_predicate_parts.into_iter();
+            let mut node = iter.next().unwrap();
+
+            for next_node in iter {
+                node = expr_arena.add(AExpr::BinaryExpr {
+                    left: node,
+                    op: Operator::And,
+                    right: next_node,
+                });
+            }
+
+            predicate = ExprIR::from_node(node, expr_arena);
+        }
+
+        break;
+    }
+
     let phys_predicate =
-        create_physical_expr(predicate, Context::Default, expr_arena, schema, state)?;
+        create_physical_expr(&predicate, Context::Default, expr_arena, schema, state)?;
+
+    if hive_predicate_is_full_predicate {
+        hive_predicate = Some(phys_predicate.clone());
+    }
+
     let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
         predicate.node(),
         expr_arena,
@@ -996,5 +1074,7 @@ pub fn create_scan_predicate(
         live_columns,
         skip_batch_predicate,
         column_predicates,
+        hive_predicate,
+        hive_predicate_is_full_predicate,
     })
 }

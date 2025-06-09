@@ -1,8 +1,8 @@
 mod mean;
 mod min_max;
+mod moment;
 mod quantile;
 mod sum;
-mod variance;
 use std::fmt::Debug;
 
 use arrow::array::PrimitiveArray;
@@ -12,15 +12,21 @@ use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
 pub use mean::*;
 pub use min_max::*;
+pub use moment::*;
 use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
 pub use sum::*;
-pub use variance::*;
 
 use super::*;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self;
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self;
 
     /// Update and recompute the window
     ///
@@ -44,7 +50,7 @@ where
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
-    let mut agg_window = Agg::new(values, start, end, params);
+    let mut agg_window = Agg::new(values, start, end, params, Some(window_size));
     if let Some(validity) = create_validity(min_periods, len, window_size, &det_offsets_fn) {
         if validity.iter().all(|x| !x) {
             return Ok(Box::new(PrimitiveArray::<T>::new_null(

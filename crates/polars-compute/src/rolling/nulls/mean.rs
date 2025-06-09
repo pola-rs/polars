@@ -2,7 +2,7 @@
 use super::*;
 
 pub struct MeanWindow<'a, T> {
-    sum: SumWindow<'a, T>,
+    sum: SumWindow<'a, T, f64>,
 }
 
 impl<
@@ -23,9 +23,10 @@ impl<
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
+        window_size: Option<usize>,
     ) -> Self {
         Self {
-            sum: SumWindow::new(slice, validity, start, end, params),
+            sum: SumWindow::new(slice, validity, start, end, params, window_size),
         }
     }
 

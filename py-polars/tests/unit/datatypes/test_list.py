@@ -477,8 +477,8 @@ def test_fill_null_empty_list() -> None:
 
 def test_nested_logical() -> None:
     assert pl.select(
-        pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).implode().implode()
-    ).to_dict(as_series=False) == {"": [[["a", "b"]]]}
+        pl.lit(pl.Series("col", ["a", "b"], dtype=pl.Categorical)).implode().implode()
+    ).to_dict(as_series=False) == {"col": [[["a", "b"]]]}
 
 
 def test_null_list_construction_and_materialization() -> None:
@@ -850,6 +850,15 @@ def test_null_list_categorical_16405() -> None:
 
     expected = pl.DataFrame([None], schema={"result": pl.List(pl.Categorical)})
     assert_frame_equal(df, expected)
+
+
+def test_list_get_literal_broadcast_21463() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df = df.with_columns(x=pl.lit([1, 2, 3, 4]))
+    expected = df.with_columns(b=pl.col("x").list.get(pl.col("a"))).drop("x")
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    actual = df.with_columns(b=pl.lit([1, 2, 3, 4]).list.get(pl.col("a")))
+    assert expected.equals(actual)
 
 
 def test_sort() -> None:

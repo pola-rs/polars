@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
 use crate::prelude::*;
@@ -10,18 +11,18 @@ mod inner {
     use polars_utils::unitvec;
 
     pub struct SlicePushDown {
-        pub streaming: bool,
         #[expect(unused)]
         pub new_streaming: bool,
         scratch: UnitVec<Node>,
+        pub(super) maintain_errors: bool,
     }
 
     impl SlicePushDown {
-        pub fn new(streaming: bool, new_streaming: bool) -> Self {
+        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
-                streaming,
                 new_streaming,
                 scratch: unitvec![],
+                maintain_errors,
             }
         }
 
@@ -41,6 +42,15 @@ struct State {
     len: IdxSize,
 }
 
+impl State {
+    fn to_slice_enum(self) -> Slice {
+        let offset = self.offset;
+        let len: usize = usize::try_from(self.len).unwrap();
+
+        (offset, len).into()
+    }
+}
+
 /// Can push down slice when:
 /// * all projections are elementwise
 /// * at least 1 projection is based on a column (for height broadcast)
@@ -51,6 +61,7 @@ fn can_pushdown_slice_past_projections(
     exprs: &[ExprIR],
     arena: &Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
+    maintain_errors: bool,
 ) -> (bool, bool) {
     scratch.clear();
 
@@ -71,6 +82,8 @@ fn can_pushdown_slice_past_projections(
         let mut has_column = false;
         let mut literals_all_scalar = true;
 
+        let mut pd_group = ExprPushdownGroup::Pushable;
+
         while let Some(node) = scratch.pop() {
             let ae = arena.get(node);
 
@@ -83,7 +96,10 @@ fn can_pushdown_slice_past_projections(
                 _ => {},
             }
 
-            if !permits_filter_pushdown(scratch, ae, arena) {
+            if pd_group
+                .update_with_expr(scratch, ae, arena)
+                .blocks_pushdown(maintain_errors)
+            {
                 return (false, false);
             }
         }
@@ -197,17 +213,36 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             }
-            #[cfg(feature = "csv")]
+
             (Scan {
                 sources,
                 file_info,
                 hive_parts,
                 output_schema,
-                mut file_options,
+                mut unified_scan_args,
                 predicate,
                 scan_type,
-            }, Some(state)) if matches!(&*scan_type, FileScan::Csv { .. }) && predicate.is_none()  =>  {
-                file_options.pre_slice = Some((state.offset, state.len as usize));
+                id: _,
+            }, Some(state)) if predicate.is_none() && match &*scan_type {
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet { .. } => true,
+
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc { .. } => true,
+
+                #[cfg(feature = "csv")]
+                FileScan::Csv { .. } => true,
+
+                #[cfg(feature = "json")]
+                FileScan::NDJson { .. } => true,
+
+                #[cfg(feature = "python")]
+                FileScan::PythonDataset { .. } => true,
+
+                // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
+                FileScan::Anonymous { .. } => state.offset == 0,
+            }  =>  {
+                unified_scan_args.pre_slice = Some(state.to_slice_enum());
 
                 let lp = Scan {
                     sources,
@@ -215,111 +250,14 @@ impl SlicePushDown {
                     hive_parts,
                     output_schema,
                     scan_type,
-                    file_options,
+                    unified_scan_args,
                     predicate,
+                    id: Default::default(),
                 };
 
                 Ok(lp)
             },
 
-            #[cfg(feature = "json")]
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut file_options,
-                predicate,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::NDJson {.. }) =>  {
-                file_options.pre_slice = Some((state.offset, state.len as usize));
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    file_options,
-                    predicate,
-                };
-
-                Ok(lp)
-            },
-            #[cfg(feature = "parquet")]
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut file_options,
-                predicate,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::Parquet { .. }) =>  {
-                file_options.pre_slice = Some((state.offset, state.len as usize));
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    file_options,
-                    predicate,
-                };
-
-                Ok(lp)
-            },
-
-            #[cfg(feature = "ipc")]
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut file_options,
-                predicate,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::Ipc{..})=>  {
-                file_options.pre_slice = Some((state.offset, state.len as usize));
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    file_options,
-                    predicate,
-                };
-
-                Ok(lp)
-            },
-
-            // TODO! we currently skip slice pushdown if there is a predicate.
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                file_options: mut options,
-                predicate,
-                scan_type
-            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.pre_slice = Some((0, state.len as usize));
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    predicate,
-                    file_options: options,
-                    scan_type
-                };
-
-                Ok(lp)
-            },
             (DataFrameScan {df, schema, output_schema, }, Some(state))  => {
                 let df = df.slice(state.offset, state.len as usize);
                 let lp = DataFrameScan {
@@ -337,17 +275,9 @@ impl SlicePushDown {
                         lp_arena.replace(*input, input_lp);
                     }
                 }
-                // The in-memory union node is slice aware.
-                // We still set this information, but the streaming engine will ignore it.
                 options.slice = Some((state.offset, state.len as usize));
                 let lp = Union {inputs, options};
-
-                if self.streaming {
-                    // Ensure the slice node remains.
-                    self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
-                } else {
-                    Ok(lp)
-                }
+                Ok(lp)
             },
             (Join {
                 input_left,
@@ -356,7 +286,7 @@ impl SlicePushDown {
                 left_on,
                 right_on,
                 mut options
-            }, Some(state)) if !self.streaming && !matches!(options.options, Some(JoinTypeOptionsIR::Cross { .. })) => {
+            }, Some(state)) if !matches!(options.options, Some(JoinTypeOptionsIR::Cross { .. })) => {
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
                 let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;
@@ -506,7 +436,8 @@ impl SlicePushDown {
             }
             // there is state, inspect the projection to determine how to deal with it
             (Select {input, expr, schema, options}, Some(_)) => {
-                if can_pushdown_slice_past_projections(&expr, expr_arena, self.empty_nodes_scratch_mut()).1 {
+                let maintain_errors = self.maintain_errors;
+                if can_pushdown_slice_past_projections(&expr, expr_arena, self.empty_nodes_scratch_mut(), maintain_errors).1 {
                     let lp = Select {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
@@ -517,7 +448,8 @@ impl SlicePushDown {
                 }
             }
             (HStack {input, exprs, schema, options}, _) => {
-                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut());
+                let maintain_errors = self.maintain_errors;
+                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut(), maintain_errors);
 
                 if can_pushdown_and_any_expr_has_column || (
                     // If the schema length is greater then an input column is being projected, so

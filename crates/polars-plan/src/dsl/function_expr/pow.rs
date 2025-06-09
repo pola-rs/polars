@@ -6,6 +6,7 @@ use polars_core::with_match_physical_integer_type;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 pub enum PowFunction {
     Generic,
@@ -74,7 +75,7 @@ where
     T::Native: Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoColumn,
 {
-    let dtype = T::get_dtype();
+    let dtype = T::get_static_dtype();
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
@@ -117,7 +118,7 @@ where
     T::Native: Pow<F::Native, Output = T::Native> + ToPrimitive,
     ChunkedArray<T>: IntoColumn,
 {
-    let dtype = T::get_dtype();
+    let dtype = T::get_static_dtype();
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {

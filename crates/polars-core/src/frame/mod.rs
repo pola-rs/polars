@@ -49,6 +49,7 @@ use crate::series::IsSorted;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
@@ -282,7 +283,7 @@ impl DataFrame {
     /// ```
     pub fn new(columns: Vec<Column>) -> PolarsResult<Self> {
         DataFrame::validate_columns_slice(&columns)
-            .map_err(|e| e.wrap_msg(|e| format!("could not create a new DataFrame: {}", e)))?;
+            .map_err(|e| e.wrap_msg(|e| format!("could not create a new DataFrame: {e}")))?;
         Ok(unsafe { Self::new_no_checks_height_from_first(columns) })
     }
 
@@ -359,6 +360,11 @@ impl DataFrame {
         let length = if columns.is_empty() { 0 } else { broadcast_len };
 
         Ok(unsafe { DataFrame::new_no_checks(length, columns) })
+    }
+
+    pub fn new_from_index(&self, index: usize, height: usize) -> Self {
+        let cols = self.columns.iter().map(|c| c.new_from_index(index, height));
+        unsafe { Self::new_no_checks(height, cols.collect()) }
     }
 
     /// Creates an empty `DataFrame` usable in a compile time context (such as static initializers).
@@ -1168,6 +1174,34 @@ impl DataFrame {
         Ok(self)
     }
 
+    pub fn vstack_mut_owned(&mut self, other: DataFrame) -> PolarsResult<&mut Self> {
+        if self.width() != other.width() {
+            polars_ensure!(
+                self.width() == 0,
+                ShapeMismatch:
+                "unable to append to a DataFrame of width {} with a DataFrame of width {}",
+                self.width(), other.width(),
+            );
+            self.columns = other.columns;
+            self.height = other.height;
+            return Ok(self);
+        }
+
+        self.columns
+            .iter_mut()
+            .zip(other.columns.into_iter())
+            .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
+                ensure_can_extend(&*left, &right)?;
+                let right_name = right.name().clone();
+                left.append_owned(right).map_err(|e| {
+                    e.context(format!("failed to vstack column '{right_name}'").into())
+                })?;
+                Ok(())
+            })?;
+        self.height += other.height;
+        Ok(self)
+    }
+
     /// Concatenate a [`DataFrame`] to this [`DataFrame`]
     ///
     /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
@@ -1852,6 +1886,17 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(self.height(), selected) })
     }
 
+    pub fn project(&self, to: SchemaRef) -> PolarsResult<Self> {
+        let from = self.schema();
+        let columns = to
+            .iter_names()
+            .map(|name| Ok(self.columns[from.try_index_of(name.as_str())?].clone()))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let mut df = unsafe { Self::new_no_checks(self.height(), columns) };
+        df.cached_schema = to.into();
+        Ok(df)
+    }
+
     /// Select column(s) from this [`DataFrame`] and return them into a [`Vec`].
     ///
     /// # Example
@@ -2044,6 +2089,8 @@ impl DataFrame {
             .and_then(|idx| self.columns.get_mut(idx))
             .ok_or_else(|| polars_err!(col_not_found = column))
             .map(|c| c.rename(name))?;
+        self.clear_schema();
+
         Ok(self)
     }
 
@@ -2830,6 +2877,7 @@ impl DataFrame {
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
     pub fn iter_chunks_physical(&self) -> PhysRecordBatchIter<'_> {
+        debug_assert!(!self.should_rechunk());
         PhysRecordBatchIter {
             schema: Arc::new(
                 self.get_columns()
@@ -2987,24 +3035,26 @@ impl DataFrame {
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
-                let gb = df.group_by(names)?;
+                let gb = df.group_by_stable(names)?;
                 let groups = gb.get_groups();
 
-                let func = |g: GroupsIndicator| match g {
-                    GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
-                    GroupsIndicator::Slice([first, len]) => first + len - 1,
-                };
+                let last_idx: NoNull<IdxCa> = groups
+                    .iter()
+                    .map(|g| match g {
+                        GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
+                        GroupsIndicator::Slice([first, len]) => first + len - 1,
+                    })
+                    .collect();
 
-                let last_idx: NoNull<IdxCa> = match slice {
-                    None => groups.iter().map(func).collect(),
-                    Some((offset, len)) => {
-                        let (offset, len) = slice_offsets(offset, len, groups.len());
-                        groups.iter().skip(offset).take(len).map(func).collect()
-                    },
-                };
+                let mut last_idx = last_idx.into_inner().sort(false);
 
-                let last_idx = last_idx.sort(false);
-                return Ok(unsafe { df.take_unchecked(&last_idx) });
+                if let Some((offset, len)) = slice {
+                    last_idx = last_idx.slice(offset, len);
+                }
+
+                let last_idx = NoNull::new(last_idx);
+                let out = unsafe { df.take_unchecked(&last_idx) };
+                return Ok(out);
             },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
                 let gb = df.group_by(names)?;
@@ -3023,14 +3073,14 @@ impl DataFrame {
             (UniqueKeepStrategy::None, _) => {
                 let df_part = df.select(names)?;
                 let mask = df_part.is_unique()?;
-                let mask = match slice {
-                    None => mask,
-                    Some((offset, len)) => mask.slice(offset, len),
-                };
-                return df.filter(&mask);
+                let mut filtered = df.filter(&mask)?;
+
+                if let Some((offset, len)) = slice {
+                    filtered = filtered.slice(offset, len);
+                }
+                return Ok(filtered);
             },
         };
-
         let height = Self::infer_height(&columns);
         Ok(unsafe { DataFrame::new_no_checks(height, columns) })
     }
@@ -3312,7 +3362,8 @@ impl DataFrame {
         let df = DataFrame::from(rb);
         polars_ensure!(
             self.schema() == df.schema(),
-            SchemaMismatch: "cannot append record batch with different schema",
+            SchemaMismatch: "cannot append record batch with different schema\n\n
+        Got {:?}\nexpected: {:?}", df.schema(), self.schema(),
         );
         self.vstack_mut_owned_unchecked(df);
         Ok(())
@@ -3605,5 +3656,25 @@ mod test {
 
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
         Ok(())
+    }
+
+    #[test]
+    fn test_unique_keep_none_with_slice() {
+        let df = df! {
+            "x" => [1, 2, 3, 2, 1]
+        }
+        .unwrap();
+        let out = df
+            .unique_stable(
+                Some(&["x".to_string()][..]),
+                UniqueKeepStrategy::None,
+                Some((0, 2)),
+            )
+            .unwrap();
+        let expected = df! {
+            "x" => [3]
+        }
+        .unwrap();
+        assert!(out.equals(&expected));
     }
 }

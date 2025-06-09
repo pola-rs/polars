@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Copy, Clone, PartialEq, Debug, Hash)]
 pub enum CorrelationMethod {
     Pearson,
@@ -21,11 +22,18 @@ impl Display for CorrelationMethod {
             SpearmanRank(_) => "spearman_rank",
             Covariance(_) => return write!(f, "covariance"),
         };
-        write!(f, "{}_correlation", s)
+        write!(f, "{s}_correlation")
     }
 }
 
 pub(super) fn corr(s: &[Column], method: CorrelationMethod) -> PolarsResult<Column> {
+    polars_ensure!(
+        s[0].len() == s[1].len() || s[0].len() == 1 || s[1].len() == 1,
+        length_mismatch = "corr",
+        s[0].len(),
+        s[1].len()
+    );
+
     match method {
         CorrelationMethod::Pearson => pearson_corr(s),
         #[cfg(all(feature = "rank", feature = "propagate_nans"))]

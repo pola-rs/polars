@@ -217,3 +217,8 @@ def test_comparison_with_string_raises_9461() -> None:
     df = pl.DataFrame({"duration": [timedelta(hours=2)]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.filter(pl.col("duration") > "1h")
+
+
+def test_duration_invalid_cast_22258() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]

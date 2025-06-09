@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
-from polars._utils.various import ordered_unique
+from polars._utils.various import ordered_unique, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
 
@@ -178,7 +178,7 @@ def concat(
 
     if how.startswith("align"):
         if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
-            msg = f"{how!r} strategy is not supported for {type(elems[0]).__name__!r}"
+            msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
             raise TypeError(msg)
 
         # establish common columns, maintaining the order in which they appear
@@ -224,6 +224,8 @@ def concat(
     out: Series | DataFrame | LazyFrame | Expr
     first = elems[0]
 
+    from polars.lazyframe.opt_flags import QueryOptFlags
+
     if isinstance(first, pl.DataFrame):
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
@@ -235,7 +237,7 @@ def concat(
                     parallel=parallel,
                     to_supertypes=True,
                 )
-            ).collect(no_optimization=True)
+            ).collect(optimizations=QueryOptFlags._eager())
 
         elif how == "diagonal":
             out = wrap_df(plr.concat_df_diagonal(elems))
@@ -247,7 +249,7 @@ def concat(
                     parallel=parallel,
                     to_supertypes=True,
                 )
-            ).collect(no_optimization=True)
+            ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
             out = wrap_df(plr.concat_df_horizontal(elems))
         else:
@@ -296,7 +298,7 @@ def concat(
     elif isinstance(first, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
-        msg = f"did not expect type: {type(first).__name__!r} in `concat`"
+        msg = f"did not expect type: {qualified_type_name(first)!r} in `concat`"
         raise TypeError(msg)
 
     if rechunk:
@@ -330,9 +332,11 @@ def _alignment_join(
             maintain_order="right_left",
         )
 
+    from polars.lazyframe import QueryOptFlags
+
     joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
     if post_align_collect:
-        joined = joined.collect(no_optimization=True).lazy()
+        joined = joined.collect(optimizations=QueryOptFlags.none()).lazy()
     return joined
 
 

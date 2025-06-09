@@ -12,8 +12,7 @@ use std::sync::Arc;
 use polars::io::mmap::MmapBytesReader;
 use polars::prelude::file::DynWriteable;
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars_error::{PolarsResult, polars_err};
-use polars_io::cloud::CloudOptions;
+use polars_error::polars_err;
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::MemSlice;
@@ -27,6 +26,10 @@ use crate::prelude::resolve_homedir;
 
 pub(crate) struct PyFileLikeObject {
     inner: PyObject,
+    /// The object expects a string instead of a bytes for `write`.
+    expects_str: bool,
+    /// The object has a flush method.
+    has_flush: bool,
 }
 
 impl WriteClose for PyFileLikeObject {}
@@ -49,6 +52,8 @@ impl Clone for PyFileLikeObject {
     fn clone(&self) -> Self {
         Python::with_gil(|py| Self {
             inner: self.inner.clone_ref(py),
+            expects_str: self.expects_str,
+            has_flush: self.has_flush,
         })
     }
 }
@@ -58,8 +63,12 @@ impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
     /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
-    pub(crate) fn new(object: PyObject) -> Self {
-        PyFileLikeObject { inner: object }
+    pub(crate) fn new(object: PyObject, expects_str: bool, has_flush: bool) -> Self {
+        PyFileLikeObject {
+            inner: object,
+            expects_str,
+            has_flush,
+        }
     }
 
     pub(crate) fn to_memslice(&self) -> MemSlice {
@@ -163,25 +172,38 @@ impl Read for PyFileLikeObject {
 impl Write for PyFileLikeObject {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         Python::with_gil(|py| {
-            let pybytes = PyBytes::new(py, buf);
+            let number_bytes_written = if self.expects_str {
+                self.inner.call_method(
+                    py,
+                    "write",
+                    (PyString::new(
+                        py,
+                        std::str::from_utf8(buf).map_err(io::Error::other)?,
+                    ),),
+                    None,
+                )
+            } else {
+                self.inner
+                    .call_method(py, "write", (PyBytes::new(py, buf),), None)
+            }
+            .map_err(pyerr_to_io_err)?;
 
-            let number_bytes_written = self
-                .inner
-                .call_method(py, "write", (pybytes,), None)
-                .map_err(pyerr_to_io_err)?;
+            let n = number_bytes_written.extract(py).map_err(pyerr_to_io_err)?;
 
-            number_bytes_written.extract(py).map_err(pyerr_to_io_err)
+            Ok(n)
         })
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
-        Python::with_gil(|py| {
-            self.inner
-                .call_method(py, "flush", (), None)
-                .map_err(pyerr_to_io_err)?;
+        if self.has_flush {
+            Python::with_gil(|py| {
+                self.inner
+                    .call_method(py, "flush", (), None)
+                    .map_err(pyerr_to_io_err)
+            })?;
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 
@@ -237,13 +259,6 @@ impl EitherRustPythonFile {
             Self::Rust(f) => Box::new(f),
         }
     }
-
-    pub(crate) fn into_dyn_writeable(self) -> Box<dyn WriteClose + Send> {
-        match self {
-            EitherRustPythonFile::Py(f) => Box::new(f),
-            EitherRustPythonFile::Rust(f) => Box::new(f),
-        }
-    }
 }
 
 pub(crate) enum PythonScanSourceInput {
@@ -253,7 +268,7 @@ pub(crate) enum PythonScanSourceInput {
 }
 
 pub(crate) fn try_get_pyfile(
-    py: Python,
+    py: Python<'_>,
     py_f: Bound<'_, PyAny>,
     write: bool,
 ) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
@@ -340,7 +355,11 @@ pub(crate) fn try_get_pyfile(
         py_f
     };
     PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
-    let f = PyFileLikeObject::new(py_f.unbind());
+    let expects_str = py_f.is_instance(&io.getattr("TextIOBase").unwrap())?;
+    let has_flush = py_f
+        .getattr_opt("flush")?
+        .is_some_and(|flush| flush.is_callable());
+    let f = PyFileLikeObject::new(py_f.unbind(), expects_str, has_flush);
     Ok((EitherRustPythonFile::Py(f), None))
 }
 
@@ -450,28 +469,4 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
             },
         }
     }
-}
-
-pub(crate) fn try_get_writeable(
-    py_f: PyObject,
-    cloud_options: Option<&CloudOptions>,
-) -> PyResult<Box<dyn WriteClose + Send>> {
-    Python::with_gil(|py| {
-        let py_f = py_f.into_bound(py);
-
-        if let Ok(s) = py_f.extract::<Cow<str>>() {
-            polars::prelude::file::try_get_writeable(&s, cloud_options)
-                .map_err(PyPolarsErr::from)
-                .map_err(|e| e.into())
-        } else {
-            Ok(try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable())
-        }
-    })
-}
-
-pub(crate) fn close_file(f: Box<dyn WriteClose>) -> PolarsResult<()> {
-    f.close().map_err(|e| {
-        let err: polars_error::PolarsError = e.into();
-        err
-    })
 }

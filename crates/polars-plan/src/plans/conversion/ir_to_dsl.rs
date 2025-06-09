@@ -6,10 +6,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
     match expr {
-        AExpr::Explode(node) => Expr::Explode(Arc::new(node_to_expr(node, expr_arena))),
-        AExpr::Alias(expr, name) => {
-            let exp = node_to_expr(expr, expr_arena);
-            Expr::Alias(Arc::new(exp), name)
+        AExpr::Explode { expr, skip_empty } => Expr::Explode {
+            input: Arc::new(node_to_expr(expr, expr_arena)),
+            skip_empty,
         },
         AExpr::Column(a) => Expr::Column(a),
         AExpr::Literal(s) => Expr::Literal(s),
@@ -30,7 +29,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             let exp = node_to_expr(expr, expr_arena);
             Expr::Cast {
                 expr: Arc::new(exp),
-                dtype,
+                dtype: dtype.into(),
                 options: strict,
             }
         },
@@ -186,6 +185,15 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             function,
             output_type,
             options,
+        },
+        AExpr::Eval {
+            expr,
+            evaluation,
+            variant,
+        } => Expr::Eval {
+            expr: Arc::new(node_to_expr(expr, expr_arena)),
+            evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
+            variant,
         },
         AExpr::Function {
             input,

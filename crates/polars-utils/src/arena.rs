@@ -156,7 +156,8 @@ impl<T> Arena<T> {
         unsafe {
             for i in 0..N {
                 let idx = *indices.get_unchecked(i);
-                *(*arr_ptr).get_unchecked_mut(i) = (*slice).get_unchecked_mut(idx.0);
+                let slice_ref: &mut [T] = &mut *slice;
+                *(*arr_ptr).get_unchecked_mut(i) = slice_ref.get_unchecked_mut(idx.0);
             }
             arr.assume_init()
         }

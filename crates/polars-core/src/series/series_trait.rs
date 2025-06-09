@@ -13,6 +13,7 @@ use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IsSorted {
     Ascending,
     Descending,
@@ -378,6 +379,25 @@ pub trait SeriesTrait:
     /// ```
     fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
+    /// Trim all lists of unused start and end elements recursively.
+    ///
+    /// - `None` if nothing needed to be done.
+    /// - `Some(series)` if something changed.
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        None
+    }
+
+    /// Propagate down nulls in nested types.
+    ///
+    /// - `None` if nothing needed to be done.
+    /// - `Some(series)` if something changed.
+    fn propagate_nulls(&self) -> Option<Series> {
+        None
+    }
+
+    /// Find the indices of elements where the null masks are different recursively.
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
+
     fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
@@ -602,11 +622,8 @@ pub trait SeriesTrait:
 }
 
 impl (dyn SeriesTrait + '_) {
-    pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
-    where
-        N: 'static + PolarsDataType<IsLogical = FalseT>,
-    {
-        polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
+    pub fn unpack<T: PolarsPhysicalType>(&self) -> PolarsResult<&ChunkedArray<T>> {
+        polars_ensure!(&T::get_static_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())
     }
 }

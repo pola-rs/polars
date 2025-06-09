@@ -615,7 +615,7 @@ where
     /// Should be used to match the chunk_id of another [`ChunkedArray`].
     /// # Panics
     /// It is the callers responsibility to ensure that this [`ChunkedArray`] has a single chunk.
-    pub(crate) fn match_chunks<I>(&self, chunk_id: I) -> Self
+    pub fn match_chunks<I>(&self, chunk_id: I) -> Self
     where
         I: Iterator<Item = usize>,
     {
@@ -820,7 +820,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
     PrimitiveArray::new(
-        T::get_dtype().to_arrow(CompatLevel::newest()),
+        T::get_static_dtype().to_arrow(CompatLevel::newest()),
         values.into(),
         validity,
     )
@@ -835,7 +835,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
-        let dtype = T::get_dtype();
+        let dtype = T::get_static_dtype();
         let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         ChunkedArray {
             field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),
@@ -898,7 +898,7 @@ pub(crate) mod test {
     fn limit() {
         let a = get_chunked_array();
         let b = a.limit(2);
-        println!("{:?}", b);
+        println!("{b:?}");
         assert_eq!(b.len(), 2)
     }
 

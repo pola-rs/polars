@@ -49,9 +49,12 @@ pub(super) fn process_projection(
             }
         }
 
-        ctx.inner.is_count_star = true;
         local_projection.push(exprs.pop().unwrap());
-        proj_pd.is_count_star = true;
+
+        if input_is_count_star_aware {
+            ctx.inner.is_count_star = true;
+            proj_pd.is_count_star = true;
+        }
     } else {
         // `remove_names` tracks projected names that need to be removed as they may be aliased
         // names that are created on this level.

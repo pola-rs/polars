@@ -2405,6 +2405,25 @@ time
     )
 
 
+def test_csv_try_parse_dates_leading_zero_8_digits_22167() -> None:
+    result = pl.read_csv(
+        io.StringIO(
+            "a\n2025-04-06T18:56:42.617736974Z\n2025-04-06T18:57:42.77756192Z\n2025-04-06T18:58:44.56928733Z"
+        ),
+        try_parse_dates=True,
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=timezone.utc),
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_read_time_schema_overrides() -> None:
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
@@ -2586,3 +2605,28 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     df2 = pl.DataFrame({"c": [99]})
     df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
     assert df3.write_csv() == expected
+
+
+def test_csv_malformed_quote_in_unenclosed_field_22395() -> None:
+    # Note - the malformed detection logic is very basic, and fails to detect many
+    # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
+    # Below is a one pattern that will be flagged (odd number of quotes in a row).
+    malformed = b"""\
+a,b,x"y
+a,x"y,c
+x"y,b,c
+"""
+    # short: non-SIMD code path
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed, has_header=False).collect()
+    with pytest.warns(UserWarning):
+        pl.read_csv(malformed, has_header=False, ignore_errors=True)
+
+    # long: trigger SIMD code path (> 64 bytes)
+    malformed_long = malformed + ("k,l,m\n" * 10).encode()
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed_long, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed_long, has_header=False).collect()

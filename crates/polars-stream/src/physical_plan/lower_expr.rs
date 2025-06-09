@@ -16,7 +16,9 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
-use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use super::fmt::fmt_exprs;
+use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+use crate::physical_plan::lower_group_by::build_group_by_stream;
 
 type ExprNodeKey = Node;
 
@@ -37,9 +39,25 @@ impl ExprCache {
 }
 
 struct LowerExprContext<'a> {
+    prepare_visualization: bool,
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     cache: &'a mut ExprCache,
+}
+
+impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext {
+    fn from(value: LowerExprContext<'a>) -> Self {
+        Self {
+            prepare_visualization: value.prepare_visualization,
+        }
+    }
+}
+impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext {
+    fn from(value: &LowerExprContext<'a>) -> Self {
+        Self {
+            prepare_visualization: value.prepare_visualization,
+        }
+    }
 }
 
 pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
@@ -51,20 +69,23 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
     // but aren't actually elementwise (e.g. arguments aren't same length).
     match expr {
         AExpr::AnonymousFunction { options, .. } => {
-            options.collect_groups == ApplyOptions::ApplyList
+            options.flags.contains(FunctionFlags::APPLY_LIST)
         },
         AExpr::Function {
             function, options, ..
         } => {
-            if options.collect_groups == ApplyOptions::ApplyList {
+            if options.flags.contains(FunctionFlags::APPLY_LIST) {
                 return true;
             }
 
             use FunctionExpr as F;
-            matches!(
-                function,
-                F::Boolean(BooleanFunction::IsIn { .. }) | F::Replace | F::ReplaceStrict { .. }
-            )
+            match function {
+                #[cfg(feature = "is_in")]
+                F::Boolean(BooleanFunction::IsIn { .. }) => true,
+                #[cfg(feature = "replace")]
+                F::Replace | F::ReplaceStrict { .. } => true,
+                _ => false,
+            }
         },
         _ => false,
     }
@@ -119,8 +140,7 @@ pub fn is_input_independent_rec(
     }
 
     let ret = match arena.get(expr_key) {
-        AExpr::Explode(inner)
-        | AExpr::Alias(inner, _)
+        AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
             expr: inner,
             dtype: _,
@@ -189,6 +209,11 @@ pub fn is_input_independent_rec(
         } => input
             .iter()
             .all(|expr| is_input_independent_rec(expr.node(), arena, cache)),
+        AExpr::Eval {
+            expr,
+            evaluation: _,
+            variant: _,
+        } => is_input_independent_rec(*expr, arena, cache),
         AExpr::Window {
             function,
             partition_by,
@@ -260,7 +285,7 @@ pub fn is_length_preserving_rec(
 
     let ret = match arena.get(expr_key) {
         AExpr::Gather { .. }
-        | AExpr::Explode(_)
+        | AExpr::Explode { .. }
         | AExpr::Filter { .. }
         | AExpr::Agg(_)
         | AExpr::Slice { .. }
@@ -269,8 +294,7 @@ pub fn is_length_preserving_rec(
 
         AExpr::Column(_) => true,
 
-        AExpr::Alias(inner, _)
-        | AExpr::Cast {
+        AExpr::Cast {
             expr: inner,
             dtype: _,
             options: _,
@@ -317,6 +341,7 @@ pub fn is_length_preserving_rec(
                     .iter()
                     .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
         },
+        AExpr::Eval { .. } => true,
         AExpr::Window {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
@@ -404,9 +429,23 @@ fn build_fallback_node_with_ctx(
             .try_collect()?;
         DataFrame::new_with_broadcast(columns)
     };
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        let mut buffer = String::new();
+        buffer.push_str("SELECT [\n");
+        fmt_exprs(
+            &mut buffer,
+            exprs,
+            ctx.expr_arena,
+            super::fmt::FormatExprStyle::Select,
+        );
+        buffer.push(']');
+        buffer
+    });
     let kind = PhysNodeKind::InMemoryMap {
         input: input_stream,
         map: Arc::new(map),
+        format_str,
     };
     Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)))
 }
@@ -509,15 +548,22 @@ fn lower_exprs_with_ctx(
         }
 
         match ctx.expr_arena.get(expr).clone() {
-            AExpr::Explode(inner) => {
+            AExpr::Explode {
+                expr: inner,
+                skip_empty,
+            } => {
                 // While explode is streamable, it is not elementwise, so we
                 // have to transform it to a select node.
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                 let exploded_name = unique_column_name();
-                let trans_inner = ctx.expr_arena.add(AExpr::Explode(trans_exprs[0]));
+                let trans_inner = ctx.expr_arena.add(AExpr::Explode {
+                    expr: trans_exprs[0],
+                    skip_empty,
+                });
                 let explode_expr =
                     ExprIR::new(trans_inner, OutputName::Alias(exploded_name.clone()));
-                let output_schema = schema_for_select(trans_input, &[explode_expr.clone()], ctx)?;
+                let output_schema =
+                    schema_for_select(trans_input, std::slice::from_ref(&explode_expr), ctx)?;
                 let node_kind = PhysNodeKind::Select {
                     input: trans_input,
                     selectors: vec![explode_expr.clone()],
@@ -527,7 +573,6 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(exploded_name)));
             },
-            AExpr::Alias(_, _) => unreachable!("alias found in physical plan"),
             AExpr::Column(_) => unreachable!("column should always be streamable"),
             AExpr::Literal(_) => {
                 let out_name = unique_column_name();
@@ -568,26 +613,56 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: FunctionExpr::Unique(maintain_order),
+                options: _,
+            } => {
+                assert!(inner_exprs.len() == 1);
+                // Lower to no-aggregate group-by with unique name.
+                let tmp_name = unique_column_name();
+                let (trans_input, trans_inner_exprs) =
+                    lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                let group_by_key_expr =
+                    ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
+                let group_by_output_schema =
+                    schema_for_select(trans_input, std::slice::from_ref(&group_by_key_expr), ctx)?;
+                let group_by_stream = build_group_by_stream(
+                    trans_input,
+                    &[group_by_key_expr],
+                    &[],
+                    group_by_output_schema,
+                    maintain_order,
+                    Arc::new(GroupbyOptions::default()),
+                    None,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext::from(&*ctx),
+                )?;
+                input_streams.insert(group_by_stream);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
+            },
+
+            #[cfg(feature = "is_in")]
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
                 options: _,
-            } if {
-                let input_schema = &ctx.phys_sm[input.node].output_schema;
-                let left_dt = inner_exprs[0]
-                    .dtype(input_schema, Context::Default, ctx.expr_arena)
-                    .unwrap();
-                let right_dt = inner_exprs[1]
-                    .dtype(input_schema, Context::Default, ctx.expr_arena)
-                    .unwrap();
-                left_dt == right_dt
-            } =>
-            {
+            } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena) => {
                 // Translate left and right side separately (they could have different lengths).
                 let left_on_name = unique_column_name();
                 let right_on_name = unique_column_name();
                 let (trans_input_left, trans_expr_left) =
                     lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
+                    // expr.implode().explode() ~= expr (and avoids rechunking)
+                    AExpr::Agg(IRAggExpr::Implode(n)) => *n,
+                    _ => ctx.expr_arena.add(AExpr::Explode {
+                        expr: inner_exprs[1].node(),
+                        skip_empty: true,
+                    }),
+                };
                 let (trans_input_right, trans_expr_right) =
-                    lower_exprs_with_ctx(input, &[inner_exprs[1].node()], ctx)?;
+                    lower_exprs_with_ctx(input, &[right_expr_exploded_node], ctx)?;
 
                 // We have to ensure the left input has the right name for the semi-anti-join to
                 // generate the correct output name.
@@ -676,6 +751,28 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
             },
+            AExpr::Eval {
+                expr: inner,
+                evaluation,
+                variant,
+            } => match variant {
+                EvalVariant::List => {
+                    let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let eval_expr = AExpr::Eval {
+                        expr: trans_expr[0],
+                        evaluation,
+                        variant,
+                    };
+                    input_streams.insert(trans_input);
+                    transformed_exprs.push(ctx.expr_arena.add(eval_expr));
+                },
+                EvalVariant::Cumulative { .. } => {
+                    // Cumulative is not elementwise, this would need a special node.
+                    let out_name = unique_column_name();
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                },
+            },
             AExpr::Ternary {
                 predicate,
                 truthy,
@@ -713,7 +810,7 @@ fn lower_exprs_with_ctx(
                 let sorted_name = unique_column_name();
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(sorted_name.clone()));
                 let select_stream =
-                    build_select_stream_with_ctx(input, &[inner_expr_ir.clone()], ctx)?;
+                    build_select_stream_with_ctx(input, std::slice::from_ref(&inner_expr_ir), ctx)?;
                 let col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
                 let kind = PhysNodeKind::Sort {
                     input: select_stream,
@@ -815,7 +912,8 @@ fn lower_exprs_with_ctx(
                     let out_name = unique_column_name();
                     let trans_agg_expr = ctx.expr_arena.add(AExpr::Agg(agg));
                     let expr_ir = ExprIR::new(trans_agg_expr, OutputName::Alias(out_name.clone()));
-                    let output_schema = schema_for_select(trans_input, &[expr_ir.clone()], ctx)?;
+                    let output_schema =
+                        schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
                     let kind = PhysNodeKind::Reduce {
                         input: trans_input,
                         exprs: vec![expr_ir],
@@ -824,8 +922,49 @@ fn lower_exprs_with_ctx(
                     input_streams.insert(PhysStream::first(reduce_node_key));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
+                IRAggExpr::NUnique(inner) => {
+                    // Lower to no-aggregate group-by with unique name feeding into len aggregate.
+                    let tmp_name = unique_column_name();
+                    let (trans_input, trans_inner_exprs) =
+                        lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let group_by_key_expr =
+                        ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
+                    let group_by_output_schema = schema_for_select(
+                        trans_input,
+                        std::slice::from_ref(&group_by_key_expr),
+                        ctx,
+                    )?;
+                    let group_by_stream = build_group_by_stream(
+                        trans_input,
+                        &[group_by_key_expr],
+                        &[],
+                        group_by_output_schema,
+                        false,
+                        Arc::new(GroupbyOptions::default()),
+                        None,
+                        ctx.expr_arena,
+                        ctx.phys_sm,
+                        ctx.cache,
+                        StreamingLowerIRContext::from(&*ctx),
+                    )?;
+
+                    let len_node = ctx.expr_arena.add(AExpr::Len);
+                    let len_expr_ir = ExprIR::new(len_node, OutputName::Alias(tmp_name.clone()));
+                    let output_schema = schema_for_select(
+                        group_by_stream,
+                        std::slice::from_ref(&len_expr_ir),
+                        ctx,
+                    )?;
+                    let kind = PhysNodeKind::Reduce {
+                        input: group_by_stream,
+                        exprs: vec![len_expr_ir],
+                    };
+
+                    let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                    input_streams.insert(PhysStream::first(reduce_node_key));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
+                },
                 IRAggExpr::Median(_)
-                | IRAggExpr::NUnique(_)
                 | IRAggExpr::Implode(_)
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::AggGroups(_) => {
@@ -837,7 +976,7 @@ fn lower_exprs_with_ctx(
             AExpr::Len => {
                 let out_name = unique_column_name();
                 let expr_ir = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
-                let output_schema = schema_for_select(input, &[expr_ir.clone()], ctx)?;
+                let output_schema = schema_for_select(input, std::slice::from_ref(&expr_ir), ctx)?;
                 let kind = PhysNodeKind::Reduce {
                     input,
                     exprs: vec![expr_ir],
@@ -988,11 +1127,13 @@ pub fn lower_exprs(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -1013,11 +1154,13 @@ pub fn build_select_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -1030,11 +1173,13 @@ pub fn build_length_preserving_select_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
     };
     let already_length_preserving = exprs
         .iter()

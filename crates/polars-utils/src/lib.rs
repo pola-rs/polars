@@ -2,8 +2,7 @@
     all(target_arch = "aarch64", feature = "nightly"),
     feature(stdarch_aarch64_prefetch)
 )]
-#![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops.
-#![cfg_attr(feature = "nightly", feature(select_unpredictable))] // For branchless programming.
+#![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops, select_unpredictable.
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
@@ -26,6 +25,7 @@ pub mod idx_mapper;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
+pub mod parma;
 pub mod pl_str;
 pub mod priority;
 pub mod regex_cache;
@@ -38,6 +38,7 @@ pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 pub mod total_ord;
+pub mod unique_id;
 
 pub use functions::*;
 pub mod file;

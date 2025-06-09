@@ -162,6 +162,16 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.new_from_index(_index, _length).into_series()
     }
 
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        self.0
+            .trim_lists_to_normalized_offsets()
+            .map(IntoSeries::into_series)
+    }
+
+    fn propagate_nulls(&self) -> Option<Series> {
+        self.0.propagate_nulls().map(IntoSeries::into_series)
+    }
+
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, cast_options)
     }
@@ -260,6 +270,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

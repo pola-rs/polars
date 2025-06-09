@@ -9,6 +9,7 @@ use crate::dsl::{FieldsMapper, FunctionOptions};
 use crate::map;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum BitwiseFunction {

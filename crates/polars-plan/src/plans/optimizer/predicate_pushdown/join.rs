@@ -107,7 +107,7 @@ pub(super) fn process_join(
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
-    options: Arc<JoinOptions>,
+    options: Arc<JoinOptionsIR>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
@@ -138,7 +138,7 @@ pub(super) fn process_join(
         )
         .unwrap_or_else(|e| {
             if cfg!(debug_assertions) {
-                panic!("{:?}", e)
+                panic!("{e:?}")
             } else {
                 ExprOrigin::None
             }

@@ -51,7 +51,15 @@ use crate::shared::{ArrowReader, finish_reader};
 
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct IpcScanOptions;
+
+#[expect(clippy::derivable_impls)]
+impl Default for IpcScanOptions {
+    fn default() -> Self {
+        Self {}
+    }
+}
 
 /// Read Arrows IPC format into a DataFrame
 ///

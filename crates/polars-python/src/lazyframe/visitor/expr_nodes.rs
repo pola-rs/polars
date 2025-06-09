@@ -7,9 +7,8 @@ use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
-use polars_plan::dsl::{BooleanFunction, StringFunction, TemporalFunction};
+use polars_plan::dsl::{BooleanFunction, StringFunction, StructFunction, TemporalFunction};
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{
     AExpr, FunctionExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PowFunction,
@@ -264,6 +263,27 @@ pub enum PyTemporalFunction {
 
 #[pymethods]
 impl PyTemporalFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pyclass(name = "StructFunction", eq)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyStructFunction {
+    FieldByIndex,
+    FieldByName,
+    RenameFields,
+    PrefixFields,
+    SuffixFields,
+    JsonEncode,
+    WithFields,
+    MultipleFields,
+    MapFieldNames,
+}
+
+#[pymethods]
+impl PyStructFunction {
     fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -533,12 +553,7 @@ impl PyGroupbyOptions {
 
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
     match expr {
-        AExpr::Explode(_) => Err(PyNotImplementedError::new_err("explode")),
-        AExpr::Alias(inner, name) => Alias {
-            expr: inner.0,
-            name: name.into_py_any(py)?,
-        }
-        .into_py_any(py),
+        AExpr::Explode { .. } => Err(PyNotImplementedError::new_err("explode")),
         AExpr::Column(name) => Column {
             name: name.into_py_any(py)?,
         }
@@ -807,6 +822,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Replace { n, literal } => {
                         (PyStringFunction::Replace, n, literal).into_py_any(py)
                     },
+                    #[cfg(feature = "string_normalize")]
                     StringFunction::Normalize { form } => (
                         PyStringFunction::Normalize,
                         match form {
@@ -890,8 +906,33 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     #[cfg(feature = "regex")]
                     StringFunction::EscapeRegex => (PyStringFunction::EscapeRegex,).into_py_any(py),
                 },
-                FunctionExpr::StructExpr(_) => {
-                    return Err(PyNotImplementedError::new_err("struct expr"));
+                FunctionExpr::StructExpr(fun) => match fun {
+                    StructFunction::FieldByIndex(index) => {
+                        (PyStructFunction::FieldByIndex, index).into_py_any(py)
+                    },
+                    StructFunction::FieldByName(name) => {
+                        (PyStructFunction::FieldByName, name.as_str()).into_py_any(py)
+                    },
+                    StructFunction::RenameFields(names) => {
+                        (PyStructFunction::RenameFields, names[0].as_str()).into_py_any(py)
+                    },
+                    StructFunction::PrefixFields(prefix) => {
+                        (PyStructFunction::PrefixFields, prefix.as_str()).into_py_any(py)
+                    },
+                    StructFunction::SuffixFields(prefix) => {
+                        (PyStructFunction::SuffixFields, prefix.as_str()).into_py_any(py)
+                    },
+                    #[cfg(feature = "json")]
+                    StructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
+                    StructFunction::WithFields => {
+                        return Err(PyNotImplementedError::new_err("with_fields"));
+                    },
+                    StructFunction::MultipleFields(_) => {
+                        return Err(PyNotImplementedError::new_err("multiple_fields"));
+                    },
+                    StructFunction::MapFieldNames(_) => {
+                        return Err(PyNotImplementedError::new_err("map_field_names"));
+                    },
                 },
                 FunctionExpr::TemporalExpr(fun) => match fun {
                     TemporalFunction::Millennium => {
@@ -1056,13 +1097,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "index_of")]
                 FunctionExpr::IndexOf => ("index_of",).into_py_any(py),
                 #[cfg(feature = "search_sorted")]
-                FunctionExpr::SearchSorted(side) => (
+                FunctionExpr::SearchSorted { side, descending } => (
                     "search_sorted",
                     match side {
                         SearchSortedSide::Any => "any",
                         SearchSortedSide::Left => "left",
                         SearchSortedSide::Right => "right",
                     },
+                    descending,
                 )
                     .into_py_any(py),
                 FunctionExpr::Range(_) => return Err(PyNotImplementedError::new_err("range")),
@@ -1094,34 +1136,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "sign")]
                 FunctionExpr::Sign => ("sign",).into_py_any(py),
                 FunctionExpr::FillNull => ("fill_null",).into_py_any(py),
-                FunctionExpr::RollingExpr(rolling) => match rolling {
-                    RollingFunction::Min(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling min"));
-                    },
-                    RollingFunction::Max(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling max"));
-                    },
-                    RollingFunction::Mean(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling mean"));
-                    },
-                    RollingFunction::Sum(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling sum"));
-                    },
-                    RollingFunction::Quantile(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling quantile"));
-                    },
-                    RollingFunction::Var(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling var"));
-                    },
-                    RollingFunction::Std(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling std"));
-                    },
-                    RollingFunction::Skew(_, _) => {
-                        return Err(PyNotImplementedError::new_err("rolling skew"));
-                    },
-                    RollingFunction::CorrCov { .. } => {
-                        return Err(PyNotImplementedError::new_err("rolling cor_cov"));
-                    },
+                FunctionExpr::RollingExpr(rolling) => {
+                    return Err(PyNotImplementedError::new_err(format!("{rolling}")));
                 },
                 FunctionExpr::RollingExprBy(rolling) => match rolling {
                     RollingFunctionBy::MinBy(_) => {
@@ -1210,7 +1226,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 FunctionExpr::Exp => ("exp",).into_py_any(py),
                 FunctionExpr::Unique(maintain_order) => ("unique", maintain_order).into_py_any(py),
-                FunctionExpr::Round { decimals } => ("round", decimals).into_py_any(py),
+                FunctionExpr::Round { decimals, mode } => {
+                    ("round", decimals, Into::<&str>::into(mode)).into_py_any(py)
+                },
                 FunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 FunctionExpr::Floor => ("floor",).into_py_any(py),
                 FunctionExpr::Ceil => ("ceil",).into_py_any(py),
@@ -1339,5 +1357,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         }
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
+        AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
     }
 }

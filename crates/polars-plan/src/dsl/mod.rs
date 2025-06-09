@@ -17,15 +17,16 @@ pub mod binary;
 mod bitwise;
 mod builder_dsl;
 pub use builder_dsl::*;
+mod datatype_expr;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
-mod expr_dyn_fn;
 mod format;
 mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
 mod name;
@@ -50,11 +51,13 @@ mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
+pub use datatype_expr::DataTypeExpr;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
+pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;
@@ -67,7 +70,11 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(any(feature = "search_sorted", feature = "is_between"))]
+#[cfg(any(
+    feature = "search_sorted",
+    feature = "is_between",
+    feature = "list_sets"
+))]
 use polars_core::utils::SuperTypeFlags;
 use polars_core::utils::{SuperTypeOptions, try_get_supertype};
 pub use selector::Selector;
@@ -78,7 +85,6 @@ mod file_scan;
 pub use file_scan::*;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
-use crate::constants::MAP_LIST_NAME;
 pub use crate::plans::lit;
 use crate::prelude::*;
 
@@ -249,7 +255,10 @@ impl Expr {
 
     /// Explode the String/List column.
     pub fn explode(self) -> Self {
-        Expr::Explode(Arc::new(self))
+        Expr::Explode {
+            input: Arc::new(self),
+            skip_empty: false,
+        }
     }
 
     /// Slice the Series.
@@ -315,13 +324,7 @@ impl Expr {
 
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "arg_min",
-            ..Default::default()
-        };
-
+        let options = FunctionOptions::aggregation().with_fmt_str("arg_min");
         self.function_with_options(
             move |c: Column| {
                 Ok(Some(Column::new(
@@ -336,13 +339,7 @@ impl Expr {
 
     /// Get the index value that has the maximum value.
     pub fn arg_max(self) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "arg_max",
-            ..Default::default()
-        };
-
+        let options = FunctionOptions::aggregation().with_fmt_str("arg_max");
         self.function_with_options(
             move |c: Column| {
                 Ok(Some(Column::new(
@@ -359,12 +356,7 @@ impl Expr {
 
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, sort_options: SortOptions) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            fmt_str: "arg_sort",
-            ..Default::default()
-        };
-
+        let options = FunctionOptions::groupwise().with_fmt_str("arg_sort");
         self.function_with_options(
             move |c: Column| {
                 Ok(Some(
@@ -386,35 +378,47 @@ impl Expr {
 
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
-    pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
-        self.map_binary(FunctionExpr::SearchSorted(side), element.into())
+    pub fn search_sorted<E: Into<Expr>>(
+        self,
+        element: E,
+        side: SearchSortedSide,
+        descending: bool,
+    ) -> Expr {
+        self.map_binary(
+            FunctionExpr::SearchSorted { side, descending },
+            element.into(),
+        )
     }
 
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows.
     /// Returns an Error if cast is invalid on rows after predicates are pushed down.
-    pub fn strict_cast(self, dtype: DataType) -> Self {
+    pub fn strict_cast(self, dtype: impl Into<DataTypeExpr>) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: CastOptions::Strict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast(self, dtype: DataType) -> Self {
+    pub fn cast(self, dtype: impl Into<DataTypeExpr>) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: CastOptions::NonStrict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast_with_options(self, dtype: DataType, cast_options: CastOptions) -> Self {
+    pub fn cast_with_options(
+        self,
+        dtype: impl Into<DataTypeExpr>,
+        cast_options: CastOptions,
+    ) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: cast_options,
         }
     }
@@ -510,7 +514,6 @@ impl Expr {
     /// Returns the `k` smallest rows by given column.
     ///
     /// For single column, use [`Expr::bottom_k`].
-    // #[cfg(feature = "top_k")]
     #[cfg(feature = "top_k")]
     pub fn bottom_k_by<K: Into<Expr>, E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
@@ -551,12 +554,9 @@ impl Expr {
             input: vec![self],
             function: new_column_udf(f),
             output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                fmt_str: "map",
-                flags: FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT,
-                ..Default::default()
-            },
+            options: FunctionOptions::elementwise()
+                .with_fmt_str("map")
+                .with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT),
         }
     }
 
@@ -574,36 +574,7 @@ impl Expr {
             input,
             function: new_column_udf(function),
             output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                fmt_str: "",
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Apply a function/closure once the logical plan get executed.
-    ///
-    /// This function is very similar to [apply](Expr::apply), but differs in how it handles aggregations.
-    ///
-    ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-    ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-    ///  * `map_list` should be used when the function expects a list aggregated series.
-    pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
-    where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
-    {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
-
-        Expr::AnonymousFunction {
-            input: vec![self],
-            function: new_column_udf(f),
-            output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyList,
-                fmt_str: MAP_LIST_NAME,
-                ..Default::default()
-            },
+            options: FunctionOptions::elementwise().with_fmt_str(""),
         }
     }
 
@@ -646,11 +617,7 @@ impl Expr {
             input: vec![self],
             function: new_column_udf(f),
             output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::GroupWise,
-                fmt_str: "",
-                ..Default::default()
-            },
+            options: FunctionOptions::groupwise().with_fmt_str(""),
         }
     }
 
@@ -668,11 +635,7 @@ impl Expr {
             input,
             function: new_column_udf(function),
             output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::GroupWise,
-                fmt_str: "",
-                ..Default::default()
-            },
+            options: FunctionOptions::groupwise().with_fmt_str(""),
         }
     }
 
@@ -710,6 +673,16 @@ impl Expr {
 
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
+    pub fn cumulative_eval(self, evaluation: Expr, min_samples: usize) -> Self {
+        Expr::Eval {
+            expr: Arc::new(self),
+            evaluation: Arc::new(evaluation),
+            variant: EvalVariant::Cumulative { min_samples },
+        }
+    }
+
+    /// Cumulatively count values from 0 to len.
+    #[cfg(feature = "cum_agg")]
     pub fn cum_count(self, reverse: bool) -> Self {
         self.map_unary(FunctionExpr::CumCount { reverse })
     }
@@ -740,13 +713,7 @@ impl Expr {
 
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
-        let options = FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "product",
-            ..Default::default()
-        };
-
+        let options = FunctionOptions::aggregation().with_fmt_str("product");
         self.function_with_options(
             move |c: Column| {
                 Some(
@@ -772,8 +739,8 @@ impl Expr {
 
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
-    pub fn round(self, decimals: u32) -> Self {
-        self.map_unary(FunctionExpr::Round { decimals })
+    pub fn round(self, decimals: u32, mode: RoundMode) -> Self {
+        self.map_unary(FunctionExpr::Round { decimals, mode })
     }
 
     /// Round to a number of significant figures.
@@ -894,20 +861,26 @@ impl Expr {
     /// ╰────────┴────────╯
     /// ```
     pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
-        self.over_with_options(partition_by, None, Default::default())
+        self.over_with_options(Some(partition_by), None, Default::default())
+            .expect("We explicitly passed `partition_by`")
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
-        partition_by: E,
+        partition_by: Option<E>,
         order_by: Option<(E, SortOptions)>,
         options: WindowMapping,
-    ) -> Self {
-        let partition_by = partition_by
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect();
+    ) -> PolarsResult<Self> {
+        polars_ensure!(partition_by.is_some() || order_by.is_some(), InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
+        let partition_by = if let Some(partition_by) = partition_by {
+            partition_by
+                .as_ref()
+                .iter()
+                .map(|e| e.clone().into())
+                .collect()
+        } else {
+            vec![lit(1)]
+        };
 
         let order_by = order_by.map(|(e, options)| {
             let e = e.as_ref();
@@ -922,12 +895,12 @@ impl Expr {
             (e, options)
         });
 
-        Expr::Window {
+        Ok(Expr::Window {
             function: Arc::new(self),
             partition_by,
             order_by,
             options: options.into(),
-        }
+        })
     }
 
     #[cfg(feature = "dynamic_group_by")]
@@ -1050,19 +1023,8 @@ impl Expr {
     #[cfg(feature = "is_in")]
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
-        let other_constant = is_column_independent(&other);
-        let returns_scalar = all_return_scalar(&self);
-
         let function = BooleanFunction::IsIn { nulls_equal };
-        let mut options = function.function_options();
-        if !other_constant {
-            // we don't have to apply on groups, so this is faster
-            // TODO: this optimization should be done during conversion to IR.
-            options.collect_groups = ApplyOptions::GroupWise;
-        }
-        if returns_scalar {
-            options.flags |= FunctionFlags::RETURNS_SCALAR;
-        }
+        let options = function.function_options();
         let function = function.into();
         Expr::Function {
             input: vec![self, other],
@@ -1164,7 +1126,8 @@ impl Expr {
     }
 
     #[cfg(feature = "interpolate")]
-    /// Fill null values using interpolation.
+    /// Interpolate intermediate values.
+    /// Nulls at the beginning and end of the series remain null.
     pub fn interpolate(self, method: InterpolationMethod) -> Expr {
         self.map_unary(FunctionExpr::Interpolate(method))
     }
@@ -1184,7 +1147,9 @@ impl Expr {
     }
 
     #[cfg(feature = "interpolate_by")]
-    /// Fill null values using interpolation.
+    /// Interpolate intermediate values.
+    /// Nulls at the beginning and end of the series remain null.
+    /// The `by` column provides the x-coordinates for interpolation and must not contain nulls.
     pub fn interpolate_by(self, by: Expr) -> Expr {
         self.map_binary(FunctionExpr::InterpolateBy, by)
     }
@@ -1334,11 +1299,15 @@ impl Expr {
     /// Apply a rolling skew.
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
-    pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
-        self.map_unary(FunctionExpr::RollingExpr(RollingFunction::Skew(
-            window_size,
-            bias,
-        )))
+    pub fn rolling_skew(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Skew)
+    }
+
+    /// Apply a rolling skew.
+    #[cfg(feature = "rolling_window")]
+    #[cfg(feature = "moment")]
+    pub fn rolling_kurtosis(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Kurtosis)
     }
 
     #[cfg(feature = "rolling_window")]
@@ -1423,19 +1392,7 @@ impl Expr {
     pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
         let old = old.into();
         let new = new.into();
-        let literal_args = is_column_independent(&old) && is_column_independent(&new);
-        let function = FunctionExpr::Replace;
-        let mut options = function.function_options();
-        if !literal_args {
-            // If we search and replace by constants, we can run on batches.
-            // TODO: this optimization should be done during conversion to IR.
-            options.collect_groups = ApplyOptions::GroupWise;
-        }
-        Expr::Function {
-            input: vec![self, old, new],
-            function,
-            options,
-        }
+        self.map_n_ary(FunctionExpr::Replace, [old, new])
     }
 
     #[cfg(feature = "replace")]
@@ -1449,25 +1406,9 @@ impl Expr {
     ) -> Expr {
         let old = old.into();
         let new = new.into();
-
-        // If we replace by constants, we can run on batches.
-        // TODO: this optimization should be done during conversion to IR.
-        let literal_args = is_column_independent(&old) && is_column_independent(&new);
-
-        let mut args = vec![self, old, new];
+        let mut args = vec![old, new];
         args.extend(default.map(Into::into));
-        let function = FunctionExpr::ReplaceStrict { return_dtype };
-        let mut options = function.function_options();
-        if !literal_args {
-            // If we search and replace by constants, we can run on batches.
-            // TODO: this optimization should be done during conversion to IR.
-            options.collect_groups = ApplyOptions::GroupWise;
-        }
-        Expr::Function {
-            input: args,
-            function,
-            options,
-        }
+        self.map_n_ary(FunctionExpr::ReplaceStrict { return_dtype }, args)
     }
 
     #[cfg(feature = "cutqcut")]
@@ -1803,38 +1744,7 @@ where
         input,
         function: new_column_udf(function),
         output_type,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            fmt_str: "",
-            ..Default::default()
-        },
-    }
-}
-
-/// Apply a function/closure over multiple columns once the logical plan get executed.
-///
-/// This function is very similar to [`apply_multiple`], but differs in how it handles aggregations.
-///
-///  * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-///  * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-///  * [`map_list_multiple`] should be used when the function expects a list aggregated series.
-pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
-where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
-    E: AsRef<[Expr]>,
-{
-    let input = expr.as_ref().to_vec();
-
-    Expr::AnonymousFunction {
-        input,
-        function: new_column_udf(function),
-        output_type,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyList,
-            fmt_str: "",
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
+        options: FunctionOptions::elementwise().with_fmt_str(""),
     }
 }
 
@@ -1858,23 +1768,16 @@ where
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
-    let mut flags = FunctionFlags::default();
-    if returns_scalar {
-        flags |= FunctionFlags::RETURNS_SCALAR;
-    }
-
     Expr::AnonymousFunction {
         input,
         function: new_column_udf(function),
         output_type,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            // don't set this to true
-            // this is for the caller to decide
-            fmt_str: "",
-            flags,
-            ..Default::default()
-        },
+        options: FunctionOptions::groupwise()
+            .with_fmt_str("")
+            .with_flags(|mut f| {
+                f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+                f
+            }),
     }
 }
 

@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "height" => [1.56, 1.77, 1.65, 1.75],  // (m)
     )
     .unwrap();
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:df]
 
     // --8<-- [start:select-1]
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lit(25).alias("ideal_max_bmi"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:select-1]
 
     // --8<-- [start:select-2]
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([((bmi.clone() - bmi.clone().mean()) / bmi.clone().std(1)).alias("deviation")])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:select-2]
 
     // --8<-- [start:with_columns-1]
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lit(25).alias("ideal_max_bmi"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:with_columns-1]
 
     // --8<-- [start:filter-1]
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and(col("height").gt(lit(1.7))),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:filter-1]
 
     // --8<-- [start:group_by-1]
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by([(col("birthdate").dt().year() / lit(10) * lit(10)).alias("decade")])
         .agg([col("name")])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:group_by-1]
 
     // --8<-- [start:group_by-2]
@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .agg([col("name")])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:group_by-2]
 
     // --8<-- [start:group_by-3]
@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cols(["weight", "height"]).mean().name().prefix("avg_"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:group_by-3]
 
     // --8<-- [start:expression-expansion-1]
@@ -118,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .name()
         .suffix("*1.1");
     let result = df.clone().lazy().select([expr.clone()]).collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:expression-expansion-1]
 
     // --8<-- [start:expression-expansion-2]
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
     let result = df2.clone().lazy().select([expr.clone()]).collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:expression-expansion-2]
 
     Ok(())

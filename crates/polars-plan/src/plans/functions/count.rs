@@ -11,8 +11,6 @@ use polars_core::error::feature_gated;
 use polars_io::SerReader;
 #[cfg(any(feature = "parquet", feature = "json"))]
 use polars_io::cloud::CloudOptions;
-#[cfg(all(feature = "parquet", feature = "async"))]
-use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
@@ -24,6 +22,7 @@ use super::*;
 pub fn count_rows(
     sources: &ScanSources,
     scan_type: &FileScan,
+    cloud_options: Option<&CloudOptions>,
     alias: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
     #[cfg(not(any(
@@ -45,30 +44,20 @@ pub fn count_rows(
     {
         let count: PolarsResult<usize> = match scan_type {
             #[cfg(feature = "csv")]
-            FileScan::Csv {
-                options,
-                cloud_options,
-            } => count_all_rows_csv(sources, options),
+            FileScan::Csv { options } => count_all_rows_csv(sources, options),
             #[cfg(feature = "parquet")]
-            FileScan::Parquet { cloud_options, .. } => {
-                count_rows_parquet(sources, cloud_options.as_ref())
-            },
+            FileScan::Parquet { .. } => count_rows_parquet(sources, cloud_options),
             #[cfg(feature = "ipc")]
-            FileScan::Ipc {
-                options,
-                cloud_options,
-                metadata,
-            } => count_rows_ipc(
+            FileScan::Ipc { options, metadata } => count_rows_ipc(
                 sources,
                 #[cfg(feature = "cloud")]
-                cloud_options.as_ref(),
+                cloud_options,
                 metadata.as_deref(),
             ),
             #[cfg(feature = "json")]
-            FileScan::NDJson {
-                options,
-                cloud_options,
-            } => count_rows_ndjson(sources, cloud_options.as_ref()),
+            FileScan::NDJson { options } => count_rows_ndjson(sources, cloud_options),
+            #[cfg(feature = "python")]
+            FileScan::PythonDataset { .. } => unreachable!(),
             FileScan::Anonymous { .. } => {
                 unreachable!()
             },
@@ -99,6 +88,9 @@ fn count_all_rows_csv(
                 parse_options.comment_prefix.as_ref(),
                 parse_options.eol_char,
                 options.has_header,
+                options.skip_lines,
+                options.skip_rows,
+                options.skip_rows_after_header,
             ),
             _ => {
                 let memslice = source.to_memslice()?;
@@ -110,6 +102,9 @@ fn count_all_rows_csv(
                     parse_options.comment_prefix.as_ref(),
                     parse_options.eol_char,
                     options.has_header,
+                    options.skip_lines,
+                    options.skip_rows,
+                    options.skip_rows_after_header,
                 )
             },
         })
@@ -148,10 +143,12 @@ async fn count_rows_cloud_parquet(
     paths: &[std::path::PathBuf],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
+    use polars_io::prelude::ParquetObjectStore;
+
     let collection = paths.iter().map(|path| {
         with_concurrency_budget(1, || async {
             let mut reader =
-                ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
+                ParquetObjectStore::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
             reader.num_rows().await
         })
     });

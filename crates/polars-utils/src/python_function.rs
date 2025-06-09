@@ -1,4 +1,4 @@
-use polars_error::{PolarsError, polars_bail};
+use polars_error::polars_bail;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -73,6 +73,21 @@ impl PartialEq for PythonObject {
                 // equality can be not implemented, so default to false
                 .unwrap_or(false)
         })
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PythonObject {
+    fn schema_name() -> String {
+        "PythonObject".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PythonObject"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
@@ -254,8 +269,7 @@ mod serde_wrap {
                     if config::verbose() {
                         eprintln!(
                             "serialize_pyobject_with_cloudpickle_fallback(): \
-                            retrying with cloudpickle due to error: {:?}",
-                            e
+                            retrying with cloudpickle due to error: {e:?}"
                         );
                     }
 
@@ -271,7 +285,6 @@ mod serde_wrap {
 
             Ok([&[used_cloudpickle as u8, b'C'][..], py_bytes.as_ref()].concat())
         })
-        .map_err(from_pyerr)
     }
 
     pub fn deserialize_pyobject_bytes_maybe_cloudpickle<T: for<'a> From<PyObject>>(
@@ -299,7 +312,6 @@ mod serde_wrap {
             let pyany_bound = pickle.call1(arg)?;
             Ok(PyObject::from(pyany_bound).into())
         })
-        .map_err(from_pyerr)
     }
 }
 
@@ -316,8 +328,4 @@ fn get_python3_version() -> [u8; 2] {
             version_info.getattr("micro").unwrap().extract().unwrap(),
         ]
     })
-}
-
-fn from_pyerr(e: PyErr) -> PolarsError {
-    PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }

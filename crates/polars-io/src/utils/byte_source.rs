@@ -85,7 +85,7 @@ impl ObjectStoreByteSource {
 
 impl ByteSource for ObjectStoreByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
-        Ok(self.store.head(&self.path).await?.size)
+        Ok(self.store.head(&self.path).await?.size as usize)
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<MemSlice> {

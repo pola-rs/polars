@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from collections import OrderedDict
+from collections.abc import Iterator, Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -26,6 +27,7 @@ from polars.exceptions import (
     OutOfBoundsError,
     ShapeError,
 )
+from polars.polars import PySeries
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -40,8 +42,22 @@ if TYPE_CHECKING:
     from polars._typing import JoinStrategy, UniqueKeepStrategy
 
 
+class MappingObject(Mapping[str, Any]):  # noqa: D101
+    def __init__(self, **values: Any) -> None:
+        self._data = {**values}
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 def test_version() -> None:
-    pl.__version__
+    isinstance(pl.__version__, str)
 
 
 def test_null_count() -> None:
@@ -1320,27 +1336,67 @@ def test_from_rows() -> None:
     assert data == df.rows()
 
 
-def test_from_rows_of_dicts() -> None:
-    records = [
-        {"id": 1, "value": 100, "_meta": "a"},
-        {"id": 2, "value": 101, "_meta": "b"},
-    ]
-    df_init: Callable[..., Any]
+@pytest.mark.parametrize(
+    "records",
+    [
+        [
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+        ],
+        [
+            None,
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+        ],
+        [
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+            None,
+        ],
+        [
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+        ],
+        [
+            None,
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+        ],
+        [
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+            None,
+        ],
+    ],
+)
+def test_from_rows_of_dicts(records: list[dict[str, Any]]) -> None:
     for df_init in (pl.from_dicts, pl.DataFrame):
-        df1 = df_init(records)
+        df1 = df_init(records).remove(pl.col("id").is_null())
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
 
         overrides = {
             "id": pl.Int16,
             "value": pl.Int32,
         }
-        df2 = df_init(records, schema_overrides=overrides)
+        df2 = df_init(records, schema_overrides=overrides).remove(
+            pl.col("id").is_null()
+        )
         assert df2.rows() == [(1, 100, "a"), (2, 101, "b")]
         assert df2.schema == {"id": pl.Int16, "value": pl.Int32, "_meta": pl.String}
 
-        df3 = df_init(records, schema=overrides)
+        df3 = df_init(records, schema=overrides).remove(pl.col("id").is_null())
         assert df3.rows() == [(1, 100), (2, 101)]
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
+
+        # explicitly check "anyvalue" conversion for dict/mapping dtypes
+        py_s = PySeries.new_from_any_values("s", records, True)
+        assert py_s.dtype() == pl.Struct(
+            {
+                "id": pl.Int64,
+                "value": pl.Int64,
+                "_meta": pl.String,
+            }
+        )
 
 
 def test_from_records_with_schema_overrides_12032() -> None:
@@ -1513,6 +1569,118 @@ def test_asof_cross_join() -> None:
 
     left.lazy().join(right.lazy(), how="cross").collect()
     assert out.shape == (15, 4)
+
+
+def test_join_bad_input_type() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3]})
+    right = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        left.join(right.lazy(), on="a")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    right = DummyDataFrameSubclass(right)
+
+    left.join(right, on="a")
+
+
+def test_join_where() -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    out = east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 100, 100, 101, 101],
+            "dur": [120, 120, 120, 140, 140],
+            "rev": [12, 12, 12, 14, 14],
+            "cores": [2, 2, 2, 8, 8],
+            "t_id": [498, 676, 742, 676, 742],
+            "time": [130, 150, 170, 150, 170],
+            "cost": [13, 15, 16, 15, 16],
+            "cores_right": [2, 1, 4, 1, 4],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_join_where_bad_input_type() -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        east.join_where(
+            west.lazy(),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        east.join_where(
+            pl.Series(west),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    west = DummyDataFrameSubclass(west)
+
+    east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    )
 
 
 def test_str_concat() -> None:
@@ -2255,6 +2423,30 @@ def test_asof_by_multiple_keys() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_asof_bad_input_type() -> None:
+    lhs = pl.DataFrame({"a": [1, 2, 3]})
+    rhs = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        lhs.join_asof(rhs.lazy(), on="a")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        lhs.join_asof(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    rhs = DummyDataFrameSubclass(rhs)
+
+    lhs.join_asof(rhs, on="a")
+
+
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
     pa_df = pa.Table.from_pylist(expected)
@@ -2818,7 +3010,9 @@ def test_deadlocks_3409() -> None:
     assert (
         pl.DataFrame({"col1": [1, 2, 3]})
         .with_columns(
-            pl.col("col1").cumulative_eval(pl.element().map_batches(lambda x: 0))
+            pl.col("col1").cumulative_eval(
+                pl.element().map_batches(lambda x: 0, pl.Int64, returns_scalar=True)
+            )
         )
         .to_dict(as_series=False)
     ) == {"col1": [0, 0, 0]}
@@ -3057,3 +3251,29 @@ def test_nan_to_null() -> None:
     )
 
     assert_frame_equal(df1, df2)
+
+
+# Below 3 tests for https://github.com/pola-rs/polars/issues/17879
+
+
+def test_with_columns_dict_direct_typeerror() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1)
+    with pytest.raises(
+        TypeError, match="Cannot pass a dictionary as a single positional argument"
+    ):
+        df.with_columns(data)
+
+
+def test_with_columns_dict_unpacking() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(**data)
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)
+
+
+def test_with_columns_generator_alias() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)

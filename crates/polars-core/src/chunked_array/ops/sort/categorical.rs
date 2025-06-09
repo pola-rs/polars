@@ -3,11 +3,6 @@ use super::*;
 impl CategoricalChunked {
     #[must_use]
     pub fn sort_with(&self, options: SortOptions) -> CategoricalChunked {
-        assert!(
-            !options.nulls_last,
-            "null last not yet supported for categorical dtype"
-        );
-
         if self.uses_lexical_ordering() {
             let mut vals = self
                 .physical()
@@ -16,10 +11,41 @@ impl CategoricalChunked {
                 .collect_trusted::<Vec<_>>();
 
             sort_unstable_by_branch(vals.as_mut_slice(), options, |a, b| a.1.cmp(&b.1));
-            let cats: UInt32Chunked = vals
-                .into_iter()
-                .map(|(idx, _v)| idx)
-                .collect_ca_trusted(self.name().clone());
+
+            let mut cats = Vec::with_capacity(self.len());
+            let mut validity =
+                (self.null_count() > 0).then(|| BitmapBuilder::with_capacity(self.len()));
+
+            if self.null_count() > 0 && !options.nulls_last {
+                cats.resize(self.null_count(), 0);
+                if let Some(validity) = &mut validity {
+                    validity.extend_constant(self.null_count(), false);
+                }
+            }
+
+            let valid_slice = if options.descending {
+                &vals[..self.len() - self.null_count()]
+            } else {
+                &vals[self.null_count()..]
+            };
+            cats.extend(valid_slice.iter().map(|(idx, _v)| idx.unwrap()));
+            if let Some(validity) = &mut validity {
+                validity.extend_constant(self.len() - self.null_count(), true);
+            }
+
+            if self.null_count() > 0 && options.nulls_last {
+                cats.resize(self.len(), 0);
+                if let Some(validity) = &mut validity {
+                    validity.extend_constant(self.null_count(), false);
+                }
+            }
+
+            let cats = PrimitiveArray::<u32>::new(
+                ArrowDataType::UInt32,
+                cats.into(),
+                validity.map(|v| v.freeze()),
+            );
+            let cats = UInt32Chunked::from_chunk_iter(self.name().clone(), Some(cats));
 
             // SAFETY:
             // we only reordered the indexes so we are still in bounds

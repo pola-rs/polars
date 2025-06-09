@@ -37,22 +37,24 @@ impl DataFrame {
             !by.is_empty(),
             ComputeError: "at least one key is required in a group_by operation"
         );
-        let minimal_by_len = by.iter().map(|s| s.len()).min().expect("at least 1 key");
-        let df_height = self.height();
 
-        // we only throw this error if self.width > 0
-        // so that we can still call this on a dummy dataframe where we provide the keys
-        if (minimal_by_len != df_height) && (self.width() > 0) {
-            polars_ensure!(
-                minimal_by_len == 1,
-                ShapeMismatch: "series used as keys should have the same length as the DataFrame"
-            );
-            for by_key in by.iter_mut() {
-                if by_key.len() == minimal_by_len {
-                    *by_key = by_key.new_from_index(0, df_height)
-                }
-            }
+        // Ensure all 'by' columns have the same common_height
+        // The condition self.width > 0 ensures we can still call this on a
+        // dummy dataframe where we provide the keys
+        let common_height = if self.width() > 0 {
+            self.height()
+        } else {
+            by.iter().map(|s| s.len()).max().expect("at least 1 key")
         };
+        for by_key in by.iter_mut() {
+            if by_key.len() != common_height {
+                polars_ensure!(
+                    by_key.len() == 1,
+                    ShapeMismatch: "series used as keys should have the same length as the DataFrame"
+                );
+                *by_key = by_key.new_from_index(0, common_height)
+            }
+        }
 
         let groups = if by.len() == 1 {
             let column = &by[0];
