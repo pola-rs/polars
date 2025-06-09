@@ -1,10 +1,12 @@
+use polars_core::random::get_global_random_u64;
+
 use super::*;
 
 impl Expr {
     pub fn shuffle(self, seed: Option<u64>) -> Self {
         self.map_unary(FunctionExpr::Random {
             method: RandomMethod::Shuffle,
-            seed,
+            seed: seed.unwrap_or_else(get_global_random_u64),
         })
     }
 
@@ -22,7 +24,7 @@ impl Expr {
                     with_replacement,
                     shuffle,
                 },
-                seed,
+                seed: seed.unwrap_or_else(get_global_random_u64),
             },
             n,
         )
@@ -42,7 +44,7 @@ impl Expr {
                     with_replacement,
                     shuffle,
                 },
-                seed,
+                seed: seed.unwrap_or_else(get_global_random_u64),
             },
             frac,
         )
