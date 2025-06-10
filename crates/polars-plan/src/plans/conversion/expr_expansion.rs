@@ -549,25 +549,34 @@ fn expand_function_inputs(
             input, function, ..
         } => {
             use FunctionExpr as F;
-            let input_wildcard_expansion = matches!(
-                function,
-                F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
-                    | F::AsStruct
-                    | F::Coalesce
-                    | F::ListExpr(ListFunction::Concat)
-                    | F::ConcatExpr(_)
-                    | F::MinHorizontal
-                    | F::MaxHorizontal
-                    | F::SumHorizontal { .. }
-                    | F::MeanHorizontal { .. }
-                    | F::StringExpr(StringFunction::ConcatHorizontal { .. })
-                    | F::StructExpr(StructFunction::WithFields)
-            ) || matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION));
-            let allow_empty_inputs = matches!(
+            let mut input_wildcard_expansion = matches!(function, F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
+                | F::Coalesce
+                | F::ListExpr(ListFunction::Concat)
+                | F::ConcatExpr(_)
+                | F::MinHorizontal
+                | F::MaxHorizontal
+                | F::SumHorizontal { .. }
+                | F::MeanHorizontal { .. }
+            );
+            let mut allow_empty_inputs = matches!(
                 function,
                 F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
                 | F::DropNulls
-            )  || matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS));
+            );
+            #[cfg(feature = "dtype-struct")]
+            {
+                input_wildcard_expansion |= matches!(function, F::AsStruct);
+                input_wildcard_expansion |= matches!( function, F::StructExpr(StructFunction::WithFields));
+            }
+            #[cfg(feature = "ffi_plugin")]
+            {
+                input_wildcard_expansion |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION));
+                allow_empty_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS));
+            }
+            #[cfg(feature = "concat_str")]
+            {
+                input_wildcard_expansion |= matches!(function, F::StringExpr(StringFunction::ConcatHorizontal { .. }));
+            }
 
             if input_wildcard_expansion {
                 *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
