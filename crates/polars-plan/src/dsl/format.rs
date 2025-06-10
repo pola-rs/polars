@@ -141,9 +141,7 @@ impl fmt::Debug for Expr {
                 f,
                 ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
             ),
-            Function {
-                input, function, ..
-            } => {
+            Function { input, function } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
                 } else {
@@ -152,13 +150,13 @@ impl fmt::Debug for Expr {
             },
             AnonymousFunction {
                 input,
-                options,
+                fmt_str,
                 function,
                 ..
             } => {
                 let name = match function {
-                    LazySerde::Named { name, .. } => name,
-                    _ => options.fmt_str,
+                    LazySerde::Named { name, .. } => name.as_str(),
+                    _ => fmt_str.as_str(),
                 };
 
                 if input.len() >= 2 {

@@ -17,16 +17,16 @@ use polars_time::{ClosedWindow, Duration};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::{FunctionExpr, FunctionOptions};
+use super::{FunctionOptions, IRFunctionExpr};
 use crate::dsl::SpecialEq;
-use crate::dsl::function_expr::FieldsMapper;
 use crate::map_as_slice;
+use crate::plans::aexpr::function_expr::FieldsMapper;
 use crate::prelude::{ColumnsUdf, FunctionFlags};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
-pub enum RangeFunction {
+pub enum IRRangeFunction {
     IntRange {
         step: i64,
         dtype: DataType,
@@ -99,9 +99,9 @@ fn map_linspace_dtype(mapper: &FieldsMapper) -> PolarsResult<DataType> {
     })
 }
 
-impl RangeFunction {
+impl IRRangeFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        use RangeFunction::*;
+        use IRRangeFunction::*;
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
             IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
@@ -153,7 +153,7 @@ impl RangeFunction {
     }
 
     pub fn function_options(&self) -> FunctionOptions {
-        use RangeFunction as R;
+        use IRRangeFunction as R;
         match self {
             R::IntRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
@@ -195,9 +195,9 @@ impl RangeFunction {
     }
 }
 
-impl Display for RangeFunction {
+impl Display for IRRangeFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use RangeFunction::*;
+        use IRRangeFunction::*;
         let s = match self {
             IntRange { .. } => "int_range",
             IntRanges => "int_ranges",
@@ -220,9 +220,9 @@ impl Display for RangeFunction {
     }
 }
 
-impl From<RangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
-    fn from(func: RangeFunction) -> Self {
-        use RangeFunction::*;
+impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
+    fn from(func: IRRangeFunction) -> Self {
+        use IRRangeFunction::*;
         match func {
             IntRange { step, dtype } => {
                 map_as_slice!(int_range::int_range, step, dtype.clone())
@@ -289,8 +289,8 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     }
 }
 
-impl From<RangeFunction> for FunctionExpr {
-    fn from(value: RangeFunction) -> Self {
+impl From<IRRangeFunction> for IRFunctionExpr {
+    fn from(value: IRRangeFunction) -> Self {
         Self::Range(value)
     }
 }

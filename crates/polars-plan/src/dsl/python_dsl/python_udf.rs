@@ -6,6 +6,7 @@ use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
 use polars_core::schema::Schema;
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -256,10 +257,10 @@ impl Expr {
             function: new_column_udf(func),
             output_type,
             options: FunctionOptions {
-                fmt_str: name,
                 flags,
                 ..Default::default()
             },
+            fmt_str: Box::new(PlSmallStr::from(name)),
         }
     }
 }

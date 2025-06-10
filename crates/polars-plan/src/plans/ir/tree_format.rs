@@ -67,8 +67,8 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 return write!(f, "{}", s.to_lowercase());
             },
             AExpr::Ternary { .. } => "ternary",
-            AExpr::AnonymousFunction { options, .. } => {
-                return write!(f, "anonymous_function: {}", options.fmt_str);
+            AExpr::AnonymousFunction { fmt_str, .. } => {
+                return write!(f, "anonymous_function: {fmt_str}");
             },
             AExpr::Eval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),

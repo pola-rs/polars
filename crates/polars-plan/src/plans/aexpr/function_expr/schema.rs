@@ -2,14 +2,14 @@ use polars_core::utils::materialize_dyn_int;
 
 use super::*;
 
-impl FunctionExpr {
+impl IRFunctionExpr {
     pub(crate) fn get_field(
         &self,
         _input_schema: &Schema,
         _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
-        use FunctionExpr::*;
+        use IRFunctionExpr::*;
 
         let mapper = FieldsMapper { fields };
         match self {
@@ -38,7 +38,7 @@ impl FunctionExpr {
             Negate => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
-                PowFunction::Generic => mapper.pow_dtype(),
+                IRPowFunction::Generic => mapper.pow_dtype(),
                 _ => mapper.map_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
@@ -61,7 +61,7 @@ impl FunctionExpr {
             FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr(rolling_func, ..) => {
-                use RollingFunction::*;
+                use IRRollingFunction::*;
                 match rolling_func {
                     Min(_) | Max(_) => mapper.with_same_dtype(),
                     Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
@@ -74,7 +74,7 @@ impl FunctionExpr {
             },
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy(rolling_func, ..) => {
-                use RollingFunctionBy::*;
+                use IRRollingFunctionBy::*;
                 match rolling_func {
                     MinBy(_) | MaxBy(_) => mapper.with_same_dtype(),
                     MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
@@ -383,7 +383,7 @@ impl FunctionExpr {
     pub(crate) fn output_name(&self) -> Option<OutputName> {
         match self {
             #[cfg(feature = "dtype-struct")]
-            FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
+            IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)) => {
                 Some(OutputName::Field(name.clone()))
             },
             _ => None,

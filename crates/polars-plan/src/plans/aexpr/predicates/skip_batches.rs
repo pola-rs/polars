@@ -9,8 +9,7 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::evaluate::{constant_evaluate, into_column};
-use super::super::{AExpr, BooleanFunction, Operator, OutputName};
-use crate::dsl::FunctionExpr;
+use super::super::{AExpr, IRBooleanFunction, IRFunctionExpr, Operator, OutputName};
 use crate::plans::predicates::get_binary_expr_col_and_lv;
 use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
 use crate::prelude::FunctionOptions;
@@ -97,7 +96,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         ($i:expr) => {{
             expr_arena.add(AExpr::Function {
                 input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                function: FunctionExpr::NullCount,
+                function: IRFunctionExpr::NullCount,
                 options: FunctionOptions::default(),
             })
         }};
@@ -120,14 +119,14 @@ fn aexpr_to_skip_batch_predicate_rec(
         ($i:expr, $dtype:expr) => {{
             let mut expr = expr_arena.add(AExpr::Function {
                 input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                 options: FunctionOptions::default(),
             });
 
             if $dtype.is_float() {
                 let is_not_nan = expr_arena.add(AExpr::Function {
                     input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNan),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan),
                     options: FunctionOptions::default(),
                 });
                 expr = and!(is_not_nan, expr);
@@ -372,9 +371,9 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Function {
                 input, function, ..
             } => match function {
-                FunctionExpr::Boolean(f) => match f {
+                IRFunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
-                    BooleanFunction::IsIn { nulls_equal } => {
+                    IRBooleanFunction::IsIn { nulls_equal } => {
                         if !is_scalar_ae(input[1].node(), expr_arena) {
                             return None;
                         }
@@ -451,10 +450,10 @@ fn aexpr_to_skip_batch_predicate_rec(
                                         ExprIR::new(col_min, OutputName::Alias(PlSmallStr::EMPTY)),
                                         ExprIR::new(lv_node, OutputName::Alias(PlSmallStr::EMPTY)),
                                     ],
-                                    function: FunctionExpr::Boolean(BooleanFunction::IsIn {
+                                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
                                         nulls_equal,
                                     }),
-                                    options: BooleanFunction::IsIn { nulls_equal }
+                                    options: IRBooleanFunction::IsIn { nulls_equal }
                                         .function_options(),
                                 });
                                 let exact_not_in = expr_arena.add(AExpr::Function {
@@ -462,8 +461,8 @@ fn aexpr_to_skip_batch_predicate_rec(
                                         exact_not_in,
                                         OutputName::Alias(PlSmallStr::EMPTY),
                                     )],
-                                    function: FunctionExpr::Boolean(BooleanFunction::Not),
-                                    options: BooleanFunction::Not.function_options(),
+                                    function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
+                                    options: IRBooleanFunction::Not.function_options(),
                                 });
                                 let exact_not_in = and!(min_is_max, has_no_nulls, exact_not_in);
 
@@ -472,7 +471,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                             _ => None,
                         }
                     },
-                    BooleanFunction::IsNull => {
+                    IRBooleanFunction::IsNull => {
                         let col = into_column(input[0].node(), expr_arena, schema, 0)?;
 
                         // col(A).is_null() -> null_count(A) == 0
@@ -480,7 +479,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let idx_zero = lv!(idx: 0);
                         Some(eq!(col_nc, idx_zero))
                     },
-                    BooleanFunction::IsNotNull => {
+                    IRBooleanFunction::IsNotNull => {
                         let col = into_column(input[0].node(), expr_arena, schema, 0)?;
 
                         // col(A).is_not_null() -> null_count(A) == LEN
@@ -489,7 +488,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         Some(eq!(col_nc, len))
                     },
                     #[cfg(feature = "is_between")]
-                    BooleanFunction::IsBetween { closed } => {
+                    IRBooleanFunction::IsBetween { closed } => {
                         let col = into_column(input[0].node(), expr_arena, schema, 0)?;
                         let dtype = schema.get(col)?;
 
@@ -575,7 +574,7 @@ fn aexpr_to_skip_batch_predicate_rec(
     let expr = rename_columns(e, expr_arena, &live_columns);
     let mut expr = expr_arena.add(AExpr::Function {
         input: vec![ExprIR::new(expr, OutputName::Alias(PlSmallStr::EMPTY))],
-        function: FunctionExpr::Boolean(BooleanFunction::Not),
+        function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
         options: FunctionOptions::elementwise(),
     });
     for col in live_columns.keys() {

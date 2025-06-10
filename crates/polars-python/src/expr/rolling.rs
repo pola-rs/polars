@@ -525,7 +525,6 @@ impl PyExpr {
         self.inner
             .clone()
             .rolling_map(Arc::new(function), GetOutput::same_type(), options)
-            .with_fmt("rolling_map")
             .into()
     }
 }

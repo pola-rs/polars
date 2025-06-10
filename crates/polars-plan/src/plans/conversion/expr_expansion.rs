@@ -206,7 +206,6 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
         Expr::Function {
             input,
             function: FunctionExpr::StructExpr(sf),
-            options,
         } => {
             if let StructFunction::FieldByIndex(index) = sf {
                 let dtype = input[0].to_field(schema, Context::Default)?.dtype;
@@ -218,13 +217,11 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
                 Ok(Expr::Function {
                     input,
                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
-                    options,
                 })
             } else {
                 Ok(Expr::Function {
                     input,
                     function: FunctionExpr::StructExpr(sf),
-                    options,
                 })
             }
         },
@@ -293,11 +290,7 @@ fn replace_struct_multiple_fields_with_field(
 ) -> PolarsResult<Expr> {
     let mut count = 0;
     let out = expr.map_expr(|e| match e {
-        Expr::Function {
-            function,
-            input,
-            options,
-        } => {
+        Expr::Function { function, input } => {
             if matches!(
                 function,
                 FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
@@ -308,14 +301,9 @@ fn replace_struct_multiple_fields_with_field(
                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(
                         column_name.clone(),
                     )),
-                    options,
                 }
             } else {
-                Expr::Function {
-                    input,
-                    function,
-                    options,
-                }
+                Expr::Function { input, function }
             }
         },
         e => e,
@@ -354,11 +342,7 @@ Try setting the output data type for that operation.",
                     #[allow(clippy::single_match)]
                     match e {
                         #[cfg(feature = "list_to_struct")]
-                        Expr::Function {
-                            input: _,
-                            function,
-                            options: _,
-                        } => {
+                        Expr::Function { input: _, function } => {
                             if matches!(
                                 function,
                                 FunctionExpr::ListExpr(ListFunction::ToStruct(..))
@@ -561,11 +545,52 @@ fn expand_function_inputs(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Expr> {
     expr.try_map_expr(|mut e| match &mut e {
-        Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
-            if options
-                .flags
-                .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
-        {
+        Expr::Function {
+            input, function, ..
+        } => {
+            use FunctionExpr as F;
+            let mut input_wildcard_expansion = matches!(function, F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
+                | F::Coalesce
+                | F::ListExpr(ListFunction::Concat)
+                | F::ConcatExpr(_)
+                | F::MinHorizontal
+                | F::MaxHorizontal
+                | F::SumHorizontal { .. }
+                | F::MeanHorizontal { .. }
+            );
+            let mut allow_empty_inputs = matches!(
+                function,
+                F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
+                | F::DropNulls
+            );
+            #[cfg(feature = "dtype-struct")]
+            {
+                input_wildcard_expansion |= matches!(function, F::AsStruct);
+                input_wildcard_expansion |= matches!( function, F::StructExpr(StructFunction::WithFields));
+            }
+            #[cfg(feature = "ffi_plugin")]
+            {
+                input_wildcard_expansion |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION));
+                allow_empty_inputs |= matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS));
+            }
+            #[cfg(feature = "concat_str")]
+            {
+                input_wildcard_expansion |= matches!(function, F::StringExpr(StringFunction::ConcatHorizontal { .. }));
+            }
+
+            if input_wildcard_expansion {
+                *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
+                if input.is_empty() && !allow_empty_inputs {
+                    // Needed to visualize the error
+                    *input = vec![Expr::Literal(LiteralValue::Scalar(Scalar::null(
+                        DataType::Null,
+                    )))];
+                    polars_bail!(InvalidOperation: "expected at least 1 input in {}", e)
+                }
+            }
+            Ok(e)
+        },
+        Expr::AnonymousFunction { input, options, .. } if options.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) => {
             *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
             if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
                 // Needed to visualize the error

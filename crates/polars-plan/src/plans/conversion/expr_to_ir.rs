@@ -265,10 +265,11 @@ pub(super) fn to_aexpr_impl(
             function,
             output_type,
             options,
+            fmt_str,
         } => {
             let e = to_expr_irs(input, arena, schema)?;
             let output_name = if e.is_empty() {
-                options.fmt_str.into()
+                fmt_str.as_ref().clone()
             } else {
                 e[0].output_name().clone()
             };
@@ -279,15 +280,14 @@ pub(super) fn to_aexpr_impl(
                     function,
                     output_type,
                     options,
+                    fmt_str,
                 },
                 output_name,
             )
         },
-        Expr::Function {
-            input,
-            function,
-            options,
-        } => return convert_functions(input, function, options, arena, schema),
+        Expr::Function { input, function } => {
+            return convert_functions(input, function, arena, schema);
+        },
         Expr::Window {
             function,
             partition_by,

@@ -1,4 +1,6 @@
+mod builder;
 mod evaluate;
+mod function_expr;
 #[cfg(feature = "cse")]
 mod hash;
 mod minterm_iter;
@@ -9,6 +11,7 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use function_expr::*;
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
@@ -23,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 mod properties;
+pub use builder::AExprBuilder;
 pub use properties::*;
 
 use crate::constants::LEN;
@@ -188,6 +192,7 @@ pub enum AExpr {
         function: OpaqueColumnUdf,
         output_type: GetOutput,
         options: FunctionOptions,
+        fmt_str: Box<PlSmallStr>,
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
@@ -208,7 +213,7 @@ pub enum AExpr {
         /// Therefor we need [`ExprIr`].
         input: Vec<ExprIR>,
         /// function to apply
-        function: FunctionExpr,
+        function: IRFunctionExpr,
         options: FunctionOptions,
     },
     Window {

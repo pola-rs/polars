@@ -74,7 +74,7 @@ impl TreeWalker for Expr {
                 Var(x, ddf) => Var(am(x, f)?, ddf),
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
-            Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
+            Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
             Explode { input, skip_empty } => Explode { input: am(input, f)?, skip_empty },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
             Window { function, partition_by, order_by, options } => {
@@ -88,8 +88,8 @@ impl TreeWalker for Expr {
             Len => Len,
             Nth(_) => self,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
-            AnonymousFunction { input, function, output_type, options } => {
-                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options }
+            AnonymousFunction { input, function, output_type, options, fmt_str } => {
+                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options, fmt_str }
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             SubPlan(_, _) => self,
