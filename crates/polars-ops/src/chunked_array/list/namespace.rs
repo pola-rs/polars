@@ -726,20 +726,17 @@ pub trait ListNameSpaceImpl: AsList {
         // this path will not expand the series, so saves memory
         let out = if other.iter().all(|s| s.len() == 1) && ca.len() != 1 {
             cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
-            let mut to_append = other
+            let to_append = other
                 .iter()
-                .flat_map(|s| {
+                .filter_map(|s| {
                     let lst = s.list().unwrap();
-                    lst.get_as_series(0)
+                    // SAFETY: previous rhs_cast ensures the type is correct
+                    unsafe {
+                        lst.get_as_series(0)
+                            .map(|s| s.from_physical_unchecked(&inner_super_type).unwrap())
+                    }
                 })
                 .collect::<Vec<_>>();
-
-            // we may need to recast back from physical dtype
-            for s in &mut to_append {
-                if *s.dtype() != inner_super_type {
-                    unsafe { *s = s.from_physical_unchecked(&inner_super_type)? }
-                }
-            }
 
             // there was a None, so all values will be None
             if to_append.len() != other_len {
