@@ -803,7 +803,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Find { literal, strict } => {
                         (PyStringFunction::Find, literal, strict).into_py_any(py)
                     },
-                    StringFunction::ToInteger(strict) => {
+                    StringFunction::ToInteger { dtype: _, strict } => {
                         (PyStringFunction::ToInteger, strict).into_py_any(py)
                     },
                     StringFunction::LenBytes => (PyStringFunction::LenBytes,).into_py_any(py),
