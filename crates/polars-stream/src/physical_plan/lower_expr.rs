@@ -620,16 +620,16 @@ fn lower_exprs_with_ctx(
                 options: _,
             } => {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
+                let out_name = unique_column_name();
                 let (trans_input, trans_inner_expr) =
                     lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
-                let column = ExprIR::from_node(trans_inner_expr[0], ctx.expr_arena);
+                let column = ExprIR::from_node(trans_inner_expr[0], ctx.expr_arena)
+                    .with_alias(out_name.clone());
                 let offset = ExprIR::from_node(trans_inner_expr[1], ctx.expr_arena);
 
-                let field = ctx.phys_sm[trans_input.node]
-                    .output_schema
-                    .get_field(column.output_name())
-                    .unwrap();
-                let output_schema = Arc::new(Schema::from_iter([field]));
+                let output_schema =
+                    schema_for_select(trans_input, std::slice::from_ref(&column), ctx)?;
+
                 let node_key = ctx.phys_sm.insert(PhysNode::new(
                     output_schema,
                     PhysNodeKind::Shift {
@@ -640,7 +640,7 @@ fn lower_exprs_with_ctx(
                 ));
 
                 input_streams.insert(PhysStream::first(node_key));
-                transformed_exprs.push(trans_inner_expr[0]);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
             AExpr::Function {
