@@ -23,6 +23,7 @@ enum State {
     Uninit,
     Positive {
         buffer: Buffer,
+        head: usize,
         offset: usize,
         seq: u64,
     },
@@ -163,6 +164,7 @@ impl ShiftNode {
                         buffer.push_back(first);
                         *shift_state = State::Positive {
                             buffer,
+                            head: offset as _,
                             offset: offset as _,
                             seq: 0,
                         };
@@ -190,45 +192,40 @@ impl ShiftNode {
             },
             State::Positive {
                 buffer,
+                head,
                 offset,
                 seq,
             } => {
                 let offset = *offset;
 
                 // 1. We need to offset the array by `offset` and insert nulls
-                // We first buffer until the offset is reached.
-                while buffer.len() < offset {
+                // 2. Then we ensure we insert the nulls (also in the middle of a morsel if needed)
+                let tail_shift = offset;
+                while *head > 0 {
                     if let Ok(next) = self.recv(receiver, state).await {
                         let next = next?;
-
                         buffer.push_back(next);
                     } else {
                         break;
                     }
-                }
-
-                // 2. Then we ensure we insert the nulls (also in the middle of a morsel if needed)
-                let mut shifted = offset;
-                let tail_shift = offset;
-                while buffer.len() >= shifted && shifted > 0 {
                     let mut morsel = buffer.pop_front();
                     let len = morsel.df().height();
 
                     // Last iteration
-                    if len > shifted {
-                        let shifted_morsel = morsel.clone().map(|df| df.shift_seq(shifted as _));
+                    if len > *head {
+                        let shifted_morsel = morsel.clone().map(|df| df.shift_seq(*head as _));
 
-                        let tail = morsel.map(|df| df.tail(Some(shifted)));
+                        let tail = morsel.map(|df| df.tail(Some(*head)));
                         buffer.push_front(tail);
                         // Don't immediately return.
                         // It can be that this is the last morsel and it has to be sliced
                         // In that case
                         buffer.push_front(shifted_morsel);
-                        shifted = 0;
+                        *head = 0;
                     }
                     // Return full morsel of nulls
                     else {
-                        shifted -= len;
+                        *head -= len;
                         let nulls = morsel
                             .clone()
                             .map(|df| DataFrame::full_null(&self.output_schema, df.height()));
@@ -259,7 +256,7 @@ impl ShiftNode {
                 }
 
                 // 4. Deal with the tail by slicing the last morsel
-                // Slices last morsel lenght.
+                // Slices last morsel length.
                 if buffer.len() > tail_shift {
                     let len = buffer.len() - tail_shift;
                     let last_morsel = buffer.pop_front();
