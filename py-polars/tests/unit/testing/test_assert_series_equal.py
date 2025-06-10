@@ -10,8 +10,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-
-# **Change**: This import is needed to adjust one of the expected outputs of a test.
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal, assert_series_not_equal
 from polars.testing.parametric import dtypes, series
@@ -73,9 +71,6 @@ def test_assert_series_equal_check_order() -> None:
 
 def test_assert_series_equal_check_order_unsortable_type() -> None:
     s = pl.Series([object(), object()])
-    # **Change**: The Rust back-end naturally throws this error when
-    # trying to sort unsortable types (InvalidOperationError), so the
-    # test needed to be updated to match.
     with pytest.raises(
         InvalidOperationError,
         match="`sort_with` operation not supported for dtype `object`",
@@ -556,9 +551,6 @@ def test_assert_series_equal_incompatible_data_types() -> None:
 def test_assert_series_equal_full_series() -> None:
     s1 = pl.Series([1, 2, 3])
     s2 = pl.Series([1, 2, 4])
-    # **Change**: The error message output was the same but not in the exact
-    # same format, so I just made a minor change here so the test would pass.
-    # No significant changes made to the structure or integrity of the test.
     with pytest.raises(
         AssertionError, match=r"Series are different \(exact value mismatch\)"
     ):
