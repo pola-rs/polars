@@ -107,14 +107,16 @@ pub fn resolve_join(
         );
     }
 
-    let mut left_on = left_on
-        .into_iter()
-        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_left))
-        .collect::<PolarsResult<Vec<_>>>()?;
-    let mut right_on = right_on
-        .into_iter()
-        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_right))
-        .collect::<PolarsResult<Vec<_>>>()?;
+    let mut left_on_ir = Vec::with_capacity(left_on.len());
+    let mut right_on_ir = Vec::with_capacity(right_on.len());
+    for e in left_on {
+        extend_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_left, &mut left_on_ir)?;
+    }
+    for e in right_on {
+        extend_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_right, &mut right_on_ir)?;
+    }
+    let mut left_on = left_on_ir;
+    let mut right_on = right_on_ir;
     let mut joined_on = PlHashSet::new();
 
     #[cfg(feature = "iejoin")]
@@ -438,7 +440,10 @@ fn resolve_join_where(
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
-        let predicate = to_expr_ir_materialized_lit(e, arena, &schema_merged)?;
+        let predicate = to_expr_ir_materialized_lit_no_selectors(e, arena, &schema_merged)?
+            .ok_or_else(
+                || polars_err!(InvalidOperation: "selectors are not allowed in the join predicate"),
+            )?;
         let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean

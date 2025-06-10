@@ -1009,7 +1009,7 @@ impl Expr {
     /// Should be used in aggregation context. If you want to filter on a
     /// DataFrame level, use `LazyFrame::filter`.
     pub fn filter<E: Into<Expr>>(self, predicate: E) -> Self {
-        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
+        if has_expr(&self, |e| matches!(e, Expr::Selector(Selector::Wildcard))) {
             panic!("filter '*' not allowed, use LazyFrame::filter")
         };
         Expr::Filter {
@@ -1788,15 +1788,15 @@ pub fn len() -> Expr {
 
 /// First column in a DataFrame.
 pub fn first() -> Expr {
-    Expr::Nth(0)
+    Expr::Selector(Selector::AtIndex([0].into()))
 }
 
 /// Last column in a DataFrame.
 pub fn last() -> Expr {
-    Expr::Nth(-1)
+    Expr::Selector(Selector::AtIndex([-1].into()))
 }
 
 /// Nth column in a DataFrame.
 pub fn nth(n: i64) -> Expr {
-    Expr::Nth(n)
+    Expr::Selector(Selector::AtIndex([n].into()))
 }
