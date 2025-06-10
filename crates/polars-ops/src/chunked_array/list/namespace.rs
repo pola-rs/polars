@@ -737,7 +737,7 @@ pub trait ListNameSpaceImpl: AsList {
             // we may need to recast back from physical dtype
             for s in &mut to_append {
                 if *s.dtype() != inner_super_type {
-                    *s = s.cast(&inner_super_type)?
+                    unsafe { *s = s.from_physical_unchecked(&inner_super_type)? }
                 }
             }
 
