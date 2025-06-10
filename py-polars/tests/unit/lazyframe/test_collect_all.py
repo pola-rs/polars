@@ -11,10 +11,10 @@ def test_collect_all_type_coercion_21805() -> None:
     assert pl.collect_all([df])[0]["A"].to_list() == [2.0, 1.0]
 
 
-@pytest.mark.parametrize("no_optimization", [False, True])
-def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
+@pytest.mark.parametrize("optimizations", [pl.QueryOptFlags(), pl.QueryOptFlags.none()])
+def test_collect_all(df: pl.DataFrame, optimizations: pl.QueryOptFlags) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
-    out = pl.collect_all([lf1, lf2], no_optimization=no_optimization)
+    out = pl.collect_all([lf1, lf2], optimizations=optimizations)
     assert cast(int, out[0].item()) == 6
     assert cast(float, out[1].item()) == 12.0

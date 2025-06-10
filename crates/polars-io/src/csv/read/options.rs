@@ -13,6 +13,7 @@ use crate::RowIndex;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvReadOptions {
     pub path: Option<PathBuf>,
     // Performance related options
@@ -45,6 +46,7 @@ pub struct CsvReadOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvParseOptions {
     pub separator: u8,
     pub quote_char: Option<u8>,
@@ -330,6 +332,7 @@ impl CsvParseOptions {
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum CsvEncoding {
     /// Utf8 encoding.
     #[default]
@@ -340,6 +343,7 @@ pub enum CsvEncoding {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum CommentPrefix {
     /// A single byte character that indicates the start of a comment line.
     Single(u8),
@@ -378,6 +382,7 @@ impl From<&str> for CommentPrefix {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum NullValues {
     /// A single value that's used for all columns
     AllColumnsSingle(PlSmallStr),

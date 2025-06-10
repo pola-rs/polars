@@ -9,7 +9,7 @@ use crate::plans::*;
 fn new_null_count(input: &[ExprIR]) -> AExpr {
     AExpr::Function {
         input: input.to_vec(),
-        function: FunctionExpr::NullCount,
+        function: IRFunctionExpr::NullCount,
         options: FunctionOptions::aggregation()
             .with_flags(|f| f | FunctionFlags::ALLOW_GROUP_AWARE),
     }
@@ -136,11 +136,11 @@ impl OptimizationRule for SimplifyBooleanRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        _schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        let in_filter = matches!(lp_arena.get(lp_node), IR::Filter { .. });
+        let in_filter = ctx.in_filter;
 
         let out = match expr {
             // true AND x => x
@@ -261,7 +261,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             },
             AExpr::Function {
                 input,
-                function: FunctionExpr::Negate,
+                function: IRFunctionExpr::Negate,
                 ..
             } if input.len() == 1 => {
                 let input = &input[0];
@@ -315,22 +315,18 @@ where
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 fn string_addition_to_linear_concat(
-    lp_arena: &Arena<IR>,
-    lp_node: Node,
     expr_arena: &Arena<AExpr>,
     left_node: Node,
     right_node: Node,
     left_aexpr: &AExpr,
     right_aexpr: &AExpr,
+    input_schema: &Schema,
 ) -> Option<AExpr> {
     {
-        let lp = lp_arena.get(lp_node);
-        let input = lp.get_input()?;
-        let schema = lp_arena.get(input).schema(lp_arena);
         let left_e = ExprIR::from_node(left_node, expr_arena);
         let right_e = ExprIR::from_node(right_node, expr_arena);
 
-        let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
+        let get_type = |ae: &AExpr| ae.get_type(input_schema, Context::Default, expr_arena).ok();
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
         let type_b = get_type(right_aexpr).or_else(|| get_type(right_aexpr))?;
 
@@ -345,7 +341,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_left,
                         function:
-                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun_l @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep_l,
                                 ignore_nulls: ignore_nulls_l,
                             }),
@@ -354,7 +350,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep_r,
                                 ignore_nulls: ignore_nulls_r,
                             }),
@@ -379,7 +375,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input,
                         function:
-                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -405,7 +401,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -426,7 +422,7 @@ fn string_addition_to_linear_concat(
                     }
                 },
                 _ => {
-                    let function = StringFunction::ConcatHorizontal {
+                    let function = IRStringFunction::ConcatHorizontal {
                         delimiter: "".into(),
                         ignore_nulls: false,
                     };
@@ -452,8 +448,8 @@ impl OptimizationRule for SimplifyExprRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        schema: &Schema,
+        _ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node).clone();
 
@@ -465,7 +461,7 @@ impl OptimizationRule for SimplifyExprRule {
                 match input_expr {
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::DropNulls,
+                        function: IRFunctionExpr::DropNulls,
                         options: _,
                     } => {
                         // we should perform optimization only if the original expression is a column
@@ -497,12 +493,12 @@ impl OptimizationRule for SimplifyExprRule {
                 match input_expr {
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                         options: _,
                     } => Some(new_null_count(input)),
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                         options: _,
                     } => {
                         // we should perform optimization only if the original expression is a column
@@ -545,13 +541,12 @@ impl OptimizationRule for SimplifyExprRule {
                                 #[cfg(all(feature = "strings", feature = "concat_str"))]
                                 {
                                     string_addition_to_linear_concat(
-                                        lp_arena,
-                                        lp_node,
                                         expr_arena,
                                         *left,
                                         *right,
                                         left_aexpr,
                                         right_aexpr,
+                                        schema,
                                     )
                                 }
                                 #[cfg(not(all(feature = "strings", feature = "concat_str")))]

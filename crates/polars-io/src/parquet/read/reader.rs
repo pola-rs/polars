@@ -120,8 +120,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                 e.wrap_msg(|s| {
                     format!(
                         "error with column selection, \
-                        consider enabling `allow_missing_columns`: {}",
-                        s
+                        consider passing `missing_columns='insert'`: {s}"
                     )
                 })
             } else {

@@ -13,6 +13,8 @@ pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 

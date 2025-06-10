@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars.io.plugins import register_io_source
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -175,3 +175,54 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
 
     column = column_cast.meta.pop()[0]
     assert column.meta == pl.col("timestamp")
+
+
+@pytest.mark.parametrize(("validate"), [(True), (False)])
+def test_reordered_columns_22731(validate: bool) -> None:
+    def my_scan() -> pl.LazyFrame:
+        schema = pl.Schema({"a": pl.Int64, "b": pl.Int64})
+
+        def source_generator(
+            with_columns: list[str] | None,
+            predicate: pl.Expr | None,
+            n_rows: int | None,
+            batch_size: int | None,
+        ) -> Iterator[pl.DataFrame]:
+            df = pl.DataFrame({"a": [1, 2, 3], "b": [42, 13, 37]})
+
+            if n_rows is not None:
+                df = df.head(min(n_rows, df.height))
+
+            maxrows = 1
+            if batch_size is not None:
+                maxrows = batch_size
+
+            while df.height > 0:
+                maxrows = min(maxrows, df.height)
+                cur = df.head(maxrows)
+                df = df.slice(maxrows)
+
+                if predicate is not None:
+                    cur = cur.filter(predicate)
+                if with_columns is not None:
+                    cur = cur.select(with_columns)
+
+                yield cur
+
+        return register_io_source(
+            io_source=source_generator, schema=schema, validate_schema=validate
+        )
+
+    expected_select = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]})
+    assert_frame_equal(my_scan().select("b", "a").collect(), expected_select)
+
+    expected_ri = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]}).with_row_index()
+    assert_frame_equal(
+        my_scan().select("b", "a").with_row_index().collect(),
+        expected_ri,
+    )
+
+    expected_with_columns = pl.DataFrame({"a": [1, 2, 3], "b": [42, 13, 37]})
+    assert_frame_equal(
+        my_scan().with_columns("b", "a").collect(), expected_with_columns
+    )

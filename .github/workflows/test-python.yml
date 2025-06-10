@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  RUSTFLAGS: -C debuginfo=0 # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
   PYTHONUTF8: 1
 
@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.9', '3.12', '3.13']
+        python-version: ['3.9', '3.12', '3.13', '3.13t']
         include:
           - os: windows-latest
             python-version: '3.13'
@@ -63,7 +63,12 @@ jobs:
           echo "$GITHUB_WORKSPACE/py-polars/.venv/$BIN" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
+      - name: Install maturin
+        if: matrix.python-version == '3.13t'
+        run: pip install maturin
+
       - name: Install Python dependencies
+        if: matrix.python-version != '3.13t'
         run: |
           pip install uv
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
@@ -90,27 +95,36 @@ jobs:
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Run tests
-        if: github.ref_name != 'main'
+        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
         env:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs"
 
       - name: Run tests with new streaming engine
-        if: github.ref_name != 'main'
+        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
         env:
           POLARS_AUTO_NEW_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
 
       - name: Run tests async reader tests
-        if: github.ref_name != 'main' && matrix.os != 'windows-latest'
+        if: github.ref_name != 'main' && matrix.os != 'windows-latest' && matrix.python-version != '3.13t'
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
+      - name: Run tests multiscan force empty capabilities
+        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
+        env:
+          POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
+          POLARS_TIMEOUT_MS: 60000
+        run: |
+          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
+          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_scan_row_deletion.py
+
       - name: Check import without optional dependencies
-        if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
+        if: github.ref_name != 'main' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.13' || matrix.python-version == '3.13t')
         run: |
           declare -a deps=("pandas"
           "pyarrow"

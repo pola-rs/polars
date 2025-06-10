@@ -135,7 +135,7 @@ impl Display for PolarsError {
             StructFieldNotFound(msg) => write!(f, "field not found: {msg}"),
             Context { error, msg } => write!(f, "{error}: {msg}"),
             #[cfg(feature = "python")]
-            Python { error } => write!(f, "python: {}", error),
+            Python { error } => write!(f, "python: {error}"),
         }
     }
 }
@@ -161,11 +161,11 @@ impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
         if let object_store::Error::Generic { store, source } = &err {
             if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
-                return polars_err.wrap_msg(|s| format!("{} (store: {})", s, store));
+                return polars_err.wrap_msg(|s| format!("{s} (store: {store})"));
             }
         }
 
-        std::io::Error::other(format!("object-store error: {}", err)).into()
+        std::io::Error::other(format!("object-store error: {err}")).into()
     }
 }
 
@@ -226,7 +226,7 @@ impl PolarsError {
                 let mut count = 0;
                 while let Some(msg) = messages.pop() {
                     count += 1;
-                    writeln!(&mut bt, "\t[{count}] {}", msg).unwrap();
+                    writeln!(&mut bt, "\t[{count}] {msg}").unwrap();
                 }
                 material_error.wrap_msg(move |msg| {
                     format!("{msg}\n\nThis error occurred with the following context stack:\n{bt}")
@@ -247,7 +247,7 @@ impl PolarsError {
             IO { error, msg } => {
                 let msg = match msg {
                     Some(msg) => func(msg),
-                    None => func(&format!("{}", error)),
+                    None => func(&format!("{error}")),
                 };
                 IO {
                     error: error.clone(),
@@ -314,6 +314,13 @@ impl PolarsError {
             error: Box::new(self),
         }
     }
+
+    pub fn remove_context(mut self) -> Self {
+        while let Self::Context { error, .. } = self {
+            self = *error;
+        }
+        self
+    }
 }
 
 pub fn map_err<E: Error>(error: E) -> PolarsError {
@@ -325,6 +332,11 @@ macro_rules! polars_err {
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
+        )
+    };
+    ($variant:ident: $fmt:literal $(, $arg:expr)*, hint = $hint:literal) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(format!(concat_str!($fmt, "\n\nHint: ", $hint), $($arg),*).into())
         )
     };
     ($variant:ident: $err:expr $(,)?) => {
@@ -430,6 +442,9 @@ on startup."#.trim_start())
     };
     (duplicate = $name:expr) => {
         $crate::polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
+    };
+    (duplicate_field = $name:expr) => {
+        $crate::polars_err!(Duplicate: "multiple fields with name '{}' found", $name)
     };
     (col_not_found = $name:expr) => {
         $crate::polars_err!(ColumnNotFound: "{:?} not found", $name)

@@ -71,6 +71,12 @@ macro_rules! push_expr {
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
             AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
+            Eval {
+                expr, evaluation, ..
+            } => {
+                $push($c, evaluation);
+                $push($c, expr);
+            },
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Explode { input, .. } => $push($c, input),
             Window {

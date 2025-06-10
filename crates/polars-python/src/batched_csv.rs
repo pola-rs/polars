@@ -135,7 +135,7 @@ impl PyBatchedCsv {
         })
     }
 
-    fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
+    fn next_batches(&self, py: Python<'_>, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let reader = &self.reader;
         let batches = py.enter_polars(move || reader.lock().unwrap().next_batches(n))?;
 

@@ -2605,3 +2605,28 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     df2 = pl.DataFrame({"c": [99]})
     df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
     assert df3.write_csv() == expected
+
+
+def test_csv_malformed_quote_in_unenclosed_field_22395() -> None:
+    # Note - the malformed detection logic is very basic, and fails to detect many
+    # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
+    # Below is a one pattern that will be flagged (odd number of quotes in a row).
+    malformed = b"""\
+a,b,x"y
+a,x"y,c
+x"y,b,c
+"""
+    # short: non-SIMD code path
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed, has_header=False).collect()
+    with pytest.warns(UserWarning):
+        pl.read_csv(malformed, has_header=False, ignore_errors=True)
+
+    # long: trigger SIMD code path (> 64 bytes)
+    malformed_long = malformed + ("k,l,m\n" * 10).encode()
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed_long, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed_long, has_header=False).collect()

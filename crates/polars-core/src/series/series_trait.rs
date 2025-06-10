@@ -13,6 +13,7 @@ use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IsSorted {
     Ascending,
     Descending,
@@ -621,11 +622,8 @@ pub trait SeriesTrait:
 }
 
 impl (dyn SeriesTrait + '_) {
-    pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
-    where
-        N: 'static + PolarsDataType<IsLogical = FalseT>,
-    {
-        polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
+    pub fn unpack<T: PolarsPhysicalType>(&self) -> PolarsResult<&ChunkedArray<T>> {
+        polars_ensure!(&T::get_static_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())
     }
 }

@@ -5,7 +5,6 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
@@ -22,7 +21,6 @@ use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
-use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::aexpr_to_leaf_names;
 
@@ -95,33 +93,39 @@ fn get_scan_columns(
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
     file_path_col: Option<&str>,
+    // When set, the column order will match the order from the provided schema
+    normalize_order_schema: Option<&Schema>,
 ) -> Option<Arc<[PlSmallStr]>> {
-    if !acc_projections.is_empty() {
-        Some(
-            acc_projections
-                .iter()
-                .filter_map(|node| {
-                    let name = column_node_to_name(*node, expr_arena);
-
-                    if let Some(ri) = row_index {
-                        if ri.name == name {
-                            return None;
-                        }
-                    }
-
-                    if let Some(file_path_col) = file_path_col {
-                        if file_path_col == name.as_str() {
-                            return None;
-                        }
-                    }
-
-                    Some(name.clone())
-                })
-                .collect::<Arc<[_]>>(),
-        )
-    } else {
-        None
+    if acc_projections.is_empty() {
+        return None;
     }
+
+    let mut column_names = acc_projections
+        .iter()
+        .filter_map(|node| {
+            let name = column_node_to_name(*node, expr_arena);
+
+            if let Some(ri) = row_index {
+                if ri.name == name {
+                    return None;
+                }
+            }
+
+            if let Some(file_path_col) = file_path_col {
+                if file_path_col == name.as_str() {
+                    return None;
+                }
+            }
+
+            Some(name.clone())
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(schema) = normalize_order_schema {
+        column_names.sort_unstable_by_key(|name| schema.try_get_full(name).unwrap().0);
+    }
+
+    Some(column_names.into_iter().collect::<Arc<[_]>>())
 }
 
 /// split in a projection vec that can be pushed down and a projection vec that should be used
@@ -412,8 +416,15 @@ impl ProjectionPushDown {
                     ctx.process_count_star_at_scan(&options.schema, expr_arena);
                 }
 
-                options.with_columns =
-                    get_scan_columns(&ctx.acc_projections, expr_arena, None, None);
+                let normalize_order_schema = Some(&*options.schema);
+
+                options.with_columns = get_scan_columns(
+                    &ctx.acc_projections,
+                    expr_arena,
+                    None,
+                    None,
+                    normalize_order_schema,
+                );
 
                 options.output_schema = if options.with_columns.is_none() {
                     None
@@ -435,6 +446,7 @@ impl ProjectionPushDown {
                 predicate,
                 mut unified_scan_args,
                 mut output_schema,
+                id: _,
             } => {
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
@@ -498,6 +510,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         unified_scan_args.row_index.as_ref(),
                         unified_scan_args.include_file_paths.as_deref(),
+                        None,
                     );
 
                     output_schema = if unified_scan_args.projection.is_some() {
@@ -561,6 +574,7 @@ impl ProjectionPushDown {
                     scan_type,
                     predicate,
                     unified_scan_args,
+                    id: Default::default(),
                 };
 
                 Ok(lp)

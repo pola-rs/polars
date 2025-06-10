@@ -141,21 +141,40 @@ impl fmt::Debug for Expr {
                 f,
                 ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
             ),
-            Function {
-                input, function, ..
-            } => {
+            Function { input, function } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
                 } else {
                     write!(f, "{:?}.{function}()", input[0])
                 }
             },
-            AnonymousFunction { input, options, .. } => {
+            AnonymousFunction {
+                input,
+                fmt_str,
+                function,
+                ..
+            } => {
+                let name = match function {
+                    LazySerde::Named { name, .. } => name.as_str(),
+                    _ => fmt_str.as_str(),
+                };
+
                 if input.len() >= 2 {
-                    write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
+                    write!(f, "{:?}.{}({:?})", input[0], name, &input[1..])
                 } else {
-                    write!(f, "{:?}.{}()", input[0], options.fmt_str)
+                    write!(f, "{:?}.{}()", input[0], name)
                 }
+            },
+            Eval {
+                expr: input,
+                evaluation,
+                variant,
+            } => match variant {
+                EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::Cumulative { min_samples } => write!(
+                    f,
+                    "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
+                ),
             },
             Slice {
                 input,

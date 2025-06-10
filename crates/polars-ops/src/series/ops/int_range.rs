@@ -9,7 +9,6 @@ pub fn new_int_range<T>(
 ) -> PolarsResult<Series>
 where
     T: PolarsIntegerType,
-    ChunkedArray<T>: IntoSeries,
     std::ops::Range<T::Native>: DoubleEndedIterator<Item = T::Native>,
 {
     let mut ca = match step {

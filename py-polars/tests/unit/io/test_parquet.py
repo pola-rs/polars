@@ -3,6 +3,7 @@ from __future__ import annotations
 import decimal
 import functools
 import io
+import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
@@ -21,6 +22,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.io.parquet import ParquetFieldOverwrites
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.core import series
@@ -28,7 +30,12 @@ from polars.testing.parametric.strategies.core import series
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import ParallelStrategy, ParquetCompression
+    from polars._typing import (
+        ParallelStrategy,
+        ParquetCompression,
+        ParquetMetadata,
+        ParquetMetadataContext,
+    )
     from tests.unit.conftest import MemoryUsage
 
 
@@ -138,14 +145,12 @@ def test_read_parquet_respects_rechunk_16416(
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
+    print(df)
     buf = io.BytesIO()
     # Writing lzo compressed parquet files is not supported for now.
     with pytest.raises(ComputeError):
         df.write_parquet(buf, compression="lzo", use_pyarrow=False)
     buf.seek(0)
-    # Invalid parquet file as writing failed.
-    with pytest.raises(ComputeError):
-        _ = pl.read_parquet(buf)
 
     buf = io.BytesIO()
     with pytest.raises(OSError):
@@ -1359,12 +1364,12 @@ def test_parquet_pyarrow_map() -> None:
 
     # Test for https://github.com/pola-rs/polars/issues/21317
     # Specifying schema/allow_missing_columns
-    for allow_missing_columns in [True, False]:
+    for missing_columns in ["insert", "raise"]:
         assert_frame_equal(
             pl.read_parquet(
                 f,
                 schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
-                allow_missing_columns=allow_missing_columns,
+                missing_columns=missing_columns,  # type: ignore[arg-type]
             ).explode(["x"]),
             expected,
         )
@@ -2005,17 +2010,18 @@ def test_allow_missing_columns(
     for df, path in zip(dfs, paths):
         df.write_parquet(path)
 
-    expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
+    expected_full = pl.DataFrame({"a": [1, 2], "b": [1, None]})
+    expected = expected_full.select(projection)
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
             engine="streaming" if streaming else "in-memory"
@@ -2025,17 +2031,44 @@ def test_allow_missing_columns(
         pl.read_parquet(
             paths,
             parallel=parallel,  # type: ignore[arg-type]
-            allow_missing_columns=True,
+            missing_columns="insert",
         ).select(projection),
         expected,
     )
 
     assert_frame_equal(
-        pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
+        pl.scan_parquet(paths, parallel=parallel, missing_columns="insert")  # type: ignore[arg-type]
         .select(projection)
         .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
+
+    # Test deprecated parameter
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        with pytest.raises(
+            pl.exceptions.ColumnNotFoundError,
+            match="passing `missing_columns='insert'`",
+        ):
+            assert_frame_equal(
+                pl.scan_parquet(
+                    paths,
+                    parallel=parallel,  # type: ignore[arg-type]
+                    allow_missing_columns=False,
+                ).collect(engine="streaming" if streaming else "in-memory"),
+                expected_full,
+            )
+
+        assert_frame_equal(
+            pl.scan_parquet(
+                paths,
+                parallel=parallel,  # type: ignore[arg-type]
+                allow_missing_columns=True,
+            ).collect(engine="streaming" if streaming else "in-memory"),
+            expected_full,
+        )
 
 
 def test_nested_nonnullable_19158() -> None:
@@ -3034,7 +3067,7 @@ def test_scan_parquet_filter_statistics_load_missing_column_21391(
 
     assert_frame_equal(
         (
-            pl.scan_parquet(root, allow_missing_columns=True)
+            pl.scan_parquet(root, missing_columns="insert")
             .filter(pl.col("y") == 1)
             .collect()
         ),
@@ -3246,3 +3279,82 @@ def test_parquet_read_timezone_22506() -> None:
             },
         ),
     )
+
+
+@pytest.mark.parametrize("static", [True, False])
+@pytest.mark.parametrize("lazy", [True, False])
+def test_read_write_metadata(tmp_path: Path, static: bool, lazy: bool) -> None:
+    metadata = {"hello": "world", "something": "else"}
+    md: ParquetMetadata = metadata
+    if not static:
+        md = lambda ctx: metadata  # noqa: E731
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    f = io.BytesIO()
+    if lazy:
+        df.lazy().sink_parquet(f, metadata=md)
+    else:
+        df.write_parquet(f, metadata=md)
+
+    f.seek(0)
+    actual = pl.read_parquet_metadata(f)
+    assert "ARROW:schema" in actual
+    assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}
+
+
+@pytest.mark.write_disk
+def test_metadata_callback_info(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    num_writes = 0
+
+    def fn_metadata(ctx: ParquetMetadataContext) -> dict[str, str]:
+        nonlocal num_writes
+        num_writes += 1
+        return {}
+
+    df.write_parquet(tmp_path, partition_by="a", metadata=fn_metadata)
+
+    assert num_writes == len(df)
+
+
+def test_field_overwrites_metadata() -> None:
+    f = io.BytesIO()
+    lf = pl.LazyFrame(
+        {
+            "a": [None, 2, 3, 4],
+            "b": [[1, 2, 3], [42], [13], [37]],
+            "c": [
+                {"x": "a", "y": 42},
+                {"x": "b", "y": 13},
+                {"x": "X", "y": 37},
+                {"x": "Y", "y": 15},
+            ],
+        }
+    )
+    lf.sink_parquet(
+        f,
+        field_overwrites={
+            "a": ParquetFieldOverwrites(metadata={"flat_from_polars": "yes"}),
+            "b": ParquetFieldOverwrites(
+                children=ParquetFieldOverwrites(metadata={"listitem": "yes"}),
+                metadata={"list": "true"},
+            ),
+            "c": ParquetFieldOverwrites(
+                children=[
+                    ParquetFieldOverwrites(name="x", metadata={"md": "yes"}),
+                    ParquetFieldOverwrites(name="y", metadata={"md2": "Yes!"}),
+                ],
+                metadata={"struct": "true"},
+            ),
+        },
+    )
+
+    f.seek(0)
+    schema = pq.read_schema(f)
+    assert schema[0].metadata[b"flat_from_polars"] == b"yes"
+    assert schema[1].metadata[b"list"] == b"true"
+    assert schema[1].type.value_field.metadata[b"listitem"] == b"yes"
+    assert schema[2].metadata[b"struct"] == b"true"
+    assert schema[2].type.fields[0].metadata[b"md"] == b"yes"
+    assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"

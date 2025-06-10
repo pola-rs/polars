@@ -103,8 +103,11 @@ impl ApplyExpr {
         if let Some(out) = self.function.call_udf(inputs)? {
             Ok(out)
         } else {
-            let field = self.to_field(self.input_schema.as_ref()).unwrap();
-            Ok(Column::full_null(field.name().clone(), 1, field.dtype()))
+            Ok(Column::full_null(
+                self.output_field.name().clone(),
+                1,
+                self.output_field.dtype(),
+            ))
         }
     }
     fn apply_single_group_aware<'a>(

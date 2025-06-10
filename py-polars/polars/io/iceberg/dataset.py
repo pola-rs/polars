@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from functools import partial
+from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
@@ -108,24 +109,61 @@ class IcebergDataset:
         )
 
         sources = []
+        deletion_files: dict[int, list[str]] = {}
 
-        if reader_override != "pyiceberg":
+        if reader_override != "pyiceberg" and not fallback_reason:
+            from pyiceberg.manifest import DataFileContent, FileFormat
+
+            if verbose:
+                eprint("IcebergDataset: to_dataset_scan(): begin path expansion")
+
+            start_time = perf_counter()
+
             scan = tbl.scan(
                 snapshot_id=snapshot_id, limit=limit, selected_fields=selected_fields
             )
 
-            for file_info in scan.plan_files():
-                if file_info.file.file_format != "PARQUET":
+            total_deletion_files = 0
+
+            for i, file_info in enumerate(scan.plan_files()):
+                if file_info.file.file_format != FileFormat.PARQUET:
                     fallback_reason = (
                         f"non-parquet format: {file_info.file.file_format}"
                     )
-                elif file_info.delete_files:
-                    fallback_reason = "unimplemented: dataset contained delete files"
-                else:
-                    sources.append(file_info.file.file_path)
-                    continue
+                    break
 
-                break
+                if file_info.delete_files:
+                    deletion_files[i] = []
+
+                    for deletion_file in file_info.delete_files:
+                        if deletion_file.content != DataFileContent.POSITION_DELETES:
+                            fallback_reason = (
+                                "unsupported deletion file type: "
+                                f"{deletion_file.content}"
+                            )
+                            break
+
+                        if deletion_file.file_format != FileFormat.PARQUET:
+                            fallback_reason = (
+                                "unsupported deletion file format: "
+                                f"{deletion_file.file_format}"
+                            )
+                            break
+
+                        deletion_files[i].append(deletion_file.file_path)
+                        total_deletion_files += 1
+
+                if fallback_reason:
+                    break
+
+                sources.append(file_info.file.file_path)
+
+            if verbose:
+                elapsed = perf_counter() - start_time
+                eprint(
+                    "IcebergDataset: to_dataset_scan(): "
+                    f"finish path expansion ({elapsed:.3f}s)"
+                )
 
         if not fallback_reason:
             from polars.io.parquet.functions import scan_parquet
@@ -133,12 +171,16 @@ class IcebergDataset:
             if verbose:
                 eprint(
                     "IcebergDataset: to_dataset_scan(): "
-                    f"native scan_parquet() ({len(sources)} sources)"
+                    f"native scan_parquet() ({len(sources)} sources), "
+                    f"deletion files: {total_deletion_files} files, "
+                    f"{len(deletion_files)} sources"
                 )
 
             return scan_parquet(
                 sources,
-                allow_missing_columns=True,
+                missing_columns="insert",
+                extra_columns="ignore",
+                _deletion_files=("iceberg-position-delete", deletion_files),
             )
 
         elif reader_override == "native":

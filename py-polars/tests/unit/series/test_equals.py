@@ -30,6 +30,25 @@ def test_equals() -> None:
     assert s3.equals(s4, null_equal=False) is False
     assert s3.dt.convert_time_zone("Asia/Tokyo").equals(s4) is True
 
+    with pytest.raises(
+        TypeError,
+        match="expected `other` to be a 'Series'.* not 'DataFrame'",
+    ):
+        s1.equals(pl.DataFrame(s2), check_names=False)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` to be a 'Series'.* not 'LazyFrame'",
+    ):
+        s1.equals(pl.DataFrame(s2).lazy(), check_names=False)  # type: ignore[arg-type]
+
+    s5 = pl.Series("a", [1, 2, 3])
+
+    class DummySeriesSubclass(pl.Series):
+        pass
+
+    assert s5.equals(DummySeriesSubclass(s5)) is True
+
 
 def test_series_equals_check_names() -> None:
     s1 = pl.Series("foo", [1, 2, 3])

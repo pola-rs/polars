@@ -17,10 +17,6 @@ use crate::chunked_array::cast::{CastOptions, cast_chunks};
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
-#[cfg(feature = "timezones")]
-use crate::chunked_array::temporal::parse_fixed_offset;
-#[cfg(feature = "timezones")]
-use crate::chunked_array::temporal::validate_time_zone;
 use crate::prelude::*;
 
 impl Series {
@@ -258,15 +254,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
-                let canonical_tz = DataType::canonical_timezone(tz);
-                let tz = match canonical_tz.as_deref() {
-                    #[cfg(feature = "timezones")]
-                    Some(tz_str) => match validate_time_zone(tz_str) {
-                        Ok(_) => canonical_tz,
-                        Err(_) => Some(parse_fixed_offset(tz_str)?),
-                    },
-                    _ => canonical_tz,
-                };
+                let tz = TimeZone::opt_try_new(tz.clone())?;
                 let chunks =
                     cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
@@ -312,14 +300,72 @@ impl Series {
                     ArrowTimeUnit::Nanosecond => s,
                 })
             },
+            ArrowDataType::Decimal32(precision, scale) => {
+                feature_gated!("dtype-decimal", {
+                    polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
+
+                    let mut chunks = chunks;
+                    for chunk in chunks.iter_mut() {
+                        let old_chunk = chunk
+                            .as_any_mut()
+                            .downcast_mut::<PrimitiveArray<i32>>()
+                            .unwrap();
+
+                        // For now, we just cast the whole data to i128.
+                        let (_, values, validity) = std::mem::take(old_chunk).into_inner();
+                        *chunk = PrimitiveArray::new(
+                            ArrowDataType::Int128,
+                            values.iter().map(|&v| v as i128).collect(),
+                            validity,
+                        )
+                        .to_boxed();
+                    }
+
+                    // @NOTE: We cannot cast here as that will lower the scale.
+                    let s = Int128Chunked::from_chunks(name, chunks)
+                        .into_decimal_unchecked(Some(*precision), *scale)
+                        .into_series();
+                    Ok(s)
+                })
+            },
+            ArrowDataType::Decimal64(precision, scale) => {
+                feature_gated!("dtype-decimal", {
+                    polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
+
+                    let mut chunks = chunks;
+                    for chunk in chunks.iter_mut() {
+                        let old_chunk = chunk
+                            .as_any_mut()
+                            .downcast_mut::<PrimitiveArray<i64>>()
+                            .unwrap();
+
+                        // For now, we just cast the whole data to i128.
+                        let (_, values, validity) = std::mem::take(old_chunk).into_inner();
+                        *chunk = PrimitiveArray::new(
+                            ArrowDataType::Int128,
+                            values.iter().map(|&v| v as i128).collect(),
+                            validity,
+                        )
+                        .to_boxed();
+                    }
+
+                    // @NOTE: We cannot cast here as that will lower the scale.
+                    let s = Int128Chunked::from_chunks(name, chunks)
+                        .into_decimal_unchecked(Some(*precision), *scale)
+                        .into_series();
+                    Ok(s)
+                })
+            },
             ArrowDataType::Decimal(precision, scale)
             | ArrowDataType::Decimal256(precision, scale) => {
                 feature_gated!("dtype-decimal", {
                     polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
-                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals about 38 precision");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
 
+                    // Q? I don't think this is correct for Decimal256?
                     let mut chunks = chunks;
-                    // @NOTE: We cannot cast here as that will lower the scale.
                     for chunk in chunks.iter_mut() {
                         *chunk = std::mem::take(
                             chunk
@@ -330,6 +376,8 @@ impl Series {
                         .to(ArrowDataType::Int128)
                         .to_boxed();
                     }
+
+                    // @NOTE: We cannot cast here as that will lower the scale.
                     let s = Int128Chunked::from_chunks(name, chunks)
                         .into_decimal_unchecked(Some(*precision), *scale)
                         .into_series();
@@ -680,7 +728,7 @@ unsafe fn to_physical_and_dtype(
             (std::mem::take(s.chunks_mut()), dtype)
         },
         dt => {
-            let dtype = DataType::from_arrow(dt, true, md);
+            let dtype = DataType::from_arrow(dt, md);
             (arrays, dtype)
         },
     }

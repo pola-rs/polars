@@ -31,7 +31,7 @@ impl StringNameSpace {
     /// Uses aho-corasick to find many patterns.
     ///
     /// # Arguments
-    /// - `patterns`: an expression that evaluates to an String column
+    /// - `patterns`: an expression that evaluates to a String column
     /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
     ///   When this option is enabled, searching will be performed without respect to case for
     ///   ASCII letters (a-z and A-Z) only.
@@ -252,18 +252,9 @@ impl StringNameSpace {
     /// Convert a String column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
     pub fn strptime(self, dtype: DataType, options: StrptimeOptions, ambiguous: Expr) -> Expr {
-        let is_column_independent = is_column_independent(&self.0);
         // Only elementwise if the format is explicitly set, or we're constant.
         self.0
             .map_binary(StringFunction::Strptime(dtype, options), ambiguous)
-            .with_function_options(|mut options| {
-                // @HACK. This needs to be done because literals still block predicate pushdown,
-                // but this should be an exception in the predicate pushdown.
-                if is_column_independent {
-                    options.set_elementwise();
-                }
-                options
-            })
     }
 
     /// Convert a String column into a Date column.

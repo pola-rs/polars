@@ -643,7 +643,7 @@ mod inner {
                 | v @ (BinaryOpApplyType::PrimitiveToList, Broadcast::Left)
                 | v @ (BinaryOpApplyType::PrimitiveToList, Broadcast::NoBroadcast) => {
                     if cfg!(debug_assertions) {
-                        panic!("operation was not re-written: {:?}", v)
+                        panic!("operation was not re-written: {v:?}")
                     } else {
                         unreachable!()
                     }

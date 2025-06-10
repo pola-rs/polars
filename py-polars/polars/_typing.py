@@ -106,6 +106,9 @@ AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
+DeletionFiles: TypeAlias = tuple[
+    Literal["iceberg-position-delete"], dict[int, list[str]]
+]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
@@ -127,6 +130,9 @@ ParquetCompression: TypeAlias = Literal[
 ]
 PivotAgg: TypeAlias = Literal[
     "min", "max", "first", "last", "sum", "mean", "median", "len"
+]
+QuantileMethod: TypeAlias = Literal[
+    "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
@@ -170,9 +176,6 @@ InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
 ]  # JoinType
-RollingInterpolationMethod: TypeAlias = Literal[
-    "nearest", "higher", "lower", "midpoint", "linear"
-]  # QuantileInterpolOptions
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -285,7 +288,6 @@ ConnectionOrCursor: TypeAlias = Union[
     BasicConnection, BasicCursor, Cursor, AlchemyConnection
 ]
 
-
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
 MultiIndexSelector: TypeAlias = Union[
@@ -330,6 +332,14 @@ FileSource: TypeAlias = Union[
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
 
+DeprecationType: TypeAlias = Literal[
+    "function",
+    "renamed_parameter",
+    "streaming_parameter",
+    "nonkeyword_arguments",
+    "parameter_as_multi_positional",
+]
+
 
 class PartitioningScheme:
     def __init__(
@@ -368,6 +378,7 @@ __all__ = [
     "DbReadEngine",
     "DbWriteEngine",
     "DbWriteMode",
+    "DeprecationType",
     "Endianness",
     "EngineType",
     "EpochTimeUnit",
@@ -411,9 +422,9 @@ __all__ = [
     "PolarsType",
     "PythonDataType",
     "PythonLiteral",
+    "QuantileMethod",
     "RankMethod",
     "Roll",
-    "RollingInterpolationMethod",
     "RowTotalsDefinition",
     "SchemaDefinition",
     "SchemaDict",
@@ -436,3 +447,22 @@ __all__ = [
     "UnstackDirection",
     "WindowMappingStrategy",
 ]
+
+
+class ParquetMetadataContext:
+    """
+    The context given when writing file-level parquet metadata.
+
+    .. warning::
+        This functionality is considered **experimental**. It may be removed or
+        changed at any point without it being considered a breaking change.
+    """
+
+    def __init__(self, *, arrow_schema: str) -> None:
+        self.arrow_schema = arrow_schema
+
+    arrow_schema: str  #: The base64 encoded arrow schema that is going to be written into metadata.
+
+
+ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
+ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]

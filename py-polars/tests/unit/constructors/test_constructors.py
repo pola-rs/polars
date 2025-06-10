@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 
+    from typing_extensions import assert_type
+
 
 # -----------------------------------------------------------------------------------
 # nested dataclasses, models, namedtuple classes (can't be defined inside test func)
@@ -1112,6 +1114,9 @@ def test_init_only_columns() -> None:
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert pl.List(pl.UInt8).is_(df.schema["d"])
 
+        if TYPE_CHECKING:
+            assert_type(pl.List(pl.UInt8).is_(df.schema["d"]), bool)
+
         dfe = df.clear()
         assert len(dfe) == 0
         assert df.schema == dfe.schema
@@ -1723,7 +1728,7 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     # RecordBatch via C array interface
     pyarrow_record_batch = pyarrow_table.to_batches()[0]
     round_trip_df = pl.DataFrame(PyCapsuleArrayHolder(pyarrow_record_batch))
-    assert df.equals(round_trip_df)
+    assert df.equals(round_trip_df.unnest(""))
 
     # ChunkedArray via C stream interface
     pyarrow_chunked_array = pyarrow_table["bools"]

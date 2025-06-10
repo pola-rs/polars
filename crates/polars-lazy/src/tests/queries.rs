@@ -1125,8 +1125,8 @@ fn test_filter_and_alias() -> PolarsResult<()> {
         "a" => [2, 2],
         "a_squared" => [4.0, 4.0]
     ]?;
-    println!("{:?}", out);
-    println!("{:?}", expected);
+    println!("{out:?}");
+    println!("{expected:?}");
     assert!(out.equals(&expected));
     Ok(())
 }
@@ -1175,7 +1175,7 @@ fn test_fill_forward() -> PolarsResult<()> {
         .lazy()
         .select([col("b")
             .fill_null_with_strategy(FillNullStrategy::Forward(FillNullLimit::None))
-            .over_with_options([col("a")], None, WindowMapping::Join)])
+            .over_with_options(Some([col("a")]), None, WindowMapping::Join)?])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1335,7 +1335,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             col("B")
                 .shift(lit(1))
                 .filter(col("B").shift(lit(1)).gt(lit(4)))
-                .over_with_options([col("fruits")], None, WindowMapping::Join)
+                .over_with_options(Some([col("fruits")]), None, WindowMapping::Join)?
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1695,7 +1695,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .over_with_options([col("group")], None, WindowMapping::Join)])
+            .over_with_options(Some([col("group")]), None, WindowMapping::Join)?])
         .collect()?;
 
     let out = out.column("value")?.explode(false)?;
@@ -1947,7 +1947,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
         )
         .slice(0, 3)
         .collect()?;
-    println!("{:?}", res);
+    println!("{res:?}");
     assert!(res.equals(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
@@ -1964,7 +1964,11 @@ fn test_over_with_options_empty_join() -> PolarsResult<()> {
 
     let empty_df_out = empty_df
         .lazy()
-        .select([col("b").over_with_options([col("a")], Option::None, WindowMapping::Join)])
+        .select([col("b").over_with_options(
+            Some([col("a")]),
+            Option::None,
+            WindowMapping::Join,
+        )?])
         .collect()?;
 
     let f1: Field = Field::new("b".into(), DataType::List(Box::new(DataType::Int32)));

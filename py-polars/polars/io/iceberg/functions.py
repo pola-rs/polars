@@ -45,8 +45,9 @@ def scan_iceberg(
         polars will by default automatically select the best reader.
 
         Available options:
+
         * native: Uses polars native reader. This allows for more optimizations to
-        improve performance.
+          improve performance.
         * pyiceberg: Uses PyIceberg, which may support more features.
 
     Returns
@@ -125,7 +126,7 @@ def scan_iceberg(
     from polars.polars import PyLazyFrame
 
     if reader_override is not None:
-        msg = "The `reader_override` parameter of `scan_iceberg()` is considered unstable."
+        msg = "the `reader_override` parameter of `scan_iceberg()` is considered unstable."
         issue_unstable_warning(msg)
 
     dataset = IcebergDataset(

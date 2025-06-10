@@ -5,6 +5,7 @@ use std::sync::{Arc, LazyLock, RwLock};
 use pyo3::{Py, PyAny, PyResult};
 
 pub type PythonToSinkTarget = Arc<dyn Fn(Py<PyAny>) -> PyResult<Box<dyn Any>> + Send + Sync>;
+pub type DataFrameToPython = Arc<dyn Fn(Box<dyn Any>) -> PyResult<Py<PyAny>> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct FromPythonConvertRegistry {
@@ -12,8 +13,14 @@ pub struct FromPythonConvertRegistry {
 }
 
 #[derive(Clone)]
+pub struct ToPythonConvertRegistry {
+    pub df: DataFrameToPython,
+}
+
+#[derive(Clone)]
 pub struct PythonConvertRegistry {
     pub from_py: FromPythonConvertRegistry,
+    pub to_py: ToPythonConvertRegistry,
 }
 
 static PYTHON_CONVERT_REGISTRY: LazyLock<RwLock<Option<PythonConvertRegistry>>> =

@@ -1995,3 +1995,12 @@ def test_str_split_self_broadcast() -> None:
         pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
         pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
     )
+
+
+def test_replace_many_mapping_in_list() -> None:
+    assert_series_equal(
+        pl.Series([["a", "b"]]).list.eval(
+            pl.element().replace_strict({"a": 1, "b": 2})
+        ),
+        pl.Series([[1, 2]]),
+    )

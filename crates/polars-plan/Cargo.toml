@@ -3,6 +3,7 @@ name = "polars-plan"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
+exclude = ["dsl-schema.sha256"]
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
@@ -39,8 +40,10 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
+schemars = { workspace = true, features = ["either"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
@@ -49,11 +52,11 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "polars-utils/python", "polars-ffi"]
+python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
-  "ir_serde",
   "dep:serde",
   "polars-core/serde-lazy",
+  "polars-core/serde",
   "polars-time/serde",
   "polars-io/serde",
   "polars-ops/serde",
@@ -61,7 +64,6 @@ serde = [
   "polars-compute/serde",
   "either/serde",
 ]
-streaming = []
 parquet = ["polars-io/parquet", "polars-parquet"]
 async = ["polars-io/async", "futures"]
 cloud = ["async", "polars-io/cloud"]
@@ -86,7 +88,7 @@ dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
-dtype-decimal = ["polars-core/dtype-decimal", "dtype-i128"]
+dtype-decimal = ["polars-core/dtype-decimal", "polars-ops/dtype-decimal", "dtype-i128"]
 dtype-date = ["polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-ops/dtype-duration"]
@@ -95,6 +97,7 @@ dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
+list_filter = ["polars-ops/list_filter"]
 list_gather = ["polars-ops/list_gather"]
 list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
@@ -106,6 +109,20 @@ string_encoding = ["polars-ops/string_encoding"]
 true_div = []
 nightly = ["polars-utils/nightly", "polars-ops/nightly"]
 extract_jsonpath = ["polars-ops/extract_jsonpath"]
+dsl-schema = [
+  "dep:schemars",
+  "dep:sha2",
+  "dep:serde_json",
+  "serde_json/preserve_order",
+  "serde",
+  "arrow/dsl-schema",
+  "polars-core/dsl-schema",
+  "polars-time/dsl-schema",
+  "polars-io/dsl-schema",
+  "polars-ops/dsl-schema",
+  "polars-utils/dsl-schema",
+  "polars-compute/dsl-schema",
+]
 
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
@@ -143,7 +160,7 @@ pct_change = ["polars-ops/pct_change"]
 moment = ["polars-ops/moment"]
 abs = ["polars-ops/abs"]
 random = ["polars-core/random"]
-dynamic_group_by = ["polars-core/dynamic_group_by"]
+dynamic_group_by = ["polars-core/dynamic_group_by", "dtype-date", "dtype-datetime"]
 ewma = ["polars-ops/ewma"]
 ewma_by = ["polars-ops/ewma_by"]
 dot_diagram = []
@@ -190,7 +207,8 @@ month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
-polars_cloud = ["serde"]
+polars_cloud_client = ["serde"]
+polars_cloud_server = ["serde", "polars-utils/polars_cloud_server"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
 [package.metadata.docs.rs]
@@ -225,6 +243,7 @@ features = [
   "list_any_all",
   "pct_change",
   "list_gather",
+  "list_filter",
   "dtype-i16",
   "round_series",
   "cutqcut",
@@ -289,9 +308,11 @@ features = [
   "coalesce",
   "dot_diagram",
   "trigonometry",
-  "streaming",
   "true_div",
   "sign",
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

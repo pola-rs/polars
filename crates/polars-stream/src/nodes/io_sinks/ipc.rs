@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
+use std::sync::{Arc, Mutex};
 
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow;
@@ -101,6 +102,7 @@ impl SinkNode for IpcSinkNode {
             dist_tx,
             chunk_size as usize,
             self.input_schema.clone(),
+            Arc::new(Mutex::new(None)),
         ));
 
         // Encoding tasks.
@@ -305,6 +307,7 @@ impl SinkNode for IpcSinkNode {
             let writer = BufWriter::new(&mut *file);
             let mut writer = IpcWriter::new(writer)
                 .with_compression(write_options.compression)
+                .with_compat_level(write_options.compat_level)
                 .with_parallel(false)
                 .batched(&input_schema)?;
 

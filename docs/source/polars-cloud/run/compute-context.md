@@ -62,7 +62,7 @@ Once defined, you can apply your compute context to queries in three ways:
    ```
 
 3. When a default compute context is set via the Polars Cloud dashboard. It is no longer required to
-   define a compoute context.
+   define a compute context.
 
    ```python
    query.remote().sink_parquet(...)

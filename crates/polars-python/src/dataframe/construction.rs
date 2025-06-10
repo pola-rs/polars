@@ -1,7 +1,7 @@
 use polars::frame::row::{Row, rows_to_schema_supertypes, rows_to_supertypes};
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyMapping, PyString};
 
 use super::PyDataFrame;
 use crate::conversion::any_value::py_object_to_any_value;
@@ -15,7 +15,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
     pub fn from_rows(
-        py: Python,
+        py: Python<'_>,
         data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
         infer_schema_length: Option<usize>,
@@ -28,7 +28,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[pyo3(signature = (data, schema=None, schema_overrides=None, strict=true, infer_schema_length=None))]
     pub fn from_dicts(
-        py: Python,
+        py: Python<'_>,
         data: &Bound<PyAny>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
@@ -38,15 +38,33 @@ impl PyDataFrame {
         let schema = schema.map(|wrap| wrap.0);
         let schema_overrides = schema_overrides.map(|wrap| wrap.0);
 
-        let names = get_schema_names(data, schema.as_ref(), infer_schema_length)?;
-        let rows = dicts_to_rows(data, &names, strict)?;
+        // determine row extraction strategy from the first item:
+        // PyDict (faster), or PyMapping (more generic, slower)
+        let from_mapping = data.len()? > 0 && {
+            let mut iter = data.try_iter()?;
+            loop {
+                match iter.next() {
+                    Some(Ok(item)) if !item.is_none() => break !item.is_instance_of::<PyDict>(),
+                    Some(Err(e)) => return Err(e),
+                    Some(_) => continue,
+                    None => break false,
+                }
+            }
+        };
+
+        // read (or infer) field names, then extract row values
+        let names = get_schema_names(data, schema.as_ref(), infer_schema_length, from_mapping)?;
+        let rows = if from_mapping {
+            mappings_to_rows(data, &names, strict)?
+        } else {
+            dicts_to_rows(data, &names, strict)?
+        };
 
         let schema = schema.or_else(|| {
             Some(columns_names_to_empty_schema(
                 names.iter().map(String::as_str),
             ))
         });
-
         py.enter_polars(move || {
             finish_from_rows(rows, schema, schema_overrides, infer_schema_length)
         })
@@ -54,7 +72,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_arrow_record_batches(
-        py: Python,
+        py: Python<'_>,
         rb: Vec<Bound<PyAny>>,
         schema: Bound<PyAny>,
     ) -> PyResult<Self> {
@@ -143,26 +161,68 @@ where
     Schema::from_iter(fields)
 }
 
-fn dicts_to_rows<'a>(
-    data: &Bound<'a, PyAny>,
-    names: &'a [String],
+fn dicts_to_rows(
+    data: &Bound<'_, PyAny>,
+    names: &[String],
     strict: bool,
-) -> PyResult<Vec<Row<'a>>> {
-    let len = data.len()?;
-    let mut rows = Vec::with_capacity(len);
+) -> PyResult<Vec<Row<'static>>> {
+    let py = data.py();
+    let mut rows = Vec::with_capacity(data.len()?);
+    let null_row = Row::new(vec![AnyValue::Null; names.len()]);
+
+    // pre-convert keys/names so we don't repeatedly create them in the loop
+    let py_keys: Vec<Py<PyString>> = names.iter().map(|k| PyString::new(py, k).into()).collect();
+
     for d in data.try_iter()? {
         let d = d?;
-        let d = d.downcast::<PyDict>()?;
-
-        let mut row = Vec::with_capacity(names.len());
-        for k in names.iter() {
-            let val = match d.get_item(k)? {
-                None => AnyValue::Null,
-                Some(val) => py_object_to_any_value(&val.as_borrowed(), strict, true)?,
-            };
-            row.push(val)
+        if d.is_none() {
+            rows.push(null_row.clone())
+        } else {
+            let d = d.downcast::<PyDict>()?;
+            let mut row = Vec::with_capacity(names.len());
+            for k in &py_keys {
+                let val = match d.get_item(k)? {
+                    None => AnyValue::Null,
+                    Some(py_val) => py_object_to_any_value(&py_val.as_borrowed(), strict, true)?,
+                };
+                row.push(val)
+            }
+            rows.push(Row(row))
         }
-        rows.push(Row(row))
+    }
+    Ok(rows)
+}
+
+fn mappings_to_rows(
+    data: &Bound<'_, PyAny>,
+    names: &[String],
+    strict: bool,
+) -> PyResult<Vec<Row<'static>>> {
+    let py = data.py();
+    let mut rows = Vec::with_capacity(data.len()?);
+    let null_row = Row::new(vec![AnyValue::Null; names.len()]);
+
+    // pre-convert keys/names so we don't repeatedly create them in the loop
+    let py_keys: Vec<Py<PyString>> = names.iter().map(|k| PyString::new(py, k).into()).collect();
+
+    for d in data.try_iter()? {
+        let d = d?;
+        if d.is_none() {
+            rows.push(null_row.clone())
+        } else {
+            let d = d.downcast::<PyMapping>()?;
+            let mut row = Vec::with_capacity(names.len());
+            for k in &py_keys {
+                let py_val = d.get_item(k)?;
+                let val = if py_val.is_none() {
+                    AnyValue::Null
+                } else {
+                    py_object_to_any_value(&py_val, strict, true)?
+                };
+                row.push(val)
+            }
+            rows.push(Row(row))
+        }
     }
     Ok(rows)
 }
@@ -172,35 +232,65 @@ fn get_schema_names(
     data: &Bound<PyAny>,
     schema: Option<&Schema>,
     infer_schema_length: Option<usize>,
+    from_mapping: bool,
 ) -> PyResult<Vec<String>> {
     if let Some(schema) = schema {
         Ok(schema.iter_names().map(|n| n.to_string()).collect())
     } else {
-        infer_schema_names_from_data(data, infer_schema_length)
+        let data_len = data.len()?;
+        let infer_schema_length = infer_schema_length
+            .map(|n| std::cmp::max(1, n))
+            .unwrap_or(data_len);
+
+        if from_mapping {
+            infer_schema_names_from_mapping_data(data, infer_schema_length)
+        } else {
+            infer_schema_names_from_dict_data(data, infer_schema_length)
+        }
     }
 }
 
 /// Infer schema names from an iterable of dictionaries.
 ///
-/// The resulting schema order is determined by the order in which the names are encountered in
-/// the data.
-fn infer_schema_names_from_data(
+/// The resulting schema order is determined by the order
+/// in which the names are encountered in the data.
+fn infer_schema_names_from_dict_data(
     data: &Bound<PyAny>,
-    infer_schema_length: Option<usize>,
+    infer_schema_length: usize,
 ) -> PyResult<Vec<String>> {
-    let data_len = data.len()?;
-    let infer_schema_length = infer_schema_length
-        .map(|n| std::cmp::max(1, n))
-        .unwrap_or(data_len);
-
     let mut names = PlIndexSet::new();
     for d in data.try_iter()?.take(infer_schema_length) {
         let d = d?;
-        let d = d.downcast::<PyDict>()?;
-        let keys = d.keys();
-        for name in keys {
-            let name = name.extract::<String>()?;
-            names.insert(name);
+        if !d.is_none() {
+            let d = d.downcast::<PyDict>()?;
+            let keys = d.keys().iter();
+            for name in keys {
+                let name = name.extract::<String>()?;
+                names.insert(name);
+            }
+        }
+    }
+    Ok(names.into_iter().collect())
+}
+
+/// Infer schema names from an iterable of mapping objects.
+///
+/// The resulting schema order is determined by the order
+/// in which the names are encountered in the data.
+fn infer_schema_names_from_mapping_data(
+    data: &Bound<PyAny>,
+    infer_schema_length: usize,
+) -> PyResult<Vec<String>> {
+    let mut names = PlIndexSet::new();
+    for d in data.try_iter()?.take(infer_schema_length) {
+        let d = d?;
+        if !d.is_none() {
+            let d = d.downcast::<PyMapping>()?;
+            let keys = d.keys()?;
+            for name in keys {
+                let name = name.extract::<String>()?;
+                names.insert(name);
+            }
         }
     }
     Ok(names.into_iter().collect())

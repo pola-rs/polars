@@ -13,3 +13,6 @@ description = "FFI utils for the Polars project."
 [dependencies]
 arrow = { workspace = true }
 polars-core = { workspace = true }
+
+[lints]
+workspace = true

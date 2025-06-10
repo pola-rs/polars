@@ -8,6 +8,7 @@ use crate::series::ops::SeriesSealed;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 #[derive(Default)]
 pub enum RoundMode {
@@ -210,7 +211,8 @@ pub trait RoundSeries: SeriesSealed {
                 .into_series());
         }
 
-        polars_bail!(InvalidOperation: "round can only be used on numeric types (f32, f64, or decimal)");
+        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "round can only be used on numeric types" );
+        Ok(s.clone())
     }
 
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {

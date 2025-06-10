@@ -141,7 +141,7 @@ where
             unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
             new_values.into(),
             Some(validity.into()),
         );

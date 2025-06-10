@@ -78,11 +78,14 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
                 return true;
             }
 
-            use FunctionExpr as F;
-            matches!(
-                function,
-                F::Boolean(BooleanFunction::IsIn { .. }) | F::Replace | F::ReplaceStrict { .. }
-            )
+            use IRFunctionExpr as F;
+            match function {
+                #[cfg(feature = "is_in")]
+                F::Boolean(IRBooleanFunction::IsIn { .. }) => true,
+                #[cfg(feature = "replace")]
+                F::Replace | F::ReplaceStrict { .. } => true,
+                _ => false,
+            }
         },
         _ => false,
     }
@@ -138,7 +141,6 @@ pub fn is_input_independent_rec(
 
     let ret = match arena.get(expr_key) {
         AExpr::Explode { expr: inner, .. }
-        | AExpr::Alias(inner, _)
         | AExpr::Cast {
             expr: inner,
             dtype: _,
@@ -199,6 +201,7 @@ pub fn is_input_independent_rec(
             function: _,
             output_type: _,
             options: _,
+            fmt_str: _,
         }
         | AExpr::Function {
             input,
@@ -207,6 +210,11 @@ pub fn is_input_independent_rec(
         } => input
             .iter()
             .all(|expr| is_input_independent_rec(expr.node(), arena, cache)),
+        AExpr::Eval {
+            expr,
+            evaluation: _,
+            variant: _,
+        } => is_input_independent_rec(*expr, arena, cache),
         AExpr::Window {
             function,
             partition_by,
@@ -287,8 +295,7 @@ pub fn is_length_preserving_rec(
 
         AExpr::Column(_) => true,
 
-        AExpr::Alias(inner, _)
-        | AExpr::Cast {
+        AExpr::Cast {
             expr: inner,
             dtype: _,
             options: _,
@@ -323,6 +330,7 @@ pub fn is_length_preserving_rec(
             function: _,
             output_type: _,
             options,
+            fmt_str: _,
         }
         | AExpr::Function {
             input,
@@ -335,6 +343,7 @@ pub fn is_length_preserving_rec(
                     .iter()
                     .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
         },
+        AExpr::Eval { .. } => true,
         AExpr::Window {
             function: _, // Actually shouldn't matter for window functions.
             partition_by: _,
@@ -555,7 +564,8 @@ fn lower_exprs_with_ctx(
                 });
                 let explode_expr =
                     ExprIR::new(trans_inner, OutputName::Alias(exploded_name.clone()));
-                let output_schema = schema_for_select(trans_input, &[explode_expr.clone()], ctx)?;
+                let output_schema =
+                    schema_for_select(trans_input, std::slice::from_ref(&explode_expr), ctx)?;
                 let node_kind = PhysNodeKind::Select {
                     input: trans_input,
                     selectors: vec![explode_expr.clone()],
@@ -565,7 +575,6 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(exploded_name)));
             },
-            AExpr::Alias(_, _) => unreachable!("alias found in physical plan"),
             AExpr::Column(_) => unreachable!("column should always be streamable"),
             AExpr::Literal(_) => {
                 let out_name = unique_column_name();
@@ -577,7 +586,7 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
-                function: FunctionExpr::ConcatExpr(_rechunk),
+                function: IRFunctionExpr::ConcatExpr(_rechunk),
                 options: _,
             } => {
                 // We have to lower each expression separately as they might have different lengths.
@@ -606,7 +615,7 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
-                function: FunctionExpr::Unique(maintain_order),
+                function: IRFunctionExpr::Unique(maintain_order),
                 options: _,
             } => {
                 assert!(inner_exprs.len() == 1);
@@ -617,7 +626,7 @@ fn lower_exprs_with_ctx(
                 let group_by_key_expr =
                     ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
                 let group_by_output_schema =
-                    schema_for_select(trans_input, &[group_by_key_expr.clone()], ctx)?;
+                    schema_for_select(trans_input, std::slice::from_ref(&group_by_key_expr), ctx)?;
                 let group_by_stream = build_group_by_stream(
                     trans_input,
                     &[group_by_key_expr],
@@ -635,9 +644,10 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
             },
 
+            #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
                 options: _,
             } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena) => {
                 // Translate left and right side separately (they could have different lengths).
@@ -743,6 +753,28 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
             },
+            AExpr::Eval {
+                expr: inner,
+                evaluation,
+                variant,
+            } => match variant {
+                EvalVariant::List => {
+                    let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let eval_expr = AExpr::Eval {
+                        expr: trans_expr[0],
+                        evaluation,
+                        variant,
+                    };
+                    input_streams.insert(trans_input);
+                    transformed_exprs.push(ctx.expr_arena.add(eval_expr));
+                },
+                EvalVariant::Cumulative { .. } => {
+                    // Cumulative is not elementwise, this would need a special node.
+                    let out_name = unique_column_name();
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                },
+            },
             AExpr::Ternary {
                 predicate,
                 truthy,
@@ -780,7 +812,7 @@ fn lower_exprs_with_ctx(
                 let sorted_name = unique_column_name();
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(sorted_name.clone()));
                 let select_stream =
-                    build_select_stream_with_ctx(input, &[inner_expr_ir.clone()], ctx)?;
+                    build_select_stream_with_ctx(input, std::slice::from_ref(&inner_expr_ir), ctx)?;
                 let col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
                 let kind = PhysNodeKind::Sort {
                     input: select_stream,
@@ -882,7 +914,8 @@ fn lower_exprs_with_ctx(
                     let out_name = unique_column_name();
                     let trans_agg_expr = ctx.expr_arena.add(AExpr::Agg(agg));
                     let expr_ir = ExprIR::new(trans_agg_expr, OutputName::Alias(out_name.clone()));
-                    let output_schema = schema_for_select(trans_input, &[expr_ir.clone()], ctx)?;
+                    let output_schema =
+                        schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
                     let kind = PhysNodeKind::Reduce {
                         input: trans_input,
                         exprs: vec![expr_ir],
@@ -898,8 +931,11 @@ fn lower_exprs_with_ctx(
                         lower_exprs_with_ctx(input, &[inner], ctx)?;
                     let group_by_key_expr =
                         ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
-                    let group_by_output_schema =
-                        schema_for_select(trans_input, &[group_by_key_expr.clone()], ctx)?;
+                    let group_by_output_schema = schema_for_select(
+                        trans_input,
+                        std::slice::from_ref(&group_by_key_expr),
+                        ctx,
+                    )?;
                     let group_by_stream = build_group_by_stream(
                         trans_input,
                         &[group_by_key_expr],
@@ -916,8 +952,11 @@ fn lower_exprs_with_ctx(
 
                     let len_node = ctx.expr_arena.add(AExpr::Len);
                     let len_expr_ir = ExprIR::new(len_node, OutputName::Alias(tmp_name.clone()));
-                    let output_schema =
-                        schema_for_select(group_by_stream, &[len_expr_ir.clone()], ctx)?;
+                    let output_schema = schema_for_select(
+                        group_by_stream,
+                        std::slice::from_ref(&len_expr_ir),
+                        ctx,
+                    )?;
                     let kind = PhysNodeKind::Reduce {
                         input: group_by_stream,
                         exprs: vec![len_expr_ir],
@@ -939,7 +978,7 @@ fn lower_exprs_with_ctx(
             AExpr::Len => {
                 let out_name = unique_column_name();
                 let expr_ir = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
-                let output_schema = schema_for_select(input, &[expr_ir.clone()], ctx)?;
+                let output_schema = schema_for_select(input, std::slice::from_ref(&expr_ir), ctx)?;
                 let kind = PhysNodeKind::Reduce {
                     input,
                     exprs: vec![expr_ir],

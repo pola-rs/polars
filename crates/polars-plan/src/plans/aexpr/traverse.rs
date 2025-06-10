@@ -11,7 +11,6 @@ impl AExpr {
 
         match self {
             Column(_) | Literal(_) | Len => {},
-            Alias(e, _) => container.extend([*e]),
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -55,6 +54,15 @@ impl AExpr {
                 container.extend(partition_by.iter().rev().cloned());
                 container.extend([*function]);
             },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                // We don't use the evaluation here because it does not contain inputs.
+                _ = evaluation;
+                container.extend([*expr]);
+            },
             Slice {
                 input,
                 offset,
@@ -69,7 +77,6 @@ impl AExpr {
         use AExpr::*;
         let input = match &mut self {
             Column(_) | Literal(_) | Len => return self,
-            Alias(input, _) => input,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
@@ -121,6 +128,15 @@ impl AExpr {
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
                 }
+                return self;
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                *expr = inputs[0];
+                _ = evaluation; // Intentional.
                 return self;
             },
             Slice {

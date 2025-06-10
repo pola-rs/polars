@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -8,15 +8,16 @@ use polars_core::config;
 use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::CreateNewSinkFn;
+use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
+use crate::nodes::io_sinks::metrics::WriteMetrics;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
@@ -41,10 +42,15 @@ pub struct MaxSizePartitionSinkNode {
     ///
     /// This is somewhat proportional to the amount of files open at any given point.
     num_retire_tasks: usize,
+
+    per_partition_sort_by: Option<PerPartitionSortBy>,
+    partition_metrics: Arc<Mutex<Vec<Vec<WriteMetrics>>>>,
+    finish_callback: Option<SinkFinishCallback>,
 }
 
 const DEFAULT_RETIRE_TASKS: usize = 1;
 impl MaxSizePartitionSinkNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
@@ -53,6 +59,9 @@ impl MaxSizePartitionSinkNode {
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
         sink_options: SinkOptions,
+
+        per_partition_sort_by: Option<PerPartitionSortBy>,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(max_size > 0);
         let num_retire_tasks =
@@ -71,6 +80,9 @@ impl MaxSizePartitionSinkNode {
             ext,
             sink_options,
             num_retire_tasks,
+            per_partition_sort_by,
+            partition_metrics: Arc::new(Mutex::new(Vec::with_capacity(num_retire_tasks))),
+            finish_callback,
         }
     }
 }
@@ -119,12 +131,14 @@ impl SinkNode for MaxSizePartitionSinkNode {
         let file_path_cb = self.file_path_cb.clone();
         let create_new = self.create_new.clone();
         let ext = self.ext.clone();
+        let per_partition_sort_by = self.per_partition_sort_by.clone();
         let retire_error = has_error_occurred.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             struct CurrentSink {
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
                 num_remaining: IdxSize,
+                node: Box<dyn SinkNode + Send + Sync>,
             }
 
             let verbose = config::verbose();
@@ -156,10 +170,11 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     ext.as_str(),
                                     verbose,
                                     &state,
+                                    per_partition_sort_by.as_ref(),
                                 )
                                 .await?;
                                 file_idx += 1;
-                                let Some((join_handles, sender)) = result else {
+                                let Some((join_handles, sender, node)) = result else {
                                     return Ok(());
                                 };
 
@@ -167,6 +182,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     sender,
                                     num_remaining: max_size,
                                     join_handles,
+                                    node,
                                 })
                             },
                         };
@@ -201,9 +217,13 @@ impl SinkNode for MaxSizePartitionSinkNode {
                             return Ok(());
                         };
 
-                        let join_handles = std::mem::take(&mut current_sink.join_handles);
-                        drop(current_sink_opt.take());
-                        if retire_tx.send(join_handles).await.is_err() {
+                        let current_sink = current_sink_opt.take().unwrap();
+                        drop(current_sink.sender);
+                        if retire_tx
+                            .send((current_sink.join_handles, current_sink.node))
+                            .await
+                            .is_err()
+                        {
                             return Ok(());
                         };
 
@@ -217,11 +237,15 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 outcome.stopped();
             }
 
-            if let Some(mut current_sink) = current_sink_opt.take() {
+            if let Some(current_sink) = current_sink_opt.take() {
                 drop(current_sink.sender);
-                while let Some(res) = current_sink.join_handles.next().await {
-                    res?;
-                }
+                if retire_tx
+                    .send((current_sink.join_handles, current_sink.node))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                };
             }
 
             Ok(())
@@ -234,18 +258,46 @@ impl SinkNode for MaxSizePartitionSinkNode {
         // but it can be scaled up using an environment variable.
         let has_error_occurred = &has_error_occurred;
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
+            let global_partition_metrics = self.partition_metrics.clone();
             let has_error_occurred = has_error_occurred.clone();
             spawn(TaskPriority::High, async move {
-                while let Ok(mut join_handles) = retire_rx.recv().await {
+                let mut partition_metrics = Vec::new();
+
+                while let Ok((mut join_handles, node)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
                         ret.inspect_err(|_| {
                             has_error_occurred.store(true, Ordering::Relaxed);
                         })?;
                     }
+                    if let Some(metrics) = node.get_metrics()? {
+                        partition_metrics.push(metrics);
+                    }
+                    node.finish()?;
+                }
+
+                {
+                    global_partition_metrics
+                        .lock()
+                        .unwrap()
+                        .push(partition_metrics);
                 }
 
                 Ok(())
             })
         }));
+    }
+
+    fn finish(&self) -> PolarsResult<()> {
+        if let Some(finish_callback) = &self.finish_callback {
+            let mut partition_metrics = self.partition_metrics.lock().unwrap();
+            let partition_metrics =
+                std::mem::take::<Vec<Vec<WriteMetrics>>>(partition_metrics.as_mut())
+                    .into_iter()
+                    .flatten()
+                    .collect();
+            let df = WriteMetrics::collapse_to_df(partition_metrics, &self.input_schema, None);
+            finish_callback.call(df)?;
+        }
+        Ok(())
     }
 }

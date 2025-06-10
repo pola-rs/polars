@@ -400,7 +400,7 @@ pub trait ChunkSort<T: PolarsDataType> {
         by: &[Column],
         _options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        polars_bail!(opq = arg_sort_multiple, T::get_dtype());
+        polars_bail!(opq = arg_sort_multiple, T::get_static_dtype());
     }
 }
 
@@ -408,6 +408,7 @@ pub type FillNullLimit = Option<IdxSize>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum FillNullStrategy {
     /// previous value in array
     Backward(FillNullLimit),
@@ -649,7 +650,7 @@ pub trait ChunkApplyKernel<A: Array> {
 /// Mask the first unique values as `true`
 pub trait IsFirstDistinct<T: PolarsDataType> {
     fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first_distinct, T::get_dtype());
+        polars_bail!(opq = is_first_distinct, T::get_static_dtype());
     }
 }
 
@@ -657,6 +658,6 @@ pub trait IsFirstDistinct<T: PolarsDataType> {
 /// Mask the last unique values as `true`
 pub trait IsLastDistinct<T: PolarsDataType> {
     fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last_distinct, T::get_dtype());
+        polars_bail!(opq = is_last_distinct, T::get_static_dtype());
     }
 }

@@ -2,18 +2,24 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, overload
 
-from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.deprecation import deprecated
 from polars._utils.serde import serialize_polars_object
 from polars._utils.various import display_dot_graph
 from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
+    import sys
     from io import IOBase
     from pathlib import Path
 
     from polars import Expr
-    from polars._typing import SerializationFormat
+    from polars._typing import SchemaDict, SerializationFormat
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprMetaNameSpace:
@@ -207,7 +213,7 @@ class ExprMetaNameSpace:
                 return None
             raise
 
-    def pop(self) -> list[Expr]:
+    def pop(self, *, schema: SchemaDict | None = None) -> list[Expr]:
         """
         Pop the latest expression and return the input(s) of the popped expression.
 
@@ -220,14 +226,14 @@ class ExprMetaNameSpace:
 
         Examples
         --------
-        >>> e = pl.col("foo").alias("bar")
+        >>> e = pl.col("foo") + pl.col("bar")
         >>> first = e.meta.pop()[0]
-        >>> first.meta == pl.col("foo")
-        True
         >>> first.meta == pl.col("bar")
+        True
+        >>> first.meta == pl.col("foo")
         False
         """
-        return [wrap_expr(e) for e in self._pyexpr.meta_pop()]
+        return [wrap_expr(e) for e in self._pyexpr.meta_pop(schema)]
 
     def root_names(self) -> list[str]:
         """
@@ -289,8 +295,10 @@ class ExprMetaNameSpace:
     def serialize(
         self, file: None = ..., *, format: Literal["binary"] = ...
     ) -> bytes: ...
+
     @overload
     def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+
     @overload
     def serialize(
         self, file: IOBase | str | Path, *, format: SerializationFormat = ...
@@ -356,7 +364,7 @@ class ExprMetaNameSpace:
     @overload
     def write_json(self, file: IOBase | str | Path) -> None: ...
 
-    @deprecate_renamed_function("Expr.meta.serialize", version="0.20.11")
+    @deprecated("`meta.write_json` was renamed; use `meta.serialize` instead")
     def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """
         Write expression to json.
@@ -367,12 +375,18 @@ class ExprMetaNameSpace:
         return self.serialize(file, format="json")
 
     @overload
-    def tree_format(self, *, return_as_string: Literal[False]) -> None: ...
+    def tree_format(
+        self, *, return_as_string: Literal[False], schema: None | SchemaDict = None
+    ) -> None: ...
 
     @overload
-    def tree_format(self, *, return_as_string: Literal[True]) -> str: ...
+    def tree_format(
+        self, *, return_as_string: Literal[True], schema: None | SchemaDict = None
+    ) -> str: ...
 
-    def tree_format(self, *, return_as_string: bool = False) -> str | None:
+    def tree_format(
+        self, *, return_as_string: bool = False, schema: None | SchemaDict = None
+    ) -> str | None:
         """
         Format the expression as a tree.
 
@@ -386,7 +400,7 @@ class ExprMetaNameSpace:
         >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
         >>> e.meta.tree_format(return_as_string=True)  # doctest: +SKIP
         """
-        s = self._pyexpr.meta_tree_format()
+        s = self._pyexpr.meta_tree_format(schema)
         if return_as_string:
             return s
         else:
@@ -400,6 +414,7 @@ class ExprMetaNameSpace:
         output_path: str | Path | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
+        schema: None | SchemaDict = None,
     ) -> str | None:
         """
         Format the expression as a Graphviz graph.
@@ -423,7 +438,7 @@ class ExprMetaNameSpace:
         >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
         >>> e.meta.show_graph()  # doctest: +SKIP
         """
-        dot = self._pyexpr.meta_show_graph()
+        dot = self._pyexpr.meta_show_graph(schema)
         return display_dot_graph(
             dot=dot,
             show=show,

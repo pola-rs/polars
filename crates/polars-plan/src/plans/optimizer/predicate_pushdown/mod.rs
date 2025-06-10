@@ -1,7 +1,6 @@
 mod group_by;
 mod join;
 mod keys;
-mod rename;
 mod utils;
 
 use polars_core::datatypes::PlHashMap;
@@ -9,13 +8,9 @@ use polars_core::prelude::*;
 use recursive::recursive;
 use utils::*;
 
-#[cfg(feature = "python")]
-use self::python_dsl::PythonScanSource;
 use super::*;
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
 pub type ExprEval<'a> =
@@ -40,16 +35,19 @@ mod inner {
         nodes_scratch: UnitVec<Node>,
         #[expect(unused)]
         pub(super) new_streaming: bool,
+        // Controls pushing filters past fallible projections
+        pub(super) maintain_errors: bool,
     }
 
     impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>, new_streaming: bool) -> Self {
+        pub fn new(expr_eval: ExprEval<'a>, maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
                 expr_eval,
                 verbose: verbose(),
                 block_at_cache: true,
                 nodes_scratch: unitvec![],
                 new_streaming,
+                maintain_errors,
             }
         }
 
@@ -119,12 +117,15 @@ impl PredicatePushDown<'_> {
             }
             let input = inputs[inputs.len() - 1];
 
+            let maintain_errors = self.maintain_errors;
             let (eligibility, alias_rename_map) = pushdown_eligibility(
                 &exprs,
                 &[],
                 &acc_predicates,
                 expr_arena,
                 self.empty_nodes_scratch_mut(),
+                maintain_errors,
+                lp_arena.get(input),
             )?;
 
             let local_predicates = match eligibility {
@@ -257,6 +258,10 @@ impl PredicatePushDown<'_> {
     ) -> PolarsResult<IR> {
         use IR::*;
 
+        // Note: The logic within the match block should ensure `acc_predicates` is left in a state
+        // where it contains only pushable exprs after it is done (although in some cases it may
+        // contain a single fallible expression).
+
         match lp {
             Filter {
                 // Note: We assume AND'ed predicates have already been split to separate IR filter
@@ -275,12 +280,16 @@ impl PredicatePushDown<'_> {
                 let tmp_key = temporary_unique_key(&acc_predicates);
                 acc_predicates.insert(tmp_key.clone(), predicate.clone());
 
+                let maintain_errors = self.maintain_errors;
+
                 let local_predicates = match pushdown_eligibility(
                     &[],
-                    &[predicate.clone()],
+                    &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
                     self.empty_nodes_scratch_mut(),
+                    maintain_errors,
+                    lp_arena.get(input),
                 )?
                 .0
                 {
@@ -348,6 +357,7 @@ impl PredicatePushDown<'_> {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                id: _,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -402,6 +412,7 @@ impl PredicatePushDown<'_> {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        id: Default::default(),
                     }
                 } else {
                     let lp = Scan {
@@ -412,6 +423,7 @@ impl PredicatePushDown<'_> {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        id: Default::default(),
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
@@ -478,17 +490,6 @@ impl PredicatePushDown<'_> {
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {
                     match function {
-                        FunctionIR::Rename { existing, new, .. } => {
-                            process_rename(&mut acc_predicates, expr_arena, existing, new);
-
-                            self.pushdown_and_continue(
-                                lp,
-                                acc_predicates,
-                                lp_arena,
-                                expr_arena,
-                                false,
-                            )
-                        },
                         FunctionIR::Explode { columns, .. } => {
                             let condition = |name: &PlSmallStr| columns.iter().any(|s| s == name);
 
@@ -606,31 +607,9 @@ impl PredicatePushDown<'_> {
                 acc_predicates,
             ),
             lp @ Union { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             lp @ Sort { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
@@ -663,22 +642,31 @@ impl PredicatePushDown<'_> {
             PythonScan { mut options } => {
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
-                    // For IO plugins we only accept streamable expressions as
-                    // we want to apply the predicates to the batches.
-                    if !is_elementwise_rec(predicate.node(), expr_arena)
-                        && matches!(options.python_source, PythonScanSource::IOPlugin)
-                    {
-                        let lp = PythonScan { options };
-                        return Ok(self.optional_apply_predicate(
-                            lp,
-                            vec![predicate],
-                            lp_arena,
-                            expr_arena,
-                        ));
-                    }
+                    match ExprPushdownGroup::Pushable.update_with_expr_rec(
+                        expr_arena.get(predicate.node()),
+                        expr_arena,
+                        None,
+                    ) {
+                        ExprPushdownGroup::Barrier => {
+                            if cfg!(debug_assertions) {
+                                // Expression should not be pushed here by the optimizer
+                                panic!()
+                            }
 
-                    options.predicate = PythonPredicate::Polars(predicate);
+                            return Ok(self.optional_apply_predicate(
+                                PythonScan { options },
+                                vec![predicate],
+                                lp_arena,
+                                expr_arena,
+                            ));
+                        },
+
+                        ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
+                            options.predicate = PythonPredicate::Polars(predicate);
+                        },
+                    }
                 }
+
                 Ok(PythonScan { options })
             },
             #[cfg(feature = "merge_sorted")]

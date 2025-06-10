@@ -5,6 +5,7 @@ pub mod reduce;
 use std::hash::Hash;
 
 use polars_error::PolarsResult;
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ use crate::prelude::{Column, Series};
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
@@ -44,6 +46,10 @@ impl Scalar {
 
     pub const fn null(dtype: DataType) -> Self {
         Self::new(dtype, AnyValue::Null)
+    }
+
+    pub fn new_idxsize(value: IdxSize) -> Self {
+        value.into()
     }
 
     pub fn cast_with_options(self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {

@@ -18,27 +18,27 @@ fn should_block_join_specific(
         // joins can produce null values
         Function {
             function:
-                FunctionExpr::Boolean(BooleanFunction::IsNotNull)
-                | FunctionExpr::Boolean(BooleanFunction::IsNull)
-                | FunctionExpr::FillNull,
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull)
+                | IRFunctionExpr::Boolean(IRBooleanFunction::IsNull)
+                | IRFunctionExpr::FillNull,
             ..
         } => join_produces_null(how),
         #[cfg(feature = "is_in")]
         Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
             ..
         } => join_produces_null(how),
         // joins can produce duplicates
         #[cfg(feature = "is_unique")]
         Function {
             function:
-                FunctionExpr::Boolean(BooleanFunction::IsUnique)
-                | FunctionExpr::Boolean(BooleanFunction::IsDuplicated),
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsUnique)
+                | IRFunctionExpr::Boolean(IRBooleanFunction::IsDuplicated),
             ..
         } => LeftRight(true, true),
         #[cfg(feature = "is_first_distinct")]
         Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsFirstDistinct),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsFirstDistinct),
             ..
         } => LeftRight(true, true),
         // any operation that checks for equality or ordering can be wrong because
@@ -107,7 +107,7 @@ pub(super) fn process_join(
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
-    options: Arc<JoinOptions>,
+    options: Arc<JoinOptionsIR>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
@@ -138,7 +138,7 @@ pub(super) fn process_join(
         )
         .unwrap_or_else(|e| {
             if cfg!(debug_assertions) {
-                panic!("{:?}", e)
+                panic!("{e:?}")
             } else {
                 ExprOrigin::None
             }

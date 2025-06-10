@@ -419,9 +419,7 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    with pytest.deprecated_call(
-        match="`ExprDateTimeNameSpace.with_time_unit` is deprecated"
-    ):
+    with pytest.deprecated_call(match="`dt.with_time_unit` is deprecated"):
         s1 = (
             pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
             .cast(pl.Datetime)
@@ -473,7 +471,7 @@ def test_datetime_comp_tz_aware_invalid() -> None:
     other = datetime(2020, 1, 1)
     with pytest.raises(
         TypeError,
-        match="Datetime time zone None does not match Series timezone 'Asia/Kathmandu'",
+        match="datetime time zone None does not match Series timezone 'Asia/Kathmandu'",
     ):
         _ = a > other
 
@@ -2469,3 +2467,50 @@ def test_temporal_downcast_construction_19309() -> None:
         datetime(1970, 1, 1),
         datetime(1970, 1, 1),
     ]
+
+
+def test_timezone_ignore_error(
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dtype = pl.Datetime(time_zone="non-existent")
+
+    capfd.readouterr()
+
+    with pytest.raises(
+        ComputeError,
+        match=(
+            "unable to parse time zone: 'non-existent'"
+            ".*POLARS_IGNORE_TIMEZONE_PARSE_ERROR"
+        ),
+    ):
+        pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
+        capfd.readouterr()
+
+        df = pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
+
+        assert df.dtypes[0] == dtype
+
+        capture = capfd.readouterr().err
+
+        assert (
+            "WARN: unable to parse time zone: 'non-existent'. Please check the "
+            "Time Zone Database for a list of available time zones."
+        ) in capture
+
+        tbl = df.to_arrow()
+
+        assert tbl.schema[0].type.tz == "non-existent"
+
+        assert_frame_equal(pl.DataFrame(tbl), df)
+
+    with pytest.raises(
+        ComputeError,
+        match="unable to parse time zone: 'non-existent'",
+    ):
+        pl.DataFrame(tbl)

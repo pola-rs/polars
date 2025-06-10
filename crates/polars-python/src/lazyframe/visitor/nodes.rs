@@ -1,5 +1,6 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
+use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
@@ -9,14 +10,14 @@ use polars_plan::prelude::{FileScan, FunctionIR, PythonPredicate, UnifiedScanArg
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{PyDict, PyList, PyString};
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
 
 fn scan_type_to_pyobject(
-    py: Python,
+    py: Python<'_>,
     scan_type: &FileScan,
     cloud_options: &Option<CloudOptions>,
 ) -> PyResult<PyObject> {
@@ -126,6 +127,29 @@ impl PyFileOptions {
     #[getter]
     fn include_file_paths(&self, _py: Python<'_>) -> Option<&str> {
         self.inner.include_file_paths.as_deref()
+    }
+
+    /// One of:
+    /// * None
+    /// * ("iceberg-position-delete", dict[int, list[str]])
+    #[getter]
+    fn deletion_files(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(match &self.inner.deletion_files {
+            None => py.None().into_any(),
+
+            Some(DeletionFilesList::IcebergPositionDelete(paths)) => {
+                let out = PyDict::new(py);
+
+                for (k, v) in paths.iter() {
+                    out.set_item(*k, v.as_ref())?;
+                }
+
+                ("iceberg-position-delete", out)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+        })
     }
 }
 
@@ -371,18 +395,36 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             output_schema: _,
             scan_type,
             unified_scan_args,
-        } => Scan {
-            paths: sources
-                .into_paths()
-                .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?
-                .into_py_any(py)?,
-            // TODO: file info
-            file_info: py.None(),
-            predicate: predicate.as_ref().map(|e| e.into()),
-            file_options: PyFileOptions {
-                inner: (**unified_scan_args).clone(),
-            },
-            scan_type: scan_type_to_pyobject(py, scan_type, &unified_scan_args.cloud_options)?,
+            id: _,
+        } => {
+            Scan {
+                paths: {
+                    let paths = sources
+                        .into_paths()
+                        .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?;
+
+                    let out = PyList::new(py, [] as [(); 0])?;
+
+                    // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
+                    // will corrupt to `uri:/...`
+                    for path in paths.iter() {
+                        if let Some(path) = path.to_str() {
+                            out.append(path)?
+                        } else {
+                            out.append(path)?
+                        }
+                    }
+
+                    out.into_py_any(py)?
+                },
+                // TODO: file info
+                file_info: py.None(),
+                predicate: predicate.as_ref().map(|e| e.into()),
+                file_options: PyFileOptions {
+                    inner: (**unified_scan_args).clone(),
+                },
+                scan_type: scan_type_to_pyobject(py, scan_type, &unified_scan_args.cloud_options)?,
+            }
         }
         .into_py_any(py),
         IR::DataFrameScan {
@@ -439,7 +481,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             cache_hits,
         } => Cache {
             input: input.0,
-            id_: *id,
+            id_: id.to_usize(),
             cache_hits: *cache_hits,
         }
         .into_py_any(py),
@@ -457,8 +499,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             aggs: aggs.iter().map(|e| e.into()).collect(),
             apply: apply.as_ref().map_or(Ok(()), |_| {
                 Err(PyNotImplementedError::new_err(format!(
-                    "apply inside GroupBy {:?}",
-                    plan
+                    "apply inside GroupBy {plan:?}"
                 )))
             })?,
             maintain_order: *maintain_order,
@@ -563,29 +604,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     streamable: _,
                     fmt_str: _,
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
-                FunctionIR::Pipeline {
-                    function: _,
-                    schema: _,
-                    original: _,
-                } => return Err(PyNotImplementedError::new_err("pipeline mapfunction")),
                 FunctionIR::Unnest { columns } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                FunctionIR::Rename {
-                    existing,
-                    new,
-                    swapping,
-                    schema: _,
-                } => (
-                    "rename",
-                    existing.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    new.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    *swapping,
-                )
-                    .into_py_any(py)?,
                 FunctionIR::Explode { columns, schema: _ } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),

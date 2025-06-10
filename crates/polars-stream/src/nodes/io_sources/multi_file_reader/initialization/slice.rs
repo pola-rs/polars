@@ -1,26 +1,33 @@
 use std::collections::VecDeque;
 
 use futures::StreamExt;
+use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
+use super::deletion_files::{DeletionFilesProvider, ExternalFilterMask};
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
+use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 
 pub struct ResolvedSliceInfo {
+    /// In the negative slice case this can be a non-zero starting position.
     pub scan_source_idx: usize,
+    /// In the negative slice case this will hold a row index with the offset adjusted.
     pub row_index: Option<RowIndex>,
-    /// This should always be positive slice.
+    /// Resolved positive slice.
     pub pre_slice: Option<Slice>,
     /// If we resolved a negative slice we keep the initialized readers here (with a limit). For
     /// Parquet this can save a duplicate metadata fetch/decode.
     ///
     /// This will be in-order - i.e. `pop_front()` corresponds to the next reader.
+    ///
+    /// `Option(scan_source_idx, Deque(file_reader, n_rows))`
     #[expect(clippy::type_complexity)]
-    pub initialized_readers: Option<(usize, VecDeque<(Box<dyn FileReader>, IdxSize)>)>,
+    pub initialized_readers: Option<(usize, VecDeque<(Box<dyn FileReader>, RowCounter)>)>,
+    pub row_deletions: PlHashMap<usize, ExternalFilterMask>,
 }
 
 pub async fn resolve_to_positive_slice(
@@ -32,6 +39,7 @@ pub async fn resolve_to_positive_slice(
             row_index: config.row_index.clone(),
             pre_slice: None,
             initialized_readers: None,
+            row_deletions: Default::default(),
         }),
 
         pre_slice @ Some(Slice::Positive { .. }) => Ok(ResolvedSliceInfo {
@@ -39,6 +47,7 @@ pub async fn resolve_to_positive_slice(
             row_index: config.row_index.clone(),
             pre_slice,
             initialized_readers: None,
+            row_deletions: Default::default(),
         }),
 
         Some(_) => resolve_negative_slice(config).await,
@@ -74,14 +83,21 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
             row_index: config.row_index.clone(),
             pre_slice: Some(Slice::Positive { offset: 0, len: 0 }),
             initialized_readers: None,
+            row_deletions: Default::default(),
         });
     }
 
-    let mut initialized_readers = VecDeque::with_capacity(
+    let deletion_files_provider = DeletionFilesProvider::new(config.deletion_files.clone());
+    let num_pipelines = config.num_pipelines();
+
+    let mut initialized_readers =
+        VecDeque::with_capacity(config.sources.len().min(num_pipelines.saturating_add(4)));
+    let mut file_row_deletions = PlHashMap::with_capacity(
         config
-            .sources
-            .len()
-            .min(config.num_pipelines().saturating_add(4)),
+            .deletion_files
+            .as_ref()
+            .map_or(0, |x| x.num_files_with_deletions())
+            .min(num_pipelines.saturating_add(4)),
     );
 
     let mut readers_init_iter = futures::stream::iter((0..config.sources.len()).rev())
@@ -89,6 +105,7 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
             let sources = config.sources.clone();
             let cloud_options = config.cloud_options.clone();
             let file_reader_builder = config.file_reader_builder.clone();
+            let deletion_files_provider = deletion_files_provider.clone();
 
             AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
                 let mut reader =
@@ -105,65 +122,83 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
                         })?;
 
                 if verbose {
-                    eprintln!(
-                        "resolve_negative_slice(): init scan source {}",
-                        scan_source_idx
-                    );
+                    eprintln!("resolve_negative_slice(): init scan source {scan_source_idx}");
                 }
 
+                let row_deletions = deletion_files_provider.spawn_row_deletions_init(
+                    scan_source_idx,
+                    cloud_options,
+                    num_pipelines,
+                    verbose,
+                );
+
                 reader.initialize().await?;
-                PolarsResult::Ok(reader)
+                PolarsResult::Ok((scan_source_idx, reader, row_deletions))
             }))
         })
-        .buffered(config.n_readers_pre_init.min(config.sources.len()));
+        .buffered(config.n_readers_pre_init());
 
-    let n_rows_needed = IdxSize::try_from(offset_from_end).unwrap();
-    let slice_len_idxsize = IdxSize::try_from(slice_len).unwrap_or(IdxSize::MAX);
+    let n_rows_needed: usize = offset_from_end;
 
-    let mut n_rows_seen: IdxSize = 0;
-    let mut n_rows_trimmed: IdxSize = 0;
+    let mut n_rows_seen: RowCounter = RowCounter::default();
+    let mut n_rows_trimmed: RowCounter = RowCounter::default();
     let mut n_files_from_end: usize = 0;
 
-    while let Some(mut file_reader) = readers_init_iter.next().await.transpose()? {
+    while let Some((scan_source_idx, mut file_reader, row_deletions)) =
+        readers_init_iter.next().await.transpose()?
+    {
         let n_rows = file_reader.n_rows_in_file().await?;
 
+        let n_rows_deleted = if let Some(row_deletions) = row_deletions {
+            let mask = row_deletions.into_external_filter_mask().await?;
+            let n_rows_deleted = mask.num_deleted_rows();
+
+            file_row_deletions.insert(scan_source_idx, mask.clone());
+
+            n_rows_deleted
+        } else {
+            0
+        };
+
+        let n_rows_this_file = RowCounter::new(n_rows, n_rows_deleted);
+
         // push_front: we are walking in reverse
-        initialized_readers.push_front((file_reader, n_rows));
+        initialized_readers.push_front((file_reader, n_rows_this_file));
 
-        n_rows_seen = n_rows_seen.saturating_add(n_rows);
+        n_rows_seen = n_rows_seen.add(n_rows_this_file);
         n_files_from_end += 1;
-
-        let n_rows_this_file = n_rows;
 
         // Trim readers from end that are already past slice_len.
         while initialized_readers.len() > 1 {
             // `current_rows_held` we exclude the latest file, as the slice offset could begin
             // from any position within that file, meaning that the file could have extra rows
             // that do not contribute to the slice_len.
-            let current_rows_held = n_rows_seen - n_rows_trimmed.saturating_add(n_rows_this_file);
-            let extra_rows_held = current_rows_held.saturating_sub(slice_len_idxsize);
+            let current_rows_held = n_rows_seen.sub(n_rows_this_file.add(n_rows_trimmed));
+            let extra_rows_held = current_rows_held.num_rows()?.saturating_sub(slice_len);
 
-            if extra_rows_held < initialized_readers.back().unwrap().1 {
+            if extra_rows_held < initialized_readers.back().unwrap().1.num_rows()? {
                 break;
             }
 
-            n_rows_trimmed =
-                n_rows_trimmed.saturating_add(initialized_readers.pop_back().unwrap().1)
+            let (_reader, row_counter) = initialized_readers.pop_back().unwrap();
+
+            n_rows_trimmed = n_rows_trimmed.add(row_counter)
         }
 
-        if n_rows_seen >= n_rows_needed {
+        if n_rows_seen.num_rows()? >= n_rows_needed {
             break;
         }
     }
 
     let scan_source_idx = config.sources.len() - n_files_from_end;
     let initialized_readers = Some((scan_source_idx, initialized_readers));
-    let resolved_slice = pre_slice.restrict_to_bounds(usize::try_from(n_rows_seen).unwrap());
+    let resolved_slice = pre_slice.restrict_to_bounds(n_rows_seen.num_rows()?);
 
     if verbose {
         eprintln!(
-            "resolve_negative_slice(): resolved to {:?}",
-            &resolved_slice,
+            "resolve_negative_slice(): \
+            resolved to {resolved_slice:?}, \
+            n_rows_seen: {n_rows_seen:?}"
         );
     }
 
@@ -173,6 +208,7 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
             row_index: config.row_index.clone(),
             pre_slice: Some(Slice::Positive { offset: 0, len: 0 }),
             initialized_readers: None,
+            row_deletions: Default::default(),
         });
     }
 
@@ -183,15 +219,29 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
             eprintln!("resolve_negative_slice(): continuing scan to resolve row index");
         }
 
-        let mut n_rows_skipped_from_start: IdxSize = 0;
+        let mut n_rows_skipped_from_start = RowCounter::default();
 
         // Fully traverse to the beginning to update the row index offset.
-        while let Some(mut reader) = readers_init_iter.next().await.transpose()? {
+        while let Some((_scan_source_idx, mut reader, row_deletions)) =
+            readers_init_iter.next().await.transpose()?
+        {
             let n_rows = reader.n_rows_in_file().await?;
-            n_rows_skipped_from_start = n_rows_skipped_from_start.saturating_add(n_rows);
+
+            let row_deletions = if let Some(row_deletions) = row_deletions {
+                Some(row_deletions.into_external_filter_mask().await?)
+            } else {
+                None
+            };
+
+            let n_rows_deleted = row_deletions.map_or(0, |x| x.num_deleted_rows());
+
+            n_rows_skipped_from_start =
+                n_rows_skipped_from_start.add(RowCounter::new(n_rows, n_rows_deleted));
         }
 
-        row_index.offset = row_index.offset.saturating_add(n_rows_skipped_from_start);
+        row_index.offset = row_index
+            .offset
+            .saturating_add(n_rows_skipped_from_start.num_rows_idxsize_saturating()?);
     }
 
     Ok(ResolvedSliceInfo {
@@ -199,5 +249,6 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
         row_index,
         pre_slice: Some(resolved_slice),
         initialized_readers,
+        row_deletions: file_row_deletions,
     })
 }

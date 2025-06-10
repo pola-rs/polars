@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from polars._typing import (
         ClosedInterval,
         PolarsDataType,
+        QuantileMethod,
         TimeUnit,
     )
 
@@ -1508,3 +1509,24 @@ def test_rolling() -> None:
         ],
         "n": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     }
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"],
+)
+def test_rolling_quantile_with_nulls_22781(method: QuantileMethod) -> None:
+    lf = pl.LazyFrame(
+        {
+            "index": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            "a": [None, None, 1.0, None, None, 1.0, 1.0, None, None],
+        }
+    )
+    method = "nearest"
+    out = (
+        lf.rolling("index", period="2i")
+        .agg(pl.col("a").quantile(0.5, interpolation=method))
+        .collect()
+    )
+    expected = pl.Series("a", [None, None, 1.0, 1.0, None, 1.0, 1.0, 1.0, None])
+    assert_series_equal(out["a"], expected)

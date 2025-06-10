@@ -15,6 +15,8 @@ mod ffi;
 pub(super) mod fmt;
 mod from_natural;
 pub mod iterator;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 mod mutable;
 pub use mutable::*;

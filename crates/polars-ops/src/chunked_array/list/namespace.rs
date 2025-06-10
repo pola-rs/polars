@@ -728,11 +728,16 @@ pub trait ListNameSpaceImpl: AsList {
             cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
             let to_append = other
                 .iter()
-                .flat_map(|s| {
+                .filter_map(|s| {
                     let lst = s.list().unwrap();
-                    lst.get_as_series(0)
+                    // SAFETY: previous rhs_cast ensures the type is correct
+                    unsafe {
+                        lst.get_as_series(0)
+                            .map(|s| s.from_physical_unchecked(&inner_super_type).unwrap())
+                    }
                 })
                 .collect::<Vec<_>>();
+
             // there was a None, so all values will be None
             if to_append.len() != other_len {
                 return Ok(ListChunked::full_null_with_dtype(

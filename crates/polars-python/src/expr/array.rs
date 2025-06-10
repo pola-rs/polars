@@ -103,8 +103,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn arr_contains(&self, other: PyExpr) -> Self {
-        self.inner.clone().arr().contains(other.inner).into()
+    fn arr_contains(&self, other: PyExpr, nulls_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .contains(other.inner, nulls_equal)
+            .into()
     }
 
     #[cfg(feature = "array_count")]

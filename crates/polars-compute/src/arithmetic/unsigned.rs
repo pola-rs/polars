@@ -135,6 +135,10 @@ macro_rules! impl_unsigned_arith_kernel {
                 ret.with_validity(valid)
             }
 
+            fn prim_checked_mul_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+                super::prim_checked_mul_scalar(&lhs, rhs)
+            }
+
             fn prim_true_div(lhs: PArr<$T>, other: PArr<$T>) -> PArr<Self::TrueDivT> {
                 prim_binary_values(lhs, other, |a, b| a as f64 / b as f64)
             }

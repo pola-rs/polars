@@ -31,7 +31,7 @@ pub fn resolve_join(
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
     predicates: Vec<Expr>,
-    mut options: Arc<JoinOptions>,
+    mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
     if !predicates.is_empty() {
@@ -71,7 +71,6 @@ pub fn resolve_join(
             turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
         }
         if turn_off_coalesce {
-            let options = Arc::make_mut(&mut options);
             if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
                 polars_warn!(
                     "coalescing join requested but not all join keys are column references, turning off key coalescing"
@@ -108,8 +107,14 @@ pub fn resolve_join(
         );
     }
 
-    let mut left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
-    let mut right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
+    let mut left_on = left_on
+        .into_iter()
+        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_left))
+        .collect::<PolarsResult<Vec<_>>>()?;
+    let mut right_on = right_on
+        .into_iter()
+        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_right))
+        .collect::<PolarsResult<Vec<_>>>()?;
     let mut joined_on = PlHashSet::new();
 
     #[cfg(feature = "iejoin")]
@@ -347,7 +352,7 @@ pub fn resolve_join(
         schema: join_schema.clone(),
         left_on,
         right_on,
-        options,
+        options: Arc::new(options),
     };
     let join_node = ctxt.lp_arena.add(ir);
 
@@ -391,7 +396,7 @@ fn resolve_join_where(
     input_left: Arc<DslPlan>,
     input_right: Arc<DslPlan>,
     predicates: Vec<Expr>,
-    mut options: Arc<JoinOptions>,
+    mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
     // If not eager, respect the flag.
@@ -411,8 +416,7 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    let opts = Arc::make_mut(&mut options);
-    opts.args.how = JoinType::Cross;
+    options.args.how = JoinType::Cross;
 
     let (mut last_node, join_node) = resolve_join(
         Either::Right(input_left),
@@ -420,7 +424,7 @@ fn resolve_join_where(
         vec![],
         vec![],
         vec![],
-        options.clone(),
+        options,
         ctxt,
     )?;
 
@@ -434,7 +438,7 @@ fn resolve_join_where(
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
-        let predicate = to_expr_ir_ignore_alias(e, arena)?;
+        let predicate = to_expr_ir_materialized_lit(e, arena, &schema_merged)?;
         let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean
@@ -562,8 +566,7 @@ fn build_upcast_node_list(
                                 get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
                                     .ok_or(PolarsError::SchemaMismatch(
                                         format!(
-                                            "'join_where' cannot compare {:?} with {:?}",
-                                            dtype_left, dtype_right
+                                            "'join_where' cannot compare {dtype_left:?} with {dtype_right:?}"
                                         )
                                         .into(),
                                     ))

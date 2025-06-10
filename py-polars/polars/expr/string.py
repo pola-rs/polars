@@ -6,10 +6,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-)
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import find_stacklevel, no_default, qualified_type_name
@@ -19,6 +16,8 @@ from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
+    import sys
+
     from polars import Expr
     from polars._typing import (
         Ambiguous,
@@ -31,6 +30,11 @@ if TYPE_CHECKING:
         UnicodeForm,
     )
     from polars._utils.various import NoDefault
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprStringNameSpace:
@@ -323,6 +327,9 @@ class ExprStringNameSpace:
         Convert a String column into a Decimal column.
 
         This method infers the needed parameters `precision` and `scale`.
+
+        .. versionchanged:: 1.20.0
+            Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
@@ -847,9 +854,7 @@ class ExprStringNameSpace:
         └──────────────┴──────────────┘
         """
         if not isinstance(fill_char, str):
-            msg = (
-                f"pad_start expects a `str`, given a {qualified_type_name(fill_char)!r}"
-            )
+            msg = f'"pad_start" expects a `str`, given a {qualified_type_name(fill_char)!r}'
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
@@ -886,7 +891,9 @@ class ExprStringNameSpace:
         └──────────────┴──────────────┘
         """
         if not isinstance(fill_char, str):
-            msg = f"pad_end expects a `str`, given a {qualified_type_name(fill_char)!r}"
+            msg = (
+                f'"pad_end" expects a `str`, given a {qualified_type_name(fill_char)!r}'
+            )
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
@@ -1642,7 +1649,7 @@ class ExprStringNameSpace:
         └─────────────────────────────────┴───────────────────────┴──────────┘
         """
         if not isinstance(pattern, str):
-            msg = f"extract_groups expects a `str`, given a {qualified_type_name(pattern)!r}"
+            msg = f'"extract_groups" expects a `str`, given a {qualified_type_name(pattern)!r}'
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
@@ -2362,22 +2369,21 @@ class ExprStringNameSpace:
         n = parse_into_expression(n)
         return wrap_expr(self._pyexpr.str_tail(n))
 
-    @deprecate_function(
-        'Use `.str.split("").explode()` instead.'
+    @deprecated(
+        '`str.explode` is deprecated; use `str.split("").explode()` instead.'
         " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use when/then/otherwise"
-        " to handle the empty list before exploding.",
-        version="0.20.31",
+        " To get the exact same behavior, split first and then use a `pl.when...then...otherwise`"
+        " expression to handle the empty list before exploding."
     )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use `.str.split("").explode()` instead.
-            Note that empty strings will result in null instead of being preserved.
-            To get the exact same behavior, split first and then use when/then/otherwise
-            to handle the empty list before exploding.
+            Use the `.str.split("").explode()` method instead. Note that empty strings
+            will result in null instead of being preserved. To get the exact same
+            behavior, split first and then use a `pl.when...then...otherwise`
+            expression to handle the empty list before exploding.
 
         Returns
         -------
@@ -2648,8 +2654,8 @@ class ExprStringNameSpace:
             # Early return in case of an empty mapping.
             if not patterns:
                 return wrap_expr(self._pyexpr)
-            replace_with = pl.Series(patterns.values())
-            patterns = pl.Series(patterns.keys())
+            replace_with = list(patterns.values())
+            patterns = list(patterns.keys())
 
         patterns = parse_into_expression(
             patterns,  # type: ignore[arg-type]
@@ -2853,10 +2859,9 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
 
-    @deprecate_function(
-        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
-        " is an empty string instead of a hyphen.",
-        version="1.0.0",
+    @deprecated(
+        "`str.concat` is deprecated; use `str.join` instead. Note also that the "
+        "default `delimiter` for `str.join` is an empty string, not a hyphen."
     )
     def concat(
         self, delimiter: str | None = None, *, ignore_nulls: bool = True

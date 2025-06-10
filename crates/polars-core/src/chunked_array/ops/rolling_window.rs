@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "rolling_window", derive(PartialEq))]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
@@ -18,7 +19,7 @@ pub struct RollingOptionsFixedWindow {
     /// Set the labels at the center of the window.
     pub center: bool,
     /// Optional parameters for the rolling
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(default))]
     pub fn_params: Option<RollingFnParams>,
 }
 
@@ -82,11 +83,7 @@ mod inner_mod {
         (start, end - start)
     }
 
-    impl<T> ChunkRollApply for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        Self: IntoSeries,
-    {
+    impl<T: PolarsNumericType> ChunkRollApply for ChunkedArray<T> {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         fn rolling_map(
             &self,
@@ -213,7 +210,6 @@ mod inner_mod {
 
     impl<T> ChunkedArray<T>
     where
-        ChunkedArray<T>: IntoSeries,
         T: PolarsFloatType,
         T::Native: Float + IsFloat + SubAssign + Pow<T::Native, Output = T::Native>,
     {
@@ -273,7 +269,7 @@ mod inner_mod {
                 }
             }
             let arr = PrimitiveArray::new(
-                T::get_dtype().to_arrow(CompatLevel::newest()),
+                T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 values.into(),
                 Some(validity.into()),
             );

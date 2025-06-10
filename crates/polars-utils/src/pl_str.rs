@@ -22,6 +22,23 @@ type Inner = compact_str::CompactString;
 )]
 pub struct PlSmallStr(Inner);
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PlSmallStr {
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn schema_name() -> std::string::String {
+        String::schema_name()
+    }
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        String::schema_id()
+    }
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
+    }
+}
+
 impl PlSmallStr {
     pub const EMPTY: Self = Self::from_static("");
     pub const EMPTY_REF: &'static Self = &Self::from_static("");

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use polars_core::StringCacheHolder;
 use polars_core::prelude::{Column, Field};
 use polars_core::schema::{SchemaExt, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
@@ -153,11 +153,17 @@ impl FileReader for CsvFileReader {
         };
 
         match &pre_slice {
+            Some(Slice::Negative { .. }) => unimplemented!(),
+
             // We don't account for comments when slicing lines. We should never hit this panic -
             // the FileReaderBuilder does not indicate PRE_SLICE support when we have a comment
             // prefix.
-            Some(..) if self.options.parse_options.comment_prefix.is_some() => panic!(),
-            Some(Slice::Negative { .. }) => unimplemented!(),
+            Some(pre_slice)
+                if self.options.parse_options.comment_prefix.is_some() && pre_slice.len() > 0 =>
+            {
+                panic!("{pre_slice:?}")
+            },
+
             _ => {},
         }
 
@@ -340,8 +346,7 @@ impl FileReader for CsvFileReader {
                     if needs_full_row_count {
                         if verbose {
                             eprintln!(
-                                "[CSV LineBatchProcessor {}]: entering row count mode",
-                                worker_idx
+                                "[CSV LineBatchProcessor {worker_idx}]: entering row count mode"
                             );
                         }
 
@@ -679,9 +684,28 @@ impl ChunkReader {
         let height = df.height();
         let n_lines_is_correct = df.height() == n_lines;
 
+        // Check malformed
+        if df.height() > n_lines
+            || (df.height() < n_lines && self.parse_options.comment_prefix.is_none())
+        {
+            // Note: in case data is malformed, df.height() is more likely to be correct than n_lines.
+            let msg = format!(
+                "CSV malformed: expected {} rows, actual {} rows, in chunk starting at row_offset {}, length {}",
+                n_lines,
+                df.height(),
+                chunk_row_offset,
+                chunk.len()
+            );
+            if self.ignore_errors {
+                polars_warn!(msg);
+            } else {
+                polars_bail!(ComputeError: msg);
+            }
+        }
+
         if slice != NO_SLICE {
             assert!(slice != SLICE_ENDED);
-            assert!(n_lines_is_correct);
+            assert!(n_lines_is_correct || slice.1 == 0);
 
             df = df.slice(i64::try_from(slice.0).unwrap(), slice.1);
         }

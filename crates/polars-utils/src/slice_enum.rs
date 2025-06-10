@@ -3,6 +3,7 @@ use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Slice {
     /// Or zero
     Positive {
@@ -29,6 +30,18 @@ impl Slice {
             Slice::Positive { len, .. } => len,
             Slice::Negative { len, .. } => len,
         }
+    }
+
+    /// Returns the offset of a positive slice.
+    ///
+    /// # Panics
+    /// Panics if `self` is [`Slice::Negative`]
+    pub fn positive_offset(&self) -> usize {
+        let Slice::Positive { offset, len: _ } = self.clone() else {
+            panic!("cannot use positive_offset() on a negative slice");
+        };
+
+        offset
     }
 
     /// Returns the end position of the slice (offset + len).

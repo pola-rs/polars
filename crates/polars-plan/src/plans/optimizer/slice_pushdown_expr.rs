@@ -13,8 +13,8 @@ impl OptimizationRule for SlicePushDown {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _lp_arena: &Arena<IR>,
-        _lp_node: Node,
+        _schema: &Schema,
+        _ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         if let AExpr::Slice {
             input,
@@ -27,7 +27,7 @@ impl OptimizationRule for SlicePushDown {
 
             use AExpr::*;
             let out = match expr_arena.get(*input) {
-                ae @ Alias(..) | ae @ Cast { .. } => {
+                ae @ Cast { .. } => {
                     let ae = ae.clone();
                     let scratch = self.empty_nodes_scratch_mut();
                     ae.inputs_rev(scratch);
@@ -76,6 +76,7 @@ impl OptimizationRule for SlicePushDown {
                         function,
                         output_type,
                         options,
+                        fmt_str,
                     } = m.clone()
                     {
                         input.iter_mut().for_each(|e| {
@@ -88,6 +89,7 @@ impl OptimizationRule for SlicePushDown {
                             function,
                             output_type,
                             options,
+                            fmt_str,
                         })
                     } else {
                         unreachable!()

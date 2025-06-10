@@ -12,10 +12,28 @@ impl LazyFrame {
 
         let (tx, rx) = channel();
         let token = state.cancel_token();
-        POOL.spawn_fifo(move || {
-            let result = physical_plan.execute(&mut state);
-            tx.send(result).unwrap();
-        });
+
+        if physical_plan.is_cache_prefiller() {
+            #[cfg(feature = "async")]
+            {
+                polars_io::pl_async::get_runtime().spawn_blocking(move || {
+                    let result = physical_plan.execute(&mut state);
+                    tx.send(result).unwrap();
+                });
+            }
+            #[cfg(not(feature = "async"))]
+            {
+                std::thread::spawn(move || {
+                    let result = physical_plan.execute(&mut state);
+                    tx.send(result).unwrap();
+                });
+            }
+        } else {
+            POOL.spawn_fifo(move || {
+                let result = physical_plan.execute(&mut state);
+                tx.send(result).unwrap();
+            });
+        }
 
         Ok(InProcessQuery {
             rx: Arc::new(Mutex::new(rx)),

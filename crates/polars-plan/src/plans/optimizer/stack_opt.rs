@@ -1,7 +1,9 @@
 use polars_core::prelude::PolarsResult;
+use polars_core::schema::Schema;
 
 use crate::plans::aexpr::AExpr;
 use crate::plans::ir::IR;
+use crate::plans::{get_input, get_schema};
 use crate::prelude::{Arena, Node};
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion
@@ -51,6 +53,17 @@ impl StackOptimizer {
                     exprs.push(expr_ir.node());
                 }
 
+                let input_schema = get_schema(lp_arena, current_node);
+                let mut ctx = OptimizeExprContext::default();
+                #[cfg(feature = "python")]
+                {
+                    use crate::dsl::python_dsl::PythonScanSource;
+                    ctx.in_pyarrow_scan = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow);
+                    ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
+                };
+                ctx.in_filter = matches!(plan, IR::Filter { .. });
+                ctx.has_inputs = !get_input(lp_arena, current_node).is_empty();
+
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
                     {
@@ -61,12 +74,9 @@ impl StackOptimizer {
                     }
                     for rule in rules.iter_mut() {
                         // keep iterating over same rule
-                        while let Some(x) = rule.optimize_expr(
-                            expr_arena,
-                            current_expr_node,
-                            lp_arena,
-                            current_node,
-                        )? {
+                        while let Some(x) =
+                            rule.optimize_expr(expr_arena, current_expr_node, &input_schema, ctx)?
+                        {
                             expr_arena.replace(current_expr_node, x);
                             changed = true;
                         }
@@ -80,6 +90,14 @@ impl StackOptimizer {
         }
         Ok(lp_top)
     }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct OptimizeExprContext {
+    pub in_pyarrow_scan: bool,
+    pub in_io_plugin: bool,
+    pub in_filter: bool,
+    pub has_inputs: bool,
 }
 
 pub trait OptimizationRule {
@@ -98,11 +116,12 @@ pub trait OptimizationRule {
     }
     fn optimize_expr(
         &mut self,
-        _expr_arena: &mut Arena<AExpr>,
-        _expr_node: Node,
-        _lp_arena: &Arena<IR>,
-        _lp_node: Node,
+        expr_arena: &mut Arena<AExpr>,
+        expr_node: Node,
+        schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
+        _ = (expr_arena, expr_node, schema, ctx);
         Ok(None)
     }
 }

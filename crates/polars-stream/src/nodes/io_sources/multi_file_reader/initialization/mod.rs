@@ -1,3 +1,4 @@
+pub mod deletion_files;
 pub mod predicate;
 pub mod projection;
 pub mod slice;
@@ -39,8 +40,14 @@ impl MultiScanTaskInitializer {
                 "[MultiScanTaskInitializer]: spawn_background_tasks(), {} sources, reader name: {}, {:?}",
                 self.config.sources.len(),
                 self.config.file_reader_builder.reader_name(),
-                self.config.file_reader_builder.reader_capabilities(),
-            )
+                self.config.reader_capabilities(),
+            );
+
+            eprintln!(
+                "[MultiScanTaskInitializer]: n_readers_pre_init: {}, max_concurrent_scans: {}",
+                self.config.n_readers_pre_init(),
+                self.config.max_concurrent_scans(),
+            );
         }
 
         let bridge_state = Arc::new(Mutex::new(BridgeState::NotYetStarted));
@@ -113,14 +120,4 @@ impl MultiScanTaskInitializer {
             bridge_state,
         )
     }
-}
-
-pub(super) fn max_concurrent_scans_config() -> usize {
-    const DEFAULT_MAX_CONCURRENT_SCANS: usize = 8;
-
-    std::env::var("POLARS_MAX_CONCURRENT_SCANS").map_or(DEFAULT_MAX_CONCURRENT_SCANS, |v| {
-        v.parse::<usize>()
-            .expect("unable to parse POLARS_MAX_CONCURRENT_SCANS")
-            .max(1)
-    })
 }

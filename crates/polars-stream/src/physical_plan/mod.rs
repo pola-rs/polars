@@ -8,9 +8,10 @@ use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
+use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, ScanSources, SinkOptions, SinkTarget,
+    PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -147,13 +148,15 @@ pub enum PhysNodeKind {
     },
 
     PartitionSink {
+        input: PhysStream,
         base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
         file_type: FileType,
-        input: PhysStream,
         cloud_options: Option<CloudOptions>,
+        per_partition_sort_by: Option<Vec<SortColumnIR>>,
+        finish_callback: Option<SinkFinishCallback>,
     },
 
     SinkMultiple {
@@ -221,6 +224,8 @@ pub enum PhysNodeKind {
         missing_columns_policy: MissingColumnsPolicy,
         extra_columns_policy: ExtraColumnsPolicy,
 
+        deletion_files: Option<DeletionFilesList>,
+
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
     },
@@ -252,6 +257,12 @@ pub enum PhysNodeKind {
         right_on: Vec<ExprIR>,
         args: JoinArgs,
         output_bool: bool,
+    },
+
+    CrossJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        args: JoinArgs,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
@@ -328,6 +339,11 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::SemiAntiJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::CrossJoin {
                 input_left,
                 input_right,
                 ..

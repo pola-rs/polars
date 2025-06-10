@@ -100,10 +100,7 @@ impl StructChunked {
 
             needs_to_broadcast |= length != 1 && s_len == 1;
 
-            polars_ensure!(
-                names.insert(s.name()),
-                Duplicate: "multiple fields with name '{}' found", s.name()
-            );
+            polars_ensure!(names.insert(s.name()), duplicate_field = s.name());
 
             match s.dtype() {
                 #[cfg(feature = "object")]
@@ -278,7 +275,7 @@ impl StructChunked {
                     for iter in &mut iters {
                         let av = unsafe { iter.next().unwrap_unchecked() };
                         row_has_nulls |= matches!(&av, AnyValue::Null);
-                        write!(scratch, "{},", av).unwrap();
+                        write!(scratch, "{av},").unwrap();
                     }
 
                     // replace latest comma with '|'

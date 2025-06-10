@@ -11,11 +11,7 @@ pub trait AggList {
     unsafe fn agg_list(&self, _groups: &GroupsType) -> Series;
 }
 
-impl<T> AggList for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         let ca = self.rechunk();
 
@@ -70,12 +66,12 @@ where
                 };
 
                 let array = PrimitiveArray::new(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                     list_values.into(),
                     validity,
                 );
                 let dtype = ListArray::<i64>::default_datatype(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 );
                 // SAFETY:
                 // offsets are monotonically increasing
@@ -135,12 +131,12 @@ where
                 };
 
                 let array = PrimitiveArray::new(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                     list_values.into(),
                     validity,
                 );
                 let dtype = ListArray::<i64>::default_datatype(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 );
                 let arr = ListArray::<i64>::new(
                     dtype,

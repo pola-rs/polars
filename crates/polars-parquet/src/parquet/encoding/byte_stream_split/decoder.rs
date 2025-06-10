@@ -20,16 +20,14 @@ impl<'a> Decoder<'a> {
             // Since Parquet format version 2.11 it's valid to use byte stream split for fixed-length byte array data,
             // which could be larger than 8 bytes, but Polars doesn't yet support reading byte stream split encoded FLBA data.
             return Err(ParquetError::oos(format!(
-                "Byte stream split decoding only supports up to {} byte element sizes",
-                MAX_ELEMENT_SIZE
+                "Byte stream split decoding only supports up to {MAX_ELEMENT_SIZE} byte element sizes"
             )));
         }
 
         let values_size = values.len();
         if values_size % element_size != 0 {
             return Err(ParquetError::oos(format!(
-                "Values array length ({}) is not a multiple of the element size ({})",
-                values_size, element_size
+                "Values array length ({values_size}) is not a multiple of the element size ({element_size})"
             )));
         }
         let num_elements = values.len() / element_size;

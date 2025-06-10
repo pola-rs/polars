@@ -386,7 +386,7 @@ impl ExprIdentifierVisitor<'_> {
                     _ => REFUSE_ALLOW_MEMBER,
                 }
             },
-            AExpr::Column(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
+            AExpr::Column(_) => REFUSE_ALLOW_MEMBER,
             AExpr::Len => {
                 if self.is_group_by {
                     REFUSE_NO_MEMBER
@@ -396,12 +396,12 @@ impl ExprIdentifierVisitor<'_> {
             },
             #[cfg(feature = "random")]
             AExpr::Function {
-                function: FunctionExpr::Random { .. },
+                function: IRFunctionExpr::Random { .. },
                 ..
             } => REFUSE_NO_MEMBER,
             #[cfg(feature = "rolling_window")]
             AExpr::Function {
-                function: FunctionExpr::RollingExpr { .. },
+                function: IRFunctionExpr::RollingExpr { .. },
                 ..
             } => REFUSE_NO_MEMBER,
             AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,

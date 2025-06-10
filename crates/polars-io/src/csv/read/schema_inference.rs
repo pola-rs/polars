@@ -117,10 +117,9 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                             DataType::Datetime(TimeUnit::Microseconds, None)
                         },
                         Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
-                        Pattern::DatetimeYMDZ => DataType::Datetime(
-                            TimeUnit::Microseconds,
-                            Some(PlSmallStr::from_static("UTC")),
-                        ),
+                        Pattern::DatetimeYMDZ => {
+                            DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC))
+                        },
                         Pattern::Time => DataType::Time,
                     },
                     None => DataType::String,
@@ -152,10 +151,9 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                         DataType::Datetime(TimeUnit::Microseconds, None)
                     },
                     Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
-                    Pattern::DatetimeYMDZ => DataType::Datetime(
-                        TimeUnit::Microseconds,
-                        Some(PlSmallStr::from_static("UTC")),
-                    ),
+                    Pattern::DatetimeYMDZ => {
+                        DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC))
+                    },
                     Pattern::Time => DataType::Time,
                 },
                 None => DataType::String,

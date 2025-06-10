@@ -265,6 +265,10 @@ def read_excel(
         Support loading data from a list (or glob pattern) of multiple workbooks.
     .. versionchanged:: 1.0
         Default engine is now "calamine" (was "xlsx2csv").
+    .. versionchanged:: 0.20.7
+        The `read_csv_options` parameter was renamed `read_options`.
+    .. versionchanged:: 0.20.6
+        The `xlsx2csv_options` parameter was renamed `engine_options`.
 
     Parameters
     ----------
@@ -909,7 +913,7 @@ def _csv_buffer_to_frame(
     if schema_overrides:
         if csv_dtypes := read_options.get("dtypes", {}):
             issue_deprecation_warning(
-                "The `dtypes` parameter for `read_csv` is deprecated. It has been renamed to `schema_overrides`.",
+                "the `dtypes` parameter for `read_csv` is deprecated. It has been renamed to `schema_overrides`.",
                 version="0.20.31",
             )
 

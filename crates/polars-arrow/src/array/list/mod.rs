@@ -14,6 +14,8 @@ mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]

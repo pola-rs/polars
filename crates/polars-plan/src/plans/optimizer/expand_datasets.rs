@@ -107,6 +107,7 @@ impl OptimizationRule for ExpandDatasets {
                                 hive_parts: _,
                                 predicate: _,
                                 output_schema: _,
+                                id: _,
                             } = &mut ir
                             else {
                                 unreachable!()
@@ -126,7 +127,9 @@ impl OptimizationRule for ExpandDatasets {
                                 pre_slice: _pre_slice @ None,
                                 cast_columns_policy,
                                 missing_columns_policy,
+                                extra_columns_policy,
                                 include_file_paths: _include_file_paths @ None,
+                                deletion_files,
                             } = *resolved_unified_scan_args
                             else {
                                 panic!(
@@ -140,6 +143,8 @@ impl OptimizationRule for ExpandDatasets {
                             unified_scan_args.cache = cache;
                             unified_scan_args.cast_columns_policy = cast_columns_policy;
                             unified_scan_args.missing_columns_policy = missing_columns_policy;
+                            unified_scan_args.extra_columns_policy = extra_columns_policy;
+                            unified_scan_args.deletion_files = deletion_files;
 
                             *sources = resolved_sources;
                             *scan_type = resolved_scan_type;

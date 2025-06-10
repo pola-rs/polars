@@ -656,6 +656,54 @@ def test_invalid_inner_type_cast_list() -> None:
         s.cast(pl.List(pl.Categorical))
 
 
+@pytest.mark.parametrize(
+    ("values", "result"),
+    [
+        ([[]], [b""]),
+        ([[1, 2], [3, 4]], [b"\x01\x02", b"\x03\x04"]),
+        ([[1, 2], None, [3, 4]], [b"\x01\x02", None, b"\x03\x04"]),
+        (
+            [None, [111, 110, 101], [12, None], [116, 119, 111], list(range(256))],
+            [
+                None,
+                b"one",
+                # A list with a null in it gets turned into a null:
+                None,
+                b"two",
+                bytes(i for i in range(256)),
+            ],
+        ),
+    ],
+)
+def test_list_uint8_to_bytes(
+    values: list[list[int | None] | None], result: list[bytes | None]
+) -> None:
+    s = pl.Series(
+        values,
+        dtype=pl.List(pl.UInt8()),
+    )
+    assert s.cast(pl.Binary(), strict=False).to_list() == result
+
+
+def test_list_uint8_to_bytes_strict() -> None:
+    series = pl.Series(
+        [[1, 2], [3, 4]],
+        dtype=pl.List(pl.UInt8()),
+    )
+    assert series.cast(pl.Binary(), strict=True).to_list() == [b"\x01\x02", b"\x03\x04"]
+
+    series = pl.Series(
+        "mycol",
+        [[1, 2], [3, None]],
+        dtype=pl.List(pl.UInt8()),
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="conversion from `list\\[u8\\]` to `binary` failed in column 'mycol' for 1 out of 2 values: \\[\\[3, null\\]\\]",
+    ):
+        series.cast(pl.Binary(), strict=True)
+
+
 def test_all_null_cast_5826() -> None:
     df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.String)])
     out = df.with_columns(pl.col("a").cast(pl.Boolean))
@@ -701,7 +749,7 @@ def test_cast_python_dtypes() -> None:
 
 
 def test_overflowing_cast_literals_21023() -> None:
-    for no_optimization in [True, False]:
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         assert_frame_equal(
             (
                 pl.LazyFrame()
@@ -710,7 +758,7 @@ def test_overflowing_cast_literals_21023() -> None:
                         pl.Int8, wrap_numerical=True
                     )
                 )
-                .collect(no_optimization=no_optimization)
+                .collect(optimizations=optimizations)
             ),
             pl.Series([-128], dtype=pl.Int8).to_frame(),
         )
@@ -872,3 +920,90 @@ def test_nested_strict_casts_succeeds(
         s.cast(to.dtype),
         to,
     )
+
+
+def test_nested_struct_cast_22744() -> None:
+    s = pl.Series(
+        "x",
+        [{"attrs": {"class": "a"}}],
+    )
+
+    expected = pl.select(
+        pl.lit(s).struct.with_fields(
+            pl.field("attrs").struct.with_fields(
+                [pl.field("class"), pl.lit(None, dtype=pl.String()).alias("other")]
+            )
+        )
+    )
+
+    assert_series_equal(
+        s.cast(
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+        ),
+        expected.to_series(),
+    )
+    assert_frame_equal(
+        pl.DataFrame([s]).cast(
+            {
+                "x": pl.Struct(
+                    {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
+                )
+            }
+        ),
+        expected,
+    )
+
+
+@pytest.mark.xfail(reason="disabled until after release 1.30.0")
+def test_cast_to_self_is_pruned() -> None:
+    q = pl.LazyFrame({"x": 1}, schema={"x": pl.Int64}).with_columns(
+        y=pl.col("x").cast(pl.Int64)
+    )
+
+    plan = q.explain()
+    assert 'col("x").alias("y")' in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "y": 1}))
+
+
+@pytest.mark.parametrize(
+    ("s", "to", "should_fail"),
+    [
+        (
+            pl.Series([datetime(2025, 1, 1)]),
+            pl.Datetime("ns"),
+            False,
+        ),
+        (
+            pl.Series([datetime(9999, 1, 1)]),
+            pl.Datetime("ns"),
+            True,
+        ),
+        (
+            pl.Series([datetime(2025, 1, 1), datetime(9999, 1, 1)]),
+            pl.Datetime("ns"),
+            True,
+        ),
+        (
+            pl.Series([[datetime(2025, 1, 1)], [datetime(9999, 1, 1)]]),
+            pl.List(pl.Datetime("ns")),
+            True,
+        ),
+        # lower date limit for nanosecond
+        (pl.Series([date(1677, 9, 22)]), pl.Datetime("ns"), False),
+        (pl.Series([date(1677, 9, 21)]), pl.Datetime("ns"), True),
+        # upper date limit for nanosecond
+        (pl.Series([date(2262, 4, 11)]), pl.Datetime("ns"), False),
+        (pl.Series([date(2262, 4, 12)]), pl.Datetime("ns"), True),
+    ],
+)
+def test_cast_temporals_overflow_16039(
+    s: pl.Series, to: pl.DataType, should_fail: bool
+) -> None:
+    if should_fail:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="conversion from"
+        ):
+            s.cast(to)
+    else:
+        s.cast(to)

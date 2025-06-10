@@ -1,10 +1,12 @@
+use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use polars_core::prelude::*;
-use polars_utils::format_pl_smallstr;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::{format_pl_smallstr, unitvec};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +33,7 @@ impl DslPlan {
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FileInfo {
     /// Schema of the physical file.
     ///
@@ -87,178 +90,12 @@ impl FileInfo {
     }
 }
 
-#[cfg(feature = "streaming")]
-fn estimate_sizes(
-    known_size: Option<usize>,
-    estimated_size: usize,
-    filter_count: usize,
-) -> (Option<usize>, usize) {
-    match (known_size, filter_count) {
-        (Some(known_size), 0) => (Some(known_size), estimated_size),
-        (None, 0) => (None, estimated_size),
-        (_, _) => (
-            None,
-            (estimated_size as f32 * 0.9f32.powf(filter_count as f32)) as usize,
-        ),
-    }
-}
-
-#[cfg(feature = "streaming")]
-pub fn set_estimated_row_counts(
-    root: Node,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    mut _filter_count: usize,
-    scratch: &mut Vec<Node>,
-) -> (Option<usize>, usize, usize) {
-    use IR::*;
-
-    fn apply_slice(out: &mut (Option<usize>, usize, usize), slice: Option<(i64, usize)>) {
-        if let Some((_, len)) = slice {
-            out.0 = out.0.map(|known_size| std::cmp::min(len, known_size));
-            out.1 = std::cmp::min(len, out.1);
-        }
-    }
-
-    match lp_arena.get(root) {
-        Filter { predicate, input } => {
-            _filter_count += expr_arena
-                .iter(predicate.node())
-                .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))
-                .count()
-                + 1;
-            set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch)
-        },
-        Slice { input, len, .. } => {
-            let len = *len as usize;
-            let mut out =
-                set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch);
-            apply_slice(&mut out, Some((0, len)));
-            out
-        },
-        Union { .. } => {
-            if let Union {
-                inputs,
-                mut options,
-            } = lp_arena.take(root)
-            {
-                let mut sum_output = (None, 0usize);
-                for input in &inputs {
-                    let mut out =
-                        set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
-                    if let Some((_offset, len)) = options.slice {
-                        apply_slice(&mut out, Some((0, len)))
-                    }
-                    // todo! deal with known as well
-                    let out = estimate_sizes(out.0, out.1, out.2);
-                    sum_output.1 = sum_output.1.saturating_add(out.1);
-                }
-                options.rows = sum_output;
-                lp_arena.replace(root, Union { inputs, options });
-                (sum_output.0, sum_output.1, 0)
-            } else {
-                unreachable!()
-            }
-        },
-        Join { .. } => {
-            if let Join {
-                input_left,
-                input_right,
-                mut options,
-                schema,
-                left_on,
-                right_on,
-            } = lp_arena.take(root)
-            {
-                let mut_options = Arc::make_mut(&mut options);
-                let (known_size, estimated_size, filter_count_left) =
-                    set_estimated_row_counts(input_left, lp_arena, expr_arena, 0, scratch);
-                mut_options.rows_left =
-                    estimate_sizes(known_size, estimated_size, filter_count_left);
-                let (known_size, estimated_size, filter_count_right) =
-                    set_estimated_row_counts(input_right, lp_arena, expr_arena, 0, scratch);
-                mut_options.rows_right =
-                    estimate_sizes(known_size, estimated_size, filter_count_right);
-
-                let mut out = match options.args.how {
-                    JoinType::Left => {
-                        let (known_size, estimated_size) = options.rows_left;
-                        (known_size, estimated_size, filter_count_left)
-                    },
-                    JoinType::Cross | JoinType::Full => {
-                        let (known_size_left, estimated_size_left) = options.rows_left;
-                        let (known_size_right, estimated_size_right) = options.rows_right;
-                        match (known_size_left, known_size_right) {
-                            (Some(l), Some(r)) => {
-                                (Some(l * r), estimated_size_left, estimated_size_right)
-                            },
-                            _ => (None, estimated_size_left * estimated_size_right, 0),
-                        }
-                    },
-                    _ => {
-                        let (known_size_left, estimated_size_left) = options.rows_left;
-                        let (known_size_right, estimated_size_right) = options.rows_right;
-                        if estimated_size_left > estimated_size_right {
-                            (known_size_left, estimated_size_left, 0)
-                        } else {
-                            (known_size_right, estimated_size_right, 0)
-                        }
-                    },
-                };
-                apply_slice(&mut out, options.args.slice);
-                lp_arena.replace(
-                    root,
-                    Join {
-                        input_left,
-                        input_right,
-                        options,
-                        schema,
-                        left_on,
-                        right_on,
-                    },
-                );
-                out
-            } else {
-                unreachable!()
-            }
-        },
-        DataFrameScan { df, .. } => {
-            let len = df.height();
-            (Some(len), len, _filter_count)
-        },
-        Scan { file_info, .. } => {
-            let (known_size, estimated_size) = file_info.row_estimation;
-            (known_size, estimated_size, _filter_count)
-        },
-        #[cfg(feature = "python")]
-        PythonScan { .. } => {
-            // TODO! get row estimation.
-            (None, usize::MAX, _filter_count)
-        },
-        lp => {
-            lp.copy_inputs(scratch);
-            let mut sum_output = (None, 0, 0);
-            while let Some(input) = scratch.pop() {
-                let out =
-                    set_estimated_row_counts(input, lp_arena, expr_arena, _filter_count, scratch);
-                sum_output.1 += out.1;
-                sum_output.2 += out.2;
-                sum_output.0 = match sum_output.0 {
-                    None => out.0,
-                    p => p,
-                };
-            }
-            sum_output
-        },
-    }
-}
-
 pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     left_on: &[ExprIR],
     right_on: &[ExprIR],
-    options: &JoinOptions,
+    options: &JoinOptionsIR,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     match &options.args.how {
@@ -455,5 +292,29 @@ impl Clone for CachedSchema {
 impl CachedSchema {
     pub fn get(&self) -> Option<SchemaRef> {
         self.0.lock().unwrap().clone()
+    }
+}
+
+pub fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
+    let plan = lp_arena.get(lp_node);
+    let mut inputs: UnitVec<Node> = unitvec!();
+
+    // Used to get the schema of the input.
+    if is_scan(plan) {
+        inputs.push(lp_node);
+    } else {
+        plan.copy_inputs(&mut inputs);
+    };
+    inputs
+}
+
+pub fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
+    let inputs = get_input(lp_arena, lp_node);
+    if inputs.is_empty() {
+        // Files don't have an input, so we must take their schema.
+        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
+    } else {
+        let input = inputs[0];
+        lp_arena.get(input).schema(lp_arena)
     }
 }

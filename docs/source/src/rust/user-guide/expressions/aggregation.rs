@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:basic]
 
     // --8<-- [start:conditional]
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:conditional]
 
     // --8<-- [start:nested]
@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:nested]
 
     // --8<-- [start:filter]
@@ -122,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         compute_age()
             .filter(col("gender").eq(lit(gender)))
             .mean()
-            .alias(format!("avg {} birthday", gender))
+            .alias(format!("avg {gender} birthday"))
     }
 
     let df = dataset
@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:filter]
 
     // --8<-- [start:filter-nested]
@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:filter-nested]
 
     // --8<-- [start:sort]
@@ -181,7 +181,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort]
 
     // --8<-- [start:sort2]
@@ -206,7 +206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort2]
 
     // --8<-- [start:sort3]
@@ -235,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort3]
 
     Ok(())

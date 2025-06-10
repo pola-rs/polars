@@ -4,22 +4,9 @@ use arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
-use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
+use super::{ColumnWriteOptions, ThriftFileMetadata, WriteOptions, to_parquet_schema};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
-
-/// Attaches [`ArrowSchema`] to `key_value_metadata`
-pub fn add_arrow_schema(
-    schema: &ArrowSchema,
-    key_value_metadata: Option<Vec<KeyValue>>,
-) -> Option<Vec<KeyValue>> {
-    key_value_metadata
-        .map(|mut x| {
-            x.push(schema_to_metadata_key(schema));
-            x
-        })
-        .or_else(|| Some(vec![schema_to_metadata_key(schema)]))
-}
 
 /// An interface to write a parquet to a [`Write`]
 pub struct FileWriter<W: Write> {
@@ -76,8 +63,13 @@ impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
     /// # Error
     /// If it is unable to derive a parquet schema from [`ArrowSchema`].
-    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
-        let parquet_schema = to_parquet_schema(&schema)?;
+    pub fn try_new(
+        writer: W,
+        schema: ArrowSchema,
+        options: WriteOptions,
+        column_options: &[ColumnWriteOptions],
+    ) -> PolarsResult<Self> {
+        let parquet_schema = to_parquet_schema(&schema, column_options)?;
         Ok(Self::new_with_parquet_schema(
             writer,
             schema,
@@ -92,9 +84,16 @@ impl<W: Write> FileWriter<W> {
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
-    pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
-        let key_value_metadata = add_arrow_schema(&self.schema, key_value_metadata);
-        Ok(self.writer.end(key_value_metadata)?)
+    /// If `key_value_metadata` is provided, the value is taken as-is. If it is not provided,
+    /// the Arrow schema is added to the metadata.
+    pub fn end(
+        &mut self,
+        key_value_metadata: Option<Vec<KeyValue>>,
+        column_options: &[ColumnWriteOptions],
+    ) -> PolarsResult<u64> {
+        let key_value_metadata = key_value_metadata
+            .unwrap_or_else(|| vec![schema_to_metadata_key(&self.schema, column_options)]);
+        Ok(self.writer.end(Some(key_value_metadata))?)
     }
 
     /// Consumes this writer and returns the inner writer

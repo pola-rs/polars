@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use polars_utils::unique_id::UniqueId;
+
 use super::*;
 
 fn get_upper_projections(
@@ -116,6 +118,7 @@ type TwoParents = [Option<Node>; 2];
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
 // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
 // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+#[expect(clippy::too_many_arguments)]
 pub(super) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -123,6 +126,7 @@ pub(super) fn set_cache_states(
     scratch: &mut Vec<Node>,
     expr_eval: ExprEval<'_>,
     verbose: bool,
+    pushdown_maintain_errors: bool,
     new_streaming: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
@@ -146,12 +150,12 @@ pub(super) fn set_cache_states(
     let mut cache_schema_and_children = BTreeMap::new();
 
     // Stack frame
-    #[derive(Default, Copy, Clone)]
+    #[derive(Default, Clone)]
     struct Frame {
         current: Node,
-        cache_id: Option<usize>,
+        cache_id: Option<UniqueId>,
         parent: TwoParents,
-        previous_cache: Option<usize>,
+        previous_cache: Option<UniqueId>,
     }
     let init = Frame {
         current: root,
@@ -182,7 +186,7 @@ pub(super) fn set_cache_states(
                 // change the schema
 
                 let v = cache_schema_and_children
-                    .entry(*id)
+                    .entry(id.clone())
                     .or_insert_with(Value::default);
                 v.children.push(*input);
                 v.parents.push(frame.parent);
@@ -233,14 +237,14 @@ pub(super) fn set_cache_states(
                     v.names_union.extend(schema.iter_names_cloned());
                 }
             }
-            frame.cache_id = Some(*id);
+            frame.cache_id = Some(id.clone());
         };
 
         // Shift parents.
         frame.parent[1] = frame.parent[0];
         frame.parent[0] = Some(frame.current);
         for n in scratch.iter() {
-            let mut new_frame = frame;
+            let mut new_frame = frame.clone();
             new_frame.current = *n;
             stack.push(new_frame);
         }
@@ -254,7 +258,9 @@ pub(super) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
-        let mut pred_pd = PredicatePushDown::new(expr_eval, new_streaming).block_at_cache(false);
+        let mut pred_pd =
+            PredicatePushDown::new(expr_eval, pushdown_maintain_errors, new_streaming)
+                .block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't

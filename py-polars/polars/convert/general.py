@@ -41,6 +41,7 @@ if TYPE_CHECKING:
         ArrowArrayExportable,
         ArrowStreamExportable,
         Orientation,
+        PolarsDataType,
         SchemaDefinition,
         SchemaDict,
     )
@@ -711,6 +712,9 @@ def from_repr(data: str) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from its string representation.
 
+    .. versionchanged:: 0.20.17
+        The `tbl` parameter was renamed to `data`.
+
     Parameters
     ----------
     data
@@ -725,7 +729,8 @@ def from_repr(data: str) -> DataFrame | Series:
     wrapped headers are accounted for, and dtypes are automatically identified.
 
     Currently compound/nested dtypes such as List and Struct are not supported;
-    neither are Object dtypes.
+    neither are Object dtypes. The DuckDB table/relation repr is also compatible
+    with this function.
 
     See Also
     --------
@@ -800,24 +805,47 @@ def from_repr(data: str) -> DataFrame | Series:
 def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     """Reconstruct a DataFrame from a regex-matched table repr."""
     from polars.datatypes.convert import dtype_short_repr_to_dtype
+    from polars.io.database._inference import dtype_from_database_typename
+
+    def _dtype_from_name(tp: str | None) -> PolarsDataType | None:
+        return (
+            None
+            if tp is None
+            else (
+                dtype_short_repr_to_dtype(tp)
+                or dtype_from_database_typename(tp, raise_unmatched=False)
+            )
+        )
 
     # extract elements from table structure
     lines = m.group().split("\n")[1:-1]
     rows = [
         [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
-        for row in [re.split("[┆|]", row.rstrip("│ ")) for row in lines]
+        for row in [re.split("[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines]
         if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
     ]
 
     # determine beginning/end of the header block
     table_body_start = 2
+    found_header_divider = False
     for idx, (elem, *_) in enumerate(rows):
-        if re.match(r"^\W*╞", elem):
+        if re.match(r"^\W*[╞]", elem):
+            found_header_divider = True
             table_body_start = idx
             break
 
     # handle headers with wrapped column names and determine headers/dtypes
-    header_block = ["".join(h).split("---") for h in zip(*rows[:table_body_start])]
+    header_rows = rows[:table_body_start]
+    header_block: list[Sequence[str]]
+    if (
+        not found_header_divider
+        and len(header_rows) == 2
+        and not any("---" in h for h in header_rows)
+    ):
+        header_block = list(zip(*header_rows))
+    else:
+        header_block = ["".join(h).split("---") for h in zip(*header_rows)]
+
     dtypes: list[str | None]
     if all(len(h) == 1 for h in header_block):
         headers = [h[0] for h in header_block]
@@ -826,6 +854,11 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         headers, dtypes = (list(h) for h in itertools.zip_longest(*header_block))
 
     body = rows[table_body_start + 1 :]
+    if not headers[0] and not dtypes[0]:
+        body = [row[1:] for row in body]
+        headers = headers[1:]
+        dtypes = dtypes[1:]
+
     no_dtypes = all(d is None for d in dtypes)
 
     # transpose rows into columns, detect/omit truncated columns
@@ -840,10 +873,10 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
     # init cols as String Series, handle "null" -> None, create schema from repr dtype
     data = [
-        pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
+        pl.Series([(None if v in ("null", "NULL") else v) for v in cd], dtype=String)
         for cd in coldata
     ]
-    schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
+    schema = dict(zip(headers, (_dtype_from_name(d) for d in dtypes)))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))

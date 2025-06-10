@@ -265,3 +265,13 @@ def test_resolved_names_15442() -> None:
     right = 1000
     in_x = (left < center.struct.field("x")) & (center.struct.field("x") <= right)
     assert df.lazy().filter(in_x).collect().shape == (1, 2)
+
+
+def test_error_on_duplicate_field_name_22959() -> None:
+    with pytest.raises(DuplicateError, match="'literal'"):
+        pl.select(
+            pl.struct(
+                pl.lit(1),
+                pl.lit(2),
+            )
+        )

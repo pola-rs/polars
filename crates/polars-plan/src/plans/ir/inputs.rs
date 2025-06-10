@@ -80,7 +80,7 @@ impl IR {
             },
             Cache { id, cache_hits, .. } => Cache {
                 input: inputs[0],
-                id: *id,
+                id: id.clone(),
                 cache_hits: *cache_hits,
             },
             Distinct { options, .. } => Distinct {
@@ -103,6 +103,7 @@ impl IR {
                 predicate,
                 unified_scan_args,
                 scan_type,
+                id: _,
             } => {
                 let mut new_predicate = None;
                 if predicate.is_some() {
@@ -117,6 +118,7 @@ impl IR {
                     unified_scan_args: unified_scan_args.clone(),
                     predicate: new_predicate,
                     scan_type: scan_type.clone(),
+                    id: Default::default(),
                 }
             },
             DataFrameScan {

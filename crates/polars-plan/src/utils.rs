@@ -49,7 +49,7 @@ pub(crate) fn is_scan(plan: &IR) -> bool {
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena
         .iter(current_node)
-        .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
+        .all(|(_node, e)| matches!(e, AExpr::Column(_)))
 }
 
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
@@ -77,20 +77,20 @@ where
 }
 
 /// Check if expression is independent from any column.
-pub(crate) fn is_column_independent(expr: &Expr) -> bool {
-    !expr.into_iter().any(|e| match e {
-        Expr::Nth(_)
-        | Expr::Column(_)
-        | Expr::Columns(_)
-        | Expr::DtypeColumn(_)
-        | Expr::IndexColumn(_)
-        | Expr::Wildcard
-        | Expr::Len
-        | Expr::SubPlan(..)
-        | Expr::Selector(_) => true,
-
+pub(crate) fn is_column_independent_aexpr(expr: Node, arena: &Arena<AExpr>) -> bool {
+    !has_aexpr(expr, arena, |e| match e {
+        AExpr::Column(_) | AExpr::Len => true,
         #[cfg(feature = "dtype-struct")]
-        Expr::Field(_) => true,
+        AExpr::Function {
+            input: _,
+            function:
+                IRFunctionExpr::StructExpr(
+                    IRStructFunction::FieldByIndex(_)
+                    | IRStructFunction::FieldByName(_)
+                    | IRStructFunction::MultipleFields(_),
+                ),
+            options: _,
+        } => true,
         _ => false,
     })
 }
@@ -108,7 +108,6 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSma
             // don't follow the partition by branch
             AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
             AExpr::Column(name) => return Ok(name.clone()),
-            AExpr::Alias(_, name) => return Ok(name.clone()),
             AExpr::Len => return Ok(get_len_name()),
             AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
             AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),

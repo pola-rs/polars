@@ -19,6 +19,7 @@ pub static DTYPE_CATEGORICAL: &str = "_PL_CATEGORICAL";
 /// to be serialized.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Field {
     /// Its name
     pub name: PlSmallStr,
@@ -82,5 +83,20 @@ impl Field {
         } else {
             false
         }
+    }
+
+    pub fn map_dtype(mut self, f: impl FnOnce(ArrowDataType) -> ArrowDataType) -> Self {
+        self.dtype = f(self.dtype);
+        self
+    }
+
+    pub fn map_dtype_mut(&mut self, f: impl FnOnce(&mut ArrowDataType)) {
+        f(&mut self.dtype);
+    }
+
+    pub fn with_dtype(&self, dtype: ArrowDataType) -> Self {
+        let mut field = self.clone();
+        field.dtype = dtype;
+        field
     }
 }

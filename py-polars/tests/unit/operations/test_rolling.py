@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -630,3 +631,96 @@ def test_rolling_unsupported_22065() -> None:
         pl.Series("a", []).rolling_sum(10)
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series("a", [[None]], pl.List(pl.Null)).rolling_sum(10)
+
+
+def test_rolling_mean_f32_22936() -> None:
+    arr = np.array(
+        [
+            4.17571609e-05,
+            4.27760388e-05,
+            5.72538265e-05,
+            5.85808011e-05,
+            5.80585256e-05,
+            5.66820236e-05,
+            5.63966605e-05,
+            5.97858889e-05,
+            5.84967784e-05,
+            9.24392344e04,
+            5.20393951e-05,
+            5.19272326e-05,
+            4.18911623e-05,
+            4.23079109e-05,
+            4.28866042e-05,
+            4.07778753e-05,
+            4.04103557e-05,
+            4.25533253e-05,
+            5.24330462e-05,
+            6.08061091e-05,
+            5.93549412e-05,
+            5.76712700e-05,
+            6.57564160e-05,
+            6.62090970e-05,
+            6.46697372e-05,
+            6.40037397e-05,
+            6.18191480e-05,
+            6.33935779e-05,
+            6.13316370e-05,
+            5.91840580e-05,
+            5.85238740e-05,
+            5.38484855e-05,
+            5.27409211e-05,
+            5.15455504e-05,
+            5.23890667e-05,
+            5.40723668e-05,
+            5.63136491e-05,
+            5.61193119e-05,
+            5.61807392e-05,
+            5.93001459e-05,
+            6.08127375e-05,
+            6.04183369e-05,
+            6.24700697e-05,
+            6.20444407e-05,
+            5.98985389e-05,
+            6.08591145e-05,
+            5.87234099e-05,
+            5.92241740e-05,
+            5.97595426e-05,
+            5.95900237e-05,
+            5.63832436e-05,
+        ],
+        dtype=np.float32,
+    )
+
+    expected = pl.Series(
+        [
+            6.1009144701529294e-05,
+            6.1128826928325e-05,
+            6.113809649832547e-05,
+            6.079911327105947e-05,
+            6.014993414282799e-05,
+            5.9692956710932776e-05,
+            5.9631252952385694e-05,
+            5.873607733519748e-05,
+            5.873924237675965e-05,
+            5.857759970240295e-05,
+        ],
+        dtype=pl.Float32,
+    )
+    out = (
+        pl.Series(arr).rolling_mean(window_size=5, min_samples=1, center=True).tail(10)
+    )
+
+    assert_series_equal(expected, out)
+
+
+def test_rolling_max_23066() -> None:
+    df = pl.DataFrame(
+        {"data": [3.0, None, 14.0, 40.0, 5.0, 10.0, 0.0, 0.0, 30.0, None]}
+    )
+    result = df.select(pl.col.data.rolling_max(window_size=4, min_samples=4))
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"data": [None, None, None, None, None, 40.0, 40.0, 10.0, 30.0, None]}
+        ),
+    )

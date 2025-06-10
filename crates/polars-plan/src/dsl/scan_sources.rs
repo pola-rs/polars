@@ -20,13 +20,14 @@ use super::UnifiedScanArgs;
 /// This can either be a list of paths to files, opened files or in-memory buffers. Mixing of
 /// buffers is not currently possible.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub enum ScanSources {
     Paths(Arc<[PathBuf]>),
 
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Buffers(Arc<[MemSlice]>),
 }
 

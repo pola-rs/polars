@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterator, Mapping
 from datetime import date, datetime, time, timedelta
 from enum import Enum as PyEnum
 from itertools import islice
@@ -13,12 +13,13 @@ from typing import (
 
 import polars._reexport as pl
 import polars._utils.construction as plc
+from polars._utils.construction.dataframe import _sequence_of_dict_to_pydf
 from polars._utils.construction.utils import (
     get_first_non_none,
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
-    is_sqlalchemy,
+    is_sqlalchemy_row,
 )
 from polars._utils.various import (
     range_to_series,
@@ -105,9 +106,20 @@ def sequence_to_pyseries(
             dataclasses.is_dataclass(value)
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__)
-            or is_sqlalchemy(value)
+            or is_sqlalchemy_row(value)
         ) and dtype != Object:
             return pl.DataFrame(values).to_struct(name)._s
+        elif (
+            not isinstance(value, dict) and isinstance(value, Mapping)
+        ) and dtype != Object:
+            return _sequence_of_dict_to_pydf(
+                value,
+                data=values,
+                strict=strict,
+                schema_overrides=None,
+                infer_schema_length=None,
+                schema=None,
+            ).to_struct(name, [])
         elif isinstance(value, range) and dtype is None:
             values = [range_to_series("", v) for v in values]
         else:

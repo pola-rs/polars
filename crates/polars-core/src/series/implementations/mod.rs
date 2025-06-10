@@ -55,15 +55,9 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
     }
 }
 
-unsafe impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
-where
-    SeriesWrap<ChunkedArray<T>>: SeriesTrait,
-{
-    fn into_series(self) -> Series
-    where
-        Self: Sized,
-    {
-        Series(Arc::new(SeriesWrap(self)))
+unsafe impl<T: PolarsPhysicalType> IntoSeries for ChunkedArray<T> {
+    fn into_series(self) -> Series {
+        T::ca_into_series(self)
     }
 }
 
@@ -408,7 +402,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.and_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -416,7 +410,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn or_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.or_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -424,7 +418,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn xor_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.xor_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))

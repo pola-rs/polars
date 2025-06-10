@@ -1,5 +1,4 @@
-#[cfg(feature = "python")]
-use self::python_dsl::PythonScanSource;
+use super::stack_opt::OptimizeExprContext;
 use super::*;
 
 pub struct FusedArithmetic {}
@@ -18,7 +17,7 @@ fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AEx
     unsafe { options.no_check_lengths() }
     AExpr::Function {
         input,
-        function: FunctionExpr::Fused(op),
+        function: IRFunctionExpr::Fused(op),
         options,
     }
 }
@@ -26,20 +25,15 @@ fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AEx
 fn check_eligible(
     left: &Node,
     right: &Node,
-    lp_node: Node,
     expr_arena: &Arena<AExpr>,
-    lp_arena: &Arena<IR>,
-) -> PolarsResult<(Option<bool>, Option<Field>)> {
-    let Some(input_node) = lp_arena.get(lp_node).get_input() else {
-        return Ok((None, None));
-    };
-    let schema = lp_arena.get(input_node).schema(lp_arena);
+    schema: &Schema,
+) -> PolarsResult<bool> {
     let field_left = expr_arena
         .get(*left)
-        .to_field(&schema, Context::Default, expr_arena)?;
+        .to_field(schema, Context::Default, expr_arena)?;
     let type_right = expr_arena
         .get(*right)
-        .get_type(&schema, Context::Default, expr_arena)?;
+        .get_type(schema, Context::Default, expr_arena)?;
     let type_left = &field_left.dtype;
     // Exclude literals for now as these will not benefit from fused operations downstream #9857
     // This optimization would also interfere with the `col -> lit` type-coercion rules
@@ -49,9 +43,9 @@ fn check_eligible(
         && !has_aexpr_literal(*left, expr_arena)
         && !has_aexpr_literal(*right, expr_arena)
     {
-        Ok((Some(true), Some(field_left)))
+        Ok(true)
     } else {
-        Ok((Some(false), None))
+        Ok(false)
     }
 }
 
@@ -61,19 +55,14 @@ impl OptimizationRule for FusedArithmetic {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         // We don't want to fuse arithmetic that we send to pyarrow.
-        #[cfg(feature = "python")]
-        if let IR::PythonScan { options } = lp_arena.get(lp_node) {
-            if matches!(
-                options.python_source,
-                PythonScanSource::Pyarrow | PythonScanSource::IOPlugin
-            ) {
-                return Ok(None);
-            }
-        };
+        if ctx.in_pyarrow_scan || ctx.in_io_plugin {
+            return Ok(None);
+        }
+
         let expr = expr_arena.get(expr_node);
 
         use AExpr::*;
@@ -97,18 +86,10 @@ impl OptimizationRule for FusedArithmetic {
                         left: a,
                         op: Operator::Multiply,
                         right: b,
-                    } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
-                        (None, _) | (Some(false), _) => Ok(None),
-                        (Some(true), Some(output_field)) => {
-                            let input = &[*right, *a, *b];
-                            let fma = get_expr(input, FusedOperator::MultiplyAdd, expr_arena);
-                            let node = expr_arena.add(fma);
-                            // we reordered the arguments, so we don't obey the left expression output name
-                            // rule anymore, that's why we alias
-                            Ok(Some(Alias(node, output_field.name.clone())))
-                        },
-                        _ => unreachable!(),
-                    },
+                    } => Ok(check_eligible(left, right, expr_arena, schema)?.then(|| {
+                        let input = &[*right, *a, *b];
+                        get_expr(input, FusedOperator::MultiplyAdd, expr_arena)
+                    })),
                     _ => match expr_arena.get(*right) {
                         // input
                         // (a + (b * c)
@@ -117,17 +98,10 @@ impl OptimizationRule for FusedArithmetic {
                             left: a,
                             op: Operator::Multiply,
                             right: b,
-                        } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
-                            (None, _) | (Some(false), _) => Ok(None),
-                            (Some(true), _) => {
-                                let input = &[*left, *a, *b];
-                                Ok(Some(get_expr(
-                                    input,
-                                    FusedOperator::MultiplyAdd,
-                                    expr_arena,
-                                )))
-                            },
-                        },
+                        } => Ok(check_eligible(left, right, expr_arena, schema)?.then(|| {
+                            let input = &[*left, *a, *b];
+                            get_expr(input, FusedOperator::MultiplyAdd, expr_arena)
+                        })),
                         _ => Ok(None),
                     },
                 }
@@ -147,17 +121,10 @@ impl OptimizationRule for FusedArithmetic {
                         left: a,
                         op: Operator::Multiply,
                         right: b,
-                    } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
-                        (None, _) | (Some(false), _) => Ok(None),
-                        (Some(true), _) => {
-                            let input = &[*left, *a, *b];
-                            Ok(Some(get_expr(
-                                input,
-                                FusedOperator::SubMultiply,
-                                expr_arena,
-                            )))
-                        },
-                    },
+                    } => Ok(check_eligible(left, right, expr_arena, schema)?.then(|| {
+                        let input = &[*left, *a, *b];
+                        get_expr(input, FusedOperator::SubMultiply, expr_arena)
+                    })),
                     _ => {
                         // FUSED MULTIPLY SUB
                         match expr_arena.get(*left) {
@@ -168,19 +135,10 @@ impl OptimizationRule for FusedArithmetic {
                                 left: a,
                                 op: Operator::Multiply,
                                 right: b,
-                            } => {
-                                match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
-                                    (None, _) | (Some(false), _) => Ok(None),
-                                    (Some(true), _) => {
-                                        let input = &[*a, *b, *right];
-                                        Ok(Some(get_expr(
-                                            input,
-                                            FusedOperator::MultiplySub,
-                                            expr_arena,
-                                        )))
-                                    },
-                                }
-                            },
+                            } => Ok(check_eligible(left, right, expr_arena, schema)?.then(|| {
+                                let input = &[*a, *b, *right];
+                                get_expr(input, FusedOperator::MultiplySub, expr_arena)
+                            })),
                             _ => Ok(None),
                         }
                     },

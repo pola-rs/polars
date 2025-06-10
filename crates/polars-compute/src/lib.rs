@@ -1,5 +1,4 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-#![cfg_attr(feature = "simd", feature(avx512_target_feature))]
 #![cfg_attr(
     all(feature = "simd", target_arch = "x86_64"),
     feature(stdarch_x86_avx512)
@@ -17,6 +16,7 @@ pub mod cardinality;
 pub mod cast;
 pub mod comparisons;
 pub mod filter;
+#[cfg(feature = "cast")]
 pub mod find_validity_mismatch;
 pub mod float_sum;
 #[cfg(feature = "gather")]

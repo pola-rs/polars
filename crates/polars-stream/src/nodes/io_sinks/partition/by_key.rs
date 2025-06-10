@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -10,14 +10,15 @@ use polars_core::prelude::{Column, PlHashSet, PlIndexMap, row_encode};
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 
-use super::CreateNewSinkFn;
+use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
+use crate::nodes::io_sinks::metrics::WriteMetrics;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode, parallelize_receive_task};
@@ -26,6 +27,7 @@ use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 type Linearized =
     Priority<Reverse<MorselSeq>, (SourceToken, Vec<(Buffer<u8>, Vec<Column>, DataFrame)>)>;
 pub struct PartitionByKeySinkNode {
+    input_schema: SchemaRef,
     // This is not be the same as the input_schema, e.g. when include_key=false then this will not
     // include the keys columns.
     sink_input_schema: SchemaRef,
@@ -41,6 +43,10 @@ pub struct PartitionByKeySinkNode {
     ext: PlSmallStr,
 
     sink_options: SinkOptions,
+
+    per_partition_sort_by: Option<PerPartitionSortBy>,
+    written_partitions: Arc<OnceLock<DataFrame>>,
+    finish_callback: Option<SinkFinishCallback>,
 }
 
 impl PartitionByKeySinkNode {
@@ -54,6 +60,8 @@ impl PartitionByKeySinkNode {
         ext: PlSmallStr,
         sink_options: SinkOptions,
         include_key: bool,
+        per_partition_sort_by: Option<PerPartitionSortBy>,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(!key_cols.is_empty());
 
@@ -80,6 +88,7 @@ impl PartitionByKeySinkNode {
             });
 
         Self {
+            input_schema,
             sink_input_schema,
             key_cols,
             max_open_partitions,
@@ -89,6 +98,9 @@ impl PartitionByKeySinkNode {
             create_new,
             ext,
             sink_options,
+            per_partition_sort_by,
+            written_partitions: Arc::new(OnceLock::new()),
+            finish_callback,
         }
     }
 }
@@ -101,8 +113,17 @@ impl SinkNode for PartitionByKeySinkNode {
     fn is_sink_input_parallel(&self) -> bool {
         true
     }
+
     fn do_maintain_order(&self) -> bool {
         self.sink_options.maintain_order
+    }
+
+    fn finish(&self) -> PolarsResult<()> {
+        if let Some(finish_callback) = &self.finish_callback {
+            let df = self.written_partitions.get().unwrap();
+            finish_callback.call(df.clone())?;
+        }
+        Ok(())
     }
 
     fn spawn_sink(
@@ -181,19 +202,28 @@ impl SinkNode for PartitionByKeySinkNode {
         }));
 
         let state = state.clone();
+        let input_schema = self.input_schema.clone();
+        let key_cols = self.key_cols.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let max_open_partitions = self.max_open_partitions;
         let base_path = self.base_path.clone();
         let file_path_cb = self.file_path_cb.clone();
         let create_new_sink = self.create_new.clone();
         let ext = self.ext.clone();
+        let per_partition_sort_by = self.per_partition_sort_by.clone();
+        let output_written_partitions = self.written_partitions.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             enum OpenPartition {
-                Sink(
-                    SinkSender,
-                    FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
-                ),
-                Buffer(Vec<Column>, Vec<DataFrame>),
+                Sink {
+                    sender: SinkSender,
+                    join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
+                    node: Box<dyn SinkNode + Send + Sync>,
+                    keys: Vec<Column>,
+                },
+                Buffer {
+                    buffered: Vec<DataFrame>,
+                    keys: Vec<Column>,
+                },
             }
 
             let verbose = config::verbose();
@@ -219,7 +249,7 @@ impl SinkNode for PartitionByKeySinkNode {
 
                                     let (idx, previous) = open_partitions.insert_full(
                                         row_encoded,
-                                        OpenPartition::Buffer(keys, Vec::new()),
+                                        OpenPartition::Buffer { buffered: Vec::new(), keys },
                                     );
                                     debug_assert!(previous.is_none());
                                     open_partitions.get_index_mut(idx).unwrap().1
@@ -239,16 +269,17 @@ impl SinkNode for PartitionByKeySinkNode {
                                         ext.as_str(),
                                         verbose,
                                         &state,
+                                        per_partition_sort_by.as_ref(),
                                     ).await?;
                                     file_idx += 1;
 
-                                    let Some((join_handles, sender)) = result else {
+                                    let Some((join_handles, sender, node)) = result else {
                                         return Ok(());
                                     };
 
                                     let (idx, previous) = open_partitions.insert_full(
                                         row_encoded,
-                                        OpenPartition::Sink(sender, join_handles),
+                                        OpenPartition::Sink { sender, join_handles, node, keys },
                                     );
                                     debug_assert!(previous.is_none());
                                     open_partitions.get_index_mut(idx).unwrap().1
@@ -257,13 +288,13 @@ impl SinkNode for PartitionByKeySinkNode {
                             };
 
                             match open_partition {
-                                OpenPartition::Sink(input, _) => {
+                                OpenPartition::Sink { sender, .. } => {
                                     let morsel = Morsel::new(partition, seq, source_token.clone());
-                                    if input.send(morsel).await.is_err() {
+                                    if sender.send(morsel).await.is_err() {
                                         return Ok(());
                                     }
                                 },
-                                OpenPartition::Buffer(_keys, buffer) => buffer.push(partition),
+                                OpenPartition::Buffer { buffered, .. } => buffered.push(partition),
                             }
                         }
                     }
@@ -273,17 +304,14 @@ impl SinkNode for PartitionByKeySinkNode {
             };
             receive_and_pass().await?;
 
+            let mut partition_metrics = Vec::with_capacity(file_idx);
+
             // At this point, we need to wait for all sinks to finish writing and close them. Also,
             // sinks that ended up buffering need to output their data.
             for open_partition in open_partitions.into_values() {
-                match open_partition {
-                    OpenPartition::Sink(sink_sender, mut join_handles) => {
-                        drop(sink_sender); // Signal to the sink that nothing more is coming.
-                        while let Some(res) = join_handles.next().await {
-                            res?;
-                        }
-                    },
-                    OpenPartition::Buffer(keys, buffered) => {
+                let (sender, mut join_handles, node, keys) = match open_partition {
+                    OpenPartition::Sink { sender, join_handles, node, keys } => (sender, join_handles, node, keys),
+                    OpenPartition::Buffer { buffered, keys } => {
                         let result = open_new_sink(
                             base_path.as_path(),
                             file_path_cb.as_ref(),
@@ -297,10 +325,11 @@ impl SinkNode for PartitionByKeySinkNode {
                             "by-key",
                             ext.as_str(),
                             verbose,
-                            &state
+                            &state,
+                            per_partition_sort_by.as_ref(),
                         ).await?;
                         file_idx += 1;
-                        let Some((mut join_handles, mut sender)) = result else {
+                        let Some((join_handles, mut sender, node)) = result else {
                             return Ok(());
                         };
 
@@ -314,14 +343,24 @@ impl SinkNode for PartitionByKeySinkNode {
                             seq = seq.successor();
                         }
 
-                        drop(sender); // Signal to the sink that nothing more is coming.
-                        while let Some(res) = join_handles.next().await {
-                            res?;
-                        }
+                        (sender, join_handles, node, keys)
                     },
+                };
+
+                drop(sender); // Signal to the sink that nothing more is coming.
+                while let Some(res) = join_handles.next().await {
+                    res?;
                 }
+
+                if let Some(mut metrics) = node.get_metrics()? {
+                    metrics.keys = Some(keys.into_iter().map(|c| c.get(0).unwrap().into_static()).collect());
+                    partition_metrics.push(metrics);
+                }
+                node.finish()?;
             }
 
+            let df = WriteMetrics::collapse_to_df(partition_metrics, &sink_input_schema, Some(&input_schema.try_project(key_cols.iter()).unwrap()));
+            output_written_partitions.set(df).unwrap();
             Ok(())
         }));
     }

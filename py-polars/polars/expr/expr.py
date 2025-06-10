@@ -23,8 +23,8 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.parse import (
@@ -45,7 +45,11 @@ from polars._utils.various import (
 from polars.datatypes import Int64, is_polars_dtype, parse_into_dtype
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
+from polars.exceptions import (
+    CustomUFuncWarning,
+    OutOfBoundsError,
+    PolarsInefficientMapWarning,
+)
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -78,8 +82,8 @@ if TYPE_CHECKING:
         NullBehavior,
         NumericLiteral,
         PolarsDataType,
+        QuantileMethod,
         RankMethod,
-        RollingInterpolationMethod,
         RoundMode,
         SchemaDict,
         SearchSortedSide,
@@ -95,6 +99,11 @@ if TYPE_CHECKING:
         from typing import Concatenate, ParamSpec
     else:
         from typing_extensions import Concatenate, ParamSpec
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -291,6 +300,26 @@ class Expr:
             raise NotImplementedError(msg)
         # Numpy/Scipy ufuncs have signature None but numba signatures always exists.
         is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
+        if is_custom_ufunc is True:
+            msg = (
+                "Native numpy ufuncs are dispatched using `map_batches(ufunc, is_elementwise=True)` which "
+                "is safe for native Numpy and Scipy ufuncs but custom ufuncs in a group_by "
+                "context won't be properly grouped. Custom ufuncs are dispatched with is_elementwise=False. "
+                f"If {ufunc.__name__} needs elementwise then please use map_batches directly."
+            )
+            warnings.warn(
+                msg,
+                CustomUFuncWarning,
+                stacklevel=find_stacklevel(),
+            )
+        if len(inputs) == 1 and len(kwargs) == 0:
+            # if there is only 1 input then it must be an Expr for this func to
+            # have been called. If there are no kwargs then call map_batches
+            # directly on the ufunc
+            if not isinstance(inputs[0], Expr):
+                msg = "Input must be expression."
+                raise OutOfBoundsError(msg)
+            return inputs[0].map_batches(ufunc, is_elementwise=not is_custom_ufunc)
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
@@ -325,20 +354,7 @@ class Expr:
                     args.append(expr[0])
             return ufunc(*args, **kwargs)
 
-        if is_custom_ufunc is True:
-            msg = (
-                "Native numpy ufuncs are dispatched using `map_batches(ufunc, is_elementwise=True)` which "
-                "is safe for native Numpy and Scipy ufuncs but custom ufuncs in a group_by "
-                "context won't be properly grouped. Custom ufuncs are dispatched with is_elementwise=False. "
-                f"If {ufunc.__name__} needs elementwise then please use map_batches directly."
-            )
-            warnings.warn(
-                msg,
-                CustomUFuncWarning,
-                stacklevel=find_stacklevel(),
-            )
-            return root_expr.map_batches(function, is_elementwise=False)
-        return root_expr.map_batches(function, is_elementwise=True)
+        return root_expr.map_batches(function, is_elementwise=not is_custom_ufunc)
 
     @classmethod
     def deserialize(
@@ -1642,10 +1658,19 @@ class Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
+        The default rounding mode is "half to even" (also known as "bankers' rounding").
+
         Parameters
         ----------
         decimals
             Number of decimals to round by.
+        mode : {'half_to_even', 'half_away_from_zero'}
+            RoundMode.
+
+            * *half_to_even*
+                round to the nearest even number
+            * *half_away_from_zero*
+                round to the nearest number away from zero
 
         Examples
         --------
@@ -1662,6 +1687,33 @@ class Expr:
         │ 1.0 │
         │ 1.2 │
         └─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "f64": [-3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5],
+        ...         "d": ["-3.5", "-2.5", "-1.5", "-0.5", "0.5", "1.5", "2.5", "3.5"],
+        ...     },
+        ...     schema_overrides={"d": pl.Decimal(scale=1)},
+        ... )
+        >>> df.with_columns(
+        ...     pl.all().round(mode="half_away_from_zero").name.suffix("_away"),
+        ...     pl.all().round(mode="half_to_even").name.suffix("_to_even"),
+        ... )
+        shape: (8, 6)
+        ┌──────┬──────────────┬──────────┬──────────────┬─────────────┬──────────────┐
+        │ f64  ┆ d            ┆ f64_away ┆ d_away       ┆ f64_to_even ┆ d_to_even    │
+        │ ---  ┆ ---          ┆ ---      ┆ ---          ┆ ---         ┆ ---          │
+        │ f64  ┆ decimal[*,1] ┆ f64      ┆ decimal[*,1] ┆ f64         ┆ decimal[*,1] │
+        ╞══════╪══════════════╪══════════╪══════════════╪═════════════╪══════════════╡
+        │ -3.5 ┆ -3.5         ┆ -4.0     ┆ -4.0         ┆ -4.0        ┆ -4.0         │
+        │ -2.5 ┆ -2.5         ┆ -3.0     ┆ -3.0         ┆ -2.0        ┆ -2.0         │
+        │ -1.5 ┆ -1.5         ┆ -2.0     ┆ -2.0         ┆ -2.0        ┆ -2.0         │
+        │ -0.5 ┆ -0.5         ┆ -1.0     ┆ -1.0         ┆ -0.0        ┆ 0.0          │
+        │ 0.5  ┆ 0.5          ┆ 1.0      ┆ 1.0          ┆ 0.0         ┆ 0.0          │
+        │ 1.5  ┆ 1.5          ┆ 2.0      ┆ 2.0          ┆ 2.0         ┆ 2.0          │
+        │ 2.5  ┆ 2.5          ┆ 3.0      ┆ 3.0          ┆ 2.0         ┆ 2.0          │
+        │ 3.5  ┆ 3.5          ┆ 4.0      ┆ 4.0          ┆ 4.0         ┆ 4.0          │
+        └──────┴──────────────┴──────────┴──────────────┴─────────────┴──────────────┘
         """
         return self._from_pyexpr(self._pyexpr.round(decimals, mode))
 
@@ -1941,6 +1993,9 @@ class Expr:
 
         .. math:: O(n \log{n})
 
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed to `reverse`.
+
         Parameters
         ----------
         by
@@ -2113,6 +2168,9 @@ class Expr:
         This has time complexity:
 
         .. math:: O(n \log{n})
+
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
@@ -2352,7 +2410,11 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.index_of(element))
 
     def search_sorted(
-        self, element: IntoExpr | np.ndarray[Any, Any], side: SearchSortedSide = "any"
+        self,
+        element: IntoExpr | np.ndarray[Any, Any],
+        side: SearchSortedSide = "any",
+        *,
+        descending: bool = False,
     ) -> Expr:
         """
         Find indices where elements should be inserted to maintain order.
@@ -2367,6 +2429,9 @@ class Expr:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+        descending
+            Boolean indicating whether the values are descending or not (they
+            are required to be sorted either way).
 
         Examples
         --------
@@ -2392,7 +2457,7 @@ class Expr:
         └──────┴───────┴─────┘
         """
         element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
-        return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
+        return self._from_pyexpr(self._pyexpr.search_sorted(element, side, descending))
 
     def sort_by(
         self,
@@ -2739,6 +2804,11 @@ class Expr:
         fill_nan
         forward_fill
 
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2830,14 +2900,14 @@ class Expr:
         value
             Value used to fill NaN values.
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
-
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
@@ -3373,7 +3443,7 @@ class Expr:
 
     def over(
         self,
-        partition_by: IntoExpr | Iterable[IntoExpr],
+        partition_by: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
         descending: bool = False,
@@ -3536,7 +3606,8 @@ class Expr:
         │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
         └──────────┴────────────┴───────┴──────────────────┘
         """
-        partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
+        if partition_by is not None:
+            partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
             order_by = parse_into_list_of_expressions(order_by)
         return self._from_pyexpr(
@@ -3808,7 +3879,7 @@ class Expr:
     def quantile(
         self,
         quantile: float | Expr,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
         Get quantile value.
@@ -3817,7 +3888,7 @@ class Expr:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -3868,7 +3939,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        """
+        """  # noqa: W505
         quantile = parse_into_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
@@ -4232,13 +4303,13 @@ class Expr:
         )
         return self._from_pyexpr(self._pyexpr.filter(predicate))
 
-    @deprecate_function("Use `filter` instead.", version="0.20.4")
+    @deprecated("`where` is deprecated; use `filter` instead.")
     def where(self, predicate: Expr) -> Expr:
         """
         Filter a single column.
 
         .. deprecated:: 0.20.4
-            Use :func:`filter` instead.
+            Use the :func:`filter` method instead.
 
         Alias for :func:`filter`.
 
@@ -4667,7 +4738,7 @@ class Expr:
         """
         if strategy == "threading":
             issue_unstable_warning(
-                "The 'threading' strategy for `map_elements` is considered unstable."
+                "the 'threading' strategy for `map_elements` is considered unstable."
             )
 
         # input x: Series of type list containing the group values
@@ -6210,6 +6281,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         by
@@ -6334,6 +6408,9 @@ class Expr:
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6485,6 +6562,9 @@ class Expr:
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6644,6 +6724,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -6795,6 +6878,9 @@ class Expr:
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6956,6 +7042,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         by
@@ -7115,6 +7204,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         by
@@ -7225,7 +7317,7 @@ class Expr:
         window_size: timedelta | str,
         *,
         quantile: float,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
         min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
@@ -7244,6 +7336,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         by
@@ -7252,7 +7347,7 @@ class Expr:
             in `window size`).
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
         window_size
             The length of the window. Can be a dynamic
@@ -7343,7 +7438,7 @@ class Expr:
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.0                 │
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0                 │
         └───────┴─────────────────────┴──────────────────────┘
-        """
+        """  # noqa: W505
         window_size = _prepare_rolling_by_window_args(window_size)
         by = parse_into_expression(by)
         return self._from_pyexpr(
@@ -7375,6 +7470,9 @@ class Expr:
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7483,6 +7581,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -7589,6 +7690,9 @@ class Expr:
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7697,6 +7801,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -7804,6 +7911,9 @@ class Expr:
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7916,6 +8026,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -8026,6 +8139,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -8118,7 +8234,7 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
         window_size: int = 2,
         weights: list[float] | None = None,
         *,
@@ -8135,11 +8251,14 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
         window_size
             The length of the window in number of elements.
@@ -8245,7 +8364,7 @@ class Expr:
         │ 5.0 ┆ null             │
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
-        """
+        """  # noqa: W505
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile(
                 quantile,
@@ -8402,6 +8521,9 @@ class Expr:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9471,6 +9593,9 @@ class Expr:
         r"""
         Compute exponentially-weighted moving average.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         com
@@ -9652,6 +9777,9 @@ class Expr:
         r"""
         Compute exponentially-weighted moving standard deviation.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         com
@@ -9743,6 +9871,9 @@ class Expr:
     ) -> Expr:
         r"""
         Compute exponentially-weighted moving variance.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9862,81 +9993,97 @@ class Expr:
         normalize: bool = False,
     ) -> Expr:
         """
-        Count the occurrences of unique values.
+        Count the occurrence of unique values.
 
         Parameters
         ----------
         sort
-            Sort the output by count in descending order.
-            If set to `False` (default), the order of the output is random.
+            Sort the output by count, in descending order.
+            If set to `False` (default), the order is non-deterministic.
         parallel
             Execute the computation in parallel.
 
             .. note::
-                This option should likely not be enabled in a group by context,
-                as the computation is already parallelized per group.
+                This option should likely *not* be enabled in a `group_by` context,
+                as the computation will already be parallelized per group.
         name
-            Give the resulting count column a specific name;
-            if `normalize` is True defaults to "proportion",
-            otherwise defaults to "count".
+            Give the resulting count column a specific name; if `normalize` is
+            True this defaults to "proportion", otherwise defaults to "count".
         normalize
-            If true gives relative frequencies of the unique values
+            If True, the count is returned as the relative frequency of unique
+            values normalized to 1.0.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Struct` with mapping of unique values to
-            their count.
+            Expression of type :class:`Struct`, mapping unique values to their
+            count (or proportion).
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {"color": ["red", "blue", "red", "green", "blue", "blue"]}
         ... )
-        >>> df.select(pl.col("color").value_counts())  # doctest: +IGNORE_RESULT
+        >>> df_count = df.select(pl.col("color").value_counts())
+        >>> df_count  # doctest: +IGNORE_RESULT
         shape: (3, 1)
         ┌─────────────┐
         │ color       │
         │ ---         │
         │ struct[2]   │
         ╞═════════════╡
-        │ {"red",2}   │
         │ {"green",1} │
         │ {"blue",3}  │
-        └─────────────┘
-
-        Sort the output by (descending) count and customize the count field name.
-
-        >>> df = df.select(pl.col("color").value_counts(sort=True, name="n"))
-        >>> df
-        shape: (3, 1)
-        ┌─────────────┐
-        │ color       │
-        │ ---         │
-        │ struct[2]   │
-        ╞═════════════╡
-        │ {"blue",3}  │
         │ {"red",2}   │
-        │ {"green",1} │
         └─────────────┘
 
-        >>> df.unnest("color")
+        >>> df_count.unnest("color")  # doctest: +IGNORE_RESULT
         shape: (3, 2)
-        ┌───────┬─────┐
-        │ color ┆ n   │
-        │ ---   ┆ --- │
-        │ str   ┆ u32 │
-        ╞═══════╪═════╡
-        │ blue  ┆ 3   │
-        │ red   ┆ 2   │
-        │ green ┆ 1   │
-        └───────┴─────┘
+        ┌───────┬───────┐
+        │ color ┆ count │
+        │ ---   ┆ ---   │
+        │ str   ┆ u32   │
+        ╞═══════╪═══════╡
+        │ green ┆ 1     │
+        │ blue  ┆ 3     │
+        │ red   ┆ 2     │
+        └───────┴───────┘
+
+        Sort the output by (descending) count, customize the field name,
+        and normalize the count to its relative proportion (of 1.0).
+
+        >>> df_count = df.select(
+        ...     pl.col("color").value_counts(
+        ...         name="fraction",
+        ...         normalize=True,
+        ...         sort=True,
+        ...     )
+        ... )
+        >>> df_count
+        shape: (3, 1)
+        ┌────────────────────┐
+        │ color              │
+        │ ---                │
+        │ struct[2]          │
+        ╞════════════════════╡
+        │ {"blue",0.5}       │
+        │ {"red",0.333333}   │
+        │ {"green",0.166667} │
+        └────────────────────┘
+
+        >>> df_count.unnest("color")
+        shape: (3, 2)
+        ┌───────┬──────────┐
+        │ color ┆ fraction │
+        │ ---   ┆ ---      │
+        │ str   ┆ f64      │
+        ╞═══════╪══════════╡
+        │ blue  ┆ 0.5      │
+        │ red   ┆ 0.333333 │
+        │ green ┆ 0.166667 │
+        └───────┴──────────┘
         """
-        if name is None:
-            if normalize:
-                name = "proportion"
-            else:
-                name = "count"
+        name = name or ("proportion" if normalize else "count")
         return self._from_pyexpr(
             self._pyexpr.value_counts(sort, parallel, name, normalize)
         )
@@ -10061,15 +10208,16 @@ class Expr:
 
     @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
-    def cumulative_eval(
-        self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
-    ) -> Expr:
+    def cumulative_eval(self, expr: Expr, *, min_samples: int = 1) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -10078,9 +10226,6 @@ class Expr:
         min_samples
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
-        parallel
-            Run in parallel. Don't do this in a group by or another operation that
-            already has much parallelization.
 
         Warnings
         --------
@@ -10111,7 +10256,7 @@ class Expr:
         └────────┘
         """
         return self._from_pyexpr(
-            self._pyexpr.cumulative_eval(expr._pyexpr, min_samples, parallel)
+            self._pyexpr.cumulative_eval(expr._pyexpr, min_samples)
         )
 
     def set_sorted(self, *, descending: bool = False) -> Expr:
@@ -10389,13 +10534,13 @@ class Expr:
         """
         if return_dtype is not None:
             issue_deprecation_warning(
-                "The `return_dtype` parameter for `replace` is deprecated."
+                "the `return_dtype` parameter for `replace` is deprecated."
                 " Use `replace_strict` instead to set a return data type while replacing values.",
                 version="1.0.0",
             )
         if default is not no_default:
             issue_deprecation_warning(
-                "The `default` parameter for `replace` is deprecated."
+                "the `default` parameter for `replace` is deprecated."
                 " Use `replace_strict` instead to set a default while replacing values.",
                 version="1.0.0",
             )
@@ -10445,7 +10590,7 @@ class Expr:
             Accepts expression input. Sequences are parsed as Series,
             other non-expression inputs are parsed as literals.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace_all(old=Series(mapping.keys()), new=Series(mapping.values()))`.
+            `replace_strict(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Accepts expression input. Sequences are parsed as Series,
@@ -10738,8 +10883,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.bitwise_xor())
 
-    @deprecate_function(
-        "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
+    @deprecated(
+        "`register_plugin` is deprecated; "
+        "use `polars.plugins.register_plugin_function` instead."
     )
     def register_plugin(
         self,

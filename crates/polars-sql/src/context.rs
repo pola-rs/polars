@@ -688,7 +688,7 @@ impl SQLContext {
                         .iter_names()
                         .filter_map(|name| {
                             // col exists in both tables and is aliased in the joined result
-                            let aliased_name = format!("{}:{}", name, r_name);
+                            let aliased_name = format!("{name}:{r_name}");
                             if left_schema.contains(name)
                                 && joined_schema.contains(aliased_name.as_str())
                             {
@@ -1311,9 +1311,11 @@ impl SQLContext {
                 matches!(e, Expr::Agg(_) | Expr::Len | Expr::Window { .. })
             });
 
+            let mut is_function_under_alias = false;
+
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
-                if e.clone().meta().is_simple_projection() {
+                if e.clone().meta().is_simple_projection(Some(&schema_before)) {
                     group_key_aliases.insert(alias.as_ref());
                     e = expr
                 } else if let Expr::Function {
@@ -1323,6 +1325,8 @@ impl SQLContext {
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
+                } else if let Expr::Function { .. } = expr.deref() {
+                    is_function_under_alias = true;
                 } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
@@ -1348,6 +1352,17 @@ impl SQLContext {
                 if !group_by_keys_schema.contains(&field.name) {
                     polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                 }
+            } else if is_function_under_alias || matches!(e, Expr::Function { .. }) {
+                aggregation_projection.push(e.clone());
+            } else if let Expr::Literal { .. }
+            | Expr::Cast { .. }
+            | Expr::Ternary { .. }
+            | Expr::Field { .. }
+            | Expr::Alias { .. } = e
+            {
+                // do nothing
+            } else {
+                polars_bail!(SQLSyntax: "Unsupported operation in the GROUP BY clause: {}", e);
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
@@ -1476,8 +1491,7 @@ impl SQLContext {
                 .replace('_', ".");
 
             modifiers.ilike = Some(
-                polars_utils::regex_cache::compile_regex(format!("^(?is){}$", rx).as_str())
-                    .unwrap(),
+                polars_utils::regex_cache::compile_regex(format!("^(?is){rx}$").as_str()).unwrap(),
             );
         }
 
@@ -1686,7 +1700,8 @@ impl ExprSqlProjectionHeightBehavior {
             has_column |= matches!(e, Column(_) | Columns(_) | DtypeColumn(_) | IndexColumn(_));
 
             has_independent |= match e {
-                Function { options, .. } | AnonymousFunction { options, .. } => {
+                // @TODO: This is broken now with functions.
+                AnonymousFunction { options, .. } => {
                     options.returns_scalar() || !options.is_length_preserving()
                 },
 

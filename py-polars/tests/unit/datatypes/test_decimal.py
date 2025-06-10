@@ -9,6 +9,7 @@ from math import ceil, floor
 from random import choice, randrange, seed
 from typing import Any, Callable, NamedTuple
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -303,16 +304,24 @@ def test_decimal_aggregations() -> None:
         "a": [[D("0.1"), D("10.1")], [D("100.01"), D("9000.12")]],
     }
 
-    assert df.group_by("g", maintain_order=True).agg(
+    result = df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
-    ).to_dict(as_series=False) == {
-        "g": [1, 2],
-        "sum": [D("10.20"), D("9100.13")],
-        "min": [D("0.10"), D("100.01")],
-        "max": [D("10.10"), D("9000.12")],
-    }
+        mean=pl.mean("a"),
+        median=pl.median("a"),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "sum": [D("10.20"), D("9100.13")],
+            "min": [D("0.10"), D("100.01")],
+            "max": [D("10.10"), D("9000.12")],
+            "mean": [5.1, 4550.065],
+            "median": [5.1, 4550.065],
+        }
+    )
+    assert_frame_equal(result, expected)
 
     res = df.select(
         sum=pl.sum("a"),
@@ -720,3 +729,32 @@ def test_decimal_min_over_21096() -> None:
     df = pl.Series("x", [1, 2], pl.Decimal(scale=2)).to_frame()
     result = df.select(pl.col("x").min().over("x"))
     assert result["x"].to_list() == [D("1.00"), D("2.00")]
+
+
+def test_decimal32_decimal64_22946() -> None:
+    tbl = pa.Table.from_pydict(
+        mapping={
+            "colx": [D("100.1"), D("200.2"), D("300.3")],
+            "coly": [D("400.4"), D("500.5"), D("600.6")],
+        },
+        schema=pa.schema(
+            [
+                ("colx", pa.decimal32(4, 1)),  # << note: decimal32
+                ("coly", pa.decimal64(4, 1)),  # << note: decimal64
+            ]
+        ),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(tbl),
+        pl.DataFrame(
+            [
+                pl.Series(
+                    "colx", [D("100.1"), D("200.2"), D("300.3")], pl.Decimal(4, 1)
+                ),
+                pl.Series(
+                    "coly", [D("400.4"), D("500.5"), D("600.6")], pl.Decimal(4, 1)
+                ),
+            ]
+        ),
+    )

@@ -27,7 +27,9 @@ raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+serde_ignored = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
@@ -44,5 +46,17 @@ mmap = ["memmap"]
 bigidx = []
 nightly = []
 ir_serde = ["serde"]
-serde = ["dep:serde", "serde/derive", "dep:rmp-serde", "dep:bincode", "dep:flate2", "dep:serde_json"]
+serde = [
+  "dep:serde",
+  "serde/derive",
+  "dep:rmp-serde",
+  "dep:bincode",
+  "dep:flate2",
+  "dep:serde_json",
+]
+dsl-schema = ["dep:schemars"]
+polars_cloud_server = ["dep:serde_ignored"]
 python = ["pyo3", "polars-error/python"]
+
+[lints]
+workspace = true

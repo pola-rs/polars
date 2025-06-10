@@ -14,7 +14,6 @@ fn rolling_skew_ca<T>(
     params: Option<RollingFnParams>,
 ) -> PolarsResult<ChunkedArray<T>>
 where
-    ChunkedArray<T>: IntoSeries,
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
@@ -70,7 +69,6 @@ fn rolling_kurtosis_ca<T>(
     center: bool,
 ) -> PolarsResult<ChunkedArray<T>>
 where
-    ChunkedArray<T>: IntoSeries,
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {

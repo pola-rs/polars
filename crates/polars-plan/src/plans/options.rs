@@ -25,10 +25,41 @@ pub struct DistinctOptionsIR {
 // a boolean that can only be set to `false` safely
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UnsafeBool(bool);
 impl Default for UnsafeBool {
     fn default() -> Self {
         UnsafeBool(true)
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for FunctionFlags {
+    fn schema_name() -> String {
+        "FunctionFlags".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "FunctionFlags"))
+    }
+
+    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        use serde_json::{Map, Value};
+
+        let name_to_bits: Map<String, Value> = Self::all()
+            .iter_names()
+            .map(|(name, flag)| (name.to_owned(), flag.bits().into()))
+            .collect();
+
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            format: Some("bitflags".to_owned()),
+            extensions: schemars::Map::from_iter([
+                // Add a map of flag names and bit patterns to detect schema changes
+                ("bitflags".to_owned(), Value::Object(name_to_bits)),
+            ]),
+            ..Default::default()
+        })
     }
 }
 
@@ -128,17 +159,15 @@ impl CastingRules {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(any(feature = "serde"), derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FunctionOptions {
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
     pub flags: FunctionFlags,
 
-    // used for formatting, (only for anonymous functions)
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub fmt_str: &'static str,
     /// Options used when deciding how to cast the arguments of the function.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     pub cast_options: Option<CastingRules>,
 }
 
@@ -217,18 +246,12 @@ impl FunctionOptions {
         self.flags = f(self.flags);
         self
     }
-
-    pub fn with_fmt_str(mut self, fmt_str: &'static str) -> FunctionOptions {
-        self.fmt_str = fmt_str;
-        self
-    }
 }
 
 impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
             check_lengths: UnsafeBool(true),
-            fmt_str: Default::default(),
             cast_options: Default::default(),
             flags: Default::default(),
         }
@@ -236,6 +259,7 @@ impl Default for FunctionOptions {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectionOptions {
     pub run_parallel: bool,

@@ -57,6 +57,15 @@ def test_cum_agg_with_nulls() -> None:
     assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
 
 
+def test_cum_agg_with_infs() -> None:
+    # confirm that inf values are handled correctly
+    s = pl.Series([float("inf"), 0.0, 1.0])
+    assert_series_equal(s.cum_min(), pl.Series([float("inf"), 0.0, 0.0]))
+
+    s = pl.Series([float("-inf"), 0.0, 1.0])
+    assert_series_equal(s.cum_max(), pl.Series([float("-inf"), 0.0, 1.0]))
+
+
 def test_cum_min_max_bool() -> None:
     s = pl.Series("a", [None, True, True, None, False, None, True, False, False, None])
     assert_series_equal(s.cum_min().cast(pl.Int32), s.cast(pl.Int32).cum_min())
@@ -559,6 +568,12 @@ def test_to_struct() -> None:
     )
 
 
+def test_to_struct_empty() -> None:
+    df = pl.DataFrame({"y": [[], [], []]}, schema={"y": pl.List(pl.Int64)})
+    empty_df = df.select(pl.col("y").list.to_struct(fields=[]).struct.unnest())
+    assert empty_df.shape == (0, 0)
+
+
 def test_sort() -> None:
     a = pl.Series("a", [2, 1, 3])
     assert_series_equal(a.sort(), pl.Series("a", [1, 2, 3]))
@@ -941,6 +956,11 @@ def test_round() -> None:
 
     b = a.round()
     assert b.to_list() == [1.0, 2.0]
+
+
+def test_round_int() -> None:
+    s = pl.Series([1, 2, 3])
+    assert_series_equal(s, s.round())
 
 
 @pytest.mark.parametrize(
@@ -1426,18 +1446,16 @@ def test_arg_sort() -> None:
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical), 0, 2),
         (pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical), 1, 4),
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
-        (
-            pl.Series(
-                [None, "c", "b", None, "a"], dtype=pl.Categorical(ordering="lexical")
-            ),
-            4,
-            1,
-        ),
+        (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical("lexical")), 4, 1),
     ],
 )
 def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
-    assert series.arg_min() == argmin
-    assert series.arg_max() == argmax
+    assert series.arg_min() == argmin, (
+        f"values: {series.to_list()}, expected {argmin} got {series.arg_min()}"
+    )
+    assert series.arg_max() == argmax, (
+        f"values: {series.to_list()}, expected {argmax} got {series.arg_max()}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1851,27 +1869,6 @@ def test_cumulative_eval() -> None:
     assert_series_equal(s.cumulative_eval(expr3), expected3)
 
 
-def test_reverse() -> None:
-    s = pl.Series("values", [1, 2, 3, 4, 5])
-    assert s.reverse().to_list() == [5, 4, 3, 2, 1]
-
-    s = pl.Series("values", ["a", "b", None, "y", "x"])
-    assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
-
-
-def test_reverse_binary() -> None:
-    # single chunk
-    s = pl.Series("values", ["a", "b", "c", "d"]).cast(pl.Binary)
-    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
-
-    # multiple chunks
-    chunk1 = pl.Series("values", ["a", "b"])
-    chunk2 = pl.Series("values", ["c", "d"])
-    s = chunk1.extend(chunk2).cast(pl.Binary)
-    assert s.n_chunks() == 2
-    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
-
-
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]
@@ -2226,7 +2223,6 @@ def test_construction_large_nested_u64_17231() -> None:
 
     values = [{"f0": [9223372036854775808]}]
     dtype = pl.Struct({"f0": pl.List(pl.UInt64)})
-
     assert pl.Series(values, dtype=dtype).to_list() == values
 
 

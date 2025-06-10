@@ -198,10 +198,7 @@ impl Series {
     }
 
     /// Take or clone a owned copy of the inner [`ChunkedArray`].
-    pub fn take_inner<T>(self) -> ChunkedArray<T>
-    where
-        T: 'static + PolarsDataType<IsLogical = FalseT>,
-    {
+    pub fn take_inner<T: PolarsPhysicalType>(self) -> ChunkedArray<T> {
         let arc_any = self.0.as_arc_any();
         let downcast = arc_any
             .downcast::<implementations::SeriesWrap<ChunkedArray<T>>>()
@@ -724,20 +721,20 @@ impl Series {
             // NOTE: Don't use cast here, as it might rechunk (if all nulls)
             // which is not allowed in a phys repr.
             #[cfg(feature = "dtype-date")]
-            Date => Cow::Owned(self.date().unwrap().0.clone().into_series()),
+            Date => Cow::Owned(self.date().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().0.clone().into_series()),
+            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-duration")]
-            Duration(_) => Cow::Owned(self.duration().unwrap().0.clone().into_series()),
+            Duration(_) => Cow::Owned(self.duration().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-time")]
-            Time => Cow::Owned(self.time().unwrap().0.clone().into_series()),
+            Time => Cow::Owned(self.time().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
                 let ca = self.categorical().unwrap();
                 Cow::Owned(ca.physical().clone().into_series())
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
+            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().phys.clone().into_series()),
             List(_) => match self.list().unwrap().to_physical_repr() {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
@@ -1059,17 +1056,14 @@ impl Default for Series {
     }
 }
 
-impl<T> AsRef<ChunkedArray<T>> for dyn SeriesTrait + '_
-where
-    T: 'static + PolarsDataType<IsLogical = FalseT>,
-{
+impl<T: PolarsPhysicalType> AsRef<ChunkedArray<T>> for dyn SeriesTrait + '_ {
     fn as_ref(&self) -> &ChunkedArray<T> {
         // @NOTE: SeriesTrait `as_any` returns a std::any::Any for the underlying ChunkedArray /
         // Logical (so not the SeriesWrap).
         let Some(ca) = self.as_any().downcast_ref::<ChunkedArray<T>>() else {
             panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
+                T::get_static_dtype(),
                 self.dtype()
             );
         };
@@ -1078,15 +1072,12 @@ where
     }
 }
 
-impl<T> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_
-where
-    T: 'static + PolarsDataType<IsLogical = FalseT>,
-{
+impl<T: PolarsPhysicalType> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_ {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
         if !self.as_any_mut().is::<ChunkedArray<T>>() {
             panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
+                T::get_static_dtype(),
                 self.dtype()
             );
         }

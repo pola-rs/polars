@@ -12,8 +12,6 @@ from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time
-
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,
@@ -523,8 +521,9 @@ class ExprListNameSpace:
             Index to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
+
+            * True -> set as null
+            * False -> raise an error
 
         Examples
         --------
@@ -670,9 +669,7 @@ class ExprListNameSpace:
         """
         return self.get(-1, null_on_oob=True)
 
-    def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
-    ) -> Expr:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
         Check if sublists contain the given item.
 
@@ -680,6 +677,8 @@ class ExprListNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -702,7 +701,7 @@ class ExprListNameSpace:
         └───────────┴──────────┘
         """
         item = parse_into_expression(item, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_contains(item))
+        return wrap_expr(self._pyexpr.list_contains(item, nulls_equal))
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
@@ -1094,7 +1093,7 @@ class ExprListNameSpace:
         self,
         n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
-        upper_bound: int = 0,
+        upper_bound: int | None = None,
         *,
         _eager: bool = False,
     ) -> Expr:
@@ -1232,6 +1231,36 @@ class ExprListNameSpace:
         └─────┴─────┴────────────┘
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
+
+    def filter(self, predicate: Expr) -> Expr:
+        """
+        Filter elements in each list by a boolean expression.
+
+        Parameters
+        ----------
+        predicate
+            A boolean expression that is evaluated per list element.
+            You can refer to the current element with `pl.element()`.
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_columns(
+        ...     evens=pl.concat_list("a", "b").list.filter(pl.element() % 2 == 0)
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ evens     │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ list[i64] │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 4   ┆ [4]       │
+        │ 8   ┆ 5   ┆ [8]       │
+        │ 3   ┆ 2   ┆ [2]       │
+        └─────┴─────┴───────────┘
+        """
+        return wrap_expr(self._pyexpr.list_filter(predicate._pyexpr))
 
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """

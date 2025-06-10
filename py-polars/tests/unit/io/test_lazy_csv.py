@@ -25,7 +25,9 @@ def test_scan_csv(io_files_path: Path) -> None:
 
 def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
     dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.thread_pool_size() + 1)
-    pl.concat(dfs, parallel=True).collect(comm_subplan_elim=False)
+    pl.concat(dfs, parallel=True).collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=False)
+    )
 
 
 def test_scan_empty_csv(io_files_path: Path) -> None:
@@ -207,7 +209,7 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
         .with_row_index()
         .filter(pl.col("index") == 1)
         .filter(pl.col("category") == pl.lit("vegetables"))
-        .explain(predicate_pushdown=True)
+        .explain(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     )
     # related to row count is not pushed.
     assert 'FILTER [(col("index")) == (1)]\nFROM' in plan
@@ -406,9 +408,7 @@ c
             f.write(data)
 
     expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
-    out = pl.scan_csv(paths).collect(  # type: ignore[call-overload]
-        engine="old-streaming" if streaming else "in-memory"
-    )
+    out = pl.scan_csv(paths).collect(engine="streaming" if streaming else "in-memory")
 
     assert_frame_equal(out, expect)
 
@@ -489,3 +489,13 @@ a,b,c
             schema=schema,
         ),
     )
+
+
+def test_csv_negative_slice_comment_char_22996() -> None:
+    f = b"""\
+a,b
+1,1
+"""
+
+    q = pl.scan_csv(2 * [f], comment_prefix="#").tail(100)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 1], "b": [1, 1]}))

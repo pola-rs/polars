@@ -477,8 +477,8 @@ def test_fill_null_empty_list() -> None:
 
 def test_nested_logical() -> None:
     assert pl.select(
-        pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).implode().implode()
-    ).to_dict(as_series=False) == {"": [[["a", "b"]]]}
+        pl.lit(pl.Series("col", ["a", "b"], dtype=pl.Categorical)).implode().implode()
+    ).to_dict(as_series=False) == {"col": [[["a", "b"]]]}
 
 
 def test_null_list_construction_and_materialization() -> None:

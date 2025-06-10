@@ -98,7 +98,7 @@ fn test_apply_groups_empty() -> PolarsResult<()> {
         .agg([col("hi").drop_nulls().unique()])
         .explain(true)
         .unwrap();
-    println!("{}", out);
+    println!("{out}");
 
     let out = df
         .lazy()

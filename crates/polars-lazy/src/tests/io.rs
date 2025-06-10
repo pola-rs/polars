@@ -508,9 +508,41 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
     // hashmap, if that doesn't set them sorted the vstack will panic.
-    let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET, Default::default())?;
-    let lf2 = LazyFrame::scan_ipc(GLOB_IPC, Default::default())?;
-    let lf3 = LazyCsvReader::new(GLOB_CSV).finish()?;
+    let lf1: LazyFrame = DslBuilder::scan_parquet(
+        ScanSources::Paths([GLOB_PARQUET.into()].into()),
+        Default::default(),
+        UnifiedScanArgs {
+            extra_columns_policy: ExtraColumnsPolicy::Ignore,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .build()
+    .into();
+
+    let lf2: LazyFrame = DslBuilder::scan_ipc(
+        ScanSources::Paths([GLOB_IPC.into()].into()),
+        Default::default(),
+        UnifiedScanArgs {
+            extra_columns_policy: ExtraColumnsPolicy::Ignore,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .build()
+    .into();
+
+    let lf3: LazyFrame = DslBuilder::scan_csv(
+        ScanSources::Paths([GLOB_CSV.into()].into()),
+        Default::default(),
+        UnifiedScanArgs {
+            extra_columns_policy: ExtraColumnsPolicy::Ignore,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .build()
+    .into();
 
     for lf in [lf1, lf2, lf3] {
         let lf = lf.filter(col("category").eq(lit("vegetables"))).select([
