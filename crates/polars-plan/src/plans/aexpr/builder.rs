@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::DataType;
+use polars_core::prelude::{DataType, SortMultipleOptions, SortOptions};
 use polars_core::scalar::Scalar;
 use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
@@ -29,6 +29,10 @@ impl AExprBuilder {
 
     pub fn col(name: impl Into<PlSmallStr>, arena: &mut Arena<AExpr>) -> Self {
         Self::new_from_aexpr(AExpr::Column(name.into()), arena)
+    }
+
+    pub fn dataframe_length(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::new_from_aexpr(AExpr::Len, arena)
     }
 
     pub fn function(
@@ -126,6 +130,94 @@ impl AExprBuilder {
         )
     }
 
+    pub fn explode_null_empty(self, arena: &mut Arena<AExpr>) -> Self {
+        Self::new_from_aexpr(
+            AExpr::Explode {
+                expr: self.node(),
+                skip_empty: false,
+            },
+            arena,
+        )
+    }
+
+    pub fn sort(self, options: SortOptions, arena: &mut Arena<AExpr>) -> Self {
+        Self::new_from_aexpr(
+            AExpr::Sort {
+                expr: self.node(),
+                options,
+            },
+            arena,
+        )
+    }
+
+    pub fn sort_by(
+        self,
+        by: Vec<Node>,
+        options: SortMultipleOptions,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        Self::new_from_aexpr(
+            AExpr::SortBy {
+                expr: self.node(),
+                by,
+                sort_options: options,
+            },
+            arena,
+        )
+    }
+
+    pub fn filter(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        Self::new_from_aexpr(
+            AExpr::Filter {
+                input: self.node(),
+                by: by.into_aexpr_builder().node(),
+            },
+            arena,
+        )
+    }
+
+    pub fn when_then_otherwise(
+        when: impl IntoAExprBuilder,
+        then: impl IntoAExprBuilder,
+        otherwise: impl IntoAExprBuilder,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        when.into_aexpr_builder().ternary(then, otherwise, arena)
+    }
+
+    pub fn ternary(
+        self,
+        truthy: impl IntoAExprBuilder,
+        falsy: impl IntoAExprBuilder,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        Self::new_from_aexpr(
+            AExpr::Ternary {
+                predicate: self.into_aexpr_builder().node(),
+                truthy: truthy.into_aexpr_builder().node(),
+                falsy: falsy.into_aexpr_builder().node(),
+            },
+            arena,
+        )
+    }
+
+    pub fn slice(
+        self,
+        offset: impl IntoAExprBuilder,
+        length: impl IntoAExprBuilder,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        Self::new_from_aexpr(
+            AExpr::Slice {
+                input: self.into_aexpr_builder().node(),
+                offset: offset.into_aexpr_builder().node(),
+                length: length.into_aexpr_builder().node(),
+            },
+            arena,
+        )
+    }
+
+    #[cfg(feature = "is_in")]
     pub fn is_in(
         self,
         other: impl IntoAExprBuilder,
