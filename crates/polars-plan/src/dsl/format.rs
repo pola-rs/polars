@@ -141,9 +141,7 @@ impl fmt::Debug for Expr {
                 f,
                 ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
             ),
-            Function {
-                input, function
-            } => {
+            Function { input, function } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{function}({:?})", input[0], &input[1..])
                 } else {

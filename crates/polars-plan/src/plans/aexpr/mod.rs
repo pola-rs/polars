@@ -1,3 +1,4 @@
+mod builder;
 mod evaluate;
 #[cfg(feature = "cse")]
 mod function_expr;
@@ -10,6 +11,7 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use function_expr::*;
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
@@ -18,13 +20,13 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use function_expr::*;
 pub use scalar::is_scalar_ae;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 mod properties;
+pub use builder::AExprBuilder;
 pub use properties::*;
 
 use crate::constants::LEN;
@@ -190,7 +192,7 @@ pub enum AExpr {
         function: OpaqueColumnUdf,
         output_type: GetOutput,
         options: FunctionOptions,
-        fmt_str: PlSmallStr,
+        fmt_str: Box<PlSmallStr>,
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///

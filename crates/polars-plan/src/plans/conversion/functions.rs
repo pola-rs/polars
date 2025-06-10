@@ -395,43 +395,60 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "is_in")]
                 B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
                 B::AllHorizontal => {
-                    if e.is_empty() {
-                        return to_aexpr_impl(lit(true), arena, schema);
+                    let Some(fst) = e.first() else {
+                        return Ok((
+                            arena.add(AExpr::Literal(Scalar::from(true).into())),
+                            format_pl_smallstr!("{}", IB::AllHorizontal),
+                        ));
+                    };
+
+                    if e.len() == 1 {
+                        return Ok((
+                            AExprBuilder::new_from_node(fst.node())
+                                .cast(DataType::Boolean, arena)
+                                .node(),
+                            fst.output_name().clone(),
+                        ));
                     }
 
                     // Convert to binary expression as the optimizer understands those.
                     // Don't exceed 128 expressions as we might stackoverflow.
                     if e.len() < 128 {
-                        dbg!();
-                        todo!()
-                        // let single = e.len() == 1;
-                        // let mut expr = e.into_iter().reduce(|l, r| l.logical_and(r)).unwrap();
-                        // if single {
-                        //     expr = expr.cast(DataType::Boolean)
-                        // }
-                        // return to_aexpr_impl(expr, arena, schema);
+                        let mut r = AExprBuilder::new_from_node(fst.node());
+                        for expr in &e[1..] {
+                            r = r.logical_and(expr.node(), arena);
+                        }
+                        return Ok((r.node(), fst.output_name().clone()));
                     }
-
 
                     IB::AllHorizontal
                 },
                 B::AnyHorizontal => {
                     // This can be created by col(*).is_null() on empty dataframes.
-                    if e.is_empty() {
-                        return to_aexpr_impl(lit(false), arena, schema);
+                    let Some(fst) = e.first() else {
+                        return Ok((
+                            arena.add(AExpr::Literal(Scalar::from(false).into())),
+                            format_pl_smallstr!("{}", IB::AnyHorizontal),
+                        ));
+                    };
+
+                    if e.len() == 1 {
+                        return Ok((
+                            AExprBuilder::new_from_node(fst.node())
+                                .cast(DataType::Boolean, arena)
+                                .node(),
+                            fst.output_name().clone(),
+                        ));
                     }
 
                     // Convert to binary expression as the optimizer understands those.
                     // Don't exceed 128 expressions as we might stackoverflow.
                     if e.len() < 128 {
-                        dbg!();
-                        todo!()
-                        // let single = e.len() == 1;
-                        // let mut expr = e.into_iter().reduce(|l, r| l.logical_or(r)).unwrap();
-                        // if single {
-                        //     expr = expr.cast(DataType::Boolean)
-                        // }
-                        // return to_aexpr_impl(expr, arena, schema);
+                        let mut r = AExprBuilder::new_from_node(fst.node());
+                        for expr in &e[1..] {
+                            r = r.logical_or(expr.node(), arena);
+                        }
+                        return Ok((r.node(), fst.output_name().clone()));
                     }
 
                     IB::AnyHorizontal
@@ -585,8 +602,11 @@ pub(super) fn convert_functions(
                 R::Quantile(r) => IR::Quantile(r),
                 R::Var(r) => IR::Var(r),
                 R::Std(r) => IR::Std(r),
+                #[cfg(feature = "moment")]
                 R::Skew(r) => IR::Skew(r),
+                #[cfg(feature = "moment")]
                 R::Kurtosis(r) => IR::Kurtosis(r),
+                #[cfg(feature = "cov")]
                 R::CorrCov {
                     rolling_options,
                     corr_cov_options,
@@ -712,6 +732,7 @@ pub(super) fn convert_functions(
             I::Correlation {
                 method: match method {
                     C::Pearson => IC::Pearson,
+                    #[cfg(all(feature = "rank", feature = "propagate_nans"))]
                     C::SpearmanRank(v) => IC::SpearmanRank(v),
                     C::Covariance(v) => IC::Covariance(v),
                 },

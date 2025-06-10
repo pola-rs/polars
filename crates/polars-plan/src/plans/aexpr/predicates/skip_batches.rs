@@ -9,9 +9,10 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::evaluate::{constant_evaluate, into_column};
-use super::super::{AExpr, IRBooleanFunction, Operator, OutputName};
+use super::super::function_expr::{IRBooleanFunction, IRFunctionExpr};
+use super::super::{AExpr, Operator, OutputName};
 use crate::plans::predicates::get_binary_expr_col_and_lv;
-use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns, IRFunctionExpr};
+use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
 use crate::prelude::FunctionOptions;
 
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and

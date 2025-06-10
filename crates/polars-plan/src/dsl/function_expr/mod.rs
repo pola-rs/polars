@@ -4,66 +4,30 @@ mod binary;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod boolean;
-mod bounds;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-categorical")]
-pub mod cat;
-#[cfg(feature = "round_series")]
-mod clip;
-#[cfg(feature = "dtype-struct")]
-mod coerce;
-mod concat;
+mod cat;
 #[cfg(feature = "cov")]
 mod correlation;
-#[cfg(feature = "cum_agg")]
-mod cum;
-#[cfg(feature = "cutqcut")]
-mod cut;
 #[cfg(feature = "temporal")]
 mod datetime;
-mod dispatch;
-#[cfg(feature = "ewma")]
-mod ewm;
-#[cfg(feature = "ewma_by")]
-mod ewm_by;
-mod fill_null;
-#[cfg(feature = "index_of")]
-mod index_of;
 mod list;
-#[cfg(feature = "log")]
-mod log;
-#[cfg(feature = "peaks")]
-mod peaks;
-#[cfg(feature = "ffi_plugin")]
-mod plugin;
-pub mod pow;
+mod pow;
 #[cfg(feature = "random")]
 mod random;
 #[cfg(feature = "range")]
 mod range;
-mod repeat;
 #[cfg(feature = "rolling_window")]
-pub mod rolling;
+mod rolling;
 #[cfg(feature = "rolling_window_by")]
-pub mod rolling_by;
-#[cfg(feature = "round_series")]
-mod round;
-#[cfg(feature = "row_hash")]
-mod row_hash;
-#[cfg(feature = "search_sorted")]
-mod search_sorted;
-mod shift_and_fill;
-mod shrink_type;
-#[cfg(feature = "sign")]
-mod sign;
+mod rolling_by;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
 #[cfg(feature = "trigonometry")]
-pub mod trigonometry;
-mod unique;
+mod trigonometry;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};

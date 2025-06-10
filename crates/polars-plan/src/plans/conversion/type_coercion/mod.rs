@@ -235,7 +235,9 @@ impl OptimizationRule for TypeCoercionRule {
             } =>
             {
                 let (op, flat, nested, is_contains) = match function {
-                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => ("is_in", 0, 1, false),
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => {
+                        ("is_in", 0, 1, false)
+                    },
                     IRFunctionExpr::ListExpr(IRListFunction::Contains { .. }) => {
                         ("list.contains", 1, 0, true)
                     },
@@ -460,7 +462,8 @@ impl OptimizationRule for TypeCoercionRule {
             },
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             AExpr::Function {
-                function: ref function @ IRFunctionExpr::TemporalExpr(IRTemporalFunction::Duration(_)),
+                function:
+                    ref function @ IRFunctionExpr::TemporalExpr(IRTemporalFunction::Duration(_)),
                 ref input,
                 options,
             } => {
@@ -691,7 +694,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             #[cfg(feature = "range")]
             AExpr::Function {
                 function:
-                    ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRange { step: _, ref dtype }),
+                    ref
+                    function @ IRFunctionExpr::Range(IRRangeFunction::IntRange { step: _, ref dtype }),
                 ref input,
                 options,
             } => {

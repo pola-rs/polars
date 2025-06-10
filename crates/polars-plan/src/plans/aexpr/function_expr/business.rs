@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::FunctionOptions;
 use crate::dsl::SpecialEq;
-use crate::plans::aexpr::function_expr::FieldsMapper;
 use crate::map_as_slice;
+use crate::plans::aexpr::function_expr::FieldsMapper;
 use crate::prelude::{ColumnsUdf, FunctionFlags};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

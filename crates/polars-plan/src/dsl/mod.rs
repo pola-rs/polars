@@ -506,7 +506,7 @@ impl Expr {
 
         let options =
             FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT);
-        let fmt_str = fmt_str.into();
+        let fmt_str = Box::new(fmt_str.into());
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
@@ -528,7 +528,7 @@ impl Expr {
         let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         let options = FunctionOptions::aggregation();
-        let fmt_str = fmt_str.into();
+        let fmt_str = Box::new(fmt_str.into());
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
@@ -550,7 +550,7 @@ impl Expr {
         let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         let options = FunctionOptions::groupwise();
-        let fmt_str = fmt_str.into();
+        let fmt_str = Box::new(fmt_str.into());
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
@@ -576,7 +576,7 @@ impl Expr {
             function: new_column_udf(function),
             output_type,
             options,
-            fmt_str: PlSmallStr::EMPTY,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -601,7 +601,7 @@ impl Expr {
             function: new_column_udf(f),
             output_type,
             options,
-            fmt_str: PlSmallStr::EMPTY,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -621,7 +621,7 @@ impl Expr {
             function: new_column_udf(function),
             output_type,
             options,
-            fmt_str: PlSmallStr::EMPTY,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -1729,7 +1729,7 @@ where
         function: new_column_udf(function),
         output_type,
         options,
-        fmt_str: PlSmallStr::EMPTY,
+        fmt_str: Box::new(PlSmallStr::EMPTY),
     }
 }
 
@@ -1762,7 +1762,7 @@ where
         function: new_column_udf(function),
         output_type,
         options,
-        fmt_str: PlSmallStr::EMPTY,
+        fmt_str: Box::new(PlSmallStr::EMPTY),
     }
 }
 

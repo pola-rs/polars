@@ -125,7 +125,6 @@ pub enum Expr {
         input: Vec<Expr>,
         /// function to apply
         function: FunctionExpr,
-
     },
     Explode {
         input: Arc<Expr>,
@@ -171,7 +170,7 @@ pub enum Expr {
         options: FunctionOptions,
         /// used for formatting
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        fmt_str: PlSmallStr,
+        fmt_str: Box<PlSmallStr>,
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
@@ -309,10 +308,7 @@ impl Hash for Expr {
                 truthy.hash(state);
                 falsy.hash(state);
             },
-            Expr::Function {
-                input,
-                function,
-            } => {
+            Expr::Function { input, function } => {
                 input.hash(state);
                 std::mem::discriminant(function).hash(state);
             },
@@ -494,10 +490,7 @@ impl Expr {
     #[inline]
     pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
         let function = function.into();
-        Expr::Function {
-            input,
-            function,
-        }
+        Expr::Function { input, function }
     }
 }
 

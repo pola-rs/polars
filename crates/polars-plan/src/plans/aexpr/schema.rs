@@ -460,7 +460,7 @@ impl AExpr {
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } => {
                 if input.is_empty() {
-                    fmt_str.clone()
+                    fmt_str.as_ref().clone()
                 } else {
                     input[0].output_name().clone()
                 }

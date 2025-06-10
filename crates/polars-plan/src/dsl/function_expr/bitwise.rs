@@ -1,6 +1,5 @@
 use std::fmt;
 
-use polars_core::prelude::*;
 use strum_macros::IntoStaticStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

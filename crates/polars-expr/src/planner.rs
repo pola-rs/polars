@@ -494,7 +494,7 @@ fn create_physical_expr_inner(
             evaluation,
             variant,
         } => {
-            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { fmt_str, .. } if fmt_str == MAP_LIST_NAME));
+            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { fmt_str, .. } if fmt_str.as_ref().as_str() == MAP_LIST_NAME));
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
             let mut pd_group = ExprPushdownGroup::Pushable;

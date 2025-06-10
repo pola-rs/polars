@@ -163,8 +163,7 @@ impl ExprIR {
                 },
                 AExpr::AnonymousFunction { input, fmt_str, .. } => {
                     if input.is_empty() {
-                        out.output_name =
-                            OutputName::LiteralLhs(fmt_str.clone());
+                        out.output_name = OutputName::LiteralLhs(fmt_str.as_ref().clone());
                     } else {
                         out.output_name = input[0].output_name.clone();
                     }

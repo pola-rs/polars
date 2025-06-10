@@ -46,7 +46,9 @@ impl AExpr {
     pub(crate) fn does_not_modify_top_level(&self) -> bool {
         match self {
             AExpr::Column(_) => true,
-            AExpr::Function { function, .. } => matches!(function, IRFunctionExpr::SetSortedFlag(_)),
+            AExpr::Function { function, .. } => {
+                matches!(function, IRFunctionExpr::SetSortedFlag(_))
+            },
             _ => false,
         }
     }
@@ -256,9 +258,10 @@ impl ExprPushdownGroup {
                     #[cfg(feature = "python")]
                     // This is python `map_elements`. This is a hack because that function breaks
                     // the Polars model. It should be elementwise. This must be fixed.
-                    AExpr::AnonymousFunction { options, fmt_str, .. }
-                        if options.flags.contains(FunctionFlags::APPLY_LIST)
-                            && *fmt_str == MAP_LIST_NAME =>
+                    AExpr::AnonymousFunction {
+                        options, fmt_str, ..
+                    } if options.flags.contains(FunctionFlags::APPLY_LIST)
+                        && fmt_str.as_ref().as_str() == MAP_LIST_NAME =>
                     {
                         return self;
                     },

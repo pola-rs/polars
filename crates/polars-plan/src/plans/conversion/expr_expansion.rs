@@ -290,10 +290,7 @@ fn replace_struct_multiple_fields_with_field(
 ) -> PolarsResult<Expr> {
     let mut count = 0;
     let out = expr.map_expr(|e| match e {
-        Expr::Function {
-            function,
-            input,
-        } => {
+        Expr::Function { function, input } => {
             if matches!(
                 function,
                 FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
@@ -306,10 +303,7 @@ fn replace_struct_multiple_fields_with_field(
                     )),
                 }
             } else {
-                Expr::Function {
-                    input,
-                    function,
-                }
+                Expr::Function { input, function }
             }
         },
         e => e,
@@ -348,10 +342,7 @@ Try setting the output data type for that operation.",
                     #[allow(clippy::single_match)]
                     match e {
                         #[cfg(feature = "list_to_struct")]
-                        Expr::Function {
-                            input: _,
-                            function,
-                        } => {
+                        Expr::Function { input: _, function } => {
                             if matches!(
                                 function,
                                 FunctionExpr::ListExpr(ListFunction::ToStruct(..))
@@ -554,14 +545,43 @@ fn expand_function_inputs(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Expr> {
     expr.try_map_expr(|mut e| match &mut e {
-        Expr::Function { .. } => {
-            dbg!();
-            todo!();
+        Expr::Function {
+            input, function, ..
+        } => {
+            use FunctionExpr as F;
+            let input_wildcard_expansion = matches!(
+                function,
+                F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
+                    | F::AsStruct
+                    | F::Coalesce
+                    | F::ListExpr(ListFunction::Concat)
+                    | F::ConcatExpr(_)
+                    | F::MinHorizontal
+                    | F::MaxHorizontal
+                    | F::SumHorizontal { .. }
+                    | F::MeanHorizontal { .. }
+                    | F::StringExpr(StringFunction::ConcatHorizontal { .. })
+                    | F::StructExpr(StructFunction::WithFields)
+            ) || matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION));
+            let allow_empty_inputs = matches!(
+                function,
+                F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
+                | F::DropNulls
+            )  || matches!(function, F::FfiPlugin { flags, .. } if flags.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS));
+
+            if input_wildcard_expansion {
+                *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
+                if input.is_empty() && !allow_empty_inputs {
+                    // Needed to visualize the error
+                    *input = vec![Expr::Literal(LiteralValue::Scalar(Scalar::null(
+                        DataType::Null,
+                    )))];
+                    polars_bail!(InvalidOperation: "expected at least 1 input in {}", e)
+                }
+            }
+            Ok(e)
         },
-        Expr::AnonymousFunction { input, options, .. }
-            if options.flags
-                .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
-        {
+        Expr::AnonymousFunction { input, options, .. } if options.flags.contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) => {
             *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
             if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
                 // Needed to visualize the error

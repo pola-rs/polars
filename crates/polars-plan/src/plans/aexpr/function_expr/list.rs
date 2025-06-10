@@ -136,7 +136,8 @@ impl IRListFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRListFunction as L;
         match self {
-            L::Concat => FunctionOptions::elementwise(),
+            L::Concat => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "is_in")]
             L::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sample")]

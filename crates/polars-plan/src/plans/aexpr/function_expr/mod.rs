@@ -12,7 +12,7 @@ mod bounds;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-categorical")]
-pub mod cat;
+mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
 #[cfg(feature = "dtype-struct")]
@@ -44,16 +44,16 @@ mod nan;
 mod peaks;
 #[cfg(feature = "ffi_plugin")]
 mod plugin;
-pub mod pow;
+mod pow;
 #[cfg(feature = "random")]
 mod random;
 #[cfg(feature = "range")]
 mod range;
 mod repeat;
 #[cfg(feature = "rolling_window")]
-pub mod rolling;
+mod rolling;
 #[cfg(feature = "rolling_window_by")]
-pub mod rolling_by;
+mod rolling_by;
 #[cfg(feature = "round_series")]
 mod round;
 #[cfg(feature = "row_hash")]
@@ -72,7 +72,7 @@ mod struct_;
 #[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "trigonometry")]
-pub mod trigonometry;
+mod trigonometry;
 mod unique;
 
 use std::fmt::{Display, Formatter};
@@ -87,8 +87,8 @@ pub use fused::FusedOperator;
 pub use list::IRListFunction;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
-use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
+use polars_core::series::ops::NullBehavior;
 use polars_core::utils::SuperTypeFlags;
 #[cfg(feature = "random")]
 pub use random::IRRandomMethod;
@@ -106,6 +106,7 @@ pub use self::business::IRBusinessFunction;
 pub use self::cat::IRCategoricalFunction;
 #[cfg(feature = "temporal")]
 pub use self::datetime::IRTemporalFunction;
+pub use self::pow::IRPowFunction;
 #[cfg(feature = "range")]
 pub use self::range::IRRangeFunction;
 #[cfg(feature = "rolling_window")]
@@ -116,10 +117,9 @@ pub use self::rolling_by::IRRollingFunctionBy;
 pub use self::strings::IRStringFunction;
 #[cfg(feature = "dtype-struct")]
 pub use self::struct_::IRStructFunction;
-use super::*;
-pub use self::pow::IRPowFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
+use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

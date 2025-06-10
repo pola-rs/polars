@@ -58,7 +58,6 @@ pub fn register_plugin_function(
             symbol: function_name.into(),
             kwargs: kwargs.into(),
         },
-        options,
     }
     .into())
 }

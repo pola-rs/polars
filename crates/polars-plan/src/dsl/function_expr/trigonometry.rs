@@ -1,6 +1,3 @@
-use num_traits::Float;
-use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
-
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

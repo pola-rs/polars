@@ -58,11 +58,11 @@ def test_empty_all_any_horizontally() -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
     assert_frame_equal(
         df.select(pl.any_horizontal(cs.string().is_null())),
-        pl.DataFrame({"literal": False}),
+        pl.DataFrame({"any_horizontal": False}),
     )
     assert_frame_equal(
         df.select(pl.all_horizontal(cs.string().is_null())),
-        pl.DataFrame({"literal": True}),
+        pl.DataFrame({"all_horizontal": True}),
     )
 
 

@@ -77,25 +77,6 @@ where
 }
 
 /// Check if expression is independent from any column.
-pub(crate) fn is_column_independent(expr: &Expr) -> bool {
-    !expr.into_iter().any(|e| match e {
-        Expr::Nth(_)
-        | Expr::Column(_)
-        | Expr::Columns(_)
-        | Expr::DtypeColumn(_)
-        | Expr::IndexColumn(_)
-        | Expr::Wildcard
-        | Expr::Len
-        | Expr::SubPlan(..)
-        | Expr::Selector(_) => true,
-
-        #[cfg(feature = "dtype-struct")]
-        Expr::Field(_) => true,
-        _ => false,
-    })
-}
-
-/// Check if expression is independent from any column.
 pub(crate) fn is_column_independent_aexpr(expr: Node, arena: &Arena<AExpr>) -> bool {
     !has_aexpr(expr, arena, |e| match e {
         AExpr::Column(_) | AExpr::Len => true,

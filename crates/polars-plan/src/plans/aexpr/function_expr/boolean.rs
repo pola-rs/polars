@@ -1,7 +1,7 @@
 use std::ops::{BitAnd, BitOr};
 
-use polars_core::utils::SuperTypeFlags;
 use polars_core::POOL;
+use polars_core::utils::SuperTypeFlags;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::*;

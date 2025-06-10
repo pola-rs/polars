@@ -85,35 +85,19 @@ impl PyExpr {
     }
 
     fn list_mean(&self) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .mean()
-            .into()
+        self.inner.clone().list().mean().into()
     }
 
     fn list_median(&self) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .median()
-            .into()
+        self.inner.clone().list().median().into()
     }
 
     fn list_std(&self, ddof: u8) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .std(ddof)
-            .into()
+        self.inner.clone().list().std(ddof).into()
     }
 
     fn list_var(&self, ddof: u8) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .var(ddof)
-            .into()
+        self.inner.clone().list().var(ddof).into()
     }
 
     fn list_min(&self) -> Self {

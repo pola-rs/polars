@@ -542,9 +542,9 @@ impl Display for ExprIRDisplay<'_> {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {
-                    write!(f, ".{}({})", fmt_str, self.with_slice(&input[1..]))
+                    write!(f, ".{fmt_str}({})", self.with_slice(&input[1..]))
                 } else {
-                    write!(f, ".{}()", fmt_str)
+                    write!(f, ".{fmt_str}()")
                 }
             },
             Eval {

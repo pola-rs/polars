@@ -62,7 +62,7 @@ where
         // Take the type of the accumulator.
         output_type,
         options,
-        fmt_str: PlSmallStr::from_static("fold"),
+        fmt_str: Box::new(PlSmallStr::from_static("fold")),
     }
 }
 
@@ -96,15 +96,15 @@ where
         }
     });
 
-    let options = FunctionOptions::aggregation()
-        .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
 
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: GetOutput::super_type(),
         options,
-        fmt_str: PlSmallStr::from_static("reduce"),
+        fmt_str: Box::new(PlSmallStr::from_static("reduce")),
     }
 }
 
@@ -141,14 +141,14 @@ where
         }
     });
 
-    let options = FunctionOptions::aggregation()
-        .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
         options,
-        fmt_str: PlSmallStr::from_static("cum_reduce"),
+        fmt_str: Box::new(PlSmallStr::from_static("cum_reduce")),
     }
 }
 
@@ -184,14 +184,14 @@ where
             .map(|ca| Some(ca.into_column()))
     });
 
-    let options = FunctionOptions::aggregation()
-        .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
         options,
-        fmt_str: PlSmallStr::from_static("cum_fold"),
+        fmt_str: Box::new(PlSmallStr::from_static("cum_fold")),
     }
 }
 

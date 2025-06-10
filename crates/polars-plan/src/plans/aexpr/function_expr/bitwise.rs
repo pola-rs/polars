@@ -5,8 +5,8 @@ use polars_core::prelude::*;
 use strum_macros::IntoStaticStr;
 
 use super::{ColumnsUdf, SpecialEq};
-use crate::plans::aexpr::function_expr::{FieldsMapper, FunctionOptions};
 use crate::map;
+use crate::plans::aexpr::function_expr::{FieldsMapper, FunctionOptions};
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

@@ -91,4 +91,3 @@ impl fmt::Display for RangeFunction {
         write!(f, "{s}")
     }
 }
-

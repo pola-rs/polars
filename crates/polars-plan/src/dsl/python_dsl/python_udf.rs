@@ -260,7 +260,7 @@ impl Expr {
                 flags,
                 ..Default::default()
             },
-            fmt_str: PlSmallStr::from(name),
+            fmt_str: Box::new(PlSmallStr::from(name)),
         }
     }
 }
