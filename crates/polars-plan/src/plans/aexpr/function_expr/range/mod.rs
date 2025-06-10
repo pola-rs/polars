@@ -14,8 +14,6 @@ use polars_core::prelude::*;
 use polars_ops::series::ClosedInterval;
 #[cfg(feature = "temporal")]
 use polars_time::{ClosedWindow, Duration};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use super::{FunctionOptions, IRFunctionExpr};
 use crate::dsl::SpecialEq;
@@ -23,8 +21,7 @@ use crate::map_as_slice;
 use crate::plans::aexpr::function_expr::FieldsMapper;
 use crate::prelude::{ColumnsUdf, FunctionFlags};
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum IRRangeFunction {
     IntRange {

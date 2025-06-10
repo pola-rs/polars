@@ -8,8 +8,7 @@ use super::{ColumnsUdf, SpecialEq};
 use crate::map;
 use crate::plans::aexpr::function_expr::{FieldsMapper, FunctionOptions};
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum IRBitwiseFunction {

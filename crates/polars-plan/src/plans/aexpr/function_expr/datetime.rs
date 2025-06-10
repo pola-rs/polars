@@ -8,13 +8,10 @@ use polars_time::dst_offset as dst_offset_fn;
 use polars_time::impl_offset_by;
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 use polars_time::replace::{replace_date, replace_datetime};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use super::*;
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum IRTemporalFunction {
     Millennium,
