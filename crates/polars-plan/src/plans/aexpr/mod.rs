@@ -1,7 +1,7 @@
 mod builder;
 mod evaluate;
-#[cfg(feature = "cse")]
 mod function_expr;
+#[cfg(feature = "cse")]
 mod hash;
 mod minterm_iter;
 pub mod predicates;
