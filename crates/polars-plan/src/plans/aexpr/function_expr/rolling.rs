@@ -9,8 +9,7 @@ use super::*;
 use crate::plans::aexpr::function_expr::pow::pow;
 
 #[derive(Clone, PartialEq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRRollingFunction {
     Min(RollingOptionsFixedWindow),
     Max(RollingOptionsFixedWindow),

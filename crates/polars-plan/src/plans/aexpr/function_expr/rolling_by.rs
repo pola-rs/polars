@@ -3,8 +3,7 @@ use polars_time::chunkedarray::*;
 use super::*;
 
 #[derive(Clone, PartialEq, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRRollingFunctionBy {
     MinBy(RollingOptionsDynamicWindow),
     MaxBy(RollingOptionsDynamicWindow),

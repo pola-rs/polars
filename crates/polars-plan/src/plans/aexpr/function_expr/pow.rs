@@ -5,8 +5,7 @@ use polars_core::with_match_physical_integer_type;
 
 use super::*;
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 pub enum IRPowFunction {
     Generic,

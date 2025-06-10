@@ -93,8 +93,6 @@ use polars_core::utils::SuperTypeFlags;
 #[cfg(feature = "random")]
 pub use random::IRRandomMethod;
 use schema::FieldsMapper;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 pub use self::binary::IRBinaryFunction;
 #[cfg(feature = "bitwise")]
@@ -121,8 +119,7 @@ pub use self::struct_::IRStructFunction;
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum IRFunctionExpr {
     // Namespaces
