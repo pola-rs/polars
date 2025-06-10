@@ -785,7 +785,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Atan2 => F::Atan2,
         #[cfg(feature = "sign")]
         IF::Sign => F::Sign,
-        IF::FillNull => F::Sign,
+        IF::FillNull => F::FillNull,
         IF::FillNullWithStrategy(strategy) => F::FillNullWithStrategy(strategy),
         #[cfg(feature = "rolling_window")]
         IF::RollingExpr(f) => {
