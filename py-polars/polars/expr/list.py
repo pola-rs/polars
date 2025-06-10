@@ -36,6 +36,10 @@ class ExprListNameSpace:
         """
         Evaluate whether all boolean values in a list are true.
 
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `True`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -61,6 +65,10 @@ class ExprListNameSpace:
     def any(self) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -195,6 +203,10 @@ class ExprListNameSpace:
     def sum(self) -> Expr:
         """
         Sum all the lists in the array.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `0`.
 
         Examples
         --------
