@@ -355,6 +355,7 @@ pub(super) fn convert_functions(
                 T::IsoYear => IT::IsoYear,
                 T::Quarter => IT::Quarter,
                 T::Month => IT::Month,
+                T::DaysInMonth => IT::DaysInMonth,
                 T::Week => IT::Week,
                 T::WeekDay => IT::WeekDay,
                 T::Day => IT::Day,
