@@ -666,9 +666,11 @@ def test_escape_regex() -> None:
         pl.escape_regex(3)  # type: ignore[arg-type]
 
 
-def test_var_std_lit_23156() -> None:
+@pytest.mark.parametrize("func", ["var", "std"])
+def test_var_std_lit_23156(func: str) -> None:
     for n in range(100):
-        out = pl.DataFrame({"x": list(range(n))}).select(pl.col("x"), pl.lit(0)).std()
+        input = pl.DataFrame({"x": list(range(n))}).select(pl.col("x"), pl.lit(0))
+        out = getattr(input, func)()
         if n <= 1:
             assert_series_equal(
                 out["literal"], pl.Series("literal", [None], dtype=pl.Float64)
