@@ -2,6 +2,8 @@ use std::fmt;
 use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::prelude::*;
+use arrow::array::builder::StaticArrayBuilder;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::parma::raw::RawTable;
@@ -117,6 +119,28 @@ impl CategoricalMapping {
     #[inline(always)]
     pub fn is_empty(&mut self) -> bool {
         self.len() == 0
+    }
+    
+    pub fn to_arrow(&self, compat_level: CompatLevel) -> Box<dyn Array> {
+        let n = self.num_cats_upper_bound();
+        if compat_level == CompatLevel::oldest() {
+            let mut builder = MutableUtf8Array::new();
+            builder.reserve(n, 0);
+            for i in 0..n {
+                let s = self.cat_to_str(i as CatSize).unwrap_or_default();
+                builder.push(Some(s));
+            }
+            let arr: Utf8Array<i64> = builder.into();
+            arr.boxed()
+        } else {
+            let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
+            builder.reserve(n);
+            for i in 0..n {
+                let s = self.cat_to_str(i as CatSize).unwrap_or_default();
+                builder.push_value_ignore_validity(s);
+            }
+            builder.freeze().boxed()
+        }
     }
 }
 

@@ -159,7 +159,7 @@ impl CatNative for u32 {
 }
 
 pub unsafe trait PolarsCategoricalType: PolarsDataType {
-    type Native: NumericNative + CatNative;
+    type Native: NumericNative + CatNative + DictionaryKey;
     type PolarsPhysical: PolarsIntegerType<Native=Self::Native>;
     
     fn physical() -> CategoricalPhysical;

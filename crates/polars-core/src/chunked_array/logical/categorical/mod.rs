@@ -10,6 +10,7 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::handle_casting_failures;
 
+
 pub type NewCategoricalChunked<T> = Logical<T, <T as PolarsCategoricalType>::PolarsPhysical>;
 pub type NewCategorical8Chunked = NewCategoricalChunked<Categorical8Type>;
 pub type NewCategorical16Chunked = NewCategoricalChunked<Categorical16Type>;
@@ -182,6 +183,15 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
         let arr = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(cat_ids).with_validity(validity.into_opt_validity());
         let phys = ChunkedArray::<T::PolarsPhysical>::with_chunk(name, arr);
         Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
+    }
+
+    pub fn to_arrow(&self, compat_level: CompatLevel) -> DictionaryArray<T::Native> {
+        let keys = self.physical().rechunk();
+        let keys = keys.downcast_as_array();
+        let values = self.get_mapping().to_arrow(compat_level);
+        let values_dtype = Box::new(values.dtype().clone());
+        let dtype = ArrowDataType::Dictionary(<T::Native as DictionaryKey>::KEY_TYPE, values_dtype, false);
+        unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
     }
 }
 
