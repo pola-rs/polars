@@ -1,7 +1,3 @@
-use arrow::array::builder::{ShareStrategy, make_builder};
-use arrow::array::{Array, FixedSizeListArray};
-use arrow::bitmap::BitmapBuilder;
-use polars_core::prelude::arity::unary_kernel;
 use polars_core::utils::slice_offsets;
 use polars_ops::chunked_array::array::*;
 
@@ -356,42 +352,8 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn slice(s: &Column, offset: i64, length: usize) -> PolarsResult<Column> {
-    let slice_arr: ArrayChunked = unary_kernel(
-        s.array()?,
-        move |arr: &FixedSizeListArray| -> FixedSizeListArray {
-            let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
-
-            let mut builder = make_builder(arr.values().dtype());
-            builder.reserve(slice_len * arr.len());
-
-            let mut validity = BitmapBuilder::with_capacity(arr.len());
-
-            let values = arr.values().as_ref();
-            for row in 0..arr.len() {
-                if !arr.is_valid(row) {
-                    validity.push(false);
-                    continue;
-                }
-                let inner_offset = row * arr.size() + raw_offset;
-                builder.subslice_extend(values, inner_offset, slice_len, ShareStrategy::Always);
-                validity.push(true);
-            }
-            let values = builder.freeze_reset();
-            let sliced_dtype = match arr.dtype() {
-                ArrowDataType::FixedSizeList(inner, _) => {
-                    ArrowDataType::FixedSizeList(inner.clone(), slice_len)
-                },
-                _ => unreachable!(),
-            };
-            FixedSizeListArray::new(
-                sliced_dtype,
-                arr.len(),
-                values,
-                validity.into_opt_validity(),
-            )
-        },
-    );
-    Ok(slice_arr.into_column())
+    let ca = s.array()?;
+    ca.array_slice(offset, length).map(Column::from)
 }
 
 fn explode(c: &[Column], skip_empty: bool) -> PolarsResult<Column> {
