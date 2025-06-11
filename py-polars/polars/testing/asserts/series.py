@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.deprecation import deprecate_renamed_parameter
@@ -13,12 +14,14 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import FLOAT_DTYPES
 from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
-from polars.polars import assert_series_equal_py
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
 if TYPE_CHECKING:
     from polars import DataType
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import assert_series_equal_py
 
 
 def _assert_correct_input_type(left: Any, right: Any) -> bool:
@@ -102,8 +105,20 @@ def assert_series_equal(
     Traceback (most recent call last):
     ...
     AssertionError: Series are different (exact value mismatch)
-    [left]:  [1, 2, 3]
-    [right]: [1, 5, 3]
+    [left]: shape: (3,)
+    Series: '' [i64]
+    [
+        1
+        2
+        3
+    ]
+    [right]: shape: (3,)
+    Series: '' [i64]
+    [
+        1
+        5
+        3
+    ]
     """
     __tracebackhide__ = True
 
