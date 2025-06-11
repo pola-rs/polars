@@ -42,7 +42,12 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars.datatypes import Int64, is_polars_dtype, parse_into_dtype
+from polars.datatypes import (
+    Int64,
+    is_polars_dtype,
+    parse_into_datatype_expr,
+    parse_into_dtype,
+)
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.exceptions import (
@@ -1803,7 +1808,7 @@ class Expr:
 
     def cast(
         self,
-        dtype: PolarsDataType | type[Any],
+        dtype: PolarsDataType | pl.DataTypeExpr | type[Any],
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
@@ -1845,8 +1850,10 @@ class Expr:
         │ 3.0 ┆ 6   │
         └─────┴─────┘
         """
-        dtype = parse_into_dtype(dtype)
-        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
+        dtype = parse_into_datatype_expr(dtype)
+        return self._from_pyexpr(
+            self._pyexpr.cast(dtype._pydatatype_expr, strict, wrap_numerical)
+        )
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
@@ -4375,7 +4382,7 @@ class Expr:
     def map_batches(
         self,
         function: Callable[[Series], Series | Any],
-        return_dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         agg_list: bool = False,
         is_elementwise: bool = False,
@@ -4534,7 +4541,7 @@ class Expr:
         └─────┴─────┴───────────┘
         """
         if return_dtype is not None:
-            return_dtype = parse_into_dtype(return_dtype)
+            return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
         return self._from_pyexpr(
             self._pyexpr.map_batches(
@@ -6151,7 +6158,7 @@ class Expr:
             print(fmt.format(s))
             return s
 
-        return self.map_batches(inspect, return_dtype=None, agg_list=True)
+        return self.map_batches(inspect, return_dtype=F.dtype_of(self), agg_list=True)
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Expr:
         """

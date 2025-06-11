@@ -158,13 +158,11 @@ pub(crate) fn binary_lambda(
 pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,
-    output_type: Option<Wrap<DataType>>,
+    output_type: Option<DataTypeExpr>,
     agg_list: bool,
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    let output_type = output_type.map(|wrap| wrap.0);
-
     let func =
         python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
     pyexpr.inner.clone().map_python(func, agg_list).into()

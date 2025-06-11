@@ -274,10 +274,13 @@ pub(super) fn to_aexpr_impl(
                 e[0].output_name().clone()
             };
 
+            let function = function.materialize()?;
+            function.as_ref().into_ir(schema)?;
+
             (
                 AExpr::AnonymousFunction {
                     input: e,
-                    function,
+                    function: LazySerde::Deserialized(function),
                     output_type,
                     options,
                     fmt_str,
@@ -337,7 +340,10 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let (expr, output_name) = to_aexpr_impl(owned(expr), arena, schema)?;
-            let (evaluation, _) = to_aexpr_impl(owned(evaluation), arena, schema)?;
+            let expr_dtype = arena.get(expr).to_dtype(schema, Context::Default, arena)?;
+            let element_dtype = variant.element_dtype(&expr_dtype)?;
+            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let (evaluation, _) = to_aexpr_impl(owned(evaluation), arena, &evaluation_schema)?;
 
             match variant {
                 EvalVariant::List => {

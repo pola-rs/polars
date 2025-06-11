@@ -11,6 +11,7 @@ use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
+use super::datatype::PyDataTypeExpr;
 use crate::PyExpr;
 use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
 use crate::error::PyPolarsErr;
@@ -242,9 +243,7 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
-        let dt = dtype.0;
-
+    fn cast(&self, dtype: PyDataTypeExpr, strict: bool, wrap_numerical: bool) -> Self {
         let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
@@ -253,7 +252,7 @@ impl PyExpr {
             CastOptions::NonStrict
         };
 
-        let expr = self.inner.clone().cast_with_options(dt, options);
+        let expr = self.inner.clone().cast_with_options(dtype.inner, options);
         expr.into()
     }
     fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
@@ -705,11 +704,12 @@ impl PyExpr {
     fn map_batches(
         &self,
         lambda: PyObject,
-        output_type: Option<Wrap<DataType>>,
+        output_type: Option<PyDataTypeExpr>,
         agg_list: bool,
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
+        let output_type = output_type.map(|v| v.inner);
         map_single(
             self,
             lambda,

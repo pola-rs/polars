@@ -253,6 +253,19 @@ class DataType(metaclass=DataTypeClass):
 
         return dtype_to_py_type(self)
 
+    @classmethod
+    def to_dtype_expr(self) -> pl.DataTypeExpr:
+        """
+        Return a [`DataTypeExpr`] with a static [`DataType`].
+
+        Examples
+        --------
+        >>> pl.Int16().to_dtype_expr()
+
+        """
+        from polars.polars import PyDataTypeExpr
+        return pl.DataTypeExpr._from_pydatatype_expr(pl.DataTypeExpr, PyDataTypeExpr.from_dtype(self))
+
 
 class NumericType(DataType):
     """Base class for numeric data types."""

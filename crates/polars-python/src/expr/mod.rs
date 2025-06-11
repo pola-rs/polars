@@ -24,6 +24,7 @@ mod serde;
 mod string;
 #[cfg(feature = "pymethods")]
 mod r#struct;
+pub mod datatype;
 
 use std::mem::ManuallyDrop;
 

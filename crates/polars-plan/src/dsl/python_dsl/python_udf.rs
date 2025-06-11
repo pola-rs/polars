@@ -1,5 +1,5 @@
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
@@ -28,7 +28,8 @@ pub use polars_utils::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VE
 
 pub struct PythonUdfExpression {
     python_function: PyObject,
-    output_type: Option<DataType>,
+    output_type: Option<DataTypeExpr>,
+    materialized_output_type: OnceLock<DataType>,
     is_elementwise: bool,
     returns_scalar: bool,
 }
@@ -36,13 +37,15 @@ pub struct PythonUdfExpression {
 impl PythonUdfExpression {
     pub fn new(
         lambda: PyObject,
-        output_type: Option<DataType>,
+        output_type: Option<impl Into<DataTypeExpr>>,
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
+        let output_type = output_type.map(Into::into);
         Self {
             python_function: lambda,
-            output_type,
+            output_type: output_type.map(Into::into),
+            materialized_output_type: OnceLock::new(),
             is_elementwise,
             returns_scalar,
         }
@@ -104,13 +107,21 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 }
 
 impl ColumnsUdf for PythonUdfExpression {
+    fn into_ir(&self, input_schema: &Schema) -> PolarsResult<()> {
+        if let Some(output_type) = self.output_type.as_ref() {
+            let dtype = output_type.clone().into_datatype(input_schema)?;
+            self.materialized_output_type.get_or_init(|| dtype);
+        }
+        Ok(())
+    }
+
     fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
         let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
 
         let output_type = self
-            .output_type
-            .clone()
-            .unwrap_or_else(|| DataType::Unknown(Default::default()));
+            .materialized_output_type
+            .get()
+            .map_or_else(|| DataType::Unknown(Default::default()), |dt| dt.clone());
         let mut out = func(s[0].clone(), &self.python_function)?;
         if !matches!(output_type, DataType::Unknown(_)) {
             let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {
@@ -176,12 +187,14 @@ impl ColumnsUdf for PythonUdfExpression {
 
 /// Serializable version of [`GetOutput`] for Python UDFs.
 pub struct PythonGetOutput {
-    return_dtype: Option<DataType>,
+    return_dtype: Option<DataTypeExpr>,
 }
 
 impl PythonGetOutput {
-    pub fn new(return_dtype: Option<DataType>) -> Self {
-        Self { return_dtype }
+    pub fn new(return_dtype: Option<impl Into<DataTypeExpr>>) -> Self {
+        Self {
+            return_dtype: return_dtype.map(Into::into),
+        }
     }
 
     #[cfg(feature = "serde")]
@@ -203,14 +216,14 @@ impl PythonGetOutput {
 impl FunctionOutputField for PythonGetOutput {
     fn get_field(
         &self,
-        _input_schema: &Schema,
+        input_schema: &Schema,
         _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
         // Take the name of first field, just like [`GetOutput::map_field`].
         let name = fields[0].name();
         let return_dtype = match self.return_dtype {
-            Some(ref dtype) => dtype.clone(),
+            Some(ref dtype) => dtype.clone().into_datatype(input_schema)?,
             None => DataType::Unknown(Default::default()),
         };
         Ok(Field::new(name.clone(), return_dtype))
