@@ -251,6 +251,19 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
+    /// Returns the number of days in the month of the underlying NaiveDateTime
+    /// representation.
+    fn days_in_month(&self) -> PolarsResult<Int8Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.days_in_month()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.days_in_month()),
+            dt => polars_bail!(opq = days_in_month, dt),
+        }
+    }
+
     /// Convert Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn to_string(&self, format: &str) -> PolarsResult<Series> {

@@ -861,6 +861,28 @@ def test_is_leap_year(
     ]
 
 
+def test_days_in_month() -> None:
+    # A non-leap year case
+    # - 1900 can be divided by 100 but not by 400, so it's not a leap year
+    # - 2025 cannot be divided by 4, so it's not a leap year
+    assert pl.datetime_range(
+        datetime(1900, 1, 1), datetime(1900, 12, 1), "1mo", eager=True
+    ).dt.days_in_month().to_list() == [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    assert pl.datetime_range(
+        datetime(2025, 1, 1), datetime(2025, 12, 1), "1mo", eager=True
+    ).dt.days_in_month().to_list() == [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+    # A leap year case
+    # - 2000 can be divided by 400, so it's a leap year
+    # - 2004 can be divided by 4 but not by 100, so it's a leap year
+    assert pl.datetime_range(
+        datetime(2000, 1, 1), datetime(2000, 12, 1), "1mo", eager=True
+    ).dt.days_in_month().to_list() == [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    assert pl.datetime_range(
+        datetime(2004, 1, 1), datetime(2004, 12, 1), "1mo", eager=True
+    ).dt.days_in_month().to_list() == [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+
 def test_quarter() -> None:
     assert pl.datetime_range(
         datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
