@@ -11,6 +11,7 @@ impl From<IRTemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             IsLeapYear => map!(datetime::is_leap_year),
             IsoYear => map!(datetime::iso_year),
             Month => map!(datetime::month),
+            DaysInMonth => map!(datetime::days_in_month),
             Quarter => map!(datetime::quarter),
             Week => map!(datetime::week),
             WeekDay => map!(datetime::weekday),
