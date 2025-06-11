@@ -475,11 +475,12 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
-            the output is null.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -534,11 +535,12 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `False` values,
-            the output is null.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -3145,8 +3147,12 @@ class Expr:
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        * Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+          Int64 before summing to prevent overflow issues.
+        * If there are no non-null values, then the output is `0`.
+          If you would prefer empty sums to return `None`, you can
+          use `pl.when(expr.count()>0).then(expr.sum())` instead
+          of `expr.sum()`.
 
         Examples
         --------
@@ -3204,6 +3210,13 @@ class Expr:
     def product(self) -> Expr:
         """
         Compute the product of an expression.
+
+        Notes
+        -----
+        If there are no non-null values, then the output is `1`.
+        If you would prefer empty products to return `None`, you can
+        use `pl.when(expr.count()>0).then(expr.product())` instead
+        of `expr.product()`.
 
         Examples
         --------

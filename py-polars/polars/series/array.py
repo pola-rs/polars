@@ -59,6 +59,10 @@ class ArrayNameSpace:
         """
         Compute the sum values of the sub-arrays.
 
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `0`.
+
         Examples
         --------
         >>> s = pl.Series([[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
@@ -191,6 +195,10 @@ class ArrayNameSpace:
         Series
             Series of data type :class:`Boolean`.
 
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `False`.
+
         Examples
         --------
         >>> s = pl.Series(
@@ -238,6 +246,10 @@ class ArrayNameSpace:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
