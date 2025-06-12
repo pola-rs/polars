@@ -14,6 +14,8 @@ pub(crate) fn contains_column_refs(expr: &Expr) -> bool {
             Expr::IndexColumn(_) => return true,
             Expr::Selector(_) => return true,
             Expr::Exclude(_, _) => return true,
+            Expr::Wildcard() => return true,
+            Expr::Field(_) => return true,
             _ => {},
         }
     }
