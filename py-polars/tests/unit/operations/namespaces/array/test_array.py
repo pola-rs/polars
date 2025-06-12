@@ -133,6 +133,14 @@ def test_arr_slice_on_series(as_array: bool) -> None:
     assert s.arr.head(10, as_array=as_array).to_list() == vals
     assert s.arr.slice(1, 2, as_array=as_array).to_list() == [[2, 3], [2, 1]]
     assert s.arr.slice(-5, 2, as_array=as_array).to_list() == [[1], [10]]
+    # TODO: there is a bug in list.slice that does not allow negative values for head
+    if as_array:
+        assert s.arr.tail(-1, as_array=as_array).to_list() == [[2, 3, 4], [2, 1, 2]]
+        assert s.arr.tail(-2, as_array=as_array).to_list() == [[3, 4], [1, 2]]
+        assert s.arr.tail(-3, as_array=as_array).to_list() == [[4], [2]]
+        assert s.arr.head(-1, as_array=as_array).to_list() == [[1, 2, 3], [10, 2, 1]]
+        assert s.arr.head(-2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
+        assert s.arr.head(-3, as_array=as_array).to_list() == [[1], [10]]
 
 
 def test_arr_unique() -> None:
