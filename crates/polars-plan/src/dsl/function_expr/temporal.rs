@@ -168,7 +168,7 @@ pub(super) fn datetime(
         minute,
         second,
         nanosecond,
-        strict, 
+        strict,
         ambiguous,
         time_unit,
         time_zone.cloned(),
