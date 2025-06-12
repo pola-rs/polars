@@ -38,7 +38,7 @@ pub enum IRArrayFunction {
         skip_empty: bool,
     },
     Concat,
-    Slice(i64, usize),
+    Slice(i64, i64),
 }
 
 impl IRArrayFunction {
@@ -125,11 +125,18 @@ fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> 
 
 fn map_to_array_fixed_length(
     offset: &i64,
-    length: &usize,
+    length: &i64,
 ) -> impl FnOnce(&DataType) -> PolarsResult<DataType> {
     move |datatype: &DataType| {
         if let DataType::Array(inner, array_len) = datatype {
-            let (_, slice_offset) = slice_offsets(*offset, *length, *array_len);
+            let length: usize = if *length < 0 {
+                (*array_len as i64 + *length).max(0)
+            } else {
+                *length
+            }.try_into().map_err(|_| {
+                polars_err!(OutOfBounds: "length must be a non-negative integer, got: {}", length)
+            })?;
+            let (_, slice_offset) = slice_offsets(*offset, length, *array_len);
             Ok(DataType::Array(inner.clone(), slice_offset))
         } else {
             polars_bail!(ComputeError: "expected array dtype, got {}", datatype);
@@ -351,7 +358,7 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     ca.array_shift(n.as_materialized_series()).map(Column::from)
 }
 
-pub(super) fn slice(s: &Column, offset: i64, length: usize) -> PolarsResult<Column> {
+pub(super) fn slice(s: &Column, offset: i64, length: i64) -> PolarsResult<Column> {
     let ca = s.array()?;
     ca.array_slice(offset, length).map(Column::from)
 }

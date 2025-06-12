@@ -200,10 +200,15 @@ pub trait ArrayNameSpace: AsArray {
         Ok(out.into_series())
     }
 
-    fn array_slice(&self, offset: i64, length: usize) -> PolarsResult<Series> {
+    fn array_slice(&self, offset: i64, length: i64) -> PolarsResult<Series> {
         let slice_arr: ArrayChunked = unary_kernel(
             self.as_array(),
             move |arr: &FixedSizeListArray| -> FixedSizeListArray {
+                let length : usize = if length < 0 {
+                    (arr.size() as i64 + length).max(0)
+                } else {
+                    length
+                }.try_into().expect("Length can not be larger than i64::MAX");
                 let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
 
                 let mut builder = make_builder(arr.values().dtype());

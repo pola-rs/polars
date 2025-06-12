@@ -174,8 +174,12 @@ impl ArrayNameSpace {
     /// Slice every subarray.
     pub fn slice(self, offset: Expr, length: Expr, as_array: bool) -> PolarsResult<Expr> {
         if as_array {
-            let offset = offset.extract_i64()?;
-            let length = length.extract_usize()?;
+            let Ok(offset) = offset.extract_i64() else {
+                polars_bail!(InvalidOperation: "Offset must be a constant `i64` value if `as_array=true`, got: {}", offset)
+            };
+            let Ok(length) = length.extract_i64() else {
+                polars_bail!(InvalidOperation: "Length must be a constant `i64` value if `as_array=true`, got: {}", length)
+            };
             Ok(self
                 .0
                 .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Slice(
@@ -196,8 +200,7 @@ impl ArrayNameSpace {
 
     /// Get the tail of every subarray
     pub fn tail(self, n: Expr, as_array: bool) -> PolarsResult<Expr> {
-        let offset = n.clone().cast(DataType::Int64).extract_i64()?;
-        self.slice(lit(0i64 - offset), n, as_array)
+        self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n, as_array)
     }
 
     /// Shift every sub-array.
