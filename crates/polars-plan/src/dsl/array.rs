@@ -11,10 +11,12 @@ use crate::prelude::*;
 pub struct ArrayNameSpace(pub Expr);
 
 impl ArrayNameSpace {
+    /// Compute the length of every subarray.
     pub fn len(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Length))
     }
+
     /// Compute the maximum of the items in every subarray.
     pub fn max(self) -> Expr {
         self.0
@@ -167,6 +169,38 @@ impl ArrayNameSpace {
             }),
             "arr.to_struct",
         ))
+    }
+
+    /// Slice every subarray.
+    pub fn slice(self, offset: Expr, length: Expr, as_array: bool) -> PolarsResult<Expr> {
+        if as_array {
+            let Ok(offset) = offset.extract_i64() else {
+                polars_bail!(InvalidOperation: "Offset must be a constant `i64` value if `as_array=true`, got: {}", offset)
+            };
+            let Ok(length) = length.extract_i64() else {
+                polars_bail!(InvalidOperation: "Length must be a constant `i64` value if `as_array=true`, got: {}", length)
+            };
+            Ok(self
+                .0
+                .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Slice(
+                    offset, length,
+                ))))
+        } else {
+            Ok(self
+                .0
+                .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::ToList))
+                .map_ternary(FunctionExpr::ListExpr(ListFunction::Slice), offset, length))
+        }
+    }
+
+    /// Get the head of every subarray
+    pub fn head(self, n: Expr, as_array: bool) -> PolarsResult<Expr> {
+        self.slice(lit(0), n, as_array)
+    }
+
+    /// Get the tail of every subarray
+    pub fn tail(self, n: Expr, as_array: bool) -> PolarsResult<Expr> {
+        self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n, as_array)
     }
 
     /// Shift every sub-array.
