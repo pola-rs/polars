@@ -321,7 +321,7 @@ impl Wrap<&DataFrame> {
                 include_lower_bound,
                 include_upper_bound,
                 options.start_by,
-            );
+            )?;
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
@@ -349,7 +349,7 @@ impl Wrap<&DataFrame> {
                     include_lower_bound,
                     include_upper_bound,
                     options.start_by,
-                );
+                )?;
 
                 PolarsResult::Ok((
                     groups
