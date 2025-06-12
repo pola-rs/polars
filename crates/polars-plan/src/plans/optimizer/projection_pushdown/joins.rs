@@ -239,24 +239,23 @@ pub(super) fn process_join(
             let dest_columns: &[ExprIR];
             let pushdown_dest: &mut Vec<ColumnNode>;
             let names_dest: &mut PlHashSet<PlSmallStr>;
-            if matches!(
-                options.args.how,
-                JoinType::Left | JoinType::Inner | JoinType::Full
-            ) {
-                src_columns = &left_on;
-                pushdown_src = &mut pushdown_left;
-                names_src = &mut names_left;
-                dest_columns = &right_on;
-                pushdown_dest = &mut pushdown_right;
-                names_dest = &mut names_right;
-            } else {
+
+            if let JoinType::Right = options.args.how {
                 src_columns = &right_on;
                 pushdown_src = &mut pushdown_right;
                 names_src = &mut names_right;
                 dest_columns = &left_on;
                 pushdown_dest = &mut pushdown_left;
                 names_dest = &mut names_left;
+            } else {
+                src_columns = &left_on;
+                pushdown_src = &mut pushdown_left;
+                names_src = &mut names_left;
+                dest_columns = &right_on;
+                pushdown_dest = &mut pushdown_right;
+                names_dest = &mut names_right;
             }
+
             for e in src_columns {
                 if !local_projected_names.insert(e.output_name().clone()) {
                     // A join can have multiple leaf names, so we must still ensure all leaf names are projected.
