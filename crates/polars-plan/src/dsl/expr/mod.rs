@@ -448,16 +448,14 @@ impl Expr {
     pub fn extract_i64(&self) -> PolarsResult<i64> {
         match self {
             Expr::Literal(n) => n.extract_i64(),
-            Expr::BinaryExpr { left, op, right } => {
-                match op {
-                    Operator::Minus => {
-                        let left = left.extract_i64()?;
-                        let right = right.extract_i64()?;
-                        Ok(left - right)
-                    },
-                    _ => unreachable!(),
-                }
-            }
+            Expr::BinaryExpr { left, op, right } => match op {
+                Operator::Minus => {
+                    let left = left.extract_i64()?;
+                    let right = right.extract_i64()?;
+                    Ok(left - right)
+                },
+                _ => unreachable!(),
+            },
             Expr::Cast { expr, dtype, .. } => {
                 if dtype.as_literal().is_some_and(|dt| dt.is_integer()) {
                     expr.extract_i64()

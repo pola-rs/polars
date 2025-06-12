@@ -204,11 +204,13 @@ pub trait ArrayNameSpace: AsArray {
         let slice_arr: ArrayChunked = unary_kernel(
             self.as_array(),
             move |arr: &FixedSizeListArray| -> FixedSizeListArray {
-                let length : usize = if length < 0 {
+                let length: usize = if length < 0 {
                     (arr.size() as i64 + length).max(0)
                 } else {
                     length
-                }.try_into().expect("Length can not be larger than i64::MAX");
+                }
+                .try_into()
+                .expect("Length can not be larger than i64::MAX");
                 let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
 
                 let mut builder = make_builder(arr.values().dtype());
