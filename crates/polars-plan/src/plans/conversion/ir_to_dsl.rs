@@ -322,7 +322,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Base64Encode => B::Base64Encode,
                 IB::Size => B::Size,
                 #[cfg(feature = "binary_encoding")]
-                IB::FromBuffer(data_type, v) => B::FromBuffer(data_type, v),
+                IB::FromBuffer(data_type, v) => B::FromBuffer(data_type.into(), v),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -440,7 +440,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     dtype,
                     infer_schema_len,
                 } => B::JsonDecode {
-                    dtype,
+                    dtype: dtype.map(Into::into),
                     infer_schema_len,
                 },
                 #[cfg(feature = "extract_jsonpath")]
@@ -477,8 +477,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "dtype-struct")]
                 IB::SplitN(n) => B::SplitN(n),
                 #[cfg(feature = "temporal")]
-                IB::Strptime(data_type, strptime_options) => {
-                    B::Strptime(data_type, strptime_options)
+                IB::Strptime(dtype, strptime_options) => {
+                    B::Strptime(dtype.into(), strptime_options)
                 },
                 IB::Split(v) => B::Split(v),
                 #[cfg(feature = "dtype-decimal")]
@@ -716,8 +716,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Range(f) => {
             use {IRRangeFunction as IR, RangeFunction as R};
             F::Range(match f {
-                IR::IntRange { step, dtype } => R::IntRange { step, dtype },
-                IR::IntRanges => R::IntRanges,
+                IR::IntRange { step, dtype } => R::IntRange {
+                    step,
+                    dtype: dtype.into(),
+                },
+                IR::IntRanges { dtype } => R::IntRanges {
+                    dtype: dtype.into(),
+                },
                 IR::LinearSpace { closed } => R::LinearSpace { closed },
                 IR::LinearSpaces {
                     closed,
@@ -1035,7 +1040,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "replace")]
         IF::Replace => F::Replace,
         #[cfg(feature = "replace")]
-        IF::ReplaceStrict { return_dtype } => F::ReplaceStrict { return_dtype },
+        IF::ReplaceStrict { return_dtype } => F::ReplaceStrict {
+            return_dtype: return_dtype.map(Into::into),
+        },
         IF::GatherEvery { n, offset } => F::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
         IF::Reinterpret(v) => F::Reinterpret(v),

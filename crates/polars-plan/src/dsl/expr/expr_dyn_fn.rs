@@ -14,7 +14,8 @@ pub trait ColumnsUdf: Send + Sync {
 
     fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>>;
 
-    fn into_ir(&self, input_schema: &Schema) -> PolarsResult<()> {
+    /// Called when converting from DSL to IR with the input schema to the expression.
+    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
         _ = input_schema;
         Ok(())
     }

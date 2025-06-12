@@ -1,6 +1,6 @@
 use core::fmt;
 
-use polars_core::error::PolarsResult;
+use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::DataType;
 use polars_core::schema::Schema;
 use polars_utils::arena::Arena;
@@ -18,16 +18,25 @@ pub enum DataTypeExpr {
 
 #[recursive::recursive]
 fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<DataType> {
-    Ok(match dt_expr {
+    let dtype = match dt_expr {
         DataTypeExpr::Literal(dt) => dt,
         DataTypeExpr::OfExpr(expr) => {
             let mut arena = Arena::new();
             let e = to_expr_ir(*expr, &mut arena, schema)?;
-            arena
+            let dtype = arena
                 .get(e.node())
-                .to_dtype(schema, Default::default(), &arena)?
+                .to_dtype(schema, Default::default(), &arena)?;
+
+            polars_ensure!(
+                !dtype.contains_unknown(),
+                InvalidOperation: "DataType expression is not allowed to instantiate to `unknown`"
+            );
+
+            dtype
         },
-    })
+    };
+
+    Ok(dtype)
 }
 
 impl DataTypeExpr {
@@ -36,6 +45,13 @@ impl DataTypeExpr {
     }
 
     pub fn as_literal(&self) -> Option<&DataType> {
+        match self {
+            Self::Literal(dt) => Some(dt),
+            _ => None,
+        }
+    }
+
+    pub fn into_literal(self) -> Option<DataType> {
         match self {
             Self::Literal(dt) => Some(dt),
             _ => None,

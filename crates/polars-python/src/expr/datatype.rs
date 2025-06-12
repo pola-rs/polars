@@ -1,5 +1,5 @@
 use polars::prelude::{DataType, DataTypeExpr, Schema};
-use pyo3::{PyResult, pyclass};
+use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass};
 
 use super::PyExpr;
 use crate::error::PyPolarsErr;
@@ -31,12 +31,16 @@ impl PyDataTypeExpr {
         DataTypeExpr::OfExpr(Box::new(expr.inner)).into()
     }
 
-    pub fn collect_dtype(&self, schema: Wrap<Schema>) -> PyResult<Wrap<Schema>> {
+    pub fn collect_dtype<'py>(
+        &self,
+        py: Python<'py>,
+        schema: Wrap<Schema>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let dtype = self
             .clone()
             .inner
             .into_datatype(&schema.0)
-            .map_err(PyPolarsErr::Polars)?;
-        Ok(Wrap(Schema::from_iter([(PlSmallStr::EMPTY, dtype)])))
+            .map_err(PyPolarsErr::from)?;
+        Wrap(dtype).into_pyobject(py)
     }
 }

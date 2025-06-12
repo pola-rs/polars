@@ -69,7 +69,7 @@ pub(super) fn convert_functions(
                 B::Base64Encode => IB::Base64Encode,
                 B::Size => IB::Size,
                 #[cfg(feature = "binary_encoding")]
-                B::FromBuffer(data_type, v) => IB::FromBuffer(data_type, v),
+                B::FromBuffer(data_type, v) => IB::FromBuffer(data_type.into_datatype(schema)?, v),
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -187,7 +187,10 @@ pub(super) fn convert_functions(
                     dtype,
                     infer_schema_len,
                 } => IS::JsonDecode {
-                    dtype,
+                    dtype: match dtype {
+                        Some(dtype) => Some(dtype.into_datatype(schema)?),
+                        None => None,
+                    },
                     infer_schema_len,
                 },
                 #[cfg(feature = "extract_jsonpath")]
@@ -227,7 +230,16 @@ pub(super) fn convert_functions(
                 S::Strptime(data_type, strptime_options) => {
                     let is_column_independent = is_column_independent_aexpr(e[0].node(), arena);
                     set_elementwise = is_column_independent;
-                    IS::Strptime(data_type, strptime_options)
+                    let dtype = data_type.into_datatype(schema)?;
+                    polars_ensure!(
+                        matches!(dtype,
+                            DataType::Date |
+                            DataType::Datetime(_, _) |
+                            DataType::Time
+                        ),
+                        InvalidOperation: "`strptime` expects a `date`, `datetime` or `time` got {dtype}"
+                    );
+                    IS::Strptime(dtype, strptime_options)
                 },
                 S::Split(v) => IS::Split(v),
                 #[cfg(feature = "dtype-decimal")]
@@ -511,8 +523,16 @@ pub(super) fn convert_functions(
         F::SearchSorted { side, descending } => I::SearchSorted { side, descending },
         #[cfg(feature = "range")]
         F::Range(range_function) => I::Range(match range_function {
-            RangeFunction::IntRange { step, dtype } => IRRangeFunction::IntRange { step, dtype },
-            RangeFunction::IntRanges => IRRangeFunction::IntRanges,
+            RangeFunction::IntRange { step, dtype } => {
+                let dtype = dtype.into_datatype(schema)?;
+                polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: '{dtype}'");
+                IRRangeFunction::IntRange { step, dtype }
+            },
+            RangeFunction::IntRanges { dtype } => {
+                let dtype = dtype.into_datatype(schema)?;
+                polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_ranges`: '{dtype}'");
+                IRRangeFunction::IntRanges { dtype }
+            },
             RangeFunction::LinearSpace { closed } => IRRangeFunction::LinearSpace { closed },
             RangeFunction::LinearSpaces {
                 closed,
@@ -820,7 +840,12 @@ pub(super) fn convert_functions(
         #[cfg(feature = "replace")]
         F::Replace => I::Replace,
         #[cfg(feature = "replace")]
-        F::ReplaceStrict { return_dtype } => I::ReplaceStrict { return_dtype },
+        F::ReplaceStrict { return_dtype } => I::ReplaceStrict {
+            return_dtype: match return_dtype {
+                Some(dtype) => Some(dtype.into_datatype(schema)?),
+                None => None,
+            },
+        },
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
         F::Reinterpret(v) => I::Reinterpret(v),

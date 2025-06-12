@@ -6,6 +6,7 @@ mod binary;
 mod bitwise;
 #[cfg(feature = "pymethods")]
 mod categorical;
+pub mod datatype;
 #[cfg(feature = "pymethods")]
 mod datetime;
 #[cfg(feature = "pymethods")]
@@ -24,7 +25,6 @@ mod serde;
 mod string;
 #[cfg(feature = "pymethods")]
 mod r#struct;
-pub mod datatype;
 
 use std::mem::ManuallyDrop;
 

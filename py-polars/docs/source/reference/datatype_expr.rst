@@ -1,19 +1,16 @@
-=========
-Selectors
-=========
+====================
+DataType expressions
+====================
 .. currentmodule:: polars
 
 Data type expressions allow lazily determining a datatype of a column or
 expression and using in expressions.
 
-Config options
---------------
-
-.. autosummary::
-   :toctree: api/
-
-    DataTypeExpr.collect_dtype
-    DataTypeExpr.with_dtype
+.. autoclass:: DataTypeExpr
+    :members:
+    :noindex:
+    :autosummary:
+    :autosummary-nosignatures:
 
 Functions
 ---------
@@ -21,4 +18,8 @@ Functions
 Available data type expressions functions:
 
 .. automodule:: polars.functions
+
    dtype_of
+.. automodule:: polars
+
+   DataType.to_dtype_expr

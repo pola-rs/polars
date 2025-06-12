@@ -15,7 +15,8 @@ use polars_python::cloud_client;
 #[cfg(feature = "polars_cloud_server")]
 use polars_python::cloud_server;
 use polars_python::dataframe::PyDataFrame;
-use polars_python::expr::{datatype::PyDataTypeExpr, PyExpr};
+use polars_python::expr::datatype::PyDataTypeExpr;
+use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use polars_python::lazyframe::PyInProcessQuery;

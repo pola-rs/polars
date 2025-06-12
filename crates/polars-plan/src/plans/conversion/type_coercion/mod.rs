@@ -734,7 +734,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             },
             #[cfg(feature = "range")]
             AExpr::Function {
-                function: ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges),
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges { dtype: _ }),
                 ref input,
                 options,
             } => {

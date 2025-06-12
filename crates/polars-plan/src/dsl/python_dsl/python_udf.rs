@@ -15,8 +15,9 @@ use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 
 // Will be overwritten on Python Polars start up.
+#[allow(clippy::type_complexity)]
 pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
-    fn(s: Column, lambda: &PyObject) -> PolarsResult<Column>,
+    fn(s: Column, output_dtype: Option<DataType>, lambda: &PyObject) -> PolarsResult<Column>,
 > = None;
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
@@ -44,7 +45,7 @@ impl PythonUdfExpression {
         let output_type = output_type.map(Into::into);
         Self {
             python_function: lambda,
-            output_type: output_type.map(Into::into),
+            output_type,
             materialized_output_type: OnceLock::new(),
             is_elementwise,
             returns_scalar,
@@ -76,7 +77,7 @@ impl PythonUdfExpression {
 
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
-        let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
+        let (output_type, is_elementwise, returns_scalar): (Option<DataTypeExpr>, bool, bool) =
             pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         let remainder = &buf[reader.position() as usize..];
@@ -107,7 +108,7 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 }
 
 impl ColumnsUdf for PythonUdfExpression {
-    fn into_ir(&self, input_schema: &Schema) -> PolarsResult<()> {
+    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
         if let Some(output_type) = self.output_type.as_ref() {
             let dtype = output_type.clone().into_datatype(input_schema)?;
             self.materialized_output_type.get_or_init(|| dtype);
@@ -122,7 +123,11 @@ impl ColumnsUdf for PythonUdfExpression {
             .materialized_output_type
             .get()
             .map_or_else(|| DataType::Unknown(Default::default()), |dt| dt.clone());
-        let mut out = func(s[0].clone(), &self.python_function)?;
+        let mut out = func(
+            s[0].clone(),
+            self.materialized_output_type.get().cloned(),
+            &self.python_function,
+        )?;
         if !matches!(output_type, DataType::Unknown(_)) {
             let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {
                 polars_err!(
@@ -206,7 +211,7 @@ impl PythonGetOutput {
         let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
-        let return_dtype: Option<DataType> =
+        let return_dtype: Option<DataTypeExpr> =
             pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         Ok(Arc::new(Self::new(return_dtype)) as Arc<dyn FunctionOutputField>)

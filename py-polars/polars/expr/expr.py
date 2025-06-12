@@ -4368,15 +4368,14 @@ class Expr:
         def __init__(
             self,
             function: Callable[[Series], Series | Any],
-            return_dtype: PolarsDataType | None,
         ) -> None:
             self.function = function
-            self.return_dtype = return_dtype
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            return_dtype = kwargs.pop("return_dtype")
             result = self.function(*args, **kwargs)
             if _check_for_numpy(result) and isinstance(result, np.ndarray):
-                result = pl.Series(result, dtype=self.return_dtype)
+                result = pl.Series(result, dtype=return_dtype)
             return result
 
     def map_batches(
@@ -4545,7 +4544,7 @@ class Expr:
 
         return self._from_pyexpr(
             self._pyexpr.map_batches(
-                self._map_batches_wrapper(function, return_dtype),
+                self._map_batches_wrapper(function),
                 return_dtype,
                 agg_list,
                 is_elementwise,
@@ -4556,7 +4555,7 @@ class Expr:
     def map_elements(
         self,
         function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -5034,8 +5033,10 @@ class Expr:
         """
         # This cast enables tail with expressions that return unsigned integers,
         # for which negate otherwise raises InvalidOperationError.
-        offset = -self._from_pyexpr(
-            parse_into_expression(n).cast(Int64, strict=False, wrap_numerical=True)
+        offset = -(
+            self._from_pyexpr(parse_into_expression(n)).cast(
+                Int64, strict=False, wrap_numerical=True
+            )
         )
         return self.slice(offset, n)
 
@@ -10598,7 +10599,7 @@ class Expr:
         new: IntoExpr | Sequence[Any] | NoDefault = no_default,
         *,
         default: IntoExpr | NoDefault = no_default,
-        return_dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     ) -> Expr:
         """
         Replace all values by different values.
@@ -10776,15 +10777,17 @@ class Expr:
         old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
         new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
+        dtype: pl.DataTypeExpr | None = None
+        if return_dtype is not None:
+            dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
         default = (
             None
             if default is no_default
             else parse_into_expression(default, str_as_lit=True)
         )
 
-        return self._from_pyexpr(
-            self._pyexpr.replace_strict(old, new, default, return_dtype)
-        )
+        return self._from_pyexpr(self._pyexpr.replace_strict(old, new, default, dtype))
 
     def bitwise_count_ones(self) -> Expr:
         """Evaluate the number of set bits."""

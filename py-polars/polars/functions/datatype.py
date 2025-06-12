@@ -21,15 +21,10 @@ def dtype_of(col_or_expr: str | Expr) -> pl.DataTypeExpr:
     """
     from polars.polars import PyDataTypeExpr
 
-    if isinstance(col_or_expr, pl.DataType):
-        e = F.col(col_or_expr)
-
     e: Expr
     if isinstance(col_or_expr, str):
         e = F.col(col_or_expr)
     else:
         e = col_or_expr
 
-    return pl.DataTypeExpr._from_pydatatype_expr(
-        pl.DataTypeExpr(), PyDataTypeExpr.of_expr(e._pyexpr)
-    )
+    return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.of_expr(e._pyexpr))

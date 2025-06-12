@@ -311,7 +311,7 @@ pub enum FunctionExpr {
     Replace,
     #[cfg(feature = "replace")]
     ReplaceStrict {
-        return_dtype: Option<DataType>,
+        return_dtype: Option<DataTypeExpr>,
     },
     GatherEvery {
         n: usize,

@@ -275,7 +275,7 @@ pub(super) fn to_aexpr_impl(
             };
 
             let function = function.materialize()?;
-            function.as_ref().into_ir(schema)?;
+            function.as_ref().resolve_dsl(schema)?;
 
             (
                 AExpr::AnonymousFunction {

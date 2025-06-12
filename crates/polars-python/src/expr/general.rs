@@ -917,7 +917,7 @@ impl PyExpr {
         old: PyExpr,
         new: PyExpr,
         default: Option<PyExpr>,
-        return_dtype: Option<Wrap<DataType>>,
+        return_dtype: Option<PyDataTypeExpr>,
     ) -> Self {
         self.inner
             .clone()
@@ -925,7 +925,7 @@ impl PyExpr {
                 old.inner,
                 new.inner,
                 default.map(|e| e.inner),
-                return_dtype.map(|dt| dt.0),
+                return_dtype.map(|dt| dt.inner),
             )
             .into()
     }
