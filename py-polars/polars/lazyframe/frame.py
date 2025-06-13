@@ -4794,7 +4794,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
            - 1y    (1 calendar year)
            - 1i    (1 index count)
 
-           Or combine them:
+           Or combine them (except in `every`):
            "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
            By "calendar day", we mean the corresponding time on the next day (which may
