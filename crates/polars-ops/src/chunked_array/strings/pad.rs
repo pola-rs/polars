@@ -36,7 +36,7 @@ fn pad_fn<'a>(
     }
 }
 
-fn zfill_fn<'a>(s: Option<&'a str>, len: Option<u64>, buf: &mut String) -> Option<&'a str> {
+fn zfill_fn<'a>(s: Option<&'a str>, length: Option<u64>, buf: &mut String) -> Option<&'a str> {
     if let (Some(s), Some(length)) = (s, length) {
         let s_len = s.len();
         let length = length as usize;
