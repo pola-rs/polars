@@ -275,13 +275,15 @@ pub(super) fn to_aexpr_impl(
             };
 
             let function = function.materialize()?;
+            let output_type = output_type.materialize()?;
             function.as_ref().resolve_dsl(schema)?;
+            output_type.as_ref().resolve_dsl(schema)?;
 
             (
                 AExpr::AnonymousFunction {
                     input: e,
                     function: LazySerde::Deserialized(function),
-                    output_type,
+                    output_type: LazySerde::Deserialized(output_type),
                     options,
                     fmt_str,
                 },

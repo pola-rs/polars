@@ -193,12 +193,14 @@ impl ColumnsUdf for PythonUdfExpression {
 /// Serializable version of [`GetOutput`] for Python UDFs.
 pub struct PythonGetOutput {
     return_dtype: Option<DataTypeExpr>,
+    materialized_output_type: OnceLock<DataType>,
 }
 
 impl PythonGetOutput {
     pub fn new(return_dtype: Option<impl Into<DataTypeExpr>>) -> Self {
         Self {
             return_dtype: return_dtype.map(Into::into),
+            materialized_output_type: OnceLock::new(),
         }
     }
 
@@ -219,16 +221,24 @@ impl PythonGetOutput {
 }
 
 impl FunctionOutputField for PythonGetOutput {
+    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
+        if let Some(output_type) = self.return_dtype.as_ref() {
+            let dtype = output_type.clone().into_datatype(input_schema)?;
+            self.materialized_output_type.get_or_init(|| dtype);
+        }
+        Ok(())
+    }
+
     fn get_field(
         &self,
-        input_schema: &Schema,
+        _input_schema: &Schema,
         _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
         // Take the name of first field, just like [`GetOutput::map_field`].
         let name = fields[0].name();
-        let return_dtype = match self.return_dtype {
-            Some(ref dtype) => dtype.clone().into_datatype(input_schema)?,
+        let return_dtype = match self.materialized_output_type.get() {
+            Some(dtype) => dtype.clone(),
             None => DataType::Unknown(Default::default()),
         };
         Ok(Field::new(name.clone(), return_dtype))

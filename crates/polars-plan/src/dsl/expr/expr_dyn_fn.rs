@@ -148,6 +148,11 @@ where
 }
 
 pub trait FunctionOutputField: Send + Sync {
+    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
+        _ = input_schema;
+        Ok(())
+    }
+
     fn get_field(
         &self,
         input_schema: &Schema,
