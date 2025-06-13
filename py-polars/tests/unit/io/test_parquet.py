@@ -3358,3 +3358,25 @@ def test_field_overwrites_metadata() -> None:
     assert schema[2].metadata[b"struct"] == b"true"
     assert schema[2].type.fields[0].metadata[b"md"] == b"yes"
     assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
+
+
+def multiple_test_sorting_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 2, 2],
+            "b": [1, 2, 3, 1, 2, 3],
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        sorting_columns=[pq.SortingColumn(0), pq.SortingColumn(1)],
+    )
+
+    f.seek(0)
+    roundtrip = pl.read_parquet(f)
+    assert roundtrip.get_column("a").is_sorted()
+    assert not roundtrip.get_column("b").is_sorted()
+    assert_frame_equal(roundtrip.sort("b"), df.sort("b"))
