@@ -1315,17 +1315,15 @@ impl SQLContext {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
             let is_agg_or_window = has_expr(e, |e| {
                 match e {
-                    Expr::Agg(_) | Expr::Len | Expr::Window {..} => true,
+                    Expr::Agg(_) | Expr::Len | Expr::Window { .. } => true,
                     Expr::Function { .. } => {
                         // If it's a function call containing a column NOT in the group by keys,
                         // we treat it as an aggregation.
-                        has_expr(e, |e| {
-                            match e {
-                                Expr::Column(name) => !group_by_keys_schema.contains(name),
-                                _ => false,
-                            }
+                        has_expr(e, |e| match e {
+                            Expr::Column(name) => !group_by_keys_schema.contains(name),
+                            _ => false,
                         })
-                    }
+                    },
                     _ => false,
                 }
             });
