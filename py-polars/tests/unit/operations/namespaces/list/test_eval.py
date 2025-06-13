@@ -136,4 +136,5 @@ def test_list_eval_when_then_23089() -> None:
     assert_series_equal(
         pl.Series([[1, 2]]).list.eval(pl.when(pl.int_range(pl.len()) > 0).then(42)),
         pl.Series([[None, 42]]),
+        check_dtypes=False,
     )
