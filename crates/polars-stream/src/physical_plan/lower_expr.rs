@@ -623,19 +623,23 @@ fn lower_exprs_with_ctx(
                 let out_name = unique_column_name();
                 let (trans_input, trans_inner_expr) =
                     lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
-                let column = ExprIR::from_node(trans_inner_expr[0], ctx.expr_arena)
-                    .with_alias(out_name.clone());
-                let offset = ExprIR::from_node(trans_inner_expr[1], ctx.expr_arena);
 
-                let output_schema =
-                    schema_for_select(trans_input, std::slice::from_ref(&column), ctx)?;
+                // Select the shift column
+                let select_expr =
+                    ExprIR::new(trans_inner_expr[0], OutputName::Alias(out_name.clone()));
+                let column_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
+                let output_schema = ctx.phys_sm[column_input.node].output_schema.clone();
+
+                // Select the offset column
+                let select_expr =
+                    ExprIR::new(trans_inner_expr[1], OutputName::Alias(out_name.clone()));
+                let offset_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
 
                 let node_key = ctx.phys_sm.insert(PhysNode::new(
                     output_schema,
                     PhysNodeKind::Shift {
                         input: trans_input,
-                        offset,
-                        column,
+                        offset: offset_input,
                     },
                 ));
 

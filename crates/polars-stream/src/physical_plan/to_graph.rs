@@ -143,20 +143,15 @@ fn to_graph_rec<'a>(
             )
         },
 
-        Shift {
-            input,
-            column,
-            offset,
-        } => {
+        Shift { input, offset } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
 
-            let phys_column = create_stream_expr(column, ctx, input_schema)?;
-            let phys_offset = create_stream_expr(offset, ctx, input_schema)?;
             let input_key = to_graph_rec(input.node, ctx)?;
+            let offset_key = to_graph_rec(offset.node, ctx)?;
 
             ctx.graph.add_node(
-                nodes::shift::ShiftNode::new(phys_column, phys_offset, node.output_schema.clone()),
-                [(input_key, input.port)],
+                nodes::shift::ShiftNode::new(node.output_schema.clone()),
+                [(input_key, input.port), (offset_key, offset.port)],
             )
         },
 
