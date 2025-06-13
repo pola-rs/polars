@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 
@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyDataTypeExpr
+    from polars import DataType
     from polars._typing import SchemaDict
 
 
@@ -26,7 +27,7 @@ class DataTypeExpr:
 
     Examples
     --------
-    >>> lf = pl.LazyFrame({ 'a': [1, 2, 3] })
+    >>> lf = pl.LazyFrame({"a": [1, 2, 3]})
     >>> lf.with_columns(
     ...     pl.col.a.map_batches(lambda x: x * 2, return_dtype=pl.dtype_of("a"))
     ... ).collect()
@@ -45,15 +46,15 @@ class DataTypeExpr:
     _pydatatype_expr: PyDataTypeExpr
 
     @classmethod
-    def _from_pydatatype_expr(cls, pydatatype_expr: PyDataTypeExpr) -> Self:
+    def _from_pydatatype_expr(cls, pydatatype_expr: PyDataTypeExpr) -> DataTypeExpr:
         slf = cls()
         slf._pydatatype_expr = pydatatype_expr
         return slf
 
     def collect_dtype(
         self, context: SchemaDict | pl.Schema | pl.DataFrame | pl.LazyFrame
-    ) -> pl.DataType:
-        """Materialize the [`DataTypeExpr`] in a specific context."""
+    ) -> DataType:
+        """Materialize the :class:`DataTypeExpr` in a specific context."""
         schema: pl.Schema
         if isinstance(context, pl.Schema):
             schema = context

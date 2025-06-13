@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 @unstable()
 def dtype_of(col_or_expr: str | Expr) -> pl.DataTypeExpr:
     """
-    Get a lazily evaluated `DataType` of a column or expression.
+    Get a lazily evaluated :class:`DataType` of a column or expression.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed

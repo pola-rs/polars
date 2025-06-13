@@ -8,7 +8,7 @@ from polars._utils.wrap import wrap_expr
 from polars.datatypes import parse_into_datatype_expr
 
 if TYPE_CHECKING:
-    from polars import Expr, DataTypeExpr
+    from polars import DataTypeExpr, Expr
     from polars._typing import (
         Endianness,
         IntoExpr,

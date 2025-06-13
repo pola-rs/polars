@@ -57,7 +57,7 @@ def arange(
     end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
-    dtype: PolarsIntegerType = Int64,
+    dtype: PolarsIntegerType | DataTypeExpr = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -141,7 +141,7 @@ def int_range(
     end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
-    dtype: PolarsIntegerType = Int64,
+    dtype: PolarsIntegerType | DataTypeExpr = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -215,13 +215,15 @@ def int_range(
         end = start
         start = 0
 
-    dtype = parse_into_datatype_expr(dtype)
+    dtype_expr = parse_into_datatype_expr(dtype)
     if isinstance(start, int) and isinstance(end, int) and eager:
-        return wrap_s(plr.eager_int_range(start, end, step, dtype._pydatatype_expr))
+        return wrap_s(
+            plr.eager_int_range(start, end, step, dtype_expr._pydatatype_expr)
+        )
 
     start = parse_into_expression(start)
     end = parse_into_expression(end)
-    result = wrap_expr(plr.int_range(start, end, step, dtype._pydatatype_expr))
+    result = wrap_expr(plr.int_range(start, end, step, dtype_expr._pydatatype_expr))
 
     if eager:
         return F.select(result).to_series()
@@ -267,7 +269,7 @@ def int_ranges(
     end: int | IntoExprColumn | None = None,
     step: int | IntoExprColumn = 1,
     *,
-    dtype: PolarsIntegerType = Int64,
+    dtype: PolarsIntegerType | DataTypeExpr = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -328,11 +330,11 @@ def int_ranges(
         end = start
         start = 0
 
-    dtype = parse_into_datatype_expr(dtype)
+    dtype_expr = parse_into_datatype_expr(dtype)
     start = parse_into_expression(start)
     end = parse_into_expression(end)
     step = parse_into_expression(step)
-    result = wrap_expr(plr.int_ranges(start, end, step, dtype._pydatatype_expr))
+    result = wrap_expr(plr.int_ranges(start, end, step, dtype_expr._pydatatype_expr))
 
     if eager:
         return F.select(result).to_series()

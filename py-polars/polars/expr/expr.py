@@ -46,7 +46,6 @@ from polars.datatypes import (
     Int64,
     is_polars_dtype,
     parse_into_datatype_expr,
-    parse_into_dtype,
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
@@ -4555,7 +4554,7 @@ class Expr:
     def map_elements(
         self,
         function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
+        return_dtype: PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -4766,6 +4765,10 @@ class Expr:
         root_names = self.meta.root_names()
         if len(root_names) > 0:
             warn_on_inefficient_map(function, columns=root_names, map_target="expr")
+
+        if isinstance(return_dtype, pl.DataTypeExpr):
+            msg = "DataTypeExpr is not supported for map_elements"
+            raise TypeError(msg)
 
         if pass_name:
 
