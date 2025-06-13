@@ -202,9 +202,9 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "string_reverse")]
                 S::Reverse => IS::Reverse,
                 #[cfg(feature = "string_pad")]
-                S::PadStart { length, fill_char } => IS::PadStart { length, fill_char },
+                S::PadStart { fill_char } => IS::PadStart { fill_char },
                 #[cfg(feature = "string_pad")]
-                S::PadEnd { length, fill_char } => IS::PadEnd { length, fill_char },
+                S::PadEnd { fill_char } => IS::PadEnd { fill_char },
                 S::Slice => IS::Slice,
                 S::Head => IS::Head,
                 S::Tail => IS::Tail,

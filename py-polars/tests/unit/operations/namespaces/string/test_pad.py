@@ -25,6 +25,40 @@ def test_str_pad_start() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_str_pad_start_expr() -> None:
+    df = pl.DataFrame({"a": ["a", "bbbbbb", "cc", "d", None], "b": [1, 2, None, 4, 4]})
+    result = df.select(
+        lit_expr=pl.col("a").str.pad_start(pl.lit(4)),
+        int_expr=pl.col("a").str.pad_start(4),
+        b_expr=pl.col("a").str.pad_start("b"),
+    )
+    expected = pl.DataFrame(
+        {
+            "lit_expr": ["   a", "bbbbbb", "  cc", "   d", None],
+            "int_expr": ["   a", "bbbbbb", "  cc", "   d", None],
+            "b_expr": ["a", "bbbbbb", None, "   d", None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_str_pad_end_expr() -> None:
+    df = pl.DataFrame({"a": ["a", "bbbbbb", "cc", "d", None], "b": [1, 2, None, 4, 4]})
+    result = df.select(
+        lit_expr=pl.col("a").str.pad_end(pl.lit(4)),
+        int_expr=pl.col("a").str.pad_end(4),
+        b_expr=pl.col("a").str.pad_end("b"),
+    )
+    expected = pl.DataFrame(
+        {
+            "lit_expr": ["a   ", "bbbbbb", "cc  ", "d   ", None],
+            "int_expr": ["a   ", "bbbbbb", "cc  ", "d   ", None],
+            "b_expr": ["a", "bbbbbb", None, "d   ", None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_str_pad_end() -> None:
     df = pl.DataFrame({"a": ["foo", "longer_foo", "longest_fooooooo", "hi"]})
 
@@ -77,13 +111,13 @@ def test_str_zfill_expr() -> None:
         }
     )
     out = df.select(
-        all_expr=pl.col("num").str.zfill(pl.col("len")),
+        all_expr=pl.col("num").str.zfill(pl.col("len") + 1),
         str_lit=pl.lit("10").str.zfill(pl.col("len")),
         len_lit=pl.col("num").str.zfill(5),
     )
     expected = pl.DataFrame(
         {
-            "all_expr": ["-10", "-001", "000", "01", "00010", None, None, "+01"],
+            "all_expr": ["-010", "-0001", "0000", "001", "000010", None, None, "+001"],
             "str_lit": ["010", "0010", "010", "10", "00010", "010", None, "010"],
             "len_lit": [
                 "-0010",
