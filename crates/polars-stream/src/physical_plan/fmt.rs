@@ -195,26 +195,23 @@ fn visualize_plan_rec(
                 from_ref(input),
             )
         },
-        PhysNodeKind::Shift {
-            input,
-            column,
-            offset,
-        } => {
-            let s = format!(
-                "shift\\nname: {}\\noffset: {}",
-                fmt_exprs_to_label(
-                    std::slice::from_ref(column),
-                    expr_arena,
-                    FormatExprStyle::NoAliases
-                ),
-                fmt_exprs_to_label(
-                    std::slice::from_ref(offset),
-                    expr_arena,
-                    FormatExprStyle::NoAliases
-                )
-            );
-
-            (s, from_ref(input))
+        PhysNodeKind::Shift { input, offset } => {
+            todo!()
+            //let s = format!(
+            //    "shift\\nname: {}\\noffset: {}",
+            //    fmt_exprs_to_label(
+            //        std::slice::from_ref(column),
+            //        expr_arena,
+            //        FormatExprStyle::NoAliases
+            //    ),
+            //    fmt_exprs_to_label(
+            //        std::slice::from_ref(offset),
+            //        expr_arena,
+            //        FormatExprStyle::NoAliases
+            //    )
+            //);
+            //
+            //(s, from_ref(input))
         },
 
         PhysNodeKind::WithRowIndex {

@@ -11,8 +11,6 @@ use crate::expression::StreamExpr;
 use crate::morsel::SourceToken;
 
 pub struct ShiftNode {
-    column: StreamExpr,
-    offset: StreamExpr,
     state: State,
     output_schema: Arc<Schema>,
 }
@@ -98,10 +96,8 @@ async fn send_morsel(
 }
 
 impl ShiftNode {
-    pub fn new(column: StreamExpr, offset: StreamExpr, output_schema: Arc<Schema>) -> Self {
+    pub fn new(output_schema: Arc<Schema>) -> Self {
         Self {
-            column,
-            offset,
             state: State::Uninit,
             output_schema,
         }
@@ -115,13 +111,17 @@ impl ShiftNode {
         let Ok(morsel) = receiver.recv().await else {
             return Err(());
         };
-        Ok(morsel
-            .async_try_map(|df| async move {
-                let column = self.column.evaluate(&df, &state.in_memory_exec_state).await;
+        Ok(Ok(morsel))
+    }
 
-                column.map(|column| column.into_frame())
-            })
-            .await)
+    async fn spawn_uninit(
+        &mut self,
+        shift_state: &mut State,
+        receiver: &mut Receiver<Morsel>,
+        sender: &mut Sender<Morsel>,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
+        todo!()
     }
 
     async fn eval(
@@ -332,20 +332,42 @@ impl ComputeNode for ShiftNode {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv_ports.len() == 1 && send_ports.len() == 1);
-        let mut receiver = recv_ports[0].take().unwrap().serial();
-        let mut sender = send_ports[0].take().unwrap().serial();
+        assert!(recv_ports.len() == 2 && send_ports.len() == 2);
 
-        let slf = &mut *self;
-        let t = scope.spawn_task(TaskPriority::High, async move {
-            let mut shift_state = std::mem::take(&mut slf.state);
+        let t = match self.state {
+            State::Uninit => {
+                let mut receiver = recv_ports[1].take().unwrap().serial();
+                let mut sender = send_ports[1].take().unwrap().serial();
 
-            slf.eval(&mut shift_state, &mut receiver, &mut sender, state)
-                .await?;
-            slf.state = shift_state;
+                let slf = &mut *self;
+                scope.spawn_task(TaskPriority::High, async move {
+                    let mut shift_state = std::mem::take(&mut slf.state);
 
-            Ok(())
-        });
+                    slf.eval(&mut shift_state, &mut receiver, &mut sender, state)
+                        .await?;
+                    slf.state = shift_state;
+
+                    Ok(())
+                })
+            },
+            _ => {
+                todo!()
+            },
+        };
+
+        //let mut receiver = recv_ports[0].take().unwrap().serial();
+        //let mut sender = send_ports[0].take().unwrap().serial();
+
+        //let slf = &mut *self;
+        //let t = scope.spawn_task(TaskPriority::High, async move {
+        //    let mut shift_state = std::mem::take(&mut slf.state);
+        //
+        //    slf.eval(&mut shift_state, &mut receiver, &mut sender, state)
+        //        .await?;
+        //    slf.state = shift_state;
+        //
+        //    Ok(())
+        //});
         join_handles.push(t);
     }
 }
