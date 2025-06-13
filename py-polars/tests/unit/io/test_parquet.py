@@ -3281,7 +3281,7 @@ def test_parquet_read_timezone_22506() -> None:
 
 @pytest.mark.parametrize("static", [True, False])
 @pytest.mark.parametrize("lazy", [True, False])
-def test_read_write_metadata(tmp_path: Path, static: bool, lazy: bool) -> None:
+def test_read_write_metadata(static: bool, lazy: bool) -> None:
     metadata = {"hello": "world", "something": "else"}
     md: ParquetMetadata = metadata
     if not static:
@@ -3378,3 +3378,20 @@ def multiple_test_sorting_columns() -> None:
     assert roundtrip.get_column("a").is_sorted()
     assert not roundtrip.get_column("b").is_sorted()
     assert_frame_equal(roundtrip.sort("b"), df.sort("b"))
+
+
+@pytest.mark.write_disk
+def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.parquet"
+
+    df = pl.DataFrame(
+        schema={
+            "a": pl.Boolean,
+            "b": pl.Boolean,
+        }
+    )
+
+    df.write_parquet(path, use_pyarrow=True)
+
+    assert_frame_equal(pl.read_parquet(path), df)
