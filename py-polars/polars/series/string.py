@@ -1448,7 +1448,7 @@ class StringNameSpace:
         ]
         """
 
-    def pad_start(self, length: int | IntoExpr, fill_char: str = " ") -> Series:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the start of the string until it reaches the given length.
 
@@ -1479,7 +1479,7 @@ class StringNameSpace:
         ]
         """
 
-    def pad_end(self, length: int | IntoExpr, fill_char: str = " ") -> Series:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the end of the string until it reaches the given length.
 

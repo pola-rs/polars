@@ -820,7 +820,7 @@ class ExprStringNameSpace:
         suffix = parse_into_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
-    def pad_start(self, length: int | IntoExpr, fill_char: str = " ") -> Expr:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the start of the string until it reaches the given length.
 
@@ -859,7 +859,7 @@ class ExprStringNameSpace:
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
-    def pad_end(self, length: int | IntoExpr, fill_char: str = " ") -> Expr:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the end of the string until it reaches the given length.
 
@@ -899,7 +899,7 @@ class ExprStringNameSpace:
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
-    def zfill(self, length: int | IntoExpr) -> Expr:
+    def zfill(self, length: int | IntoExprColumn) -> Expr:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
