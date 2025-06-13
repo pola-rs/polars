@@ -68,4 +68,4 @@ class DataTypeExpr:
             msg = f"DataTypeExpr.collect_dtype did not expect {context!r}"
             raise TypeError(msg)
 
-        self._pydatatype_expr.collect_dtype(schema)
+        return self._pydatatype_expr.collect_dtype(schema)
