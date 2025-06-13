@@ -645,7 +645,6 @@ pub(super) fn pad_start(s: &[Column], fill_char: char) -> PolarsResult<Column> {
         s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
         ShapeMismatch: "cannot pad_start with 'length' array of length {}", length.len()
     );
-    let length = length.strict_cast(&DataType::UInt64)?;
     let length = length.as_materialized_series().u64()?;
     let ca = s1.str()?;
     Ok(ca.pad_start(length, fill_char).into_column())
@@ -659,7 +658,6 @@ pub(super) fn pad_end(s: &[Column], fill_char: char) -> PolarsResult<Column> {
         s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
         ShapeMismatch: "cannot pad_end with 'length' array of length {}", length.len()
     );
-    let length = length.strict_cast(&DataType::UInt64)?;
     let length = length.as_materialized_series().u64()?;
     let ca = s1.str()?;
     Ok(ca.pad_end(length, fill_char).into_column())
@@ -673,7 +671,6 @@ pub(super) fn zfill(s: &[Column]) -> PolarsResult<Column> {
         s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
         ShapeMismatch: "cannot zfill with 'length' array of length {}", length.len()
     );
-    let length = length.strict_cast(&DataType::UInt64)?;
     let length = length.as_materialized_series().u64()?;
     let ca = s1.str()?;
     Ok(ca.zfill(length).into_column())
