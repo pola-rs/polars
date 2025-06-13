@@ -2156,36 +2156,34 @@ def test_conserve_sortedness(
         }
     )
 
-    pq.write_table(
-        df.to_arrow(),
-        f,
-        sorting_columns=[
-            pq.SortingColumn(0, False, False),
-            pq.SortingColumn(1, False, False),
-            pq.SortingColumn(2, True, True),
-            pq.SortingColumn(3, True, True),
-        ],
-    )
+    for col, descending, nulls_last in [("a", False, False), ("c", True, True)]:
+        col_idx = df.get_column_index(col)
+        f.seek(0)
+        pq.write_table(
+            df.to_arrow(),
+            f,
+            sorting_columns=[
+                pq.SortingColumn(col_idx, descending, nulls_last),
+            ],
+        )
+        f.truncate()
+        f.seek(0)
 
-    f.seek(0)
+        monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+        df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
 
-    df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
+        captured = capfd.readouterr().err
 
-    captured = capfd.readouterr().err
-
-    # @NOTE: We don't conserve sortedness for anything except integers at the
-    # moment.
-    assert captured.count("Parquet conserved SortingColumn for column chunk of") == 2
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'a' to Ascending"
-        in captured
-    )
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
-        in captured
-    )
+        # @NOTE: We don't conserve sortedness for anything except integers at the
+        # moment.
+        assert (
+            captured.count("Parquet conserved SortingColumn for column chunk of") == 1
+        )
+        assert (
+            f"Parquet conserved SortingColumn for column chunk of '{col}' to {'Descending' if descending else 'Ascending'}"
+            in captured
+        )
 
 
 @pytest.mark.parametrize("use_dictionary", [True, False])
@@ -3358,3 +3356,25 @@ def test_field_overwrites_metadata() -> None:
     assert schema[2].metadata[b"struct"] == b"true"
     assert schema[2].type.fields[0].metadata[b"md"] == b"yes"
     assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
+
+
+def multiple_test_sorting_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 2, 2],
+            "b": [1, 2, 3, 1, 2, 3],
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        sorting_columns=[pq.SortingColumn(0), pq.SortingColumn(1)],
+    )
+
+    f.seek(0)
+    roundtrip = pl.read_parquet(f)
+    assert roundtrip.get_column("a").is_sorted()
+    assert not roundtrip.get_column("b").is_sorted()
+    assert_frame_equal(roundtrip.sort("b"), df.sort("b"))
