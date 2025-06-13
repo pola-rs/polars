@@ -107,16 +107,29 @@ def test_str_zfill_expr() -> None:
     df = pl.DataFrame(
         {
             "num": ["-10", "-1", "0", "1", "10", None, "1", "+1"],
-            "len": [3, 4, 3, 2, 5, 3, None, 3],
+            # u8 tests the IR length cast
+            "len_u8": pl.Series([3, 4, 3, 2, 5, 3, None, 3], dtype=pl.UInt8),
+            "len_u64": pl.Series([3, 4, 3, 2, 5, 3, None, 3], dtype=pl.UInt64),
         }
     )
     out = df.select(
-        all_expr=pl.col("num").str.zfill(pl.col("len") + 1),
-        str_lit=pl.lit("10").str.zfill(pl.col("len")),
+        all_expr_u8=pl.col("num").str.zfill(pl.col("len_u8") + 1),
+        all_expr=pl.col("num").str.zfill(pl.col("len_u64") + 1),
+        str_lit=pl.lit("10").str.zfill(pl.col("len_u64")),
         len_lit=pl.col("num").str.zfill(5),
     )
     expected = pl.DataFrame(
         {
+            "all_expr_u8": [
+                "-010",
+                "-0001",
+                "0000",
+                "001",
+                "000010",
+                None,
+                None,
+                "+001",
+            ],
             "all_expr": ["-010", "-0001", "0000", "001", "000010", None, None, "+001"],
             "str_lit": ["010", "0010", "010", "10", "00010", "010", None, "010"],
             "len_lit": [
