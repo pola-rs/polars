@@ -2156,36 +2156,34 @@ def test_conserve_sortedness(
         }
     )
 
-    pq.write_table(
-        df.to_arrow(),
-        f,
-        sorting_columns=[
-            pq.SortingColumn(0, False, False),
-            pq.SortingColumn(1, False, False),
-            pq.SortingColumn(2, True, True),
-            pq.SortingColumn(3, True, True),
-        ],
-    )
+    for col, descending, nulls_last in [("a", False, False), ("c", True, True)]:
+        col_idx = df.get_column_index(col)
+        f.seek(0)
+        pq.write_table(
+            df.to_arrow(),
+            f,
+            sorting_columns=[
+                pq.SortingColumn(col_idx, descending, nulls_last),
+            ],
+        )
+        f.truncate()
+        f.seek(0)
 
-    f.seek(0)
+        monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+        df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
 
-    df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
+        captured = capfd.readouterr().err
 
-    captured = capfd.readouterr().err
-
-    # @NOTE: We don't conserve sortedness for anything except integers at the
-    # moment.
-    assert captured.count("Parquet conserved SortingColumn for column chunk of") == 2
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'a' to Ascending"
-        in captured
-    )
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
-        in captured
-    )
+        # @NOTE: We don't conserve sortedness for anything except integers at the
+        # moment.
+        assert (
+            captured.count("Parquet conserved SortingColumn for column chunk of") == 1
+        )
+        assert (
+            f"Parquet conserved SortingColumn for column chunk of '{col}' to {'Descending' if descending else 'Ascending'}"
+            in captured
+        )
 
 
 @pytest.mark.parametrize("use_dictionary", [True, False])
