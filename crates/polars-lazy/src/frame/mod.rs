@@ -528,7 +528,7 @@ impl LazyFrame {
     }
 
     /// Cast all frame columns to the given dtype, resulting in a new LazyFrame
-    pub fn cast_all(self, dtype: DataType, strict: bool) -> Self {
+    pub fn cast_all(self, dtype: impl Into<DataTypeExpr>, strict: bool) -> Self {
         self.with_columns(vec![if strict {
             col(PlSmallStr::from_static("*")).strict_cast(dtype)
         } else {

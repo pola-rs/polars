@@ -107,6 +107,7 @@ pub enum IRStringFunction {
     #[cfg(feature = "dtype-struct")]
     SplitN(usize),
     #[cfg(feature = "temporal")]
+    // DataType can only be Date/Datetime/Time
     Strptime(DataType, StrptimeOptions),
     Split(bool),
     #[cfg(feature = "dtype-decimal")]

@@ -5,7 +5,7 @@ use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Hash)]
 pub enum StringFunction {
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
@@ -43,7 +43,7 @@ pub enum StringFunction {
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
     JsonDecode {
-        dtype: Option<DataType>,
+        dtype: Option<DataTypeExpr>,
         infer_schema_len: Option<usize>,
     },
     #[cfg(feature = "extract_jsonpath")]
@@ -96,7 +96,7 @@ pub enum StringFunction {
     #[cfg(feature = "dtype-struct")]
     SplitN(usize),
     #[cfg(feature = "temporal")]
-    Strptime(DataType, StrptimeOptions),
+    Strptime(DataTypeExpr, StrptimeOptions),
     Split(bool),
     #[cfg(feature = "dtype-decimal")]
     ToDecimal(usize),

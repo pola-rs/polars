@@ -524,15 +524,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(select)))?;
-            let schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
-            let (exprs, schema) = prepare_projection(expr, &schema, ctxt.opt_flags)
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+            let (exprs, schema) = prepare_projection(expr, &input_schema, ctxt.opt_flags)
                 .map_err(|e| e.context(failed_here!(select)))?;
 
             if exprs.is_empty() {
                 ctxt.lp_arena.replace(input, empty_df());
+                return Ok(input);
             }
 
-            let eirs = to_expr_irs(exprs, ctxt.expr_arena, &schema)?;
+            let eirs = to_expr_irs(exprs, ctxt.expr_arena, &input_schema)?;
             ctxt.conversion_optimizer
                 .fill_scratch(&eirs, ctxt.expr_arena);
 

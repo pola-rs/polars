@@ -28,7 +28,9 @@ pub enum IRRangeFunction {
         step: i64,
         dtype: DataType,
     },
-    IntRanges,
+    IntRanges {
+        dtype: DataType,
+    },
     LinearSpace {
         closed: ClosedInterval,
     },
@@ -101,7 +103,7 @@ impl IRRangeFunction {
         use IRRangeFunction::*;
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
-            IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
+            IntRanges { dtype } => mapper.with_dtype(DataType::List(Box::new(dtype.clone()))),
             LinearSpace { .. } => mapper.with_dtype(map_linspace_dtype(&mapper)?),
             LinearSpaces {
                 closed: _,
@@ -170,7 +172,7 @@ impl IRRangeFunction {
             R::TimeRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            R::IntRanges => {
+            R::IntRanges { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             R::LinearSpaces { .. } => {
@@ -197,7 +199,7 @@ impl Display for IRRangeFunction {
         use IRRangeFunction::*;
         let s = match self {
             IntRange { .. } => "int_range",
-            IntRanges => "int_ranges",
+            IntRanges { .. } => "int_ranges",
             LinearSpace { .. } => "linear_space",
             LinearSpaces { .. } => "linear_spaces",
             #[cfg(feature = "dtype-date")]
@@ -224,8 +226,8 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             IntRange { step, dtype } => {
                 map_as_slice!(int_range::int_range, step, dtype.clone())
             },
-            IntRanges => {
-                map_as_slice!(int_range::int_ranges)
+            IntRanges { dtype } => {
+                map_as_slice!(int_range::int_ranges, dtype.clone())
             },
             LinearSpace { closed } => {
                 map_as_slice!(linear_space::linear_space, closed)

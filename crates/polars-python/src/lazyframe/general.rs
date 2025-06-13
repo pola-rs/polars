@@ -20,6 +20,7 @@ use pyo3::types::{PyDict, PyDictMethods, PyList};
 use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::expr::datatype::PyDataTypeExpr;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::io::PyScanOptions;
 use crate::lazyframe::visit::NodeTraverser;
@@ -1531,8 +1532,8 @@ impl PyLazyFrame {
         self.ldf.clone().cast(cast_map, strict).into()
     }
 
-    fn cast_all(&self, dtype: Wrap<DataType>, strict: bool) -> Self {
-        self.ldf.clone().cast_all(dtype.0, strict).into()
+    fn cast_all(&self, dtype: PyDataTypeExpr, strict: bool) -> Self {
+        self.ldf.clone().cast_all(dtype.inner, strict).into()
     }
 
     fn clone(&self) -> Self {
