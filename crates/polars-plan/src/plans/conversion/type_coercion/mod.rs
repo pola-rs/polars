@@ -601,7 +601,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     ref function @ IRFunctionExpr::StringExpr(
                         IRStringFunction::PadStart { .. }
                         | IRStringFunction::PadEnd { .. }
-                        | IRStringFunction::ZFill { .. },
+                        | IRStringFunction::ZFill,
                     ),
                 ref input,
                 options,

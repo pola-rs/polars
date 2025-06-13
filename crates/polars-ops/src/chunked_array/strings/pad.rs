@@ -10,56 +10,54 @@ fn pad_fn<'a>(
     fill_char: char,
     pad_start: bool,
 ) -> Option<&'a str> {
-    match (s, length) {
-        (Some(s), Some(length)) => {
-            let length = length as usize;
-            let n_chars = s.chars().count();
-            if length <= n_chars {
-                return Some(s);
-            }
-            let padding = length - n_chars;
-            buf.clear();
-            if !pad_start {
-                buf.push_str(s);
-            }
-            for _ in 0..padding {
-                buf.push(fill_char)
-            }
-            if pad_start {
-                buf.push_str(s);
-            }
-            // extend lifetime
-            // lifetime is bound to 'a
-            let slice = buf.as_str();
-            Some(unsafe { std::mem::transmute::<&str, &'a str>(slice) })
-        },
-        _ => None,
+    if let (Some(s), Some(length)) = (s, length) {
+        let length = length as usize;
+        let n_chars = s.chars().count();
+        if length <= n_chars {
+            return Some(s);
+        }
+        let padding = length - n_chars;
+        buf.clear();
+        if !pad_start {
+            buf.push_str(s);
+        }
+        for _ in 0..padding {
+            buf.push(fill_char)
+        }
+        if pad_start {
+            buf.push_str(s);
+        }
+        // extend lifetime
+        // lifetime is bound to 'a
+        let slice = buf.as_str();
+        Some(unsafe { std::mem::transmute::<&str, &'a str>(slice) })
+    } else {
+        None
     }
 }
 
 fn zfill_fn<'a>(s: Option<&'a str>, len: Option<u64>, buf: &mut String) -> Option<&'a str> {
-    match (s, len) {
-        (Some(s), Some(length)) => {
-            let s_len = s.len();
-            let length = length as usize;
-            if length <= s_len {
-                return Some(s);
-            }
-            buf.clear();
-            let length = length - s_len;
-            if let Some(stripped) = s.strip_prefix('-') {
-                write!(buf, "-{:0length$}{stripped}", 0,).unwrap();
-            } else if let Some(stripped) = s.strip_prefix('+') {
-                write!(buf, "+{:0length$}{stripped}", 0,).unwrap();
-            } else {
-                write!(buf, "{:0length$}{s}", 0,).unwrap();
-            };
-            // extend lifetime
-            // lifetime is bound to 'a
-            let slice = buf.as_str();
-            Some(unsafe { std::mem::transmute::<&str, &'a str>(slice) })
-        },
-        _ => None,
+    if let (Some(s), Some(length)) = (s, length) {
+        let s_len = s.len();
+        let length = length as usize;
+        if length <= s_len {
+            return Some(s);
+        }
+        buf.clear();
+        let length = length - s_len;
+        if let Some(stripped) = s.strip_prefix('-') {
+            write!(buf, "-{:0length$}{stripped}", 0,).unwrap();
+        } else if let Some(stripped) = s.strip_prefix('+') {
+            write!(buf, "+{:0length$}{stripped}", 0,).unwrap();
+        } else {
+            write!(buf, "{:0length$}{s}", 0,).unwrap();
+        };
+        // extend lifetime
+        // lifetime is bound to 'a
+        let slice = buf.as_str();
+        Some(unsafe { std::mem::transmute::<&str, &'a str>(slice) })
+    } else {
+        None
     }
 }
 
