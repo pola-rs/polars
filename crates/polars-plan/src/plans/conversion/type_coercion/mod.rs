@@ -596,6 +596,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 None
             },
 
+            #[cfg(feature = "string_pad")]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::StringExpr(
