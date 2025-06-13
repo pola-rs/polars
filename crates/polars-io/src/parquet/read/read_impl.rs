@@ -60,11 +60,7 @@ fn should_copy_sortedness(dtype: &DataType) -> bool {
     )
 }
 
-pub fn try_set_sorted_flag(
-    series: &mut Series,
-    col_idx: usize,
-    sorting_map: &Vec<(usize, IsSorted)>,
-) {
+pub fn try_set_sorted_flag(series: &mut Series, col_idx: usize, sorting_map: &[(usize, IsSorted)]) {
     let Some((sorted_col, is_sorted)) = sorting_map.first() else {
         return;
     };
@@ -93,8 +89,8 @@ pub fn create_sorting_map(md: &RowGroupMetadata) -> Vec<(usize, IsSorted)> {
                     IsSorted::Descending
                 } else {
                     IsSorted::Ascending
-                })
-            )
+                },
+            ))
         }
     }
 
