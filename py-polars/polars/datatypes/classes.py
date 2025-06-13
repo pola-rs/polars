@@ -260,12 +260,12 @@ class DataType(metaclass=DataTypeClass):
     @classinstmethod
     def to_dtype_expr(self) -> pl.DataTypeExpr:
         """
-        Return a [`DataTypeExpr`] with a static [`DataType`].
+        Return a :class:`DataTypeExpr` with a static :class:`DataType`.
 
         Examples
         --------
-        >>> pl.Int16().to_dtype_expr()
-
+        >>> pl.Int16().to_dtype_expr().collect_dtype({})
+        Int16
         """
         from polars.polars import PyDataTypeExpr
 

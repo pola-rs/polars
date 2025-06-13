@@ -17,9 +17,8 @@ Functions
 
 Available data type expressions functions:
 
-.. automodule:: polars.functions
+.. autosummary::
+   :toctree: api/
 
    dtype_of
-.. automodule:: polars
-
    DataType.to_dtype_expr
