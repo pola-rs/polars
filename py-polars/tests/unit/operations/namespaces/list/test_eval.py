@@ -133,4 +133,7 @@ def test_list_eval_list_output_18510(data: dict[str, Any], expr: pl.Expr) -> Non
 
 
 def test_list_eval_when_then_23089() -> None:
-    pl.Series([[1, 2]]).list.eval(pl.when(pl.int_range(pl.len()) > 0).then(42))
+    assert_series_equal(
+        pl.Series([[1, 2]]).list.eval(pl.when(pl.int_range(pl.len()) > 0).then(42)),
+        pl.Series([[None, 42]]),
+    )
