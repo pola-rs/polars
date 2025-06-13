@@ -1314,10 +1314,21 @@ impl SQLContext {
         for mut e in projections {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
             let is_agg_or_window = has_expr(e, |e| {
-                matches!(e, Expr::Agg(_) | Expr::Len | Expr::Window { .. })
+                match e {
+                    Expr::Agg(_) | Expr::Len | Expr::Window {..} => true,
+                    Expr::Function { .. } => {
+                        // If it's a function call containing a column NOT in the group by keys,
+                        // we treat it as an aggregation.
+                        has_expr(e, |e| {
+                            match e {
+                                Expr::Column(name) => !group_by_keys_schema.contains(name),
+                                _ => false,
+                            }
+                        })
+                    }
+                    _ => false,
+                }
             });
-
-            let mut is_function_under_alias = false;
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
@@ -1331,8 +1342,6 @@ impl SQLContext {
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
-                } else if let Expr::Function { .. } = expr.deref() {
-                    is_function_under_alias = true;
                 } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
@@ -1358,17 +1367,6 @@ impl SQLContext {
                 if !group_by_keys_schema.contains(&field.name) {
                     polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                 }
-            } else if is_function_under_alias || matches!(e, Expr::Function { .. }) {
-                aggregation_projection.push(e.clone());
-            } else if let Expr::Literal { .. }
-            | Expr::Cast { .. }
-            | Expr::Ternary { .. }
-            | Expr::Field { .. }
-            | Expr::Alias { .. } = e
-            {
-                // do nothing
-            } else {
-                polars_bail!(SQLSyntax: "Unsupported operation in the GROUP BY clause: {}", e);
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
