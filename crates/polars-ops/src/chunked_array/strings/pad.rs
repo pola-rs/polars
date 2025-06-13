@@ -37,56 +37,6 @@ fn pad_fn<'a>(
     }
 }
 
-// pub(super) fn pad_end<'a>(ca: &'a StringChunked, length: usize, fill_char: char) -> StringChunked {
-//     // amortize allocation
-//     let mut buf = String::new();
-//     let f = |s: &'a str| {
-//         let n_chars = s.chars().count();
-//         if length <= n_chars {
-//             s
-//         } else {
-//             let padding = length - n_chars;
-//             buf.clear();
-//             buf.push_str(s);
-//             for _ in 0..padding {
-//                 buf.push(fill_char)
-//             }
-//             // extend lifetime
-//             // lifetime is bound to 'a
-//             let slice = buf.as_str();
-//             unsafe { std::mem::transmute::<&str, &'a str>(slice) }
-//         }
-//     };
-//     ca.apply_mut(f)
-// }
-
-// pub(super) fn pad_start<'a>(
-//     ca: &'a StringChunked,
-//     length: usize,
-//     fill_char: char,
-// ) -> StringChunked {
-//     // amortize allocation
-//     let mut buf = String::new();
-//     let f = |s: &'a str| {
-//         let n_chars = s.chars().count();
-//         if length <= n_chars {
-//             s
-//         } else {
-//             let padding = length - n_chars;
-//             buf.clear();
-//             for _ in 0..padding {
-//                 buf.push(fill_char)
-//             }
-//             buf.push_str(s);
-//             // extend lifetime
-//             // lifetime is bound to 'a
-//             let slice = buf.as_str();
-//             unsafe { std::mem::transmute::<&str, &'a str>(slice) }
-//         }
-//     };
-//     ca.apply_mut(f)
-// }
-
 fn zfill_fn<'a>(s: Option<&'a str>, len: Option<u64>, buf: &mut String) -> Option<&'a str> {
     match (s, len) {
         (Some(s), Some(length)) => {
