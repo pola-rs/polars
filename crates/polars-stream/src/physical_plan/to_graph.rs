@@ -143,6 +143,18 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Shift { input, offset } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let offset_key = to_graph_rec(offset.node, ctx)?;
+
+            ctx.graph.add_node(
+                nodes::shift::ShiftNode::new(node.output_schema.clone()),
+                [(input_key, input.port), (offset_key, offset.port)],
+            )
+        },
+
         Filter { predicate, input } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
