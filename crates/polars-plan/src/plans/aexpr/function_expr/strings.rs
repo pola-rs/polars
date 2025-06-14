@@ -74,12 +74,10 @@ pub enum IRStringFunction {
     Reverse,
     #[cfg(feature = "string_pad")]
     PadStart {
-        length: usize,
         fill_char: char,
     },
     #[cfg(feature = "string_pad")]
     PadEnd {
-        length: usize,
         fill_char: char,
     },
     Slice,
@@ -412,12 +410,12 @@ impl From<IRStringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             LenBytes => map!(strings::len_bytes),
             LenChars => map!(strings::len_chars),
             #[cfg(feature = "string_pad")]
-            PadEnd { length, fill_char } => {
-                map!(strings::pad_end, length, fill_char)
+            PadEnd { fill_char } => {
+                map_as_slice!(strings::pad_end, fill_char)
             },
             #[cfg(feature = "string_pad")]
-            PadStart { length, fill_char } => {
-                map!(strings::pad_start, length, fill_char)
+            PadStart { fill_char } => {
+                map_as_slice!(strings::pad_start, fill_char)
             },
             #[cfg(feature = "string_pad")]
             ZFill => {
@@ -640,23 +638,41 @@ pub(super) fn extract_groups(s: &Column, pat: &str, dtype: &DataType) -> PolarsR
 }
 
 #[cfg(feature = "string_pad")]
-pub(super) fn pad_start(s: &Column, length: usize, fill_char: char) -> PolarsResult<Column> {
-    let ca = s.str()?;
+pub(super) fn pad_start(s: &[Column], fill_char: char) -> PolarsResult<Column> {
+    let s1 = s[0].as_materialized_series();
+    let length = &s[1];
+    polars_ensure!(
+        s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
+        ShapeMismatch: "cannot pad_start with 'length' array of length {}", length.len()
+    );
+    let length = length.as_materialized_series().u64()?;
+    let ca = s1.str()?;
     Ok(ca.pad_start(length, fill_char).into_column())
 }
 
 #[cfg(feature = "string_pad")]
-pub(super) fn pad_end(s: &Column, length: usize, fill_char: char) -> PolarsResult<Column> {
-    let ca = s.str()?;
+pub(super) fn pad_end(s: &[Column], fill_char: char) -> PolarsResult<Column> {
+    let s1 = s[0].as_materialized_series();
+    let length = &s[1];
+    polars_ensure!(
+        s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
+        ShapeMismatch: "cannot pad_end with 'length' array of length {}", length.len()
+    );
+    let length = length.as_materialized_series().u64()?;
+    let ca = s1.str()?;
     Ok(ca.pad_end(length, fill_char).into_column())
 }
 
 #[cfg(feature = "string_pad")]
 pub(super) fn zfill(s: &[Column]) -> PolarsResult<Column> {
-    _check_same_length(s, "zfill")?;
-    let ca = s[0].str()?;
-    let length_s = s[1].strict_cast(&DataType::UInt64)?;
-    let length = length_s.u64()?;
+    let s1 = s[0].as_materialized_series();
+    let length = &s[1];
+    polars_ensure!(
+        s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
+        ShapeMismatch: "cannot zfill with 'length' array of length {}", length.len()
+    );
+    let length = length.as_materialized_series().u64()?;
+    let ca = s1.str()?;
     Ok(ca.zfill(length).into_column())
 }
 

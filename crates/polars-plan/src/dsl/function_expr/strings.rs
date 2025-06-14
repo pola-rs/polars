@@ -63,12 +63,10 @@ pub enum StringFunction {
     Reverse,
     #[cfg(feature = "string_pad")]
     PadStart {
-        length: usize,
         fill_char: char,
     },
     #[cfg(feature = "string_pad")]
     PadEnd {
-        length: usize,
         fill_char: char,
     },
     Slice,

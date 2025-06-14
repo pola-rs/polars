@@ -452,9 +452,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "string_reverse")]
                 IB::Reverse => B::Reverse,
                 #[cfg(feature = "string_pad")]
-                IB::PadStart { length, fill_char } => B::PadStart { length, fill_char },
+                IB::PadStart { fill_char } => B::PadStart { fill_char },
                 #[cfg(feature = "string_pad")]
-                IB::PadEnd { length, fill_char } => B::PadEnd { length, fill_char },
+                IB::PadEnd { fill_char } => B::PadEnd { fill_char },
                 IB::Slice => B::Slice,
                 IB::Head => B::Head,
                 IB::Tail => B::Tail,
