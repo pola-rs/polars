@@ -69,7 +69,6 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Series
     from polars._typing import PolarsDataType
-    from polars.dependencies import pandas as pd
 
 
 def sequence_to_pyseries(
@@ -389,16 +388,21 @@ def iterable_to_pyseries(
 
 def pandas_to_pyseries(
     name: str,
-    values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+    values: pd.Series[Any]
+    | pd.Index[Any]
+    | pd.DatetimeIndex
+    | pd.core.arrays.ExtensionArray,
     dtype: PolarsDataType | None = None,
     *,
     strict: bool = True,
     nan_to_null: bool = True,
 ) -> PySeries:
-    """Construct a PySeries from a pandas Series or DatetimeIndex."""
-    if not name and values.name is not None:
+    """Construct a PySeries from a pandas Series/Index/DatetimeIndex/ExtensionArray."""
+    if not name and hasattr(values, "name") and values.name is not None:
         name = str(values.name)
-    if is_simple_numpy_backed_pandas_series(values):
+    if not isinstance(
+        values, pd.core.arrays.ExtensionArray
+    ) and is_simple_numpy_backed_pandas_series(values):
         return pl.Series(
             name, values.to_numpy(), dtype=dtype, nan_to_null=nan_to_null, strict=strict
         )._s

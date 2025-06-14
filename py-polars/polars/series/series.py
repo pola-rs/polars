@@ -343,7 +343,8 @@ class Series:
             self._s = arrow_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif _check_for_pandas(values) and isinstance(
-            values, (pd.Series, pd.Index, pd.DatetimeIndex)
+            values,
+            (pd.Series, pd.Index, pd.DatetimeIndex, pd.core.arrays.base.ExtensionArray),
         ):
             self._s = pandas_to_pyseries(name, values, dtype=dtype, strict=strict)
 
