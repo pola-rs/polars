@@ -12,7 +12,7 @@ use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_ops::pivot::PivotAgg;
 
-use crate::physical_plan::exotic::{prepare_eval_expr, prepare_expression_for_context};
+use crate::physical_plan::exotic::prepare_expression_for_context_with_schema;
 use crate::prelude::*;
 
 struct PivotExpr(Expr);
@@ -20,13 +20,16 @@ struct PivotExpr(Expr);
 impl PhysicalAggExpr for PivotExpr {
     fn evaluate(&self, df: &DataFrame, groups: &GroupPositions) -> PolarsResult<Series> {
         let state = ExecutionState::new();
-        let dtype = df.get_columns()[0].dtype();
-        let phys_expr = prepare_expression_for_context(
-            PlSmallStr::EMPTY,
-            &self.0,
-            dtype,
-            Context::Aggregation,
-        )?;
+        // TODO: DELETE
+        // let dtype = df.get_columns()[0].dtype();
+        // let phys_expr = prepare_expression_for_context(
+        //     PlSmallStr::EMPTY,
+        //     &self.0,
+        //     dtype,
+        //     Context::Aggregation,
+        // )?;
+        let phys_expr =
+            prepare_expression_for_context_with_schema(df.schema(), &self.0, Context::Aggregation)?;
         phys_expr
             .evaluate_on_groups(df, groups, &state)
             .map(|mut ac| ac.aggregated().take_materialized_series())
@@ -57,8 +60,8 @@ where
 {
     // make sure that the root column is replaced
     let agg_expr = agg_expr.map(|agg_expr| {
-        let expr = prepare_eval_expr(agg_expr);
-        PivotAgg::Expr(Arc::new(PivotExpr(expr)))
+        // let expr = prepare_eval_expr(agg_expr); // TODO TBD: Not needed? Intent unclear?
+        PivotAgg::Expr(Arc::new(PivotExpr(agg_expr)))
     });
     polars_ops::pivot::pivot(df, on, index, values, sort_columns, agg_expr, separator)
 }
@@ -83,8 +86,8 @@ where
 {
     // make sure that the root column is replaced
     let agg_expr = agg_expr.map(|agg_expr| {
-        let expr = prepare_eval_expr(agg_expr);
-        PivotAgg::Expr(Arc::new(PivotExpr(expr)))
+        // let expr = prepare_eval_expr(agg_expr); // TODO TBD: Not needed? Intent unclear?
+        PivotAgg::Expr(Arc::new(PivotExpr(agg_expr)))
     });
     polars_ops::pivot::pivot_stable(df, on, index, values, sort_columns, agg_expr, separator)
 }
