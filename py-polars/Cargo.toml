@@ -111,6 +111,7 @@ all = [
   "performant",
 ]
 
+default_alloc = []
 default = ["all", "nightly"]
 
 [lints]
