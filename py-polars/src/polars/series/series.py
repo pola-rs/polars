@@ -18,6 +18,11 @@ from typing import (
     Union,
     overload,
 )
+from typing import (
+    # Returning a union is rarely useful so we return Any but aliased for
+    # documentation. See https://github.com/pola-rs/polars/issues/23132
+    Any as UnknownPythonLiteral,
+)
 
 import polars._reexport as pl
 from polars import functions as F
@@ -2068,7 +2073,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> PythonLiteral | None:
+    def mean(self) -> UnknownPythonLiteral | None:
         """
         Reduce this Series to the mean value.
 
@@ -2143,7 +2148,7 @@ class Series:
             exponent = Series(exponent)
         return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
 
-    def min(self) -> PythonLiteral | None:
+    def min(self) -> UnknownPythonLiteral | None:
         """
         Get the minimal value in this Series.
 
@@ -2155,7 +2160,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> PythonLiteral | None:
+    def max(self) -> UnknownPythonLiteral | None:
         """
         Get the maximum value in this Series.
 
@@ -2243,7 +2248,7 @@ class Series:
         """
         return self._s.var(ddof)
 
-    def median(self) -> PythonLiteral | None:
+    def median(self) -> UnknownPythonLiteral | None:
         """
         Get the median of this Series.
 
@@ -9146,19 +9151,19 @@ class Series:
     def bitwise_trailing_zeros(self) -> Self:
         """Evaluate the number least-significant unset bits before seeing a set bit."""
 
-    def bitwise_and(self) -> PythonLiteral | None:
+    def bitwise_and(self) -> UnknownPythonLiteral | None:
         """Perform an aggregation of bitwise ANDs."""
         return self._s.bitwise_and()
 
-    def bitwise_or(self) -> PythonLiteral | None:
+    def bitwise_or(self) -> UnknownPythonLiteral | None:
         """Perform an aggregation of bitwise ORs."""
         return self._s.bitwise_or()
 
-    def bitwise_xor(self) -> PythonLiteral | None:
+    def bitwise_xor(self) -> UnknownPythonLiteral | None:
         """Perform an aggregation of bitwise XORs."""
         return self._s.bitwise_xor()
 
-    def first(self) -> PythonLiteral | None:
+    def first(self) -> UnknownPythonLiteral | None:
         """
         Get the first element of the Series.
 
@@ -9166,7 +9171,7 @@ class Series:
         """
         return self._s.first()
 
-    def last(self) -> PythonLiteral | None:
+    def last(self) -> UnknownPythonLiteral | None:
         """
         Get the last element of the Series.
 
@@ -9174,7 +9179,7 @@ class Series:
         """
         return self._s.last()
 
-    def approx_n_unique(self) -> PythonLiteral | None:
+    def approx_n_unique(self) -> UnknownPythonLiteral | None:
         """
         Approximate count of unique values.
 
