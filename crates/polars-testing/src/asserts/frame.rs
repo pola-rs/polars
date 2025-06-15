@@ -109,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "data types do not match")]
+    #[should_panic(expected = "dtypes do not match")]
     fn test_dataframe_dtype_mismatch() {
         let df1 = DataFrame::new(vec![
             Series::new("col1".into(), &[1, 2, 3]).into(),
@@ -532,7 +532,7 @@ mod tests {
 
     // Testing categorical operations
     #[test]
-    #[should_panic(expected = "data types do not match")]
+    #[should_panic(expected = "dtypes do not match")]
     fn test_dataframe_categorical_as_string_mismatch() {
         enable_string_cache();
 

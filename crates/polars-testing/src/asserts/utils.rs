@@ -706,9 +706,6 @@ pub fn assert_dataframe_schema_equal(
     let left_set: PlHashSet<&PlSmallStr> = ordered_left_cols.iter().copied().collect();
     let right_set: PlHashSet<&PlSmallStr> = ordered_right_cols.iter().copied().collect();
 
-    let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
-    let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
-
     // Fast path for equal DataFrames
     if left_schema == right_schema {
         return Ok(());
@@ -722,7 +719,7 @@ pub fn assert_dataframe_schema_equal(
 
         if !left_not_right.is_empty() {
             return Err(polars_err!(
-                assertion_error = "DataFrame",
+                assertion_error = "DataFrames",
                 format!(
                     "columns mismatch: {:?} in left, but not in right",
                     left_not_right
@@ -737,7 +734,7 @@ pub fn assert_dataframe_schema_equal(
                 .collect();
 
             return Err(polars_err!(
-                assertion_error = "DataFrame",
+                assertion_error = "DataFrames",
                 format!(
                     "columns mismatch: {:?} in right, but not in left",
                     right_not_left
@@ -750,20 +747,37 @@ pub fn assert_dataframe_schema_equal(
 
     if check_column_order && ordered_left_cols != ordered_right_cols {
         return Err(polars_err!(
-            assertion_error = "DataFrame",
+            assertion_error = "DataFrames",
             "columns are not in the same order",
             format!("{:?}", ordered_left_cols),
             format!("{:?}", ordered_right_cols)
         ));
     }
 
-    if check_dtypes && (check_column_order || left_dtypes != right_dtypes) {
-        return Err(polars_err!(
-            assertion_error = "DataFrame",
-            "data types do not match",
-            format!("{:?}", left_dtypes),
-            format!("{:?}", right_dtypes)
-        ));
+    if check_dtypes {
+        if check_column_order {
+            let left_dtypes_ordered = left.dtypes();
+            let right_dtypes_ordered = right.dtypes();
+            if left_dtypes_ordered != right_dtypes_ordered {
+                return Err(polars_err!(
+                    assertion_error = "DataFrames",
+                    "dtypes do not match",
+                    format!("{:?}", left_dtypes_ordered),
+                    format!("{:?}", right_dtypes_ordered)
+                ));
+            }
+        } else {
+            let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
+            let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
+            if left_dtypes != right_dtypes {
+                return Err(polars_err!(
+                    assertion_error = "DataFrames",
+                    "dtypes do not match",
+                    format!("{:?}", left_dtypes),
+                    format!("{:?}", right_dtypes)
+                ));
+            }
+        }
     }
 
     Ok(())
@@ -859,7 +873,7 @@ pub fn assert_dataframe_equal(
             Ok(_) => {},
             Err(err) => {
                 return Err(polars_err!(
-                    assertion_error = "DataFrame",
+                    assertion_error = "DataFrames",
                     format!("value mismatch for column {:?}:, {}", col, err),
                     format!("{:?}", s_left_series),
                     format!("{:?}", s_right_series)
