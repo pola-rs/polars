@@ -46,7 +46,7 @@ impl BinaryExpr {
 }
 
 /// Check if unsigned subtraction would underflow and promote types accordingly
-fn checked_unsigned_sub(left: &Column, right: &Column) -> PolarsResult<Column> {
+pub(crate) fn checked_unsigned_sub(left: &Column, right: &Column) -> PolarsResult<Column> {
     use DataType::*;
     
     match (left.dtype(), right.dtype()) {
