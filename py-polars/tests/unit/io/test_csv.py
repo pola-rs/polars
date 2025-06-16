@@ -2677,8 +2677,9 @@ def test_write_csv_decimal_comma(
     buf.seek(0)
     assert buf.read() == expected
 
-    # under certain conditions, df = read_csv(write_csv(df))
-    # TODO: drop the separator condition when quoting is upported in read_csv
+    # df = read_csv(write_csv(df)), unless precision truncates values
+    # TODO: drop the separator condition when read_csv supports comma as both the
+    # decimal separator and field separator, see #23157
     if precision is not None and precision > 2 and separator == ";":
         buf.seek(0)
         df.write_csv(

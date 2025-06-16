@@ -3016,9 +3016,7 @@ class DataFrame:
             - non_numeric: This puts quotes around all fields that are non-numeric.
               Namely, when writing a field that does not parse as a valid float
               or integer, then quotes will be used even if they aren`t strictly
-              necessary. Floats with comma as the decimal separator are considered
-              numeric and will not be quoted, which may conflict with the field
-              separator.
+              necessary.
         storage_options
             Options that indicate how to connect to a cloud provider.
 

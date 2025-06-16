@@ -208,13 +208,10 @@ fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerE
 fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer {
-    let mut scratch = Vec::new();
 
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        scratch.clear();
         let v: f64 = NumCast::from(item).unwrap();
-        let _ = write!(&mut scratch, "{}", v);
-        buf.extend_from_slice(&scratch);
+        let _ = write!(buf, "{}", v);
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -722,16 +719,15 @@ pub(super) fn serializer_for<'a>(
                     },
                 }
             } else {
-                // Float string will use a comma as the decimal separator. Subsequently, any
-                // float string that contains a comma may require quoting.
-                // More specifically, quoting is required when:
+                // Float string will use a comma as the decimal separator, which may conflict with
+                // the use of comma as the field separator. Quoting is required when:
                 // - quote_style is Always, or
                 // - quote_style is Necessary, the separator is also a comma, and the float string
                 //   field contains a comma character (no precision or precision > 0)
                 // - quote_style is Non-Numeric, same conditions
                 //
-                // In some rare cases, a field may get quoted where that is not strictly necessary
-                // (e.g., in scientific notation when only the first digit is non-zero)
+                // In some rare cases, a field may get quoted when that is not strictly necessary
+                // (e.g., in scientific notation when only the first digit is non-zero such as '1e12')
 
                 let mut should_quote = options.separator == b',';
 
