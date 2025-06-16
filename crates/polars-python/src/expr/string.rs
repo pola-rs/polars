@@ -227,7 +227,6 @@ impl PyExpr {
             .clone()
             .str()
             .to_integer(base.inner, dtype.map(|wrap| wrap.0), strict)
-            .with_fmt("str.to_integer")
             .into()
     }
 

@@ -431,7 +431,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "regex")]
                 IB::Find { literal, strict } => B::Find { literal, strict },
                 #[cfg(feature = "string_to_integer")]
-                IB::ToInteger(v) => B::ToInteger(v),
+                IB::ToInteger{
+                    dtype,
+                    strict,
+                } => B::ToInteger {
+                    dtype: dtype.map(Into::into),
+                    strict,
+                },
                 IB::LenBytes => B::LenBytes,
                 IB::LenChars => B::LenChars,
                 IB::Lowercase => B::Lowercase,

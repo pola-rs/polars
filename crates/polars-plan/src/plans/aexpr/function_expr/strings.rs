@@ -48,7 +48,10 @@ pub enum IRStringFunction {
         strict: bool,
     },
     #[cfg(feature = "string_to_integer")]
-    ToInteger(bool),
+    ToInteger {
+        dtype: Option<DataType>,
+        strict: bool,
+    },
     LenBytes,
     LenChars,
     Lowercase,
@@ -460,7 +463,10 @@ impl From<IRStringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_to_integer")]
-            ToInteger(strict) => map_as_slice!(strings::to_integer, strict),
+            ToInteger {
+                dtype,
+                strict,
+            } => map_as_slice!(strings::to_integer, dtype.clone(), strict),
             Slice => map_as_slice!(strings::str_slice),
             Head => map_as_slice!(strings::str_head),
             Tail => map_as_slice!(strings::str_tail),
@@ -1091,10 +1097,14 @@ pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "string_to_integer")]
-pub(super) fn to_integer(s: &[Column], strict: bool) -> PolarsResult<Column> {
+pub(super) fn to_integer(
+    s: &[Column],
+    dtype: Option<DataType>,
+    strict: bool,
+) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let base = s[1].strict_cast(&DataType::UInt32)?;
-    ca.to_integer(base.u32()?, strict)
+    ca.to_integer(base.u32()?, dtype, strict)
         .map(|ok| ok.into_column())
 }
 
