@@ -14,6 +14,12 @@ pub trait ColumnsUdf: Send + Sync {
 
     fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>>;
 
+    /// Called when converting from DSL to IR with the input schema to the expression.
+    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
+        _ = input_schema;
+        Ok(())
+    }
+
     fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
         polars_bail!(ComputeError: "serialization not supported for this 'opaque' function")
     }
@@ -142,6 +148,11 @@ where
 }
 
 pub trait FunctionOutputField: Send + Sync {
+    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
+        _ = input_schema;
+        Ok(())
+    }
+
     fn get_field(
         &self,
         input_schema: &Schema,

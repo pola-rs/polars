@@ -37,6 +37,10 @@ class ListNameSpace:
         Series
             Series of data type :class:`Boolean`.
 
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `True`.
+
         Examples
         --------
         >>> s = pl.Series(
@@ -64,6 +68,10 @@ class ListNameSpace:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -168,6 +176,10 @@ class ListNameSpace:
     def sum(self) -> Series:
         """
         Sum all the arrays in the list.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `0`.
 
         Examples
         --------

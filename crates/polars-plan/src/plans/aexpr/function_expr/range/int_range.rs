@@ -36,7 +36,7 @@ where
     Ok(value)
 }
 
-pub(super) fn int_ranges(s: &[Column]) -> PolarsResult<Column> {
+pub(super) fn int_ranges(s: &[Column], dtype: DataType) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
     let step = &s[2];
@@ -68,5 +68,11 @@ pub(super) fn int_ranges(s: &[Column]) -> PolarsResult<Column> {
             Ok(())
         };
 
-    numeric_ranges_impl_broadcast(start, end, step, range_impl, &mut builder)
+    let column = numeric_ranges_impl_broadcast(start, end, step, range_impl, &mut builder)?;
+
+    if dtype != DataType::Int64 {
+        column.cast(&DataType::List(Box::new(dtype)))
+    } else {
+        Ok(column)
+    }
 }

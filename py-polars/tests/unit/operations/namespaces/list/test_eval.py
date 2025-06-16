@@ -130,3 +130,11 @@ def test_list_eval_list_output_18510(data: dict[str, Any], expr: pl.Expr) -> Non
     df = pl.DataFrame(data)
     result = df.select(pl.col("a").list.eval(pl.lit("")))
     assert result.to_series().dtype == pl.List(pl.String)
+
+
+def test_list_eval_when_then_23089() -> None:
+    assert_series_equal(
+        pl.Series([[1, 2]]).list.eval(pl.when(pl.int_range(pl.len()) > 0).then(42)),
+        pl.Series([[None, 42]]),
+        check_dtypes=False,
+    )

@@ -5,7 +5,7 @@ use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Hash)]
 pub enum BinaryFunction {
     Contains,
     StartsWith,
@@ -20,7 +20,7 @@ pub enum BinaryFunction {
     Base64Encode,
     Size,
     #[cfg(feature = "binary_encoding")]
-    FromBuffer(DataType, bool),
+    FromBuffer(DataTypeExpr, bool),
 }
 
 impl Display for BinaryFunction {

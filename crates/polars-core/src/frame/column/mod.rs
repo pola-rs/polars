@@ -1537,8 +1537,9 @@ impl Column {
             Column::Partitioned(s) => s.as_materialized_series().std_reduce(ddof),
             Column::Scalar(s) => {
                 // We don't really want to deal with handling the full semantics here so we just
-                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
-                s.as_single_value_series().std_reduce(ddof)
+                // cast to a small series. This is a tiny bit wasteful, but probably fine.
+                let n = s.len().min(ddof as usize + 1);
+                s.as_n_values_series(n).std_reduce(ddof)
             },
         }
     }
@@ -1548,8 +1549,9 @@ impl Column {
             Column::Partitioned(s) => s.as_materialized_series().var_reduce(ddof),
             Column::Scalar(s) => {
                 // We don't really want to deal with handling the full semantics here so we just
-                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
-                s.as_single_value_series().var_reduce(ddof)
+                // cast to a small series. This is a tiny bit wasteful, but probably fine.
+                let n = s.len().min(ddof as usize + 1);
+                s.as_n_values_series(n).var_reduce(ddof)
             },
         }
     }

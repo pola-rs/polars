@@ -332,7 +332,7 @@ impl Series {
     #[cfg(feature = "dtype-array")]
     pub fn array(&self) -> PolarsResult<&ArrayChunked> {
         self.try_array()
-            .ok_or_else(|| unpack_chunked_err!(self => "FixedSizeList"))
+            .ok_or_else(|| unpack_chunked_err!(self => "Array"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`]

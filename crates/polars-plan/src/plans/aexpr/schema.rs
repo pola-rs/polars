@@ -382,6 +382,7 @@ impl AExpr {
                     .arena
                     .get(*evaluation)
                     .to_field_impl(&mut ctx, &mut false)?;
+                output_field.dtype = output_field.dtype.materialize_unknown(false)?;
 
                 output_field.dtype = match variant {
                     EvalVariant::List => DataType::List(Box::new(output_field.dtype)),

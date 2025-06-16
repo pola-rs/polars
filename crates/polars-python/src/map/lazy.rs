@@ -3,7 +3,7 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use polars::prelude::*;
 use polars_ffi::version_0::SeriesExport;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 
 use crate::py_modules::{pl_series, polars, polars_rs};
 use crate::series::PySeries;
@@ -67,6 +67,7 @@ impl ToSeries for PyObject {
 pub(crate) fn call_lambda_with_series(
     py: Python<'_>,
     s: &Series,
+    output_dtype: Option<Option<DataType>>,
     lambda: &PyObject,
 ) -> PyResult<PyObject> {
     let pypolars = polars(py).bind(py);
@@ -96,7 +97,19 @@ pub(crate) fn call_lambda_with_series(
             .call1((s_location as usize,))
             .unwrap()
     }
-    lambda.call1(py, (python_series_wrapper,))
+
+    let mut dict = None;
+    if let Some(output_dtype) = output_dtype {
+        let d = PyDict::new(py);
+        let output_dtype = match output_dtype {
+            None => None,
+            Some(dt) => Some(Wrap(dt).into_pyobject(py)?),
+        };
+        d.set_item("return_dtype", output_dtype)?;
+        dict = Some(d);
+    }
+
+    lambda.call(py, (python_series_wrapper,), dict.as_ref())
 }
 
 /// A python lambda taking two Series
@@ -158,13 +171,11 @@ pub(crate) fn binary_lambda(
 pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,
-    output_type: Option<Wrap<DataType>>,
+    output_type: Option<DataTypeExpr>,
     agg_list: bool,
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    let output_type = output_type.map(|wrap| wrap.0);
-
     let func =
         python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
     pyexpr.inner.clone().map_python(func, agg_list).into()

@@ -1385,13 +1385,18 @@ impl Expr {
         old: E,
         new: E,
         default: Option<E>,
-        return_dtype: Option<DataType>,
+        return_dtype: Option<impl Into<DataTypeExpr>>,
     ) -> Expr {
         let old = old.into();
         let new = new.into();
         let mut args = vec![old, new];
         args.extend(default.map(Into::into));
-        self.map_n_ary(FunctionExpr::ReplaceStrict { return_dtype }, args)
+        self.map_n_ary(
+            FunctionExpr::ReplaceStrict {
+                return_dtype: return_dtype.map(Into::into),
+            },
+            args,
+        )
     }
 
     #[cfg(feature = "cutqcut")]

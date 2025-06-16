@@ -4,15 +4,16 @@ use polars_ops::series::ClosedInterval;
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
+use crate::expr::datatype::PyDataTypeExpr;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
 use crate::{PyExpr, PySeries};
 
 #[pyfunction]
-pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -> PyExpr {
+pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: PyDataTypeExpr) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
-    let dtype = dtype.0;
+    let dtype = dtype.inner;
     dsl::int_range(start, end, step, dtype).into()
 }
 
@@ -23,12 +24,19 @@ pub fn eager_int_range(
     lower: &Bound<'_, PyAny>,
     upper: &Bound<'_, PyAny>,
     step: &Bound<'_, PyAny>,
-    dtype: Wrap<DataType>,
+    dtype: PyDataTypeExpr,
 ) -> PyResult<PySeries> {
-    let dtype = dtype.0;
+    let dtype = dtype.inner;
+    let Some(dtype) = dtype.into_literal() else {
+        return Err(PyPolarsErr::from(
+            polars_err!(ComputeError: "eager `int_range` cannot be given lazy datatype expression"),
+        )
+        .into());
+    };
+
     if !dtype.is_integer() {
         return Err(PyPolarsErr::from(
-            polars_err!(ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype),
+            polars_err!(ComputeError: "non-integer `dtype` passed to `int_range`: '{}'", dtype),
         )
         .into());
     }
@@ -46,23 +54,10 @@ pub fn int_ranges(
     start: PyExpr,
     end: PyExpr,
     step: PyExpr,
-    dtype: Wrap<DataType>,
+    dtype: PyDataTypeExpr,
 ) -> PyResult<PyExpr> {
-    let dtype = dtype.0;
-    if !dtype.is_integer() {
-        return Err(PyPolarsErr::from(
-            polars_err!(ComputeError: "non-integer `dtype` passed to `int_ranges`: {:?}", dtype),
-        )
-        .into());
-    }
-
-    let mut result = dsl::int_ranges(start.inner, end.inner, step.inner);
-
-    if dtype != DataType::Int64 {
-        result = result.cast(DataType::List(Box::new(dtype)))
-    }
-
-    Ok(result.into())
+    let dtype = dtype.inner;
+    Ok(dsl::int_ranges(start.inner, end.inner, step.inner, dtype).into())
 }
 
 #[pyfunction]

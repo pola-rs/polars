@@ -151,7 +151,7 @@ pub fn group_by_windows(
     include_lower_bound: bool,
     include_upper_bound: bool,
     start_by: StartBy,
-) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
+) -> PolarsResult<(GroupsSlice, Vec<i64>, Vec<i64>)> {
     let start = time[0];
     // the boundary we define here is not yet correct. It doesn't take 'period' into account
     // and it doesn't have the proper starting point. This boundary is used as a proxy to find
@@ -184,15 +184,13 @@ pub fn group_by_windows(
         #[cfg(feature = "timezones")]
         Some(tz) => {
             update_groups_and_bounds(
-                window
-                    .get_overlapping_bounds_iter(
-                        boundary,
-                        closed_window,
-                        tu,
-                        tz.parse::<Tz>().ok().as_ref(),
-                        start_by,
-                    )
-                    .unwrap(),
+                window.get_overlapping_bounds_iter(
+                    boundary,
+                    closed_window,
+                    tu,
+                    tz.parse::<Tz>().ok().as_ref(),
+                    start_by,
+                )?,
                 start_offset,
                 time,
                 closed_window,
@@ -205,9 +203,7 @@ pub fn group_by_windows(
         },
         _ => {
             update_groups_and_bounds(
-                window
-                    .get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)
-                    .unwrap(),
+                window.get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)?,
                 start_offset,
                 time,
                 closed_window,
@@ -220,7 +216,7 @@ pub fn group_by_windows(
         },
     };
 
-    (groups, lower_bound, upper_bound)
+    Ok((groups, lower_bound, upper_bound))
 }
 
 // t is right at the end of the window

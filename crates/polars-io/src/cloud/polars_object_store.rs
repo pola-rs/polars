@@ -2,10 +2,12 @@ use std::ops::Range;
 
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
+use hashbrown::hash_map::RawEntryMut;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
+use polars_utils::mmap::MemSlice;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::pl_async::{
@@ -214,14 +216,11 @@ impl PolarsObjectStore {
     ///
     /// # Panics
     /// Panics if the same range start is used by more than 1 range.
-    pub async fn get_ranges_sort<
-        K: TryFrom<usize, Error = impl std::fmt::Debug> + std::hash::Hash + Eq,
-        T: From<Bytes>,
-    >(
+    pub async fn get_ranges_sort(
         &self,
         path: &Path,
         ranges: &mut [Range<usize>],
-    ) -> PolarsResult<PlHashMap<K, T>> {
+    ) -> PolarsResult<PlHashMap<usize, MemSlice>> {
         if ranges.is_empty() {
             return Ok(Default::default());
         }
@@ -280,16 +279,23 @@ impl PolarsObjectStore {
 
                             assert_eq!(bytes.len(), full_range.len());
 
+                            let bytes = MemSlice::from_bytes(bytes);
+
                             for range in &ranges[current_offset..end] {
-                                let v = out.insert(
-                                    K::try_from(range.start).unwrap(),
-                                    T::from(bytes.slice(
-                                        range.start - full_range.start
-                                            ..range.end - full_range.start,
-                                    )),
+                                let mem_slice = bytes.slice(
+                                    range.start - full_range.start..range.end - full_range.start,
                                 );
 
-                                assert!(v.is_none()); // duplicate range start
+                                match out.raw_entry_mut().from_key(&range.start) {
+                                    RawEntryMut::Vacant(slot) => {
+                                        slot.insert(range.start, mem_slice);
+                                    },
+                                    RawEntryMut::Occupied(mut slot) => {
+                                        if slot.get_mut().len() < mem_slice.len() {
+                                            *slot.get_mut() = mem_slice;
+                                        }
+                                    },
+                                }
                             }
 
                             current_offset = end;

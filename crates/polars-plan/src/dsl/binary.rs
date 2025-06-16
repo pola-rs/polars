@@ -54,10 +54,10 @@ impl BinaryNameSpace {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn from_buffer(self, to_type: DataType, is_little_endian: bool) -> Expr {
+    pub fn from_buffer(self, to_type: impl Into<DataTypeExpr>, is_little_endian: bool) -> Expr {
         self.0
             .map_unary(FunctionExpr::BinaryExpr(BinaryFunction::FromBuffer(
-                to_type,
+                to_type.into(),
                 is_little_endian,
             )))
     }

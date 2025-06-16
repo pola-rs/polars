@@ -12,13 +12,24 @@ pub fn arange(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
 }
 
 /// Generate a range of integers.
-pub fn int_range(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
-    Expr::n_ary(RangeFunction::IntRange { step, dtype }, vec![start, end])
+pub fn int_range(start: Expr, end: Expr, step: i64, dtype: impl Into<DataTypeExpr>) -> Expr {
+    Expr::n_ary(
+        RangeFunction::IntRange {
+            step,
+            dtype: dtype.into(),
+        },
+        vec![start, end],
+    )
 }
 
 /// Generate a range of integers for each row of the input columns.
-pub fn int_ranges(start: Expr, end: Expr, step: Expr) -> Expr {
-    Expr::n_ary(RangeFunction::IntRanges, vec![start, end, step])
+pub fn int_ranges(start: Expr, end: Expr, step: Expr, dtype: impl Into<DataTypeExpr>) -> Expr {
+    Expr::n_ary(
+        RangeFunction::IntRanges {
+            dtype: dtype.into(),
+        },
+        vec![start, end, step],
+    )
 }
 
 /// Create a date range from a `start` and `stop` expression.

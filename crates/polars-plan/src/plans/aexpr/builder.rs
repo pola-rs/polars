@@ -92,7 +92,7 @@ impl AExprBuilder {
 
     pub fn max(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(
-            IRAggExpr::Min {
+            IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: false,
             },
@@ -112,7 +112,7 @@ impl AExprBuilder {
 
     pub fn nan_max(self, arena: &mut Arena<AExpr>) -> Self {
         Self::agg(
-            IRAggExpr::Min {
+            IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: true,
             },

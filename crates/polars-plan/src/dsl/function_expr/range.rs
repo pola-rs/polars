@@ -7,17 +7,19 @@ use polars_time::{ClosedWindow, Duration};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::FunctionExpr;
+use super::{DataTypeExpr, FunctionExpr};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Hash)]
 pub enum RangeFunction {
     IntRange {
         step: i64,
-        dtype: DataType,
+        dtype: DataTypeExpr,
     },
-    IntRanges,
+    IntRanges {
+        dtype: DataTypeExpr,
+    },
     LinearSpace {
         closed: ClosedInterval,
     },
@@ -72,7 +74,7 @@ impl fmt::Display for RangeFunction {
         use RangeFunction::*;
         let s = match self {
             IntRange { .. } => "int_range",
-            IntRanges => "int_ranges",
+            IntRanges { .. } => "int_ranges",
             LinearSpace { .. } => "linear_space",
             LinearSpaces { .. } => "linear_spaces",
             #[cfg(feature = "dtype-date")]

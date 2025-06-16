@@ -21,6 +21,7 @@ polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
+polars-testing = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
