@@ -2674,12 +2674,12 @@ x"y,b,c
     ],
 )
 def test_write_csv_decimal_comma(
-    separator: str | None,
+    separator: str,
     quote_style: CsvQuoteStyle | None,
     scientific: bool | None,
     precision: int | None,
     decimal_comma: bool,
-    expected: IO[bytes],
+    expected: bytes,
 ) -> None:
     # as Float64 (implicit)
     df = pl.DataFrame({"a": [123.75], "b": [60.0], "c": [9]})
@@ -2716,7 +2716,7 @@ def test_write_csv_decimal_comma(
     # TODO: drop the separator condition when read_csv supports comma as both the
     # decimal separator and field separator, see #23157
     if (
-        precision is None or (precision is None) or (precision > 2)
+        precision is None or precision > 2
     ) and separator != ",":
         # eager
         buf.seek(0)
