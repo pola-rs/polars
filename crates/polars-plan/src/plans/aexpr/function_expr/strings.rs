@@ -463,10 +463,9 @@ impl From<IRStringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_to_integer")]
-            ToInteger {
-                dtype,
-                strict,
-            } => map_as_slice!(strings::to_integer, dtype.clone(), strict),
+            ToInteger { dtype, strict } => {
+                map_as_slice!(strings::to_integer, dtype.clone(), strict)
+            },
             Slice => map_as_slice!(strings::str_slice),
             Head => map_as_slice!(strings::str_head),
             Tail => map_as_slice!(strings::str_tail),
