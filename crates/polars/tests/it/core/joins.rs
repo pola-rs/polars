@@ -688,3 +688,209 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
     assert_eq!(out.shape(), (1, 2));
     Ok(())
 }
+
+// Test for reproducing u32 arithmetic overflow issue in joins
+// This reproduces the issue where subtracting u32 values in a join operation
+// results in wrapping overflow instead of proper handling of negative results
+#[test]
+fn test_join_u32_arithmetic_overflow() -> PolarsResult<()> {
+    // Create test data that will produce the overflow scenario
+    // Week 1: 2 sales records, Week 2: 3 sales records
+    // When we shift and join, we'll get: current week (2 records) - previous week (3 records) = -1
+    // But since count() returns u32, this will wrap to u32::MAX (4294967295)
+    let dates = vec![1, 1, 2, 2, 2]; // Week 1 has 2 records, Week 2 has 3 records
+    let units_sold = vec![100, 500, 200, 700, 1000];
+    
+    let df = df![
+        "week" => dates,
+        "units_sold" => units_sold,
+    ]?;
+
+    // Group by week and aggregate
+    let _sales_summary = df
+        .clone()
+        .lazy()
+        .group_by([col("week")])
+        .agg([
+            col("units_sold").sum().alias("units_sold"),
+            col("units_sold").count().alias("days_of_sales"), // This creates u32 column
+        ])
+        .sort(["week"], Default::default())
+        .collect()?;
+
+    // Create a shifted version where we pretend week 1's data is actually week 2's "previous week" data
+    // This simulates the scenario in the Python code where we join with shifted weeks
+    let sales_previous = df![
+        "week" => [2i32], // Week 2
+        "units_sold_previous_week" => [1900i32], // Previous week had more sales 
+        "days_of_sales_previous_week" => [3u32], // Previous week had 3 sales days
+    ]?;
+
+    // Create current week data that has fewer days than previous week
+    let current_week = df![
+        "week" => [2i32], // Week 2  
+        "units_sold" => [600i32], // Current week sales
+        "days_of_sales" => [2u32], // Current week has only 2 sales days
+    ]?;
+
+    // Join current week with "previous week" data
+    let joined = current_week
+        .inner_join(&sales_previous, ["week"], ["week"])?;
+
+    // Calculate the changes - this is where the overflow occurs
+    let result = joined
+        .lazy()
+        .with_columns([
+            (col("units_sold") - col("units_sold_previous_week")).alias("change_in_units_sold"),
+            (col("days_of_sales") - col("days_of_sales_previous_week")).alias("change_in_days_of_sales"),
+        ])
+        .collect()?;
+
+    // Print the result to see the overflow
+    println!("Current week data:");
+    println!("{}", current_week);
+    println!("\nPrevious week data:");
+    println!("{}", sales_previous);
+    println!("\nJoined result:");
+    println!("{}", result);
+
+    // Check the problematic column - days_of_sales is u32, so 2 - 3 = u32::MAX
+    let change_in_days = result.column("change_in_days_of_sales")?;
+    println!("\nData type of change_in_days_of_sales: {:?}", change_in_days.dtype());
+    
+    // This should demonstrate the issue: when subtracting u32 values where result would be negative,
+    // we get u32::MAX (4294967295) instead of -1
+    let overflow_value = change_in_days.get(0)?;
+    println!("First value of change_in_days_of_sales: {:?}", overflow_value);
+    
+    // If this is a u32 column and we're doing 2 - 3, we expect to see u32::MAX
+    if change_in_days.dtype() == &DataType::UInt32 {
+        // This tests documents the current behavior - overflow wrapping
+        // In the future, this might be changed to handle negative results properly
+        // by either promoting to i64 or handling it differently
+        match overflow_value {
+            AnyValue::UInt32(val) => {
+                if val == u32::MAX {
+                    println!("CONFIRMED: u32 arithmetic overflow detected (2 - 3 = {})", val);
+                    println!("This demonstrates the issue where u32 subtraction wraps around to u32::MAX");
+                    println!("Expected -1, but got {} due to unsigned integer wraparound", val);
+                } else {
+                    println!("Got u32 value: {}", val);
+                }
+            },
+            _ => println!("Unexpected value type: {:?}", overflow_value),
+        }
+    }
+
+    Ok(())
+}
+
+// Simpler test that directly demonstrates u32 subtraction overflow
+#[test]
+fn test_u32_subtraction_overflow_simple() -> PolarsResult<()> {
+    // Create a simple DataFrame with u32 columns
+    let df = df![
+        "a" => [2u32, 5u32],
+        "b" => [3u32, 4u32],
+    ]?;
+
+    // Perform subtraction that would result in negative values
+    let result = df
+        .clone()
+        .lazy()
+        .with_columns([
+            (col("a") - col("b")).alias("difference"),
+        ])
+        .collect()?;
+
+    println!("Input DataFrame:");
+    println!("{}", df);
+    println!("\nResult with subtraction:");
+    println!("{}", result);
+
+    let difference_col = result.column("difference")?;
+    println!("\nData type of difference: {:?}", difference_col.dtype());
+
+    // Check the first value: 2 - 3 should be -1, but in u32 it wraps to u32::MAX
+    let first_value = difference_col.get(0)?;
+    println!("2 - 3 = {:?}", first_value);
+    
+    // Check the second value: 5 - 4 should be 1, which works fine
+    let second_value = difference_col.get(1)?;
+    println!("5 - 4 = {:?}", second_value);
+
+    // Assert the overflow behavior
+    if let AnyValue::UInt32(val) = first_value {
+        assert_eq!(val, u32::MAX, "Expected u32::MAX due to wraparound, got {}", val);
+        println!("✓ Confirmed: u32 subtraction wraps around to u32::MAX when result would be negative");
+    }
+
+    if let AnyValue::UInt32(val) = second_value {
+        assert_eq!(val, 1, "Expected 1 for positive result, got {}", val);
+        println!("✓ Confirmed: u32 subtraction works correctly for positive results");
+    }
+
+    Ok(())
+}
+
+// Test specifically for u32 subtraction overflow in arithmetic operations
+#[test]
+fn test_u32_subtraction_overflow() -> PolarsResult<()> {
+    // Create a simple DataFrame with u32 values where subtraction would result in negative
+    let df = df![
+        "a" => [2u32, 5u32, 1u32],
+        "b" => [3u32, 2u32, 4u32],
+    ]?;
+
+    // Perform subtraction that should result in negative values
+    let result = df
+        .clone()
+        .lazy()
+        .with_columns([
+            (col("a") - col("b")).alias("a_minus_b"),
+        ])
+        .collect()?;
+
+    println!("Original DataFrame:");
+    println!("{}", df);
+    println!("\nResult with subtraction:");
+    println!("{}", result);
+
+    // Check the results
+    let a_minus_b = result.column("a_minus_b")?;
+    println!("\nData type of a_minus_b: {:?}", a_minus_b.dtype());
+
+    // Check each value
+    for i in 0..result.height() {
+        let value = a_minus_b.get(i)?;
+        println!("Row {}: a_minus_b = {:?}", i, value);
+        
+        // For row 0: 2u32 - 3u32 should be -1, but will wrap to u32::MAX
+        // For row 2: 1u32 - 4u32 should be -3, but will wrap to u32::MAX - 2
+        if i == 0 {
+            match value {
+                AnyValue::UInt32(val) => {
+                    if val == u32::MAX {
+                        println!("  ↳ OVERFLOW: 2 - 3 = {} (should be -1)", val);
+                    }
+                },
+                _ => println!("  ↳ Unexpected type: {:?}", value),
+            }
+        } else if i == 2 {
+            match value {
+                AnyValue::UInt32(val) => {
+                    if val == u32::MAX - 2 {
+                        println!("  ↳ OVERFLOW: 1 - 4 = {} (should be -3)", val);
+                    }
+                },
+                _ => println!("  ↳ Unexpected type: {:?}", value),
+            }
+        }
+    }
+
+    // This test documents the current behavior where u32 arithmetic wraps around
+    // Instead of producing negative results or promoting to a signed type
+    assert_eq!(a_minus_b.dtype(), &DataType::UInt32);
+    
+    Ok(())
+}
