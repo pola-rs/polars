@@ -654,20 +654,6 @@ pub(super) fn serializer_for<'a>(
         ($make_serializer:path) => { quote_if_always!($make_serializer,) };
     }
 
-    // // TODO - REFACTOR: use this cover all cases, including replacing quote_if_alias! ?
-    // macro_rules! quote_if_conditions {
-    //     ($make_serializer:path, if $cond_necessary:expr, if $cond_nonnumeric:expr, $($arg:tt)*) => {{
-    //         let serializer = $make_serializer(array.as_any().downcast_ref().unwrap(), $($arg)*);
-    //         match options.quote_style {
-    //             QuoteStyle::Always => Box::new(quote_serializer(serializer)) as Box<dyn Serializer + Send>,
-    //             QuoteStyle::Necessary if $cond_necessary => Box::new(quote_serializer(serializer)) as Box<dyn Serializer + Send>,
-    //             QuoteStyle::NonNumeric if $cond_nonnumeric => Box::new(quote_serializer(serializer)) as Box<dyn Serializer + Send>,
-    //             _ => Box::new(serializer)
-    //         }
-    //     }};
-    //     ($make_serializer:path, if $cond_necessary:expr, if $cond_nonnumeric:expr) => { quote_if_conditions!($make_serializer, if $cond_necessary, if $cond_nonnumeric, ) };
-    // }
-
     // This flag is targeted at numerical types, other types may require custom logic
     let needs_quotes = match dtype {
         DataType::Float32 | DataType::Float64 => {
@@ -716,19 +702,48 @@ pub(super) fn serializer_for<'a>(
         DataType::Int64 => quote_if_always!(integer_serializer::<i64>),
         DataType::UInt64 => quote_if_always!(integer_serializer::<u64>),
         DataType::Int128 => quote_if_always!(integer_serializer::<i128>),
-        DataType::Float32 => match options.float_precision {
-            Some(precision) => match options.float_scientific {
-                Some(true) => {
-                    quote_if_always!(float_serializer_with_precision_scientific::<f32>, precision)
+        DataType::Float32 => {
+            match (
+                options.decimal_comma,
+                options.float_precision,
+                options.float_scientific,
+            ) {
+                // no decimal_comma
+                (false, Some(precision), Some(true)) => {
+                    quote_wrapper!(float_serializer_with_precision_scientific::<f32>, precision)
                 },
-                _ => quote_if_always!(float_serializer_with_precision_positional::<f32>, precision),
-            },
-            None => match options.float_scientific {
-                Some(true) => quote_if_always!(float_serializer_no_precision_scientific::<f32>),
-                Some(false) => quote_if_always!(float_serializer_no_precision_positional::<f32>),
-                None => quote_if_always!(float_serializer_no_precision_autoformat::<f32>),
-            },
-            //TODO: support decimal_comma for Float32, once refactor strategy is defined
+                (false, Some(precision), _) => {
+                    quote_wrapper!(float_serializer_with_precision_positional::<f32>, precision)
+                },
+                (false, None, Some(true)) => {
+                    quote_wrapper!(float_serializer_no_precision_scientific::<f32>)
+                },
+                (false, None, Some(false)) => {
+                    quote_wrapper!(float_serializer_no_precision_positional::<f32>)
+                },
+                (false, None, None) => {
+                    quote_wrapper!(float_serializer_no_precision_autoformat::<f32>)
+                },
+
+                // decimal comma
+                (true, Some(precision), Some(true)) => quote_wrapper!(
+                    float_serializer_with_precision_scientific_decimal_comma::<f32>,
+                    precision
+                ),
+                (true, Some(precision), _) => quote_wrapper!(
+                    float_serializer_with_precision_positional_decimal_comma::<f32>,
+                    precision
+                ),
+                (true, None, Some(true)) => {
+                    quote_wrapper!(float_serializer_no_precision_scientific_decimal_comma::<f32>)
+                },
+                (true, None, Some(false)) => {
+                    quote_wrapper!(float_serializer_no_precision_positional_decimal_comma::<f32>)
+                },
+                (true, None, None) => {
+                    quote_wrapper!(float_serializer_no_precision_autoformat_decimal_comma::<f32>)
+                },
+            }
         },
         DataType::Float64 => {
             match (
@@ -773,69 +788,6 @@ pub(super) fn serializer_for<'a>(
                 },
             }
         },
-        // DataType::Float64 => {
-        //     if !options.decimal_comma {
-        //         match options.float_precision {
-        //             Some(precision) => match options.float_scientific {
-        //                 Some(true) => {
-        //                     quote_wrapper!(
-        //                         float_serializer_with_precision_scientific::<f64>,
-        //                         precision
-        //                     )
-        //                 },
-        //                 _ => quote_wrapper!(
-        //                     float_serializer_with_precision_positional::<f64>,
-        //                     precision
-        //                 ),
-        //             },
-        //             None => match options.float_scientific {
-        //                 Some(true) => {
-        //                     quote_wrapper!(float_serializer_no_precision_scientific::<f64>)
-        //                 },
-        //                 Some(false) => {
-        //                     quote_wrapper!(float_serializer_no_precision_positional::<f64>)
-        //                 },
-        //                 None => quote_wrapper!(float_serializer_no_precision_autoformat::<f64>),
-        //             },
-        //         }
-        //     } else {
-        //         match options.float_precision {
-        //             Some(precision) => match options.float_scientific {
-        //                 Some(true) => {
-        //                     quote_wrapper!(
-        //                         float_serializer_with_precision_scientific_decimal_comma::<f64>,
-        //                         precision
-        //                     )
-        //                 },
-        //                 _ => {
-        //                     quote_wrapper!(
-        //                         float_serializer_with_precision_positional_decimal_comma::<f64>,
-        //                         precision
-        //                     )
-        //                 },
-        //             },
-        //             None => match options.float_scientific {
-        //                 Some(true) => {
-        //                     quote_wrapper!(
-        //                         float_serializer_no_precision_scientific_decimal_comma::<f64>
-        //                     )
-        //                 },
-
-        //                 Some(false) => {
-        //                     quote_wrapper!(
-        //                         float_serializer_no_precision_positional_decimal_comma::<f64>
-        //                     )
-        //                 },
-
-        //                 None => {
-        //                     quote_wrapper!(
-        //                         float_serializer_no_precision_autoformat_decimal_comma::<f64>
-        //                     )
-        //                 },
-        //             },
-        //         }
-        //     }
-        // },
         DataType::Null => quote_if_always!(null_serializer),
         DataType::Boolean => {
             let array = array.as_any().downcast_ref().unwrap();
