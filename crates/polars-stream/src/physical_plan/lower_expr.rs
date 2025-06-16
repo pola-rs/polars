@@ -638,7 +638,7 @@ fn lower_exprs_with_ctx(
                 let node_key = ctx.phys_sm.insert(PhysNode::new(
                     output_schema,
                     PhysNodeKind::Shift {
-                        input: trans_input,
+                        input: column_input,
                         offset: offset_input,
                     },
                 ));
