@@ -45,11 +45,53 @@ impl BinaryExpr {
     }
 }
 
+/// Check if unsigned subtraction would underflow and promote types accordingly
+fn checked_unsigned_sub(left: &Column, right: &Column) -> PolarsResult<Column> {
+    use DataType::*;
+    
+    match (left.dtype(), right.dtype()) {
+        (UInt32, UInt32) => {
+            let left_i64 = left.cast(&Int64)?;
+            let right_i64 = right.cast(&Int64)?;
+            Ok((&left_i64 - &right_i64)?)
+        },
+        (UInt16, UInt16) => {
+            let left_i32 = left.cast(&Int32)?;
+            let right_i32 = right.cast(&Int32)?;
+            Ok((&left_i32 - &right_i32)?)
+        },
+        (UInt8, UInt8) => {
+            let left_i16 = left.cast(&Int16)?;
+            let right_i16 = right.cast(&Int16)?;
+            Ok((&left_i16 - &right_i16)?)
+        },
+        (UInt64, UInt64) => {
+            // u64 -> i64 may still overflow but is better than wrapping
+            let left_i64 = left.cast(&Int64)?;
+            let right_i64 = right.cast(&Int64)?;
+            Ok((&left_i64 - &right_i64)?)
+        },
+        // For mixed types or already signed types, fall back to normal subtraction
+        _ => Ok((left - right)?),
+    }
+}
+
 /// Can partially do operations in place.
 fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResult<Column> {
     match op {
         Operator::Plus => left.try_add_owned(right),
-        Operator::Minus => left.try_sub_owned(right),
+        Operator::Minus => {
+            // Handle unsigned integer subtraction that could underflow
+            if matches!((left.dtype(), right.dtype()), 
+                (DataType::UInt8, DataType::UInt8) |
+                (DataType::UInt16, DataType::UInt16) |
+                (DataType::UInt32, DataType::UInt32) |
+                (DataType::UInt64, DataType::UInt64)) {
+                checked_unsigned_sub(&left, &right)
+            } else {
+                left.try_sub_owned(right)
+            }
+        },
         Operator::Multiply
             if left.dtype().is_primitive_numeric() && right.dtype().is_primitive_numeric() =>
         {
@@ -69,7 +111,18 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::Eq => ChunkCompareEq::equal(left, right).map(|ca| ca.into_column()),
         Operator::NotEq => ChunkCompareEq::not_equal(left, right).map(|ca| ca.into_column()),
         Operator::Plus => left + right,
-        Operator::Minus => left - right,
+        Operator::Minus => {
+            // Handle unsigned integer subtraction that could underflow
+            if matches!((left.dtype(), right.dtype()), 
+                (DataType::UInt8, DataType::UInt8) |
+                (DataType::UInt16, DataType::UInt16) |
+                (DataType::UInt32, DataType::UInt32) |
+                (DataType::UInt64, DataType::UInt64)) {
+                checked_unsigned_sub(left, right)
+            } else {
+                left - right
+            }
+        },
         Operator::Multiply => left * right,
         Operator::Divide => left / right,
         Operator::TrueDivide => match left.dtype() {
