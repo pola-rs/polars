@@ -18,14 +18,19 @@ impl MetaNameSpace {
             Some(s) => s,
         };
         let mut arena = Arena::with_capacity(8);
-        let expr = to_expr_ir(self.0, &mut arena, schema)?;
-        let ae = arena.get(expr.node());
-        let mut inputs = Vec::with_capacity(2);
-        ae.inputs_rev(&mut inputs);
-        Ok(inputs
-            .iter()
-            .map(|node| node_to_expr(*node, &arena))
-            .collect())
+        let expr_ir = to_expr_ir(self.0, &mut arena, schema)?;
+
+        if expr_ir.has_alias() {
+            Ok(vec![node_to_expr(expr_ir.node(), &arena)])
+        } else {
+            let ae = arena.get(expr_ir.node());
+            let mut inputs = Vec::with_capacity(2);
+            ae.inputs_rev(&mut inputs);
+            Ok(inputs
+                .iter()
+                .map(|node| node_to_expr(*node, &arena))
+                .collect())
+        }
     }
 
     /// Get the root column names.

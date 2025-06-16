@@ -45,6 +45,11 @@ def test_root_and_output_names() -> None:
     )
 
 
+def test_alias_pop() -> None:
+    e = pl.col("foo").alias("bar")
+    assert e.meta.pop()[0].meta == pl.col("foo")
+
+
 def test_undo_aliases() -> None:
     e = pl.col("foo").alias("bar")
     assert e.meta.undo_aliases().meta == pl.col("foo")
