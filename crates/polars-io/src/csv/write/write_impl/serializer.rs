@@ -10,13 +10,13 @@
 //!  - [`QuoteStyle::Necessary`] (the default) is only relevant for strings and floats with decimal_comma,
 //!    as these are the only types that can have newlines (row separators), commas (default column separators)
 //!    or quotes. String escaping is complicated anyway, and it is all inside [`string_serializer()`].
-//!  - The real complication is [`QuoteStyle::NonNumeric`], that doesn't quote numbers and nulls,
-//!    and quotes any other thing. The problem is that nulls can be within any type, so we need to handle
-//!    two possibilities of quoting everywhere.
+//!  - The real complication is [`QuoteStyle::NonNumeric`], that doesn't quote numbers (unless necessary)
+//!    and nulls, and quotes any other thing. The problem is that nulls can be within any type, so we
+//!    need to handle two possibilities of quoting everywhere.
 //!
 //! So in case the chosen style is anything but `NonNumeric`, we statically know for each column except strings
-//! and floats_with_comma whether it should be quoted (and for strings and floats_with_comma too when
-//! not `Necessary`). There we use `quote_serializer()` or nothing.
+//! whether it should be quoted (and for strings too when not `Necessary`). There we use
+//! `quote_serializer()` or nothing.
 //!
 //! But to help with `NonNumeric`, each serializer carry the potential to distinguish between nulls and non-nulls,
 //! and quote the latter and not the former. But in order to not have the branch when we statically know the answer,
@@ -653,7 +653,8 @@ pub(super) fn serializer_for<'a>(
             //   and the float string field contains a comma character (no precision or precision > 0)
             //
             // In some rare cases, a field may get quoted when it is not strictly necessary
-            // (e.g., in scientific notation when only the first digit is non-zero such as '1e12').
+            // (e.g., in scientific notation when only the first digit is non-zero such as '1e12',
+            // or null values in 'non_numeric' quote_style).
 
             let mut should_quote = options.decimal_comma && options.separator == b',';
             if let Some(precision) = options.float_precision {
