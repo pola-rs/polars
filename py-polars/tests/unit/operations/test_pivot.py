@@ -585,7 +585,7 @@ def test_pivot_agg_column_ref_invalid_22479() -> None:
     )
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
-        match="Explicit column references are not allowed in aggregate_function",
+        match="explicit column references are not allowed in aggregate_function",
     ):
         df.pivot(
             on="a", index="b", values="c", aggregate_function=pl.element().sort_by("d")
