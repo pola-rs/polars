@@ -210,7 +210,7 @@ fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
 ) -> impl Serializer {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let v: f64 = NumCast::from(item).unwrap();
-        let _ = write!(buf, "{}", v);
+        let _ = write!(buf, "{v}");
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -230,7 +230,7 @@ fn float_serializer_no_precision_positional_decimal_comma<I: NativeType + NumCas
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         scratch.clear();
         let v: f64 = NumCast::from(item).unwrap();
-        let _ = write!(&mut scratch, "{}", v);
+        let _ = write!(&mut scratch, "{v}");
         for c in &mut scratch {
             if *c == b'.' {
                 *c = b',';
@@ -642,19 +642,7 @@ pub(super) fn serializer_for<'a>(
     _datetime_format: &'a str,
     _time_zone: Option<Tz>,
 ) -> PolarsResult<Box<dyn Serializer<'a> + Send + 'a>> {
-    // macro_rules! quote_if_always {
-    //     ($make_serializer:path, $($arg:tt)*) => {{
-    //         let serializer = $make_serializer(array.as_any().downcast_ref().unwrap(), $($arg)*);
-    //         if let QuoteStyle::Always = options.quote_style {
-    //             Box::new(quote_serializer(serializer)) as Box<dyn Serializer + Send>
-    //         } else {
-    //             Box::new(serializer)
-    //         }
-    //     }};
-    //     ($make_serializer:path) => { quote_if_always!($make_serializer,) };
-    // }
-
-    // This flag is targeted at numerical types, other types may require custom logic
+    // Numerical types
     let needs_quotes = match dtype {
         DataType::Float32 | DataType::Float64 => {
             // Quoting may be required when comma is used as both the field separator and decimal
