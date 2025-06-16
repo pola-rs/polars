@@ -2653,7 +2653,9 @@ x"y,b,c
         (",", None, None, 3, True, b'"123,750","60,000",9\n'),
         (";", None, None, 0, True, b"124;60;9\n"),
         (";", None, None, 3, True, b"123,750;60,000;9\n"),
+        (",", None, True, None, False, b"1.2375e2,6e1,9\n"),
         (",", None, True, None, True, b'"1,2375e2","6e1",9\n'),  # (excessive quoting)
+        (",", None, False, None, False, b"123.75,60,9\n"),
         (",", None, False, None, True, b'"123,75","60",9\n'),  # (excessive quoting)
         (";", None, True, None, True, b"1,2375e2;6e1;9\n"),
         (";", None, False, None, True, b"123,75;60;9\n"),
@@ -2672,7 +2674,7 @@ x"y,b,c
     ],
 )
 def test_write_csv_decimal_comma(
-    separator: chr | None,
+    separator: str | None,
     quote_style: CsvQuoteStyle | None,
     scientific: bool | None,
     precision: int | None,
