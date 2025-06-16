@@ -2608,7 +2608,6 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     assert df3.write_csv() == expected
 
 
-<<<<<<< HEAD
 def test_csv_malformed_quote_in_unenclosed_field_22395() -> None:
     # Note - the malformed detection logic is very basic, and fails to detect many
     # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
@@ -2634,14 +2633,9 @@ x"y,b,c
         pl.scan_csv(malformed_long, has_header=False).collect()
 
 
-# Note: in some cases, marked "(unneeded quoting)", the expected value has
-# quoted fields where that is not strictly necessary.
-# It is okay to relax tests in the future when code is refactored
-=======
 # Note: in some cases, marked "(excessive quoting)", the expected value has
 # quoted fields even when that is not strictly necessary.
 # It is okay to relax these tests in the future when code is refactored
->>>>>>> 079435e55 (update csv test suite)
 @pytest.mark.parametrize(
     (
         "separator",
