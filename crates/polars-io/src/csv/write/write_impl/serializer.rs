@@ -642,17 +642,17 @@ pub(super) fn serializer_for<'a>(
     _datetime_format: &'a str,
     _time_zone: Option<Tz>,
 ) -> PolarsResult<Box<dyn Serializer<'a> + Send + 'a>> {
-    macro_rules! quote_if_always {
-        ($make_serializer:path, $($arg:tt)*) => {{
-            let serializer = $make_serializer(array.as_any().downcast_ref().unwrap(), $($arg)*);
-            if let QuoteStyle::Always = options.quote_style {
-                Box::new(quote_serializer(serializer)) as Box<dyn Serializer + Send>
-            } else {
-                Box::new(serializer)
-            }
-        }};
-        ($make_serializer:path) => { quote_if_always!($make_serializer,) };
-    }
+    // macro_rules! quote_if_always {
+    //     ($make_serializer:path, $($arg:tt)*) => {{
+    //         let serializer = $make_serializer(array.as_any().downcast_ref().unwrap(), $($arg)*);
+    //         if let QuoteStyle::Always = options.quote_style {
+    //             Box::new(quote_serializer(serializer)) as Box<dyn Serializer + Send>
+    //         } else {
+    //             Box::new(serializer)
+    //         }
+    //     }};
+    //     ($make_serializer:path) => { quote_if_always!($make_serializer,) };
+    // }
 
     // This flag is targeted at numerical types, other types may require custom logic
     let needs_quotes = match dtype {
@@ -693,15 +693,15 @@ pub(super) fn serializer_for<'a>(
     }
 
     let serializer = match dtype {
-        DataType::Int8 => quote_if_always!(integer_serializer::<i8>),
-        DataType::UInt8 => quote_if_always!(integer_serializer::<u8>),
-        DataType::Int16 => quote_if_always!(integer_serializer::<i16>),
-        DataType::UInt16 => quote_if_always!(integer_serializer::<u16>),
-        DataType::Int32 => quote_if_always!(integer_serializer::<i32>),
-        DataType::UInt32 => quote_if_always!(integer_serializer::<u32>),
-        DataType::Int64 => quote_if_always!(integer_serializer::<i64>),
-        DataType::UInt64 => quote_if_always!(integer_serializer::<u64>),
-        DataType::Int128 => quote_if_always!(integer_serializer::<i128>),
+        DataType::Int8 => quote_wrapper!(integer_serializer::<i8>),
+        DataType::UInt8 => quote_wrapper!(integer_serializer::<u8>),
+        DataType::Int16 => quote_wrapper!(integer_serializer::<i16>),
+        DataType::UInt16 => quote_wrapper!(integer_serializer::<u16>),
+        DataType::Int32 => quote_wrapper!(integer_serializer::<i32>),
+        DataType::UInt32 => quote_wrapper!(integer_serializer::<u32>),
+        DataType::Int64 => quote_wrapper!(integer_serializer::<i64>),
+        DataType::UInt64 => quote_wrapper!(integer_serializer::<u64>),
+        DataType::Int128 => quote_wrapper!(integer_serializer::<i128>),
         DataType::Float32 => {
             match (
                 options.decimal_comma,
@@ -788,7 +788,7 @@ pub(super) fn serializer_for<'a>(
                 },
             }
         },
-        DataType::Null => quote_if_always!(null_serializer),
+        DataType::Null => quote_wrapper!(null_serializer),
         DataType::Boolean => {
             let array = array.as_any().downcast_ref().unwrap();
             match options.quote_style {
@@ -913,7 +913,7 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            quote_if_always!(decimal_serializer, scale.unwrap_or(0))
+            quote_wrapper!(decimal_serializer, scale.unwrap_or(0))
         },
         _ => {
             polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")
