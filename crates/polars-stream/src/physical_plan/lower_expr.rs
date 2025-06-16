@@ -78,10 +78,10 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
                 return true;
             }
 
-            use FunctionExpr as F;
+            use IRFunctionExpr as F;
             match function {
                 #[cfg(feature = "is_in")]
-                F::Boolean(BooleanFunction::IsIn { .. }) => true,
+                F::Boolean(IRBooleanFunction::IsIn { .. }) => true,
                 #[cfg(feature = "replace")]
                 F::Replace | F::ReplaceStrict { .. } => true,
                 _ => false,
@@ -201,6 +201,7 @@ pub fn is_input_independent_rec(
             function: _,
             output_type: _,
             options: _,
+            fmt_str: _,
         }
         | AExpr::Function {
             input,
@@ -329,6 +330,7 @@ pub fn is_length_preserving_rec(
             function: _,
             output_type: _,
             options,
+            fmt_str: _,
         }
         | AExpr::Function {
             input,
@@ -584,7 +586,7 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
-                function: FunctionExpr::ConcatExpr(_rechunk),
+                function: IRFunctionExpr::ConcatExpr(_rechunk),
                 options: _,
             } => {
                 // We have to lower each expression separately as they might have different lengths.
@@ -613,7 +615,7 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
-                function: FunctionExpr::Unique(maintain_order),
+                function: IRFunctionExpr::Unique(maintain_order),
                 options: _,
             } => {
                 assert!(inner_exprs.len() == 1);
@@ -645,7 +647,7 @@ fn lower_exprs_with_ctx(
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
                 options: _,
             } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena) => {
                 // Translate left and right side separately (they could have different lengths).

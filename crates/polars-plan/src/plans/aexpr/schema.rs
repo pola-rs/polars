@@ -344,10 +344,11 @@ impl AExpr {
                 output_type,
                 input,
                 options,
+                fmt_str,
                 ..
             } => {
                 let fields = func_args_to_fields(input, ctx, agg_list)?;
-                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
                 let out = output_type
                     .clone()
                     .materialize()?
@@ -381,6 +382,7 @@ impl AExpr {
                     .arena
                     .get(*evaluation)
                     .to_field_impl(&mut ctx, &mut false)?;
+                output_field.dtype = output_field.dtype.materialize_unknown(false)?;
 
                 output_field.dtype = match variant {
                     EvalVariant::List => DataType::List(Box::new(output_field.dtype)),
@@ -457,9 +459,9 @@ impl AExpr {
             | Agg(Count(expr, _))
             | Agg(AggGroups(expr))
             | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
-            AnonymousFunction { input, options, .. } => {
+            AnonymousFunction { input, fmt_str, .. } => {
                 if input.is_empty() {
-                    options.fmt_str.into()
+                    fmt_str.as_ref().clone()
                 } else {
                     input[0].output_name().clone()
                 }

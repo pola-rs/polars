@@ -42,7 +42,11 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars.datatypes import Int64, is_polars_dtype, parse_into_dtype
+from polars.datatypes import (
+    Int64,
+    is_polars_dtype,
+    parse_into_datatype_expr,
+)
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.exceptions import (
@@ -475,11 +479,12 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
-            the output is null.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -534,11 +539,12 @@ class Expr:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `False` values,
-            the output is null.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1801,7 +1807,7 @@ class Expr:
 
     def cast(
         self,
-        dtype: PolarsDataType | type[Any],
+        dtype: PolarsDataType | pl.DataTypeExpr | type[Any],
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
@@ -1843,8 +1849,10 @@ class Expr:
         │ 3.0 ┆ 6   │
         └─────┴─────┘
         """
-        dtype = parse_into_dtype(dtype)
-        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
+        dtype = parse_into_datatype_expr(dtype)
+        return self._from_pyexpr(
+            self._pyexpr.cast(dtype._pydatatype_expr, strict, wrap_numerical)
+        )
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
@@ -3145,8 +3153,12 @@ class Expr:
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        * Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+          Int64 before summing to prevent overflow issues.
+        * If there are no non-null values, then the output is `0`.
+          If you would prefer empty sums to return `None`, you can
+          use `pl.when(expr.count()>0).then(expr.sum())` instead
+          of `expr.sum()`.
 
         Examples
         --------
@@ -3204,6 +3216,13 @@ class Expr:
     def product(self) -> Expr:
         """
         Compute the product of an expression.
+
+        Notes
+        -----
+        If there are no non-null values, then the output is `1`.
+        If you would prefer empty products to return `None`, you can
+        use `pl.when(expr.count()>0).then(expr.product())` instead
+        of `expr.product()`.
 
         Examples
         --------
@@ -4348,21 +4367,20 @@ class Expr:
         def __init__(
             self,
             function: Callable[[Series], Series | Any],
-            return_dtype: PolarsDataType | None,
         ) -> None:
             self.function = function
-            self.return_dtype = return_dtype
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            return_dtype = kwargs.pop("return_dtype")
             result = self.function(*args, **kwargs)
             if _check_for_numpy(result) and isinstance(result, np.ndarray):
-                result = pl.Series(result, dtype=self.return_dtype)
+                result = pl.Series(result, dtype=return_dtype)
             return result
 
     def map_batches(
         self,
         function: Callable[[Series], Series | Any],
-        return_dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         agg_list: bool = False,
         is_elementwise: bool = False,
@@ -4521,11 +4539,11 @@ class Expr:
         └─────┴─────┴───────────┘
         """
         if return_dtype is not None:
-            return_dtype = parse_into_dtype(return_dtype)
+            return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
         return self._from_pyexpr(
             self._pyexpr.map_batches(
-                self._map_batches_wrapper(function, return_dtype),
+                self._map_batches_wrapper(function),
                 return_dtype,
                 agg_list,
                 is_elementwise,
@@ -4747,6 +4765,10 @@ class Expr:
         root_names = self.meta.root_names()
         if len(root_names) > 0:
             warn_on_inefficient_map(function, columns=root_names, map_target="expr")
+
+        if isinstance(return_dtype, pl.DataTypeExpr):
+            msg = "DataTypeExpr is not supported for map_elements"
+            raise TypeError(msg)
 
         if pass_name:
 
@@ -5014,8 +5036,10 @@ class Expr:
         """
         # This cast enables tail with expressions that return unsigned integers,
         # for which negate otherwise raises InvalidOperationError.
-        offset = -self._from_pyexpr(
-            parse_into_expression(n).cast(Int64, strict=False, wrap_numerical=True)
+        offset = -(
+            self._from_pyexpr(parse_into_expression(n)).cast(
+                Int64, strict=False, wrap_numerical=True
+            )
         )
         return self.slice(offset, n)
 
@@ -6138,7 +6162,7 @@ class Expr:
             print(fmt.format(s))
             return s
 
-        return self.map_batches(inspect, return_dtype=None, agg_list=True)
+        return self.map_batches(inspect, return_dtype=F.dtype_of(self), agg_list=True)
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Expr:
         """
@@ -10578,7 +10602,7 @@ class Expr:
         new: IntoExpr | Sequence[Any] | NoDefault = no_default,
         *,
         default: IntoExpr | NoDefault = no_default,
-        return_dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     ) -> Expr:
         """
         Replace all values by different values.
@@ -10590,7 +10614,7 @@ class Expr:
             Accepts expression input. Sequences are parsed as Series,
             other non-expression inputs are parsed as literals.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace_all(old=Series(mapping.keys()), new=Series(mapping.values()))`.
+            `replace_strict(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Accepts expression input. Sequences are parsed as Series,
@@ -10756,15 +10780,17 @@ class Expr:
         old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
         new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
+        dtype: pl.DataTypeExpr | None = None
+        if return_dtype is not None:
+            dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
         default = (
             None
             if default is no_default
             else parse_into_expression(default, str_as_lit=True)
         )
 
-        return self._from_pyexpr(
-            self._pyexpr.replace_strict(old, new, default, return_dtype)
-        )
+        return self._from_pyexpr(self._pyexpr.replace_strict(old, new, default, dtype))
 
     def bitwise_count_ones(self) -> Expr:
         """Evaluate the number of set bits."""

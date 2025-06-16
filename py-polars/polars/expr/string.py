@@ -11,7 +11,7 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import find_stacklevel, no_default, qualified_type_name
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Int64, Time, parse_into_dtype
+from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
@@ -1230,7 +1230,7 @@ class ExprStringNameSpace:
 
     def json_decode(
         self,
-        dtype: PolarsDataType | None = None,
+        dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Expr:
@@ -1272,7 +1272,7 @@ class ExprStringNameSpace:
         └─────────────────────┴───────────┘
         """
         if dtype is not None:
-            dtype = parse_into_dtype(dtype)
+            dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
         return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:

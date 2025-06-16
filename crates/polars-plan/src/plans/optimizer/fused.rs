@@ -17,7 +17,7 @@ fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AEx
     unsafe { options.no_check_lengths() }
     AExpr::Function {
         input,
-        function: FunctionExpr::Fused(op),
+        function: IRFunctionExpr::Fused(op),
         options,
     }
 }

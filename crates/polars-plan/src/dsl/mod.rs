@@ -53,7 +53,6 @@ pub use arity::*;
 pub use array::*;
 pub use datatype_expr::DataTypeExpr;
 pub use expr::*;
-pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
@@ -70,13 +69,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(any(
-    feature = "search_sorted",
-    feature = "is_between",
-    feature = "list_sets"
-))]
-use polars_core::utils::SuperTypeFlags;
-use polars_core::utils::{SuperTypeOptions, try_get_supertype};
+use polars_core::utils::try_get_supertype;
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -89,54 +82,6 @@ pub use crate::plans::lit;
 use crate::prelude::*;
 
 impl Expr {
-    /// Modify the Options passed to the `Function` node.
-    pub(crate) fn with_function_options<F>(self, func: F) -> Expr
-    where
-        F: Fn(FunctionOptions) -> FunctionOptions,
-    {
-        match self {
-            Self::AnonymousFunction {
-                input,
-                function,
-                output_type,
-                mut options,
-            } => {
-                options = func(options);
-                Self::AnonymousFunction {
-                    input,
-                    function,
-                    output_type,
-                    options,
-                }
-            },
-            Self::Function {
-                input,
-                function,
-                mut options,
-            } => {
-                options = func(options);
-                Self::Function {
-                    input,
-                    function,
-                    options,
-                }
-            },
-            _ => {
-                panic!("implementation error")
-            },
-        }
-    }
-
-    /// Overwrite the function name used for formatting.
-    /// (this is not intended to be used).
-    #[doc(hidden)]
-    pub fn with_fmt(self, name: &'static str) -> Expr {
-        self.with_function_options(|mut options| {
-            options.fmt_str = name;
-            options
-        })
-    }
-
     /// Compare `Expr` with other `Expr` on equality.
     pub fn eq<E: Into<Expr>>(self, other: E) -> Expr {
         binary_expr(self, Operator::Eq, other.into())
@@ -324,8 +269,7 @@ impl Expr {
 
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
-        let options = FunctionOptions::aggregation().with_fmt_str("arg_min");
-        self.function_with_options(
+        self.agg_with_fmt_str(
             move |c: Column| {
                 Ok(Some(Column::new(
                     c.name().clone(),
@@ -333,14 +277,13 @@ impl Expr {
                 )))
             },
             GetOutput::from_type(IDX_DTYPE),
-            options,
+            "arg_min",
         )
     }
 
     /// Get the index value that has the maximum value.
     pub fn arg_max(self) -> Self {
-        let options = FunctionOptions::aggregation().with_fmt_str("arg_max");
-        self.function_with_options(
+        self.agg_with_fmt_str(
             move |c: Column| {
                 Ok(Some(Column::new(
                     c.name().clone(),
@@ -350,14 +293,13 @@ impl Expr {
                 )))
             },
             GetOutput::from_type(IDX_DTYPE),
-            options,
+            "arg_max",
         )
     }
 
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, sort_options: SortOptions) -> Self {
-        let options = FunctionOptions::groupwise().with_fmt_str("arg_sort");
-        self.function_with_options(
+        self.apply_with_fmt_str(
             move |c: Column| {
                 Ok(Some(
                     c.as_materialized_series()
@@ -366,7 +308,7 @@ impl Expr {
                 ))
             },
             GetOutput::from_type(IDX_DTYPE),
-            options,
+            "arg_sort",
         )
     }
 
@@ -548,15 +490,73 @@ impl Expr {
     where
         F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
+        self.map_with_fmt_str(function, output_type, "map")
+    }
+
+    pub fn map_with_fmt_str<F>(
+        self,
+        function: F,
+        output_type: GetOutput,
+        fmt_str: impl Into<PlSmallStr>,
+    ) -> Self
+    where
+        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+    {
         let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
+        let options =
+            FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT);
+        let fmt_str = Box::new(fmt_str.into());
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
             output_type,
-            options: FunctionOptions::elementwise()
-                .with_fmt_str("map")
-                .with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT),
+            options,
+            fmt_str,
+        }
+    }
+
+    pub fn agg_with_fmt_str<F>(
+        self,
+        function: F,
+        output_type: GetOutput,
+        fmt_str: impl Into<PlSmallStr>,
+    ) -> Self
+    where
+        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+    {
+        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+
+        let options = FunctionOptions::aggregation();
+        let fmt_str = Box::new(fmt_str.into());
+        Expr::AnonymousFunction {
+            input: vec![self],
+            function: new_column_udf(f),
+            output_type,
+            options,
+            fmt_str,
+        }
+    }
+
+    pub fn apply_with_fmt_str<F>(
+        self,
+        function: F,
+        output_type: GetOutput,
+        fmt_str: impl Into<PlSmallStr>,
+    ) -> Self
+    where
+        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+    {
+        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+
+        let options = FunctionOptions::groupwise();
+        let fmt_str = Box::new(fmt_str.into());
+        Expr::AnonymousFunction {
+            input: vec![self],
+            function: new_column_udf(f),
+            output_type,
+            options,
+            fmt_str,
         }
     }
 
@@ -570,31 +570,13 @@ impl Expr {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
+        let options = FunctionOptions::elementwise();
         Expr::AnonymousFunction {
             input,
             function: new_column_udf(function),
             output_type,
-            options: FunctionOptions::elementwise().with_fmt_str(""),
-        }
-    }
-
-    /// A function that cannot be expressed with `map` or `apply` and requires extra settings.
-    pub fn function_with_options<F>(
-        self,
-        function: F,
-        output_type: GetOutput,
-        options: FunctionOptions,
-    ) -> Self
-    where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
-    {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
-
-        Expr::AnonymousFunction {
-            input: vec![self],
-            function: new_column_udf(f),
-            output_type,
             options,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -613,11 +595,13 @@ impl Expr {
     {
         let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
+        let options = FunctionOptions::groupwise();
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
             output_type,
-            options: FunctionOptions::groupwise().with_fmt_str(""),
+            options,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -631,11 +615,13 @@ impl Expr {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
+        let options = FunctionOptions::groupwise();
         Expr::AnonymousFunction {
             input,
             function: new_column_udf(function),
             output_type,
-            options: FunctionOptions::groupwise().with_fmt_str(""),
+            options,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 
@@ -713,8 +699,7 @@ impl Expr {
 
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
-        let options = FunctionOptions::aggregation().with_fmt_str("product");
-        self.function_with_options(
+        self.agg_with_fmt_str(
             move |c: Column| {
                 Some(
                     c.product()
@@ -733,7 +718,7 @@ impl Expr {
                     _ => T::Int64,
                 })
             }),
-            options,
+            "product",
         )
     }
 
@@ -1024,12 +1009,10 @@ impl Expr {
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
         let function = BooleanFunction::IsIn { nulls_equal };
-        let options = function.function_options();
         let function = function.into();
         Expr::Function {
             input: vec![self, other],
             function,
-            options,
         }
     }
 
@@ -1319,7 +1302,7 @@ impl Expr {
         output_type: GetOutput,
         options: RollingOptionsFixedWindow,
     ) -> Expr {
-        self.apply(
+        self.apply_with_fmt_str(
             move |c: Column| {
                 c.as_materialized_series()
                     .rolling_map(f.as_ref(), options.clone())
@@ -1327,8 +1310,8 @@ impl Expr {
                     .map(Some)
             },
             output_type,
+            "rolling_map",
         )
-        .with_fmt("rolling_map")
     }
 
     #[cfg(feature = "rolling_window")]
@@ -1339,7 +1322,7 @@ impl Expr {
     where
         F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
     {
-        self.apply(
+        self.apply_with_fmt_str(
             move |c: Column| {
                 let out = match c.dtype() {
                     DataType::Float64 => c
@@ -1367,8 +1350,8 @@ impl Expr {
                     _ => Field::new(field.name().clone(), DataType::Float64),
                 })
             }),
+            "rolling_map_float",
         )
-        .with_fmt("rolling_map_float")
     }
 
     #[cfg(feature = "peaks")]
@@ -1402,13 +1385,18 @@ impl Expr {
         old: E,
         new: E,
         default: Option<E>,
-        return_dtype: Option<DataType>,
+        return_dtype: Option<impl Into<DataTypeExpr>>,
     ) -> Expr {
         let old = old.into();
         let new = new.into();
         let mut args = vec![old, new];
         args.extend(default.map(Into::into));
-        self.map_n_ary(FunctionExpr::ReplaceStrict { return_dtype }, args)
+        self.map_n_ary(
+            FunctionExpr::ReplaceStrict {
+                return_dtype: return_dtype.map(Into::into),
+            },
+            args,
+        )
     }
 
     #[cfg(feature = "cutqcut")]
@@ -1740,11 +1728,13 @@ where
 {
     let input = expr.as_ref().to_vec();
 
+    let options = FunctionOptions::elementwise();
     Expr::AnonymousFunction {
         input,
         function: new_column_udf(function),
         output_type,
-        options: FunctionOptions::elementwise().with_fmt_str(""),
+        options,
+        fmt_str: Box::new(PlSmallStr::EMPTY),
     }
 }
 
@@ -1768,16 +1758,16 @@ where
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
+    let options = FunctionOptions::groupwise().with_flags(|mut f| {
+        f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+        f
+    });
     Expr::AnonymousFunction {
         input,
         function: new_column_udf(function),
         output_type,
-        options: FunctionOptions::groupwise()
-            .with_fmt_str("")
-            .with_flags(|mut f| {
-                f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
-                f
-            }),
+        options,
+        fmt_str: Box::new(PlSmallStr::EMPTY),
     }
 }
 

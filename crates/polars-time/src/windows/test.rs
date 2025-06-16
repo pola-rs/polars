@@ -120,7 +120,8 @@ fn test_groups_large_interval() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups.len(), 4);
     assert_eq!(groups[0], [0, 1]);
     assert_eq!(groups[1], [1, 1]);
@@ -135,7 +136,8 @@ fn test_groups_large_interval() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[2], [3, 1]);
     let (groups, _, _) = group_by_windows(
@@ -147,7 +149,8 @@ fn test_groups_large_interval() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[1], [1, 1]);
 }
@@ -226,7 +229,8 @@ fn test_boundaries() {
         true,
         true,
         Default::default(),
-    );
+    )
+    .unwrap();
 
     // 1st group
     // expected boundary:
@@ -328,7 +332,8 @@ fn test_boundaries() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [2, 2]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
@@ -343,7 +348,8 @@ fn test_boundaries() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [0, 1]); // (2021-12-15 23:30, 2021-12-16 00:00]
     assert_eq!(groups[1], [1, 2]); // (2021-12-16 00:00, 2021-12-16 00:30]
     assert_eq!(groups[2], [3, 2]); // (2021-12-16 00:30, 2021-12-16 01:00]
@@ -359,7 +365,8 @@ fn test_boundaries() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [3, 1]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
@@ -416,7 +423,8 @@ fn test_boundaries_2() {
         true,
         true,
         Default::default(),
-    );
+    )
+    .unwrap();
 
     // 1st group
     // expected boundary:
@@ -544,7 +552,8 @@ fn test_boundaries_ms() {
         true,
         true,
         Default::default(),
-    );
+    )
+    .unwrap();
 
     // 1st group
     // expected boundary:
@@ -646,7 +655,8 @@ fn test_boundaries_ms() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [2, 2]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
@@ -661,7 +671,8 @@ fn test_boundaries_ms() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [0, 1]); // (2021-12-15 23:30, 2021-12-16 00:00]
     assert_eq!(groups[1], [1, 2]); // (2021-12-16 00:00, 2021-12-16 00:30]
     assert_eq!(groups[2], [3, 2]); // (2021-12-16 00:30, 2021-12-16 01:00]
@@ -677,7 +688,8 @@ fn test_boundaries_ms() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [3, 1]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
@@ -840,7 +852,8 @@ fn test_end_membership() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [0, 1]);
     assert_eq!(groups[1], [0, 1]);
     assert_eq!(groups[2], [1, 1]);
@@ -864,7 +877,8 @@ fn test_group_by_windows_membership_2791() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups[0], [0, 2]);
     assert_eq!(groups[1], [2, 2]);
 }
@@ -887,7 +901,8 @@ fn test_group_by_windows_duplicates_2931() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups, [[0, 1], [1, 2], [3, 2]]);
 }
 
@@ -923,6 +938,7 @@ fn test_group_by_windows_offsets_3776() {
         false,
         false,
         Default::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(groups, [[0, 1], [1, 1], [2, 1]]);
 }

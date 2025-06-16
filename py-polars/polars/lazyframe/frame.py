@@ -82,6 +82,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
     is_polars_dtype,
+    parse_into_datatype_expr,
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
@@ -3687,6 +3688,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
             ]
             | PolarsDataType
+            | pl.DataTypeExpr
         ),
         *,
         strict: bool = True,
@@ -3765,8 +3767,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
         """
         if not isinstance(dtypes, Mapping):
-            dtypes = parse_into_dtype(dtypes)
-            return self._from_pyldf(self._ldf.cast_all(dtypes, strict))
+            dtypes = parse_into_datatype_expr(dtypes)
+            return self._from_pyldf(self._ldf.cast_all(dtypes._pydatatype_expr, strict))
 
         cast_map = {}
         for c, dtype in dtypes.items():
@@ -4792,7 +4794,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
            - 1y    (1 calendar year)
            - 1i    (1 index count)
 
-           Or combine them:
+           Or combine them (except in `every`):
            "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
            By "calendar day", we mean the corresponding time on the next day (which may

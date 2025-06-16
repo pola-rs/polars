@@ -27,6 +27,7 @@ pub struct WindowExpr {
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
+    pub(crate) has_different_group_sources: bool,
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -284,39 +285,6 @@ impl WindowExpr {
         agg_col
     }
 
-    /// Check if the branches have an aggregation
-    /// when(a > sum)
-    /// then (foo)
-    /// otherwise(bar - sum)
-    fn has_different_group_sources(&self) -> bool {
-        let mut has_arity = false;
-        let mut agg_col = false;
-        for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
-                // or list().alias
-                for e in &**function {
-                    match e {
-                        Expr::Ternary { .. } | Expr::BinaryExpr { .. } => {
-                            has_arity = true;
-                        },
-                        Expr::Alias(_, _) => {},
-                        Expr::Agg(_) => {
-                            agg_col = true;
-                        },
-                        Expr::Function { options, .. }
-                        | Expr::AnonymousFunction { options, .. } => {
-                            if options.flags.returns_scalar() {
-                                agg_col = true;
-                            }
-                        },
-                        _ => {},
-                    }
-                }
-            }
-        }
-        has_arity && agg_col
-    }
-
     fn determine_map_strategy(
         &self,
         agg_state: &AggState,
@@ -448,7 +416,7 @@ impl PhysicalExpr for WindowExpr {
 
         // overwrite sort_groups for some expressions
         // TODO: fully understand the rationale is here.
-        if self.has_different_group_sources() {
+        if self.has_different_group_sources {
             sort_groups = true
         }
 

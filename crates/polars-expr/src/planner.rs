@@ -233,6 +233,31 @@ fn create_physical_expr_inner(
                         }
                     }
 
+                    // Check if the branches have an aggregation
+                    // when(a > sum)
+                    // then (foo)
+                    // otherwise(bar - sum)
+                    let mut has_arity = false;
+                    let mut agg_col = false;
+                    for (_, e) in expr_arena.iter(function) {
+                        match e {
+                            AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
+                                has_arity = true;
+                            },
+                            AExpr::Agg(_) => {
+                                agg_col = true;
+                            },
+                            AExpr::Function { options, .. }
+                            | AExpr::AnonymousFunction { options, .. } => {
+                                if options.flags.returns_scalar() {
+                                    agg_col = true;
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+                    let has_different_group_sources = has_arity && agg_col;
+
                     Ok(Arc::new(WindowExpr {
                         group_by,
                         order_by,
@@ -241,6 +266,7 @@ fn create_physical_expr_inner(
                         phys_function,
                         mapping: *mapping,
                         expr,
+                        has_different_group_sources,
                     }))
                 },
                 #[cfg(feature = "dynamic_group_by")]
@@ -442,6 +468,7 @@ fn create_physical_expr_inner(
             function,
             output_type: _,
             options,
+            fmt_str: _,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
@@ -467,7 +494,7 @@ fn create_physical_expr_inner(
             evaluation,
             variant,
         } => {
-            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME));
+            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { fmt_str, .. } if fmt_str.as_ref().as_str() == MAP_LIST_NAME));
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
             let mut pd_group = ExprPushdownGroup::Pushable;

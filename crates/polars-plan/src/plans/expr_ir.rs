@@ -147,7 +147,7 @@ impl ExprIR {
                 } => {
                     match function {
                         #[cfg(feature = "dtype-struct")]
-                        FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
+                        IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)) => {
                             out.output_name = OutputName::Field(name.clone());
                         },
                         _ => {
@@ -161,10 +161,9 @@ impl ExprIR {
                     }
                     break;
                 },
-                AExpr::AnonymousFunction { input, options, .. } => {
+                AExpr::AnonymousFunction { input, fmt_str, .. } => {
                     if input.is_empty() {
-                        out.output_name =
-                            OutputName::LiteralLhs(PlSmallStr::from_static(options.fmt_str));
+                        out.output_name = OutputName::LiteralLhs(fmt_str.as_ref().clone());
                     } else {
                         out.output_name = input[0].output_name.clone();
                     }

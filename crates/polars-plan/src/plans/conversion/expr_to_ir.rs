@@ -265,29 +265,34 @@ pub(super) fn to_aexpr_impl(
             function,
             output_type,
             options,
+            fmt_str,
         } => {
             let e = to_expr_irs(input, arena, schema)?;
             let output_name = if e.is_empty() {
-                options.fmt_str.into()
+                fmt_str.as_ref().clone()
             } else {
                 e[0].output_name().clone()
             };
 
+            let function = function.materialize()?;
+            let output_type = output_type.materialize()?;
+            function.as_ref().resolve_dsl(schema)?;
+            output_type.as_ref().resolve_dsl(schema)?;
+
             (
                 AExpr::AnonymousFunction {
                     input: e,
-                    function,
-                    output_type,
+                    function: LazySerde::Deserialized(function),
+                    output_type: LazySerde::Deserialized(output_type),
                     options,
+                    fmt_str,
                 },
                 output_name,
             )
         },
-        Expr::Function {
-            input,
-            function,
-            options,
-        } => return convert_functions(input, function, options, arena, schema),
+        Expr::Function { input, function } => {
+            return convert_functions(input, function, arena, schema);
+        },
         Expr::Window {
             function,
             partition_by,
@@ -337,7 +342,10 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let (expr, output_name) = to_aexpr_impl(owned(expr), arena, schema)?;
-            let (evaluation, _) = to_aexpr_impl(owned(evaluation), arena, schema)?;
+            let expr_dtype = arena.get(expr).to_dtype(schema, Context::Default, arena)?;
+            let element_dtype = variant.element_dtype(&expr_dtype)?;
+            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let (evaluation, _) = to_aexpr_impl(owned(evaluation), arena, &evaluation_schema)?;
 
             match variant {
                 EvalVariant::List => {

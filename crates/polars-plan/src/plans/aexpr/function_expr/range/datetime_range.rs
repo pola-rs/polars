@@ -7,7 +7,7 @@ use super::utils::{
     ensure_range_bounds_contain_exactly_one_value, temporal_ranges_impl_broadcast,
     temporal_series_to_i64_scalar,
 };
-use crate::dsl::function_expr::FieldsMapper;
+use crate::plans::aexpr::function_expr::FieldsMapper;
 
 const CAPACITY_FACTOR: usize = 5;
 

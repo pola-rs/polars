@@ -510,13 +510,13 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{function}()")
                 }
             },
-            AnonymousFunction { input, options, .. } => {
+            AnonymousFunction { input, fmt_str, .. } => {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {
-                    write!(f, ".{}({})", options.fmt_str, self.with_slice(&input[1..]))
+                    write!(f, ".{fmt_str}({})", self.with_slice(&input[1..]))
                 } else {
-                    write!(f, ".{}()", options.fmt_str)
+                    write!(f, ".{fmt_str}()")
                 }
             },
             Eval {

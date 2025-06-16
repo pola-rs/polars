@@ -1,6 +1,7 @@
 #[cfg(all(
     not(allocator = "mimalloc"),
     not(allocator = "default"),
+    not(feature = "default_alloc"),
     target_family = "unix",
     not(target_os = "emscripten"),
 ))]
@@ -9,6 +10,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(all(
     not(allocator = "default"),
+    not(feature = "default_alloc"),
     any(
         not(target_family = "unix"),
         target_os = "emscripten",

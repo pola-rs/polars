@@ -3418,6 +3418,7 @@ dependencies = [
  "polars-parquet",
  "polars-plan",
  "polars-row",
+ "polars-testing",
  "polars-time",
  "polars-utils",
  "pyo3",
@@ -3669,7 +3670,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.30.0"
+version = "1.31.0-beta.1"
 dependencies = [
  "either",
  "libc",

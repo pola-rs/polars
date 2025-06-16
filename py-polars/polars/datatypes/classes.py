@@ -108,6 +108,10 @@ class DataTypeClass(type):
     def to_python(cls) -> PythonDataType:  # noqa: D102
         ...
 
+    @classmethod
+    def to_dtype_expr(cls) -> pl.DataTypeExpr:  # noqa: D102
+        ...
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -252,6 +256,20 @@ class DataType(metaclass=DataTypeClass):
         from polars.datatypes import dtype_to_py_type
 
         return dtype_to_py_type(self)
+
+    @classinstmethod
+    def to_dtype_expr(self) -> pl.DataTypeExpr:
+        """
+        Return a :class:`DataTypeExpr` with a static :class:`DataType`.
+
+        Examples
+        --------
+        >>> pl.Int16().to_dtype_expr().collect_dtype({})
+        Int16
+        """
+        from polars.polars import PyDataTypeExpr
+
+        return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
 
 
 class NumericType(DataType):

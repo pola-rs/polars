@@ -1828,10 +1828,6 @@ class DateTimeNameSpace:
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
 
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
@@ -1949,10 +1945,6 @@ class DateTimeNameSpace:
         - 1mo   (1 calendar month)
         - 1q    (1 calendar quarter)
         - 1y    (1 calendar year)
-
-        These strings can be combined:
-
-        - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",

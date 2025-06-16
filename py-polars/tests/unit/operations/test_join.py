@@ -209,6 +209,23 @@ def test_join_lazy_frame_on_expression() -> None:
     assert lazy_join.shape == eager_join.shape
 
 
+def test_right_join_schema_maintained_22516() -> None:
+    df_left = pl.DataFrame({"number": [1]})
+    df_right = pl.DataFrame({"invoice_number": [1]})
+    eager_join = df_left.join(
+        df_right, left_on="number", right_on="invoice_number", how="right"
+    ).select(pl.len())
+
+    lazy_join = (
+        df_left.lazy()
+        .join(df_right.lazy(), left_on="number", right_on="invoice_number", how="right")
+        .select(pl.len())
+        .collect()
+    )
+
+    assert lazy_join.item() == eager_join.item()
+
+
 def test_join() -> None:
     df_left = pl.DataFrame(
         {
