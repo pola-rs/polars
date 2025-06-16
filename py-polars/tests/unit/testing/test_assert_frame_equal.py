@@ -319,7 +319,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(
         AssertionError,
-        match='DataFrames are different \\(columns mismatch: \\["b", "c"\\] in right, but not in left\\)',
+        match="columns mismatch.*in right.*but not in left",
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)

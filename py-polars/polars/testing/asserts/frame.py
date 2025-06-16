@@ -108,7 +108,7 @@ def assert_frame_equal(
     if lazy:
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
-    # Tell type checker these are now DataFrames (cast does nothing at runtime)
+    # Tell type checker these are now DataFrames to prevent type errors
     left, right = cast(DataFrame, left), cast(DataFrame, right)
 
     assert_dataframe_equal_py(
