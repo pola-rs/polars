@@ -24,7 +24,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from typing import IO
 
     from polars._typing import CsvQuoteStyle, TimeUnit
     from tests.unit.conftest import MemoryUsage
@@ -2715,9 +2714,7 @@ def test_write_csv_decimal_comma(
     #   df == read_csv(write_csv(df)), unless precision affects the value
     # TODO: drop the separator condition when read_csv supports comma as both the
     # decimal separator and field separator, see #23157
-    if (
-        precision is None or precision > 2
-    ) and separator != ",":
+    if (precision is None or precision > 2) and separator != ",":
         # eager
         buf.seek(0)
         df.write_csv(
