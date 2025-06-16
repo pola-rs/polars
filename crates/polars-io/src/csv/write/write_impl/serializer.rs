@@ -642,16 +642,17 @@ pub(super) fn serializer_for<'a>(
     _datetime_format: &'a str,
     _time_zone: Option<Tz>,
 ) -> PolarsResult<Box<dyn Serializer<'a> + Send + 'a>> {
-    // Numerical types
+    // The needs_quotes flag captures the quote logic for the quote_wrapper! macro
+    // It is targeted at numerical types primarily; other types may required additional logic
     let needs_quotes = match dtype {
         DataType::Float32 | DataType::Float64 => {
-            // Quoting may be required when comma is used as both the field separator and decimal
-            // separator. Specifically, when:
+            // When comma is used as both the field separator and decimal separator, quoting
+            // may be required. Specifically, when:
             // - quote_style is Always, or
             // - quote_style is Necessary or Non-Numeric, the field separator is also a comma,
             //   and the float string field contains a comma character (no precision or precision > 0)
             //
-            // In some rare cases, a field may get quoted when that is not strictly necessary
+            // In some rare cases, a field may get quoted when it is not strictly necessary
             // (e.g., in scientific notation when only the first digit is non-zero such as '1e12').
 
             let mut should_quote = options.decimal_comma && options.separator == b',';
@@ -696,7 +697,7 @@ pub(super) fn serializer_for<'a>(
                 options.float_precision,
                 options.float_scientific,
             ) {
-                // no decimal_comma
+                // standard decimal separator (period)
                 (false, Some(precision), Some(true)) => {
                     quote_wrapper!(float_serializer_with_precision_scientific::<f32>, precision)
                 },
@@ -713,7 +714,7 @@ pub(super) fn serializer_for<'a>(
                     quote_wrapper!(float_serializer_no_precision_autoformat::<f32>)
                 },
 
-                // decimal comma
+                // comma as the decimal separator
                 (true, Some(precision), Some(true)) => quote_wrapper!(
                     float_serializer_with_precision_scientific_decimal_comma::<f32>,
                     precision
@@ -739,7 +740,7 @@ pub(super) fn serializer_for<'a>(
                 options.float_precision,
                 options.float_scientific,
             ) {
-                // no decimal_comma
+                // standard decimal separator (period)
                 (false, Some(precision), Some(true)) => {
                     quote_wrapper!(float_serializer_with_precision_scientific::<f64>, precision)
                 },
@@ -756,7 +757,7 @@ pub(super) fn serializer_for<'a>(
                     quote_wrapper!(float_serializer_no_precision_autoformat::<f64>)
                 },
 
-                // decimal comma
+                // comma as the decimal separator
                 (true, Some(precision), Some(true)) => quote_wrapper!(
                     float_serializer_with_precision_scientific_decimal_comma::<f64>,
                     precision
