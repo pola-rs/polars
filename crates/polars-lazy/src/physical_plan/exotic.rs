@@ -4,12 +4,22 @@ use polars_expr::{ExpressionConversionState, create_physical_expr};
 use crate::prelude::*;
 
 #[cfg(feature = "pivot")]
-pub(crate) fn prepare_eval_expr(expr: Expr) -> Expr {
-    expr.map_expr(|e| match e {
-        Expr::Column(_) => Expr::Column(PlSmallStr::EMPTY),
-        Expr::Nth(_) => Expr::Column(PlSmallStr::EMPTY),
-        e => e,
-    })
+pub(crate) fn contains_column_refs(expr: &Expr) -> bool {
+    for e in expr.into_iter() {
+        match e {
+            Expr::Column(c) if !c.eq(&PlSmallStr::EMPTY) => return true,
+            Expr::Nth(_) => return true,
+            Expr::Columns(_) => return true,
+            Expr::DtypeColumn(_) => return true,
+            Expr::IndexColumn(_) => return true,
+            Expr::Selector(_) => return true,
+            Expr::Exclude(_, _) => return true,
+            Expr::Wildcard => return true,
+            Expr::Field(_) => return true,
+            _ => {},
+        }
+    }
+    false
 }
 
 pub(crate) fn prepare_expression_for_context(
