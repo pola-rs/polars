@@ -453,7 +453,7 @@ def test_frame_schema_fail():
     # an import is missing or something like that):
 
     assert (
-        'AssertionError: DataFrames are different (value mismatch for column "a":'
+        'AssertionError: DataFrames are different (value mismatch for column "a")'
         in stdout
     )
     assert "AssertionError: DataFrames are equal" in stdout

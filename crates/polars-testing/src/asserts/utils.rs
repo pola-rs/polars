@@ -871,10 +871,10 @@ pub fn assert_dataframe_equal(
             options.categorical_as_str,
         ) {
             Ok(_) => {},
-            Err(err) => {
+            Err(_) => {
                 return Err(polars_err!(
                     assertion_error = "DataFrames",
-                    format!("value mismatch for column {:?}:, {}", col, err),
+                    format!("value mismatch for column {:?}", col),
                     format!("{:?}", s_left_series),
                     format!("{:?}", s_right_series)
                 ));
