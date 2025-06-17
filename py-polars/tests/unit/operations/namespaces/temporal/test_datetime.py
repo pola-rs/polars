@@ -29,7 +29,9 @@ def series_of_str_dates() -> pl.Series:
 
 
 def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
-    expected_str_dates = pl.Series(["1993-01-01", "1997-05-19", "2024-10-04", "2052-02-20"])
+    expected_str_dates = pl.Series(
+        ["1993-01-01", "1997-05-19", "2024-10-04", "2052-02-20"]
+    )
 
     assert series_of_int_dates.dtype == pl.Date
     assert_series_equal(series_of_int_dates.dt.to_string("%F"), expected_str_dates)
