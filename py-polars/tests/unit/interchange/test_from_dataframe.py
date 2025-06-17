@@ -122,7 +122,7 @@ def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
 
     batch = pa.record_batch([a, b], names=["a", "b"])
     with pytest.deprecated_call(match="`allow_copy` is deprecated"):
-        result = pl.from_dataframe(batch, allow_copy=False).unnest("")
+        result = pl.from_dataframe(batch, allow_copy=False)
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
     assert_frame_equal(result, expected)

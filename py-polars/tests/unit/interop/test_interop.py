@@ -952,3 +952,21 @@ def test_arrow_c_array_object_no_unnest_23068() -> None:
     result = cast(pl.DataFrame, pl.from_arrow(ArrowLike(pa.array(data)))).to_series()
     expected = pl.Series(data)
     assert_series_equal(result, expected)
+
+
+def test_from_arrow_recorbatch() -> None:
+    n_legs = pa.array([2, 2, 4, 4, 5, 100])
+    animals = pa.array(
+        ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]
+    )
+    names = ["n_legs", "animals"]
+    record_batch = pa.RecordBatch.from_arrays([n_legs, animals], names=names)
+    assert_frame_equal(
+        pl.DataFrame(record_batch),
+        pl.DataFrame(
+            {
+                "n_legs": n_legs,
+                "animals": animals,
+            }
+        ),
+    )
