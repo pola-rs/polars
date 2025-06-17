@@ -621,30 +621,39 @@ fn lower_exprs_with_ctx(
             } => {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
                 let out_name = unique_column_name();
-                let (trans_input, trans_inner_expr) =
-                    lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
 
-                // Select the shift column
-                let select_expr =
-                    ExprIR::new(trans_inner_expr[0], OutputName::Alias(out_name.clone()));
-                let column_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
-                let output_schema = ctx.phys_sm[column_input.node].output_schema.clone();
+                let (trans_input_column, trans_inner_expr_column) =
+                    lower_exprs_with_ctx(input, &[inner_nodes[0]], ctx)?;
 
-                // Select the offset column
-                let select_expr =
-                    ExprIR::new(trans_inner_expr[1], OutputName::Alias(out_name.clone()));
-                let offset_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
+                let (trans_input_offset, trans_inner_expr_offset) =
+                    lower_exprs_with_ctx(input, &[inner_nodes[1]], ctx)?;
+
+                let output_schema = ctx.phys_sm[trans_input_column.node].output_schema.clone();
+                dbg!(&output_schema);
+
+                //// Select the shift column
+                //let select_expr =
+                //    ExprIR::new(trans_inner_expr[0], OutputName::Alias(out_name.clone()));
+                //let column_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
+                //let output_schema = ctx.phys_sm[column_input.node].output_schema.clone();
+                //dbg!(&output_schema);
+                //
+                //// Select the offset column
+                //let select_expr =
+                //    ExprIR::new(trans_inner_expr[1], OutputName::Alias(out_name.clone()));
+                //let offset_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
 
                 let node_key = ctx.phys_sm.insert(PhysNode::new(
                     output_schema,
                     PhysNodeKind::Shift {
-                        input: column_input,
-                        offset: offset_input,
+                        input: trans_input_column,
+                        offset: trans_input_offset,
                     },
                 ));
 
                 input_streams.insert(PhysStream::first(node_key));
-                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                transformed_exprs.extend(trans_inner_expr_column);
+                transformed_exprs.extend(trans_inner_expr_offset);
             },
 
             AExpr::Function {
