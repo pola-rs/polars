@@ -791,8 +791,11 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
     ("range_fn", "value_type", "kwargs"),
     [
         (pl.datetime_range, datetime, {"time_unit": "ns"}),
+        (pl.datetime_range, datetime, {"time_unit": "ns", "time_zone": "CET"}),
         (pl.datetime_range, datetime, {"time_unit": "us"}),
+        (pl.datetime_range, datetime, {"time_unit": "us", "time_zone": "CET"}),
         (pl.datetime_range, datetime, {"time_unit": "ms"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms", "time_zone": "CET"}),
         (pl.date_range, date, {}),
     ],
 )
