@@ -799,6 +799,42 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
         (pl.date_range, date, {}),
     ],
 )
+def test_iso_year(
+    range_fn: Callable[..., pl.Series], value_type: type, kwargs: dict[str, str]
+) -> None:
+    assert range_fn(
+        value_type(1990, 1, 1), value_type(2004, 1, 1), "1y", **kwargs, eager=True
+    ).dt.iso_year().to_list() == [
+        1990,
+        1991,
+        1992,
+        1992,
+        1993,
+        1994,
+        1996,
+        1997,
+        1998,
+        1998,
+        1999,
+        2001,
+        2002,
+        2003,
+        2004,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("range_fn", "value_type", "kwargs"),
+    [
+        (pl.datetime_range, datetime, {"time_unit": "ns"}),
+        (pl.datetime_range, datetime, {"time_unit": "ns", "time_zone": "CET"}),
+        (pl.datetime_range, datetime, {"time_unit": "us"}),
+        (pl.datetime_range, datetime, {"time_unit": "us", "time_zone": "CET"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms", "time_zone": "CET"}),
+        (pl.date_range, date, {}),
+    ],
+)
 def test_is_leap_year(
     range_fn: Callable[..., pl.Series], value_type: type, kwargs: dict[str, str]
 ) -> None:
