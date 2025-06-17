@@ -329,3 +329,56 @@ def time_func(func: Callable[[], Any], *, iterations: int = 3) -> float:
         times = [min(times)]
 
     return min(times)
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--cloud-distributed",
+        action="store_true",
+        default=False,
+        help="Run all queries by default of the distributed engine",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _patched_cloud(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if request.config.getoption("--cloud-distributed"):
+        import uuid
+
+        from polars_cloud import ComputeContext, ComputeContextStatus
+
+        class PatchedComputeContext(ComputeContext):
+            def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+                self._interactive = True
+                self._compute_address = "localhost:5051"
+                self._compute_public_key = b""
+                self._compute_id = uuid.uuid4()
+
+            def get_status(self: ComputeContext) -> ComputeContextStatus:
+                """Get the status of the compute cluster."""
+                return ComputeContextStatus.RUNNING
+
+        monkeypatch.setattr(
+            "polars_cloud.context.compute.ComputeContext.__init__",
+            PatchedComputeContext.__init__,
+        )
+        monkeypatch.setattr(
+            "polars_cloud.context.compute.ComputeContext.get_status",
+            PatchedComputeContext.get_status,
+        )
+
+        original_collect = pl.LazyFrame.collect
+
+        def cloud_collect(lf: pl.LazyFrame, *args, **kwargs) -> pl.DataFrame:
+            if "optimizations" in kwargs:
+                kwargs.pop("optimizations")
+            df = original_collect(lf.remote().distributed().collect(*args, **kwargs))
+            print(df)
+            return df
+
+        monkeypatch.setattr(
+            "polars.LazyFrame.collect",
+            cloud_collect,
+        )
