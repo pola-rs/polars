@@ -144,8 +144,6 @@ fn to_graph_rec<'a>(
         },
 
         Shift { input, offset } => {
-            let input_schema = &ctx.phys_sm[input.node].output_schema;
-
             let input_key = to_graph_rec(input.node, ctx)?;
             let offset_key = to_graph_rec(offset.node, ctx)?;
 

@@ -131,6 +131,7 @@ impl ComputeNode for ShiftNode {
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
+        dbg!(&recv, &send);
 
         if send[0] == PortState::Done {
             self.state = State::Done;
