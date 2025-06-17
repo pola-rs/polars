@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use arrow::offset;
 use polars_core::schema::Schema;
 use polars_core::utils::Container;
 use polars_error::polars_ensure;
@@ -30,12 +29,21 @@ enum State {
         tail_shift: usize,
         seq: u64,
     },
+    PositivePass {
+        buffer: Buffer,
+        tail_shift: usize,
+        seq: u64,
+    },
     Negative {
         // Rows to skip at the start of the DataFrame
         // This state will be decremented until it reaches 0
         // and we don't have to skip any rows anymore
         skip: usize,
         // Nulls to append at the end of the DataFrame
+        tail: usize,
+        seq: u64,
+    },
+    NegativeFlush {
         tail: usize,
         seq: u64,
     },
@@ -99,7 +107,6 @@ async fn send_morsel(
     *seq += 1;
 
     morsel.set_seq(MorselSeq::new(*seq));
-    dbg!(&morsel.df());
     sender.send(morsel).await
 }
 
@@ -109,213 +116,6 @@ impl ShiftNode {
             state: State::Uninit,
             output_schema,
         }
-    }
-
-    async fn recv(
-        &self,
-        receiver: &mut Receiver<Morsel>,
-        state: &StreamingExecutionState,
-    ) -> Result<PolarsResult<Morsel>, ()> {
-        let Ok(morsel) = receiver.recv().await else {
-            return Err(());
-        };
-        Ok(Ok(morsel))
-    }
-
-    async fn spawn_uninit(
-        &mut self,
-        shift_state: &mut State,
-        receiver: &mut Receiver<Morsel>,
-        sender: &mut Sender<Morsel>,
-        state: &StreamingExecutionState,
-    ) -> PolarsResult<()> {
-        todo!()
-    }
-
-    async fn eval(
-        &mut self,
-        shift_state: &mut State,
-        receiver: &mut Receiver<Morsel>,
-        sender: &mut Sender<Morsel>,
-        state: &StreamingExecutionState,
-    ) -> PolarsResult<()> {
-        match shift_state {
-            _ => todo!(),
-            State::Uninit => {
-                todo!()
-                //let mut buffer = Buffer::new();
-                //
-                //let Ok(first) = self.recv(receiver, state).await else {
-                //    return Ok(());
-                //};
-                //let first = first?;
-                //
-                //let offset_column = self
-                //    .offset
-                //    .evaluate(first.df(), &state.in_memory_exec_state)
-                //    .await?;
-                //polars_ensure!(offset_column.len() == 1, InvalidOperation: "expected a scalar for 'offset' in the 'shift'");
-                //let offset_column = offset_column.get(0).unwrap();
-                //let offset = offset_column
-                //    .extract::<i64>()
-                //    .expect("type checked at dsl resolving");
-                //
-                //// Deal with the trivial case
-                //if offset == 0 {
-                //    let _ = sender.send(first).await;
-                //
-                //    while let Ok(morsel) = receiver.recv().await {
-                //        if sender.send(morsel).await.is_err() {
-                //            break;
-                //        }
-                //    }
-                //} else {
-                //    if offset > 0 {
-                //        buffer.push_back(first);
-                //        *shift_state = State::Positive {
-                //            buffer,
-                //            head: offset as _,
-                //            offset: offset as _,
-                //            seq: 0,
-                //        };
-                //    } else {
-                //        let mut skip = -offset as usize;
-                //        let tail = -offset as usize;
-                //        let len = first.df().height();
-                //        let mut seq = 0;
-                //
-                //        if skip >= len {
-                //            skip -= len
-                //        } else {
-                //            let morsel = first.map(|df| df.slice(skip as _, usize::MAX));
-                //
-                //            if send_morsel(morsel, sender, &mut seq).await.is_err() {
-                //                return Ok(());
-                //            };
-                //            skip = 0;
-                //        }
-                //
-                //        *shift_state = State::Negative { skip, tail, seq };
-                //    }
-                //    Box::pin(self.eval(shift_state, receiver, sender, state)).await?
-                //}
-            },
-            State::PositiveHead {
-                buffer,
-                head,
-                offset,
-                seq,
-            } => {
-                let offset = *offset;
-
-                // 1. We need to offset the array by `offset` and insert nulls
-                // 2. Then we ensure we insert the nulls (also in the middle of a morsel if needed)
-                let tail_shift = offset;
-                while *head > 0 {
-                    if let Ok(next) = self.recv(receiver, state).await {
-                        let next = next?;
-                        buffer.push_back(next);
-                    } else {
-                        break;
-                    }
-                    let mut morsel = buffer.pop_front();
-                    let len = morsel.df().height();
-
-                    // Last iteration
-                    if len > *head {
-                        let shifted_morsel = morsel.clone().map(|df| df.shift_seq(*head as _));
-
-                        let tail = morsel.map(|df| df.tail(Some(*head)));
-                        buffer.push_front(tail);
-                        // Don't immediately return.
-                        // It can be that this is the last morsel and it has to be sliced
-                        // In that case
-                        buffer.push_front(shifted_morsel);
-                        *head = 0;
-                    }
-                    // Return full morsel of nulls
-                    else {
-                        *head -= len;
-                        let nulls = morsel
-                            .clone()
-                            .map(|df| DataFrame::full_null(&self.output_schema, df.height()));
-                        buffer.push_front(morsel);
-
-                        morsel = nulls;
-                        if send_morsel(morsel, sender, seq).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-
-                // 3. Now we have dealt with the starting 'offset'
-                // we can pump the remaining morsel through, until we have reached the tail offset
-                loop {
-                    if buffer.len_after_pop_front() > tail_shift {
-                        let morsel = buffer.pop_front();
-
-                        if send_morsel(morsel, sender, seq).await.is_err() {
-                            break;
-                        }
-                    } else {
-                        let Ok(morsel) = self.recv(receiver, state).await else {
-                            break;
-                        };
-                        buffer.push_back(morsel?);
-                    }
-                }
-
-                // 4. Deal with the tail by slicing the last morsel
-                // Slices last morsel length.
-                if buffer.len() > tail_shift {
-                    let len = buffer.len() - tail_shift;
-                    let last_morsel = buffer.pop_front();
-                    let last_morsel = last_morsel.map(|df| df.slice(0, len));
-                    let _ = send_morsel(last_morsel, sender, seq).await;
-                }
-            },
-            State::Negative { skip, tail, seq } => {
-                while let Ok(morsel) = self.recv(receiver, state).await {
-                    let morsel = morsel?;
-
-                    // 1. Deals with the boundary effects.
-                    // We 'skip' the initial row until we have reached the 'offset'.
-                    // After that we pump all morsel.
-                    if *skip != 0 {
-                        let len = morsel.df().len();
-
-                        if *skip >= len {
-                            *skip -= len
-                        } else {
-                            let morsel = morsel.map(|df| df.slice(*skip as _, usize::MAX));
-
-                            if morsel.df().is_empty() {
-                                continue;
-                            }
-
-                            if send_morsel(morsel, sender, seq).await.is_err() {
-                                return Ok(());
-                            };
-                            *skip = 0;
-                        }
-                    }
-                    // 2. The non-boundary case, where we can pump morsels.
-                    else if send_morsel(morsel, sender, seq).await.is_err() {
-                        return Ok(());
-                    }
-                }
-
-                // 3. When all morsels are processed, pass a full-null morsel of 'offset' length.
-                let last_morsel = Morsel::new(
-                    DataFrame::full_null(&self.output_schema, *tail),
-                    Default::default(),
-                    SourceToken::new(),
-                );
-                let _ = send_morsel(last_morsel, sender, seq).await;
-            },
-            State::Done => todo!(),
-        }
-        Ok(())
     }
 }
 
@@ -353,15 +153,32 @@ impl ComputeNode for ShiftNode {
                 recv[0] = PortState::Done;
                 send[0] = PortState::Done;
             },
-            State::Negative { .. } => {
-                recv[0] = PortState::Ready;
-                send[0] = PortState::Ready;
+            State::PositivePass {
+                buffer,
+                tail_shift,
+                seq,
+            } => {
+                if matches!(recv[0], PortState::Done) {
+                    self.state = State::PositiveTail {
+                        buffer: std::mem::take(buffer),
+                        tail_shift: *tail_shift,
+                        seq: *seq,
+                    }
+                }
+            },
+            State::Negative { tail, seq, .. } => {
+                if matches!(recv[0], PortState::Done) {
+                    self.state = State::NegativeFlush {
+                        tail: *tail,
+                        seq: *seq,
+                    }
+                }
             },
             State::PositiveHead { .. } => {
                 recv[0] = PortState::Ready;
                 send[0] = PortState::Ready;
             },
-            State::PositiveTail { .. } => {},
+            State::PositiveTail { .. } | State::NegativeFlush { .. } => {},
         }
 
         Ok(())
@@ -406,6 +223,21 @@ impl ComputeNode for ShiftNode {
                     Ok(())
                 })
             },
+            State::PositivePass {
+                buffer,
+                tail_shift,
+                mut seq,
+            } => {
+                let receiver = recv_ports[0].take().unwrap().serial();
+                let sender = send_ports[0].take().unwrap().serial();
+                let slf = self;
+                scope.spawn_task(TaskPriority::High, async move {
+                    slf.state =
+                        positive_pass(receiver, sender, buffer, tail_shift, &mut seq).await?;
+
+                    Ok(())
+                })
+            },
             State::PositiveTail {
                 buffer,
                 tail_shift,
@@ -419,9 +251,32 @@ impl ComputeNode for ShiftNode {
                     Ok(())
                 })
             },
-            _ => {
-                todo!()
+            State::Negative {
+                mut skip,
+                tail,
+                mut seq,
+            } => {
+                let receiver = recv_ports[0].take().unwrap().serial();
+                let sender = send_ports[0].take().unwrap().serial();
+                let slf = self;
+                scope.spawn_task(TaskPriority::High, async move {
+                    negative(receiver, sender, &mut skip, &mut seq).await?;
+
+                    slf.state = State::Negative { skip, tail, seq };
+                    Ok(())
+                })
             },
+            State::NegativeFlush { tail, mut seq } => {
+                let sender = send_ports[0].take().unwrap().serial();
+                let slf = self;
+                scope.spawn_task(TaskPriority::High, async move {
+                    negative_flush(sender, tail, &mut seq, &slf.output_schema).await?;
+
+                    slf.state = State::Done;
+                    Ok(())
+                })
+            },
+            State::Done => unreachable!(),
         };
 
         join_handles.push(t);
@@ -531,7 +386,8 @@ async fn positive_pass(
             }
         } else {
             let Ok(morsel) = recv.recv().await else {
-                return Ok(State::PositiveTail {
+                // There might come a new phase
+                return Ok(State::PositivePass {
                     buffer,
                     tail_shift,
                     seq: *seq,
@@ -563,4 +419,55 @@ async fn positive_tail(
         let last_morsel = last_morsel.map(|df| df.slice(0, len));
         let _ = send_morsel(last_morsel, &mut sender, seq).await;
     }
+}
+
+async fn negative(
+    mut receiver: Receiver<Morsel>,
+    mut sender: Sender<Morsel>,
+    skip: &mut usize,
+    seq: &mut u64,
+) -> PolarsResult<()> {
+    while let Ok(morsel) = receiver.recv().await {
+        // 1. Deals with the boundary effects.
+        // We 'skip' the initial row until we have reached the 'offset'.
+        // After that we pump all morsel.
+        if *skip != 0 {
+            let len = morsel.df().len();
+
+            if *skip >= len {
+                *skip -= len
+            } else {
+                let morsel = morsel.map(|df| df.slice(*skip as _, usize::MAX));
+
+                if morsel.df().is_empty() {
+                    continue;
+                }
+
+                if send_morsel(morsel, &mut sender, seq).await.is_err() {
+                    return Ok(());
+                };
+                *skip = 0;
+            }
+        }
+        // 2. The non-boundary case, where we can pump morsels.
+        else if send_morsel(morsel, &mut sender, seq).await.is_err() {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+async fn negative_flush(
+    mut sender: Sender<Morsel>,
+    tail: usize,
+    seq: &mut u64,
+    output_schema: &Schema,
+) -> PolarsResult<()> {
+    let last_morsel = Morsel::new(
+        DataFrame::full_null(output_schema, tail),
+        Default::default(),
+        SourceToken::new(),
+    );
+    let _ = send_morsel(last_morsel, &mut sender, seq).await;
+    Ok(())
 }

@@ -4,10 +4,9 @@ use super::*;
 fn test_shift_streaming() {
     let lf = scan_foods_parquet(true);
 
-    for neg in [false, true] {
-        for i in 3..20 {
-            let offset = i;
-            //let offset = if neg { -i } else { i };
+    for neg in [true, false] {
+        for i in 0i32..27 {
+            let offset = if neg { -i } else { i };
 
             let out = lf
                 .clone()
