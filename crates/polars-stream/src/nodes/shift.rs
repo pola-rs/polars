@@ -322,7 +322,6 @@ async fn positive_head(
 ) -> PolarsResult<State> {
     // 1. We need to offset the array by `offset` and insert nulls
     // 2. Then we ensure we insert the nulls (also in the middle of a morsel if needed)
-    let tail_shift = offset;
     while *head > 0 {
         if let Ok(next) = receiver.recv().await {
             buffer.push_back(next);
