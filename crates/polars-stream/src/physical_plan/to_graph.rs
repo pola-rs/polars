@@ -516,6 +516,7 @@ fn to_graph_rec<'a>(
             extra_columns_policy,
             cast_columns_policy,
             include_file_paths,
+            deletion_files,
             file_schema,
         } => {
             let hive_parts = hive_parts.clone();
@@ -527,6 +528,7 @@ fn to_graph_rec<'a>(
                         pred,
                         ctx.expr_arena,
                         output_schema,
+                        hive_parts.as_ref().map(|hp| hp.df().schema().as_ref()),
                         &mut ctx.expr_conversion_state,
                         true, // create_skip_batch_predicate
                         file_reader_builder
@@ -552,6 +554,7 @@ fn to_graph_rec<'a>(
             let missing_columns_policy = *missing_columns_policy;
             let extra_columns_policy = *extra_columns_policy;
             let cast_columns_policy = cast_columns_policy.clone();
+            let deletion_files = deletion_files.clone();
 
             let verbose = config::verbose();
 
@@ -572,6 +575,7 @@ fn to_graph_rec<'a>(
                         missing_columns_policy,
                         extra_columns_policy,
                         cast_columns_policy,
+                        deletion_files,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
                         n_readers_pre_init: AtomicUsize::new(0),
@@ -1004,6 +1008,7 @@ fn to_graph_rec<'a>(
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let extra_columns_policy = ExtraColumnsPolicy::Ignore;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
+            let deletion_files = None;
             let verbose = config::verbose();
 
             ctx.graph.add_node(
@@ -1023,6 +1028,7 @@ fn to_graph_rec<'a>(
                         missing_columns_policy,
                         extra_columns_policy,
                         cast_columns_policy,
+                        deletion_files,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
                         n_readers_pre_init: AtomicUsize::new(0),

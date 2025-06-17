@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use polars_utils::unique_id::UniqueId;
+
 use super::*;
 
 fn get_upper_projections(
@@ -148,12 +150,12 @@ pub(super) fn set_cache_states(
     let mut cache_schema_and_children = BTreeMap::new();
 
     // Stack frame
-    #[derive(Default, Copy, Clone)]
+    #[derive(Default, Clone)]
     struct Frame {
         current: Node,
-        cache_id: Option<usize>,
+        cache_id: Option<UniqueId>,
         parent: TwoParents,
-        previous_cache: Option<usize>,
+        previous_cache: Option<UniqueId>,
     }
     let init = Frame {
         current: root,
@@ -184,7 +186,7 @@ pub(super) fn set_cache_states(
                 // change the schema
 
                 let v = cache_schema_and_children
-                    .entry(*id)
+                    .entry(id.clone())
                     .or_insert_with(Value::default);
                 v.children.push(*input);
                 v.parents.push(frame.parent);
@@ -235,14 +237,14 @@ pub(super) fn set_cache_states(
                     v.names_union.extend(schema.iter_names_cloned());
                 }
             }
-            frame.cache_id = Some(*id);
+            frame.cache_id = Some(id.clone());
         };
 
         // Shift parents.
         frame.parent[1] = frame.parent[0];
         frame.parent[0] = Some(frame.current);
         for n in scratch.iter() {
-            let mut new_frame = frame;
+            let mut new_frame = frame.clone();
             new_frame.current = *n;
             stack.push(new_frame);
         }

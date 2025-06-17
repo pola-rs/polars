@@ -1731,11 +1731,12 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
-            the output is `None`.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1773,11 +1774,12 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `False` values,
-            the output is `None`.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -2042,8 +2044,12 @@ class Series:
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        * Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+          Int64 before summing to prevent overflow issues.
+        * If there are no non-null values, then the output is `0`.
+          If you would prefer empty sums to return `None`, you can
+          use `s.sum() if s.count() else None` instead
+          of `s.sum()`.
 
         Examples
         --------
@@ -2068,6 +2074,13 @@ class Series:
     def product(self) -> int | float:
         """
         Reduce this Series to the product value.
+
+        Notes
+        -----
+        If there are no non-null values, then the output is `1`.
+        If you would prefer empty products to return `None`, you can
+        use `s.product() if s.count() else None` instead
+        of `s.product()`.
 
         Examples
         --------
@@ -7162,7 +7175,7 @@ class Series:
         old
             Value or sequence of values to replace.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace_all(old=Series(mapping.keys()), new=Series(mapping.values()))`.
+            `replace_strict(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.

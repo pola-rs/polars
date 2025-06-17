@@ -88,7 +88,7 @@ def deprecate_streaming_parameter() -> Callable[[Callable[P, T]], Callable[P, T]
                     "the `streaming` parameter was deprecated in 1.25.0; use `engine` instead."
                 )
                 if kwargs["streaming"]:
-                    kwargs["engine"] = "old-streaming"
+                    kwargs["engine"] = "streaming"
                 elif "engine" not in kwargs:
                     kwargs["engine"] = "in-memory"
 

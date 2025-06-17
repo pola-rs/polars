@@ -226,11 +226,11 @@ class ExprMetaNameSpace:
 
         Examples
         --------
-        >>> e = pl.col("foo").alias("bar")
+        >>> e = pl.col("foo") + pl.col("bar")
         >>> first = e.meta.pop()[0]
-        >>> first.meta == pl.col("foo")
-        True
         >>> first.meta == pl.col("bar")
+        True
+        >>> first.meta == pl.col("foo")
         False
         """
         return [wrap_expr(e) for e in self._pyexpr.meta_pop(schema)]

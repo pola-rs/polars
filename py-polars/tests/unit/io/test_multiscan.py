@@ -673,6 +673,26 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+def test_row_index_name_in_file(scan: Any, write: Any) -> None:
+    f = io.BytesIO()
+    write(pl.DataFrame({"index": 1}), f)
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError,
+        match="cannot add row_index with name 'index': column already exists in file",
+    ):
+        scan(f).with_row_index().collect()
+
+
 def test_extra_columns_not_ignored_22218() -> None:
     dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2, "c": 2})]
 

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.30.0"
+version = "1.31.0-beta.1"
 edition = "2021"
 
 [lib]
@@ -51,7 +51,6 @@ pct_change = ["polars-python/pct_change"]
 repeat_by = ["polars-python/repeat_by"]
 # also includes simd
 nightly = ["polars-python/nightly"]
-streaming = ["polars-python/streaming"]
 meta = ["polars-python/meta"]
 search_sorted = ["polars-python/search_sorted"]
 decompress = ["polars-python/decompress"]
@@ -112,6 +111,7 @@ all = [
   "performant",
 ]
 
+default_alloc = []
 default = ["all", "nightly"]
 
 [lints]

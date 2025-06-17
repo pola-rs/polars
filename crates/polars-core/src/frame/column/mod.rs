@@ -77,7 +77,14 @@ impl Column {
     }
 
     pub fn new_row_index(name: PlSmallStr, offset: IdxSize, length: usize) -> PolarsResult<Column> {
-        let length = IdxSize::try_from(length).unwrap_or(IdxSize::MAX);
+        let Ok(length) = IdxSize::try_from(length) else {
+            polars_bail!(
+                ComputeError:
+                "row index length {} overflows IdxSize::MAX ({})",
+                length,
+                IdxSize::MAX,
+            )
+        };
 
         if offset.checked_add(length).is_none() {
             polars_bail!(
@@ -1530,8 +1537,9 @@ impl Column {
             Column::Partitioned(s) => s.as_materialized_series().std_reduce(ddof),
             Column::Scalar(s) => {
                 // We don't really want to deal with handling the full semantics here so we just
-                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
-                s.as_single_value_series().std_reduce(ddof)
+                // cast to a small series. This is a tiny bit wasteful, but probably fine.
+                let n = s.len().min(ddof as usize + 1);
+                s.as_n_values_series(n).std_reduce(ddof)
             },
         }
     }
@@ -1541,8 +1549,9 @@ impl Column {
             Column::Partitioned(s) => s.as_materialized_series().var_reduce(ddof),
             Column::Scalar(s) => {
                 // We don't really want to deal with handling the full semantics here so we just
-                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
-                s.as_single_value_series().var_reduce(ddof)
+                // cast to a small series. This is a tiny bit wasteful, but probably fine.
+                let n = s.len().min(ddof as usize + 1);
+                s.as_n_values_series(n).var_reduce(ddof)
             },
         }
     }

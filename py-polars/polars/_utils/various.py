@@ -699,6 +699,7 @@ def display_dot_graph(
 
         plt.figure(figsize=figsize)
         img = mpimg.imread(BytesIO(graph))
+        plt.axis("off")
         plt.imshow(img)
         plt.show()
         return None

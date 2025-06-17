@@ -7,6 +7,7 @@ from polars import functions as F
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import Int64
+from polars.datatypes._parse import parse_into_datatype_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -14,7 +15,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from typing import Literal
 
-    from polars import Expr, Series
+    from polars import DataTypeExpr, Expr, Series
     from polars._typing import IntoExprColumn, PolarsIntegerType
 
 
@@ -24,7 +25,7 @@ def arange(
     end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
 
@@ -35,7 +36,7 @@ def arange(
     end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: Literal[True],
 ) -> Series: ...
 
@@ -46,7 +47,7 @@ def arange(
     end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: bool,
 ) -> Expr | Series: ...
 
@@ -56,7 +57,7 @@ def arange(
     end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
-    dtype: PolarsIntegerType = Int64,
+    dtype: PolarsIntegerType | DataTypeExpr = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -108,7 +109,7 @@ def int_range(
     end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
 
@@ -119,7 +120,7 @@ def int_range(
     end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: Literal[True],
 ) -> Series: ...
 
@@ -130,7 +131,7 @@ def int_range(
     end: int | IntoExprColumn | None = ...,
     step: int = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: bool,
 ) -> Expr | Series: ...
 
@@ -140,7 +141,7 @@ def int_range(
     end: int | IntoExprColumn | None = None,
     step: int = 1,
     *,
-    dtype: PolarsIntegerType = Int64,
+    dtype: PolarsIntegerType | DataTypeExpr = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -214,12 +215,15 @@ def int_range(
         end = start
         start = 0
 
+    dtype_expr = parse_into_datatype_expr(dtype)
     if isinstance(start, int) and isinstance(end, int) and eager:
-        return wrap_s(plr.eager_int_range(start, end, step, dtype))
+        return wrap_s(
+            plr.eager_int_range(start, end, step, dtype_expr._pydatatype_expr)
+        )
 
     start = parse_into_expression(start)
     end = parse_into_expression(end)
-    result = wrap_expr(plr.int_range(start, end, step, dtype))
+    result = wrap_expr(plr.int_range(start, end, step, dtype_expr._pydatatype_expr))
 
     if eager:
         return F.select(result).to_series()
@@ -233,7 +237,7 @@ def int_ranges(
     end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
 
@@ -244,7 +248,7 @@ def int_ranges(
     end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: Literal[True],
 ) -> Series: ...
 
@@ -255,7 +259,7 @@ def int_ranges(
     end: int | IntoExprColumn | None = ...,
     step: int | IntoExprColumn = ...,
     *,
-    dtype: PolarsIntegerType = ...,
+    dtype: PolarsIntegerType | DataTypeExpr = ...,
     eager: bool,
 ) -> Expr | Series: ...
 
@@ -265,7 +269,7 @@ def int_ranges(
     end: int | IntoExprColumn | None = None,
     step: int | IntoExprColumn = 1,
     *,
-    dtype: PolarsIntegerType = Int64,
+    dtype: PolarsIntegerType | DataTypeExpr = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -326,10 +330,11 @@ def int_ranges(
         end = start
         start = 0
 
+    dtype_expr = parse_into_datatype_expr(dtype)
     start = parse_into_expression(start)
     end = parse_into_expression(end)
     step = parse_into_expression(step)
-    result = wrap_expr(plr.int_ranges(start, end, step, dtype))
+    result = wrap_expr(plr.int_ranges(start, end, step, dtype_expr._pydatatype_expr))
 
     if eager:
         return F.select(result).to_series()

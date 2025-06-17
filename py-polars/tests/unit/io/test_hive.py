@@ -741,6 +741,49 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.write_disk
+def test_hive_partition_filter_null_23005(tmp_path: Path) -> None:
+    root = tmp_path
+
+    df = pl.DataFrame(
+        {
+            "date1": [
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                None,
+            ],
+            "date2": [
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                None,
+                datetime(2023, 3, 1),
+            ],
+            "x": [1, 2, 3, 4],
+        },
+        schema={"date1": pl.Date, "date2": pl.Datetime, "x": pl.Int32},
+    )
+
+    df.write_parquet(root, partition_by=["date1", "date2"])
+
+    q = pl.scan_parquet(root, include_file_paths="path")
+
+    full = q.collect()
+
+    assert (
+        full.select(
+            (
+                pl.any_horizontal(pl.col("date1", "date2").is_null())
+                & pl.col("path").str.contains("__HIVE_DEFAULT_PARTITION__")
+            ).sum()
+        ).item()
+        == 2
+    )
+
+    lf = pl.scan_parquet(root).filter(pl.col("date1") == datetime(2024, 1, 1))
+    assert_frame_equal(lf.collect(), df.head(1))
+
+
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),
     [

@@ -1,6 +1,7 @@
 use polars::prelude::*;
 use pyo3::prelude::*;
 
+use super::datatype::PyDataTypeExpr;
 use crate::PyExpr;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
@@ -225,7 +226,6 @@ impl PyExpr {
             .clone()
             .str()
             .to_integer(base.inner, strict)
-            .with_fmt("str.to_integer")
             .into()
     }
 
@@ -233,10 +233,10 @@ impl PyExpr {
     #[pyo3(signature = (dtype=None, infer_schema_len=None))]
     fn str_json_decode(
         &self,
-        dtype: Option<Wrap<DataType>>,
+        dtype: Option<PyDataTypeExpr>,
         infer_schema_len: Option<usize>,
     ) -> Self {
-        let dtype = dtype.map(|wrap| wrap.0);
+        let dtype = dtype.map(|wrap| wrap.inner);
         self.inner
             .clone()
             .str()

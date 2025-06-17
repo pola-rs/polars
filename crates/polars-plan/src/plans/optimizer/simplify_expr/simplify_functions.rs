@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) fn optimize_functions(
     input: &[ExprIR],
-    function: &FunctionExpr,
+    function: &IRFunctionExpr,
     options: &FunctionOptions,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
@@ -10,12 +10,12 @@ pub(super) fn optimize_functions(
         // is_null().any() -> null_count() > 0
         // is_not_null().any() ->  null_count() < len()
         // CORRECTNESS: we can ignore 'ignore_nulls' since is_null/is_not_null never produces NULLS
-        FunctionExpr::Boolean(BooleanFunction::Any { ignore_nulls: _ }) => {
+        IRFunctionExpr::Boolean(IRBooleanFunction::Any { ignore_nulls: _ }) => {
             let input_node = expr_arena.get(input[0].node());
             match input_node {
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                     options: _,
                 } => Some(AExpr::BinaryExpr {
                     left: expr_arena.add(new_null_count(input)),
@@ -24,7 +24,7 @@ pub(super) fn optimize_functions(
                 }),
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                     options: _,
                 } => {
                     // we should perform optimization only if the original expression is a column
@@ -51,12 +51,12 @@ pub(super) fn optimize_functions(
         },
         // is_null().all() -> null_count() == len()
         // is_not_null().all() -> null_count() == 0
-        FunctionExpr::Boolean(BooleanFunction::All { ignore_nulls: _ }) => {
+        IRFunctionExpr::Boolean(IRBooleanFunction::All { ignore_nulls: _ }) => {
             let input_node = expr_arena.get(input[0].node());
             match input_node {
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                     options: _,
                 } => {
                     // we should perform optimization only if the original expression is a column
@@ -78,7 +78,7 @@ pub(super) fn optimize_functions(
                 },
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                     options: _,
                 } => Some(AExpr::BinaryExpr {
                     left: expr_arena.add(new_null_count(input)),
@@ -90,7 +90,7 @@ pub(super) fn optimize_functions(
         },
         // sort().reverse() -> sort(reverse)
         // sort_by().reverse() -> sort_by(reverse)
-        FunctionExpr::Reverse => {
+        IRFunctionExpr::Reverse => {
             let input = expr_arena.get(input[0].node());
             match input {
                 AExpr::Sort { expr, options } => {
@@ -121,7 +121,7 @@ pub(super) fn optimize_functions(
         },
         // flatten nested concat_str calls
         #[cfg(all(feature = "strings", feature = "concat_str"))]
-        function @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+        function @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
             delimiter: sep,
             ignore_nulls,
         }) if sep.is_empty() => {
@@ -146,7 +146,7 @@ pub(super) fn optimize_functions(
                 None
             }
         },
-        FunctionExpr::Boolean(BooleanFunction::Not) => {
+        IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
             let y = expr_arena.get(input[0].node());
 
             match y {
@@ -161,13 +161,13 @@ pub(super) fn optimize_functions(
                     Some(AExpr::BinaryExpr {
                         left: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(left, expr_arena)],
-                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
                             options: *options,
                         }),
                         op: Operator::Or,
                         right: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(right, expr_arena)],
-                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
                             options: *options,
                         }),
                     })
@@ -183,13 +183,13 @@ pub(super) fn optimize_functions(
                     Some(AExpr::BinaryExpr {
                         left: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(left, expr_arena)],
-                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
                             options: *options,
                         }),
                         op: Operator::And,
                         right: expr_arena.add(AExpr::Function {
                             input: vec![ExprIR::from_node(right, expr_arena)],
-                            function: FunctionExpr::Boolean(BooleanFunction::Not),
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
                             options: *options,
                         }),
                     })
@@ -197,7 +197,7 @@ pub(super) fn optimize_functions(
                 // not(not x) => x
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::Not),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
                     ..
                 } => Some(expr_arena.get(input[0].node()).clone()),
                 // not(lit x) => !x
@@ -207,21 +207,21 @@ pub(super) fn optimize_functions(
                 // not(x.is_null) => x.is_not_null
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                     options,
                 } => Some(AExpr::Function {
                     input: input.clone(),
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                     options: *options,
                 }),
                 // not(x.is_not_null) => x.is_null
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                     options,
                 } => Some(AExpr::Function {
                     input: input.clone(),
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                     options: *options,
                 }),
                 // not(a == b) => a != b
@@ -288,7 +288,7 @@ pub(super) fn optimize_functions(
                 // not(col('x').is_between(a,b)) => col('x') < a || col('x') > b
                 AExpr::Function {
                     input,
-                    function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
                     ..
                 } => {
                     if !matches!(expr_arena.get(input[0].node()), AExpr::Column(_)) {
@@ -338,8 +338,8 @@ pub(super) fn optimize_functions(
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 fn is_string_concat(ae: &AExpr, ignore_nulls: bool) -> bool {
     matches!(ae, AExpr::Function {
-                function:FunctionExpr::StringExpr(
-                    StringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_inore_nulls},
+                function:IRFunctionExpr::StringExpr(
+                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_inore_nulls},
                 ),
                 ..
             } if sep.is_empty() && *func_inore_nulls == ignore_nulls)
@@ -355,7 +355,7 @@ fn get_string_concat_input(
         AExpr::Function {
             input,
             function:
-                FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                     delimiter: sep,
                     ignore_nulls: func_ignore_nulls,
                 }),

@@ -20,7 +20,7 @@ use strum_macros::IntoStaticStr;
 use self::hive::HivePartitionsDf;
 use crate::prelude::*;
 
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,
@@ -70,8 +70,7 @@ pub enum IR {
         /// We use this instead of the Arc-address of the ScanSources as it's possible to pass the
         /// same set of ScanSources with different scan options.
         ///
-        /// NOTE: This must be reset to a new Arc during e.g. predicate / slice pushdown.
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
+        /// NOTE: This must be reset to a new ID during e.g. predicate / slice pushdown.
         id: UniqueId,
     },
     DataFrameScan {
@@ -102,8 +101,8 @@ pub enum IR {
     },
     Cache {
         input: Node,
-        // Unique ID.
-        id: usize,
+        /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
+        id: UniqueId,
         /// How many hits the cache must be saved in memory.
         cache_hits: u32,
     },
@@ -195,11 +194,6 @@ impl IRPlan {
         }
     }
 
-    /// Extract the original logical plan if the plan is for the Streaming Engine
-    pub fn extract_streaming_plan(&self) -> Option<IRPlanRef> {
-        self.as_ref().extract_streaming_plan()
-    }
-
     pub fn describe(&self) -> String {
         self.as_ref().describe()
     }
@@ -228,22 +222,6 @@ impl<'a> IRPlanRef<'a> {
             lp_arena: self.lp_arena,
             expr_arena: self.expr_arena,
         }
-    }
-
-    /// Extract the original logical plan if the plan is for the Streaming Engine
-    pub fn extract_streaming_plan(self) -> Option<IRPlanRef<'a>> {
-        // @NOTE: the streaming engine replaces the whole tree with a MapFunction { Pipeline, .. }
-        // and puts the original plan somewhere in there. This is how we extract it. Disgusting, I
-        // know.
-        let IR::MapFunction { input: _, function } = self.root() else {
-            return None;
-        };
-
-        let FunctionIR::Pipeline { original, .. } = function else {
-            return None;
-        };
-
-        Some(original.as_ref()?.as_ref().as_ref())
     }
 
     pub fn display(self) -> format::IRDisplay<'a> {

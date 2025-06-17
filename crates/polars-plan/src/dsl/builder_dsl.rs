@@ -128,8 +128,7 @@ impl DslBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache { input, id }.into()
+        DslPlan::Cache { input }.into()
     }
 
     pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
@@ -369,7 +368,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 validate_output,
             }),
         }
@@ -395,7 +394,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 fmt_str: name,
             }),
         }

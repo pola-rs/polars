@@ -24,12 +24,12 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
-            Eval { .. }
-            | Alias(_, _)
-            | BinaryExpr { .. }
-            | Column(_)
-            | Ternary { .. }
-            | Cast { .. } => true,
+            Eval { variant, .. } => match variant {
+                EvalVariant::List => true,
+                EvalVariant::Cumulative { min_samples: _ } => false,
+            },
+
+            BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
             | Explode { .. }
@@ -46,7 +46,9 @@ impl AExpr {
     pub(crate) fn does_not_modify_top_level(&self) -> bool {
         match self {
             AExpr::Column(_) => true,
-            AExpr::Function { function, .. } => matches!(function, FunctionExpr::SetSortedFlag(_)),
+            AExpr::Function { function, .. } => {
+                matches!(function, IRFunctionExpr::SetSortedFlag(_))
+            },
             _ => false,
         }
     }
@@ -112,7 +114,7 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
         // for inspection. (e.g. `is_in(<literal>)`).
         #[cfg(feature = "is_in")]
         Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
             input,
             ..
         } => (|| {
@@ -217,19 +219,19 @@ impl ExprPushdownGroup {
                     // Rows that go OOB on get/gather may be filtered out in earlier operations,
                     // so we don't push these down.
                     AExpr::Function {
-                        function: FunctionExpr::ListExpr(ListFunction::Get(false)),
+                        function: IRFunctionExpr::ListExpr(IRListFunction::Get(false)),
                         ..
                     } => true,
 
                     #[cfg(feature = "list_gather")]
                     AExpr::Function {
-                        function: FunctionExpr::ListExpr(ListFunction::Gather(false)),
+                        function: IRFunctionExpr::ListExpr(IRListFunction::Gather(false)),
                         ..
                     } => true,
 
                     #[cfg(feature = "dtype-array")]
                     AExpr::Function {
-                        function: FunctionExpr::ArrayExpr(ArrayFunction::Get(false)),
+                        function: IRFunctionExpr::ArrayExpr(IRArrayFunction::Get(false)),
                         ..
                     } => true,
 
@@ -237,7 +239,7 @@ impl ExprPushdownGroup {
                     AExpr::Function {
                         input,
                         function:
-                            FunctionExpr::StringExpr(StringFunction::Strptime(_, strptime_options)),
+                            IRFunctionExpr::StringExpr(IRStringFunction::Strptime(_, strptime_options)),
                         ..
                     } => {
                         debug_assert!(input.len() <= 2);
@@ -256,9 +258,10 @@ impl ExprPushdownGroup {
                     #[cfg(feature = "python")]
                     // This is python `map_elements`. This is a hack because that function breaks
                     // the Polars model. It should be elementwise. This must be fixed.
-                    AExpr::AnonymousFunction { options, .. }
-                        if options.flags.contains(FunctionFlags::APPLY_LIST)
-                            && options.fmt_str == MAP_LIST_NAME =>
+                    AExpr::AnonymousFunction {
+                        options, fmt_str, ..
+                    } if options.flags.contains(FunctionFlags::APPLY_LIST)
+                        && fmt_str.as_ref().as_str() == MAP_LIST_NAME =>
                     {
                         return self;
                     },

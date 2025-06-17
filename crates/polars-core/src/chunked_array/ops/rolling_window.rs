@@ -83,11 +83,7 @@ mod inner_mod {
         (start, end - start)
     }
 
-    impl<T> ChunkRollApply for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        Self: IntoSeries,
-    {
+    impl<T: PolarsNumericType> ChunkRollApply for ChunkedArray<T> {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         fn rolling_map(
             &self,
@@ -214,7 +210,6 @@ mod inner_mod {
 
     impl<T> ChunkedArray<T>
     where
-        ChunkedArray<T>: IntoSeries,
         T: PolarsFloatType,
         T::Native: Float + IsFloat + SubAssign + Pow<T::Native, Output = T::Native>,
     {

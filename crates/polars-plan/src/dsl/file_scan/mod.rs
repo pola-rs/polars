@@ -1,6 +1,7 @@
 use std::hash::Hash;
 use std::sync::Mutex;
 
+use deletion::DeletionFilesList;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -18,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use super::*;
+pub mod deletion;
 
 #[cfg(feature = "python")]
 pub mod python_dataset;
@@ -206,6 +208,8 @@ pub struct UnifiedScanArgs {
     pub missing_columns_policy: MissingColumnsPolicy,
     pub extra_columns_policy: ExtraColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,
+
+    pub deletion_files: Option<DeletionFilesList>,
 }
 
 impl Default for UnifiedScanArgs {
@@ -224,6 +228,7 @@ impl Default for UnifiedScanArgs {
             missing_columns_policy: MissingColumnsPolicy::default(),
             extra_columns_policy: ExtraColumnsPolicy::default(),
             include_file_paths: None,
+            deletion_files: None,
         }
     }
 }

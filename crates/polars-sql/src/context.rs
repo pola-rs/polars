@@ -1700,7 +1700,8 @@ impl ExprSqlProjectionHeightBehavior {
             has_column |= matches!(e, Column(_) | Columns(_) | DtypeColumn(_) | IndexColumn(_));
 
             has_independent |= match e {
-                Function { options, .. } | AnonymousFunction { options, .. } => {
+                // @TODO: This is broken now with functions.
+                AnonymousFunction { options, .. } => {
                     options.returns_scalar() || !options.is_length_preserving()
                 },
 

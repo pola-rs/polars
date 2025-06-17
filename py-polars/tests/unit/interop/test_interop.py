@@ -938,3 +938,21 @@ def test_from_arrow_string_cache_20271() -> None:
 def test_to_arrow_empty_chunks_20627() -> None:
     df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
     assert df.to_arrow().shape == (1, 1)
+
+
+def test_from_arrow_recorbatch() -> None:
+    n_legs = pa.array([2, 2, 4, 4, 5, 100])
+    animals = pa.array(
+        ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]
+    )
+    names = ["n_legs", "animals"]
+    record_batch = pa.RecordBatch.from_arrays([n_legs, animals], names=names)
+    assert_frame_equal(
+        pl.DataFrame(record_batch),
+        pl.DataFrame(
+            {
+                "n_legs": n_legs,
+                "animals": animals,
+            }
+        ),
+    )

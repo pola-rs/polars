@@ -834,7 +834,7 @@ impl Duration {
                 )
             },
             _ => {
-                polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
+                polars_bail!(ComputeError: "cannot mix month, week, day, and sub-daily units for this operation")
             },
         }
     }

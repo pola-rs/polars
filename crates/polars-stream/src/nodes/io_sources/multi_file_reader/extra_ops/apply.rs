@@ -11,13 +11,14 @@ use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::ScanSource;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
 use super::ExtraOperations;
 use super::cast_columns::CastColumns;
 use super::reorder_columns::ReorderColumns;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::initialize_missing_columns_policy;
+use crate::nodes::io_sources::multi_file_reader::initialization::deletion_files::ExternalFilterMask;
+use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 
 /// Apply extra operations onto morsels originating from a reader. This should be initialized
 /// per-reader (it contains e.g. file path).
@@ -34,12 +35,16 @@ pub enum ApplyExtraOps {
         scan_source: ScanSource,
         scan_source_idx: usize,
         hive_parts: Option<Arc<HivePartitionsDf>>,
+        /// E.g. Iceberg deletion files.
+        external_filter_mask: Option<ExternalFilterMask>,
     },
 
+    /// Note: These fields are ordered according to the order in which they are applied.
     Initialized {
-        // Note: These fields are ordered according to when they (should be) applied.
+        /// Physical - i.e. applied before `external_filter_mask`. This is calculated in `initialize()` if needed.
+        physical_pre_slice: Option<Slice>,
+        external_filter_mask: Option<ExternalFilterMask>,
         row_index: Option<RowIndex>,
-        pre_slice: Option<Slice>,
         cast_columns: Option<CastColumns>,
         /// This will have include_file_paths, hive columns, missing columns.
         extra_columns: Vec<ScalarColumn>,
@@ -52,6 +57,14 @@ pub enum ApplyExtraOps {
 }
 
 impl ApplyExtraOps {
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            ApplyExtraOps::Uninitialized { .. } => "Uninitialized",
+            ApplyExtraOps::Initialized { .. } => "Initialized",
+            ApplyExtraOps::Noop => "Noop",
+        }
+    }
+
     pub fn initialize(
         self,
         // Schema of the incoming morsels.
@@ -77,6 +90,7 @@ impl ApplyExtraOps {
                 scan_source,
                 scan_source_idx,
                 hive_parts,
+                external_filter_mask,
             } => {
                 // Negative slice should have been resolved earlier.
                 if let Some(Slice::Negative { .. }) = pre_slice {
@@ -131,8 +145,9 @@ impl ApplyExtraOps {
                 debug_assert_eq!(extra_columns.len(), n_expected_extra_columns);
 
                 let mut slf = Self::Initialized {
+                    physical_pre_slice: pre_slice,
+                    external_filter_mask,
                     row_index,
-                    pre_slice,
                     cast_columns,
                     extra_columns,
                     predicate,
@@ -148,7 +163,7 @@ impl ApplyExtraOps {
                     // We use a trick to determine our schema state before reordering by applying onto an empty DataFrame.
                     // This is much less error prone compared determining it separately.
                     let mut df = DataFrame::empty_with_schema(incoming_schema);
-                    slf.apply_to_df(&mut df, IdxSize::MAX)?;
+                    slf.apply_to_df(&mut df, RowCounter::MAX)?;
                     df.schema().clone()
                 };
 
@@ -172,8 +187,9 @@ impl ApplyExtraOps {
                 // can see the `Noop` and avoid running through an extra distributor pipeline.
                 let slf = match slf {
                     Initialized {
+                        physical_pre_slice: None,
+                        external_filter_mask: None,
                         row_index: None,
-                        pre_slice: None,
                         cast_columns: None,
                         extra_columns,
                         predicate: None,
@@ -195,11 +211,13 @@ impl ApplyExtraOps {
     pub fn apply_to_df(
         &self,
         df: &mut DataFrame,
-        current_row_position: IdxSize,
+        // Row position of this morsel relative to the start of the current file.
+        current_row_position: RowCounter,
     ) -> PolarsResult<()> {
         let Self::Initialized {
+            physical_pre_slice,
+            external_filter_mask,
             row_index,
-            pre_slice,
             cast_columns,
             extra_columns,
             predicate,
@@ -217,25 +235,70 @@ impl ApplyExtraOps {
             unreachable!();
         };
 
-        if let Some(ri) = row_index {
-            unsafe {
-                df.with_column_unchecked(Column::new_row_index(
-                    ri.name.clone(),
-                    ri.offset.saturating_add(current_row_position),
-                    df.height(),
-                )?)
-            };
-        }
+        // Note, this counts physical rows
+        let mut local_slice_offset: usize = 0;
 
-        if let Some(pre_slice) = pre_slice.clone() {
-            let Slice::Positive { offset, len } = pre_slice
-                .offsetted(usize::try_from(current_row_position).unwrap())
+        if let Some(physical_pre_slice) = physical_pre_slice.clone() {
+            let Slice::Positive { offset, len } = physical_pre_slice
+                .offsetted(current_row_position.num_physical_rows())
                 .restrict_to_bounds(df.height())
             else {
                 unreachable!()
             };
 
+            local_slice_offset = offset;
+
             *df = df.slice(i64::try_from(offset).unwrap(), len)
+        }
+
+        if let Some(external_filter_mask) = external_filter_mask {
+            let offset = current_row_position
+                .num_physical_rows()
+                .saturating_add(local_slice_offset);
+
+            let Slice::Positive { offset, len } = Slice::Positive {
+                offset,
+                len: df.height(),
+            }
+            .restrict_to_bounds(external_filter_mask.len()) else {
+                unreachable!()
+            };
+
+            let local_filter_mask = external_filter_mask.slice(offset, len);
+            local_filter_mask.filter_df(df)?;
+        };
+
+        // Note: This branch is hit if we have negative slice or predicate + row index and the reader
+        // does not support them.
+        if let Some(ri) = row_index {
+            // Adjustment needed for `current_row_position`.
+            let local_offset_adjustment = RowCounter::new(
+                // Number of physical rows skipped in the current function
+                local_slice_offset,
+                // How many of those skipped rows were deleted
+                external_filter_mask.as_ref().map_or(0, |mask| {
+                    if local_slice_offset == 0 {
+                        0
+                    } else {
+                        mask.slice(current_row_position.num_physical_rows(), local_slice_offset)
+                            .num_deleted_rows()
+                    }
+                }),
+            );
+
+            let offset = ri.offset.saturating_add(
+                current_row_position
+                    .add(local_offset_adjustment)
+                    .num_rows_idxsize_saturating()?,
+            );
+
+            unsafe {
+                df.with_column_unchecked(Column::new_row_index(
+                    ri.name.clone(),
+                    offset,
+                    df.height(),
+                )?)
+            };
         }
 
         if let Some(cast_columns) = cast_columns {

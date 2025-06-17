@@ -249,18 +249,6 @@ def test_unset_sorted_flag_after_extend() -> None:
     assert df.to_dict(as_series=False) == {"Add": [37, 41], "Batch": [48, 49]}
 
 
-def test_sorted_flag_after_streaming_join() -> None:
-    # streaming left join
-    df1 = pl.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 6]}).set_sorted("x")
-    df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
-    assert (
-        df1.lazy()
-        .join(df2.lazy(), on="x", how="left", maintain_order="left")
-        .collect(engine="old-streaming")["x"]  # type: ignore[call-overload]
-        .flags["SORTED_ASC"]
-    )
-
-
 def test_sorted_flag_partition_by() -> None:
     assert (
         pl.DataFrame({"one": [1, 2, 3], "two": ["a", "a", "b"]})

@@ -408,9 +408,7 @@ c
             f.write(data)
 
     expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
-    out = pl.scan_csv(paths).collect(  # type: ignore[call-overload]
-        engine="old-streaming" if streaming else "in-memory"
-    )
+    out = pl.scan_csv(paths).collect(engine="streaming" if streaming else "in-memory")
 
     assert_frame_equal(out, expect)
 
@@ -491,3 +489,13 @@ a,b,c
             schema=schema,
         ),
     )
+
+
+def test_csv_negative_slice_comment_char_22996() -> None:
+    f = b"""\
+a,b
+1,1
+"""
+
+    q = pl.scan_csv(2 * [f], comment_prefix="#").tail(100)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 1], "b": [1, 1]}))

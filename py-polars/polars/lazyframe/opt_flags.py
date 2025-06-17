@@ -259,7 +259,6 @@ QueryOptFlags {{
     fast_projection: {self.fast_projection}
 
     eager: {self._pyoptflags.eager}
-    old_streaming: {self._pyoptflags.old_streaming}
     streaming: {self._pyoptflags.streaming}
 }}
         """.strip()

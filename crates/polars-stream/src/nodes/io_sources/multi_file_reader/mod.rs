@@ -4,6 +4,7 @@ pub mod initialization;
 pub mod post_apply_pipeline;
 pub mod reader_interface;
 pub mod reader_pipelines;
+pub mod row_counter;
 
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
@@ -15,12 +16,14 @@ use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::{RowIndex, pl_async};
+use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use reader_interface::builder::FileReaderBuilder;
+use reader_interface::capabilities::ReaderCapabilities;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector;
@@ -53,6 +56,7 @@ pub struct MultiFileReaderConfig {
     pub missing_columns_policy: MissingColumnsPolicy,
     pub extra_columns_policy: ExtraColumnsPolicy,
     pub cast_columns_policy: CastColumnsPolicy,
+    pub deletion_files: Option<DeletionFilesList>,
 
     pub num_pipelines: AtomicUsize,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
@@ -77,6 +81,14 @@ impl MultiFileReaderConfig {
     fn max_concurrent_scans(&self) -> usize {
         self.max_concurrent_scans
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn reader_capabilities(&self) -> ReaderCapabilities {
+        if std::env::var("POLARS_FORCE_EMPTY_READER_CAPABILITIES").as_deref() == Ok("1") {
+            ReaderCapabilities::empty()
+        } else {
+            self.file_reader_builder.reader_capabilities()
+        }
     }
 }
 

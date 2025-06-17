@@ -20,6 +20,7 @@ use pyo3::types::{PyDict, PyDictMethods, PyList};
 use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::expr::datatype::PyDataTypeExpr;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::io::PyScanOptions;
 use crate::lazyframe::visit::NodeTraverser;
@@ -302,34 +303,16 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (
-        source, sources, n_rows, cache, parallel, rechunk, row_index, low_memory, cloud_options,
-        credential_provider, use_statistics, hive_partitioning, schema, hive_schema,
-        try_parse_hive_dates, retries, glob, include_file_paths, scan_options,
+        sources, schema, scan_options, parallel, low_memory, use_statistics
     ))]
     fn new_from_parquet(
-        source: Option<PyObject>,
         sources: Wrap<ScanSources>,
-        n_rows: Option<usize>,
-        cache: bool,
-        parallel: Wrap<ParallelStrategy>,
-        rechunk: bool,
-        row_index: Option<(String, IdxSize)>,
-        low_memory: bool,
-        cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
-        use_statistics: bool,
-        hive_partitioning: Option<bool>,
         schema: Option<Wrap<Schema>>,
-        hive_schema: Option<Wrap<Schema>>,
-        try_parse_hive_dates: bool,
-        retries: usize,
-        glob: bool,
-        include_file_paths: Option<String>,
         scan_options: PyScanOptions,
+        parallel: Wrap<ParallelStrategy>,
+        low_memory: bool,
+        use_statistics: bool,
     ) -> PyResult<Self> {
-        use cloud::credential_provider::PlCredentialProvider;
-        use polars_utils::slice_enum::Slice;
-
         use crate::utils::to_py_err;
 
         let parallel = parallel.0;
@@ -342,64 +325,9 @@ impl PyLazyFrame {
         };
 
         let sources = sources.0;
-        let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.to_path_buf()), sources),
-            Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
-        };
+        let first_path = sources.first_path().map(|p| p.to_path_buf());
 
-        let cloud_options = if let Some(first_path) = first_path {
-            #[cfg(feature = "cloud")]
-            {
-                let first_path_url = first_path.to_string_lossy();
-                let cloud_options =
-                    parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
-
-                Some(
-                    cloud_options
-                        .with_max_retries(retries)
-                        .with_credential_provider(
-                            credential_provider.map(PlCredentialProvider::from_python_builder),
-                        ),
-                )
-            }
-
-            #[cfg(not(feature = "cloud"))]
-            {
-                None
-            }
-        } else {
-            None
-        };
-
-        let hive_schema = hive_schema.map(|s| Arc::new(s.0));
-
-        let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: name.into(),
-            offset,
-        });
-
-        let hive_options = HiveOptions {
-            enabled: hive_partitioning,
-            hive_start_idx: 0,
-            schema: hive_schema,
-            try_parse_dates: try_parse_hive_dates,
-        };
-
-        let unified_scan_args = UnifiedScanArgs {
-            schema: None,
-            cloud_options,
-            hive_options,
-            rechunk,
-            cache,
-            glob,
-            projection: None,
-            row_index,
-            pre_slice: n_rows.map(|len| Slice::Positive { offset: 0, len }),
-            cast_columns_policy: scan_options.extract_cast_options()?,
-            missing_columns_policy: scan_options.missing_columns_policy()?,
-            extra_columns_policy: scan_options.extra_columns_policy()?,
-            include_file_paths: include_file_paths.map(|x| x.into()),
-        };
+        let unified_scan_args = scan_options.extract_unified_scan_args(first_path.as_ref())?;
 
         let lf: LazyFrame = DslBuilder::scan_parquet(sources, options, unified_scan_args)
             .map_err(to_py_err)?
@@ -595,7 +523,6 @@ impl PyLazyFrame {
         comm_subexpr_elim: bool,
         cluster_with_columns: bool,
         collapse_joins: bool,
-        streaming: bool,
         _eager: bool,
         _check_order: bool,
         #[allow(unused_variables)] new_streaming: bool,
@@ -612,11 +539,6 @@ impl PyLazyFrame {
             .with_check_order(_check_order)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
-
-        #[cfg(feature = "streaming")]
-        {
-            ldf = ldf.with_streaming(streaming);
-        }
 
         #[cfg(feature = "new_streaming")]
         {
@@ -779,7 +701,7 @@ impl PyLazyFrame {
         })
     }
 
-    #[cfg(all(feature = "streaming", feature = "parquet"))]
+    #[cfg(feature = "parquet")]
     #[pyo3(signature = (
         target, compression, compression_level, statistics, row_group_size, data_page_size,
         cloud_options, credential_provider, retries, sink_options, metadata, field_overwrites,
@@ -851,7 +773,7 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    #[cfg(all(feature = "streaming", feature = "ipc"))]
+    #[cfg(feature = "ipc")]
     #[pyo3(signature = (
         target, compression, compat_level, cloud_options, credential_provider, retries,
         sink_options
@@ -916,7 +838,7 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    #[cfg(all(feature = "streaming", feature = "csv"))]
+    #[cfg(feature = "csv")]
     #[pyo3(signature = (
         target, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
@@ -1011,7 +933,7 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[cfg(all(feature = "streaming", feature = "json"))]
+    #[cfg(feature = "json")]
     #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options))]
     fn sink_json(
         &self,
@@ -1580,7 +1502,7 @@ impl PyLazyFrame {
         opt.set(OptFlags::PREDICATE_PUSHDOWN, predicate_pushdown);
         opt.set(OptFlags::PROJECTION_PUSHDOWN, projection_pushdown);
         opt.set(OptFlags::SLICE_PUSHDOWN, slice_pushdown);
-        opt.set(OptFlags::STREAMING, streamable);
+        opt.set(OptFlags::NEW_STREAMING, streamable);
 
         self.ldf
             .clone()
@@ -1610,8 +1532,8 @@ impl PyLazyFrame {
         self.ldf.clone().cast(cast_map, strict).into()
     }
 
-    fn cast_all(&self, dtype: Wrap<DataType>, strict: bool) -> Self {
-        self.ldf.clone().cast_all(dtype.0, strict).into()
+    fn cast_all(&self, dtype: PyDataTypeExpr, strict: bool) -> Self {
+        self.ldf.clone().cast_all(dtype.inner, strict).into()
     }
 
     fn clone(&self) -> Self {
@@ -1692,11 +1614,16 @@ impl<'py> FromPyObject<'py> for Wrap<polars_io::parquet::write::ParquetFieldOver
                 .collect()
         });
 
+        let required = PyDictMethods::get_item(&parsed, "required")?
+            .map(|v| v.extract::<bool>())
+            .transpose()?;
+
         Ok(Wrap(ParquetFieldOverwrites {
             name,
             children,
             field_id,
             metadata,
+            required,
         }))
     }
 }

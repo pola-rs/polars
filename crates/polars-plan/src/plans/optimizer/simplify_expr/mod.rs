@@ -9,7 +9,7 @@ use crate::plans::*;
 fn new_null_count(input: &[ExprIR]) -> AExpr {
     AExpr::Function {
         input: input.to_vec(),
-        function: FunctionExpr::NullCount,
+        function: IRFunctionExpr::NullCount,
         options: FunctionOptions::aggregation()
             .with_flags(|f| f | FunctionFlags::ALLOW_GROUP_AWARE),
     }
@@ -261,7 +261,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             },
             AExpr::Function {
                 input,
-                function: FunctionExpr::Negate,
+                function: IRFunctionExpr::Negate,
                 ..
             } if input.len() == 1 => {
                 let input = &input[0];
@@ -341,7 +341,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_left,
                         function:
-                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun_l @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep_l,
                                 ignore_nulls: ignore_nulls_l,
                             }),
@@ -350,7 +350,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep_r,
                                 ignore_nulls: ignore_nulls_r,
                             }),
@@ -375,7 +375,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input,
                         function:
-                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -401,7 +401,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -422,7 +422,7 @@ fn string_addition_to_linear_concat(
                     }
                 },
                 _ => {
-                    let function = StringFunction::ConcatHorizontal {
+                    let function = IRStringFunction::ConcatHorizontal {
                         delimiter: "".into(),
                         ignore_nulls: false,
                     };
@@ -461,7 +461,7 @@ impl OptimizationRule for SimplifyExprRule {
                 match input_expr {
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::DropNulls,
+                        function: IRFunctionExpr::DropNulls,
                         options: _,
                     } => {
                         // we should perform optimization only if the original expression is a column
@@ -493,12 +493,12 @@ impl OptimizationRule for SimplifyExprRule {
                 match input_expr {
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                         options: _,
                     } => Some(new_null_count(input)),
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                         options: _,
                     } => {
                         // we should perform optimization only if the original expression is a column

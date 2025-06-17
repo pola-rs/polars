@@ -141,6 +141,10 @@ fn to_nested_recursive(
 ) -> PolarsResult<()> {
     let is_optional = is_nullable(type_.get_field_info());
 
+    if !is_optional && array.null_count() > 0 {
+        polars_bail!(InvalidOperation: "writing a missing value to required field '{}'", type_.name());
+    }
+
     use PhysicalType::*;
     match array.dtype().to_physical_type() {
         Struct => {

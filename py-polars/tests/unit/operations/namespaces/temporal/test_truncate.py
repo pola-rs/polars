@@ -9,6 +9,7 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -159,3 +160,9 @@ def test_truncate_origin_22590(
         .item()
     )
     assert result == expected, result
+
+
+def test_truncate_invalid() -> None:
+    s = pl.Series([date(2020, 1, 1)])
+    with pytest.raises(ComputeError, match="cannot mix"):
+        s.dt.truncate("1d1h")

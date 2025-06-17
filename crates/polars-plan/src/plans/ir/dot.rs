@@ -10,7 +10,6 @@ use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
 pub struct IRDotDisplay<'a> {
-    is_streaming: bool,
     lp: IRPlanRef<'a>,
 }
 
@@ -50,26 +49,11 @@ fn write_label<'a, 'b>(
 
 impl<'a> IRDotDisplay<'a> {
     pub fn new(lp: IRPlanRef<'a>) -> Self {
-        if let Some(streaming_lp) = lp.extract_streaming_plan() {
-            return Self::new_streaming(streaming_lp);
-        }
-
-        Self {
-            is_streaming: false,
-            lp,
-        }
-    }
-
-    fn new_streaming(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            is_streaming: true,
-            lp,
-        }
+        Self { lp }
     }
 
     fn with_root(&self, root: Node) -> Self {
         Self {
-            is_streaming: false,
             lp: self.lp.with_root(root),
         }
     }
@@ -94,23 +78,8 @@ impl<'a> IRDotDisplay<'a> {
         use fmt::Write;
 
         let root = self.lp.root();
-
-        let mut parent = parent;
-        if self.is_streaming {
-            *last += 1;
-            let streaming_node = DotNode::Plain(*last);
-
-            if let Some(parent) = parent {
-                writeln!(f, "{INDENT}{parent} -- {streaming_node}")?;
-                write_label(f, streaming_node, |f| f.write_str("STREAMING"))?;
-            }
-
-            parent = Some(streaming_node);
-        }
-        let parent = parent;
-
         let id = if let IR::Cache { id, .. } = root {
-            DotNode::Cache(*id)
+            DotNode::Cache(id.to_usize())
         } else {
             *last += 1;
             DotNode::Plain(*last)
@@ -297,12 +266,8 @@ impl<'a> IRDotDisplay<'a> {
             MapFunction {
                 input, function, ..
             } => {
-                if let Some(streaming_lp) = function.to_streaming_lp() {
-                    Self::new_streaming(streaming_lp)._format(f, Some(id), last)?;
-                } else {
-                    self.with_root(*input)._format(f, Some(id), last)?;
-                    write_label(f, id, |f| write!(f, "{function}"))?;
-                }
+                self.with_root(*input)._format(f, Some(id), last)?;
+                write_label(f, id, |f| write!(f, "{function}"))?;
             },
             ExtContext { input, .. } => {
                 self.with_root(*input)._format(f, Some(id), last)?;

@@ -229,17 +229,20 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
-    >>> df.select(pl.cum_count("a"))
-    shape: (3, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ u32 │
-    ╞═════╡
-    │ 1   │
-    │ 2   │
-    │ 2   │
-    └─────┘
+    >>> df.with_columns(
+    ...     ca=pl.cum_count("a"),
+    ...     cb=pl.cum_count("b"),
+    ... )
+    shape: (3, 4)
+    ┌──────┬──────┬─────┬─────┐
+    │ a    ┆ b    ┆ ca  ┆ cb  │
+    │ ---  ┆ ---  ┆ --- ┆ --- │
+    │ i64  ┆ i64  ┆ u32 ┆ u32 │
+    ╞══════╪══════╪═════╪═════╡
+    │ 1    ┆ 3    ┆ 1   ┆ 1   │
+    │ 2    ┆ null ┆ 2   ┆ 1   │
+    │ null ┆ null ┆ 2   ┆ 1   │
+    └──────┴──────┴─────┴─────┘
     """
     return F.col(*columns).cum_count(reverse=reverse)
 
@@ -1885,7 +1888,7 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    if engine in ("streaming", "old-streaming"):
+    if engine == "streaming":
         issue_unstable_warning("streaming mode is considered unstable.")
 
     lfs = [lf._ldf for lf in lazy_frames]
@@ -1982,7 +1985,7 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    if engine in ("streaming", "old-streaming"):
+    if engine == "streaming":
         issue_unstable_warning("streaming mode is considered unstable.")
 
     result: (

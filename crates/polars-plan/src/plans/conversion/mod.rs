@@ -7,7 +7,8 @@ mod ir_to_dsl;
     feature = "ipc",
     feature = "parquet",
     feature = "csv",
-    feature = "json"
+    feature = "json",
+    feature = "python"
 ))]
 mod scans;
 mod stack_opt;
@@ -26,7 +27,8 @@ use recursive::recursive;
     feature = "ipc",
     feature = "parquet",
     feature = "csv",
-    feature = "json"
+    feature = "json",
+    feature = "python"
 ))]
 pub use scans::*;
 mod functions;
@@ -175,8 +177,10 @@ impl IR {
                 id,
                 cache_hits: _,
             } => {
-                let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache { input, id }
+                let input: Arc<DslPlan> = id
+                    .downcast_arc()
+                    .unwrap_or_else(|| Arc::new(convert_to_lp(input, lp_arena)));
+                DslPlan::Cache { input }
             },
             IR::GroupBy {
                 input,

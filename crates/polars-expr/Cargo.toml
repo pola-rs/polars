@@ -28,7 +28,6 @@ recursive = { workspace = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-plan/nightly"]
-streaming = ["polars-plan/streaming", "polars-ops/chunked_ids"]
 parquet = ["polars-io/parquet", "polars-plan/parquet"]
 temporal = [
   "dtype-datetime",

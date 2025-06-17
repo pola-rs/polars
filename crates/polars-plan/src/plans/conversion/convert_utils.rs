@@ -30,7 +30,7 @@ pub(super) fn convert_st_union(
             exprs.extend(to_cast);
 
             if !exprs.is_empty() {
-                let expr = to_expr_irs(exprs, expr_arena)?;
+                let expr = to_expr_irs(exprs, expr_arena, &input_schema)?;
                 let lp = IRBuilder::new(*input, expr_arena, lp_arena)
                     .with_columns(expr, Default::default())
                     .build();
@@ -87,7 +87,7 @@ pub(super) fn convert_diagonal_concat(
                 columns_to_add.push(NULL.lit().cast(dtype.clone()).alias(name.clone()))
             }
         }
-        let expr = to_expr_irs(columns_to_add, expr_arena)?;
+        let expr = to_expr_irs(columns_to_add, expr_arena, &Schema::default())?;
         *node = IRBuilder::new(*node, expr_arena, lp_arena)
             // Add the missing columns
             .with_columns(expr, Default::default())

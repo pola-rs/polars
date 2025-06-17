@@ -114,7 +114,6 @@ performant = [
   "dtype-struct",
   "cse",
   "polars-ops/performant",
-  "streaming",
   "fused",
 ]
 
@@ -217,7 +216,6 @@ index_of = ["polars-lazy?/index_of"]
 search_sorted = ["polars-lazy?/search_sorted"]
 semi_anti_join = ["polars-lazy?/semi_anti_join", "polars-ops/semi_anti_join", "polars-sql?/semi_anti_join"]
 sign = ["polars-lazy?/sign"]
-streaming = ["polars-lazy?/streaming"]
 string_encoding = ["polars-ops/string_encoding", "polars-lazy?/string_encoding", "polars-core/strings"]
 string_pad = ["polars-lazy?/string_pad", "polars-ops/string_pad"]
 string_normalize = ["polars-lazy?/string_normalize", "polars-ops/string_normalize"]
@@ -436,7 +434,6 @@ docs-selection = [
   "unique_counts",
   "polars_cloud_client",
   "serde",
-  "ir_serde",
   "cloud",
   "async",
 ]

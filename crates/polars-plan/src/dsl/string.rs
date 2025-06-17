@@ -251,19 +251,15 @@ impl StringNameSpace {
 
     /// Convert a String column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
-    pub fn strptime(self, dtype: DataType, options: StrptimeOptions, ambiguous: Expr) -> Expr {
-        let is_column_independent = is_column_independent(&self.0);
+    pub fn strptime(
+        self,
+        dtype: impl Into<DataTypeExpr>,
+        options: StrptimeOptions,
+        ambiguous: Expr,
+    ) -> Expr {
         // Only elementwise if the format is explicitly set, or we're constant.
         self.0
-            .map_binary(StringFunction::Strptime(dtype, options), ambiguous)
-            .with_function_options(|mut options| {
-                // @HACK. This needs to be done because literals still block predicate pushdown,
-                // but this should be an exception in the predicate pushdown.
-                if is_column_independent {
-                    options.set_elementwise();
-                }
-                options
-            })
+            .map_binary(StringFunction::Strptime(dtype.into(), options), ambiguous)
     }
 
     /// Convert a String column into a Date column.
@@ -479,9 +475,13 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_decode(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
+    pub fn json_decode(
+        self,
+        dtype: Option<impl Into<DataTypeExpr>>,
+        infer_schema_len: Option<usize>,
+    ) -> Expr {
         self.0.map_unary(StringFunction::JsonDecode {
-            dtype,
+            dtype: dtype.map(Into::into),
             infer_schema_len,
         })
     }

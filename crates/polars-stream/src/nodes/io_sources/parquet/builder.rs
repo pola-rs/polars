@@ -10,7 +10,7 @@ use super::{FileReader, ParquetFileReader};
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParquetReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub options: Arc<ParquetOptions>,

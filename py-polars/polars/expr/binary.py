@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import scale_bytes
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import parse_into_dtype
+from polars.datatypes import parse_into_datatype_expr
 
 if TYPE_CHECKING:
-    from polars import Expr
+    from polars import DataTypeExpr, Expr
     from polars._typing import (
         Endianness,
         IntoExpr,
@@ -298,7 +298,7 @@ class ExprBinaryNameSpace:
         return sz
 
     def reinterpret(
-        self, *, dtype: PolarsDataType, endianness: Endianness = "little"
+        self, *, dtype: PolarsDataType | DataTypeExpr, endianness: Endianness = "little"
     ) -> Expr:
         r"""
         Interpret a buffer as a numerical Polars type.
@@ -335,6 +335,6 @@ class ExprBinaryNameSpace:
         │ b"\x10\x00\x01\x00" ┆ 65552   │
         └─────────────────────┴─────────┘
         """
-        dtype = parse_into_dtype(dtype)
+        dtype = parse_into_datatype_expr(dtype)
 
-        return wrap_expr(self._pyexpr.from_buffer(dtype, endianness))
+        return wrap_expr(self._pyexpr.from_buffer(dtype._pydatatype_expr, endianness))

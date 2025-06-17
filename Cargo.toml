@@ -57,13 +57,13 @@ memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
 ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
-numpy = "0.24"
+numpy = "0.25"
 object_store = { version = "0.12", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
 proptest = { version = "1.6", default-features = false, features = ["std"] }
-pyo3 = "0.24.2"
+pyo3 = "0.25"
 rand = "0.8"
 rand_distr = "0.4"
 raw-cpuid = "11"
@@ -112,13 +112,13 @@ polars-lazy = { version = "0.48.1", path = "crates/polars-lazy", default-feature
 polars-mem-engine = { version = "0.48.1", path = "crates/polars-mem-engine", default-features = false }
 polars-ops = { version = "0.48.1", path = "crates/polars-ops", default-features = false }
 polars-parquet = { version = "0.48.1", path = "crates/polars-parquet", default-features = false }
-polars-pipe = { version = "0.48.1", path = "crates/polars-pipe", default-features = false }
 polars-plan = { version = "0.48.1", path = "crates/polars-plan", default-features = false }
 polars-python = { version = "0.48.1", path = "crates/polars-python", default-features = false }
 polars-row = { version = "0.48.1", path = "crates/polars-row", default-features = false }
 polars-schema = { version = "0.48.1", path = "crates/polars-schema", default-features = false }
 polars-sql = { version = "0.48.1", path = "crates/polars-sql", default-features = false }
 polars-stream = { version = "0.48.1", path = "crates/polars-stream", default-features = false }
+polars-testing = { version = "0.48.1", path = "crates/polars-testing", default-features = false }
 polars-time = { version = "0.48.1", path = "crates/polars-time", default-features = false }
 polars-utils = { version = "0.48.1", path = "crates/polars-utils", default-features = false }
 
@@ -147,10 +147,6 @@ collapsible_if = "allow"
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 tikv-jemallocator = { git = "https://github.com/pola-rs/jemallocator", rev = "c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936" }
-pyo3-build-config = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
-pyo3 = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
-pyo3-macros-backend = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
-pyo3-ffi = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
 
 [profile.mindebug-dev]
 inherits = "dev"

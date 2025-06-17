@@ -138,6 +138,9 @@ impl DynLiteralValue {
                 Ok(Scalar::from(s).cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Int(i) => {
+                #[cfg(not(feature = "dtype-i128"))]
+                let i: i64 = i.try_into().expect("activate dtype-i128 feature");
+
                 Ok(Scalar::from(i).cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Float(f) => {
@@ -205,14 +208,6 @@ impl RangeLiteralValue {
 }
 
 impl LiteralValue {
-    /// Get the output name as `&str`.
-    pub(crate) fn output_name(&self) -> &PlSmallStr {
-        match self {
-            LiteralValue::Series(s) => s.name(),
-            _ => get_literal_name(),
-        }
-    }
-
     /// Get the output name as [`PlSmallStr`].
     pub(crate) fn output_column_name(&self) -> &PlSmallStr {
         match self {

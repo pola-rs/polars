@@ -183,6 +183,6 @@ impl Iterator for FlatIter {
         }
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.offset))
+        (self.len - self.offset, Some(self.len - self.offset))
     }
 }

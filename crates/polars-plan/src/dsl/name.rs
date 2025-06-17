@@ -111,6 +111,14 @@ impl ExprNameNameSpace {
         )
     }
 
+    #[cfg(all(feature = "dtype-struct", feature = "python"))]
+    pub fn map_fields_udf(self, function: polars_utils::python_function::PythonObject) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::StructExpr(StructFunction::MapFieldNames(
+                SpecialEq::new(Arc::new(function)),
+            )))
+    }
+
     #[cfg(feature = "dtype-struct")]
     pub fn prefix_fields(self, prefix: &str) -> Expr {
         self.0

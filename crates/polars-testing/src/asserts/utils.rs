@@ -335,7 +335,17 @@ pub fn assert_series_values_equal(
         (left.clone(), right.clone())
     };
 
-    let unequal = left.not_equal_missing(&right)?;
+    let unequal = match left.not_equal_missing(&right) {
+        Ok(result) => result,
+        Err(_) => {
+            return Err(polars_err!(
+                assertion_error = "Series",
+                "incompatible data types",
+                left.dtype(),
+                right.dtype()
+            ));
+        },
+    };
 
     if comparing_nested_floats(left.dtype(), right.dtype()) {
         let filtered_left = left.filter(&unequal)?;
@@ -349,9 +359,7 @@ pub fn assert_series_values_equal(
             atol,
             categorical_as_str,
         ) {
-            Ok(_) => {
-                return Ok(());
-            },
+            Ok(_) => return Ok(()),
             Err(_) => {
                 return Err(polars_err!(
                     assertion_error = "Series",
@@ -424,7 +432,10 @@ pub fn assert_series_nested_values_equal(
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
     if comparing_lists(left.dtype(), right.dtype()) {
-        let zipped = left.iter().zip(right.iter());
+        let left_rechunked = left.rechunk();
+        let right_rechunked = right.rechunk();
+
+        let zipped = left_rechunked.iter().zip(right_rechunked.iter());
 
         for (s1, s2) in zipped {
             if s1.is_null() || s2.is_null() {
@@ -456,13 +467,16 @@ pub fn assert_series_nested_values_equal(
         let ls = left.struct_()?.clone().unnest();
         let rs = right.struct_()?.clone().unnest();
 
-        let ls_cols = ls.get_columns();
-        let rs_cols = rs.get_columns();
+        for col_name in ls.get_column_names() {
+            let s1_column = ls.column(col_name)?;
+            let s2_column = rs.column(col_name)?;
 
-        for (s1, s2) in ls_cols.iter().zip(rs_cols.iter()) {
+            let s1_series = s1_column.as_materialized_series();
+            let s2_series = s2_column.as_materialized_series();
+
             match assert_series_values_equal(
-                s1.as_series().unwrap(),
-                s2.as_series().unwrap(),
+                s1_series,
+                s2_series,
                 true,
                 check_exact,
                 rtol,
@@ -538,7 +552,7 @@ pub fn assert_series_equal(
     if options.check_dtypes && left.dtype() != right.dtype() {
         return Err(polars_err!(
             assertion_error = "Series",
-            "data type mismatch",
+            "dtype mismatch",
             left.dtype(),
             right.dtype()
         ));

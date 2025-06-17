@@ -26,6 +26,7 @@ from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
 from polars.functions.business import business_day_count
 from polars.functions.col import col
+from polars.functions.datatype import dtype_of
 from polars.functions.eager import align_frames, concat
 from polars.functions.escape_regex import escape_regex
 from polars.functions.lazy import (
@@ -103,6 +104,8 @@ __all__ = [
     "max_horizontal",
     "min_horizontal",
     "sum_horizontal",
+    # polars.functions.datatype
+    "dtype_of",
     # polars.functions.eager
     "align_frames",
     "approx_n_unique",

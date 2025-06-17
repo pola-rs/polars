@@ -41,7 +41,6 @@ impl FunctionIR {
                 .as_ref()
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
-            Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
             FastCount { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
                 let name = alias.clone().unwrap_or_else(get_len_name);

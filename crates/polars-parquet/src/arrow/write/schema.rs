@@ -69,6 +69,13 @@ fn insert_field_metadata(field: &mut Cow<Field>, options: &ColumnWriteOptions) {
         field.metadata = Some(Arc::new(metadata));
     }
 
+    if let Some(v) = options.required {
+        if v == field.is_nullable {
+            let field = field.to_mut();
+            field.is_nullable = !v;
+        }
+    }
+
     use ArrowDataType as D;
     match field.dtype() {
         D::Struct(f) => {
@@ -180,10 +187,10 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema, options: &[ColumnWriteOption
 /// Creates a [`ParquetType`] from a [`Field`].
 pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsResult<ParquetType> {
     let name = field.name.clone();
-    let repetition = if field.is_nullable {
-        Repetition::Optional
-    } else {
+    let repetition = if options.required.unwrap_or(!field.is_nullable) {
         Repetition::Required
+    } else {
+        Repetition::Optional
     };
 
     let field_id = options.field_id;

@@ -173,7 +173,7 @@ fn create_physical_expr_inner(
             order_by,
             options,
         } => {
-            let mut function = *function;
+            let function = *function;
             state.set_window();
             let phys_function = create_physical_expr_inner(
                 function,
@@ -198,11 +198,6 @@ fn create_physical_expr_inner(
                 })
                 .transpose()?;
 
-            let mut out_name = None;
-            if let Alias(expr, name) = expr_arena.get(function) {
-                function = *expr;
-                out_name = Some(name.clone());
-            };
             let function_expr = node_to_expr(function, expr_arena);
             let expr = node_to_expr(expression, expr_arena);
 
@@ -238,22 +233,46 @@ fn create_physical_expr_inner(
                         }
                     }
 
+                    // Check if the branches have an aggregation
+                    // when(a > sum)
+                    // then (foo)
+                    // otherwise(bar - sum)
+                    let mut has_arity = false;
+                    let mut agg_col = false;
+                    for (_, e) in expr_arena.iter(function) {
+                        match e {
+                            AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
+                                has_arity = true;
+                            },
+                            AExpr::Agg(_) => {
+                                agg_col = true;
+                            },
+                            AExpr::Function { options, .. }
+                            | AExpr::AnonymousFunction { options, .. } => {
+                                if options.flags.returns_scalar() {
+                                    agg_col = true;
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+                    let has_different_group_sources = has_arity && agg_col;
+
                     Ok(Arc::new(WindowExpr {
                         group_by,
                         order_by,
                         apply_columns,
-                        out_name,
                         function: function_expr,
                         phys_function,
                         mapping: *mapping,
                         expr,
+                        has_different_group_sources,
                     }))
                 },
                 #[cfg(feature = "dynamic_group_by")]
                 WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
                     function: function_expr,
                     phys_function,
-                    out_name,
                     options: options.clone(),
                     expr,
                 })),
@@ -449,6 +468,7 @@ fn create_physical_expr_inner(
             function,
             output_type: _,
             options,
+            fmt_str: _,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
@@ -469,8 +489,12 @@ fn create_physical_expr_inner(
                 is_scalar,
             )))
         },
-        Eval { expr, evaluation } => {
-            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME));
+        Eval {
+            expr,
+            evaluation,
+            variant,
+        } => {
+            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { fmt_str, .. } if fmt_str.as_ref().as_str() == MAP_LIST_NAME));
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
             let mut pd_group = ExprPushdownGroup::Pushable;
@@ -478,14 +502,15 @@ fn create_physical_expr_inner(
             let output_field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
+            let non_aggregated_output_field =
+                expr_arena
+                    .get(expression)
+                    .to_field(schema, Context::Default, expr_arena)?;
             let input_field = expr_arena.get(*expr).to_field(schema, ctxt, expr_arena)?;
             let expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
 
-            let DataType::List(dtype) = &input_field.dtype else {
-                unreachable!();
-            };
-
-            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, dtype.as_ref().clone())]);
+            let element_dtype = variant.element_dtype(&input_field.dtype)?;
+            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let evaluation = create_physical_expr_inner(
                 *evaluation,
                 Context::Default,
@@ -497,9 +522,11 @@ fn create_physical_expr_inner(
             Ok(Arc::new(EvalExpr::new(
                 expr,
                 evaluation,
+                *variant,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading,
                 output_field,
+                non_aggregated_output_field.dtype,
                 is_scalar,
                 pd_group,
                 evaluation_is_scalar,
@@ -567,14 +594,6 @@ fn create_physical_expr_inner(
                 schema.clone(),
                 field,
                 false,
-            )))
-        },
-        Alias(input, name) => {
-            let phys_expr = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(AliasExpr::new(
-                phys_expr,
-                name.clone(),
-                node_to_expr(*input, expr_arena),
             )))
         },
     }

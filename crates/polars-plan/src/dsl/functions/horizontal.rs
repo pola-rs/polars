@@ -50,18 +50,19 @@ where
         .map(GetOutput::from_type)
         .unwrap_or_else(|| GetOutput::first());
 
+    let options = FunctionOptions::groupwise().with_flags(|mut f| {
+        f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
+        f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+        f
+    });
+
     Expr::AnonymousFunction {
         input: exprs,
         function,
         // Take the type of the accumulator.
         output_type,
-        options: FunctionOptions::groupwise()
-            .with_fmt_str("fold")
-            .with_flags(|mut f| {
-                f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-                f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
-                f
-            }),
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("fold")),
     }
 }
 
@@ -95,13 +96,15 @@ where
         }
     });
 
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
+
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: GetOutput::super_type(),
-        options: FunctionOptions::aggregation()
-            .with_fmt_str("reduce")
-            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("reduce")),
     }
 }
 
@@ -138,13 +141,14 @@ where
         }
     });
 
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
-        options: FunctionOptions::aggregation()
-            .with_fmt_str("cum_reduce")
-            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("cum_reduce")),
     }
 }
 
@@ -180,13 +184,14 @@ where
             .map(|ca| Some(ca.into_column()))
     });
 
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
-        options: FunctionOptions::aggregation()
-            .with_fmt_str("cum_fold")
-            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("cum_fold")),
     }
 }
 

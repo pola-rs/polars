@@ -16,6 +16,7 @@ pub mod named_serde;
 #[cfg(feature = "serde")]
 mod serde_expr;
 
+use super::datatype_expr::DataTypeExpr;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
@@ -94,7 +95,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        dtype: DataType,
+        dtype: DataTypeExpr,
         options: CastOptions,
     },
     Sort {
@@ -124,7 +125,6 @@ pub enum Expr {
         input: Vec<Expr>,
         /// function to apply
         function: FunctionExpr,
-        options: FunctionOptions,
     },
     Explode {
         input: Arc<Expr>,
@@ -166,7 +166,11 @@ pub enum Expr {
         function: OpaqueColumnUdf,
         /// output dtype of the function
         output_type: GetOutput,
+
         options: FunctionOptions,
+        /// used for formatting
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        fmt_str: Box<PlSmallStr>,
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
@@ -174,6 +178,7 @@ pub enum Expr {
     Eval {
         expr: Arc<Expr>,
         evaluation: Arc<Expr>,
+        variant: EvalVariant,
     },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
@@ -303,14 +308,9 @@ impl Hash for Expr {
                 truthy.hash(state);
                 falsy.hash(state);
             },
-            Expr::Function {
-                input,
-                function,
-                options,
-            } => {
+            Expr::Function { input, function } => {
                 input.hash(state);
                 std::mem::discriminant(function).hash(state);
-                options.hash(state);
             },
             Expr::Gather {
                 expr,
@@ -370,16 +370,20 @@ impl Hash for Expr {
                 function: _,
                 output_type: _,
                 options,
+                fmt_str,
             } => {
                 input.hash(state);
                 options.hash(state);
+                fmt_str.hash(state);
             },
             Expr::Eval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
                 input.hash(state);
                 evaluation.hash(state);
+                variant.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -417,10 +421,10 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena)?;
-        expr_arena
-            .get(root)
-            .to_field_and_validate(schema, ctxt, expr_arena)
+        let expr = to_expr_ir(self.clone(), expr_arena, schema)?;
+        let (node, output_name) = expr.into_inner();
+        let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
+        Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 
     /// Extract a constant usize from an expression.
@@ -429,7 +433,7 @@ impl Expr {
             Expr::Literal(n) => n.extract_usize(),
             Expr::Cast { expr, dtype, .. } => {
                 // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
-                if dtype.is_integer() {
+                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) {
                     expr.extract_usize()
                 } else {
                     polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
@@ -486,11 +490,35 @@ impl Expr {
     #[inline]
     pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
         let function = function.into();
-        let options = function.function_options();
-        Expr::Function {
-            input,
-            function,
-            options,
+        Expr::Function { input, function }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum EvalVariant {
+    /// `list.eval`
+    List,
+
+    /// `cumulative_eval`
+    Cumulative { min_samples: usize },
+}
+
+impl EvalVariant {
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            Self::List => "list.eval",
+            Self::Cumulative { min_samples: _ } => "cumulative_eval",
+        }
+    }
+
+    /// Get the `DataType` of the `pl.element()` value.
+    pub fn element_dtype<'a>(&self, dtype: &'a DataType) -> PolarsResult<&'a DataType> {
+        match (self, dtype) {
+            (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
+            (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
+            _ => polars_bail!(op = self.to_name(), dtype),
         }
     }
 }

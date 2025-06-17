@@ -384,7 +384,8 @@ impl PyExpr {
         };
         let function = move |s: &Series| {
             Python::with_gil(|py| {
-                let out = call_lambda_with_series(py, s, &lambda).expect("python function failed");
+                let out =
+                    call_lambda_with_series(py, s, None, &lambda).expect("python function failed");
                 match out.getattr(py, "_s") {
                     Ok(pyseries) => {
                         let Ok(s) = pyseries
@@ -525,7 +526,6 @@ impl PyExpr {
         self.inner
             .clone()
             .rolling_map(Arc::new(function), GetOutput::same_type(), options)
-            .with_fmt("rolling_map")
             .into()
     }
 }
