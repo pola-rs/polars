@@ -25,11 +25,6 @@ enum State {
         offset: usize,
         seq: u64,
     },
-    PostivePassthrough {
-        buffer: Buffer,
-        offset: usize,
-        seq: u64,
-    },
     PositiveTail {
         buffer: Buffer,
         tail_shift: usize,
@@ -335,12 +330,11 @@ impl ComputeNode for ShiftNode {
         send: &mut [PortState],
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
-        dbg!("update state");
-        dbg!(&recv, &send);
         assert!(recv.len() == 2 && send.len() == 1);
 
         if send[0] == PortState::Done {
             self.state = State::Done;
+            return Ok(());
         }
 
         // Handle offset
@@ -350,102 +344,26 @@ impl ComputeNode for ShiftNode {
             recv[1] = PortState::Done
         }
 
-        if recv[0] == PortState::Done {
-            dbg!("left");
-            match &mut self.state {
-                State::Uninit => self.state = State::Done,
-                State::Done => {
-                    send[0] = PortState::Done;
-                    recv[0] = PortState::Done;
-                },
-                State::PositiveHead {
-                    buffer,
-                    seq,
-                    offset,
-                    ..
-                } => {
-                    let buffer = std::mem::take(buffer);
-
-                    //let buffer = std::mem::take(buffer);
-                    self.state = State::PostivePassthrough {
-                        buffer,
-                        seq: *seq,
-                        offset: *offset,
-                    };
-
-                    //self.state = State::PositiveTail {
-                    //    buffer,
-                    //    tail_shift: *offset,
-                    //    seq: *seq,
-                    //};
-                },
-                State::PositiveTail {
-                    buffer, tail_shift, ..
-                } => {
-                    if buffer.len() <= *tail_shift {
-                        self.state = State::Done;
-                        recv[0] = PortState::Done;
-                        send[0] = PortState::Done;
-                    }
-                },
-                State::PostivePassthrough {
-                    buffer,
-                    seq,
-                    offset,
-                } => {
-                    let buffer = std::mem::take(buffer);
-                    dbg!(&buffer.inner);
-                    self.state = State::PositiveTail {
-                        buffer,
-                        tail_shift: *offset,
-                        seq: *seq,
-                    }
-                },
-                State::Negative { .. } => todo!(),
-            }
-        } else {
-            dbg!("right");
-            match &mut self.state {
-                State::Uninit => {
-                    recv[0] = PortState::Blocked;
-                    send[0] = PortState::Blocked;
-                },
-                State::Done => {
-                    recv[0] = PortState::Done;
-                    send[0] = PortState::Done;
-                },
-                State::Negative { .. } => {
-                    recv[0] = PortState::Ready;
-                    send[0] = PortState::Ready;
-                },
-                State::PositiveHead {
-                    head,
-                    buffer,
-                    offset,
-                    seq,
-                } => {
-                    dbg!("head", *head, &buffer.inner);
-                    if *head == 0 {
-                        let buffer = std::mem::take(buffer);
-                        self.state = State::PostivePassthrough {
-                            buffer,
-                            seq: *seq,
-                            offset: *offset,
-                        };
-                    }
-                },
-                State::PostivePassthrough { .. } => {
-                    dbg!("passthorugh");
-                },
-                State::PositiveTail { .. } => {
-                    dbg!("tail");
-                    recv[0] = PortState::Done;
-                    send[0] = PortState::Ready;
-                },
-            }
+        match &mut self.state {
+            State::Uninit => {
+                recv[0] = PortState::Blocked;
+                send[0] = PortState::Blocked;
+            },
+            State::Done => {
+                recv[0] = PortState::Done;
+                send[0] = PortState::Done;
+            },
+            State::Negative { .. } => {
+                recv[0] = PortState::Ready;
+                send[0] = PortState::Ready;
+            },
+            State::PositiveHead { .. } => {
+                recv[0] = PortState::Ready;
+                send[0] = PortState::Ready;
+            },
+            State::PositiveTail { .. } => {},
         }
 
-        //recv.swap_with_slice(send);
         Ok(())
     }
 
@@ -454,45 +372,50 @@ impl ComputeNode for ShiftNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s StreamingExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 2 && send_ports.len() == 1);
 
-        let t = match &mut self.state {
-            shift_state @ State::Uninit => {
-                dbg!("init");
+        let t = match std::mem::take(&mut self.state) {
+            State::Uninit => {
+                let slf = self;
                 let receiver = recv_ports[1].take().unwrap().serial();
 
                 scope.spawn_task(TaskPriority::Low, async move {
-                    *shift_state = init(receiver).await?;
+                    slf.state = init(receiver).await?;
                     Ok(())
                 })
             },
             State::PositiveHead {
                 buffer,
-                head,
+                mut head,
                 offset,
-                seq,
+                mut seq,
             } => {
-                dbg!("pos head");
                 let receiver = recv_ports[0].take().unwrap().serial();
                 let sender = send_ports[0].take().unwrap().serial();
-                let schema = self.output_schema.clone();
+                let slf = self;
+                let schema = slf.output_schema.clone();
                 scope.spawn_task(TaskPriority::High, async move {
-                    positive_head(receiver, sender, buffer, head, *offset, seq, schema).await?;
+                    slf.state = positive_head(
+                        receiver, sender, buffer, &mut head, offset, &mut seq, schema,
+                    )
+                    .await?;
+
                     Ok(())
                 })
             },
             State::PositiveTail {
                 buffer,
                 tail_shift,
-                seq,
+                mut seq,
             } => {
-                dbg!("pos tail");
                 let sender = send_ports[0].take().unwrap().serial();
+                let slf = self;
                 scope.spawn_task(TaskPriority::High, async move {
-                    positive_tail(sender, buffer, *tail_shift, seq).await;
+                    positive_tail(sender, buffer, tail_shift, &mut seq).await;
+                    slf.state = State::Done;
                     Ok(())
                 })
             },
@@ -501,19 +424,6 @@ impl ComputeNode for ShiftNode {
             },
         };
 
-        //let mut receiver = recv_ports[0].take().unwrap().serial();
-        //let mut sender = send_ports[0].take().unwrap().serial();
-
-        //let slf = &mut *self;
-        //let t = scope.spawn_task(TaskPriority::High, async move {
-        //    let mut shift_state = std::mem::take(&mut slf.state);
-        //
-        //    slf.eval(&mut shift_state, &mut receiver, &mut sender, state)
-        //        .await?;
-        //    slf.state = shift_state;
-        //
-        //    Ok(())
-        //});
         join_handles.push(t);
     }
 }
@@ -549,12 +459,12 @@ async fn init(mut receiver: Receiver<Morsel>) -> PolarsResult<State> {
 async fn positive_head(
     mut receiver: Receiver<Morsel>,
     mut sender: Sender<Morsel>,
-    buffer: &mut Buffer,
+    mut buffer: Buffer,
     head: &mut usize,
     offset: usize,
     seq: &mut u64,
     output_schema: Arc<Schema>,
-) -> PolarsResult<()> {
+) -> PolarsResult<State> {
     // 1. We need to offset the array by `offset` and insert nulls
     // 2. Then we ensure we insert the nulls (also in the middle of a morsel if needed)
     let tail_shift = offset;
@@ -562,8 +472,12 @@ async fn positive_head(
         if let Ok(next) = receiver.recv().await {
             buffer.push_back(next);
         } else {
-            dbg!("EMPTIED BUFFER");
-            break;
+            return Ok(State::PositiveHead {
+                buffer,
+                head: *head,
+                offset,
+                seq: *seq,
+            });
         }
         let mut morsel = buffer.pop_front();
         let len = morsel.df().height();
@@ -590,23 +504,51 @@ async fn positive_head(
 
             morsel = nulls;
             if send_morsel(morsel, &mut sender, seq).await.is_err() {
-                break;
+                return Ok(State::Done);
             }
         }
     }
-    dbg!("FINISHED", *head);
 
-    Ok(())
+    positive_pass(receiver, sender, buffer, offset, seq).await
+}
+
+async fn positive_pass(
+    mut recv: Receiver<Morsel>,
+    mut sender: Sender<Morsel>,
+    mut buffer: Buffer,
+    tail_shift: usize,
+    seq: &mut u64,
+) -> PolarsResult<State> {
+    // 3. Now we have dealt with the starting 'offset'
+    // we can pump the remaining morsel through, until we have reached the tail offset
+
+    loop {
+        if buffer.len_after_pop_front() > tail_shift {
+            let morsel = buffer.pop_front();
+
+            if send_morsel(morsel, &mut sender, seq).await.is_err() {
+                return Ok(State::Done);
+            }
+        } else {
+            let Ok(morsel) = recv.recv().await else {
+                return Ok(State::PositiveTail {
+                    buffer,
+                    tail_shift,
+                    seq: *seq,
+                });
+            };
+            buffer.push_back(morsel);
+        }
+    }
 }
 
 async fn positive_tail(
     mut sender: Sender<Morsel>,
-    buffer: &mut Buffer,
+    mut buffer: Buffer,
     tail_shift: usize,
     seq: &mut u64,
 ) {
     while buffer.len_after_pop_front() > tail_shift {
-        dbg!("LOOP");
         let morsel = buffer.pop_front();
 
         if send_morsel(morsel, &mut sender, seq).await.is_err() {
