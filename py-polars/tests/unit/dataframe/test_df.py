@@ -793,6 +793,7 @@ def test_to_dummies_drop_first() -> None:
         (0, 1, 0, 1, 0, 1),
     ]
 
+
 def test_to_dummies_drop_nulls() -> None:
     df = pl.DataFrame(
         {
@@ -804,21 +805,23 @@ def test_to_dummies_drop_nulls() -> None:
 
     dm = df.to_dummies(drop_nulls=True)
 
-    expected = pl.DataFrame({
-        "foo_0": [1, 0, 0],
-        "foo_1": [0, 1, 0],
-        "bar_3": [1, 0, 0],
-        "bar_5": [0, 0, 1],
-        "baz_y": [0, 1, 0],
-        "baz_z": [0, 0, 1],
-    }, schema={
-        "foo_0": pl.UInt8,
-        "foo_1": pl.UInt8,
-        "bar_3": pl.UInt8,
-        "bar_5": pl.UInt8,
-        "baz_y": pl.UInt8,
-        "baz_z": pl.UInt8,
-    }
+    expected = pl.DataFrame(
+        {
+            "foo_0": [1, 0, 0],
+            "foo_1": [0, 1, 0],
+            "bar_3": [1, 0, 0],
+            "bar_5": [0, 0, 1],
+            "baz_y": [0, 1, 0],
+            "baz_z": [0, 0, 1],
+        },
+        schema={
+            "foo_0": pl.UInt8,
+            "foo_1": pl.UInt8,
+            "bar_3": pl.UInt8,
+            "bar_5": pl.UInt8,
+            "baz_y": pl.UInt8,
+            "baz_z": pl.UInt8,
+        },
     )
     assert_frame_equal(dm, expected)
 

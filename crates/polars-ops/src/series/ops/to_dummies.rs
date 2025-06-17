@@ -13,11 +13,21 @@ type DummyType = i32;
 type DummyCa = Int32Chunked;
 
 pub trait ToDummies {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool, drop_nulls: bool) -> PolarsResult<DataFrame>;
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        drop_nulls: bool,
+    ) -> PolarsResult<DataFrame>;
 }
 
 impl ToDummies for Series {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool, drop_nulls: bool) -> PolarsResult<DataFrame> {
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        drop_nulls: bool,
+    ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
         let groups = self.group_tuples(true, drop_first)?;

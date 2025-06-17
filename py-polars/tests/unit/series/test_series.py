@@ -1378,6 +1378,7 @@ def test_to_dummies_drop_first() -> None:
     )
     assert_frame_equal(result, expected)
 
+
 def test_to_dummies_drop_nulls() -> None:
     s = pl.Series("a", [1, 2, None])
     result = s.to_dummies(drop_nulls=True)

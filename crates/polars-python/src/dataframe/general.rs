@@ -463,7 +463,7 @@ impl PyDataFrame {
                 cols.iter().map(|x| x as &str).collect(),
                 separator,
                 drop_first,
-                drop_nulls
+                drop_nulls,
             ),
             None => self.df.to_dummies(separator, drop_first, drop_nulls),
         })
