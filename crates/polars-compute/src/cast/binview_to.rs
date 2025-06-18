@@ -5,6 +5,7 @@ use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
 use chrono::Datelike;
+use num_traits::FromBytes;
 use polars_error::PolarsResult;
 
 use super::CastOptionsImpl;
@@ -153,32 +154,19 @@ pub trait TryFromBytes {
         Self: Sized;
 }
 
-macro_rules! impl_try_from_bytes {
-    ($primitive_type:ident) => {
-        impl TryFromBytes for $primitive_type {
-            fn try_from_le_bytes(val: &[u8]) -> Option<Self> {
-                Some($primitive_type::from_le_bytes(val.try_into().ok()?))
-            }
+impl<T> TryFromBytes for T
+where
+    T: FromBytes,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    fn try_from_le_bytes(val: &[u8]) -> Option<Self> {
+        Some(T::from_le_bytes(val.try_into().ok()?))
+    }
 
-            fn try_from_be_bytes(val: &[u8]) -> Option<Self> {
-                Some($primitive_type::from_be_bytes(val.try_into().ok()?))
-            }
-        }
-    };
+    fn try_from_be_bytes(val: &[u8]) -> Option<Self> {
+        Some(T::from_be_bytes(val.try_into().ok()?))
+    }
 }
-
-impl_try_from_bytes!(i8);
-impl_try_from_bytes!(i16);
-impl_try_from_bytes!(i32);
-impl_try_from_bytes!(i64);
-impl_try_from_bytes!(i128);
-impl_try_from_bytes!(u8);
-impl_try_from_bytes!(u16);
-impl_try_from_bytes!(u32);
-impl_try_from_bytes!(u64);
-impl_try_from_bytes!(u128);
-impl_try_from_bytes!(f32);
-impl_try_from_bytes!(f64);
 
 /// Casts a [`BinaryArray`] containing binary-encoded numbers to a
 /// [`PrimitiveArray`], making any uncastable value a Null.
