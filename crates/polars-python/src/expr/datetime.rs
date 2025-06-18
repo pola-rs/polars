@@ -29,17 +29,10 @@ impl PyExpr {
     }
 
     fn dt_epoch_seconds(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| {
-                    s.take_materialized_series()
-                        .timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| (ca / 1000).into_column())
-                },
-                |_, f| Ok(Field::new(f.name().clone(), DataType::Int64)),
-            )
-            .into()
+        PyExpr {
+            inner: self.inner.clone().dt().timestamp(TimeUnit::Milliseconds)
+                / Expr::Literal(Scalar::from(1000i64).into()),
+        }
     }
 
     fn dt_with_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
