@@ -821,11 +821,6 @@ def test_series_data_type_fail():
 
     assert "def assert_series_equal" not in stdout
     assert "def assert_series_not_equal" not in stdout
-    assert "def _assert_series_values_equal" not in stdout
-    assert "def _assert_series_nested_values_equal" not in stdout
-    assert "def _assert_series_null_values_match" not in stdout
-    assert "def _assert_series_nan_values_match" not in stdout
-    assert "def _assert_series_values_within_tolerance" not in stdout
 
     # Make sure the tests are failing for the expected reason (e.g. not because
     # an import is missing or something like that):

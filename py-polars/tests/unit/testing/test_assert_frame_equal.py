@@ -7,6 +7,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 from polars.testing.parametric import dataframes
 
@@ -205,7 +206,7 @@ def test_compare_frame_equal_nans() -> None:
         schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="value mismatch for column 'y'"):
+    with pytest.raises(AssertionError, match='value mismatch for column "y"'):
         assert_frame_equal(df1, df2, check_exact=True)
 
 
@@ -222,7 +223,7 @@ def test_compare_frame_equal_nested_nans() -> None:
         schema=[("x", pl.List(pl.Float32)), ("y", pl.List(pl.Float64))],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="value mismatch for column 'y'"):
+    with pytest.raises(AssertionError, match='value mismatch for column "y"'):
         assert_frame_equal(df1, df2, check_exact=True)
 
     # struct dtype
@@ -296,7 +297,7 @@ def test_assert_frame_equal_length_mismatch() -> None:
     df2 = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(
         AssertionError,
-        match=r"DataFrames are different \(number of rows does not match\)",
+        match=r"DataFrames are different \(height \(row count\) mismatch\)",
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -306,7 +307,8 @@ def test_assert_frame_equal_column_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"b": [1, 2]})
     with pytest.raises(
-        AssertionError, match="columns \\['a'\\] in left DataFrame, but not in right"
+        AssertionError,
+        match='DataFrames are different \\(columns mismatch: \\["a"\\] in left, but not in right\\)',
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -317,7 +319,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(
         AssertionError,
-        match="columns \\['b', 'c'\\] in right LazyFrame, but not in left",
+        match="columns mismatch.*in right.*but not in left",
     ):
         assert_frame_equal(df1, df2)
     assert_frame_not_equal(df1, df2)
@@ -337,7 +339,7 @@ def test_assert_frame_equal_check_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
 
-    with pytest.raises(AssertionError, match="value mismatch for column 'a'"):
+    with pytest.raises(AssertionError, match='value mismatch for column "a"'):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_row_order=False)
@@ -363,7 +365,8 @@ def test_assert_frame_equal_check_row_order_unsortable(assert_function: Any) -> 
     df1 = pl.DataFrame({"a": [object(), object()], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [object(), object()], "b": [4, 3]})
     with pytest.raises(
-        TypeError, match="cannot set `check_row_order=False`.*unsortable columns"
+        InvalidOperationError,
+        match="`arg_sort_multiple` operation not supported for dtype `object`",
     ):
         assert_function(df1, df2, check_row_order=False)
 
@@ -442,21 +445,15 @@ def test_frame_schema_fail():
     assert "def assert_frame_equal" not in stdout
     assert "def assert_frame_not_equal" not in stdout
     assert "def _assert_correct_input_type" not in stdout
-    assert "def _assert_frame_schema_equal" not in stdout
 
     assert "def assert_series_equal" not in stdout
     assert "def assert_series_not_equal" not in stdout
-    assert "def _assert_series_values_equal" not in stdout
-    assert "def _assert_series_nested_values_equal" not in stdout
-    assert "def _assert_series_null_values_match" not in stdout
-    assert "def _assert_series_nan_values_match" not in stdout
-    assert "def _assert_series_values_within_tolerance" not in stdout
 
     # Make sure the tests are failing for the expected reason (e.g. not because
     # an import is missing or something like that):
 
     assert (
-        "AssertionError: DataFrames are different (value mismatch for column 'a')"
+        'AssertionError: DataFrames are different (value mismatch for column "a")'
         in stdout
     )
     assert "AssertionError: DataFrames are equal" in stdout
