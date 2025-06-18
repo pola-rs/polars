@@ -61,8 +61,9 @@ pub fn utf8view_to_utf8<O: Offset>(array: &Utf8ViewArray) -> Utf8Array<O> {
         )
     }
 }
-/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub(super) fn binview_to_primitive<T>(
+/// Casts a [`BinaryArray`] of UTF-8 encoded string representations of numbers
+/// into a [`PrimitiveArray`], making any uncastable value a Null.
+pub(super) fn utf8_binview_to_primitive<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
 ) -> PrimitiveArray<T>
@@ -74,7 +75,7 @@ where
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
 
-pub(super) fn binview_to_primitive_dyn<T>(
+pub(super) fn utf8_binview_to_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     options: CastOptionsImpl,
@@ -86,7 +87,7 @@ where
     if options.partial {
         unimplemented!()
     } else {
-        Ok(Box::new(binview_to_primitive::<T>(from, to)))
+        Ok(Box::new(utf8_binview_to_primitive::<T>(from, to)))
     }
 }
 
