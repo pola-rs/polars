@@ -165,15 +165,23 @@ impl PyExpr {
         self.inner.clone().str().reverse().into()
     }
 
-    fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().pad_start(length, fill_char).into()
+    fn str_pad_start(&self, length: PyExpr, fill_char: char) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .pad_start(length.inner, fill_char)
+            .into()
     }
 
-    fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().pad_end(length, fill_char).into()
+    fn str_pad_end(&self, length: PyExpr, fill_char: char) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .pad_end(length.inner, fill_char)
+            .into()
     }
 
-    fn str_zfill(&self, length: Self) -> Self {
+    fn str_zfill(&self, length: PyExpr) -> Self {
         self.inner.clone().str().zfill(length.inner).into()
     }
 
