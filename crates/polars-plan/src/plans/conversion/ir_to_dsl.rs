@@ -387,6 +387,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IL::Reverse => L::Reverse,
                 IL::Unique(v) => L::Unique(v),
                 IL::NUnique => L::NUnique,
+                IL::RemoveByIndex(null_on_oob) => L::RemoveByIndex(null_on_oob),
                 #[cfg(feature = "list_sets")]
                 IL::SetOperation(set_operation) => L::SetOperation(set_operation),
                 #[cfg(feature = "list_any_all")]

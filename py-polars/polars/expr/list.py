@@ -1431,3 +1431,36 @@ class ExprListNameSpace:
         else:
             other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+
+    def remove_by_index(self, index: IntoExpr, *, null_on_oob: bool = False) -> Expr:
+        """
+        Remove an element at the given index from every sublist.
+
+        Parameters
+        ----------
+        index
+            Index of the element to remove. Negative indexing is supported.
+        null_on_oob
+            If `True`, return `null` for sublists that are out of bounds
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5]]})
+        >>> df.with_columns(remove=pl.col("a").list.remove_by_index(1))
+        shape: (2, 2)
+        ┌───────────┬────────────┐
+        │ a         ┆ remove     │
+        │ ---       ┆ ---        │
+        │ list[i64] ┆ list[i64]  │
+        ╞═══════════╪════════════╡
+        │ [1, 2, 3] ┆ [1, 3]     │
+        │ [4, 5]    ┆ [4]        │
+        └───────────┴────────────┘
+        """
+        index = parse_into_expression(index)
+        return wrap_expr(self._pyexpr.list_remove_by_index(index, null_on_oob))

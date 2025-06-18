@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ptr::null;
 
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
@@ -256,6 +257,10 @@ impl PyExpr {
         } else {
             e.list().unique().into()
         }
+    }
+
+    fn list_remove_by_index(&self, index: PyExpr, null_if_oob: bool) -> Self {
+        self.inner.clone().list().remove_by_index(index.inner, null_if_oob).into()
     }
 
     #[cfg(feature = "list_sets")]

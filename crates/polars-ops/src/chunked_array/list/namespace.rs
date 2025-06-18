@@ -1,7 +1,11 @@
+use crate::prelude::list::namespace::Array;
 use std::borrow::Cow;
 use std::fmt::Write;
-
-use arrow::array::ValueSize;
+use arrow::array::builder::{make_builder, ShareStrategy};
+use arrow::array::{ListArray, PrimitiveArray, ValueSize};
+use arrow::bitmap::BitmapBuilder;
+use arrow::offset::Offsets;
+use arrow::pushable::Pushable;
 #[cfg(feature = "list_gather")]
 use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
@@ -11,6 +15,7 @@ use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
+use polars_core::with_match_physical_numeric_type;
 
 use super::*;
 #[cfg(feature = "list_any_all")]
@@ -333,6 +338,98 @@ pub trait ListNameSpaceImpl: AsList {
             }),
         };
         Ok(self.same_type(out))
+    }
+
+    fn lst_remove_by_index(&self, index: &Column, null_on_oob: bool) -> PolarsResult<ListChunked> {
+        with_match_physical_numeric_type!(index.dtype().to_physical(), |$T| {
+        // ──────────────────────────────────────────────────────────────────────────────
+        // in-lined version of the old `drop_index_inner::<$T>` goes here
+        // ──────────────────────────────────────────────────────────────────────────────
+        arity::binary(
+            self.as_list(),
+            index.$T().unwrap(),
+            |list_arr: &LargeListArray, idx_arr: &PrimitiveArray<$T>| {
+                let rows = list_arr.len();
+
+                // Inner value array & type
+                let values_arr: &dyn Array = list_arr.values().as_ref();
+                let inner_arrow_type = values_arr.dtype().clone();
+
+                // Raw list offsets
+                let raw_offsets = list_arr.offsets().as_slice();
+
+                // Pre-allocate enough slots for the kept elements
+                let total_inner: usize = list_arr
+                    .offsets()
+                    .windows(2)
+                    .map(|o| (o[1] - o[0] - 1).max(0) as usize)
+                    .sum();
+
+                let mut builder = make_builder(&inner_arrow_type);
+                builder.reserve(total_inner);
+
+                let mut validity = BitmapBuilder::with_capacity(rows);
+                let mut offsets  = Offsets::with_capacity(rows + 1);
+
+                for row in 0..rows {
+                    // For a scalar index column we always reuse slot 0
+                    let index_idx   = if idx_arr.len() == 1 { 0 } else { row };
+                    let row_is_valid =
+                        list_arr.is_valid(row) && idx_arr.is_valid(index_idx);
+
+                    if !row_is_valid {
+                        offsets.push_null();
+                        validity.push(false);
+                        continue;
+                    }
+
+                    let start   = raw_offsets[row]     as usize;
+                    let end     = raw_offsets[row + 1] as usize;
+                    let row_len = end - start;
+                    let drop_idx = idx_arr.value(index_idx).to_usize().unwrap();
+
+                    if drop_idx < row_len {
+                        // left slice
+                        if drop_idx > 0 {
+                            builder.subslice_extend(
+                                values_arr,
+                                start,
+                                drop_idx,
+                                ShareStrategy::Always,
+                            );
+                        }
+                        // right slice
+                        let right_len = row_len - drop_idx - 1;
+                        if right_len > 0 {
+                            builder.subslice_extend(
+                                values_arr,
+                                start + drop_idx + 1,
+                                right_len,
+                                ShareStrategy::Always,
+                            );
+                        }
+                        offsets.push(builder.len());
+                        validity.push(true);
+                    } else if null_on_oob {
+                        offsets.push_null();
+                        validity.push(false);
+                    } else {
+                        polars_bail!(ComputeError: "drop index is out of bounds");
+                    }
+                }
+
+                let values    = builder.freeze_reset();
+                let list_dtype = ListArray::<i64>::default_datatype(inner_arrow_type);
+
+                LargeListArray::new(
+                    list_dtype,
+                    offsets.into(),
+                    values,
+                    validity.into_opt_validity(),
+                )
+            },
+        )
+    })
     }
 
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
