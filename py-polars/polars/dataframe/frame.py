@@ -2899,6 +2899,7 @@ class DataFrame:
         time_format: str | None = ...,
         float_scientific: bool | None = ...,
         float_precision: int | None = ...,
+        decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: dict[str, Any] | None = ...,
@@ -2922,6 +2923,7 @@ class DataFrame:
         time_format: str | None = ...,
         float_scientific: bool | None = ...,
         float_precision: int | None = ...,
+        decimal_comma: bool = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: dict[str, Any] | None = ...,
@@ -2944,6 +2946,7 @@ class DataFrame:
         time_format: str | None = None,
         float_scientific: bool | None = None,
         float_precision: int | None = None,
+        decimal_comma: bool = False,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         storage_options: dict[str, Any] | None = None,
@@ -2992,6 +2995,10 @@ class DataFrame:
         float_precision
             Number of decimal places to write, applied to both `Float32` and
             `Float64` datatypes.
+        decimal_comma
+            Use a comma as the decimal separator instead of a point in standard
+            notation. Floats will be encapsulated in quotes if necessary; set the
+            field separator to override.
         null_value
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
@@ -3083,6 +3090,7 @@ class DataFrame:
             time_format=time_format,
             float_scientific=float_scientific,
             float_precision=float_precision,
+            decimal_comma=decimal_comma,
             null_value=null_value,
             quote_style=quote_style,
             storage_options=storage_options,

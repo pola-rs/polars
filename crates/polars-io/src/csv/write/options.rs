@@ -42,6 +42,8 @@ pub struct SerializeOptions {
     /// and [`DataType::Float32`](polars_core::datatypes::DataType::Float32).
     pub float_scientific: Option<bool>,
     pub float_precision: Option<usize>,
+    /// Use comma as the decimal separator.
+    pub decimal_comma: bool,
     /// Used as separator.
     pub separator: u8,
     /// Quoting character.
@@ -62,6 +64,7 @@ impl Default for SerializeOptions {
             datetime_format: None,
             float_scientific: None,
             float_precision: None,
+            decimal_comma: false,
             separator: b',',
             quote_char: b'"',
             null: String::new(),
