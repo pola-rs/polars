@@ -141,41 +141,44 @@ pub(super) fn utf8view_to_date32_dyn(from: &dyn Array) -> PolarsResult<Box<dyn A
     Ok(Box::new(utf8view_to_date32(from)))
 }
 
-/// Trait for casting bytes to a primitive type
-pub trait Cast {
-    fn cast_le(val: &[u8]) -> Option<Self>
+/// Trait for casting bytes to a primitive type, with support for case where the
+/// number of bytes is wrong.
+pub trait TryFromBytes {
+    fn try_from_le_bytes(val: &[u8]) -> Option<Self>
     where
         Self: Sized;
-    fn cast_be(val: &[u8]) -> Option<Self>
+
+    fn try_from_be_bytes(val: &[u8]) -> Option<Self>
     where
         Self: Sized;
 }
-macro_rules! impl_cast {
+
+macro_rules! impl_try_from_bytes {
     ($primitive_type:ident) => {
-        impl Cast for $primitive_type {
-            fn cast_le(val: &[u8]) -> Option<Self> {
+        impl TryFromBytes for $primitive_type {
+            fn try_from_le_bytes(val: &[u8]) -> Option<Self> {
                 Some($primitive_type::from_le_bytes(val.try_into().ok()?))
             }
 
-            fn cast_be(val: &[u8]) -> Option<Self> {
+            fn try_from_be_bytes(val: &[u8]) -> Option<Self> {
                 Some($primitive_type::from_be_bytes(val.try_into().ok()?))
             }
         }
     };
 }
 
-impl_cast!(i8);
-impl_cast!(i16);
-impl_cast!(i32);
-impl_cast!(i64);
-impl_cast!(i128);
-impl_cast!(u8);
-impl_cast!(u16);
-impl_cast!(u32);
-impl_cast!(u64);
-impl_cast!(u128);
-impl_cast!(f32);
-impl_cast!(f64);
+impl_try_from_bytes!(i8);
+impl_try_from_bytes!(i16);
+impl_try_from_bytes!(i32);
+impl_try_from_bytes!(i64);
+impl_try_from_bytes!(i128);
+impl_try_from_bytes!(u8);
+impl_try_from_bytes!(u16);
+impl_try_from_bytes!(u32);
+impl_try_from_bytes!(u64);
+impl_try_from_bytes!(u128);
+impl_try_from_bytes!(f32);
+impl_try_from_bytes!(f64);
 
 /// Casts a [`BinaryArray`] containing binary-encoded numbers to a
 /// [`PrimitiveArray`], making any uncastable value a Null.
@@ -185,14 +188,14 @@ pub(super) fn cast_binview_to_primitive<T>(
     is_little_endian: bool,
 ) -> PrimitiveArray<T>
 where
-    T: Cast + NativeType,
+    T: TryFromBytes + NativeType,
 {
     let iter = from.iter().map(|x| {
         x.and_then::<T, _>(|x| {
             if is_little_endian {
-                T::cast_le(x)
+                T::try_from_le_bytes(x)
             } else {
-                T::cast_be(x)
+                T::try_from_be_bytes(x)
             }
         })
     });
@@ -208,7 +211,7 @@ pub fn cast_binview_to_primitive_dyn<T>(
     is_little_endian: bool,
 ) -> PolarsResult<Box<dyn Array>>
 where
-    T: Cast + NativeType,
+    T: TryFromBytes + NativeType,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(cast_binview_to_primitive::<T>(
