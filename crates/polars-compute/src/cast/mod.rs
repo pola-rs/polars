@@ -21,11 +21,11 @@ use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::match_integer_type;
 use arrow::offset::{Offset, Offsets};
+pub use binview_to::cast_binview_to_primitive_dyn;
 use binview_to::{
     binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
     utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
-pub use binview_to::cast_binview_to_primitive_dyn;
 use dictionary_to::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
@@ -534,9 +534,15 @@ pub fn cast(
                 Int32 => utf8_binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
                 Int64 => utf8_binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
                 #[cfg(feature = "dtype-i128")]
-                Int128 => utf8_binview_to_primitive_dyn::<i128>(&arr.to_binview(), to_type, options),
-                Float32 => utf8_binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options),
-                Float64 => utf8_binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options),
+                Int128 => {
+                    utf8_binview_to_primitive_dyn::<i128>(&arr.to_binview(), to_type, options)
+                },
+                Float32 => {
+                    utf8_binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options)
+                },
+                Float64 => {
+                    utf8_binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options)
+                },
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },
