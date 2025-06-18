@@ -119,6 +119,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-core
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
+	cargo publish --allow-dirty -p polars-testing
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
@@ -126,7 +127,6 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-expr
 	cargo publish --allow-dirty -p polars-mem-engine
 	cargo publish --allow-dirty -p polars-stream
-	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
