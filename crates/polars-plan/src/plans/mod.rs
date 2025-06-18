@@ -27,7 +27,7 @@ pub use python::*;
 mod schema;
 pub mod visitor;
 
-pub use aexpr::{FieldsMapper, *};
+pub use aexpr::*;
 pub use anonymous_scan::*;
 pub use apply::*;
 pub use builder_ir::*;
