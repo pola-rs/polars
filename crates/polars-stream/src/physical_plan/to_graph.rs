@@ -147,13 +147,10 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
             let offset_key = to_graph_rec(offset.node, ctx)?;
 
-            let out = ctx.graph.add_node(
+            ctx.graph.add_node(
                 nodes::shift::ShiftNode::new(node.output_schema.clone()),
                 [(input_key, input.port), (offset_key, offset.port)],
-            );
-            dbg!("CALLED");
-
-            out
+            )
         },
 
         Filter { predicate, input } => {
