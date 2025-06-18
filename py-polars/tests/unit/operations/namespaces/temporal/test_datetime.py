@@ -862,12 +862,27 @@ def test_is_leap_year(
 
 
 @pytest.mark.parametrize(
-    ("range_fn", "value_type", "kwargs"),
+    ("value_type", "time_unit", "time_zone"),
     [
-        (pl.date_range, date, {}),
-        (pl.datetime_range, datetime, {"time_unit": "ns"}),
-        (pl.datetime_range, datetime, {"time_unit": "us"}),
-        (pl.datetime_range, datetime, {"time_unit": "ms"}),
+        (date, None, None),
+        (datetime, "ns", None),
+        (
+            datetime,
+            "ns",
+            "Asia/Kathmandu",
+        ),
+        (datetime, "us", None),
+        (
+            datetime,
+            "us",
+            "Asia/Kathmandu",
+        ),
+        (datetime, "ms", None),
+        (
+            datetime,
+            "ms",
+            "Asia/Kathmandu",
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -882,13 +897,22 @@ def test_is_leap_year(
     ],
 )
 def test_days_in_month(
-    range_fn: Callable[..., pl.Series],
     value_type: type,
-    kwargs: dict[str, str],
+    time_unit: str | None,
+    time_zone: str | None,
     start_ymd: tuple[int, int, int],
     end_ymd: tuple[int, int, int],
     feb_days: int,
 ) -> None:
+    assert value_type in (date, datetime)
+    range_fn: Callable[..., pl.Series] = (
+        pl.date_range if value_type is date else pl.datetime_range
+    )
+    kwargs: dict[str, str] = {}
+    if time_unit is not None:
+        kwargs["time_unit"] = time_unit
+    if time_zone is not None:
+        kwargs["time_zone"] = time_zone
     assert range_fn(
         value_type(*start_ymd), value_type(*end_ymd), "1mo", **kwargs, eager=True
     ).dt.days_in_month().to_list() == [

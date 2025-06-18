@@ -105,7 +105,18 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Microseconds => datetime_to_days_in_month_us,
             TimeUnit::Milliseconds => datetime_to_days_in_month_ms,
         };
-        ca.apply_kernel_cast::<Int8Type>(&f)
+        let ca_local = match ca.dtype() {
+            #[cfg(feature = "timezones")]
+            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+                ca,
+                None,
+                &StringChunked::new("".into(), ["raise"]),
+                NonExistent::Raise,
+            )
+            .expect("Removing time zone is infallible"),
+            _ => ca,
+        };
+        ca_local.apply_kernel_cast::<Int8Type>(&f)
     }
 
     /// Extract ISO weekday from underlying NaiveDateTime representation.
