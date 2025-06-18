@@ -25,6 +25,7 @@ use binview_to::{
     binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
     utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
+pub use binview_to::cast_binview_to_primitive_dyn;
 use dictionary_to::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
