@@ -620,7 +620,6 @@ fn lower_exprs_with_ctx(
                 options: _,
             } => {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
-                let out_name = unique_column_name();
 
                 let (trans_input_column, trans_inner_expr_column) =
                     lower_exprs_with_ctx(input, &[inner_nodes[0]], ctx)?;
@@ -629,19 +628,6 @@ fn lower_exprs_with_ctx(
                     lower_exprs_with_ctx(input, &[inner_nodes[1]], ctx)?;
 
                 let output_schema = ctx.phys_sm[trans_input_column.node].output_schema.clone();
-                dbg!(&output_schema);
-
-                //// Select the shift column
-                //let select_expr =
-                //    ExprIR::new(trans_inner_expr[0], OutputName::Alias(out_name.clone()));
-                //let column_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
-                //let output_schema = ctx.phys_sm[column_input.node].output_schema.clone();
-                //dbg!(&output_schema);
-                //
-                //// Select the offset column
-                //let select_expr =
-                //    ExprIR::new(trans_inner_expr[1], OutputName::Alias(out_name.clone()));
-                //let offset_input = build_select_stream_with_ctx(trans_input, &[select_expr], ctx)?;
 
                 let node_key = ctx.phys_sm.insert(PhysNode::new(
                     output_schema,
