@@ -372,12 +372,13 @@ def _patched_cloud(
         original_collect = pl.LazyFrame.collect
 
         def cloud_collect(lf: pl.LazyFrame, *args, **kwargs) -> pl.DataFrame:
+            # issue: cloud client should use pl.QueryOptFlags()
             if "optimizations" in kwargs:
                 kwargs.pop("optimizations")
             df = original_collect(lf.remote().distributed().collect(*args, **kwargs))
-            print(df)
             return df
 
+        monkeypatch.setenv("POLARS_SKIP_CLIENT_CHECK", "1")
         monkeypatch.setattr(
             "polars.LazyFrame.collect",
             cloud_collect,
