@@ -98,20 +98,11 @@ impl Series {
             String => StringChunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ (Categorical(rev_map, ordering) | Enum(rev_map, ordering)) => {
-                let cats = UInt32Chunked::from_chunks(name, chunks);
-                let rev_map = rev_map.clone().unwrap_or_else(|| {
-                    assert!(cats.is_empty());
-                    Arc::new(RevMapping::default())
-                });
-                let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    cats,
-                    rev_map,
-                    matches!(dt, Enum(_, _)),
-                    *ordering,
-                );
-                ca.set_fast_unique(false);
-                ca.into_series()
+            dt @ (NewCategorical(_, _) | NewEnum(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    let phys = ChunkedArray::from_chunks(name, chunks);
+                    NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(phys, dt.clone()).into_series()
+                })
             },
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
@@ -392,12 +383,8 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
                 use arrow::datatypes::IntegerType;
-                // don't spuriously call this; triggers a read on mmapped data
-                let arr = if chunks.len() > 1 {
-                    concatenate_unchecked(&chunks)?
-                } else {
-                    chunks[0].clone()
-                };
+
+                /*
 
                 // If the value type is a string, they are converted to Categoricals or Enums
                 if matches!(
@@ -463,7 +450,16 @@ impl Series {
                     )
                     .into_series());
                 }
+                */
+                
+                // TODO @ cat-rework: decode into Categorical / Enum.
 
+                // Don't spuriously call this; triggers a read on mmapped data.
+                let arr = if chunks.len() > 1 {
+                    concatenate_unchecked(&chunks)?
+                } else {
+                    chunks[0].clone()
+                };
                 macro_rules! unpack_keys_values {
                     ($dt:ty) => {{
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();

@@ -36,8 +36,6 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-#[cfg(feature = "dtype-categorical")]
-pub use crate::datatypes::string_cache::StringCacheHolder;
 pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::signals::try_raise_keyboard_interrupt;
 pub use crate::error::{
