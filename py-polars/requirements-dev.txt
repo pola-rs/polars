@@ -57,7 +57,6 @@ matplotlib
 # Testing
 hypothesis
 # Miscellaneous
-# orjson # TODO orjson is not supported on free-threaded python, it has a custom fork of pyo3?
 
 # -------
 # TOOLING
