@@ -253,7 +253,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    fn pad_start(&self, length: usize, fill_char: char) -> StringChunked {
+    fn pad_start(&self, length: &UInt64Chunked, fill_char: char) -> StringChunked {
         let ca = self.as_string();
         pad::pad_start(ca, length, fill_char)
     }
@@ -264,7 +264,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    fn pad_end(&self, length: usize, fill_char: char) -> StringChunked {
+    fn pad_end(&self, length: &UInt64Chunked, fill_char: char) -> StringChunked {
         let ca = self.as_string();
         pad::pad_end(ca, length, fill_char)
     }

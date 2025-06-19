@@ -697,10 +697,10 @@ def display_dot_graph(
         import matplotlib.image as mpimg
         import matplotlib.pyplot as plt
 
-        fig = plt.figure(figsize=figsize)
+        plt.figure(figsize=figsize)
         img = mpimg.imread(BytesIO(graph))
+        plt.axis("off")
         plt.imshow(img)
-        fig.gca().set(xticks=[], yticks=[])
         plt.show()
         return None
 

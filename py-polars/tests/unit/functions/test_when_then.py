@@ -800,3 +800,19 @@ def test_when_then_complex_conditional_22959() -> None:
             pl.Struct({"X": pl.List(pl.Float64), "Y": pl.List(pl.Float64)}),
         ),
     )
+
+
+def test_when_then_simplification() -> None:
+    lf = pl.LazyFrame({"a": [12]})
+    assert (
+        """[col("a")]"""
+        in (
+            lf.select(pl.when(True).then(pl.col("a")).otherwise(pl.col("a") * 2))
+        ).explain()
+    )
+    assert (
+        """(col("a")) * (2)"""
+        in (
+            lf.select(pl.when(False).then(pl.col("a")).otherwise(pl.col("a") * 2))
+        ).explain()
+    )

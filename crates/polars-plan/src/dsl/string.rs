@@ -187,9 +187,9 @@ impl StringNameSpace {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    pub fn pad_start(self, length: usize, fill_char: char) -> Expr {
+    pub fn pad_start(self, length: Expr, fill_char: char) -> Expr {
         self.0
-            .map_unary(StringFunction::PadStart { length, fill_char })
+            .map_binary(StringFunction::PadStart { fill_char }, length)
     }
 
     /// Pad the end of the string until it reaches the given length.
@@ -198,9 +198,9 @@ impl StringNameSpace {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    pub fn pad_end(self, length: usize, fill_char: char) -> Expr {
+    pub fn pad_end(self, length: Expr, fill_char: char) -> Expr {
         self.0
-            .map_unary(StringFunction::PadEnd { length, fill_char })
+            .map_binary(StringFunction::PadEnd { fill_char }, length)
     }
 
     /// Pad the start of the string with zeros until it reaches the given length.
