@@ -711,7 +711,9 @@ pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
 pub(super) fn remove_by_index(s: &[Column], null_on_oob: bool) -> PolarsResult<Column> {
     let list_ca = s[0].list()?;
     let index = &s[1];
-    Ok(list_ca.lst_remove_by_index(index, null_on_oob)?.into_column())
+    Ok(list_ca
+        .lst_remove_by_index(index, null_on_oob)?
+        .into_column())
 }
 
 pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {
