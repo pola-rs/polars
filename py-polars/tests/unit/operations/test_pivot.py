@@ -577,3 +577,16 @@ def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
     result = df.pivot(index="index", on="on", values="values")
     expected = pl.DataFrame({"index": index})
     assert_frame_equal(result, expected)
+
+
+def test_pivot_agg_column_ref_invalid_22479() -> None:
+    df = pl.DataFrame(
+        {"a": ["x", "x", "x"], "b": [1, 1, 1], "c": [7, 8, 9], "d": [0, 2, 1]}
+    )
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="explicit column references are not allowed in aggregate_function",
+    ):
+        df.pivot(
+            on="a", index="b", values="c", aggregate_function=pl.element().sort_by("d")
+        )

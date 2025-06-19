@@ -46,7 +46,18 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Microseconds => datetime_to_is_leap_year_us,
             TimeUnit::Milliseconds => datetime_to_is_leap_year_ms,
         };
-        ca.apply_kernel_cast::<BooleanType>(&f)
+        let ca_local = match ca.dtype() {
+            #[cfg(feature = "timezones")]
+            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+                ca,
+                None,
+                &StringChunked::new("".into(), ["raise"]),
+                NonExistent::Raise,
+            )
+            .expect("Removing time zone is infallible"),
+            _ => ca,
+        };
+        ca_local.apply_kernel_cast::<BooleanType>(&f)
     }
 
     fn iso_year(&self) -> Int32Chunked {
@@ -56,7 +67,18 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Microseconds => datetime_to_iso_year_us,
             TimeUnit::Milliseconds => datetime_to_iso_year_ms,
         };
-        ca.apply_kernel_cast::<Int32Type>(&f)
+        let ca_local = match ca.dtype() {
+            #[cfg(feature = "timezones")]
+            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+                ca,
+                None,
+                &StringChunked::new("".into(), ["raise"]),
+                NonExistent::Raise,
+            )
+            .expect("Removing time zone is infallible"),
+            _ => ca,
+        };
+        ca_local.apply_kernel_cast::<Int32Type>(&f)
     }
 
     /// Extract quarter from underlying NaiveDateTime representation.

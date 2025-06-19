@@ -1450,15 +1450,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_start(self, length: int, fill_char: str = " ") -> Series:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1481,15 +1481,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_end(self, length: int, fill_char: str = " ") -> Series:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1515,14 +1515,14 @@ class StringNameSpace:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
-        A sign prefix (`-`) is handled by inserting the padding after the sign
-        character rather than before.
+        A sign prefix (`-`) is handled by inserting the padding after the sign character
+        rather than before.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
 
         See Also
         --------

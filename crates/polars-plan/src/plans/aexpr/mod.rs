@@ -24,6 +24,7 @@ pub use scalar::is_scalar_ae;
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 mod properties;
+pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
 pub use properties::*;
 

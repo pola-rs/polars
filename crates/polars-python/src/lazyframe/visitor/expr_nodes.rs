@@ -834,11 +834,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     )
                         .into_py_any(py),
                     IRStringFunction::Reverse => (PyStringFunction::Reverse,).into_py_any(py),
-                    IRStringFunction::PadStart { length, fill_char } => {
-                        (PyStringFunction::PadStart, length, fill_char).into_py_any(py)
+                    IRStringFunction::PadStart { fill_char } => {
+                        (PyStringFunction::PadStart, fill_char).into_py_any(py)
                     },
-                    IRStringFunction::PadEnd { length, fill_char } => {
-                        (PyStringFunction::PadEnd, length, fill_char).into_py_any(py)
+                    IRStringFunction::PadEnd { fill_char } => {
+                        (PyStringFunction::PadEnd, fill_char).into_py_any(py)
                     },
                     IRStringFunction::Slice => (PyStringFunction::Slice,).into_py_any(py),
                     IRStringFunction::Head => (PyStringFunction::Head,).into_py_any(py),

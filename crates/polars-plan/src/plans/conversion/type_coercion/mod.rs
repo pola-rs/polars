@@ -595,6 +595,42 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 );
                 None
             },
+
+            #[cfg(feature = "string_pad")]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::StringExpr(
+                        IRStringFunction::PadStart { .. }
+                        | IRStringFunction::PadEnd { .. }
+                        | IRStringFunction::ZFill,
+                    ),
+                ref input,
+                options,
+            } => {
+                let (_, length_type) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                if length_type == DataType::UInt64 {
+                    None
+                } else {
+                    let function = function.clone();
+                    let mut input = input.clone();
+                    cast_expr_ir(
+                        &mut input[1],
+                        &length_type,
+                        &DataType::UInt64,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                }
+            },
+
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:
