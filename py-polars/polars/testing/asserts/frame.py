@@ -1,13 +1,33 @@
 from __future__ import annotations
 
+import contextlib
 from typing import cast
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.dataframe import DataFrame
-from polars.exceptions import InvalidOperationError
 from polars.lazyframe import LazyFrame
-from polars.testing.asserts.series import _assert_series_values_equal
 from polars.testing.asserts.utils import raise_assertion_error
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import assert_dataframe_equal_py
+
+
+def _assert_correct_input_type(
+    left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
+) -> bool:
+    __tracebackhide__ = True
+
+    if isinstance(left, DataFrame) and isinstance(right, DataFrame):
+        return False
+    elif isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
+        return True
+    else:
+        raise_assertion_error(
+            "inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
+        )
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
@@ -73,126 +93,47 @@ def assert_frame_equal(
     >>> from polars.testing import assert_frame_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 5, 3]})
-    >>> assert_frame_equal(df1, df2)
+    >>> assert_frame_equal(df1, df2)  # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ...
-    AssertionError: DataFrames are different (value mismatch for column 'a')
-    [left]:  [1, 2, 3]
-    [right]: [1, 5, 3]
+    AssertionError: DataFrames are different (value mismatch for column "a")
+    [left]: shape: (3,)
+    Series: 'a' [i64]
+    [
+        1
+        2
+        3
+    ]
+    [right]: shape: (3,)
+    Series: 'a' [i64]
+    [
+        1
+        5
+        3
+    ]
     """
     __tracebackhide__ = True
 
     lazy = _assert_correct_input_type(left, right)
-    objects = "LazyFrames" if lazy else "DataFrames"
 
-    _assert_frame_schema_equal(
-        left,
-        right,
-        check_column_order=check_column_order,
-        check_dtypes=check_dtypes,
-        objects=objects,
-    )
-
+    # Rust back-end function expects DataFrames so LazyFrames must be collected
     if lazy:
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
+
+    # Tell type checker these are now DataFrames to prevent type errors
     left, right = cast(DataFrame, left), cast(DataFrame, right)
 
-    if left.height != right.height:
-        raise_assertion_error(
-            objects, "number of rows does not match", left.height, right.height
-        )
-
-    if not check_row_order:
-        left, right = _sort_dataframes(left, right)
-
-    for c in left.columns:
-        s_left, s_right = left.get_column(c), right.get_column(c)
-        try:
-            _assert_series_values_equal(
-                s_left,
-                s_right,
-                check_order=True,
-                check_exact=check_exact,
-                rtol=rtol,
-                atol=atol,
-                categorical_as_str=categorical_as_str,
-            )
-        except AssertionError as exc:
-            raise_assertion_error(
-                objects,
-                f"value mismatch for column {c!r}",
-                s_left.to_list(),
-                s_right.to_list(),
-                cause=exc,
-            )
-
-
-def _assert_correct_input_type(
-    left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
-) -> bool:
-    __tracebackhide__ = True
-
-    if isinstance(left, DataFrame) and isinstance(right, DataFrame):
-        return False
-    elif isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
-        return True
-    else:
-        raise_assertion_error(
-            "inputs",
-            "unexpected input types",
-            type(left).__name__,
-            type(right).__name__,
-        )
-
-
-def _assert_frame_schema_equal(
-    left: DataFrame | LazyFrame,
-    right: DataFrame | LazyFrame,
-    *,
-    check_dtypes: bool,
-    check_column_order: bool,
-    objects: str,
-) -> None:
-    __tracebackhide__ = True
-
-    left_schema, right_schema = left.collect_schema(), right.collect_schema()
-
-    # Fast path for equal frames
-    if left_schema == right_schema:
-        return
-
-    # Special error message for when column names do not match
-    if left_schema.keys() != right_schema.keys():
-        if left_not_right := [c for c in left_schema if c not in right_schema]:
-            msg = f"columns {left_not_right!r} in left {objects[:-1]}, but not in right"
-            raise AssertionError(msg)
-        else:
-            right_not_left = [c for c in right_schema if c not in left_schema]
-            msg = f"columns {right_not_left!r} in right {objects[:-1]}, but not in left"
-            raise AssertionError(msg)
-
-    if check_column_order:
-        left_columns, right_columns = list(left_schema), list(right_schema)
-        if left_columns != right_columns:
-            detail = "columns are not in the same order"
-            raise_assertion_error(objects, detail, left_columns, right_columns)
-
-    if check_dtypes:
-        left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
-        if check_column_order or left_schema_dict != right_schema_dict:
-            detail = "dtypes do not match"
-            raise_assertion_error(objects, detail, left_schema_dict, right_schema_dict)
-
-
-def _sort_dataframes(left: DataFrame, right: DataFrame) -> tuple[DataFrame, DataFrame]:
-    by = left.columns
-    try:
-        left = left.sort(by)
-        right = right.sort(by)
-    except InvalidOperationError as exc:
-        msg = "cannot set `check_row_order=False` on frame with unsortable columns"
-        raise TypeError(msg) from exc
-    return left, right
+    assert_dataframe_equal_py(
+        left._df,
+        right._df,
+        check_row_order=check_row_order,
+        check_column_order=check_column_order,
+        check_dtypes=check_dtypes,
+        check_exact=check_exact,
+        rtol=rtol,
+        atol=atol,
+        categorical_as_str=categorical_as_str,
+    )
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")

@@ -1728,7 +1728,7 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     # RecordBatch via C array interface
     pyarrow_record_batch = pyarrow_table.to_batches()[0]
     round_trip_df = pl.DataFrame(PyCapsuleArrayHolder(pyarrow_record_batch))
-    assert df.equals(round_trip_df.unnest(""))
+    assert df.equals(round_trip_df)
 
     # ChunkedArray via C stream interface
     pyarrow_chunked_array = pyarrow_table["bools"]

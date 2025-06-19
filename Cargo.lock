@@ -2935,7 +2935,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "apache-avro",
  "avro-schema",
@@ -2964,7 +2964,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "async-stream",
  "atoi_simd",
@@ -3013,7 +3013,7 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -3039,7 +3039,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "bincode",
  "bitflags",
@@ -3076,7 +3076,7 @@ dependencies = [
 
 [[package]]
 name = "polars-doc-examples"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dylib"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "polars",
  "polars-arrow",
@@ -3104,7 +3104,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -3118,7 +3118,7 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "bitflags",
  "hashbrown 0.15.3",
@@ -3140,7 +3140,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -3148,7 +3148,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -3198,7 +3198,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -3218,7 +3218,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "bitflags",
  "chrono",
@@ -3246,7 +3246,7 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "futures",
  "memmap2",
@@ -3268,7 +3268,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "aho-corasick",
  "argminmax",
@@ -3307,7 +3307,7 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -3350,7 +3350,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -3388,7 +3388,7 @@ dependencies = [
 
 [[package]]
 name = "polars-python"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "arboard",
  "bincode",
@@ -3430,7 +3430,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -3443,7 +3443,7 @@ dependencies = [
 
 [[package]]
 name = "polars-schema"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "indexmap 2.9.0",
  "polars-error",
@@ -3455,7 +3455,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "bitflags",
  "hex",
@@ -3474,7 +3474,7 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -3510,7 +3510,7 @@ dependencies = [
 
 [[package]]
 name = "polars-testing"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "polars-core",
  "polars-ops",
@@ -3518,7 +3518,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -3541,7 +3541,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.48.1"
+version = "0.49.1"
 dependencies = [
  "bincode",
  "bytemuck",
@@ -3670,7 +3670,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.31.0-beta.1"
+version = "1.31.0"
 dependencies = [
  "either",
  "libc",
