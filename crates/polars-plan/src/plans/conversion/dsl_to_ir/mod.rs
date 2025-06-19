@@ -12,6 +12,7 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 
 mod concat;
+mod datatype_fn_to_ir;
 mod expr_expansion;
 mod expr_to_ir;
 mod functions;

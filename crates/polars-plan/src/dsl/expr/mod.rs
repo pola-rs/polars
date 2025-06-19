@@ -1,8 +1,10 @@
+mod datatype_fn;
 mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+pub use datatype_fn::*;
 pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
@@ -88,6 +90,7 @@ pub enum Expr {
     DtypeColumn(Vec<DataType>),
     IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
+    DataTypeFunction(DataTypeFunction),
     BinaryExpr {
         left: Arc<Expr>,
         op: Operator,
@@ -272,6 +275,7 @@ impl Hash for Expr {
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
             Expr::Nth(v) => v.hash(state),
+            Expr::DataTypeFunction(v) => v.hash(state),
             Expr::Filter { input, by } => {
                 input.hash(state);
                 by.hash(state);

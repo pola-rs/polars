@@ -48,6 +48,7 @@ impl TreeWalker for Expr {
             DtypeColumn(_) => self,
             IndexColumn(_) => self,
             Literal(_) => self,
+            DataTypeFunction(_) => self,
             #[cfg(feature = "dtype-struct")]
             Field(_) => self,
             BinaryExpr { left, op, right } => {

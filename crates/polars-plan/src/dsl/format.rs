@@ -37,6 +37,7 @@ impl fmt::Debug for Expr {
                     }
                 },
             },
+            DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Nth(i) => write!(f, "nth({i})"),
             Len => write!(f, "len()"),
             Explode {
