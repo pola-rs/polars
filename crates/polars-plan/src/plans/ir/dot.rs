@@ -252,15 +252,15 @@ impl<'a> IRDotDisplay<'a> {
                 self.with_root(*input_left)._format(f, Some(id), last)?;
                 self.with_root(*input_right)._format(f, Some(id), last)?;
 
-                let left_on = self.display_exprs(left_on);
-                let right_on = self.display_exprs(right_on);
-
                 write_label(f, id, |f| {
-                    write!(
-                        f,
-                        "JOIN {}\nleft: {left_on};\nright: {right_on}",
-                        options.args.how
-                    )
+                    write!(f, "JOIN {}", options.args.how)?;
+
+                    if !left_on.is_empty() {
+                        let left_on = self.display_exprs(left_on);
+                        let right_on = self.display_exprs(right_on);
+                        write!(f, "\nleft: {left_on};\nright: {right_on}")?
+                    }
+                    Ok(())
                 })?;
             },
             MapFunction {
