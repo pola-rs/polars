@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar, cast
 
 import pytest
 
@@ -27,10 +27,7 @@ def _patched_cloud(
         import uuid
         from pathlib import Path
 
-        from polars_cloud import ComputeContext, ComputeContextStatus
-
-        if TYPE_CHECKING:
-            from polars_cloud import LazyFrameExt
+        from polars_cloud import ComputeContext, ComputeContextStatus, InteractiveQuery
 
         TIMEOUT_SECS = 4
 
@@ -69,7 +66,7 @@ def _patched_cloud(
 
         prev_collect = pl.LazyFrame.collect
 
-        def cloud_collect(lf: pl.LazyFrame, *args, **kwargs) -> pl.DataFrame:
+        def cloud_collect(lf: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.DataFrame:
             # issue: cloud client should use pl.QueryOptFlags()
             if "optimizations" in kwargs:
                 kwargs.pop("optimizations")
@@ -82,7 +79,7 @@ def _patched_cloud(
 
         class LazyExe:
             def __init__(
-                self, query: LazyFrameExt, prev_tgt: io.BytesIO | None, path: Path
+                self, query: InteractiveQuery, prev_tgt: io.BytesIO | None, path: Path
             ) -> None:
                 self.query = query
 
@@ -90,7 +87,9 @@ def _patched_cloud(
                 self.path = path
 
             def collect(self) -> pl.DataFrame:
-                res = with_timeout(lambda: self.query.await_result())
+                res = with_timeout(
+                    lambda: prev_collect(self.query.await_result().lazy())
+                )
                 if self.prev_tgt is not None:
                     with Path.open(self.path, "rb") as f:
                         self.prev_tgt.write(f.read())
@@ -108,10 +107,13 @@ def _patched_cloud(
             s.seek(offset)
             return path
 
-        def create_cloud_scan(ext: str) -> Callable:
+        def create_cloud_scan(ext: str) -> Callable[..., pl.LazyFrame]:
             prev_scan = getattr(pl, f"scan_{ext}")
+            prev_scan = cast(Callable[..., pl.LazyFrame], prev_scan)
 
-            def _(src: io.BytesIO | str | Path, *args, **kwargs) -> pl.LazyFrame:
+            def _(
+                src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
+            ) -> pl.LazyFrame:
                 if isinstance(src, io.BytesIO):
                     src = io_to_path(src, ext)
                 elif isinstance(src, list):
@@ -124,19 +126,22 @@ def _patched_cloud(
                     and all(lambda x: isinstance(x, str, Path), src)
                 )
 
-                return prev_scan(src, *args, **kwargs)
+                return prev_scan(src, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
 
-        def create_cloud_sink(ext: str, unsupported: list[str]) -> Callable:
+        def create_cloud_sink(
+            ext: str, unsupported: list[str]
+        ) -> Callable[..., pl.LazyFrame | None]:
             prev_sink = getattr(pl.LazyFrame, f"sink_{ext}")
+            prev_sink = cast(Callable[..., pl.LazyFrame | None], prev_sink)
 
-            def _(lf: pl.LazyFrame, *args, **kwargs) -> pl.LazyFrame | None:
+            def _(lf: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame | None:
                 # The cloud client sinks to a "placeholder-path".
                 if args[0] == "placeholder-path" or isinstance(
                     args[0], PartitioningScheme
                 ):
-                    return prev_sink(lf, *args, **kwargs)
+                    return prev_sink(lf, *args, **kwargs)  # type: ignore[no-any-return]
 
                 prev_tgt = None
                 if isinstance(args[0], io.BytesIO):
@@ -150,8 +155,10 @@ def _patched_cloud(
                     _ = kwargs.pop(u, None)
 
                 sink = getattr(lf.remote().distributed(), f"sink_{ext}")
+                q = sink(*args, **kwargs)
+                assert isinstance(q, InteractiveQuery)
                 query = LazyExe(
-                    sink(*args, **kwargs),
+                    q,
                     prev_tgt,
                     args[0],
                 )
