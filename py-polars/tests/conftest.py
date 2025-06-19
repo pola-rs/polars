@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import pytest
 
@@ -28,10 +29,15 @@ def _patched_cloud(
 
         from polars_cloud import ComputeContext, ComputeContextStatus
 
+        if TYPE_CHECKING:
+            from polars_cloud import LazyFrameExt
+
         TIMEOUT_SECS = 4
 
-        def with_timeout(f):
-            def handler(signum, frame):
+        T = TypeVar("T")
+
+        def with_timeout(f: Callable[[], T]) -> T:
+            def handler(signum: Any, frame: Any) -> None:
                 msg = "test timed out"
                 raise TimeoutError(msg)
 
@@ -61,15 +67,7 @@ def _patched_cloud(
             PatchedComputeContext.get_status,
         )
 
-        prev = {
-            name: getattr(pl.LazyFrame, name)
-            for name in [
-                "collect",
-                "sink_parquet",
-            ]
-        }
-
-        prevpl = {name: getattr(pl, name) for name in ["scan_parquet"]}
+        prev_collect = pl.LazyFrame.collect
 
         def cloud_collect(lf: pl.LazyFrame, *args, **kwargs) -> pl.DataFrame:
             # issue: cloud client should use pl.QueryOptFlags()
@@ -77,13 +75,15 @@ def _patched_cloud(
                 kwargs.pop("optimizations")
             if "engine" in kwargs:
                 kwargs.pop("engine")
-            df = prev["collect"](
+            df = prev_collect(
                 with_timeout(lambda: lf.remote().distributed().collect(*args, **kwargs))
             )
             return df
 
         class LazyExe:
-            def __init__(self, query, prev_tgt, path) -> None:
+            def __init__(
+                self, query: LazyFrameExt, prev_tgt: io.BytesIO | None, path: Path
+            ) -> None:
                 self.query = query
 
                 self.prev_tgt = prev_tgt
@@ -94,58 +94,87 @@ def _patched_cloud(
                 if self.prev_tgt is not None:
                     with Path.open(self.path, "rb") as f:
                         self.prev_tgt.write(f.read())
+
+                    # delete the temporary file
                     Path(self.path).unlink()
                 return res
 
         def io_to_path(s: io.BytesIO, ext: str) -> Path:
             path = Path(f"/tmp/pc-{uuid.uuid4()!s}.{ext}")
 
-            offset = s.seek()
+            offset = s.seek(0, 1)
             with Path.open(path, "wb") as f:
                 f.write(s.read())
             s.seek(offset)
             return path
 
-        def cloud_scan_parquet(src, *args, **kwargs) -> pl.LazyFrame | None:
-            if isinstance(src, io.BytesIO):
-                src = io_to_path(src)
-            elif isinstance(src, list):
-                for i in range(len(src)):
-                    if isinstance(src, io.BytesIO):
-                        src[i] = io_to_path(src[i])
+        def create_cloud_scan(ext: str) -> Callable:
+            prev_scan = getattr(pl, f"scan_{ext}")
 
-            return prevpl["scan_parquet"](src, *args, **kwargs)
+            def _(src: io.BytesIO | str | Path, *args, **kwargs) -> pl.LazyFrame:
+                if isinstance(src, io.BytesIO):
+                    src = io_to_path(src, ext)
+                elif isinstance(src, list):
+                    for i in range(len(src)):
+                        if isinstance(src, io.BytesIO):
+                            src[i] = io_to_path(src[i], ext)
 
-        def cloud_sink_parquet(
-            lf: pl.LazyFrame, *args, **kwargs
-        ) -> pl.LazyFrame | None:
-            if args[0] == "placeholder-path" or isinstance(args[0], PartitioningScheme):
-                return prev["sink_parquet"](lf, *args, **kwargs)
+                assert isinstance(src, (str, Path)) or (
+                    isinstance(src, list)
+                    and all(lambda x: isinstance(x, str, Path), src)
+                )
 
-            prev_tgt = None
-            if isinstance(args[0], io.BytesIO):
-                prev_tgt = args[0]
-                args = (f"/tmp/pc-{uuid.uuid4()!s}.parquet",) + args[1:]
+                return prev_scan(src, *args, **kwargs)
 
-            lazy = kwargs.pop("lazy", False)
-            _engine = kwargs.pop("engine", "auto")  # fix: unsupported
-            _optimizations = kwargs.pop("optimizations", None)  # fix: unsupported
-            _metadata = kwargs.pop("metadata", None)  # fix: unsupported
-            _mkdir = kwargs.pop("mkdir", False)  # fix: unsupported
-            _retries = kwargs.pop("retries", None)  # fix: unsupported
-            query = LazyExe(
-                lf.remote().distributed().sink_parquet(*args, **kwargs),
-                prev_tgt,
-                args[0],
+            return _
+
+        def create_cloud_sink(ext: str, unsupported: list[str]) -> Callable:
+            prev_sink = getattr(pl.LazyFrame, f"sink_{ext}")
+
+            def _(lf: pl.LazyFrame, *args, **kwargs) -> pl.LazyFrame | None:
+                # The cloud client sinks to a "placeholder-path".
+                if args[0] == "placeholder-path" or isinstance(
+                    args[0], PartitioningScheme
+                ):
+                    return prev_sink(lf, *args, **kwargs)
+
+                prev_tgt = None
+                if isinstance(args[0], io.BytesIO):
+                    prev_tgt = args[0]
+                    args = (f"/tmp/pc-{uuid.uuid4()!s}.{ext}",) + args[1:]
+
+                lazy = kwargs.pop("lazy", False)
+
+                # these are all the unsupported flags
+                for u in unsupported:
+                    _ = kwargs.pop(u, None)
+
+                sink = getattr(lf.remote().distributed(), f"sink_{ext}")
+                query = LazyExe(
+                    sink(*args, **kwargs),
+                    prev_tgt,
+                    args[0],
+                )
+
+                if lazy:
+                    return query  # type: ignore[return-value]
+                return None
+
+            return _
+
+        # fix: these need to become supported somehow
+        BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir", "retries"]
+        for ext, unsupported in [
+            ("parquet", ["metadata"]),
+            ("csv", []),
+            ("ipc", []),
+            ("ndjson", []),
+        ]:
+            monkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
+            monkeypatch.setattr(
+                f"polars.LazyFrame.sink_{ext}",
+                create_cloud_sink(ext, BASE_UNSUPPORTED + unsupported),
             )
 
-            if not lazy:
-                return query.collect()
-
-            return
-
-        monkeypatch.setattr("polars.scan_parquet", cloud_scan_parquet)
         monkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)
-        monkeypatch.setattr("polars.LazyFrame.sink_parquet", cloud_sink_parquet)
-
         monkeypatch.setenv("POLARS_SKIP_CLIENT_CHECK", "1")
