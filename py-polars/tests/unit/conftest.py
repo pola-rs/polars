@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import io
-import inspect
 import gc
 import os
 import random
@@ -12,7 +10,6 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
-from polars._typing import PartitioningScheme
 import pytest
 
 import polars as pl
