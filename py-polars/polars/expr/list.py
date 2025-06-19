@@ -1453,14 +1453,14 @@ class ExprListNameSpace:
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5]]})
         >>> df.with_columns(remove=pl.col("a").list.remove_by_index(1))
         shape: (2, 2)
-        ┌───────────┬────────────┐
-        │ a         ┆ remove     │
-        │ ---       ┆ ---        │
-        │ list[i64] ┆ list[i64]  │
-        ╞═══════════╪════════════╡
-        │ [1, 2, 3] ┆ [1, 3]     │
-        │ [4, 5]    ┆ [4]        │
-        └───────────┴────────────┘
+        ┌───────────┬───────────┐
+        │ a         ┆ remove    │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [1, 3]    │
+        │ [4, 5]    ┆ [4]       │
+        └───────────┴───────────┘
         """
         index = parse_into_expression(index)
         return wrap_expr(self._pyexpr.list_remove_by_index(index, null_on_oob))

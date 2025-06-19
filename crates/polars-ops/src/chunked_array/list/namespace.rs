@@ -341,7 +341,6 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_remove_by_index(&self, index: &Column, null_on_oob: bool) -> PolarsResult<ListChunked> {
-        println!("index dtype: {}", index.dtype());
         let list_ca = self.as_list();
         Ok(
             with_match_physical_numeric_type!(index.dtype().to_physical(), |$T| {

@@ -1090,7 +1090,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def remove_by_index(self, index: IntoExpr, *, null_on_oob: bool = False) -> Expr:
+    def remove_by_index(self, index: IntoExpr, *, null_on_oob: bool = False) -> Series:
         """
         Remove an element at the given index from every sublist.
 
