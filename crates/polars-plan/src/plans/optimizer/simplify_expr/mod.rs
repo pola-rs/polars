@@ -3,6 +3,7 @@ mod simplify_functions;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
+mod binary;
 
 use crate::plans::*;
 
@@ -140,124 +141,11 @@ impl OptimizationRule for SimplifyBooleanRule {
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        let in_filter = ctx.in_filter;
 
         let out = match expr {
             // true AND x => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && in_filter =>
-            {
-                // Only in filter as we might change the name from "literal"
-                // to whatever lhs columns is.
-                return Ok(Some(expr_arena.get(*right).clone()));
-            },
-            // x AND true => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) =>
-            {
-                Some(expr_arena.get(*left).clone())
-            },
-
-            // x AND false -> false
-            // FIXME: we need an optimizer redesign to allow x & false to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
-                && matches!(
-                    expr_arena.get(*right),
-                    AExpr::Literal(lv) if lv.bool() == Some(false)
-                ) =>
-            {
-                Some(AExpr::Literal(Scalar::from(false).into()))
-            },
-
-            // false AND x -> false
-            // FIXME: we need an optimizer redesign to allow false & x to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
-            {
-                Some(AExpr::Literal(Scalar::from(false).into()))
-            },
-
-            // false or x => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) && in_filter =>
-            {
-                // Only in filter as we might change the name from "literal"
-                // to whatever lhs columns is.
-                return Ok(Some(expr_arena.get(*right).clone()));
-            },
-            // x or false => x
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-                ..
-            } if matches!(
-                expr_arena.get(*right),
-                AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) =>
-            {
-                Some(expr_arena.get(*left).clone())
-            },
-
-            // true OR x => true
-            // FIXME: we need an optimizer redesign to allow true | x to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(expr_arena.get(*left), AExpr::Literal(_))
-                && matches!(
-                    expr_arena.get(*right),
-                    AExpr::Literal(lv) if lv.bool() == Some(true)
-                ) =>
-            {
-                Some(AExpr::Literal(Scalar::from(true).into()))
-            },
-
-            // x OR true => true
-            // FIXME: we need an optimizer redesign to allow true | x to be optimized
-            // in general as we can forget the length of a series otherwise.
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(
-                expr_arena.get(*left),
-                    AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
-            {
-                Some(AExpr::Literal(Scalar::from(true).into()))
+            AExpr::BinaryExpr { left, op, right } => {
+                return Ok(binary::simplify_binary(*left, *op, *right, ctx, expr_arena));
             },
             AExpr::Function {
                 input,
