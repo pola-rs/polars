@@ -38,7 +38,8 @@ pub(super) fn simplify_binary(
             // x AND false -> false
             // FIXME: we need an optimizer redesign to allow x & false to be optimized
             // in general as we can forget the length of a series otherwise.
-            if matches!(left, AExpr::Literal(_))
+            // In filter we allow it as the length is not important there.
+            if (matches!(left, AExpr::Literal(_)) | in_filter)
                 && matches!(
                     right,
                     AExpr::Literal(lv) if lv.bool() == Some(false)
@@ -72,6 +73,7 @@ pub(super) fn simplify_binary(
             // true OR x => true
             // FIXME: we need an optimizer redesign to allow true | x to be optimized
             // in general as we can forget the length of a series otherwise.
+            // In filter we allow it as the length is not important there.
             if (matches!(left, AExpr::Literal(_)) | in_filter)
                 && matches!(
                     right,
@@ -84,6 +86,7 @@ pub(super) fn simplify_binary(
             // x OR true => true
             // FIXME: we need an optimizer redesign to allow true | x to be optimized
             // in general as we can forget the length of a series otherwise.
+            // In filter we allow it as the length is not important there.
             if matches!(
                 left,
                     AExpr::Literal(lv) if lv.bool() == Some(true)
