@@ -468,7 +468,7 @@ class LazyGroupBy:
 
     def max(self) -> LazyFrame:
         """
-        Reduce the groups to the maximal value.
+        Reduce the groups to the maximal value, ignoring null values.
 
         Examples
         --------
@@ -550,7 +550,7 @@ class LazyGroupBy:
 
     def min(self) -> LazyFrame:
         """
-        Reduce the groups to the minimal value.
+        Reduce the groups to the minimal value, ignoring null values.
 
         Examples
         --------

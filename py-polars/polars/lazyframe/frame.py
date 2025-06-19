@@ -6460,6 +6460,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6839,6 +6843,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             where N represents the number of elements.
             By default ddof is 1.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6879,6 +6887,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             where N represents the number of elements.
             By default ddof is 1.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6912,6 +6924,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their maximum value.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6935,6 +6951,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def min(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their minimum value.
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
@@ -6960,6 +6980,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their sum value.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6984,6 +7008,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their mean value.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7007,6 +7035,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def median(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their median value.
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
@@ -7174,8 +7206,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If you're coming from pandas, this is similar to
-        `pandas.DataFrame.drop_duplicates`.
+        * If you're coming from pandas, this is similar to
+          `pandas.DataFrame.drop_duplicates`.
+        * `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------

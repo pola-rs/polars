@@ -146,7 +146,7 @@ class DateTimeNameSpace:
 
     def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
-        Return minimum as Python datetime.
+        Return minimum as Python datetime, ignoring null values.
 
         Examples
         --------
@@ -159,7 +159,7 @@ class DateTimeNameSpace:
 
     def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
-        Return maximum as Python datetime.
+        Return maximum as Python datetime, ignoring null values.
 
         Examples
         --------

@@ -292,7 +292,7 @@ def implode(*columns: str) -> Expr:
 
 def std(column: str, ddof: int = 1) -> Expr:
     """
-    Get the standard deviation.
+    Get the standard deviation, ignoring null values.
 
     This function is syntactic sugar for `pl.col(column).std(ddof)`.
 
@@ -331,7 +331,7 @@ def std(column: str, ddof: int = 1) -> Expr:
 
 def var(column: str, ddof: int = 1) -> Expr:
     """
-    Get the variance.
+    Get the variance, ignoring null values.
 
     This function is syntactic sugar for `pl.col(column).var(ddof)`.
 
@@ -370,7 +370,7 @@ def var(column: str, ddof: int = 1) -> Expr:
 
 def mean(*columns: str) -> Expr:
     """
-    Get the mean value.
+    Get the mean value, ignoring null values.
 
     This function is syntactic sugar for `pl.col(columns).mean()`.
 
@@ -417,7 +417,7 @@ def mean(*columns: str) -> Expr:
 
 def median(*columns: str) -> Expr:
     """
-    Get the median value.
+    Get the median value, ignoring null values.
 
     This function is syntactic sugar for `pl.col(columns).median()`.
 
@@ -512,6 +512,10 @@ def approx_n_unique(*columns: str) -> Expr:
     ----------
     columns
         One or more column names.
+
+    Notes
+    -----
+    `null` is considered to be a unique value for the purposes of this operation.
 
     Examples
     --------
