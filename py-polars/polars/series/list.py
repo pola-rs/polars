@@ -1101,9 +1101,8 @@ class ListNameSpace:
         null_on_oob
             If `True`, return `null` for sublists that are out of bounds
 
-        Examples 
+        Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5]])
         >>> s.list.remove_by_index(1)
         shape: (2,)

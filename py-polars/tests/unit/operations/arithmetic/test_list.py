@@ -1024,3 +1024,57 @@ def test_list_to_primitive_arithmetic() -> None:
         out = pl.select(r=rhs).select(pl.col("r") - lhs).to_series().alias("")  # noqa: PIE794
 
         assert_series_equal(out, expect)
+
+@pytest.mark.parametrize(
+    ("values", "idx", "expected"),
+    [
+        ([[10, 20], [30, 40], [50, 60]], 1, [[10], [30], [50]]),
+        ([[10, 20], [30, 40], [50, 60]], 0, [[20], [40], [60]]),
+        ([[10, 20], [30, 40], [50, 60]], -1, [[10], [30], [50]]),
+    ],
+)
+def test_remove_by_index_scalar(values, idx, expected) -> None:
+    df = pl.DataFrame({"values": values})
+    assert_frame_equal(
+        df.select(pl.col("values").list.remove_by_index(idx)),
+        pl.Series("values", expected).to_frame(),
+    )
+    assert_series_equal(
+        pl.Series(values).list.remove_by_index(idx),
+        pl.Series(expected),
+    )
+
+def test_remove_by_index_variable_index() -> None:
+    values = [[10, 20, 30], [40, 50], [60, 70]]
+    indices = [0, 1, -1]
+    expected = [[20, 30], [40], [60]]
+    df = pl.DataFrame({"values": values, "idx": indices})
+    assert_frame_equal(
+        df.select(pl.col("values").list.remove_by_index(pl.col("idx"))),
+        pl.Series("values", expected).to_frame(),
+    )
+    s = pl.Series(values)
+    idx_s = pl.Series(indices)
+    assert_series_equal(
+        s.list.remove_by_index(idx_s),
+        pl.Series(expected),
+    )
+
+@pytest.mark.parametrize(
+    ("values", "idx", "null_on_oob", "expected"),
+    [
+        ([[1], [2, 3]], 2, True, [None, None]),
+        ([[], None, [4]], 0, True, [None, None, []]),
+        ([[5, 6]], -3, True, [None]),
+    ],
+)
+def test_remove_by_index_oob_null(values, idx, null_on_oob, expected) -> None:
+    df = pl.DataFrame({"values": values})
+    assert_frame_equal(
+        df.select(pl.col("values").list.remove_by_index(idx, null_on_oob=null_on_oob)),
+        pl.Series("values", expected, dtype=pl.List(pl.Int64)).to_frame(),
+    )
+    assert_series_equal(
+        pl.Series(values).list.remove_by_index(idx, null_on_oob=null_on_oob),
+        pl.Series(expected, dtype=pl.List(pl.Int64)),
+    )

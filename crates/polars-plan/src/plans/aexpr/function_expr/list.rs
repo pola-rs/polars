@@ -311,7 +311,7 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Sort(options) => map!(sort, options),
             Reverse => map!(reverse),
             Unique(is_stable) => map!(unique, is_stable),
-            RemoveByIndex(null_on_oob) => map!(remove_by_index, null_on_oob),
+            RemoveByIndex(null_on_oob) => map_as_slice!(remove_by_index, null_on_oob),
             #[cfg(feature = "list_sets")]
             SetOperation(s) => map_as_slice!(set_operation, s),
             #[cfg(feature = "list_any_all")]
@@ -708,8 +708,10 @@ pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_arg_min().into_column())
 }
 
-pub(super) fn remove_by_index(s: &Column, null_on_oob: bool) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_remove_by_index(s, null_on_oob)?.into_column())
+pub(super) fn remove_by_index(s: &[Column], null_on_oob: bool) -> PolarsResult<Column> {
+    let list_ca = s[0].list()?;
+    let index = &s[1];
+    Ok(list_ca.lst_remove_by_index(index, null_on_oob)?.into_column())
 }
 
 pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {

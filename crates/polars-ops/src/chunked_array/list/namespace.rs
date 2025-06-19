@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::fmt::Write;
-use arrow::array::builder::{make_builder, ShareStrategy};
-use arrow::array::Array as ArrowArray;
-use arrow::array::{ListArray, PrimitiveArray, ValueSize};
+
+use arrow::array::builder::{ShareStrategy, make_builder};
+use arrow::array::{Array as ArrowArray, ListArray, ValueSize};
 use arrow::bitmap::BitmapBuilder;
 use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
@@ -341,14 +341,94 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_remove_by_index(&self, index: &Column, null_on_oob: bool) -> PolarsResult<ListChunked> {
+        println!("index dtype: {}", index.dtype());
         let list_ca = self.as_list();
-        let result: ListChunked = with_match_physical_numeric_type!(index.dtype().to_physical(), |$T| {
-            arity::binary(list_ca, index.$T().unwrap(), drop_index_inner::<$T>)
-        });
-        Ok(result)
+        Ok(
+            with_match_physical_numeric_type!(index.dtype().to_physical(), |$T| {
+                let idx_ca = index.$T().unwrap();
+                arity::try_binary(list_ca, idx_ca, |list_arr, idx_arr| {
+                    let rows = list_arr.len();
+                    let values_arr: &dyn ArrowArray = list_arr.values().as_ref();
+                    let inner_dtype = values_arr.dtype().clone();
+                    let raw_offsets = list_arr.offsets().as_slice();
+
+                    let total_inner = list_arr
+                        .offsets()
+                        .windows(2)
+                        .map(|o| (o[1] - o[0] - 1).max(0) as usize)
+                        .sum();
+
+                    let mut builder = make_builder(&inner_dtype);
+                    builder.reserve(total_inner);
+
+                    let mut validity = BitmapBuilder::with_capacity(rows);
+                    let mut offsets = Offsets::with_capacity(rows + 1);
+
+                    for row in 0..rows {
+                        let idx_row = if idx_arr.len() == 1 { 0 } else { row };
+
+                        let row_is_valid = list_arr.is_valid(row) && idx_arr.is_valid(idx_row);
+                        if !row_is_valid {
+                            offsets.push_null();
+                            validity.push(false);
+                            continue;
+                        }
+
+                        let start = raw_offsets[row] as usize;
+                        let end   = raw_offsets[row + 1] as usize;
+                        let row_len = end - start;
+
+                        let raw_idx = idx_arr.value(idx_row).to_i64().unwrap();
+                        let signed_idx : i64 = if raw_idx < 0 {
+                            raw_idx + row_len as i64
+                        } else {
+                            raw_idx
+                        };
+
+                        if signed_idx < 0 || signed_idx >= row_len as i64 {
+                            if null_on_oob {
+                                offsets.push_null();
+                                validity.push(false);
+                                continue;
+                            } else {
+                                polars_bail!(
+                                    ComputeError:
+                                    "drop index {raw_idx} is out of bounds (row length = {row_len})"
+                                );
+                            }
+                        }
+                        let drop_idx = signed_idx as usize;
+
+                        if drop_idx > 0 {
+                            builder.subslice_extend(values_arr, start, drop_idx, ShareStrategy::Always);
+                        }
+
+                        let right_len = row_len - drop_idx - 1;
+                        if right_len > 0 {
+                            builder.subslice_extend(
+                                values_arr,
+                                start + drop_idx + 1,
+                                right_len,
+                                ShareStrategy::Always,
+                            );
+                        }
+
+                        offsets.push(row_len - 1);
+                        validity.push(true);
+                    }
+
+                    let values = builder.freeze_reset();
+                    let list_dtype = ListArray::<i64>::default_datatype(inner_dtype);
+                    Ok(LargeListArray::new(
+                        list_dtype,
+                        offsets.into(),
+                        values,
+                        validity.into_opt_validity(),
+                    ))
+                })?
+            }),
+        )
     }
-
-
 
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
         let ca = self.as_list();
@@ -965,89 +1045,4 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
         OutOfBounds: "gather indices are out of bounds"
     );
     Ok(out)
-}
-
-// TODO: implement the above for ArrayChunked as well?
-fn drop_index_inner<T>(list_arr: &LargeListArray, idx_arr: &PrimitiveArray<T>) -> LargeListArray
-where
-    T: NumericNative,
-{
-    let rows = list_arr.len();
-
-    let values_arr: &dyn ArrowArray = list_arr.values().as_ref();
-    let inner_arrow_type: ArrowDataType = values_arr.dtype().clone();
-
-    let raw_offsets = list_arr.offsets().as_slice();
-
-    let total_inner: usize = list_arr
-        .offsets()
-        .windows(2)
-        .map(|o| (o[1] - o[0] - 1).max(0))
-        .map(|x| x as usize)
-        .sum();
-
-    let mut builder = make_builder(&inner_arrow_type);
-    builder.reserve(total_inner);
-
-    let mut validity = BitmapBuilder::with_capacity(rows);
-    let mut offsets = Offsets::with_capacity(rows + 1);
-
-    /*
-     *   Build the offsets and validity bitmaps by the following logic:
-     *   1. If the row is valid in both list and index arrays, we check the index value.
-     *   2. If the index is less than the length of the list, we drop the element at that index and
-     *    push the new length to offsets.
-     *   3. If the index is greater than or equal to the length of the list, we push the original
-     *       length to offsets and mark the validity as true.
-     *   4. If the row is invalid in either array, we push null to offsets and mark validity as false.
-     *   */
-    for row in 0..rows {
-        let index_idx = if idx_arr.len() == 1 { 0 } else { row };
-        let row_is_valid = list_arr.is_valid(row) && idx_arr.is_valid(index_idx);
-        if !row_is_valid {
-            offsets.push_null();
-            validity.push(false);
-            continue;
-        }
-
-        let start = raw_offsets[row] as usize;
-        let end = raw_offsets[row + 1] as usize;
-        let row_len = end - start;
-        let drop_idx = idx_arr.value(index_idx).to_usize().unwrap();
-
-        let mut kept = 0usize;
-
-        if drop_idx < row_len {
-            if drop_idx > 0 {
-                builder.subslice_extend(values_arr, start, drop_idx, ShareStrategy::Always);
-                kept += drop_idx;
-            }
-            let right_len = row_len - drop_idx - 1;
-            if right_len > 0 {
-                builder.subslice_extend(
-                    values_arr,
-                    start + drop_idx + 1,
-                    right_len,
-                    ShareStrategy::Always,
-                );
-                kept += right_len;
-            }
-            offsets.push(kept);
-            validity.push(true);
-        } else {
-            panic!(
-                "{}",
-                polars_err!(ComputeError: "drop index is out of bounds")
-            );
-        }
-    }
-
-    let values = builder.freeze_reset();
-    let list_dtype = ListArray::<i64>::default_datatype(inner_arrow_type.clone());
-    LargeListArray::new(
-        list_dtype,
-        offsets.into(),
-        values,
-        validity.into_opt_validity(),
-    )
 }
