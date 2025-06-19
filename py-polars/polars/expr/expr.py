@@ -17,6 +17,7 @@ from typing import (
     ClassVar,
     NoReturn,
     TypeVar,
+    overload,
 )
 
 import polars._reexport as pl
@@ -3459,6 +3460,26 @@ class Expr:
         └─────┘
         """
         return self._from_pyexpr(self._pyexpr.last())
+
+    def over(
+        self,
+        partition_by: IntoExpr | Iterable[IntoExpr] = ...,
+        *more_exprs: IntoExpr,
+        order_by: IntoExpr | Iterable[IntoExpr] | None = ...,
+        descending: bool = ...,
+        nulls_last: bool = ...,
+        mapping_strategy: WindowMappingStrategy = ...,
+    ) -> Expr:
+
+    def over(
+        self,
+        partition_by: None = ...,
+        *more_exprs: IntoExpr,
+        order_by: IntoExpr | Iterable[IntoExpr],
+        descending: bool = ...,
+        nulls_last: bool = ...,
+        mapping_strategy: WindowMappingStrategy = ...,
+    ) -> Expr:
 
     def over(
         self,
