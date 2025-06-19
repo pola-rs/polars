@@ -3,7 +3,7 @@ mod simplify_functions;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
-mod binary;
+mod arity;
 
 use crate::plans::*;
 
@@ -145,7 +145,16 @@ impl OptimizationRule for SimplifyBooleanRule {
         let out = match expr {
             // true AND x => x
             AExpr::BinaryExpr { left, op, right } => {
-                return Ok(binary::simplify_binary(*left, *op, *right, ctx, expr_arena));
+                return Ok(arity::simplify_binary(*left, *op, *right, ctx, expr_arena));
+            },
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                return Ok(arity::simplify_ternary(
+                    *predicate, *truthy, *falsy, expr_arena,
+                ));
             },
             AExpr::Function {
                 input,
