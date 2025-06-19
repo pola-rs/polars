@@ -6,7 +6,6 @@ use arrow::array::{Array as ArrowArray, ListArray, ValueSize};
 use arrow::bitmap::BitmapBuilder;
 use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
-#[cfg(feature = "list_gather")]
 use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
 use num_traits::{NumCast, Signed, Zero};
