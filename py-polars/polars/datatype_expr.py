@@ -161,6 +161,18 @@ class DataTypeExpr:
         """Get whether the output DataType is an object."""
         return pl.Expr._from_pyexpr(self._pydatatype_expr.is_object())
 
+    def wrap_in_list(self) -> DataTypeExpr:
+        """Get the DataType wrapped in a list."""
+        return DataTypeExpr._from_pydatatype_expr(
+            self._from_pydatatype_expr.wrap_in_list()
+        )
+
+    def wrap_in_array(self, *, width: int) -> DataTypeExpr:
+        """Get the DataType wrapped in an array."""
+        return DataTypeExpr._from_pydatatype_expr(
+            self._from_pydatatype_expr.wrap_in_array(width)
+        )
+
     @property
     def int(self) -> DataTypeExprIntNameSpace:
         """Create an object namespace of all integer related methods."""

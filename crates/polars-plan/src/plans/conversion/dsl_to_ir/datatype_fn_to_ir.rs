@@ -16,7 +16,7 @@ use crate::plans::{AExpr, LiteralValue};
 pub fn datatype_fn_to_aexpr(
     f: DataTypeFunction,
     schema: &Schema,
-    arena: &mut Arena<AExpr>,
+    _arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(AExpr, PlSmallStr)> {
     use DataTypeFunction as DTF;
     Ok(match f {

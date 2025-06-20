@@ -28,9 +28,9 @@ pub enum DataTypeExpr {
     Struct(Box<DataTypeExpr>, StructDataTypeExpr),
 
     // Constructors for nested types
-    ListWith(Box<DataTypeExpr>),
-    ArrayWith(Box<DataTypeExpr>, usize),
-    StructWith(Vec<(PlSmallStr, DataTypeExpr)>),
+    WrapInList(Box<DataTypeExpr>),
+    WrapInArray(Box<DataTypeExpr>, usize),
+    StructWithFields(Vec<(PlSmallStr, DataTypeExpr)>),
 }
 
 #[derive(Clone, PartialEq, Hash)]
@@ -147,11 +147,11 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
                 },
             }
         },
-        D::ListWith(dt_expr) => DataType::List(Box::new(dt_expr.into_datatype(schema)?)),
-        D::ArrayWith(dt_expr, width) => {
+        D::WrapInList(dt_expr) => DataType::List(Box::new(dt_expr.into_datatype(schema)?)),
+        D::WrapInArray(dt_expr, width) => {
             DataType::Array(Box::new(dt_expr.into_datatype(schema)?), width)
         },
-        D::StructWith(field_exprs) => {
+        D::StructWithFields(field_exprs) => {
             let mut seen = PlHashSet::with_capacity(field_exprs.len());
             let mut fields = Vec::with_capacity(field_exprs.len());
             for (name, dt_expr) in field_exprs {
@@ -266,6 +266,14 @@ impl DataTypeExpr {
         self.is_kind(DataTypeKind::Object)
     }
 
+    pub fn wrap_in_list(self) -> Self {
+        Self::WrapInList(Box::new(self))
+    }
+
+    pub fn wrap_in_array(self, width: usize) -> Self {
+        Self::WrapInArray(Box::new(self), width)
+    }
+
     pub fn int(self) -> DataTypeExprIntNameSpace {
         DataTypeExprIntNameSpace(self)
     }
@@ -321,13 +329,13 @@ impl fmt::Debug for DataTypeExpr {
                     },
                 }
             },
-            Self::ListWith(dt_expr) => {
+            Self::WrapInList(dt_expr) => {
                 write!(f, "pl.list_dtype_with({dt_expr:?})")
             },
-            Self::ArrayWith(dt_expr, width) => {
+            Self::WrapInArray(dt_expr, width) => {
                 write!(f, "pl.array_dtype_with({dt_expr:?}, {width})")
             },
-            Self::StructWith(field_exprs) => {
+            Self::StructWithFields(field_exprs) => {
                 f.write_str("pl.struct_dtype_with(")?;
                 if let Some(field_expr) = field_exprs.first() {
                     fmt::Debug::fmt(field_expr, f)?;

@@ -1,4 +1,4 @@
-use polars::prelude::{DataType, DataTypeExpr, Schema};
+use polars::prelude::{DataType, DataTypeExpr, PlSmallStr, Schema};
 use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass};
 
 use super::PyExpr;
@@ -116,6 +116,23 @@ impl PyDataTypeExpr {
         self.inner.clone().is_object().into()
     }
 
+    #[staticmethod]
+    pub fn struct_with_fields(fields: Vec<(String, PyDataTypeExpr)>) -> Self {
+        let fields = fields
+            .into_iter()
+            .map(|(name, dt_expr)| (PlSmallStr::from_string(name), dt_expr.inner))
+            .collect();
+        DataTypeExpr::StructWithFields(fields).into()
+    }
+
+    pub fn wrap_in_list(&self) -> Self {
+        self.inner.clone().wrap_in_list().into()
+    }
+
+    pub fn wrap_in_array(&self, width: usize) -> Self {
+        self.inner.clone().wrap_in_array(width).into()
+    }
+
     pub fn int_to_unsigned(&self) -> Self {
         self.inner.clone().int().to_unsigned().into()
     }
@@ -177,11 +194,19 @@ impl PyDataTypeExpr {
     }
 
     pub fn struct_field_dtype_by_index(&self, index: i64) -> Self {
-        self.inner.clone().struct_().field_dtype_by_index(index).into()
+        self.inner
+            .clone()
+            .struct_()
+            .field_dtype_by_index(index)
+            .into()
     }
 
     pub fn struct_field_dtype_by_name(&self, name: &str) -> Self {
-        self.inner.clone().struct_().field_dtype_by_name(name).into()
+        self.inner
+            .clone()
+            .struct_()
+            .field_dtype_by_name(name)
+            .into()
     }
 
     pub fn struct_num_fields(&self) -> PyExpr {
