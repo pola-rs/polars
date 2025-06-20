@@ -118,7 +118,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Iterator, Mapping, Hashable
+    from collections.abc import Collection, Hashable, Iterator, Mapping
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -10607,10 +10607,10 @@ class DataFrame:
         if columns is not None:
             columns = _expand_selectors(self, columns)
         if categories is not None:
-            categories = {
-                k: [str(cat) for cat in v] for k, v in categories.items()
-            }
-        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first, categories))
+            categories = {k: [str(cat) for cat in v] for k, v in categories.items()}
+        return self._from_pydf(
+            self._df.to_dummies(columns, separator, drop_first, categories)
+        )
 
     def unique(
         self,

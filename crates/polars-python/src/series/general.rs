@@ -307,7 +307,10 @@ impl PySeries {
         drop_first: bool,
         categories: Option<Vec<String>>,
     ) -> PyResult<PyDataFrame> {
-        py.enter_polars_df(|| self.series.to_dummies(separator, drop_first, categories.as_ref()))
+        py.enter_polars_df(|| {
+            self.series
+                .to_dummies(separator, drop_first, categories.as_ref())
+        })
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {

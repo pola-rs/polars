@@ -1385,6 +1385,7 @@ def test_to_dummies_null_clash_19096() -> None:
     ):
         print(pl.Series([None, "null"]).to_dummies())
 
+
 def test_to_dummies_categories() -> None:
     s: pl.Series = pl.Series("pet", ["cat", "dog", "cat"])
     df: pl.DataFrame = s.to_dummies(categories=["cat", "dog", "bird"])

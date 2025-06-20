@@ -47,7 +47,7 @@ impl ToDummies for Series {
                 polars_bail!(Duplicate: "column with name '{name}' has more than one occurrence")
             }
             columns.insert(name, group);
-        } 
+        }
 
         let columns = match categories {
             Some(cats) => {
@@ -74,22 +74,22 @@ impl ToDummies for Series {
             },
             None => sort_columns(
                 columns
-                .iter()
-                .skip(drop_first as usize)
-                .map(|(name, group)| {
-                    let name = format_pl_smallstr!("{col_name}{sep}{name}");
+                    .iter()
+                    .skip(drop_first as usize)
+                    .map(|(name, group)| {
+                        let name = format_pl_smallstr!("{col_name}{sep}{name}");
 
-                    let ca = match group {
-                        GroupsIndicator::Idx((_, group)) => {
-                            dummies_helper_idx(group, self.len(), name)
-                        },
-                        GroupsIndicator::Slice([offset, len]) => {
-                            dummies_helper_slice(*offset, *len, self.len(), name)
-                        },
-                    };
-                    ca.into_column()
-                })
-                .collect::<Vec<_>>()
+                        let ca = match group {
+                            GroupsIndicator::Idx((_, group)) => {
+                                dummies_helper_idx(group, self.len(), name)
+                            },
+                            GroupsIndicator::Slice([offset, len]) => {
+                                dummies_helper_slice(*offset, *len, self.len(), name)
+                            },
+                        };
+                        ca.into_column()
+                    })
+                    .collect::<Vec<_>>(),
             ),
         };
 

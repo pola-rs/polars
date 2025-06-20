@@ -114,7 +114,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Generator, Mapping, Hashable
+    from collections.abc import Collection, Generator, Hashable, Mapping
 
     import jax
     import numpy.typing as npt
@@ -2269,7 +2269,11 @@ class Series:
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
-        self, *, separator: str = "_", drop_first: bool = False, categories: Sequence[Hashable] | None = None,
+        self,
+        *,
+        separator: str = "_",
+        drop_first: bool = False,
+        categories: Sequence[Hashable] | None = None,
     ) -> DataFrame:
         """
         Get dummy/indicator variables.

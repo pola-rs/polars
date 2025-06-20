@@ -793,6 +793,7 @@ def test_to_dummies_drop_first() -> None:
         (0, 1, 0, 1, 0, 1),
     ]
 
+
 def test_to_dummies_categories_basic() -> None:
     df: pl.DataFrame = pl.DataFrame({"A": ["a", "a", "b"], "B": ["x", "y", "x"]})
     dummies: pl.DataFrame = df.to_dummies(
@@ -811,6 +812,7 @@ def test_to_dummies_categories_basic() -> None:
     )
     assert_frame_equal(dummies.select(expected.columns), expected)
 
+
 def test_to_dummies_categories_drop_first() -> None:
     df: pl.DataFrame = pl.DataFrame({"k": ["b", "c"]})
 
@@ -824,6 +826,7 @@ def test_to_dummies_categories_drop_first() -> None:
     assert dd.columns == ["k_b", "k_d"]
     assert dd["k_d"].to_list() == [0, 0]
 
+
 def test_to_dummies_categories_override_columns() -> None:
     df: pl.DataFrame = pl.DataFrame({"kind": ["A", "B"]})
     out: pl.DataFrame = df.to_dummies(
@@ -833,6 +836,7 @@ def test_to_dummies_categories_override_columns() -> None:
 
     assert "kind_C" in out.columns
     assert out["kind_C"].sum() == 0
+
 
 def test_to_dummies_categories_duplicates_error() -> None:
     df: pl.DataFrame = pl.DataFrame({"col": ["x", "y"]})
