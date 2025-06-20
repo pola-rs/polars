@@ -1,4 +1,5 @@
 use core::fmt;
+use std::ffi::OsStr;
 use std::path::{Component, Path};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -266,26 +267,27 @@ impl<'a> PlPathRef<'a> {
         })
     }
 
-    // TODO
     pub fn extension(&self) -> Option<&str> {
-        let offset_path = self.strip_scheme();
-        let separator = match self {
-            Self::Local(_) => std::path::MAIN_SEPARATOR,
-            Self::Cloud(_) => '/',
-        };
+        match self {
+            Self::Local(path) => path.extension().and_then(|e| e.to_str()),
+            Self::Cloud(_) => {
+                let offset_path = self.strip_scheme();
+                let separator = '/';
 
-        let mut ext_start = None;
-        for (i, c) in offset_path.char_indices() {
-            if c == separator {
-                ext_start = None;
-            }
+                let mut ext_start = None;
+                for (i, c) in offset_path.char_indices() {
+                    if c == separator {
+                        ext_start = None;
+                    }
 
-            if c == '.' && ext_start.is_none() {
-                ext_start = Some(i);
-            }
+                    if c == '.' && ext_start.is_none() {
+                        ext_start = Some(i);
+                    }
+                }
+
+                ext_start.map(|i| &offset_path[i + 1..])
+            },
         }
-
-        ext_start.map(|i| &offset_path[i + 1..])
     }
 
     pub fn to_str(&self) -> &'a str {
@@ -295,52 +297,52 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn separator(&self) -> char {
-        match self {
-            Self::Local(_) => std::path::MAIN_SEPARATOR,
-            Self::Cloud(_) => '/',
-        }
-    }
-
-    // SAFETY: returns empty path if n is larger than path len
+    // SAFETY: will panic if n is out of bounds, or the path cannot be parsed
     pub fn offset_bytes(&'a self, n: usize) -> Self {
         match self {
             Self::Local(path) => {
-                let s = path.to_str().expect("Path is not valid UTF-8");
-                let sliced = if s.is_char_boundary(n) { &s[n..] } else { "" };
+                // TODO: select either &OsStr or &str approach after checking 'hive_start_idx' definition
+                let s = path.as_os_str().as_encoded_bytes();
+                let sliced;
+                unsafe {
+                    sliced = OsStr::from_encoded_bytes_unchecked(&s[n..]);
+                }
                 PlPathRef::Local(Path::new(sliced))
+                // let s = path.to_str().expect("Path is not valid UTF-8");
+                // PlPathRef::Local(Path::new(&s[n..]))
             },
             Self::Cloud(cloudpath) => {
                 let s = self.to_str();
-                let sliced = if s.is_char_boundary(n) { &s[n..] } else { "" };
                 PlPathRef::Cloud(PlCloudPathRef {
                     scheme: cloudpath.scheme,
-                    uri: sliced,
+                    uri: &s[n..],
                 })
             },
         }
     }
 
-    // TODO: introduce custom enum iterator type PathSegmentIteror plus impl Iterator
-    // TODO: remove non-path fields from cloud URI
-    /// Return an iterator over the 'normal' path segments. This excludes any
+    /// Return an iterator over the 'normal' components. This excludes any
     /// prefix (e.g. 'C:\' or server share), directory (such as '.' and '..'),
-    /// scheme, authority (userinfo, host, port), bucket, query or fragment data
-    pub fn path_segments(&self) -> Box<dyn Iterator<Item = &str> + '_> {
+    /// or scheme, query or fragment data.
+    //
+    // For reference:
+    //   URI syntax = scheme ":" ["//" authority] path ["?" query] ["#" fragment]
+    //
+    // TODO: change to custom Enum Iterator if we care about performance
+    pub fn get_normal_components(&self) -> Box<dyn Iterator<Item = &str> + '_> {
         match self {
             Self::Local(path) => Box::new(path.components().filter_map(|c| match c {
                 Component::Normal(seg) => Some(seg.to_str().unwrap()),
                 _ => None,
             })),
             Self::Cloud(cloudpath) => {
-                let path = cloudpath.strip_scheme();
+                let separator = '/';
                 let query_delimiter = '?';
+                let path = cloudpath.strip_scheme();
                 let path = path
                     .split_once(query_delimiter)
                     .map_or(path, |(before, _)| before);
-                let sep = self.separator();
-                // todo!(); // strip non-path data such as authority, bucket, etc
-                Box::new(path.split(sep))
+                Box::new(path.split(separator))
             },
         }
     }

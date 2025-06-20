@@ -176,7 +176,7 @@ async fn open_new_sink(
         Box<dyn SinkNode + Send + Sync>,
     )>,
 > {
-    let separator = base_path.separator();
+    let separator = '/'; // note: accepted by both Windows and Linux
     let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys, separator)?;
     let path = base_path.join(file_path.as_str());
 
