@@ -824,7 +824,7 @@ class Series:
             other = maybe_cast(other, self.dtype)
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
-            msg = f"Series of type {self.dtype} can not be compared"
+            msg = f"Series of type {self.dtype} does not have {op} operator"
             raise NotImplementedError(msg)
 
         return self._from_pyseries(f(other))
