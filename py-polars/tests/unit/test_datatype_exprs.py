@@ -132,6 +132,49 @@ def test_int_signed_classification(fn: str, fn_tag: str) -> None:
         assert pl.select(expr).to_series().item() == expected
 
 
+def test_array_width_classification() -> None:
+    arr_dtype = pl.Array(pl.String, 2)
+
+    assert pl.select(arr_dtype.to_dtype_expr().arr.has_width(2)).to_series().item()
+    assert not (
+        pl.select(arr_dtype.to_dtype_expr().arr.has_width(3)).to_series().item()
+    )
+
+
+def test_array_width() -> None:
+    arr_dtype = pl.Array(pl.String, 2)
+    assert pl.select(arr_dtype.to_dtype_expr().arr.width()).to_series().item() == 2
+
+    arr_dtype = pl.Array(pl.String, 3)
+    assert pl.select(arr_dtype.to_dtype_expr().arr.width()).to_series().item() == 3
+
+
+def test_array_dimensions() -> None:
+    arr_dtype = pl.Array(pl.String, 2)
+    assert pl.select(
+        arr_dtype.to_dtype_expr().arr.dimensions()
+    ).to_series().item().to_list() == [2]
+
+    arr_dtype = pl.Array(pl.Array(pl.Array(pl.String, 1), 2), 3)
+    assert pl.select(
+        arr_dtype.to_dtype_expr().arr.dimensions()
+    ).to_series().item().to_list() == [
+        3,
+        2,
+        1,
+    ]
+
+    arr_dtype = pl.Array(pl.String, (1, 42, 13, 37))
+    assert pl.select(
+        arr_dtype.to_dtype_expr().arr.dimensions()
+    ).to_series().item().to_list() == [
+        1,
+        42,
+        13,
+        37,
+    ]
+
+
 def test_inner_dtype() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Struct({"x": pl.Int8}).to_dtype_expr().inner_dtype().collect_dtype({})
@@ -174,3 +217,157 @@ def test_element_bitsize() -> None:
                 pl.select(dtype.to_dtype_expr().element_bitsize()).to_series().item()
                 == bitsize
             )
+
+
+def test_wrap_in_list() -> None:
+    for dtype, _, _, _ in DTYPES:
+        assert dtype.to_dtype_expr().wrap_in_list().collect_dtype({}) == pl.List(dtype)
+
+
+def test_wrap_in_array() -> None:
+    for dtype, _, _, _ in DTYPES:
+        assert dtype.to_dtype_expr().wrap_in_array(width=42).collect_dtype(
+            {}
+        ) == pl.Array(dtype, 42)
+
+
+def test_struct_with_fields() -> None:
+    for dtype, _, _, _ in DTYPES:
+        assert pl.struct_with_fields({"x": dtype.to_dtype_expr()}).collect_dtype(
+            {}
+        ) == pl.Struct({"x": dtype})
+
+    assert pl.struct_with_fields(
+        {"x": pl.Int64, "y": pl.String(), "z": pl.dtype_of("x")}
+    ).collect_dtype({"x": pl.List(pl.Null)}) == pl.Struct(
+        {"x": pl.Int64, "y": pl.String, "z": pl.List(pl.Null)}
+    )
+
+
+def test_enum() -> None:
+    dtype = pl.Enum(["a", "b"]).to_dtype_expr()
+
+    assert pl.select(dtype.enum.num_categories()).to_series().item() == 2
+    assert pl.select(dtype.enum.categories()).to_series().item().to_list() == ["a", "b"]
+    assert pl.select(dtype.enum.get_category(0)).to_series().item() == "a"
+    assert pl.select(dtype.enum.get_category(1)).to_series().item() == "b"
+    assert pl.select(dtype.enum.get_category(-2)).to_series().item() == "a"
+    assert pl.select(dtype.enum.get_category(-1)).to_series().item() == "b"
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(dtype.enum.get_category(2))
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(dtype.enum.get_category(-3))
+    assert (
+        pl.select(dtype.enum.get_category(2, raise_on_oob=False)).to_series().item()
+        is None
+    )
+    assert (
+        pl.select(dtype.enum.get_category(-3, raise_on_oob=False)).to_series().item()
+        is None
+    )
+    assert pl.select(dtype.enum.index_of_category("a")).to_series().item() == 0
+    assert pl.select(dtype.enum.index_of_category("b")).to_series().item() == 1
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(dtype.enum.index_of_category("c"))
+    assert (
+        pl.select(dtype.enum.index_of_category("c", raise_on_missing=False))
+        .to_series()
+        .item()
+        is None
+    )
+
+    for dtype, dtype_tag, _, _ in DTYPES:
+        dtype_expr = dtype.to_dtype_expr()
+        if dtype_tag != "enum":
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.select(dtype_expr.enum.num_categories())
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.select(dtype_expr.enum.categories())
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.select(dtype_expr.enum.get_category(0, raise_on_oob=False))
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.select(dtype_expr.enum.index_of_category("", raise_on_missing=False))
+
+
+def test_struct() -> None:
+    empty_struct = pl.Struct({}).to_dtype_expr()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        empty_struct.struct[0].collect_dtype({})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        empty_struct.struct["a"].collect_dtype({})
+    assert (
+        pl.select(empty_struct.struct.field_names()).to_series().item().to_list() == []
+    )
+    assert (
+        pl.select(empty_struct.struct.field_name(0, raise_on_oob=False))
+        .to_series()
+        .item()
+        is None
+    )
+    assert (
+        pl.select(empty_struct.struct.field_index("a", raise_on_missing=False))
+        .to_series()
+        .item()
+        is None
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(empty_struct.struct.field_name(0))
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(empty_struct.struct.field_index("a"))
+
+    struct = pl.Struct({"a": pl.Int64, "b": pl.String}).to_dtype_expr()
+    assert struct.struct[0].collect_dtype({}) == pl.Int64
+    assert struct.struct[1].collect_dtype({}) == pl.String
+    assert struct.struct[-1].collect_dtype({}) == pl.String
+    assert struct.struct[-2].collect_dtype({}) == pl.Int64
+
+    assert struct.struct["a"].collect_dtype({}) == pl.Int64
+    assert struct.struct["b"].collect_dtype({}) == pl.String
+
+    assert pl.select(struct.struct.field_name(1)).to_series().item() == "b"
+    assert pl.select(struct.struct.field_name(0)).to_series().item() == "a"
+    assert pl.select(struct.struct.field_name(1)).to_series().item() == "b"
+    assert pl.select(struct.struct.field_name(-1)).to_series().item() == "b"
+    assert pl.select(struct.struct.field_name(-2)).to_series().item() == "a"
+    assert (
+        pl.select(struct.struct.field_name(2, raise_on_oob=False)).to_series().item()
+        is None
+    )
+    assert (
+        pl.select(struct.struct.field_name(-3, raise_on_oob=False)).to_series().item()
+        is None
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(struct.struct.field_name(2, raise_on_oob=True))
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(struct.struct.field_name(-3, raise_on_oob=True))
+
+    assert pl.select(struct.struct.field_index("a")).to_series().item() == 0
+    assert pl.select(struct.struct.field_index("b")).to_series().item() == 1
+    assert (
+        pl.select(struct.struct.field_index("c", raise_on_missing=False))
+        .to_series()
+        .item()
+        is None
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(struct.struct.field_index("c", raise_on_missing=True))
+
+    assert pl.select(struct.struct.field_names()).to_series().item().to_list() == [
+        "a",
+        "b",
+    ]
+
+    for dtype, dtype_tag, _, _ in DTYPES:
+        dtype_expr = dtype.to_dtype_expr()
+        if dtype_tag != "struct":
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                dtype_expr.struct[0].collect_dtype({})
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                dtype_expr.struct["a"].collect_dtype({})
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.select(dtype_expr.struct.field_names())
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.select(dtype_expr.struct.field_name(0, raise_on_oob=False))
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.select(dtype_expr.struct.field_index("a", raise_on_missing=False))
