@@ -26,6 +26,7 @@ python:
   date_range: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.date_range.html
   datetime_range: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.datetime_range.html
   describe: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.describe.html
+  dtype_of: https://docs.pola.rs/api/python/stable/reference/api/polars.dtype_of.html
   dt.convert_time_zone:
     name: dt.convert_time_zone
     link: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.dt.convert_time_zone.html
@@ -86,6 +87,7 @@ python:
   List: https://docs.pola.rs/api/python/stable/reference/api/polars.datatypes.List.html
   list.eval: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.list.eval.html
   map: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.name.map.html
+  map_batches: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.map_batches.html
   map_elements: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.map_elements.html
   max: https://docs.pola.rs/api/python/stable/reference/series/api/polars.Series.max.html
   min: https://docs.pola.rs/api/python/stable/reference/series/api/polars.Series.min.html

@@ -4,16 +4,31 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
-from polars._typing import PolarsDataType
-from polars._utils.various import qualified_type_name
+from polars._utils.various import BUILDING_SPHINX_DOCS
+from polars.datatype_expr.array import DataTypeExprArrNameSpace
+from polars.datatype_expr.enum import DataTypeExprEnumNameSpace
+from polars.datatype_expr.int import DataTypeExprIntNameSpace
+from polars.datatype_expr.list import DataTypeExprListNameSpace
+from polars.datatype_expr.struct import DataTypeExprStructNameSpace
 
 if TYPE_CHECKING:
     import contextlib
+    from typing import ClassVar
+
+    from polars import DataType
+    from polars._typing import PolarsDataType, SchemaDict
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyDataTypeExpr
-    from polars import DataType
-    from polars._typing import SchemaDict
+elif BUILDING_SPHINX_DOCS:
+    import sys
+
+    from polars._utils.various import sphinx_accessor
+
+    # note: we assign this way to work around an autocomplete issue in ipython/jedi
+    # (ref: https://github.com/davidhalter/jedi/issues/2057)
+    current_module = sys.modules[__name__]
+    current_module.property = sphinx_accessor
 
 
 class DataTypeExpr:
@@ -46,6 +61,13 @@ class DataTypeExpr:
     """
 
     _pydatatype_expr: PyDataTypeExpr
+    _accessors: ClassVar[set[str]] = {
+        "arr",
+        "enum",
+        "list",
+        "int",
+        "struct",
+    }
 
     def __eq__(self, value: PolarsDataType | DataTypeExpr) -> pl.Expr:
         cmp_with: DataTypeExpr
@@ -118,7 +140,7 @@ class DataTypeExpr:
         return pl.Expr._from_pyexpr(self._pydatatype_expr.is_categorical())
 
     def is_enum(self) -> pl.Expr:
-        """Get whether the output DataType is a enum."""
+        """Get whether the output DataType is an enum."""
         return pl.Expr._from_pyexpr(self._pydatatype_expr.is_enum())
 
     def is_nested(self) -> pl.Expr:
@@ -138,7 +160,7 @@ class DataTypeExpr:
         return pl.Expr._from_pyexpr(self._pydatatype_expr.is_array())
 
     def is_struct(self) -> pl.Expr:
-        """Get whether the output DataType is an struct."""
+        """Get whether the output DataType is a struct."""
         return pl.Expr._from_pyexpr(self._pydatatype_expr.is_struct())
 
     def is_temporal(self) -> pl.Expr:
@@ -214,177 +236,3 @@ class DataTypeExpr:
             raise TypeError(msg)
 
         return self._pydatatype_expr.collect_dtype(schema)
-
-
-class DataTypeExprIntNameSpace:
-    """Namespace for integers datatype expressions."""
-
-    _accessor = "int"
-
-    def __init__(self, expr: DataTypeExpr) -> None:
-        self._pydatatype_expr = expr._pydatatype_expr
-
-    def to_unsigned(self) -> pl.DataTypeExpr:
-        """Get the unsigned integer version of the same bitsize."""
-        return DataTypeExpr._from_pydatatype_expr(
-            self._pydatatype_expr.int_to_unsigned()
-        )
-
-    def to_signed(self) -> pl.DataTypeExpr:
-        """Get the signed integer version of the same bitsize."""
-        return DataTypeExpr._from_pydatatype_expr(self._pydatatype_expr.int_to_signed())
-
-    def is_unsigned(self) -> pl.Expr:
-        """Get whether the given integer is unsigned."""
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.int_is_unsigned())
-
-    def is_signed(self) -> pl.Expr:
-        """Get whether the given integer is signed."""
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.int_is_signed())
-
-
-class DataTypeExprEnumNameSpace:
-    """Namespace for enum datatype expressions."""
-
-    _accessor = "enum"
-
-    def __init__(self, expr: DataTypeExpr) -> None:
-        self._pydatatype_expr = expr._pydatatype_expr
-
-    def num_categories(self) -> pl.Expr:
-        """Get the number of enum categories."""
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.enum_num_categories())
-
-    def categories(self) -> pl.Expr:
-        """Get the enum categories as a list."""
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.enum_categories())
-
-    def get_category(self, index: int, *, raise_on_oob: bool = True) -> pl.Expr:
-        """Get the enum category at a specific index."""
-        return pl.Expr._from_pyexpr(
-            self._pydatatype_expr.enum_get_category(index, raise_on_oob)
-        )
-
-    def index_of_category(
-        self, category: str, *, raise_on_missing: bool = True
-    ) -> pl.Expr:
-        """Get the index of a specific enum category."""
-        return pl.Expr._from_pyexpr(
-            self._pydatatype_expr.enum_index_of_category(category, raise_on_missing)
-        )
-
-
-class DataTypeExprListNameSpace:
-    """Namespace for list datatype expressions."""
-
-    _accessor = "list"
-
-    def __init__(self, expr: DataTypeExpr) -> None:
-        self._pydatatype_expr = expr._pydatatype_expr
-
-    def inner_dtype(self) -> DataTypeExpr:
-        """Get the inner DataType of list."""
-        return DataTypeExpr._from_pydatatype_expr(
-            self._pydatatype_expr.list_inner_dtype()
-        )
-
-
-class DataTypeExprArrNameSpace:
-    """Namespace for arr datatype expressions."""
-
-    _accessor = "arr"
-
-    def __init__(self, expr: DataTypeExpr) -> None:
-        self._pydatatype_expr = expr._pydatatype_expr
-
-    def inner_dtype(self) -> DataTypeExpr:
-        """Get the inner DataType of array."""
-        return DataTypeExpr._from_pydatatype_expr(
-            self._pydatatype_expr.arr_inner_dtype()
-        )
-
-    def has_width(self, width: int) -> pl.Expr:
-        """Get whether an array has a specific width."""
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.arr_has_width(width))
-
-    def width(self) -> pl.Expr:
-        """
-        Get the array width.
-
-        Examples
-        --------
-        >>> pl.select(pl.Array(pl.Int8, (1, 2, 3)).to_dtype_expr().arr.width())
-        shape: (1, 1)
-        ┌───────────┐
-        │ literal   │
-        │ ---       │
-        │ int       │
-        ╞═══════════╡
-        │ 1         │
-        └───────────┘
-        """
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.arr_width())
-
-    def dimensions(self) -> pl.Expr:
-        """
-        Get the dimensions of sequentially nested arrays.
-
-        Examples
-        --------
-        >>> pl.select(pl.Array(pl.Int8, (1, 2, 3)).to_dtype_expr().arr.dimensions())
-        shape: (1, 1)
-        ┌───────────┐
-        │ literal   │
-        │ ---       │
-        │ list[u32] │
-        ╞═══════════╡
-        │ [1, 2, 3] │
-        └───────────┘
-        """
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.arr_dimensions())
-
-
-class DataTypeExprStructNameSpace:
-    """Namespace for struct datatype expressions."""
-
-    _accessor = "struct"
-
-    def __init__(self, expr: DataTypeExpr) -> None:
-        self._pydatatype_expr = expr._pydatatype_expr
-
-    def __getitem__(self, item: str | int) -> DataTypeExpr:
-        if isinstance(item, str):
-            return self.field_dtype(item)
-        elif isinstance(item, int):
-            return DataTypeExpr._from_pydatatype_expr(
-                self._pydatatype_expr.struct_field_dtype_by_index(item)
-            )
-        else:
-            msg = f"expected type 'int | str', got {qualified_type_name(item)!r} ({item!r})"
-            raise TypeError(msg)
-
-    def field_dtype(self, field_name: str) -> DataTypeExpr:
-        """Get the DataType of field with a specific field name."""
-        return DataTypeExpr._from_pydatatype_expr(
-            self._pydatatype_expr.struct_field_dtype_by_name(field_name)
-        )
-
-    def num_fields(self) -> pl.Expr:
-        """Get the number of fields in a struct."""
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.struct_num_fields())
-
-    def field_names(self) -> pl.Expr:
-        """Get the field names in a struct as a list."""
-        return pl.Expr._from_pyexpr(self._pydatatype_expr.struct_field_names())
-
-    def field_name(self, index: int, *, raise_on_oob: bool = True) -> pl.Expr:
-        """Get the n-th field name."""
-        return pl.Expr._from_pyexpr(
-            self._pydatatype_expr.struct_field_name(index, raise_on_oob)
-        )
-
-    def field_index(self, field_name: str, *, raise_on_missing: bool = True) -> pl.Expr:
-        """Get the index of a field."""
-        return pl.Expr._from_pyexpr(
-            self._pydatatype_expr.struct_field_index(field_name, raise_on_missing)
-        )
