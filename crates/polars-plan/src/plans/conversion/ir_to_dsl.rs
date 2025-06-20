@@ -548,6 +548,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::IsoYear => B::IsoYear,
                 IB::Quarter => B::Quarter,
                 IB::Month => B::Month,
+                IB::DaysInMonth => B::DaysInMonth,
                 IB::Week => B::Week,
                 IB::WeekDay => B::WeekDay,
                 IB::Day => B::Day,

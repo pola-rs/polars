@@ -175,6 +175,9 @@ impl PyExpr {
     fn dt_month(&self) -> Self {
         self.inner.clone().dt().month().into()
     }
+    fn dt_days_in_month(&self) -> Self {
+        self.inner.clone().dt().days_in_month().into()
+    }
     fn dt_week(&self) -> Self {
         self.inner.clone().dt().week().into()
     }
