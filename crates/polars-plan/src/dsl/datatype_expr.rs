@@ -124,19 +124,25 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
             };
             match f {
                 StructDataTypeExpr::FieldDataTypeByIndex(idx) => {
-                    let offset = idx.abs_diff(0);
-                    assert!(offset <= usize::MAX as u64);
-                    polars_ensure!(
-                        offset < fields.len() as u64,
-                        InvalidOperation: "`struct` has {} fields, but field {idx} was requested",
-                        fields.len()
-                    );
-                    let idx = if idx < 0 {
-                        fields.len() - offset as usize - 1
+                    let offset = if idx < 0 {
+                        let offset = usize::try_from(idx.abs_diff(0)).unwrap();
+                        polars_ensure!(
+                            offset <= fields.len(),
+                            InvalidOperation: "`struct` has {} fields, but field {idx} was requested",
+                            fields.len()
+                        );
+                        fields.len() - offset
                     } else {
-                        offset as usize
+                        let offset = usize::try_from(idx).unwrap();
+                        polars_ensure!(
+                            offset < fields.len(),
+                            InvalidOperation: "`struct` has {} fields, but field {idx} was requested",
+                            fields.len()
+                        );
+                        offset
                     };
-                    fields.into_iter().skip(idx).next().unwrap().dtype
+                    
+                    fields.into_iter().skip(offset).next().unwrap().dtype
                 },
                 StructDataTypeExpr::FieldDataTypeByName(name) => {
                     let Some(field) = fields.into_iter().find(|f| f.name() == &name) else {

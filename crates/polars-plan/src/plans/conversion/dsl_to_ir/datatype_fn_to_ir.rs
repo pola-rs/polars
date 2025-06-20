@@ -122,34 +122,33 @@ pub fn datatype_fn_to_aexpr(
                 StructDataTypeFunction::NumFields => Scalar::from(fields.len() as u32),
                 StructDataTypeFunction::FieldNames => Scalar::new(
                     DataType::List(Box::new(DataType::String)),
-                    AnyValue::List(
-                        Series::new(
-                            PlSmallStr::EMPTY,
-                            fields
-                                .iter()
-                                .map(|f| f.name.as_str())
-                                .collect::<Vec<&str>>(),
-                        ),
-                    ),
+                    AnyValue::List(Series::new(
+                        PlSmallStr::EMPTY,
+                        fields
+                            .iter()
+                            .map(|f| f.name.as_str())
+                            .collect::<Vec<&str>>(),
+                    )),
                 ),
                 StructDataTypeFunction::FieldName { idx, raise_on_oob } => {
-                    let offset = idx.abs_diff(0);
-                    assert!(offset <= usize::MAX as u64);
-                    if offset >= fields.len() as u64 {
-                        polars_ensure!(
-                            !raise_on_oob,
-                            InvalidOperation: "`struct` has {} fields, but field {idx} was requested",
-                            fields.len()
-                        );
-
-                        Scalar::null(DataType::String)
+                    let offset = if idx < 0 {
+                        usize::try_from(idx.abs_diff(0))
+                            .ok()
+                            .and_then(|idx| fields.len().checked_sub(idx))
                     } else {
-                        let idx = if idx < 0 {
-                            fields.len() - offset as usize - 1
-                        } else {
-                            offset as usize
-                        };
-                        Scalar::from(fields[idx].name().clone())
+                        usize::try_from(idx).ok()
+                    };
+                    let offset = offset.filter(|o| *o < fields.len());
+                    match offset {
+                        None => {
+                            polars_ensure!(
+                                !raise_on_oob,
+                                InvalidOperation: "`struct` has {} fields, but field {idx} was requested",
+                                fields.len()
+                            );
+                            Scalar::null(DataType::String)
+                        },
+                        Some(offset) => Scalar::from(fields[offset].name().clone()),
                     }
                 },
                 StructDataTypeFunction::FieldIndex {
@@ -194,27 +193,28 @@ pub fn datatype_fn_to_aexpr(
                         .unwrap(),
                     ),
                 ),
-                EnumDataTypeFunction::GetCategory {
-                    idx,
-                    raise_on_oob: raise,
-                } => {
-                    let offset = idx.abs_diff(0);
-                    assert!(offset <= usize::MAX as u64);
-                    if offset >= categories.len() as u64 {
-                        polars_ensure!(
-                            !raise,
-                            InvalidOperation: "`struct` has {} fields, but field {idx} was requested",
-                            categories.len()
-                        );
-
-                        Scalar::null(DataType::String)
+                EnumDataTypeFunction::GetCategory { idx, raise_on_oob } => {
+                    let offset = if idx < 0 {
+                        usize::try_from(idx.abs_diff(0))
+                            .ok()
+                            .and_then(|idx| categories.len().checked_sub(idx))
                     } else {
-                        let idx = if idx < 0 {
-                            categories.len() - offset as usize - 1
-                        } else {
-                            offset as usize
-                        };
-                        Scalar::from(PlSmallStr::from_str(categories.get(idx).unwrap()))
+                        usize::try_from(idx).ok()
+                    };
+                    let offset = offset.filter(|o| *o < categories.len());
+                    match offset {
+                        None => {
+                            polars_ensure!(
+                                !raise_on_oob,
+                                InvalidOperation: "`struct` has {} fields, but field {idx} was requested",
+                                categories.len()
+                            );
+
+                            Scalar::null(DataType::String)
+                        },
+                        Some(offset) => {
+                            Scalar::from(PlSmallStr::from_str(categories.get(offset).unwrap()))
+                        },
                     }
                 },
                 EnumDataTypeFunction::IndexOfCategory {
