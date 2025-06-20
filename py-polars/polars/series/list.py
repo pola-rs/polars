@@ -175,7 +175,7 @@ class ListNameSpace:
 
     def sum(self) -> Series:
         """
-        Sum all the arrays in the list.
+        Sum all the arrays in the list, ignoring null values.
 
         Notes
         -----
@@ -195,7 +195,7 @@ class ListNameSpace:
 
     def max(self) -> Series:
         """
-        Compute the max value of the arrays in the list.
+        Compute the max value of the arrays in the list, ignoring null values.
 
         Examples
         --------
@@ -211,7 +211,7 @@ class ListNameSpace:
 
     def min(self) -> Series:
         """
-        Compute the min value of the arrays in the list.
+        Compute the min value of the arrays in the list, ignoring null values.
 
         Examples
         --------
@@ -227,7 +227,7 @@ class ListNameSpace:
 
     def mean(self) -> Series:
         """
-        Compute the mean value of the arrays in the list.
+        Compute the mean value of the arrays in the list, ignoring null values.
 
         Examples
         --------
@@ -243,7 +243,7 @@ class ListNameSpace:
 
     def median(self) -> Series:
         """
-        Compute the median value of the arrays in the list.
+        Compute the median value of the arrays in the list, ignoring null values.
 
         Examples
         --------
@@ -259,7 +259,7 @@ class ListNameSpace:
 
     def std(self, ddof: int = 1) -> Series:
         """
-        Compute the std value of the arrays in the list.
+        Compute the std value of the arrays in the list, ignoring null values.
 
         Examples
         --------
@@ -275,7 +275,7 @@ class ListNameSpace:
 
     def var(self, ddof: int = 1) -> Series:
         """
-        Compute the var value of the arrays in the list.
+        Compute the var value of the arrays in the list, ignoring null values.
 
         Examples
         --------
@@ -351,6 +351,10 @@ class ListNameSpace:
         ----------
         maintain_order
             Maintain order of data. This requires more work.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -600,7 +604,7 @@ class ListNameSpace:
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve the index of the minimal value in every sublist, ignoring null values.
 
         Returns
         -------
@@ -622,7 +626,7 @@ class ListNameSpace:
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve the index of the maximum value in every sublist, ignoring null values.
 
         Returns
         -------

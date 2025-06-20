@@ -118,7 +118,7 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
 
 def max(*names: str) -> Expr:
     """
-    Get the maximum value.
+    Get the maximum value, ignoring null values.
 
     Syntactic sugar for `col(names).max()`.
 
@@ -178,7 +178,7 @@ def max(*names: str) -> Expr:
 
 def min(*names: str) -> Expr:
     """
-    Get the minimum value.
+    Get the minimum value, ignoring null values.
 
     Syntactic sugar for `col(names).min()`.
 
