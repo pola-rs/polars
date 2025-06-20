@@ -127,6 +127,7 @@ pub fn optimize(
                             left_schema,
                             right_schema,
                             suffix.as_str(),
+                            None,
                         )
                         .unwrap();
                         let right_origin = ExprOrigin::get_expr_origin(
@@ -135,6 +136,7 @@ pub fn optimize(
                             left_schema,
                             right_schema,
                             suffix.as_str(),
+                            None,
                         )
                         .unwrap();
 
