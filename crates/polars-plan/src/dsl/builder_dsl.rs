@@ -60,10 +60,7 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScanDsl::Parquet {
-                options,
-                metadata: None,
-            }),
+            scan_type: Box::new(FileScanDsl::Parquet { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -112,7 +109,6 @@ impl DslBuilder {
             unified_scan_args: Default::default(),
             scan_type: Box::new(FileScanDsl::PythonDataset {
                 dataset_object: Arc::new(PythonDatasetProvider::new(dataset_object)),
-                cached_ir: Default::default(),
             }),
             cached_ir: Default::default(),
         }

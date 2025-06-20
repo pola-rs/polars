@@ -45,11 +45,7 @@ pub enum FileScanDsl {
     NDJson { options: NDJsonReadOptions },
 
     #[cfg(feature = "parquet")]
-    Parquet {
-        options: ParquetOptions,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        metadata: Option<FileMetadataRef>,
-    },
+    Parquet { options: ParquetOptions },
 
     #[cfg(feature = "ipc")]
     Ipc { options: IpcScanOptions },
@@ -57,9 +53,6 @@ pub enum FileScanDsl {
     #[cfg(feature = "python")]
     PythonDataset {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
-
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip, default))]
-        cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]

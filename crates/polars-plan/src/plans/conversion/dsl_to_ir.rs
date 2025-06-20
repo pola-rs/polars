@@ -202,7 +202,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                 let (mut file_info, scan_type_ir) = match *scan_type.clone() {
                     #[cfg(feature = "parquet")]
-                    FileScanDsl::Parquet { options, metadata } => {
+                    FileScanDsl::Parquet { options } => {
                         if let Some(schema) = &options.schema {
                             // We were passed a schema, we don't have to call `parquet_file_info`,
                             // but this does mean we don't have `row_estimation` and `first_metadata`.
@@ -214,23 +214,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                     ))),
                                     row_estimation: (None, 0),
                                 },
-                                FileScanIR::Parquet { options, metadata },
+                                FileScanIR::Parquet {
+                                    options,
+                                    metadata: None,
+                                },
                             )
                         } else {
-                            let (file_info, md) = scans::parquet_file_info(
+                            let (file_info, metadata) = scans::parquet_file_info(
                                 &sources,
                                 unified_scan_args.row_index.as_ref(),
                                 cloud_options,
                             )
                             .map_err(|e| e.context(failed_here!(parquet scan)))?;
 
-                            (
-                                file_info,
-                                FileScanIR::Parquet {
-                                    options,
-                                    metadata: md,
-                                },
-                            )
+                            (file_info, FileScanIR::Parquet { options, metadata })
                         }
                     },
                     #[cfg(feature = "ipc")]
@@ -281,10 +278,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScanIR::NDJson { options },
                     ),
                     #[cfg(feature = "python")]
-                    FileScanDsl::PythonDataset {
-                        dataset_object,
-                        cached_ir,
-                    } => {
+                    FileScanDsl::PythonDataset { dataset_object } => {
                         if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
                             polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
                         }
@@ -307,7 +301,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             },
                             FileScanIR::PythonDataset {
                                 dataset_object,
-                                cached_ir,
+                                cached_ir: Default::default(),
                             },
                         )
                     },
