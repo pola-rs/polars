@@ -11,8 +11,8 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_)
-            | IndexColumn(_) | Len => {},
+            DataTypeFunction(_) | Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_)
+            | DtypeColumn(_) | IndexColumn(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),
