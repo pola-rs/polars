@@ -37,6 +37,43 @@ bitflags::bitflags! {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 // TODO: Arc<> some of the options and the cloud options.
+pub enum FileScanDsl {
+    #[cfg(feature = "csv")]
+    Csv { options: CsvReadOptions },
+
+    #[cfg(feature = "json")]
+    NDJson { options: NDJsonReadOptions },
+
+    #[cfg(feature = "parquet")]
+    Parquet {
+        options: ParquetOptions,
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        metadata: Option<FileMetadataRef>,
+    },
+
+    #[cfg(feature = "ipc")]
+    Ipc { options: IpcScanOptions },
+
+    #[cfg(feature = "python")]
+    PythonDataset {
+        dataset_object: Arc<python_dataset::PythonDatasetProvider>,
+
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip, default))]
+        cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
+    },
+
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+    Anonymous {
+        options: Arc<AnonymousScanOptions>,
+        function: Arc<dyn AnonymousScan>,
+        file_info: FileInfo,
+    },
+}
+
+#[derive(Clone, Debug, IntoStaticStr)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+// TODO: Arc<> some of the options and the cloud options.
 pub enum FileScan {
     #[cfg(feature = "csv")]
     Csv { options: CsvReadOptions },
@@ -61,7 +98,6 @@ pub enum FileScan {
     #[cfg(feature = "python")]
     PythonDataset {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
-
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip, default))]
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },

@@ -77,9 +77,37 @@ impl IR {
                     unreachable!()
                 };
 
+                let scan_type = Box::new(match *scan_type {
+                    #[cfg(feature = "csv")]
+                    FileScan::Csv { options } => FileScanDsl::Csv { options },
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { options } => FileScanDsl::NDJson { options },
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet { options, metadata } => {
+                        FileScanDsl::Parquet { options, metadata }
+                    },
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc {
+                        options,
+                        metadata: _,
+                    } => FileScanDsl::Ipc { options },
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset {
+                        dataset_object,
+                        cached_ir,
+                    } => FileScanDsl::PythonDataset {
+                        dataset_object,
+                        cached_ir,
+                    },
+                    FileScan::Anonymous { options, function } => FileScanDsl::Anonymous {
+                        options,
+                        function,
+                        file_info,
+                    },
+                });
+
                 DslPlan::Scan {
                     sources,
-                    file_info: Some(file_info),
                     scan_type,
                     unified_scan_args,
                     cached_ir: Arc::new(Mutex::new(Some(ir))),
