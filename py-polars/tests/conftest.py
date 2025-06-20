@@ -44,7 +44,7 @@ def _patched_cloud(
             return f()
 
         class PatchedComputeContext(ComputeContext):
-            def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            def __init__(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
                 self._interactive = True
                 self._compute_address = "localhost:5051"
                 self._compute_public_key = b""
@@ -109,7 +109,7 @@ def _patched_cloud(
 
         def create_cloud_scan(ext: str) -> Callable[..., pl.LazyFrame]:
             prev_scan = getattr(pl, f"scan_{ext}")
-            prev_scan = cast(Callable[..., pl.LazyFrame], prev_scan)
+            prev_scan = cast("Callable[..., pl.LazyFrame]", prev_scan)
 
             def _(
                 src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
