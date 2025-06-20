@@ -472,6 +472,8 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
 
 /// Maps column references within an expression. Used to handle column renaming when pushing
 /// predicates.
+///
+/// This will not mutate the underlying nodes.
 pub(super) fn map_column_references(
     expr: &mut ExprIR,
     expr_arena: &mut Arena<AExpr>,
