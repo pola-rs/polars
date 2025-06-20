@@ -449,18 +449,18 @@ impl ProjectionPushDown {
                 id: _,
             } => {
                 let do_optimization = match &*scan_type {
-                    FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
+                    FileScanIR::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => true,
+                    FileScanIR::NDJson { .. } => true,
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => true,
+                    FileScanIR::Ipc { .. } => true,
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => true,
+                    FileScanIR::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => true,
+                    FileScanIR::Parquet { .. } => true,
                     // MultiScan will handle it if the PythonDataset cannot do projections.
                     #[cfg(feature = "python")]
-                    FileScan::PythonDataset { .. } => true,
+                    FileScanIR::PythonDataset { .. } => true,
                 };
 
                 #[expect(clippy::never_loop)]
@@ -470,7 +470,7 @@ impl ProjectionPushDown {
                     }
 
                     if self.is_count_star {
-                        if let FileScan::Anonymous { .. } = &*scan_type {
+                        if let FileScanIR::Anonymous { .. } = &*scan_type {
                             // Anonymous scan is not controlled by us, we don't know if it can support
                             // 0-column projections, so we always project one.
                             use either::Either;

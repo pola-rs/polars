@@ -214,7 +214,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                     ))),
                                     row_estimation: (None, 0),
                                 },
-                                FileScan::Parquet { options, metadata },
+                                FileScanIR::Parquet { options, metadata },
                             )
                         } else {
                             let (file_info, md) = scans::parquet_file_info(
@@ -226,7 +226,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                             (
                                 file_info,
-                                FileScan::Parquet {
+                                FileScanIR::Parquet {
                                     options,
                                     metadata: md,
                                 },
@@ -243,7 +243,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .map_err(|e| e.context(failed_here!(ipc scan)))?;
                         (
                             file_info,
-                            FileScan::Ipc {
+                            FileScanIR::Ipc {
                                 options,
                                 metadata: Some(Arc::new(md)),
                             },
@@ -266,7 +266,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 cloud_options,
                             )
                             .map_err(|e| e.context(failed_here!(csv scan)))?,
-                            FileScan::Csv { options },
+                            FileScanIR::Csv { options },
                         )
                     },
                     #[cfg(feature = "json")]
@@ -278,7 +278,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             cloud_options,
                         )
                         .map_err(|e| e.context(failed_here!(ndjson scan)))?,
-                        FileScan::NDJson { options },
+                        FileScanIR::NDJson { options },
                     ),
                     #[cfg(feature = "python")]
                     FileScanDsl::PythonDataset {
@@ -305,7 +305,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 reader_schema: Some(either::Either::Right(reader_schema)),
                                 row_estimation: (None, usize::MAX),
                             },
-                            FileScan::PythonDataset {
+                            FileScanIR::PythonDataset {
                                 dataset_object,
                                 cached_ir,
                             },
@@ -315,7 +315,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         file_info,
                         options,
                         function,
-                    } => (file_info, FileScan::Anonymous { options, function }),
+                    } => (file_info, FileScanIR::Anonymous { options, function }),
                 };
 
                 if unified_scan_args.hive_options.enabled.is_none() {

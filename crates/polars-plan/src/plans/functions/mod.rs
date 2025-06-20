@@ -39,7 +39,7 @@ pub enum FunctionIR {
 
     FastCount {
         sources: ScanSources,
-        scan_type: Box<FileScan>,
+        scan_type: Box<FileScanIR>,
         cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
     },

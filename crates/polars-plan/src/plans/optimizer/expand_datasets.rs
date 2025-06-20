@@ -13,7 +13,7 @@ use polars_utils::slice_enum::Slice;
 use super::OptimizationRule;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
-use crate::dsl::{DslPlan, FileScan, UnifiedScanArgs};
+use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
 use crate::plans::IR;
 
 /// Note: Currently only used for iceberg. This is so that we can call iceberg to fetch the files
@@ -45,7 +45,7 @@ impl OptimizationRule for ExpandDatasets {
 
             match scan_type.as_ref() {
                 #[cfg(feature = "python")]
-                FileScan::PythonDataset {
+                FileScanIR::PythonDataset {
                     dataset_object,
                     cached_ir,
                 } => {

@@ -457,7 +457,7 @@ fn create_physical_plan_impl(
             {
                 create_skip_batch_predicate |= matches!(
                     &*scan_type,
-                    FileScan::Parquet {
+                    FileScanIR::Parquet {
                         options: polars_io::prelude::ParquetOptions {
                             use_statistics: true,
                             ..
@@ -482,7 +482,7 @@ fn create_physical_plan_impl(
                 .transpose()?;
 
             match *scan_type {
-                FileScan::Anonymous { function, .. } => {
+                FileScanIR::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
                         predicate,

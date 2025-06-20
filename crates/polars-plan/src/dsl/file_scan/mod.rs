@@ -74,7 +74,7 @@ pub enum FileScanDsl {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 // TODO: Arc<> some of the options and the cloud options.
-pub enum FileScan {
+pub enum FileScanIR {
     #[cfg(feature = "csv")]
     Csv { options: CsvReadOptions },
 
@@ -109,7 +109,7 @@ pub enum FileScan {
     },
 }
 
-impl FileScan {
+impl FileScanIR {
     pub fn flags(&self) -> ScanFlags {
         match self {
             #[cfg(feature = "csv")]
@@ -275,17 +275,17 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
-    use super::FileScan;
+    use super::FileScanIR;
 
-    impl PartialEq for FileScan {
+    impl PartialEq for FileScanIR {
         fn eq(&self, other: &Self) -> bool {
             FileScanEqHashWrap::from(self) == FileScanEqHashWrap::from(other)
         }
     }
 
-    impl Eq for FileScan {}
+    impl Eq for FileScanIR {}
 
-    impl Hash for FileScan {
+    impl Hash for FileScanIR {
         fn hash<H: Hasher>(&self, state: &mut H) {
             FileScanEqHashWrap::from(self).hash(state)
         }
@@ -334,29 +334,29 @@ mod _file_scan_eq_hash {
         Phantom(&'a ()),
     }
 
-    impl<'a> From<&'a FileScan> for FileScanEqHashWrap<'a> {
-        fn from(value: &'a FileScan) -> Self {
+    impl<'a> From<&'a FileScanIR> for FileScanEqHashWrap<'a> {
+        fn from(value: &'a FileScanIR) -> Self {
             match value {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options } => FileScanEqHashWrap::Csv { options },
+                FileScanIR::Csv { options } => FileScanEqHashWrap::Csv { options },
 
                 #[cfg(feature = "json")]
-                FileScan::NDJson { options } => FileScanEqHashWrap::NDJson { options },
+                FileScanIR::NDJson { options } => FileScanEqHashWrap::NDJson { options },
 
                 #[cfg(feature = "parquet")]
-                FileScan::Parquet { options, metadata } => FileScanEqHashWrap::Parquet {
+                FileScanIR::Parquet { options, metadata } => FileScanEqHashWrap::Parquet {
                     options,
                     metadata: metadata.as_ref().map(arc_as_ptr),
                 },
 
                 #[cfg(feature = "ipc")]
-                FileScan::Ipc { options, metadata } => FileScanEqHashWrap::Ipc {
+                FileScanIR::Ipc { options, metadata } => FileScanEqHashWrap::Ipc {
                     options,
                     metadata: metadata.as_ref().map(arc_as_ptr),
                 },
 
                 #[cfg(feature = "python")]
-                FileScan::PythonDataset {
+                FileScanIR::PythonDataset {
                     dataset_object,
                     cached_ir,
                 } => FileScanEqHashWrap::PythonDataset {
@@ -364,7 +364,7 @@ mod _file_scan_eq_hash {
                     cached_ir: arc_as_ptr(cached_ir),
                 },
 
-                FileScan::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
+                FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
                     function: arc_as_ptr(function),
                 },

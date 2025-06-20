@@ -79,27 +79,27 @@ impl IR {
 
                 let scan_type = Box::new(match *scan_type {
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { options } => FileScanDsl::Csv { options },
+                    FileScanIR::Csv { options } => FileScanDsl::Csv { options },
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { options } => FileScanDsl::NDJson { options },
+                    FileScanIR::NDJson { options } => FileScanDsl::NDJson { options },
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet { options, metadata } => {
+                    FileScanIR::Parquet { options, metadata } => {
                         FileScanDsl::Parquet { options, metadata }
                     },
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
+                    FileScanIR::Ipc {
                         options,
                         metadata: _,
                     } => FileScanDsl::Ipc { options },
                     #[cfg(feature = "python")]
-                    FileScan::PythonDataset {
+                    FileScanIR::PythonDataset {
                         dataset_object,
                         cached_ir,
                     } => FileScanDsl::PythonDataset {
                         dataset_object,
                         cached_ir,
                     },
-                    FileScan::Anonymous { options, function } => FileScanDsl::Anonymous {
+                    FileScanIR::Anonymous { options, function } => FileScanDsl::Anonymous {
                         options,
                         function,
                         file_info,
