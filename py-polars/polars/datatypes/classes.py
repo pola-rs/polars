@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
@@ -119,7 +119,15 @@ class DataType(metaclass=DataTypeClass):
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
 
-    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+    @overload
+    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+
+    @overload
+    def __eq__(self, other: PolarsDataType) -> bool: ...
+
+    def __eq__(self, other: pl.DataTypeExpr | PolarsDataType) -> pl.Expr | bool:  # type: ignore[override]
+        if isinstance(other, pl.DataTypeExpr):
+            return self.to_dtype_expr() == other
         if type(other) is DataTypeClass:
             return issubclass(other, type(self))
         else:
