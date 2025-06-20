@@ -79,6 +79,19 @@ Feather / IPC
    DataFrame.write_ipc_stream
    LazyFrame.sink_ipc
 
+Google BigQuery
+~~~~~~~~~~~~~~~
+
+.. currentmodule:: polars.io.bigquery
+
+.. autosummary::
+   :toctree: api/
+
+   scan_bigquery
+   
+.. currentmodule:: polars
+
+
 Iceberg
 ~~~~~~~
 .. autosummary::
