@@ -940,6 +940,20 @@ def test_to_arrow_empty_chunks_20627() -> None:
     assert df.to_arrow().shape == (1, 1)
 
 
+def test_arrow_c_array_object_no_unnest_23068() -> None:
+    class ArrowLike:
+        def __init__(self, pa_array: pa.Array) -> None:
+            self.pa_array = pa_array
+
+        def __arrow_c_array__(self, requested_schema: Any = None) -> Any:
+            return self.pa_array.__arrow_c_array__(requested_schema)
+
+    data = [1, 2, 3]
+    result = cast(pl.DataFrame, pl.from_arrow(ArrowLike(pa.array(data)))).to_series()
+    expected = pl.Series(data)
+    assert_series_equal(result, expected)
+
+
 def test_from_arrow_recorbatch() -> None:
     n_legs = pa.array([2, 2, 4, 4, 5, 100])
     animals = pa.array(

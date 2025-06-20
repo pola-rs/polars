@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars._utils.construction.dataframe import dataframe_to_pydf
 from polars._utils.wrap import wrap_df, wrap_s
+from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):
     from polars.polars import PySeries
@@ -28,11 +29,13 @@ def pycapsule_to_frame(
 ) -> DataFrame:
     """Convert PyCapsule object to DataFrame."""
     if hasattr(obj, "__arrow_c_array__"):
-        # This uses the fact that PySeries.from_arrow_c_array will create a
-        # struct-typed Series. Then we unpack that to a DataFrame.
-        tmp_col_name = ""
         s = wrap_s(PySeries.from_arrow_c_array(obj))
-        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        if isinstance(obj, pa.RecordBatch):
+            # Maintain historical behavior of unnesting RecordBatch
+            tmp_col_name = ""
+            df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        else:
+            df = s.to_frame()
 
     elif hasattr(obj, "__arrow_c_stream__"):
         # This uses the fact that PySeries.from_arrow_c_stream will create a
