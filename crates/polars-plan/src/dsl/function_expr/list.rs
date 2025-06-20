@@ -57,6 +57,7 @@ pub enum ListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    RemoveByIndex(bool),
 }
 
 impl Display for ListFunction {
@@ -108,6 +109,7 @@ impl Display for ListFunction {
                 }
             },
             NUnique => "n_unique",
+            RemoveByIndex(_) => "remove_by_index",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
             #[cfg(feature = "list_any_all")]

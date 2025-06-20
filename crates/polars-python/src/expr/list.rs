@@ -258,6 +258,14 @@ impl PyExpr {
         }
     }
 
+    fn list_remove_by_index(&self, index: PyExpr, null_if_oob: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .remove_by_index(index.inner, null_if_oob)
+            .into()
+    }
+
     #[cfg(feature = "list_sets")]
     fn list_set_operation(&self, other: PyExpr, operation: Wrap<SetOperation>) -> Self {
         let e = self.inner.clone().list();
