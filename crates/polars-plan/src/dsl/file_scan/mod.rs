@@ -268,9 +268,9 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
-    use super::FileScanIR;
+    use super::{FileScanDsl, FileScanIR};
 
-    impl PartialEq for FileScanIR {
+    impl PartialEq for FileScanDsl {
         fn eq(&self, other: &Self) -> bool {
             FileScanEqHashWrap::from(self) == FileScanEqHashWrap::from(other)
         }
@@ -279,6 +279,20 @@ mod _file_scan_eq_hash {
     impl Eq for FileScanIR {}
 
     impl Hash for FileScanIR {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            FileScanEqHashWrap::from(self).hash(state)
+        }
+    }
+
+    impl PartialEq for FileScanIR {
+        fn eq(&self, other: &Self) -> bool {
+            FileScanEqHashWrap::from(self) == FileScanEqHashWrap::from(other)
+        }
+    }
+
+    impl Eq for FileScanDsl {}
+
+    impl Hash for FileScanDsl {
         fn hash<H: Hasher>(&self, state: &mut H) {
             FileScanEqHashWrap::from(self).hash(state)
         }
@@ -320,6 +334,7 @@ mod _file_scan_eq_hash {
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
+            reader_schema: usize,
         },
 
         /// Variant to ensure the lifetime is used regardless of feature gate combination.
@@ -360,6 +375,56 @@ mod _file_scan_eq_hash {
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
                     function: arc_as_ptr(function),
+                    reader_schema: 0,
+                },
+            }
+        }
+    }
+
+    impl<'a> From<&'a FileScanDsl> for FileScanEqHashWrap<'a> {
+        fn from(value: &'a FileScanDsl) -> Self {
+            match value {
+                #[cfg(feature = "csv")]
+                FileScanDsl::Csv { options } => FileScanEqHashWrap::Csv { options },
+
+                #[cfg(feature = "json")]
+                FileScanDsl::NDJson { options } => FileScanEqHashWrap::NDJson { options },
+
+                #[cfg(feature = "parquet")]
+                FileScanDsl::Parquet { options } => FileScanEqHashWrap::Parquet {
+                    options,
+                    metadata: None,
+                },
+
+                #[cfg(feature = "ipc")]
+                FileScanDsl::Ipc { options } => FileScanEqHashWrap::Ipc {
+                    options,
+                    metadata: None,
+                },
+
+                #[cfg(feature = "python")]
+                FileScanDsl::PythonDataset { dataset_object } => {
+                    FileScanEqHashWrap::PythonDataset {
+                        dataset_object: arc_as_ptr(dataset_object),
+                        cached_ir: 0,
+                    }
+                },
+
+                FileScanDsl::Anonymous {
+                    options,
+                    function,
+                    file_info,
+                } => FileScanEqHashWrap::Anonymous {
+                    options,
+                    function: arc_as_ptr(function),
+                    reader_schema: file_info
+                        .reader_schema
+                        .as_ref()
+                        .map(|e| match e {
+                            either::Either::Left(l) => arc_as_ptr(l),
+                            either::Either::Right(r) => arc_as_ptr(r),
+                        })
+                        .unwrap_or(0),
                 },
             }
         }
