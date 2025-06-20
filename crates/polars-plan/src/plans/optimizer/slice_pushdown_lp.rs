@@ -225,22 +225,22 @@ impl SlicePushDown {
                 id: _,
             }, Some(state)) if predicate.is_none() && match &*scan_type {
                 #[cfg(feature = "parquet")]
-                FileScan::Parquet { .. } => true,
+                FileScanIR::Parquet { .. } => true,
 
                 #[cfg(feature = "ipc")]
-                FileScan::Ipc { .. } => true,
+                FileScanIR::Ipc { .. } => true,
 
                 #[cfg(feature = "csv")]
-                FileScan::Csv { .. } => true,
+                FileScanIR::Csv { .. } => true,
 
                 #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => true,
+                FileScanIR::NDJson { .. } => true,
 
                 #[cfg(feature = "python")]
-                FileScan::PythonDataset { .. } => true,
+                FileScanIR::PythonDataset { .. } => true,
 
                 // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
-                FileScan::Anonymous { .. } => state.offset == 0,
+                FileScanIR::Anonymous { .. } => state.offset == 0,
             }  =>  {
                 unified_scan_args.pre_slice = Some(state.to_slice_enum());
 

@@ -21,7 +21,7 @@ use super::*;
 #[allow(unused_variables)]
 pub fn count_rows(
     sources: &ScanSources,
-    scan_type: &FileScan,
+    scan_type: &FileScanIR,
     cloud_options: Option<&CloudOptions>,
     alias: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
@@ -44,21 +44,21 @@ pub fn count_rows(
     {
         let count: PolarsResult<usize> = match scan_type {
             #[cfg(feature = "csv")]
-            FileScan::Csv { options } => count_all_rows_csv(sources, options),
+            FileScanIR::Csv { options } => count_all_rows_csv(sources, options),
             #[cfg(feature = "parquet")]
-            FileScan::Parquet { .. } => count_rows_parquet(sources, cloud_options),
+            FileScanIR::Parquet { .. } => count_rows_parquet(sources, cloud_options),
             #[cfg(feature = "ipc")]
-            FileScan::Ipc { options, metadata } => count_rows_ipc(
+            FileScanIR::Ipc { options, metadata } => count_rows_ipc(
                 sources,
                 #[cfg(feature = "cloud")]
                 cloud_options,
                 metadata.as_deref(),
             ),
             #[cfg(feature = "json")]
-            FileScan::NDJson { options } => count_rows_ndjson(sources, cloud_options),
+            FileScanIR::NDJson { options } => count_rows_ndjson(sources, cloud_options),
             #[cfg(feature = "python")]
-            FileScan::PythonDataset { .. } => unreachable!(),
-            FileScan::Anonymous { .. } => {
+            FileScanIR::PythonDataset { .. } => unreachable!(),
+            FileScanIR::Anonymous { .. } => {
                 unreachable!()
             },
         };
