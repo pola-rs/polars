@@ -129,11 +129,10 @@ impl OptimizationRule for TypeCoercionRule {
                         #[expect(clippy::single_match)]
                         match v {
                             // No casting needed
-                            // TODO: Enable after release 1.30.0
-                            // Ok(false) => {
-                            //     return Ok(Some(expr_arena.get(input_expr).clone()));
-                            // },
-                            Ok(true | false) => {
+                            Ok(false) => {
+                                return Ok(Some(expr_arena.get(input_expr).clone()));
+                            },
+                            Ok(true) => {
                                 let options = if cast_from.is_primitive_numeric()
                                     && cast_to.is_primitive_numeric()
                                 {
