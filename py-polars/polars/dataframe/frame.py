@@ -10537,6 +10537,7 @@ class DataFrame:
         *,
         separator: str = "_",
         drop_first: bool = False,
+        drop_nulls: bool = False,
     ) -> DataFrame:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -10550,6 +10551,8 @@ class DataFrame:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variables being encoded.
+        drop_nulls
+            If there are `None` values in the series, a `null` column is not generated
 
         Examples
         --------
@@ -10607,7 +10610,9 @@ class DataFrame:
         """
         if columns is not None:
             columns = _expand_selectors(self, columns)
-        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first))
+        return self._from_pydf(
+            self._df.to_dummies(columns, separator, drop_first, drop_nulls)
+        )
 
     def unique(
         self,

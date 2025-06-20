@@ -794,6 +794,38 @@ def test_to_dummies_drop_first() -> None:
     ]
 
 
+def test_to_dummies_drop_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [0, 1, None],
+            "bar": [3, None, 5],
+            "baz": [None, "y", "z"],
+        }
+    )
+
+    dm = df.to_dummies(drop_nulls=True)
+
+    expected = pl.DataFrame(
+        {
+            "foo_0": [1, 0, 0],
+            "foo_1": [0, 1, 0],
+            "bar_3": [1, 0, 0],
+            "bar_5": [0, 0, 1],
+            "baz_y": [0, 1, 0],
+            "baz_z": [0, 0, 1],
+        },
+        schema={
+            "foo_0": pl.UInt8,
+            "foo_1": pl.UInt8,
+            "bar_3": pl.UInt8,
+            "bar_5": pl.UInt8,
+            "baz_y": pl.UInt8,
+            "baz_z": pl.UInt8,
+        },
+    )
+    assert_frame_equal(dm, expected)
+
+
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
     # pyarrow cannot convert a time64 w/ non-zero nanoseconds
