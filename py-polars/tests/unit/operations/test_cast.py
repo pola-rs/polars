@@ -954,7 +954,6 @@ def test_nested_struct_cast_22744() -> None:
     )
 
 
-@pytest.mark.xfail(reason="disabled until after release 1.30.0")
 def test_cast_to_self_is_pruned() -> None:
     q = pl.LazyFrame({"x": 1}, schema={"x": pl.Int64}).with_columns(
         y=pl.col("x").cast(pl.Int64)
