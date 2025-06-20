@@ -1,4 +1,5 @@
 use core::fmt;
+use std::fmt::Write;
 
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{DataType, Field, InitHashMaps, PlHashSet};
@@ -191,7 +192,10 @@ impl DataTypeExpr {
     }
 
     pub fn inner_dtype(self) -> Self {
-        Self::InnerDataType { input: Box::new(self), validation: None }
+        Self::InnerDataType {
+            input: Box::new(self),
+            validation: None,
+        }
     }
 
     pub fn equals(self, other: Self) -> Expr {
@@ -322,29 +326,29 @@ impl fmt::Debug for DataTypeExpr {
                 f.write_str(".struct")?;
                 match t {
                     StructDataTypeExpr::FieldDataTypeByIndex(i) => {
-                        write!(f, ".field_dtype_by_index({i})")
+                        write!(f, "[{i}]")
                     },
                     StructDataTypeExpr::FieldDataTypeByName(name) => {
-                        write!(f, ".field_dtype_by_name({name})")
+                        write!(f, "[{name}]")
                     },
                 }
             },
             Self::WrapInList(dt_expr) => {
-                write!(f, "pl.list_dtype_with({dt_expr:?})")
+                write!(f, "{dt_expr:?}.wrap_in_list()")
             },
             Self::WrapInArray(dt_expr, width) => {
-                write!(f, "pl.array_dtype_with({dt_expr:?}, {width})")
+                write!(f, "{dt_expr:?}.wrap_in_array(width={width})")
             },
             Self::StructWithFields(field_exprs) => {
-                f.write_str("pl.struct_dtype_with(")?;
-                if let Some(field_expr) = field_exprs.first() {
-                    fmt::Debug::fmt(field_expr, f)?;
-                    for field_expr in &field_exprs[1..] {
-                        f.write_str(", ")?;
-                        fmt::Debug::fmt(field_expr, f)?;
+                f.write_str("struct_with_fields({")?;
+                if let Some((field_name, field_expr)) = field_exprs.first() {
+                    write!(f, " {field_name}: {field_expr:?}")?;
+                    for (field_name, field_expr) in &field_exprs[1..] {
+                        write!(f, ", {field_name}: {field_expr:?}")?;
                     }
+                    f.write_char(' ')?;
                 }
-                f.write_str(")")
+                f.write_str("})")
             },
         }
     }

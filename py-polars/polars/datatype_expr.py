@@ -163,14 +163,12 @@ class DataTypeExpr:
 
     def wrap_in_list(self) -> DataTypeExpr:
         """Get the DataType wrapped in a list."""
-        return DataTypeExpr._from_pydatatype_expr(
-            self._from_pydatatype_expr.wrap_in_list()
-        )
+        return DataTypeExpr._from_pydatatype_expr(self._pydatatype_expr.wrap_in_list())
 
     def wrap_in_array(self, *, width: int) -> DataTypeExpr:
         """Get the DataType wrapped in an array."""
         return DataTypeExpr._from_pydatatype_expr(
-            self._from_pydatatype_expr.wrap_in_array(width)
+            self._pydatatype_expr.wrap_in_array(width)
         )
 
     @property
