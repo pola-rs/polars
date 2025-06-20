@@ -1129,7 +1129,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .coalesce(coalesce)
-            .how(JoinType::AsOf(AsOfOptions {
+            .how(JoinType::AsOf(Box::new(AsOfOptions {
                 strategy: strategy.0,
                 left_by: left_by.map(strings_to_pl_smallstr),
                 right_by: right_by.map(strings_to_pl_smallstr),
@@ -1137,7 +1137,7 @@ impl PyLazyFrame {
                 tolerance_str: tolerance_str.map(|s| s.into()),
                 allow_eq,
                 check_sortedness,
-            }))
+            })))
             .suffix(suffix)
             .finish()
             .into())
