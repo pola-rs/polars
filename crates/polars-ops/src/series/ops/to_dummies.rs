@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use polars_utils::format_pl_smallstr;
 
 use super::*;
@@ -33,23 +34,26 @@ impl ToDummies for Series {
         let groups = self.group_tuples(true, drop_first)?;
 
         // SAFETY: groups are in bounds
-        let columns = unsafe { self.agg_first(&groups) };
-        let columns = columns.iter().zip(groups.iter());
-        let columns: PlHashMap<String, GroupsIndicator<'_>> = columns
-            .map(|(av, group)| {
-                (
-                    match av.get_str() {
-                        Some(s) => s.to_string(),
-                        None => format!("{av}"),
-                    },
-                    group,
-                )
-            })
-            .collect();
+        let cols = unsafe { self.agg_first(&groups) };
+        let cols = cols.iter().zip(groups.iter());
+
+        let mut columns: IndexMap<String, GroupsIndicator<'_>> = IndexMap::new();
+        for (av, group) in cols {
+            let name = match av.get_str() {
+                Some(s) => s.to_string(),
+                None => format!("{av}"),
+            };
+            if columns.contains_key(&name) {
+                polars_bail!(Duplicate: "column with name '{name}' has more than one occurrence")
+            }
+            columns.insert(name, group);
+        } 
+
         let columns = match categories {
             Some(cats) => {
                 // if categories are provided, we create dummies for only those categories, but all
                 // of them, even if they are not present in the data
+                // The resulting columns stay in the same order as the categories
                 cats.iter()
                     .skip(drop_first as usize)
                     .map(|cat| {
@@ -68,7 +72,8 @@ impl ToDummies for Series {
                     })
                     .collect::<Vec<_>>()
             },
-            None => columns
+            None => sort_columns(
+                columns
                 .iter()
                 .skip(drop_first as usize)
                 .map(|(name, group)| {
@@ -84,10 +89,11 @@ impl ToDummies for Series {
                     };
                     ca.into_column()
                 })
-                .collect::<Vec<_>>(),
+                .collect::<Vec<_>>()
+            ),
         };
 
-        DataFrame::new(sort_columns(columns))
+        DataFrame::new(columns)
     }
 }
 

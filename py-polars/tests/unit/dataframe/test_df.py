@@ -793,6 +793,55 @@ def test_to_dummies_drop_first() -> None:
         (0, 1, 0, 1, 0, 1),
     ]
 
+def test_to_dummies_categories_basic() -> None:
+    df: pl.DataFrame = pl.DataFrame({"A": ["a", "a", "b"], "B": ["x", "y", "x"]})
+    dummies: pl.DataFrame = df.to_dummies(
+        categories={"A": ["a", "b", "c"], "B": ["x", "y"]},
+    )
+
+    expected: pl.DataFrame = pl.DataFrame(
+        {
+            "A_a": [1, 1, 0],
+            "A_b": [0, 0, 1],
+            "A_c": [0, 0, 0],
+            "B_x": [1, 0, 1],
+            "B_y": [0, 1, 0],
+        },
+        schema={c: pl.UInt8 for c in ["A_a", "A_b", "A_c", "B_x", "B_y"]},
+    )
+    assert_frame_equal(dummies.select(expected.columns), expected)
+
+def test_to_dummies_categories_drop_first() -> None:
+    df: pl.DataFrame = pl.DataFrame({"k": ["b", "c"]})
+
+    dm: pl.DataFrame = df.to_dummies(categories={"k": ["a", "b", "d"]})
+    dd: pl.DataFrame = df.to_dummies(
+        categories={"k": ["a", "b", "d"]},
+        drop_first=True,
+    )
+
+    assert set(dm.columns) - set(dd.columns) == {"k_a"}
+    assert dd.columns == ["k_b", "k_d"]
+    assert dd["k_d"].to_list() == [0, 0]
+
+def test_to_dummies_categories_override_columns() -> None:
+    df: pl.DataFrame = pl.DataFrame({"kind": ["A", "B"]})
+    out: pl.DataFrame = df.to_dummies(
+        columns=["kind"],
+        categories={"kind": ["A", "B", "C"]},
+    )
+
+    assert "kind_C" in out.columns
+    assert out["kind_C"].sum() == 0
+
+def test_to_dummies_categories_duplicates_error() -> None:
+    df: pl.DataFrame = pl.DataFrame({"col": ["x", "y"]})
+
+    with pytest.raises(
+        DuplicateError, match="column with name 'col_x' has more than one occurrence"
+    ):
+        _ = df.to_dummies(categories={"col": ["x", "x"]})
+
 
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.

@@ -119,7 +119,7 @@ pub trait DataFrameOps: IntoDf {
                 .map(
                     |s| match (set.contains(s.name().as_str()), categories.as_ref()) {
                         (true, Some(cats)) => {
-                            let cats = cats.get(&s.name().to_string());
+                            let cats = cats.get(s.name().as_str());
                             s.as_materialized_series()
                                 .to_dummies(separator, drop_first, cats)
                         },
