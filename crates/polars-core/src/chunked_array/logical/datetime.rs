@@ -1,3 +1,13 @@
+use std::str::FromStr;
+
+#[cfg(feature = "timezones")]
+use arrow::legacy::kernels::convert_to_naive_local;
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
+
 use super::*;
 use crate::datatypes::time_unit::TimeUnit;
 use crate::prelude::*;
@@ -68,14 +78,46 @@ impl LogicalType for DatetimeChunked {
             },
             #[cfg(feature = "dtype-date")]
             Date => {
+                let timestamp_to_datetime = match self.time_unit() {
+                    TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+                    TimeUnit::Microseconds => timestamp_us_to_datetime,
+                    TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                };
+                let datetime_to_timestamp = match self.time_unit() {
+                    TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+                    TimeUnit::Microseconds => datetime_to_timestamp_us,
+                    TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+                };
                 let cast_to_date = |tu_in_day: i64| {
-                    let mut dt = self
-                        .phys
-                        .apply_values(|v| v.div_euclid(tu_in_day))
+                    let values = match self.dtype() {
+                        #[cfg(feature = "timezones")]
+                        Datetime(_, Some(tz)) => {
+                            let from_tz = tz.to_chrono()?;
+                            let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
+                            self.phys.apply_values(|timestamp| {
+                                let ndt = timestamp_to_datetime(timestamp);
+                                let res = convert_to_naive_local(
+                                    &from_tz,
+                                    &Tz::UTC,
+                                    ndt,
+                                    Ambiguous::from_str(ambiguous.get(0).unwrap()).unwrap(),
+                                    NonExistent::Raise,
+                                )
+                                .unwrap();
+                                res.map(datetime_to_timestamp)
+                                    .unwrap()
+                                    .div_euclid(tu_in_day)
+                            })
+                        },
+                        _ => self.phys.apply_values(|v| v.div_euclid(tu_in_day)),
+                    };
+
+                    let mut dt = values
                         .cast_with_options(&Int32, cast_options)
                         .unwrap()
                         .into_date()
                         .into_series();
+
                     dt.set_sorted_flag(self.is_sorted_flag());
                     Ok(dt)
                 };
