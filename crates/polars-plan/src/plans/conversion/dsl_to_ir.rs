@@ -1,8 +1,11 @@
+use std::path::PathBuf;
+
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::config::verbose;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;
@@ -80,7 +83,9 @@ pub fn to_alp(
         conversion_optimizer,
         opt_flags,
         nodes_scratch: &mut unitvec![],
+        cache_file_info: Default::default(),
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
+        verbose: verbose(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -114,13 +119,40 @@ pub fn to_alp(
     }
 }
 
+#[derive(Default)]
+struct SourcesToFileInfo {
+    inner: PlHashMap<Arc<[PathBuf]>, FileInfo>,
+}
+
+impl SourcesToFileInfo {
+    fn insert(&mut self, source: &ScanSources, info: &FileInfo) {
+        match source {
+            ScanSources::Paths(paths) => {
+                self.inner.insert(paths.clone(), info.clone());
+            },
+            ScanSources::Files(_) | ScanSources::Buffers(_) => {
+                // don't save the files or buffers
+            },
+        }
+    }
+
+    fn get(&self, source: &ScanSources) -> Option<&FileInfo> {
+        match source {
+            ScanSources::Paths(paths) => self.inner.get(paths),
+            _ => None,
+        }
+    }
+}
+
 pub(super) struct DslConversionContext<'a> {
     pub(super) expr_arena: &'a mut Arena<AExpr>,
     pub(super) lp_arena: &'a mut Arena<IR>,
     pub(super) conversion_optimizer: ConversionOptimizer,
     pub(super) opt_flags: &'a mut OptFlags,
     pub(super) nodes_scratch: &'a mut UnitVec<Node>,
+    cache_file_info: SourcesToFileInfo,
     pub(super) pushdown_maintain_errors: bool,
+    verbose: bool,
 }
 
 pub(super) fn run_conversion(
@@ -200,116 +232,163 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScanDsl::Anonymous { .. } => sources,
                     };
 
-                let (mut file_info, scan_type_ir) = match *scan_type.clone() {
-                    #[cfg(feature = "parquet")]
-                    FileScanDsl::Parquet { options } => {
-                        if let Some(schema) = &options.schema {
-                            // We were passed a schema, we don't have to call `parquet_file_info`,
-                            // but this does mean we don't have `row_estimation` and `first_metadata`.
-                            (
-                                FileInfo {
-                                    schema: schema.clone(),
-                                    reader_schema: Some(either::Either::Left(Arc::new(
-                                        schema.to_arrow(CompatLevel::newest()),
-                                    ))),
-                                    row_estimation: (None, 0),
-                                },
-                                FileScanIR::Parquet {
-                                    options,
-                                    metadata: None,
-                                },
-                            )
-                        } else {
-                            let (file_info, metadata) = scans::parquet_file_info(
-                                &sources,
-                                unified_scan_args.row_index.as_ref(),
-                                cloud_options,
-                            )
-                            .map_err(|e| e.context(failed_here!(parquet scan)))?;
-
-                            (file_info, FileScanIR::Parquet { options, metadata })
-                        }
-                    },
-                    #[cfg(feature = "ipc")]
-                    FileScanDsl::Ipc { options } => {
-                        let (file_info, md) = scans::ipc_file_info(
-                            &sources,
-                            unified_scan_args.row_index.as_ref(),
-                            cloud_options,
-                        )
-                        .map_err(|e| e.context(failed_here!(ipc scan)))?;
-                        (
-                            file_info,
-                            FileScanIR::Ipc {
-                                options,
-                                metadata: Some(Arc::new(md)),
-                            },
-                        )
-                    },
-                    #[cfg(feature = "csv")]
-                    FileScanDsl::Csv { mut options } => {
-                        // TODO: This is a hack. We conditionally set `allow_missing_columns` to
-                        // mimic existing behavior, but this should be taken from a user provided
-                        // parameter instead.
-                        if options.schema.is_some() && options.has_header {
-                            unified_scan_args.missing_columns_policy = MissingColumnsPolicy::Insert;
-                        }
-
-                        (
-                            scans::csv_file_info(
-                                &sources,
-                                unified_scan_args.row_index.as_ref(),
-                                &mut options,
-                                cloud_options,
-                            )
-                            .map_err(|e| e.context(failed_here!(csv scan)))?,
-                            FileScanIR::Csv { options },
-                        )
-                    },
-                    #[cfg(feature = "json")]
-                    FileScanDsl::NDJson { options } => (
-                        scans::ndjson_file_info(
-                            &sources,
-                            unified_scan_args.row_index.as_ref(),
-                            &options,
-                            cloud_options,
-                        )
-                        .map_err(|e| e.context(failed_here!(ndjson scan)))?,
-                        FileScanIR::NDJson { options },
-                    ),
-                    #[cfg(feature = "python")]
-                    FileScanDsl::PythonDataset { dataset_object } => {
-                        if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
-                            polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
-                        }
-
-                        let mut schema = dataset_object.schema()?;
-                        let reader_schema = schema.clone();
-
-                        if let Some(row_index) = &unified_scan_args.row_index {
-                            insert_row_index_to_schema(
-                                Arc::make_mut(&mut schema),
-                                row_index.name.clone(),
-                            )?;
-                        }
-
-                        (
-                            FileInfo {
-                                schema,
-                                reader_schema: Some(either::Either::Right(reader_schema)),
-                                row_estimation: (None, usize::MAX),
-                            },
+                // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
+                // sharing.
+                // First we check if we have a cache `FileInfo`, if not we load the metadata and
+                // insert in the cache. Loading metadata can be expensive, and comprise of multiple
+                // Gb's
+                let (mut file_info, scan_type_ir) = if let Some(file_info) =
+                    ctxt.cache_file_info.get(&sources)
+                {
+                    if ctxt.verbose {
+                        eprintln!("FILE_INFO CACHE HIT")
+                    }
+                    let scan_type_ir = match *scan_type.clone() {
+                        #[cfg(feature = "csv")]
+                        FileScanDsl::Csv { options } => FileScanIR::Csv { options },
+                        #[cfg(feature = "json")]
+                        FileScanDsl::NDJson { options } => FileScanIR::NDJson { options },
+                        #[cfg(feature = "parquet")]
+                        FileScanDsl::Parquet { options } => FileScanIR::Parquet {
+                            options,
+                            metadata: None,
+                        },
+                        #[cfg(feature = "ipc")]
+                        FileScanDsl::Ipc { options } => FileScanIR::Ipc {
+                            options,
+                            metadata: None,
+                        },
+                        #[cfg(feature = "python")]
+                        FileScanDsl::PythonDataset { dataset_object } => {
                             FileScanIR::PythonDataset {
                                 dataset_object,
                                 cached_ir: Default::default(),
-                            },
-                        )
-                    },
-                    FileScanDsl::Anonymous {
-                        file_info,
-                        options,
-                        function,
-                    } => (file_info, FileScanIR::Anonymous { options, function }),
+                            }
+                        },
+                        FileScanDsl::Anonymous {
+                            options,
+                            function,
+                            file_info: _,
+                        } => FileScanIR::Anonymous { options, function },
+                    };
+                    (file_info.clone(), scan_type_ir)
+                } else {
+                    let (file_info, scan_type_ir) = match *scan_type.clone() {
+                        #[cfg(feature = "parquet")]
+                        FileScanDsl::Parquet { options } => {
+                            if let Some(schema) = &options.schema {
+                                // We were passed a schema, we don't have to call `parquet_file_info`,
+                                // but this does mean we don't have `row_estimation` and `first_metadata`.
+                                (
+                                    FileInfo {
+                                        schema: schema.clone(),
+                                        reader_schema: Some(either::Either::Left(Arc::new(
+                                            schema.to_arrow(CompatLevel::newest()),
+                                        ))),
+                                        row_estimation: (None, 0),
+                                    },
+                                    FileScanIR::Parquet {
+                                        options,
+                                        metadata: None,
+                                    },
+                                )
+                            } else {
+                                let (file_info, metadata) = scans::parquet_file_info(
+                                    &sources,
+                                    unified_scan_args.row_index.as_ref(),
+                                    cloud_options,
+                                )
+                                .map_err(|e| e.context(failed_here!(parquet scan)))?;
+
+                                (file_info, FileScanIR::Parquet { options, metadata })
+                            }
+                        },
+                        #[cfg(feature = "ipc")]
+                        FileScanDsl::Ipc { options } => {
+                            let (file_info, md) = scans::ipc_file_info(
+                                &sources,
+                                unified_scan_args.row_index.as_ref(),
+                                cloud_options,
+                            )
+                            .map_err(|e| e.context(failed_here!(ipc scan)))?;
+                            (
+                                file_info,
+                                FileScanIR::Ipc {
+                                    options,
+                                    metadata: Some(Arc::new(md)),
+                                },
+                            )
+                        },
+                        #[cfg(feature = "csv")]
+                        FileScanDsl::Csv { mut options } => {
+                            // TODO: This is a hack. We conditionally set `allow_missing_columns` to
+                            // mimic existing behavior, but this should be taken from a user provided
+                            // parameter instead.
+                            if options.schema.is_some() && options.has_header {
+                                unified_scan_args.missing_columns_policy =
+                                    MissingColumnsPolicy::Insert;
+                            }
+
+                            (
+                                scans::csv_file_info(
+                                    &sources,
+                                    unified_scan_args.row_index.as_ref(),
+                                    &mut options,
+                                    cloud_options,
+                                )
+                                .map_err(|e| e.context(failed_here!(csv scan)))?,
+                                FileScanIR::Csv { options },
+                            )
+                        },
+                        #[cfg(feature = "json")]
+                        FileScanDsl::NDJson { options } => (
+                            scans::ndjson_file_info(
+                                &sources,
+                                unified_scan_args.row_index.as_ref(),
+                                &options,
+                                cloud_options,
+                            )
+                            .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+                            FileScanIR::NDJson { options },
+                        ),
+                        #[cfg(feature = "python")]
+                        FileScanDsl::PythonDataset { dataset_object } => {
+                            if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
+                                polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
+                            }
+
+                            let mut schema = dataset_object.schema()?;
+                            let reader_schema = schema.clone();
+
+                            if let Some(row_index) = &unified_scan_args.row_index {
+                                insert_row_index_to_schema(
+                                    Arc::make_mut(&mut schema),
+                                    row_index.name.clone(),
+                                )?;
+                            }
+
+                            (
+                                FileInfo {
+                                    schema,
+                                    reader_schema: Some(either::Either::Right(reader_schema)),
+                                    row_estimation: (None, usize::MAX),
+                                },
+                                FileScanIR::PythonDataset {
+                                    dataset_object,
+                                    cached_ir: Default::default(),
+                                },
+                            )
+                        },
+                        FileScanDsl::Anonymous {
+                            file_info,
+                            options,
+                            function,
+                        } => (file_info, FileScanIR::Anonymous { options, function }),
+                    };
+
+                    // Insert so that the files are deduplicated.
+                    ctxt.cache_file_info.insert(&sources, &file_info);
+                    (file_info, scan_type_ir)
                 };
 
                 if unified_scan_args.hive_options.enabled.is_none() {

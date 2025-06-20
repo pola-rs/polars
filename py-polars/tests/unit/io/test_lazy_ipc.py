@@ -130,3 +130,16 @@ def test_sink_ipc_compat_level_22930() -> None:
     t2 = pyarrow.ipc.open_file(f2)
     assert "large_string" in str(t2.schema)
     assert_frame_equal(pl.DataFrame(t2.read_all()), df)
+
+
+def test_scan_file_info_cache(
+    capfd: Any, monkeypatch: Any, foods_ipc_path: Path
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    a = pl.scan_ipc(foods_ipc_path)
+    b = pl.scan_ipc(foods_ipc_path)
+
+    a.join(b, how="cross").explain()
+
+    captured = capfd.readouterr().err
+    assert "FILE_INFO CACHE HIT" in captured

@@ -270,17 +270,17 @@ mod _file_scan_eq_hash {
 
     use super::FileScanIR;
 
-    impl PartialEq for FileScanIR {
-        fn eq(&self, other: &Self) -> bool {
-            FileScanEqHashWrap::from(self) == FileScanEqHashWrap::from(other)
-        }
-    }
-
     impl Eq for FileScanIR {}
 
     impl Hash for FileScanIR {
         fn hash<H: Hasher>(&self, state: &mut H) {
             FileScanEqHashWrap::from(self).hash(state)
+        }
+    }
+
+    impl PartialEq for FileScanIR {
+        fn eq(&self, other: &Self) -> bool {
+            FileScanEqHashWrap::from(self) == FileScanEqHashWrap::from(other)
         }
     }
 
