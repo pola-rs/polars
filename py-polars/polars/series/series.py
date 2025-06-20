@@ -114,7 +114,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Generator, Mapping
+    from collections.abc import Collection, Generator, Mapping, Hashable
 
     import jax
     import numpy.typing as npt
@@ -2269,7 +2269,7 @@ class Series:
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
-        self, *, separator: str = "_", drop_first: bool = False
+        self, *, separator: str = "_", drop_first: bool = False, categories: Sequence[Hashable] | None = None,
     ) -> DataFrame:
         """
         Get dummy/indicator variables.
@@ -2280,6 +2280,10 @@ class Series:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variable being encoded.
+        categories
+            Optional list of all categories that should be represented.
+            Categories that are not present in the data get an all-zero column.
+            Values that are not in the categories will be ignored.
 
         Examples
         --------
@@ -2308,7 +2312,9 @@ class Series:
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator, drop_first))
+        if categories is not None:
+            categories = [str(c) for c in categories]
+        return wrap_df(self._s.to_dummies(separator, drop_first, categories))
 
     @unstable()
     def cut(

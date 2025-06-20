@@ -13,38 +13,79 @@ type DummyType = i32;
 type DummyCa = Int32Chunked;
 
 pub trait ToDummies {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame>;
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        categories: Option<&Vec<String>>,
+    ) -> PolarsResult<DataFrame>;
 }
 
 impl ToDummies for Series {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        categories: Option<&Vec<String>>,
+    ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
         let groups = self.group_tuples(true, drop_first)?;
 
         // SAFETY: groups are in bounds
         let columns = unsafe { self.agg_first(&groups) };
-        let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
-        let columns = columns
+        let columns = columns.iter().zip(groups.iter());
+        let columns: PlHashMap<String, GroupsIndicator<'_>> = columns
             .map(|(av, group)| {
-                // strings are formatted with extra \" \" in polars, so we
-                // extract the string
-                let name = if let Some(s) = av.get_str() {
-                    format_pl_smallstr!("{col_name}{sep}{s}")
-                } else {
-                    // other types don't have this formatting issue
-                    format_pl_smallstr!("{col_name}{sep}{av}")
-                };
-
-                let ca = match group {
-                    GroupsIndicator::Idx((_, group)) => dummies_helper_idx(group, self.len(), name),
-                    GroupsIndicator::Slice([offset, len]) => {
-                        dummies_helper_slice(offset, len, self.len(), name)
+                (
+                    match av.get_str() {
+                        Some(s) => s.to_string(),
+                        None => format!("{av}"),
                     },
-                };
-                ca.into_column()
+                    group,
+                )
             })
-            .collect::<Vec<_>>();
+            .collect();
+        let columns = match categories {
+            Some(cats) => {
+                // if categories are provided, we create dummies for only those categories, but all
+                // of them, even if they are not present in the data
+                cats.iter()
+                    .skip(drop_first as usize)
+                    .map(|cat| {
+                        let name = format_pl_smallstr!("{col_name}{sep}{cat}");
+                        match columns.get(cat.as_str()) {
+                            // // category observed in data, default case
+                            Some(GroupsIndicator::Idx((_, idxs))) => {
+                                dummies_helper_idx(idxs, self.len(), name).into_column()
+                            },
+                            Some(GroupsIndicator::Slice([offset, len])) => {
+                                dummies_helper_slice(*offset, *len, self.len(), name).into_column()
+                            },
+                            // category not present in data -> all-zero column
+                            None => UInt8Chunked::full(name, 0u8, self.len()).into_column(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            },
+            None => columns
+                .iter()
+                .skip(drop_first as usize)
+                .map(|(name, group)| {
+                    let name = format_pl_smallstr!("{col_name}{sep}{name}");
+
+                    let ca = match group {
+                        GroupsIndicator::Idx((_, group)) => {
+                            dummies_helper_idx(group, self.len(), name)
+                        },
+                        GroupsIndicator::Slice([offset, len]) => {
+                            dummies_helper_slice(*offset, *len, self.len(), name)
+                        },
+                    };
+                    ca.into_column()
+                })
+                .collect::<Vec<_>>(),
+        };
 
         DataFrame::new(sort_columns(columns))
     }

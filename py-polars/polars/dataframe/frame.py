@@ -118,7 +118,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Iterator, Mapping
+    from collections.abc import Collection, Iterator, Mapping, Hashable
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -10529,6 +10529,7 @@ class DataFrame:
         *,
         separator: str = "_",
         drop_first: bool = False,
+        categories: Mapping[str, Sequence[Hashable]] | None = None,
     ) -> DataFrame:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -10542,6 +10543,12 @@ class DataFrame:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variables being encoded.
+        categories
+            Mapping ``{column_name: [cat1, cat2, ...]}`` that defines
+            the *complete* category set for each column. Categories that are not
+            present in the data will still appear as all-zero dummy columns.
+            Columns and categories that are not present in the mapping will be ignored.
+            This overrides values set in the `columns` parameter.
 
         Examples
         --------
@@ -10599,7 +10606,11 @@ class DataFrame:
         """
         if columns is not None:
             columns = _expand_selectors(self, columns)
-        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first))
+        if categories is not None:
+            categories = {
+                k: [str(cat) for cat in v] for k, v in categories.items()
+            }
+        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first, categories))
 
     def unique(
         self,

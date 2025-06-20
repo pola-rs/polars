@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use arrow::bitmap::MutableBitmap;
@@ -449,21 +450,23 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    #[pyo3(signature = (columns, separator, drop_first=false))]
+    #[pyo3(signature = (columns, separator, drop_first=false, categories=None))]
     pub fn to_dummies(
         &self,
         py: Python<'_>,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
         drop_first: bool,
+        categories: Option<HashMap<String, Vec<String>>>,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| match columns {
             Some(cols) => self.df.columns_to_dummies(
                 cols.iter().map(|x| x as &str).collect(),
                 separator,
                 drop_first,
+                categories,
             ),
-            None => self.df.to_dummies(separator, drop_first),
+            None => self.df.to_dummies(separator, drop_first, categories),
         })
     }
 
