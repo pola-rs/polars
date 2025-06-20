@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["count_rows","count_rows_par","infer_schema"],"mod":["core"]};

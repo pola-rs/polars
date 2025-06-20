@@ -1,0 +1,6 @@
+﻿polars.cumfold
+==============
+
+.. currentmodule:: polars
+
+.. autofunction:: cumfold
