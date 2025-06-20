@@ -44,7 +44,7 @@ def _patched_cloud(
             return f()
 
         class PatchedComputeContext(ComputeContext):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
                 self._interactive = True
                 self._compute_address = "localhost:5051"
                 self._compute_public_key = b""
@@ -134,7 +134,7 @@ def _patched_cloud(
             ext: str, unsupported: list[str]
         ) -> Callable[..., pl.LazyFrame | None]:
             prev_sink = getattr(pl.LazyFrame, f"sink_{ext}")
-            prev_sink = cast(Callable[..., pl.LazyFrame | None], prev_sink)
+            prev_sink = cast("Callable[..., pl.LazyFrame | None]", prev_sink)
 
             def _(lf: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame | None:
                 # The cloud client sinks to a "placeholder-path".
