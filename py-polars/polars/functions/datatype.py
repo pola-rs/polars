@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Mapping
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
@@ -8,6 +8,8 @@ from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from polars import Expr
     from polars._typing import PolarsDataType
 
