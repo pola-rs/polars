@@ -64,24 +64,60 @@ impl IR {
         match lp {
             ir @ IR::Scan { .. } => {
                 let IR::Scan {
-                    sources,
-                    file_info,
+                    ref sources,
+                    ref file_info,
                     hive_parts: _,
                     predicate: _,
-                    scan_type,
+                    ref scan_type,
                     output_schema: _,
-                    unified_scan_args,
+                    ref unified_scan_args,
                     id: _,
-                } = ir.clone()
+                } = ir
                 else {
                     unreachable!()
                 };
 
+                let scan_type = Box::new(match &**scan_type {
+                    #[cfg(feature = "csv")]
+                    FileScanIR::Csv { options } => FileScanDsl::Csv {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "json")]
+                    FileScanIR::NDJson { options } => FileScanDsl::NDJson {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "parquet")]
+                    FileScanIR::Parquet {
+                        options,
+                        metadata: _,
+                    } => FileScanDsl::Parquet {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "ipc")]
+                    FileScanIR::Ipc {
+                        options,
+                        metadata: _,
+                    } => FileScanDsl::Ipc {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "python")]
+                    FileScanIR::PythonDataset {
+                        dataset_object,
+                        cached_ir: _,
+                    } => FileScanDsl::PythonDataset {
+                        dataset_object: dataset_object.clone(),
+                    },
+                    FileScanIR::Anonymous { options, function } => FileScanDsl::Anonymous {
+                        options: options.clone(),
+                        function: function.clone(),
+                        file_info: file_info.clone(),
+                    },
+                });
+
                 DslPlan::Scan {
-                    sources,
-                    file_info: Some(file_info),
+                    sources: sources.clone(),
                     scan_type,
-                    unified_scan_args,
+                    unified_scan_args: unified_scan_args.clone(),
                     cached_ir: Arc::new(Mutex::new(Some(ir))),
                 }
             },

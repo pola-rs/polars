@@ -74,7 +74,7 @@ struct CountStarExpr {
     sources: ScanSources,
     cloud_options: Option<CloudOptions>,
     // File Type
-    scan_type: Box<FileScan>,
+    scan_type: Box<FileScanIR>,
     // Column Alias
     alias: Option<PlSmallStr>,
 }
@@ -95,7 +95,7 @@ fn visit_logical_plan_for_scan_paths(
                 Buffers(Vec<MemSlice>),
             }
 
-            let mut scan_type: Option<Box<FileScan>> = None;
+            let mut scan_type: Option<Box<FileScanIR>> = None;
             let mut cloud_options = None;
             let mut sources = None;
 
@@ -168,7 +168,7 @@ fn visit_logical_plan_for_scan_paths(
 
             let use_fast_file_count = use_fast_file_count.unwrap_or(match scan_type.as_ref() {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { .. } => true,
+                FileScanIR::Csv { .. } => true,
                 _ => false,
             });
 

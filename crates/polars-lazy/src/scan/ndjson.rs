@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
 use polars_plan::dsl::{
-    CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScan, MissingColumnsPolicy, ScanSources,
+    CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScanDsl, MissingColumnsPolicy, ScanSources,
 };
 use polars_plan::prelude::{NDJsonReadOptions, UnifiedScanArgs};
 use polars_utils::slice_enum::Slice;
@@ -152,11 +152,10 @@ impl LazyFileListReader for LazyJsonLineReader {
             schema_overwrite: self.schema_overwrite,
         };
 
-        let scan_type = Box::new(FileScan::NDJson { options });
+        let scan_type = Box::new(FileScanDsl::NDJson { options });
 
         Ok(LazyFrame::from(DslPlan::Scan {
             sources: self.sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
             scan_type,
             cached_ir: Default::default(),

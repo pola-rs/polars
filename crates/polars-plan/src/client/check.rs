@@ -2,7 +2,7 @@ use polars_core::error::{PolarsResult, polars_err};
 use polars_io::path_utils::is_cloud_url;
 
 use crate::constants::POLARS_PLACEHOLDER;
-use crate::dsl::{DslPlan, FileScan, ScanSources, SinkType};
+use crate::dsl::{DslPlan, FileScanDsl, ScanSources, SinkType};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
@@ -42,7 +42,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     },
                 }
 
-                if matches!(&**scan_type, FileScan::Anonymous { .. }) {
+                if matches!(&**scan_type, FileScanDsl::Anonymous { .. }) {
                     return ineligible_error("contains anonymous scan");
                 }
             },
