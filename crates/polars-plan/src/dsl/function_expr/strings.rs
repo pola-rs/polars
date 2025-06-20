@@ -37,7 +37,10 @@ pub enum StringFunction {
         strict: bool,
     },
     #[cfg(feature = "string_to_integer")]
-    ToInteger(bool),
+    ToInteger {
+        dtype: Option<DataType>,
+        strict: bool,
+    },
     LenBytes,
     LenChars,
     Lowercase,
