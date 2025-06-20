@@ -126,7 +126,6 @@ impl OptimizationRule for TypeCoercionRule {
                         }
                         .should_cast_column("", cast_to, &cast_from);
 
-                        #[expect(clippy::single_match)]
                         match v {
                             // No casting needed
                             Ok(false) => {
