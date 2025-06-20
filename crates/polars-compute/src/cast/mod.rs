@@ -526,9 +526,15 @@ pub fn cast(
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
                 UInt8 => parse_binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
-                UInt16 => parse_binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options),
-                UInt32 => parse_binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options),
-                UInt64 => parse_binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options),
+                UInt16 => {
+                    parse_binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options)
+                },
+                UInt32 => {
+                    parse_binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options)
+                },
+                UInt64 => {
+                    parse_binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options)
+                },
                 Int8 => parse_binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
                 Int16 => parse_binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
                 Int32 => parse_binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
