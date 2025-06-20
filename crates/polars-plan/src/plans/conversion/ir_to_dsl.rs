@@ -303,6 +303,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "array_count")]
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
+                IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode { skip_empty } => A::Explode { skip_empty },
             })
         },

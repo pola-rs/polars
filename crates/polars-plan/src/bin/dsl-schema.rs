@@ -90,7 +90,7 @@ mod impls {
             std::fs::read_to_string(path).expect("faled to read the hash from the file");
         if file_hash != current_hash() {
             eprintln!(
-                "the schema hash is not up to date, please run `make update-dsl-schema-hash`"
+                "the schema hash is not up to date, please update the DSL_VERSION in `polars-plan/src/dsl/plan.rs` if needed and run `make update-dsl-schema-hash`"
             );
             std::process::exit(1);
         }

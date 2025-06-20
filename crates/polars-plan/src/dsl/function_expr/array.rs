@@ -7,6 +7,7 @@ use polars_core::prelude::SortOptions;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ArrayFunction {
     Length,
+    Slice(i64, i64),
     Min,
     Max,
     Sum,
@@ -45,6 +46,7 @@ impl fmt::Display for ArrayFunction {
         let name = match self {
             Concat => "concat",
             Length => "length",
+            Slice(_, _) => "slice",
             Min => "min",
             Max => "max",
             Sum => "sum",
