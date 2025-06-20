@@ -824,7 +824,8 @@ class Series:
             other = maybe_cast(other, self.dtype)
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            msg = f"Series of type {self.dtype} can not be compared"
+            raise NotImplementedError(msg)
 
         return self._from_pyseries(f(other))
 
@@ -5020,7 +5021,8 @@ class Series:
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            msg = f"Series of type {self.dtype} can not be set"
+            raise NotImplementedError(msg)
         return self._from_pyseries(f(filter._s, value))
 
     def scatter(
