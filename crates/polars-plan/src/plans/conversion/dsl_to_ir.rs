@@ -5,6 +5,7 @@ use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::config::verbose;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;
@@ -82,8 +83,9 @@ pub fn to_alp(
         conversion_optimizer,
         opt_flags,
         nodes_scratch: &mut unitvec![],
-        pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         cache_file_info: Default::default(),
+        pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
+        verbose: verbose(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -148,8 +150,9 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) conversion_optimizer: ConversionOptimizer,
     pub(super) opt_flags: &'a mut OptFlags,
     pub(super) nodes_scratch: &'a mut UnitVec<Node>,
-    pub(super) pushdown_maintain_errors: bool,
     cache_file_info: SourcesToFileInfo,
+    pub(super) pushdown_maintain_errors: bool,
+    verbose: bool,
 }
 
 pub(super) fn run_conversion(
@@ -237,6 +240,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let (mut file_info, scan_type_ir) = if let Some(file_info) =
                     ctxt.cache_file_info.get(&sources)
                 {
+                    if ctxt.verbose {
+                        eprintln!("FILE_INFO CACHE HIT")
+                    }
                     let scan_type_ir = match *scan_type.clone() {
                         #[cfg(feature = "csv")]
                         FileScanDsl::Csv { options } => FileScanIR::Csv { options },
