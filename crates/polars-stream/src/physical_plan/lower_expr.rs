@@ -245,6 +245,8 @@ pub fn is_input_independent_rec(
     ret
 }
 
+/// Whether the expression needs an input dataframe to produce a result
+/// A literal for instance doesn't need that.
 pub fn is_input_independent(
     expr_key: ExprNodeKey,
     expr_arena: &Arena<AExpr>,
@@ -611,6 +613,33 @@ fn lower_exprs_with_ctx(
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: FunctionExpr::Shift,
+                options: _,
+            } => {
+                let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
+
+                let (trans_input_column, trans_inner_expr_column) =
+                    lower_exprs_with_ctx(input, &[inner_nodes[0]], ctx)?;
+
+                let (trans_input_offset, trans_inner_expr_offset) =
+                    lower_exprs_with_ctx(input, &[inner_nodes[1]], ctx)?;
+
+                let output_schema = ctx.phys_sm[trans_input_column.node].output_schema.clone();
+
+                let node_key = ctx.phys_sm.insert(PhysNode::new(
+                    output_schema,
+                    PhysNodeKind::Shift {
+                        input: trans_input_column,
+                        offset: trans_input_offset,
+                    },
+                ));
+
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.extend(trans_inner_expr_column);
+                transformed_exprs.extend(trans_inner_expr_offset);
             },
 
             AExpr::Function {

@@ -9,6 +9,7 @@ use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::physical_plan::PhysStream;
 
 /// A style of a graph node.
 enum NodeStyle {
@@ -159,6 +160,7 @@ fn visualize_plan_rec(
     visited.insert(node_key, ());
 
     let kind = &phys_sm[node_key].kind;
+    let mut inputs_scratch = vec![];
 
     use std::slice::from_ref;
     let (label, inputs) = match kind {
@@ -195,6 +197,12 @@ fn visualize_plan_rec(
                 from_ref(input),
             )
         },
+        PhysNodeKind::Shift { input, offset } => {
+            inputs_scratch.push(*input);
+            inputs_scratch.push(*offset);
+            ("shift".to_string(), inputs_scratch.as_ref())
+        },
+
         PhysNodeKind::WithRowIndex {
             input,
             name,

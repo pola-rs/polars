@@ -13,7 +13,7 @@ use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 pub enum PhysicalPipe {
     Uninit(usize),
-    /// (_, _, maintain_order)
+    /// (num_pipelines, _, maintain_order)
     SerialReceiver(usize, Sender<Morsel>, bool),
     ParallelReceiver(Vec<Sender<Morsel>>),
     /// (_, _, maintain_order)
