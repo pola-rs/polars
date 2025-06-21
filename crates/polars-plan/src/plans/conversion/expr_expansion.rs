@@ -552,7 +552,6 @@ fn expand_function_inputs(
             let mut input_wildcard_expansion = matches!(function, F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
                 | F::Coalesce
                 | F::ListExpr(ListFunction::Concat)
-                | F::ArrayExpr(ArrayFunction::Concat)
                 | F::ConcatExpr(_)
                 | F::MinHorizontal
                 | F::MaxHorizontal
@@ -564,6 +563,10 @@ fn expand_function_inputs(
                 F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
                 | F::DropNulls
             );
+            #[cfg(feature = "dtype-array")]
+            {
+                input_wildcard_expansion |= matches!(function, F::ArrayExpr(ArrayFunction::Concat));
+            }
             #[cfg(feature = "dtype-struct")]
             {
                 input_wildcard_expansion |= matches!(function, F::AsStruct);
