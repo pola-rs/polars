@@ -185,3 +185,10 @@ def test_concat_arr_scalar() -> None:
 
     out = df.with_columns(out=pl.concat_arr(pl.first(), pl.first()))
     assert out._to_metadata()["repr"].to_list() == ["scalar", "scalar"]
+
+
+def test_concat_arr_expansion_23267() -> None:
+    df = pl.select(x=1, y=2).cast(pl.Int64)
+    out = df.select(z=pl.concat_arr(pl.all())).to_series()
+
+    assert_series_equal(out, pl.Series("z", [[1, 2]], dtype=pl.Array(pl.Int64, 2)))
