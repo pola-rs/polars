@@ -552,6 +552,7 @@ fn expand_function_inputs(
             let mut input_wildcard_expansion = matches!(function, F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
                 | F::Coalesce
                 | F::ListExpr(ListFunction::Concat)
+                | F::ArrayExpr(ArrayFunction::Concat)
                 | F::ConcatExpr(_)
                 | F::MinHorizontal
                 | F::MaxHorizontal
