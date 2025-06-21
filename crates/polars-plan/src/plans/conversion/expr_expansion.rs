@@ -563,6 +563,10 @@ fn expand_function_inputs(
                 F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
                 | F::DropNulls
             );
+            #[cfg(feature = "dtype-array")]
+            {
+                input_wildcard_expansion |= matches!(function, F::ArrayExpr(ArrayFunction::Concat));
+            }
             #[cfg(feature = "dtype-struct")]
             {
                 input_wildcard_expansion |= matches!(function, F::AsStruct);
