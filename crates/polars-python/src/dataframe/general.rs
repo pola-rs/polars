@@ -459,6 +459,11 @@ impl PyDataFrame {
         drop_first: bool,
         categories: Option<HashMap<String, Vec<String>>>,
     ) -> PyResult<Self> {
+        let categories = categories.map(|cats| {
+            cats.into_iter()
+                .map(|(k, v)| (PlSmallStr::from(k), strings_to_pl_smallstr(v)))
+                .collect::<PlHashMap<_, _>>()
+        });
         py.enter_polars_df(|| match columns {
             Some(cols) => self.df.columns_to_dummies(
                 cols.iter().map(|x| x as &str).collect(),

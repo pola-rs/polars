@@ -18,7 +18,7 @@ pub trait ToDummies {
         &self,
         separator: Option<&str>,
         drop_first: bool,
-        categories: Option<&Vec<String>>,
+        categories: Option<&Vec<PlSmallStr>>,
     ) -> PolarsResult<DataFrame>;
 }
 
@@ -27,7 +27,7 @@ impl ToDummies for Series {
         &self,
         separator: Option<&str>,
         drop_first: bool,
-        categories: Option<&Vec<String>>,
+        categories: Option<&Vec<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();

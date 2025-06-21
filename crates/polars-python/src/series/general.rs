@@ -307,6 +307,8 @@ impl PySeries {
         drop_first: bool,
         categories: Option<Vec<String>>,
     ) -> PyResult<PyDataFrame> {
+        let categories =
+            categories.map(|cats| cats.into_iter().map(PlSmallStr::from).collect::<Vec<_>>());
         py.enter_polars_df(|| {
             self.series
                 .to_dummies(separator, drop_first, categories.as_ref())

@@ -2,9 +2,6 @@ pub mod join;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
-#[cfg(feature = "to_dummies")]
-use std::collections::HashMap;
-
 pub use join::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::POOL;
@@ -77,7 +74,7 @@ pub trait DataFrameOps: IntoDf {
         &self,
         separator: Option<&str>,
         drop_first: bool,
-        categories: Option<HashMap<String, Vec<String>>>,
+        categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         self._to_dummies(None, separator, drop_first, categories)
     }
@@ -88,7 +85,7 @@ pub trait DataFrameOps: IntoDf {
         columns: Vec<&str>,
         separator: Option<&str>,
         drop_first: bool,
-        categories: Option<HashMap<String, Vec<String>>>,
+        categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         self._to_dummies(Some(columns), separator, drop_first, categories)
     }
@@ -99,7 +96,7 @@ pub trait DataFrameOps: IntoDf {
         columns: Option<Vec<&str>>,
         separator: Option<&str>,
         drop_first: bool,
-        categories: Option<HashMap<String, Vec<String>>>,
+        categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         use crate::series::ToDummies;
 
