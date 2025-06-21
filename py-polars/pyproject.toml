@@ -234,6 +234,7 @@ addopts = [
 ]
 markers = [
   "ci_only: Tests that should only run on CI by default.",
+  "benchmark: Tests used to benchmark with.",
   "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
   "release: Tests that should be run on a Polars release build.",
