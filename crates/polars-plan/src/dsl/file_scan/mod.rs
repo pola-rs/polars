@@ -397,11 +397,6 @@ impl CastColumnsPolicy {
             )
         };
 
-        // If either data type is unknown, casting is always needed.
-        if incoming_dtype.is_unknown() || target_dtype.is_unknown() {
-            return Ok(true);
-        }
-
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
         // is instead done manually through this function.
 

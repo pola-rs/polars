@@ -871,7 +871,10 @@ fn try_inline_literal_cast(
             let s = s.cast_with_options(dtype, options)?;
             LiteralValue::Series(SpecialEq::new(s))
         },
-        LiteralValue::Dyn(dyn_value) => dyn_value.clone().try_materialize_to_dtype(dtype)?.into(),
+        LiteralValue::Dyn(dyn_value) => dyn_value
+            .clone()
+            .try_materialize_to_dtype(dtype, options)?
+            .into(),
         lv if lv.is_null() => match dtype {
             DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
                 LiteralValue::untyped_null()
