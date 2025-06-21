@@ -126,14 +126,12 @@ impl OptimizationRule for TypeCoercionRule {
                         }
                         .should_cast_column("", cast_to, &cast_from);
 
-                        #[expect(clippy::single_match)]
                         match v {
                             // No casting needed
-                            // TODO: Enable after release 1.30.0
-                            // Ok(false) => {
-                            //     return Ok(Some(expr_arena.get(input_expr).clone()));
-                            // },
-                            Ok(true | false) => {
+                            Ok(false) => {
+                                return Ok(Some(expr_arena.get(input_expr).clone()));
+                            },
+                            Ok(true) => {
                                 let options = if cast_from.is_primitive_numeric()
                                     && cast_to.is_primitive_numeric()
                                 {
@@ -873,7 +871,10 @@ fn try_inline_literal_cast(
             let s = s.cast_with_options(dtype, options)?;
             LiteralValue::Series(SpecialEq::new(s))
         },
-        LiteralValue::Dyn(dyn_value) => dyn_value.clone().try_materialize_to_dtype(dtype)?.into(),
+        LiteralValue::Dyn(dyn_value) => dyn_value
+            .clone()
+            .try_materialize_to_dtype(dtype, options)?
+            .into(),
         lv if lv.is_null() => match dtype {
             DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
                 LiteralValue::untyped_null()

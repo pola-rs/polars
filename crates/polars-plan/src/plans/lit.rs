@@ -82,7 +82,11 @@ pub enum MaterializedLiteralValue {
 }
 
 impl DynListLiteralValue {
-    pub fn try_materialize_to_dtype(self, dtype: &DataType) -> PolarsResult<Scalar> {
+    pub fn try_materialize_to_dtype(
+        self,
+        dtype: &DataType,
+        options: CastOptions,
+    ) -> PolarsResult<Scalar> {
         let Some(inner_dtype) = dtype.inner_dtype() else {
             polars_bail!(InvalidOperation: "conversion from list literal to `{dtype}` failed.");
         };
@@ -119,7 +123,7 @@ impl DynListLiteralValue {
             DynListLiteralValue::List(_) => todo!("nested lists"),
         };
 
-        let s = s.cast_with_options(inner_dtype, CastOptions::Strict)?;
+        let s = s.cast_with_options(inner_dtype, options)?;
         let value = match dtype {
             DataType::List(_) => AnyValue::List(s),
             #[cfg(feature = "dtype-array")]
@@ -132,21 +136,23 @@ impl DynListLiteralValue {
 }
 
 impl DynLiteralValue {
-    pub fn try_materialize_to_dtype(self, dtype: &DataType) -> PolarsResult<Scalar> {
+    pub fn try_materialize_to_dtype(
+        self,
+        dtype: &DataType,
+        options: CastOptions,
+    ) -> PolarsResult<Scalar> {
         match self {
-            DynLiteralValue::Str(s) => {
-                Ok(Scalar::from(s).cast_with_options(dtype, CastOptions::Strict)?)
-            },
+            DynLiteralValue::Str(s) => Ok(Scalar::from(s).cast_with_options(dtype, options)?),
             DynLiteralValue::Int(i) => {
                 #[cfg(not(feature = "dtype-i128"))]
                 let i: i64 = i.try_into().expect("activate dtype-i128 feature");
 
-                Ok(Scalar::from(i).cast_with_options(dtype, CastOptions::Strict)?)
+                Ok(Scalar::from(i).cast_with_options(dtype, options)?)
             },
-            DynLiteralValue::Float(f) => {
-                Ok(Scalar::from(f).cast_with_options(dtype, CastOptions::Strict)?)
+            DynLiteralValue::Float(f) => Ok(Scalar::from(f).cast_with_options(dtype, options)?),
+            DynLiteralValue::List(dyn_list_value) => {
+                dyn_list_value.try_materialize_to_dtype(dtype, options)
             },
-            DynLiteralValue::List(dyn_list_value) => dyn_list_value.try_materialize_to_dtype(dtype),
         }
     }
 }
@@ -213,44 +219,6 @@ impl LiteralValue {
         match self {
             LiteralValue::Series(s) => s.name(),
             _ => get_literal_name(),
-        }
-    }
-
-    pub fn try_materialize_to_dtype(
-        self,
-        dtype: &DataType,
-    ) -> PolarsResult<MaterializedLiteralValue> {
-        use LiteralValue as L;
-        match self {
-            L::Dyn(dyn_value) => dyn_value
-                .try_materialize_to_dtype(dtype)
-                .map(MaterializedLiteralValue::Scalar),
-            L::Scalar(sc) => Ok(MaterializedLiteralValue::Scalar(
-                sc.cast_with_options(dtype, CastOptions::Strict)?,
-            )),
-            L::Range(range) => {
-                let Some(inner_dtype) = dtype.inner_dtype() else {
-                    polars_bail!(
-                        InvalidOperation: "cannot turn `{}` range into `{dtype}`",
-                        range.dtype
-                    );
-                };
-
-                let s = range.try_materialize_to_series(inner_dtype)?;
-                let value = match dtype {
-                    DataType::List(_) => AnyValue::List(s),
-                    #[cfg(feature = "dtype-array")]
-                    DataType::Array(_, size) => AnyValue::Array(s, *size),
-                    _ => unreachable!(),
-                };
-                Ok(MaterializedLiteralValue::Scalar(Scalar::new(
-                    dtype.clone(),
-                    value,
-                )))
-            },
-            L::Series(s) => Ok(MaterializedLiteralValue::Series(
-                s.cast_with_options(dtype, CastOptions::Strict)?,
-            )),
         }
     }
 
