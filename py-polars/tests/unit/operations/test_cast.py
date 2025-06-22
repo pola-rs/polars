@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
+from polars.datatypes.group import NUMERIC_DTYPES
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
@@ -1006,3 +1007,16 @@ def test_cast_temporals_overflow_16039(
             s.cast(to)
     else:
         s.cast(to)
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_prune_superfluous_cast(dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": dtype})
+    result = lf.select(pl.col("a").cast(dtype))
+    assert "strict_cast" not in result.explain()
+
+
+def test_not_prune_necessary_cast() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt16})
+    result = lf.select(pl.col("a").cast(pl.UInt8))
+    assert "strict_cast" in result.explain()
