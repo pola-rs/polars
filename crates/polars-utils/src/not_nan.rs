@@ -7,7 +7,12 @@ use polars_error::{PolarsError, PolarsResult, polars_bail};
 ///
 /// The implementation is inspired by the `ordered-float` crate.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize), serde(transparent))]
+#[cfg_attr(
+    feature = "dsl-schema",
+    derive(schemars::JsonSchema),
+    schemars(transparent)
+)]
 pub struct NotNan<T>(T);
 
 /* ----------------------------------------- CONVERSION ---------------------------------------- */
