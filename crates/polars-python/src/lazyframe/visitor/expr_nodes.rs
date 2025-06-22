@@ -200,6 +200,7 @@ pub enum PyBooleanFunction {
     IsDuplicated,
     IsBetween,
     IsIn,
+    IsClose,
     AllHorizontal,
     AnyHorizontal,
     Not,
@@ -1081,6 +1082,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRBooleanFunction::IsIn { nulls_equal } => {
                         (PyBooleanFunction::IsIn, nulls_equal).into_py_any(py)
                     },
+                    IRBooleanFunction::IsClose {
+                        abs_tol,
+                        rel_tol,
+                        nans_equal,
+                    } => (
+                        PyBooleanFunction::IsClose,
+                        abs_tol.into_inner(),
+                        rel_tol.into_inner(),
+                        nans_equal,
+                    )
+                        .into_py_any(py),
                     IRBooleanFunction::AllHorizontal => {
                         (PyBooleanFunction::AllHorizontal,).into_py_any(py)
                     },

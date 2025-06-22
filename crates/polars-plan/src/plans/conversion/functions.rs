@@ -406,6 +406,16 @@ pub(super) fn convert_functions(
                 B::IsBetween { closed } => IB::IsBetween { closed },
                 #[cfg(feature = "is_in")]
                 B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
+                #[cfg(feature = "is_close")]
+                B::IsClose {
+                    abs_tol,
+                    rel_tol,
+                    nans_equal,
+                } => IB::IsClose {
+                    abs_tol,
+                    rel_tol,
+                    nans_equal,
+                },
                 B::AllHorizontal => {
                     let Some(fst) = e.first() else {
                         return Ok((

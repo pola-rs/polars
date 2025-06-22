@@ -13,6 +13,8 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
+#[cfg(feature = "is_close")]
+use ordered_float::NotNan;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod builder_dsl;
@@ -956,6 +958,26 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
         self.map_unary(BooleanFunction::IsUnique)
+    }
+
+    /// Check whether floating point values are close to each other.
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_close")]
+    pub fn is_close<E: Into<Expr>>(
+        self,
+        expr: E,
+        abs_tol: f64,
+        rel_tol: f64,
+        nans_equal: bool,
+    ) -> Self {
+        self.map_binary(
+            BooleanFunction::IsClose {
+                abs_tol: NotNan::new(abs_tol).expect("`abs_tol` must not be NaN"),
+                rel_tol: NotNan::new(rel_tol).expect("`rel_tol` must not be NaN"),
+                nans_equal,
+            },
+            expr.into(),
+        )
     }
 
     /// Get the approximate count of unique values.
