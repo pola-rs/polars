@@ -1,9 +1,9 @@
 use std::ops::{BitAnd, BitOr};
 
-#[cfg(feature = "is_close")]
-use ordered_float::NotNan;
 use polars_core::POOL;
 use polars_core::utils::SuperTypeFlags;
+#[cfg(feature = "is_close")]
+use polars_utils::not_nan::NotNan;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::*;
@@ -281,8 +281,8 @@ fn is_close(
     polars_ops::prelude::is_close(
         left.as_materialized_series(),
         right.as_materialized_series(),
-        abs_tol.into_inner(),
-        rel_tol.into_inner(),
+        abs_tol.into(),
+        rel_tol.into(),
         nans_equal,
     )
     .map(|ca| Some(ca.into_column()))

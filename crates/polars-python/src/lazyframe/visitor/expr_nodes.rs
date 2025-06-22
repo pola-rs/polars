@@ -1088,8 +1088,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         nans_equal,
                     } => (
                         PyBooleanFunction::IsClose,
-                        abs_tol.into_inner(),
-                        rel_tol.into_inner(),
+                        Into::<f64>::into(*abs_tol),
+                        Into::<f64>::into(*rel_tol),
                         nans_equal,
                     )
                         .into_py_any(py),

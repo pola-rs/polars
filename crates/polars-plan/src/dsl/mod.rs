@@ -13,8 +13,6 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
-#[cfg(feature = "is_close")]
-use ordered_float::NotNan;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod builder_dsl;
@@ -972,8 +970,8 @@ impl Expr {
     ) -> Self {
         self.map_binary(
             BooleanFunction::IsClose {
-                abs_tol: NotNan::new(abs_tol).expect("`abs_tol` must not be NaN"),
-                rel_tol: NotNan::new(rel_tol).expect("`rel_tol` must not be NaN"),
+                abs_tol: abs_tol.try_into().expect("`abs_tol` must not be NaN"),
+                rel_tol: rel_tol.try_into().expect("`rel_tol` must not be NaN"),
                 nans_equal,
             },
             expr.into(),

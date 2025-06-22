@@ -1,5 +1,5 @@
 #[cfg(feature = "is_close")]
-use ordered_float::NotNan;
+use polars_utils::not_nan::NotNan;
 
 use super::*;
 
