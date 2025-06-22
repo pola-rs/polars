@@ -41,7 +41,7 @@ pub trait DataFrameOps: IntoDf {
     ///       "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
     ///   }.unwrap();
     ///
-    ///   let dummies = df.to_dummies(None, false).unwrap();
+    ///   let dummies = df.to_dummies(None, false, None).unwrap();
     ///   println!("{}", dummies);
     /// # }
     /// ```
@@ -70,8 +70,13 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
-        self._to_dummies(None, separator, drop_first)
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
+    ) -> PolarsResult<DataFrame> {
+        self._to_dummies(None, separator, drop_first, categories)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -80,8 +85,9 @@ pub trait DataFrameOps: IntoDf {
         columns: Vec<&str>,
         separator: Option<&str>,
         drop_first: bool,
+        categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
-        self._to_dummies(Some(columns), separator, drop_first)
+        self._to_dummies(Some(columns), separator, drop_first, categories)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -90,24 +96,36 @@ pub trait DataFrameOps: IntoDf {
         columns: Option<Vec<&str>>,
         separator: Option<&str>,
         drop_first: bool,
+        categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         use crate::series::ToDummies;
 
         let df = self.to_df();
 
-        let set: PlHashSet<&str> = if let Some(columns) = columns {
-            PlHashSet::from_iter(columns)
-        } else {
-            PlHashSet::from_iter(df.iter().map(|s| s.name().as_str()))
+        let set: PlHashSet<&str> = match (columns, categories.as_ref()) {
+            // categories override columns if both are provided
+            (Some(_), Some(cats)) => PlHashSet::from_iter(cats.keys().map(|k| k.as_str())),
+            (Some(cols), None) => PlHashSet::from_iter(cols),
+            (None, Some(cats)) => PlHashSet::from_iter(cats.keys().map(|k| k.as_str())),
+            (None, None) => PlHashSet::from_iter(df.iter().map(|s| s.name().as_str())),
         };
 
         let cols = POOL.install(|| {
             df.get_columns()
                 .par_iter()
-                .map(|s| match set.contains(s.name().as_str()) {
-                    true => s.as_materialized_series().to_dummies(separator, drop_first),
-                    false => Ok(s.clone().into_frame()),
-                })
+                .map(
+                    |s| match (set.contains(s.name().as_str()), categories.as_ref()) {
+                        (true, Some(cats)) => {
+                            let cats = cats.get(s.name().as_str());
+                            s.as_materialized_series()
+                                .to_dummies(separator, drop_first, cats)
+                        },
+                        (true, None) => s
+                            .as_materialized_series()
+                            .to_dummies(separator, drop_first, None),
+                        (false, _) => Ok(s.clone().into_frame()),
+                    },
+                )
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
