@@ -16,7 +16,7 @@ pub fn is_close(
     if abs_tol < 0.0 {
         polars_bail!(ComputeError: "`abs_tol` must be non-negative but got {}", abs_tol);
     }
-    if rel_tol < 0.0 || rel_tol >= 1.0 {
+    if !(0.0..1.0).contains(&rel_tol) {
         polars_bail!(ComputeError: "`rel_tol` must be in the range [0, 1) but got {}", rel_tol);
     }
     validate_numeric(s.dtype())?;
@@ -109,7 +109,7 @@ fn is_close_scalar(x: f64, y: f64, abs_tol: f64, rel_tol: f64, nans_equal: bool)
             abs_tol,
             f64::total_cmp,
         );
-    return (x.is_finite() && y.is_finite() && cmp)
+    (x.is_finite() && y.is_finite() && cmp)
         || (x.is_nan() && y.is_nan() && nans_equal)
-        || (x.is_infinite() && y.is_infinite() && x.signum() == y.signum());
+        || (x.is_infinite() && y.is_infinite() && x.signum() == y.signum())
 }
