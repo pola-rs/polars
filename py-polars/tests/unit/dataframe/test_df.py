@@ -773,6 +773,37 @@ def test_to_dummies() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Boolean,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Float32,
+        pl.Float64,
+    ],
+)
+def test_dataframe_to_dummies_respects_output_type(dtype: pl.DataType) -> None:
+    df0 = pl.DataFrame(
+        {
+            "cat": ["x", "y", "x"],
+            "value": [10, 20, 10],
+        }
+    )
+    df = df0.to_dummies(columns=["cat"], output_type=dtype)
+    expected_dummy = {"cat_x", "cat_y"}
+    assert set(df.columns) == expected_dummy.union({"value"})
+    for col in expected_dummy:
+        assert df[col].dtype == dtype
+    assert df["value"].dtype == dtype
+
+
 def test_to_dummies_drop_first() -> None:
     df = pl.DataFrame(
         {
