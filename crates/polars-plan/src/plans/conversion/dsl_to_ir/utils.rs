@@ -1,10 +1,8 @@
-use std::path::PathBuf;
-
 use super::*;
 
 #[derive(Default)]
 pub(super) struct SourcesToFileInfo {
-    inner: PlHashMap<Arc<[PathBuf]>, FileInfo>,
+    inner: PlHashMap<Arc<[PlPath]>, FileInfo>,
 }
 
 impl SourcesToFileInfo {

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
@@ -20,6 +19,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
@@ -995,7 +995,9 @@ fn to_graph_rec<'a>(
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
-            let sources = ScanSources::Paths(Arc::from([PathBuf::from("python-scan-0")]));
+            let sources = ScanSources::Paths(Arc::from([PlPath::from_string(
+                "python-scan-0".to_string(),
+            )]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
             let projected_file_schema = output_schema.clone();
