@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from regex import S
 
 import polars as pl
 from polars._utils.construction import iterable_to_pyseries
@@ -2241,6 +2242,17 @@ def test_repeat_by() -> None:
     calculated = pl.select(a=pl.Series("a", [1, 2]).repeat_by(2))
     expected = pl.select(a=pl.Series("a", [[1, 1], [2, 2]]))
     assert calculated.equals(expected)
+
+
+def test_comparisons_structs_raise() -> None:
+    s = pl.Series([{"x": 1}, {"x": 2}, {"x": 3}])
+    rhss = ["", " ", 5, {"x": 1}]
+    for rhs in rhss:
+        with pytest.raises(
+            NotImplementedError,
+            match=r"Series of type Struct\(\{'x': Int64\}\) does not have eq operator",
+        ):
+            s == rhs  # noqa: B015
 
 
 def test_is_close() -> None:
