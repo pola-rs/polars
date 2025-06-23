@@ -269,12 +269,14 @@ class DataTypeExpr:
 
         Examples
         --------
-        >>> lf = pl.LazyFrame({
-        ...     'a': [1, 2, 3],
-        ... })
-        >>> pl.dtype_of('a').collect_dtype(lf)
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...     }
+        ... )
+        >>> pl.dtype_of("a").collect_dtype(lf)
         Int64
-        >>> pl.dtype_of('a').collect_dtype({ 'a': pl.String })
+        >>> pl.dtype_of("a").collect_dtype({"a": pl.String})
         String
         """
         schema: pl.Schema

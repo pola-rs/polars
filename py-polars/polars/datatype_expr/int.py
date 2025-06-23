@@ -35,7 +35,9 @@ class DataTypeExprIntNameSpace:
         >>> uint32.int.to_unsigned().collect_dtype({})
         Int32
         """
-        return pl.DataTypeExpr._from_pydatatype_expr(self._pydatatype_expr.int_to_signed())
+        return pl.DataTypeExpr._from_pydatatype_expr(
+            self._pydatatype_expr.int_to_signed()
+        )
 
     def is_unsigned(self) -> pl.Expr:
         """
@@ -43,13 +45,15 @@ class DataTypeExprIntNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame([
-        ...     pl.Series('a', [1, 2, 3], pl.Int32()),
-        ...     pl.Series('b', [1, 2, 3], pl.UInt64()),
-        ... ])
+        >>> df = pl.DataFrame(
+        ...     [
+        ...         pl.Series("a", [1, 2, 3], pl.Int32()),
+        ...         pl.Series("b", [1, 2, 3], pl.UInt64()),
+        ...     ]
+        ... )
         >>> df.select(
-        ...     is_a_unsigned = pl.dtype_of('a').int.is_unsigned(),
-        ...     is_b_unsigned = pl.dtype_of('b').int.is_unsigned(),
+        ...     is_a_unsigned=pl.dtype_of("a").int.is_unsigned(),
+        ...     is_b_unsigned=pl.dtype_of("b").int.is_unsigned(),
         ... )
         shape: (1, 2)
         ┌───────────────┬───────────────┐
@@ -68,13 +72,15 @@ class DataTypeExprIntNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame([
-        ...     pl.Series('a', [1, 2, 3], pl.Int32()),
-        ...     pl.Series('b', [1, 2, 3], pl.UInt64()),
-        ... ])
+        >>> df = pl.DataFrame(
+        ...     [
+        ...         pl.Series("a", [1, 2, 3], pl.Int32()),
+        ...         pl.Series("b", [1, 2, 3], pl.UInt64()),
+        ...     ]
+        ... )
         >>> df.select(
-        ...     is_a_signed = pl.dtype_of('a').int.is_signed(),
-        ...     is_b_signed = pl.dtype_of('b').int.is_signed(),
+        ...     is_a_signed=pl.dtype_of("a").int.is_signed(),
+        ...     is_b_signed=pl.dtype_of("b").int.is_signed(),
         ... )
         shape: (1, 2)
         ┌─────────────┬─────────────┐

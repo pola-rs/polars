@@ -56,6 +56,3 @@ class DataTypeExprArrNameSpace:
         └───────────┘
         """
         return pl.Expr._from_pyexpr(self._pydatatype_expr.arr_dimensions())
-
-
-

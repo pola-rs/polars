@@ -34,10 +34,10 @@ class DataTypeExprStructNameSpace:
         fields by index:
 
         >>> (
-        ...     pl.Struct({ 'x': pl.Int64, 'y': pl.String })
-        ...       .to_dtype_expr()
-        ...       .struct[1]
-        ...       .collect_dtype({})
+        ...     pl.Struct({"x": pl.Int64, "y": pl.String})
+        ...     .to_dtype_expr()
+        ...     .struct[1]
+        ...     .collect_dtype({})
         ... )
         String
         """

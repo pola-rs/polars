@@ -17,12 +17,15 @@ class DataTypeExprEnumNameSpace:
 
         Examples
         --------
-        >>> country_codes = pl.Enum([ 'US', 'NL', 'CN', 'IN', 'FR' ])
-        >>> df = pl.DataFrame({
-        ...     'country': ['NL', 'FR', 'CN'],
-        ... }, schema={ 'country': country_codes })
+        >>> country_codes = pl.Enum(["US", "NL", "CN", "IN", "FR"])
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "country": ["NL", "FR", "CN"],
+        ...     },
+        ...     schema={"country": country_codes},
+        ... )
         >>> df.select(
-        ...     num_country_codes = pl.dtype_of('country').enum.num_categories(),
+        ...     num_country_codes=pl.dtype_of("country").enum.num_categories(),
         ... )
         shape: (1, 1)
         ┌───────────────────┐
@@ -41,12 +44,15 @@ class DataTypeExprEnumNameSpace:
 
         Examples
         --------
-        >>> country_codes = pl.Enum([ 'US', 'NL', 'CN', 'IN', 'FR' ])
-        >>> df = pl.DataFrame({
-        ...     'country': ['NL', 'FR', 'CN'],
-        ... }, schema={ 'country': country_codes })
+        >>> country_codes = pl.Enum(["US", "NL", "CN", "IN", "FR"])
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "country": ["NL", "FR", "CN"],
+        ...     },
+        ...     schema={"country": country_codes},
+        ... )
         >>> df.select(
-        ...     all_country_codes = pl.dtype_of('country').enum.categories(),
+        ...     all_country_codes=pl.dtype_of("country").enum.categories(),
         ... )
         shape: (1, 1)
         ┌──────────────────────┐
@@ -112,12 +118,15 @@ class DataTypeExprEnumNameSpace:
 
         Examples
         --------
-        >>> country_codes = pl.Enum([ 'US', 'NL', 'CN', 'IN', 'FR' ])
-        >>> df = pl.DataFrame({
-        ...     'country': ['NL', 'FR', 'CN'],
-        ... }, schema={ 'country': country_codes })
+        >>> country_codes = pl.Enum(["US", "NL", "CN", "IN", "FR"])
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "country": ["NL", "FR", "CN"],
+        ...     },
+        ...     schema={"country": country_codes},
+        ... )
         >>> df.select(
-        ...     india_enum_index = pl.dtype_of('country').enum.index_of_category('IN'),
+        ...     india_enum_index=pl.dtype_of("country").enum.index_of_category("IN"),
         ... )
         shape: (1, 1)
         ┌──────────────────┐
