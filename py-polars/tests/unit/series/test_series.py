@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from regex import S
 
 import polars as pl
 from polars._utils.construction import iterable_to_pyseries
