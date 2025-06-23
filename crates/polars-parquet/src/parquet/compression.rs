@@ -332,8 +332,13 @@ mod tests {
 
         let mut decompressed = vec![0; data.len()];
         let mut context = DecompressionContext::Unset;
-        decompress(c.into(), &compressed[offset..], &mut decompressed, &mut context)
-            .expect("Error when decompressing");
+        decompress(
+            c.into(),
+            &compressed[offset..],
+            &mut decompressed,
+            &mut context,
+        )
+        .expect("Error when decompressing");
         assert_eq!(data, decompressed.as_slice());
     }
 
