@@ -17,9 +17,8 @@ dtype_expr.wrap_in_list().collect_dtype(schema)
 dtype_expr.int.to_signed().collect_dtype(schema)
 # --8<-- [end:basic-manipulation]
 
-df = schema.to_frame()
-
 # --8<-- [start:basic-inspect]
+df = schema.to_frame()
 df.select(
     userid_dtype_name = pl.dtype_of('UserID').to_string(),
     userid_is_signed  = pl.dtype_of('UserID').int.is_signed(),
