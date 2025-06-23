@@ -1,6 +1,5 @@
 use either::Either;
 use polars_io::RowIndex;
-use polars_io::path_utils::is_cloud_url;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
@@ -57,7 +56,7 @@ pub(super) fn dsl_to_ir(
             FileScanDsl::PythonDataset { .. } => {
                 // There are a lot of places that short-circuit if the paths is empty,
                 // so we just give a dummy path here.
-                ScanSources::Paths(Arc::from(["dummy".into()]))
+                ScanSources::Paths(Arc::from([PlPath::from_string("dummy".to_string())]))
             },
             FileScanDsl::Anonymous { .. } => sources,
         };
@@ -371,12 +370,11 @@ pub(super) fn parquet_file_info(
 
     let (reader_schema, num_rows, metadata) = {
         if sources.is_cloud_url() {
-            let first_path = &sources.as_paths().unwrap()[0];
+            let first_path = &sources.first_path().unwrap();
             feature_gated!("cloud", {
-                let uri = first_path.to_string_lossy();
+                let uri = first_path.to_str();
                 get_runtime().block_in_place_on(async {
-                    let mut reader =
-                        ParquetObjectStore::from_uri(&uri, cloud_options, None).await?;
+                    let mut reader = ParquetObjectStore::from_uri(uri, cloud_options, None).await?;
 
                     PolarsResult::Ok((
                         reader.schema().await?,
@@ -419,16 +417,17 @@ pub(super) fn ipc_file_info(
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
+    use polars_utils::plpath::PlPathRef;
 
     let Some(first) = sources.first() else {
         polars_bail!(ComputeError: "expected at least 1 source");
     };
 
     let metadata = match first {
-        ScanSourceRef::Path(path) => {
-            if is_cloud_url(path) {
+        ScanSourceRef::Path(addr) => match addr {
+            PlPathRef::Cloud(uri) => {
                 feature_gated!("cloud", {
-                    let uri = path.to_string_lossy();
+                    let uri = uri.to_string();
                     get_runtime().block_on(async {
                         polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options)
                             .await?
@@ -436,11 +435,10 @@ pub(super) fn ipc_file_info(
                             .await
                     })?
                 })
-            } else {
-                arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                    polars_utils::open_file(path)?,
-                ))?
-            }
+            },
+            PlPathRef::Local(path) => arrow::io::ipc::read::read_file_metadata(
+                &mut std::io::BufReader::new(polars_utils::open_file(path)?),
+            )?,
         },
         ScanSourceRef::File(file) => {
             arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(file))?
@@ -494,7 +492,7 @@ pub fn csv_file_info(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .map(|path| Arc::from(path.to_str()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,
@@ -610,7 +608,7 @@ pub fn ndjson_file_info(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .map(|path| Arc::from(path.to_str()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,
