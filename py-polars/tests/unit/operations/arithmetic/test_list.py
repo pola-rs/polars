@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, ShapeError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.operations.arithmetic.utils import (
     BROADCAST_SERIES_COMBINATIONS,
@@ -1090,3 +1090,12 @@ def test_remove_by_index_oob_null(
         pl.Series(values).list.remove_by_index(idx, null_on_oob=null_on_oob),
         pl.Series(expected, dtype=pl.List(pl.Int64)),
     )
+
+
+def test_remove_by_index_error_oob() -> None:
+    values = [[1, 2], [3, 4]]
+    idx = 2
+    with pytest.raises(
+        ComputeError, match=r"drop index 2 is out of bounds \(row length = 2\)"
+    ):
+        pl.Series(values).list.remove_by_index(idx, null_on_oob=False)

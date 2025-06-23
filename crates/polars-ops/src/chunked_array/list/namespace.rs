@@ -4,6 +4,7 @@ use std::fmt::Write;
 use arrow::array::builder::{ShareStrategy, make_builder};
 use arrow::array::{Array as ArrowArray, ListArray, ValueSize};
 use arrow::bitmap::BitmapBuilder;
+use arrow::legacy::is_valid::IsValid;
 use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
 use num_traits::ToPrimitive;
@@ -365,18 +366,18 @@ pub trait ListNameSpaceImpl: AsList {
                     for row in 0..rows {
                         let idx_row = if idx_arr.len() == 1 { 0 } else { row };
 
-                        let row_is_valid = list_arr.is_valid(row) && idx_arr.is_valid(idx_row);
+                        let row_is_valid = unsafe {list_arr.is_valid_unchecked(row) && idx_arr.is_valid_unchecked(idx_row)};
                         if !row_is_valid {
                             offsets.push_null();
                             validity.push(false);
                             continue;
                         }
 
-                        let start = raw_offsets[row] as usize;
-                        let end   = raw_offsets[row + 1] as usize;
+                        let start = unsafe { *raw_offsets.get_unchecked(row) } as usize;
+                        let end = unsafe { *raw_offsets.get_unchecked(row + 1) } as usize;
                         let row_len = end - start;
 
-                        let raw_idx = idx_arr.value(idx_row).to_i64().unwrap();
+                        let raw_idx = unsafe { idx_arr.value_unchecked(idx_row).to_i64().unwrap() };
                         let signed_idx : i64 = if raw_idx < 0 {
                             raw_idx + row_len as i64
                         } else {

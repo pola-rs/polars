@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 
@@ -1432,9 +1433,14 @@ class ExprListNameSpace:
             other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
+    @unstable()
     def remove_by_index(self, index: IntoExpr, *, null_on_oob: bool = False) -> Expr:
         """
         Remove an element at the given index from every sublist.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------

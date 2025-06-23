@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -1090,9 +1091,14 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
+    @unstable()
     def remove_by_index(self, index: IntoExpr, *, null_on_oob: bool = False) -> Series:
         """
         Remove an element at the given index from every sublist.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
