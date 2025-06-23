@@ -1,5 +1,4 @@
 use core::fmt;
-use std::ffi::OsStr;
 use std::path::{Component, Path};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -297,19 +296,12 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    // SAFETY: will panic if n is out of bounds, or the path cannot be parsed
+    // Panics: will panic if n is out of bounds, or the path cannot be parsed
     pub fn offset_bytes(&'a self, n: usize) -> Self {
         match self {
             Self::Local(path) => {
-                // TODO: select either &OsStr or &str approach after checking 'hive_start_idx' definition
-                let s = path.as_os_str().as_encoded_bytes();
-                let sliced;
-                unsafe {
-                    sliced = OsStr::from_encoded_bytes_unchecked(&s[n..]);
-                }
-                PlPathRef::Local(Path::new(sliced))
-                // let s = path.to_str().expect("Path is not valid UTF-8");
-                // PlPathRef::Local(Path::new(&s[n..]))
+                let s = path.to_str().expect("Path is not valid UTF-8");
+                PlPathRef::Local(Path::new(&s[n..]))
             },
             Self::Cloud(cloudpath) => {
                 let s = self.to_str();
