@@ -98,7 +98,34 @@ class DataTypeExpr:
         return DataTypeExpr._from_pydatatype_expr(self._pydatatype_expr.inner_dtype())
 
     def to_string(self) -> pl.Expr:
-        """Get a formatted version of the output DataType."""
+        """
+        Get a formatted version of the output DataType.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["X", "Y", "Z"],
+        ...         "c": [1.3, 3.7, 4.2],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     a=pl.dtype_of("a").to_string(),
+        ...     b=pl.dtype_of("b").to_string(),
+        ...     c=pl.dtype_of("c").to_string(),
+        ... ).transpose(include_header=True, column_names=["dtype"])
+        shape: (3, 2)
+        ┌────────┬───────┐
+        │ column ┆ dtype │
+        │ ---    ┆ ---   │
+        │ str    ┆ str   │
+        ╞════════╪═══════╡
+        │ a      ┆ i64   │
+        │ b      ┆ str   │
+        │ c      ┆ f64   │
+        └────────┴───────┘
+        """
         return pl.Expr._from_pyexpr(self._pydatatype_expr.to_string())
 
     def element_bitsize(self) -> pl.Expr:
@@ -183,11 +210,26 @@ class DataTypeExpr:
         return pl.Expr._from_pyexpr(self._pydatatype_expr.is_object())
 
     def wrap_in_list(self) -> DataTypeExpr:
-        """Get the DataType wrapped in a list."""
+        """
+        Get the DataType wrapped in a list.
+
+        Examples
+        --------
+        >>> pl.Int32.to_dtype_expr().wrap_in_list().collect_dtype({})
+        List(Int32)
+
+        """
         return DataTypeExpr._from_pydatatype_expr(self._pydatatype_expr.wrap_in_list())
 
     def wrap_in_array(self, *, width: int) -> DataTypeExpr:
-        """Get the DataType wrapped in an array."""
+        """
+        Get the DataType wrapped in an array.
+
+        Examples
+        --------
+        >>> pl.Int32.to_dtype_expr().wrap_in_array(width=5).collect_dtype({})
+        Array(Int32, shape=(5,))
+        """
         return DataTypeExpr._from_pydatatype_expr(
             self._pydatatype_expr.wrap_in_array(width)
         )
@@ -220,7 +262,21 @@ class DataTypeExpr:
     def collect_dtype(
         self, context: SchemaDict | pl.Schema | pl.DataFrame | pl.LazyFrame
     ) -> DataType:
-        """Materialize the :class:`DataTypeExpr` in a specific context."""
+        """
+        Materialize the :class:`DataTypeExpr` in a specific context.
+
+        This is a useful function when debugging datatype expressions.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame({
+        ...     'a': [1, 2, 3],
+        ... })
+        >>> pl.dtype_of('a').collect_dtype(lf)
+        Int64
+        >>> pl.dtype_of('a').collect_dtype({ 'a': pl.String })
+        String
+        """
         schema: pl.Schema
         if isinstance(context, pl.Schema):
             schema = context

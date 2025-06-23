@@ -54,13 +54,32 @@ class DataTypeExprStructNameSpace:
         return pl.Expr._from_pyexpr(self._pydatatype_expr.struct_field_names())
 
     def field_name(self, index: int, *, raise_on_oob: bool = True) -> pl.Expr:
-        """Get the n-th field name."""
+        """
+        Get the n-th field name.
+
+        Parameters
+        ----------
+        index
+            Field index to get.
+        raise_on_oob
+            If the index is out-of-bounds, should an exception be raised or
+            should a missing value be inserted.
+        """
         return pl.Expr._from_pyexpr(
             self._pydatatype_expr.struct_field_name(index, raise_on_oob)
         )
 
     def field_index(self, field_name: str, *, raise_on_missing: bool = True) -> pl.Expr:
-        """Get the index of a field."""
+        """Get the index of a field.
+
+        Parameters
+        ----------
+        field_name
+            Field name to search for.
+        raise_on_missing
+            If the field name cannot be found, should an exception be raised or
+            should a missing value be inserted.
+        """
         return pl.Expr._from_pyexpr(
             self._pydatatype_expr.struct_field_index(field_name, raise_on_missing)
         )

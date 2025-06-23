@@ -32,7 +32,7 @@ def inspect(expr: pl.Expr) -> pl.Expr:
         print(s)
         return s
 
-    expr.map_batches(
+    return expr.map_batches(
         print_and_return,
 
         # Clarify that the expression returns the same datatype as the input

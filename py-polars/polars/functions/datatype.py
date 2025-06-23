@@ -22,6 +22,48 @@ def dtype_of(col_or_expr: str | Expr) -> pl.DataTypeExpr:
     .. warning::
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
+
+    Examples
+    --------
+    >>> def inspect(expr: pl.Expr) -> pl.Expr:
+    ...     def print_and_return(s: pl.Series) -> pl.Series:
+    ...         print(s)
+    ...         return s
+    ...
+    ...     return expr.map_batches(
+    ...         print_and_return,
+    ...         # Clarify that the expression returns the same datatype as the input
+    ...         # datatype.
+    ...         return_dtype=pl.dtype_of(expr),
+    ...     )
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "UserID": [1, 2, 3, 4, 5],
+    ...         "Name": ["Alice", "Bob", "Charlie", "Diana", "Ethan"],
+    ...     }
+    ... )
+    >>> df.select(inspect(pl.col("Name")))
+    shape: (5,)
+    Series: 'Name' [str]
+    [
+        "Alice"
+        "Bob"
+        "Charlie"
+        "Diana"
+        "Ethan"
+    ]
+    shape: (5, 1)
+    ┌─────────┐
+    │ Name    │
+    │ ---     │
+    │ str     │
+    ╞═════════╡
+    │ Alice   │
+    │ Bob     │
+    │ Charlie │
+    │ Diana   │
+    │ Ethan   │
+    └─────────┘
     """
     from polars.polars import PyDataTypeExpr
 
