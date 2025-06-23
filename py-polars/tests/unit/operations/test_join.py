@@ -2514,7 +2514,6 @@ def test_join_filter_pushdown_left_join() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-@pytest.mark.may_fail_auto_streaming  # http://github.com/pola-rs/polars/issues/23246
 def test_join_filter_pushdown_right_join() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
