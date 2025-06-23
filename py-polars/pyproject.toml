@@ -241,6 +241,7 @@ markers = [
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
   "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
+  "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
 ]
 filterwarnings = [
   # Fail on warnings
