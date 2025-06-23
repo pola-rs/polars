@@ -32,7 +32,6 @@ use recursive::recursive;
 ))]
 pub use scans::*;
 mod functions;
-mod join;
 pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
