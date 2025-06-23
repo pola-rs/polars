@@ -819,7 +819,10 @@ class Series:
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
-        f = get_ffi_func(op + "_<>", self.dtype, self._s)
+        try:
+            f = get_ffi_func(op + "_<>", self.dtype, self._s)
+        except NotImplementedError:
+            f = None
         if f is None:
             msg = f"Series of type {self.dtype} does not have {op} operator"
             raise NotImplementedError(msg)
