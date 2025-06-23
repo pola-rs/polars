@@ -417,3 +417,124 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
         _ => false,
     }
 }
+
+/// Identifies columns that are guaranteed to be non-NULL after applying this filter.
+///
+/// This is conservative in that it will not give false positives, but may not identify all columns.
+///
+/// Note, this must be called with the root node of filter expressions (the root nodes after splitting
+/// with MintermIter is also allowed).
+pub(crate) fn predicate_non_null_column_outputs(
+    predicate_node: Node,
+    expr_arena: &Arena<AExpr>,
+    column_names: &mut PlHashSet<PlSmallStr>,
+) {
+    let mut insert_column_name = |name: &PlSmallStr| {
+        if !column_names.contains(name) {
+            column_names.insert(name.clone());
+        }
+    };
+
+    // Also catch `col().is_not_null()`, `~col.is_null()`. This is done before because the loop below
+    // requires all expressions to strictly maintain NULLs.
+    {
+        use AExpr::*;
+
+        match expr_arena.get(predicate_node) {
+            Function {
+                input,
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+                options: _,
+            } if !input.is_empty() => {
+                if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
+                    insert_column_name(name)
+                }
+            },
+
+            Function {
+                input,
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
+                options: _,
+            } if !input.is_empty() => match expr_arena.get(input.first().unwrap().node()) {
+                Function {
+                    input,
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
+                    options: _,
+                } if !input.is_empty() => {
+                    if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
+                        insert_column_name(name)
+                    }
+                },
+
+                _ => {},
+            },
+
+            _ => {},
+        }
+    }
+
+    let stack = &mut unitvec![predicate_node];
+
+    /// Only traverse the first input, e.g. `A.is_in(B)` we don't consider B.
+    macro_rules! traverse_first_input {
+        // &[ExprIR]
+        ($inputs:expr) => {{
+            if let Some(expr_ir) = $inputs.first() {
+                stack.push(expr_ir.node())
+            }
+
+            false
+        }};
+    }
+
+    // This loop we traverse a subset of the operations that are guaranteed to maintain NULLs.
+    //
+    // This must not catch any operations that materialize NULLs, as otherwise e.g.
+    // `e.fill_null(False) >= False` will include NULLs
+    while let Some(node) = stack.pop() {
+        use AExpr::*;
+
+        let ae = expr_arena.get(node);
+
+        let traverse_all_inputs = match ae {
+            BinaryExpr {
+                left: _,
+                op,
+                right: _,
+            } => {
+                use Operator::*;
+
+                match op {
+                    Eq | NotEq | Lt | LtEq | Gt | GtEq | Plus | Minus | Multiply | Divide
+                    | TrueDivide | FloorDivide | Modulus | Xor => true,
+
+                    // These can turn NULLs into true/false. E.g.:
+                    // * L & False >= False becomes True
+                    // * L | True becomes True
+                    EqValidity | NotEqValidity | Or | LogicalOr | And | LogicalAnd => false,
+                }
+            },
+
+            Function {
+                input,
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
+                options: _,
+            } => traverse_first_input!(input),
+            //
+            // TODO:
+            // * String functions, but not all will preserve NULLs (e.g. ConcatHorizontal { ignore_nulls: true })
+            //   These can be common - e.g. `filter(str.contains(..))`
+            //
+            Column(name) => {
+                insert_column_name(name);
+                false
+            },
+
+            _ => false,
+        };
+
+        if traverse_all_inputs {
+            ae.inputs_rev(stack);
+        }
+    }
+}
