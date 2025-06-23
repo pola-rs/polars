@@ -516,7 +516,7 @@ pub(crate) fn predicate_non_null_column_outputs(
             },
 
             Cast { dtype, .. } => {
-                // Forbid nested types:
+                // Forbid nested types, it's currently buggy:
                 // >>> pl.select(a=pl.lit(None), b=pl.lit(None).cast(pl.Struct({})))
                 // | a    | b         |
                 // | ---  | ---       |
@@ -528,6 +528,7 @@ pub(crate) fn predicate_non_null_column_outputs(
                 !dtype.is_nested()
             },
 
+            #[cfg(feature = "is_in")]
             Function {
                 input,
                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
