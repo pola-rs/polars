@@ -732,8 +732,6 @@ fn try_downgrade_join_type(
         }
     }
 
-    dbg!(&original_to_new_names_map);
-
     if !original_to_new_names_map.is_empty() {
         assert!(project_to_original.is_some());
 
