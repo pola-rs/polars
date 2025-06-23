@@ -819,13 +819,12 @@ class Series:
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
-
-        if other is not None:
-            other = maybe_cast(other, self.dtype)
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             msg = f"Series of type {self.dtype} does not have {op} operator"
             raise NotImplementedError(msg)
+        if other is not None:
+            other = maybe_cast(other, self.dtype)
 
         return self._from_pyseries(f(other))
 
