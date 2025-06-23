@@ -515,6 +515,19 @@ pub(crate) fn predicate_non_null_column_outputs(
                 }
             },
 
+            Cast { dtype, .. } => {
+                // Forbid nested types:
+                // >>> pl.select(a=pl.lit(None), b=pl.lit(None).cast(pl.Struct({})))
+                // | a    | b         |
+                // | ---  | ---       |
+                // | null | struct[0] |
+                // |------|-----------|
+                // | null | {}        |
+                //
+                // (issue at https://github.com/pola-rs/polars/issues/23276)
+                !dtype.is_nested()
+            },
+
             Function {
                 input,
                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
@@ -529,9 +542,6 @@ pub(crate) fn predicate_non_null_column_outputs(
                 insert_column_name(name);
                 false
             },
-
-            // All casts should preserve NULLs.
-            Cast { .. } => true,
 
             _ => false,
         };
