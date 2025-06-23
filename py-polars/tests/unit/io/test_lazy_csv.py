@@ -4,7 +4,6 @@ import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -12,9 +11,6 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from polars._typing import EngineType
 
 
 @pytest.fixture
@@ -388,8 +384,8 @@ def test_file_list_schema_mismatch(
 
 
 @pytest.mark.may_fail_auto_streaming
-@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
-def test_file_list_schema_supertype(tmp_path: Path, engine: EngineType) -> None:
+@pytest.mark.parametrize("streaming", [True, False])
+def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     data_lst = [
