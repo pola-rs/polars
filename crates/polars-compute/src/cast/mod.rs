@@ -12,7 +12,7 @@ use arrow::bitmap::MutableBitmap;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
-use binview_to::parse_binview_to_primitive_dyn;
+use binview_to::utf8view_to_primitive_dyn;
 pub use binview_to::utf8view_to_utf8;
 pub use boolean_to::*;
 pub use decimal_to::*;
@@ -525,30 +525,18 @@ pub fn cast(
             match to_type {
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
-                UInt8 => parse_binview_to_primitive_dyn::<u8>(&arr.to_binview(), to_type, options),
-                UInt16 => {
-                    parse_binview_to_primitive_dyn::<u16>(&arr.to_binview(), to_type, options)
-                },
-                UInt32 => {
-                    parse_binview_to_primitive_dyn::<u32>(&arr.to_binview(), to_type, options)
-                },
-                UInt64 => {
-                    parse_binview_to_primitive_dyn::<u64>(&arr.to_binview(), to_type, options)
-                },
-                Int8 => parse_binview_to_primitive_dyn::<i8>(&arr.to_binview(), to_type, options),
-                Int16 => parse_binview_to_primitive_dyn::<i16>(&arr.to_binview(), to_type, options),
-                Int32 => parse_binview_to_primitive_dyn::<i32>(&arr.to_binview(), to_type, options),
-                Int64 => parse_binview_to_primitive_dyn::<i64>(&arr.to_binview(), to_type, options),
+                UInt8 => utf8view_to_primitive_dyn::<u8>(arr, to_type, options),
+                UInt16 => utf8view_to_primitive_dyn::<u16>(arr, to_type, options),
+                UInt32 => utf8view_to_primitive_dyn::<u32>(arr, to_type, options),
+                UInt64 => utf8view_to_primitive_dyn::<u64>(arr, to_type, options),
+                Int8 => utf8view_to_primitive_dyn::<i8>(arr, to_type, options),
+                Int16 => utf8view_to_primitive_dyn::<i16>(arr, to_type, options),
+                Int32 => utf8view_to_primitive_dyn::<i32>(arr, to_type, options),
+                Int64 => utf8view_to_primitive_dyn::<i64>(arr, to_type, options),
                 #[cfg(feature = "dtype-i128")]
-                Int128 => {
-                    parse_binview_to_primitive_dyn::<i128>(&arr.to_binview(), to_type, options)
-                },
-                Float32 => {
-                    parse_binview_to_primitive_dyn::<f32>(&arr.to_binview(), to_type, options)
-                },
-                Float64 => {
-                    parse_binview_to_primitive_dyn::<f64>(&arr.to_binview(), to_type, options)
-                },
+                Int128 => utf8view_to_primitive_dyn::<i128>(arr, to_type, options),
+                Float32 => utf8view_to_primitive_dyn::<f32>(arr, to_type, options),
+                Float64 => utf8view_to_primitive_dyn::<f64>(arr, to_type, options),
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },

@@ -63,23 +63,25 @@ pub fn utf8view_to_utf8<O: Offset>(array: &Utf8ViewArray) -> Utf8Array<O> {
     }
 }
 
-/// Parses a [`BinaryArray`] of UTF-8 encoded string representations of numbers
-/// into a [`PrimitiveArray`], making any unparsable value a Null.
-pub(super) fn parse_binview_to_primitive<T>(
-    from: &BinaryViewArray,
+/// Parses a [`Utf8ViewArray`] with text representations of numbers into a
+/// [`PrimitiveArray`], making any unparsable value a Null.
+pub(super) fn utf8view_to_primitive<T>(
+    from: &Utf8ViewArray,
     to: &ArrowDataType,
 ) -> PrimitiveArray<T>
 where
     T: NativeType + Parse,
 {
-    let iter = from.iter().map(|x| x.and_then::<T, _>(|x| T::parse(x)));
+    let iter = from
+        .iter()
+        .map(|x| x.and_then::<T, _>(|x| T::parse(x.as_bytes())));
 
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
 
 /// Parses a `&dyn` [`Array`] of UTF-8 encoded string representations of numbers
 /// into a [`PrimitiveArray`], making any unparsable value a Null.
-pub(super) fn parse_binview_to_primitive_dyn<T>(
+pub(super) fn utf8view_to_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     options: CastOptionsImpl,
@@ -91,7 +93,7 @@ where
     if options.partial {
         unimplemented!()
     } else {
-        Ok(Box::new(parse_binview_to_primitive::<T>(from, to)))
+        Ok(Box::new(utf8view_to_primitive::<T>(from, to)))
     }
 }
 
