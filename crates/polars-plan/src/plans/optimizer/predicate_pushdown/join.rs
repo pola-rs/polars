@@ -369,6 +369,7 @@ fn try_downgrade_join_type(
         return None;
     }
 
+    /// Note: This may panic if `args.should_coalesce()` is false.
     macro_rules! lhs_input_column_keys_iter {
         () => {{
             left_on.iter().map(|e| {
