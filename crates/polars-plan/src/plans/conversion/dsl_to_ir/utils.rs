@@ -1,31 +1,5 @@
-use std::path::PathBuf;
-
+use super::scans::SourcesToFileInfo;
 use super::*;
-
-#[derive(Default)]
-pub(super) struct SourcesToFileInfo {
-    inner: PlHashMap<Arc<[PathBuf]>, FileInfo>,
-}
-
-impl SourcesToFileInfo {
-    pub(super) fn insert(&mut self, source: &ScanSources, info: &FileInfo) {
-        match source {
-            ScanSources::Paths(paths) => {
-                self.inner.insert(paths.clone(), info.clone());
-            },
-            ScanSources::Files(_) | ScanSources::Buffers(_) => {
-                // don't save the files or buffers
-            },
-        }
-    }
-
-    pub(super) fn get(&self, source: &ScanSources) -> Option<&FileInfo> {
-        match source {
-            ScanSources::Paths(paths) => self.inner.get(paths),
-            _ => None,
-        }
-    }
-}
 
 pub(super) struct DslConversionContext<'a> {
     pub(super) expr_arena: &'a mut Arena<AExpr>,

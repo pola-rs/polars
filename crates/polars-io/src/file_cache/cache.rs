@@ -5,12 +5,13 @@ use std::sync::{Arc, LazyLock, RwLock};
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
+use polars_utils::plpath::PlPathRef;
 
 use super::entry::{DATA_PREFIX, FileCacheEntry, METADATA_PREFIX};
 use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
 use super::utils::FILE_CACHE_PREFIX;
-use crate::path_utils::{ensure_directory_init, is_cloud_url};
+use crate::path_utils::ensure_directory_init;
 
 pub static FILE_CACHE: LazyLock<FileCache> = LazyLock::new(|| {
     let prefix = FILE_CACHE_PREFIX.as_ref();
@@ -99,7 +100,7 @@ impl FileCache {
         #[cfg(debug_assertions)]
         {
             // Local paths must be absolute or else the cache would be wrong.
-            if !crate::path_utils::is_cloud_url(uri.as_ref()) {
+            if !PlPathRef::new(uri.as_ref()).is_cloud_url() {
                 let path = Path::new(uri.as_ref());
                 assert_eq!(path, std::fs::canonicalize(path).unwrap().as_path());
             }
@@ -166,16 +167,17 @@ impl FileCache {
     }
 
     /// This function can accept relative local paths.
-    pub fn get_entry(&self, uri: &str) -> Option<Arc<FileCacheEntry>> {
-        if is_cloud_url(uri) {
-            self.entries.read().unwrap().get(uri).map(Arc::clone)
-        } else {
-            let uri = std::fs::canonicalize(uri).unwrap();
-            self.entries
-                .read()
-                .unwrap()
-                .get(uri.to_str().unwrap())
-                .map(Arc::clone)
+    pub fn get_entry(&self, addr: PlPathRef<'_>) -> Option<Arc<FileCacheEntry>> {
+        match addr {
+            PlPathRef::Local(p) => {
+                let p = std::fs::canonicalize(p).unwrap();
+                self.entries
+                    .read()
+                    .unwrap()
+                    .get(p.to_str().unwrap())
+                    .map(Arc::clone)
+            },
+            PlPathRef::Cloud(p) => self.entries.read().unwrap().get(p.uri()).map(Arc::clone),
         }
     }
 }

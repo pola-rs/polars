@@ -9,7 +9,6 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -39,6 +38,7 @@ use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::frame::cached_arenas::CachedArena;
@@ -1019,7 +1019,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_parquet_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: ParquetWriteOptions,
@@ -1047,7 +1047,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_ipc_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: IpcWriterOptions,
@@ -1075,7 +1075,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_csv_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: CsvWriterOptions,
@@ -1103,7 +1103,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_json_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: JsonWriterOptions,
