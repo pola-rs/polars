@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
-from polars._utils.various import BUILDING_SPHINX_DOCS
+from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
 from polars.datatype_expr.array import DataTypeExprArrNameSpace
 from polars.datatype_expr.enum import DataTypeExprEnumNameSpace
 from polars.datatype_expr.int import DataTypeExprIntNameSpace
@@ -22,8 +22,6 @@ if TYPE_CHECKING:
         from polars.polars import PyDataTypeExpr
 elif BUILDING_SPHINX_DOCS:
     import sys
-
-    from polars._utils.various import sphinx_accessor
 
     # note: we assign this way to work around an autocomplete issue in ipython/jedi
     # (ref: https://github.com/davidhalter/jedi/issues/2057)
@@ -60,7 +58,8 @@ class DataTypeExpr:
     └─────┘
     """
 
-    _pydatatype_expr: PyDataTypeExpr
+    # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
+    _pydatatype_expr: PyDataTypeExpr = None
     _accessors: ClassVar[set[str]] = {
         "arr",
         "enum",
