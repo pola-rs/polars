@@ -2269,7 +2269,11 @@ class Series:
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
-        self, *, separator: str = "_", drop_first: bool = False
+        self,
+        *,
+        separator: str = "_",
+        drop_first: bool = False,
+        drop_nulls: bool = False,
     ) -> DataFrame:
         """
         Get dummy/indicator variables.
@@ -2280,6 +2284,8 @@ class Series:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variable being encoded.
+        drop_nulls
+            If there are `None` values in the series, a `null` column is not generated
 
         Examples
         --------
@@ -2308,7 +2314,7 @@ class Series:
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator, drop_first))
+        return wrap_df(self._s.to_dummies(separator, drop_first, drop_nulls))
 
     @unstable()
     def cut(

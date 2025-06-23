@@ -330,6 +330,7 @@ fn create_physical_plan_impl(
                                         .with_float_precision(
                                             options.serialize_options.float_precision,
                                         )
+                                        .with_decimal_comma(options.serialize_options.decimal_comma)
                                         .with_null_value(options.serialize_options.null.clone())
                                         .with_quote_style(options.serialize_options.quote_style)
                                         .finish(&mut df)?;
@@ -456,7 +457,7 @@ fn create_physical_plan_impl(
             {
                 create_skip_batch_predicate |= matches!(
                     &*scan_type,
-                    FileScan::Parquet {
+                    FileScanIR::Parquet {
                         options: polars_io::prelude::ParquetOptions {
                             use_statistics: true,
                             ..
@@ -481,7 +482,7 @@ fn create_physical_plan_impl(
                 .transpose()?;
 
             match *scan_type {
-                FileScan::Anonymous { function, .. } => {
+                FileScanIR::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
                         predicate,
