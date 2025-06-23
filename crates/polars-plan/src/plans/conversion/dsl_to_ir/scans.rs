@@ -668,7 +668,7 @@ impl SourcesToFileInfo {
             );
         }
 
-        let (k, v) = match scan_type {
+        let (k, v): (CachedSourceKey, Option<&(FileInfo, FileScanIR)>) = match scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { options } => {
                 let key = CachedSourceKey::ParquetIpc {
