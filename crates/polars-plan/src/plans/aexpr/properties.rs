@@ -427,14 +427,8 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
 pub(crate) fn predicate_non_null_column_outputs(
     predicate_node: Node,
     expr_arena: &Arena<AExpr>,
-    column_names: &mut PlHashSet<PlSmallStr>,
+    non_null_column_callback: &mut dyn FnMut(&PlSmallStr),
 ) {
-    let mut insert_column_name = |name: &PlSmallStr| {
-        if !column_names.contains(name) {
-            column_names.insert(name.clone());
-        }
-    };
-
     // Also catch `col().is_not_null()`, `~col.is_null()`. This is done before because the loop below
     // requires all expressions to strictly maintain NULLs.
     {
@@ -447,7 +441,7 @@ pub(crate) fn predicate_non_null_column_outputs(
                 options: _,
             } if !input.is_empty() => {
                 if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
-                    insert_column_name(name)
+                    non_null_column_callback(name)
                 }
             },
 
@@ -462,7 +456,7 @@ pub(crate) fn predicate_non_null_column_outputs(
                     options: _,
                 } if !input.is_empty() => {
                     if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
-                        insert_column_name(name)
+                        non_null_column_callback(name)
                     }
                 },
 
@@ -540,7 +534,7 @@ pub(crate) fn predicate_non_null_column_outputs(
             //   These can be common - e.g. `filter(str.contains(..))`
             //
             Column(name) => {
-                insert_column_name(name);
+                non_null_column_callback(name);
                 false
             },
 

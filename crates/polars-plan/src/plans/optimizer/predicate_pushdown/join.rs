@@ -398,29 +398,25 @@ fn try_downgrade_join_type(
         }
     }
 
-    let mut non_null_column_outputs = PlHashSet::with_capacity(output_schema.len());
+    let mut non_null_side = ExprOrigin::None;
 
     for predicate in acc_predicates.values() {
         for node in MintermIter::new(predicate.node(), expr_arena) {
-            predicate_non_null_column_outputs(node, expr_arena, &mut non_null_column_outputs);
+            predicate_non_null_column_outputs(node, expr_arena, &mut |non_null_column| {
+                if coalesced_full_join_key_outputs.contains(non_null_column) {
+                    return;
+                }
+
+                non_null_side |= ExprOrigin::get_column_origin(
+                    non_null_column.as_str(),
+                    schema_left,
+                    schema_right,
+                    options.args.suffix(),
+                    Some(&|x| coalesced_to_right.contains(x)),
+                )
+                .unwrap();
+            });
         }
-    }
-
-    let mut non_null_side = ExprOrigin::None;
-
-    for non_null_column in non_null_column_outputs {
-        if coalesced_full_join_key_outputs.contains(&non_null_column) {
-            continue;
-        }
-
-        non_null_side |= ExprOrigin::get_column_origin(
-            non_null_column.as_str(),
-            schema_left,
-            schema_right,
-            options.args.suffix(),
-            Some(&|x| coalesced_to_right.contains(x)),
-        )
-        .unwrap();
     }
 
     #[expect(clippy::question_mark)]
