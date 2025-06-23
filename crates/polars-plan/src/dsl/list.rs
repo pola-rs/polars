@@ -298,6 +298,13 @@ impl ListNameSpace {
         self.set_operation(other.into(), SetOperation::SymmetricDifference)
     }
 
+    pub fn remove_by_index(self, index: Expr, null_if_oob: bool) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ListExpr(ListFunction::RemoveByIndex(null_if_oob)),
+            index,
+        )
+    }
+
     pub fn eval<E: Into<Expr>>(self, other: E) -> Expr {
         Expr::Eval {
             expr: Arc::new(self.0),

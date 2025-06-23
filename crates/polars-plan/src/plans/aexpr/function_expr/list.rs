@@ -61,6 +61,7 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    RemoveByIndex(bool),
 }
 
 impl IRListFunction {
@@ -117,6 +118,7 @@ impl IRListFunction {
             Reverse => mapper.with_same_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             Length => mapper.with_dtype(IDX_DTYPE),
+            RemoveByIndex(_) => mapper.with_same_dtype(),
             #[cfg(feature = "list_sets")]
             SetOperation(_) => mapper.with_same_dtype(),
             #[cfg(feature = "list_any_all")]
@@ -174,6 +176,7 @@ impl IRListFunction {
             | L::Reverse
             | L::Unique(_)
             | L::Join(_)
+            | L::RemoveByIndex(_)
             | L::NUnique => FunctionOptions::elementwise(),
             #[cfg(feature = "list_any_all")]
             L::Any | L::All => FunctionOptions::elementwise(),
@@ -244,6 +247,7 @@ impl Display for IRListFunction {
                     "unique"
                 }
             },
+            RemoveByIndex(_) => "remove_by_index",
             NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
@@ -307,6 +311,7 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Sort(options) => map!(sort, options),
             Reverse => map!(reverse),
             Unique(is_stable) => map!(unique, is_stable),
+            RemoveByIndex(null_on_oob) => map_as_slice!(remove_by_index, null_on_oob),
             #[cfg(feature = "list_sets")]
             SetOperation(s) => map_as_slice!(set_operation, s),
             #[cfg(feature = "list_any_all")]
@@ -701,6 +706,14 @@ pub(super) fn var(s: &Column, ddof: u8) -> PolarsResult<Column> {
 
 pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_arg_min().into_column())
+}
+
+pub(super) fn remove_by_index(s: &[Column], null_on_oob: bool) -> PolarsResult<Column> {
+    let list_ca = s[0].list()?;
+    let index = &s[1];
+    Ok(list_ca
+        .lst_remove_by_index(index, null_on_oob)?
+        .into_column())
 }
 
 pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {

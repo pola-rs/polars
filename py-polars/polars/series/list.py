@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -1089,3 +1090,45 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+    @unstable()
+    def remove_by_index(self, index: IntoExpr, *, null_on_oob: bool = False) -> Series:
+        """
+        Remove an element at the given index from every sublist.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        index
+            Index of the element to remove. Negative indexing is supported.
+        null_on_oob
+            If `True`, return `null` for sublists that are out of bounds
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5]])
+        >>> s.list.remove_by_index(1)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 3]
+            [4]
+        ]
+        >>> s.list.remove_by_index(-1, null_on_oob=True)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [1, 2]
+            [4]
+        ]
+        >>> s.list.remove_by_index(5, null_on_oob=True)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            null
+            null
+        ]
+        """

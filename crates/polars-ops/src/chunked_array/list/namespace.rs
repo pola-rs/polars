@@ -1,8 +1,12 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
-#[cfg(feature = "list_gather")]
+use arrow::array::builder::{ShareStrategy, make_builder};
+use arrow::array::{Array as ArrowArray, ListArray, ValueSize};
+use arrow::bitmap::BitmapBuilder;
+use arrow::legacy::is_valid::IsValid;
+use arrow::offset::Offsets;
+use arrow::pushable::Pushable;
 use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
 use num_traits::{NumCast, Signed, Zero};
@@ -11,6 +15,7 @@ use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
+use polars_core::with_match_physical_numeric_type;
 
 use super::*;
 #[cfg(feature = "list_any_all")]
@@ -333,6 +338,95 @@ pub trait ListNameSpaceImpl: AsList {
             }),
         };
         Ok(self.same_type(out))
+    }
+
+    fn lst_remove_by_index(&self, index: &Column, null_on_oob: bool) -> PolarsResult<ListChunked> {
+        let list_ca = self.as_list();
+        Ok(
+            with_match_physical_numeric_type!(index.dtype().to_physical(), |$T| {
+                let idx_ca = index.$T().unwrap();
+                arity::try_binary(list_ca, idx_ca, |list_arr, idx_arr| {
+                    let rows = list_arr.len();
+                    let values_arr: &dyn ArrowArray = list_arr.values().as_ref();
+                    let inner_dtype = values_arr.dtype().clone();
+                    let raw_offsets = list_arr.offsets().as_slice();
+
+                    let total_inner = list_arr
+                        .offsets()
+                        .windows(2)
+                        .map(|o| (o[1] - o[0] - 1).max(0) as usize)
+                        .sum();
+
+                    let mut builder = make_builder(&inner_dtype);
+                    builder.reserve(total_inner);
+
+                    let mut validity = BitmapBuilder::with_capacity(rows);
+                    let mut offsets = Offsets::with_capacity(rows + 1);
+
+                    for row in 0..rows {
+                        let idx_row = if idx_arr.len() == 1 { 0 } else { row };
+
+                        let row_is_valid = unsafe {list_arr.is_valid_unchecked(row) && idx_arr.is_valid_unchecked(idx_row)};
+                        if !row_is_valid {
+                            offsets.push_null();
+                            validity.push(false);
+                            continue;
+                        }
+
+                        let start = unsafe { *raw_offsets.get_unchecked(row) } as usize;
+                        let end = unsafe { *raw_offsets.get_unchecked(row + 1) } as usize;
+                        let row_len = end - start;
+
+                        let raw_idx = unsafe { idx_arr.value_unchecked(idx_row).to_i64().unwrap() };
+                        let signed_idx : i64 = if raw_idx < 0 {
+                            raw_idx + row_len as i64
+                        } else {
+                            raw_idx
+                        };
+
+                        if signed_idx < 0 || signed_idx >= row_len as i64 {
+                            if null_on_oob {
+                                offsets.push_null();
+                                validity.push(false);
+                                continue;
+                            } else {
+                                polars_bail!(
+                                    ComputeError:
+                                    "drop index {raw_idx} is out of bounds (row length = {row_len})"
+                                );
+                            }
+                        }
+                        let drop_idx = signed_idx as usize;
+
+                        if drop_idx > 0 {
+                            builder.subslice_extend(values_arr, start, drop_idx, ShareStrategy::Always);
+                        }
+
+                        let right_len = row_len - drop_idx - 1;
+                        if right_len > 0 {
+                            builder.subslice_extend(
+                                values_arr,
+                                start + drop_idx + 1,
+                                right_len,
+                                ShareStrategy::Always,
+                            );
+                        }
+
+                        offsets.push(row_len - 1);
+                        validity.push(true);
+                    }
+
+                    let values = builder.freeze_reset();
+                    let list_dtype = ListArray::<i64>::default_datatype(inner_dtype);
+                    Ok(LargeListArray::new(
+                        list_dtype,
+                        offsets.into(),
+                        values,
+                        validity.into_opt_validity(),
+                    ))
+                })?
+            }),
+        )
     }
 
     fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
@@ -951,5 +1045,3 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
     );
     Ok(out)
 }
-
-// TODO: implement the above for ArrayChunked as well?

@@ -134,6 +134,7 @@ pub(super) fn convert_functions(
                 L::Reverse => IL::Reverse,
                 L::Unique(v) => IL::Unique(v),
                 L::NUnique => IL::NUnique,
+                L::RemoveByIndex(null_on_oob) => IL::RemoveByIndex(null_on_oob),
                 #[cfg(feature = "list_sets")]
                 L::SetOperation(set_operation) => IL::SetOperation(set_operation),
                 #[cfg(feature = "list_any_all")]
