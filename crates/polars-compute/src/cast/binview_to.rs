@@ -149,7 +149,7 @@ pub(super) fn utf8view_to_date32_dyn(from: &dyn Array) -> PolarsResult<Box<dyn A
 
 /// Casts a [`BinaryArray`] containing binary-encoded numbers to a
 /// [`PrimitiveArray`], making any uncastable value a Null.
-pub(super) fn cast_binview_to_primitive<T>(
+pub(super) fn binview_to_primitive<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
     is_little_endian: bool,
@@ -171,9 +171,9 @@ where
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
 
-/// Casts a [`BinaryArray`] containing binary-encoded numbers to a
+/// Casts a `&dyn` [`Array`] containing binary-encoded numbers to a
 /// [`PrimitiveArray`], making any uncastable value a Null.
-pub fn cast_binview_to_primitive_dyn<T>(
+pub fn binview_to_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     is_little_endian: bool,
@@ -183,7 +183,7 @@ where
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(cast_binview_to_primitive::<T>(
+    Ok(Box::new(binview_to_primitive::<T>(
         from,
         to,
         is_little_endian,

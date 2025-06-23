@@ -21,7 +21,7 @@ use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::match_integer_type;
 use arrow::offset::{Offset, Offsets};
-pub use binview_to::cast_binview_to_primitive_dyn;
+pub use binview_to::binview_to_primitive_dyn;
 use binview_to::{
     binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
     utf8view_to_naive_timestamp_dyn, view_to_binary,
