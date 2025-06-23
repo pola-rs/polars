@@ -530,6 +530,9 @@ pub(crate) fn predicate_non_null_column_outputs(
                 false
             },
 
+            // All casts should preserve NULLs.
+            Cast { .. } => true,
+
             _ => false,
         };
 
