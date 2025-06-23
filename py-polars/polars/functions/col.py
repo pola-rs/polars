@@ -7,8 +7,15 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Datetime, Duration, is_polars_dtype, parse_into_dtype
+from polars.datatypes import (
+    Categorical,
+    Datetime,
+    Duration,
+    is_polars_dtype,
+    parse_into_dtype,
+)
 from polars.datatypes.group import (
+    CATEGORICAL_DTYPES,
     DATETIME_DTYPES,
     DURATION_DTYPES,
     FLOAT_DTYPES,
@@ -114,6 +121,8 @@ def _polars_dtype_match(tp: PolarsDataType) -> list[PolarsDataType]:
         return list(DATETIME_DTYPES)
     elif Duration.is_(tp):
         return list(DURATION_DTYPES)
+    elif Categorical.is_(tp):
+        return list(CATEGORICAL_DTYPES)
     return [tp]
 
 
