@@ -67,7 +67,8 @@ def test_eq_list_cmp_list() -> None:
 def test_eq_list_cmp_int() -> None:
     s = pl.Series([[1], [1, 2]])
     with pytest.raises(
-        TypeError, match="cannot convert Python type 'int' to List\\(Int64\\)"
+        NotImplementedError,
+        match=r"Series of type List\(Int64\) does not have eq operator",
     ):
         s == 1  # noqa: B015
 
@@ -82,8 +83,8 @@ def test_eq_array_cmp_list() -> None:
 def test_eq_array_cmp_int() -> None:
     s = pl.Series([[1, 3], [1, 2]], dtype=pl.Array(pl.Int16, 2))
     with pytest.raises(
-        TypeError,
-        match="cannot convert Python type 'int' to Array\\(Int16, shape=\\(2,\\)\\)",
+        NotImplementedError,
+        match=r"Series of type Array\(Int16, shape=\(2,\)\) does not have eq operator",
     ):
         s == 1  # noqa: B015
 
