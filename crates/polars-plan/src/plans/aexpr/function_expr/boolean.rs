@@ -3,7 +3,7 @@ use std::ops::{BitAnd, BitOr};
 use polars_core::POOL;
 use polars_core::utils::SuperTypeFlags;
 #[cfg(feature = "is_close")]
-use polars_utils::not_nan::NotNan;
+use polars_utils::total_ord::TotalOrdWrap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::*;
@@ -44,8 +44,8 @@ pub enum IRBooleanFunction {
     },
     #[cfg(feature = "is_close")]
     IsClose {
-        abs_tol: NotNan<f64>,
-        rel_tol: NotNan<f64>,
+        abs_tol: TotalOrdWrap<f64>,
+        rel_tol: TotalOrdWrap<f64>,
         nans_equal: bool,
     },
     AllHorizontal,
@@ -272,8 +272,8 @@ fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Option<Column>> {
 #[cfg(feature = "is_close")]
 fn is_close(
     s: &mut [Column],
-    abs_tol: NotNan<f64>,
-    rel_tol: NotNan<f64>,
+    abs_tol: TotalOrdWrap<f64>,
+    rel_tol: TotalOrdWrap<f64>,
     nans_equal: bool,
 ) -> PolarsResult<Option<Column>> {
     let left = &s[0];
@@ -281,8 +281,8 @@ fn is_close(
     polars_ops::prelude::is_close(
         left.as_materialized_series(),
         right.as_materialized_series(),
-        abs_tol.into(),
-        rel_tol.into(),
+        abs_tol.0,
+        rel_tol.0,
         nans_equal,
     )
     .map(|ca| Some(ca.into_column()))

@@ -70,6 +70,8 @@ use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
+#[cfg(feature = "is_close")]
+use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -970,8 +972,8 @@ impl Expr {
     ) -> Self {
         self.map_binary(
             BooleanFunction::IsClose {
-                abs_tol: abs_tol.try_into().expect("`abs_tol` must not be NaN"),
-                rel_tol: rel_tol.try_into().expect("`rel_tol` must not be NaN"),
+                abs_tol: TotalOrdWrap(abs_tol),
+                rel_tol: TotalOrdWrap(rel_tol),
                 nans_equal,
             },
             expr.into(),

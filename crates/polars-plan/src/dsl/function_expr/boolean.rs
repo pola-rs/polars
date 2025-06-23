@@ -1,5 +1,5 @@
 #[cfg(feature = "is_close")]
-use polars_utils::not_nan::NotNan;
+use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
 
@@ -37,8 +37,8 @@ pub enum BooleanFunction {
     },
     #[cfg(feature = "is_close")]
     IsClose {
-        abs_tol: NotNan<f64>,
-        rel_tol: NotNan<f64>,
+        abs_tol: TotalOrdWrap<f64>,
+        rel_tol: TotalOrdWrap<f64>,
         nans_equal: bool,
     },
     AllHorizontal,

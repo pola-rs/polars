@@ -1086,12 +1086,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         abs_tol,
                         rel_tol,
                         nans_equal,
-                    } => (
-                        PyBooleanFunction::IsClose,
-                        Into::<f64>::into(*abs_tol),
-                        Into::<f64>::into(*rel_tol),
-                        nans_equal,
-                    )
+                    } => (PyBooleanFunction::IsClose, abs_tol.0, rel_tol.0, nans_equal)
                         .into_py_any(py),
                     IRBooleanFunction::AllHorizontal => {
                         (PyBooleanFunction::AllHorizontal,).into_py_any(py)
