@@ -503,7 +503,7 @@ pub(crate) fn predicate_non_null_column_outputs(
                     | TrueDivide | FloorDivide | Modulus | Xor => true,
 
                     // These can turn NULLs into true/false. E.g.:
-                    // * L & False >= False becomes True
+                    // * (L & False) >= False becomes True
                     // * L | True becomes True
                     EqValidity | NotEqValidity | Or | LogicalOr | And | LogicalAnd => false,
                 }
