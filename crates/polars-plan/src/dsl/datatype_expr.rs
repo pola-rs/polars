@@ -141,8 +141,8 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
                         );
                         offset
                     };
-                    
-                    fields.into_iter().skip(offset).next().unwrap().dtype
+
+                    fields.into_iter().nth(offset).unwrap().dtype
                 },
                 StructDataTypeExpr::FieldDataTypeByName(name) => {
                     let Some(field) = fields.into_iter().find(|f| f.name() == &name) else {
@@ -373,18 +373,22 @@ pub struct DataTypeExprArrNameSpace(DataTypeExpr);
 pub struct DataTypeExprStructNameSpace(DataTypeExpr);
 
 impl DataTypeExprIntNameSpace {
+    #[expect(clippy::wrong_self_convention)]
     pub fn to_unsigned(self) -> DataTypeExpr {
         DataTypeExpr::Int(Box::new(self.0), IntDataTypeExpr::ToUnsigned)
     }
 
+    #[expect(clippy::wrong_self_convention)]
     pub fn to_signed(self) -> DataTypeExpr {
         DataTypeExpr::Int(Box::new(self.0), IntDataTypeExpr::ToSigned)
     }
 
+    #[expect(clippy::wrong_self_convention)]
     pub fn is_unsigned(self) -> Expr {
         self.0.is_kind(DataTypeKind::UnsignedInteger)
     }
 
+    #[expect(clippy::wrong_self_convention)]
     pub fn is_signed(self) -> Expr {
         self.0.is_kind(DataTypeKind::SignedInteger)
     }

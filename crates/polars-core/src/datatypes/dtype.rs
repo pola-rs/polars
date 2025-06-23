@@ -999,9 +999,11 @@ impl DataType {
             D::Int128 => 128,
             #[cfg(feature = "dtype-decimal")]
             D::Decimal(_, _) => 128,
-            D::String | D::Binary | D::BinaryOffset | D::List(_) | D::Object(_) | D::Unknown(_) => {
+            D::String | D::Binary | D::BinaryOffset | D::List(_) | D::Unknown(_) => {
                 return None;
             },
+            #[cfg(feature = "object")]
+            D::Object(_) => return None,
             #[cfg(feature = "dtype-array")]
             D::Array(dt, width) => dt.num_bits_per_element()? * (*width as u64),
             #[cfg(feature = "dtype-categorical")]

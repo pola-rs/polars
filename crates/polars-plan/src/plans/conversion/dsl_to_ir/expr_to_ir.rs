@@ -389,7 +389,9 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::Len => (AExpr::Len, get_len_name()),
-        Expr::DataTypeFunction(f) => super::datatype_fn_to_ir::datatype_fn_to_aexpr(f, schema, arena)?,
+        Expr::DataTypeFunction(f) => {
+            super::datatype_fn_to_ir::datatype_fn_to_aexpr(f, schema, arena)?
+        },
         #[cfg(feature = "dtype-struct")]
         e @ Expr::Field(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
