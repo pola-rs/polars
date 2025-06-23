@@ -10,9 +10,15 @@ use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::plans::conversion::expr_expansion::expand_selectors;
+mod concat;
+mod expr_to_ir;
+mod functions;
 mod join;
 mod scans;
 mod utils;
+
+pub use expr_to_ir::to_expr_ir;
+use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
 use utils::DslConversionContext;
 
 macro_rules! failed_here {
@@ -125,12 +131,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map_err(|e| e.context(failed_here!(vertical concat)))?;
 
             if args.diagonal {
-                inputs =
-                    convert_utils::convert_diagonal_concat(inputs, ctxt.lp_arena, ctxt.expr_arena)?;
+                inputs = concat::convert_diagonal_concat(inputs, ctxt.lp_arena, ctxt.expr_arena)?;
             }
 
             if args.to_supertypes {
-                convert_utils::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
+                concat::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
                     .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
 
@@ -156,7 +161,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .collect::<PolarsResult<Vec<_>>>()
                 .map_err(|e| e.context(failed_here!(horizontal concat)))?;
 
-            let schema = convert_utils::h_concat_schema(&inputs, ctxt.lp_arena)?;
+            let schema = concat::h_concat_schema(&inputs, ctxt.lp_arena)?;
 
             IR::HConcat {
                 inputs,

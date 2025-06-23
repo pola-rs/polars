@@ -1,21 +1,18 @@
 mod convert_utils;
 mod dsl_to_ir;
 mod expr_expansion;
-mod expr_to_ir;
 mod ir_to_dsl;
 mod stack_opt;
 
 use std::sync::{Arc, Mutex};
 
 pub use dsl_to_ir::*;
-pub use expr_to_ir::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
-mod functions;
 pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
