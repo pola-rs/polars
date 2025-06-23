@@ -1,6 +1,5 @@
 mod convert_utils;
 mod dsl_to_ir;
-mod expr_expansion;
 mod ir_to_dsl;
 mod stack_opt;
 
@@ -16,7 +15,7 @@ use recursive::recursive;
 pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
-pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
+pub use dsl_to_ir::{expand_selectors, is_regex_projection, prepare_projection};
 pub(crate) use stack_opt::ConversionOptimizer;
 
 use crate::constants::get_len_name;

@@ -1,6 +1,6 @@
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
-use expr_expansion::{is_regex_projection, rewrite_projections};
+use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
@@ -9,14 +9,15 @@ use polars_utils::unique_id::UniqueId;
 use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
-use crate::plans::conversion::expr_expansion::expand_selectors;
+
 mod concat;
+mod expr_expansion;
 mod expr_to_ir;
 mod functions;
 mod join;
 mod scans;
 mod utils;
-
+pub use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
 pub use expr_to_ir::to_expr_ir;
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
 use utils::DslConversionContext;
