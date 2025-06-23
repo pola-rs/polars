@@ -13,11 +13,21 @@ type DummyType = i32;
 type DummyCa = Int32Chunked;
 
 pub trait ToDummies {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame>;
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        drop_nulls: bool,
+    ) -> PolarsResult<DataFrame>;
 }
 
 impl ToDummies for Series {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        drop_nulls: bool,
+    ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
         let groups = self.group_tuples(true, drop_first)?;
@@ -26,7 +36,7 @@ impl ToDummies for Series {
         let columns = unsafe { self.agg_first(&groups) };
         let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
         let columns = columns
-            .map(|(av, group)| {
+            .filter_map(|(av, group)| {
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string
                 let name = if let Some(s) = av.get_str() {
@@ -36,13 +46,17 @@ impl ToDummies for Series {
                     format_pl_smallstr!("{col_name}{sep}{av}")
                 };
 
+                if av.is_null() && drop_nulls {
+                    return None;
+                }
+
                 let ca = match group {
                     GroupsIndicator::Idx((_, group)) => dummies_helper_idx(group, self.len(), name),
                     GroupsIndicator::Slice([offset, len]) => {
                         dummies_helper_slice(offset, len, self.len(), name)
                     },
                 };
-                ca.into_column()
+                Some(ca.into_column())
             })
             .collect::<Vec<_>>();
 

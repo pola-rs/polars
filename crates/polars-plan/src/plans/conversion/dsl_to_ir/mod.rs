@@ -1,8 +1,6 @@
-use std::path::PathBuf;
-
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
-use expr_expansion::{is_regex_projection, rewrite_projections};
+use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
@@ -11,51 +9,18 @@ use polars_utils::unique_id::UniqueId;
 use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
-use crate::plans::conversion::expr_expansion::expand_selectors;
 
-fn expand_expressions(
-    input: Node,
-    exprs: Vec<Expr>,
-    lp_arena: &Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-    opt_flags: &mut OptFlags,
-) -> PolarsResult<Vec<ExprIR>> {
-    let schema = lp_arena.get(input).schema(lp_arena);
-    let exprs = rewrite_projections(exprs, &schema, &[], opt_flags)?;
-    to_expr_irs(exprs, expr_arena, &schema)
-}
-
-fn empty_df() -> IR {
-    IR::DataFrameScan {
-        df: Arc::new(Default::default()),
-        schema: Arc::new(Default::default()),
-        output_schema: None,
-    }
-}
-
-fn validate_expression(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    input_schema: &Schema,
-    operation_name: &str,
-) -> PolarsResult<()> {
-    let iter = aexpr_to_leaf_names_iter(node, expr_arena);
-    validate_columns_in_input(iter, input_schema, operation_name)
-}
-
-fn validate_expressions<N: Into<Node>, I: IntoIterator<Item = N>>(
-    nodes: I,
-    expr_arena: &Arena<AExpr>,
-    input_schema: &Schema,
-    operation_name: &str,
-) -> PolarsResult<()> {
-    let nodes = nodes.into_iter();
-
-    for node in nodes {
-        validate_expression(node.into(), expr_arena, input_schema, operation_name)?
-    }
-    Ok(())
-}
+mod concat;
+mod expr_expansion;
+mod expr_to_ir;
+mod functions;
+mod join;
+mod scans;
+mod utils;
+pub use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
+pub use expr_to_ir::to_expr_ir;
+use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
+use utils::DslConversionContext;
 
 macro_rules! failed_here {
     ($($t:tt)*) => {
@@ -119,47 +84,7 @@ pub fn to_alp(
     }
 }
 
-#[derive(Default)]
-struct SourcesToFileInfo {
-    inner: PlHashMap<Arc<[PathBuf]>, FileInfo>,
-}
-
-impl SourcesToFileInfo {
-    fn insert(&mut self, source: &ScanSources, info: &FileInfo) {
-        match source {
-            ScanSources::Paths(paths) => {
-                self.inner.insert(paths.clone(), info.clone());
-            },
-            ScanSources::Files(_) | ScanSources::Buffers(_) => {
-                // don't save the files or buffers
-            },
-        }
-    }
-
-    fn get(&self, source: &ScanSources) -> Option<&FileInfo> {
-        match source {
-            ScanSources::Paths(paths) => self.inner.get(paths),
-            _ => None,
-        }
-    }
-}
-
-pub(super) struct DslConversionContext<'a> {
-    pub(super) expr_arena: &'a mut Arena<AExpr>,
-    pub(super) lp_arena: &'a mut Arena<IR>,
-    pub(super) conversion_optimizer: ConversionOptimizer,
-    pub(super) opt_flags: &'a mut OptFlags,
-    pub(super) nodes_scratch: &'a mut UnitVec<Node>,
-    cache_file_info: SourcesToFileInfo,
-    pub(super) pushdown_maintain_errors: bool,
-    verbose: bool,
-}
-
-pub(super) fn run_conversion(
-    lp: IR,
-    ctxt: &mut DslConversionContext,
-    name: &str,
-) -> PolarsResult<Node> {
+fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
         .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node)
@@ -178,323 +103,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     let v = match lp {
         DslPlan::Scan {
             sources,
-            unified_scan_args: mut unified_scan_args_box,
+            unified_scan_args,
             scan_type,
             cached_ir,
-        } => {
-            // Note that the first metadata can still end up being `None` later if the files were
-            // filtered from predicate pushdown.
-            let mut cached_ir = cached_ir.lock().unwrap();
-
-            if cached_ir.is_none() {
-                let cloud_options = unified_scan_args_box.cloud_options.clone();
-                let cloud_options = cloud_options.as_ref();
-
-                let unified_scan_args = unified_scan_args_box.as_mut();
-
-                if let Some(hive_schema) = unified_scan_args.hive_options.schema.as_deref() {
-                    match unified_scan_args.hive_options.enabled {
-                        // Enable hive_partitioning if it is unspecified but a non-empty hive_schema given
-                        None if !hive_schema.is_empty() => {
-                            unified_scan_args.hive_options.enabled = Some(true)
-                        },
-                        // hive_partitioning was explicitly disabled
-                        Some(false) => polars_bail!(
-                            ComputeError:
-                            "a hive schema was given but hive_partitioning was disabled"
-                        ),
-                        Some(true) | None => {},
-                    }
-                }
-
-                let sources =
-                    match &*scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScanDsl::Parquet { .. } => sources
-                            .expand_paths_with_hive_update(unified_scan_args, cloud_options)?,
-                        #[cfg(feature = "ipc")]
-                        FileScanDsl::Ipc { .. } => sources
-                            .expand_paths_with_hive_update(unified_scan_args, cloud_options)?,
-                        #[cfg(feature = "csv")]
-                        FileScanDsl::Csv { .. } => {
-                            sources.expand_paths(unified_scan_args, cloud_options)?
-                        },
-                        #[cfg(feature = "json")]
-                        FileScanDsl::NDJson { .. } => {
-                            sources.expand_paths(unified_scan_args, cloud_options)?
-                        },
-                        #[cfg(feature = "python")]
-                        FileScanDsl::PythonDataset { .. } => {
-                            // There are a lot of places that short-circuit if the paths is empty,
-                            // so we just give a dummy path here.
-                            ScanSources::Paths(Arc::from(["dummy".into()]))
-                        },
-                        FileScanDsl::Anonymous { .. } => sources,
-                    };
-
-                // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
-                // sharing.
-                // First we check if we have a cache `FileInfo`, if not we load the metadata and
-                // insert in the cache. Loading metadata can be expensive, and comprise of multiple
-                // Gb's
-                let (mut file_info, scan_type_ir) = if let Some(file_info) =
-                    ctxt.cache_file_info.get(&sources)
-                {
-                    if ctxt.verbose {
-                        eprintln!("FILE_INFO CACHE HIT")
-                    }
-                    let scan_type_ir = match *scan_type.clone() {
-                        #[cfg(feature = "csv")]
-                        FileScanDsl::Csv { options } => FileScanIR::Csv { options },
-                        #[cfg(feature = "json")]
-                        FileScanDsl::NDJson { options } => FileScanIR::NDJson { options },
-                        #[cfg(feature = "parquet")]
-                        FileScanDsl::Parquet { options } => FileScanIR::Parquet {
-                            options,
-                            metadata: None,
-                        },
-                        #[cfg(feature = "ipc")]
-                        FileScanDsl::Ipc { options } => FileScanIR::Ipc {
-                            options,
-                            metadata: None,
-                        },
-                        #[cfg(feature = "python")]
-                        FileScanDsl::PythonDataset { dataset_object } => {
-                            FileScanIR::PythonDataset {
-                                dataset_object,
-                                cached_ir: Default::default(),
-                            }
-                        },
-                        FileScanDsl::Anonymous {
-                            options,
-                            function,
-                            file_info: _,
-                        } => FileScanIR::Anonymous { options, function },
-                    };
-                    (file_info.clone(), scan_type_ir)
-                } else {
-                    let (file_info, scan_type_ir) = match *scan_type.clone() {
-                        #[cfg(feature = "parquet")]
-                        FileScanDsl::Parquet { options } => {
-                            if let Some(schema) = &options.schema {
-                                // We were passed a schema, we don't have to call `parquet_file_info`,
-                                // but this does mean we don't have `row_estimation` and `first_metadata`.
-                                (
-                                    FileInfo {
-                                        schema: schema.clone(),
-                                        reader_schema: Some(either::Either::Left(Arc::new(
-                                            schema.to_arrow(CompatLevel::newest()),
-                                        ))),
-                                        row_estimation: (None, 0),
-                                    },
-                                    FileScanIR::Parquet {
-                                        options,
-                                        metadata: None,
-                                    },
-                                )
-                            } else {
-                                let (file_info, metadata) = scans::parquet_file_info(
-                                    &sources,
-                                    unified_scan_args.row_index.as_ref(),
-                                    cloud_options,
-                                )
-                                .map_err(|e| e.context(failed_here!(parquet scan)))?;
-
-                                (file_info, FileScanIR::Parquet { options, metadata })
-                            }
-                        },
-                        #[cfg(feature = "ipc")]
-                        FileScanDsl::Ipc { options } => {
-                            let (file_info, md) = scans::ipc_file_info(
-                                &sources,
-                                unified_scan_args.row_index.as_ref(),
-                                cloud_options,
-                            )
-                            .map_err(|e| e.context(failed_here!(ipc scan)))?;
-                            (
-                                file_info,
-                                FileScanIR::Ipc {
-                                    options,
-                                    metadata: Some(Arc::new(md)),
-                                },
-                            )
-                        },
-                        #[cfg(feature = "csv")]
-                        FileScanDsl::Csv { mut options } => {
-                            // TODO: This is a hack. We conditionally set `allow_missing_columns` to
-                            // mimic existing behavior, but this should be taken from a user provided
-                            // parameter instead.
-                            if options.schema.is_some() && options.has_header {
-                                unified_scan_args.missing_columns_policy =
-                                    MissingColumnsPolicy::Insert;
-                            }
-
-                            (
-                                scans::csv_file_info(
-                                    &sources,
-                                    unified_scan_args.row_index.as_ref(),
-                                    &mut options,
-                                    cloud_options,
-                                )
-                                .map_err(|e| e.context(failed_here!(csv scan)))?,
-                                FileScanIR::Csv { options },
-                            )
-                        },
-                        #[cfg(feature = "json")]
-                        FileScanDsl::NDJson { options } => (
-                            scans::ndjson_file_info(
-                                &sources,
-                                unified_scan_args.row_index.as_ref(),
-                                &options,
-                                cloud_options,
-                            )
-                            .map_err(|e| e.context(failed_here!(ndjson scan)))?,
-                            FileScanIR::NDJson { options },
-                        ),
-                        #[cfg(feature = "python")]
-                        FileScanDsl::PythonDataset { dataset_object } => {
-                            if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
-                                polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
-                            }
-
-                            let mut schema = dataset_object.schema()?;
-                            let reader_schema = schema.clone();
-
-                            if let Some(row_index) = &unified_scan_args.row_index {
-                                insert_row_index_to_schema(
-                                    Arc::make_mut(&mut schema),
-                                    row_index.name.clone(),
-                                )?;
-                            }
-
-                            (
-                                FileInfo {
-                                    schema,
-                                    reader_schema: Some(either::Either::Right(reader_schema)),
-                                    row_estimation: (None, usize::MAX),
-                                },
-                                FileScanIR::PythonDataset {
-                                    dataset_object,
-                                    cached_ir: Default::default(),
-                                },
-                            )
-                        },
-                        FileScanDsl::Anonymous {
-                            file_info,
-                            options,
-                            function,
-                        } => (file_info, FileScanIR::Anonymous { options, function }),
-                    };
-
-                    // Insert so that the files are deduplicated.
-                    ctxt.cache_file_info.insert(&sources, &file_info);
-                    (file_info, scan_type_ir)
-                };
-
-                if unified_scan_args.hive_options.enabled.is_none() {
-                    // We expect this to be `Some(_)` after this point. If it hasn't been auto-enabled
-                    // we explicitly set it to disabled.
-                    unified_scan_args.hive_options.enabled = Some(false);
-                }
-
-                let hive_parts = if unified_scan_args.hive_options.enabled.unwrap()
-                    && file_info.reader_schema.is_some()
-                {
-                    let paths = sources.as_paths().ok_or_else(|| {
-                        polars_err!(nyi = "Hive-partitioning of in-memory buffers")
-                    })?;
-
-                    #[allow(unused_assignments)]
-                    let mut owned = None;
-
-                    hive_partitions_from_paths(
-                        paths,
-                        unified_scan_args.hive_options.hive_start_idx,
-                        unified_scan_args.hive_options.schema.clone(),
-                        match file_info.reader_schema.as_ref().unwrap() {
-                            Either::Left(v) => {
-                                owned = Some(Schema::from_arrow_schema(v.as_ref()));
-                                owned.as_ref().unwrap()
-                            },
-                            Either::Right(v) => v.as_ref(),
-                        },
-                        unified_scan_args.hive_options.try_parse_dates,
-                    )?
-                } else {
-                    None
-                };
-
-                if let Some(ref hive_parts) = hive_parts {
-                    let hive_schema = hive_parts.schema();
-                    file_info.update_schema_with_hive_schema(hive_schema.clone());
-                } else if let Some(hive_schema) = unified_scan_args.hive_options.schema.clone() {
-                    // We hit here if we are passed the `hive_schema` to `scan_parquet` but end up with an empty file
-                    // list during path expansion. In this case we still want to return an empty DataFrame with this
-                    // schema.
-                    file_info.update_schema_with_hive_schema(hive_schema);
-                }
-
-                if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
-                    let schema = Arc::make_mut(&mut file_info.schema);
-
-                    if schema.contains(file_path_col) {
-                        polars_bail!(
-                            Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
-                            file_path_col
-                        );
-                    }
-
-                    schema.insert_at_index(
-                        schema.len(),
-                        file_path_col.clone(),
-                        DataType::String,
-                    )?;
-                }
-
-                unified_scan_args.projection = if file_info.reader_schema.is_some() {
-                    maybe_init_projection_excluding_hive(
-                        file_info.reader_schema.as_ref().unwrap(),
-                        hive_parts.as_ref().map(|h| h.schema()),
-                    )
-                } else {
-                    None
-                };
-
-                if let Some(row_index) = &unified_scan_args.row_index {
-                    let schema = Arc::make_mut(&mut file_info.schema);
-                    *schema = schema
-                        .new_inserting_at_index(0, row_index.name.clone(), IDX_DTYPE)
-                        .unwrap();
-                }
-
-                let ir = if sources.is_empty()
-                    && !matches!(&(*scan_type), FileScanDsl::Anonymous { .. })
-                {
-                    IR::DataFrameScan {
-                        df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
-                        schema: file_info.schema,
-                        output_schema: None,
-                    }
-                } else {
-                    let unified_scan_args = unified_scan_args_box;
-
-                    IR::Scan {
-                        sources,
-                        file_info,
-                        hive_parts,
-                        predicate: None,
-                        scan_type: Box::new(scan_type_ir),
-                        output_schema: None,
-                        unified_scan_args,
-                        id: Default::default(),
-                    }
-                };
-
-                cached_ir.replace(ir);
-            }
-
-            cached_ir.clone().unwrap()
-        },
+        } => scans::dsl_to_ir(sources, unified_scan_args, scan_type, cached_ir, ctxt)?,
         #[cfg(feature = "python")]
         DslPlan::PythonScan { mut options } => {
             let scan_fn = options.scan_fn.take();
@@ -520,12 +132,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map_err(|e| e.context(failed_here!(vertical concat)))?;
 
             if args.diagonal {
-                inputs =
-                    convert_utils::convert_diagonal_concat(inputs, ctxt.lp_arena, ctxt.expr_arena)?;
+                inputs = concat::convert_diagonal_concat(inputs, ctxt.lp_arena, ctxt.expr_arena)?;
             }
 
             if args.to_supertypes {
-                convert_utils::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
+                concat::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
                     .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
 
@@ -551,7 +162,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .collect::<PolarsResult<Vec<_>>>()
                 .map_err(|e| e.context(failed_here!(horizontal concat)))?;
 
-            let schema = convert_utils::h_concat_schema(&inputs, ctxt.lp_arena)?;
+            let schema = concat::h_concat_schema(&inputs, ctxt.lp_arena)?;
 
             IR::HConcat {
                 inputs,
@@ -631,7 +242,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map_err(|e| e.context(failed_here!(select)))?;
 
             if exprs.is_empty() {
-                ctxt.lp_arena.replace(input, empty_df());
+                ctxt.lp_arena.replace(input, utils::empty_df());
                 return Ok(input);
             }
 
@@ -692,7 +303,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     .cycle()
                     .zip(sort_options.descending.iter().cycle()),
             ) {
-                let exprs = expand_expressions(
+                let exprs = utils::expand_expressions(
                     input,
                     vec![c],
                     ctxt.lp_arena,
@@ -1079,7 +690,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
 
                     if output_schema.is_empty() {
-                        ctxt.lp_arena.replace(input, empty_df());
+                        ctxt.lp_arena.replace(input, utils::empty_df());
                     }
 
                     IR::SimpleProjection {
@@ -1527,8 +1138,8 @@ fn resolve_group_by(
     }
     let keys = to_expr_irs(keys, expr_arena, input_schema)?;
     let aggs = to_expr_irs(aggs, expr_arena, input_schema)?;
-    validate_expressions(&keys, expr_arena, input_schema, "group by")?;
-    validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
+    utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
+    utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
 
     Ok((keys, aggs, Arc::new(output_schema)))
 }
