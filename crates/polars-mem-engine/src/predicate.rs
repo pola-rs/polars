@@ -10,7 +10,7 @@ use polars_error::PolarsResult;
 use polars_expr::prelude::{AggregationContext, PhysicalExpr, phys_expr_to_io_expr};
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::{
-    ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicateExpr,
+    ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate,
 };
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -47,13 +47,8 @@ impl fmt::Debug for ScanPredicate {
 
 #[derive(Clone)]
 pub struct PhysicalColumnPredicates {
-    pub predicates: PlHashMap<
-        PlSmallStr,
-        (
-            Arc<dyn PhysicalExpr>,
-            Option<SpecializedColumnPredicateExpr>,
-        ),
-    >,
+    pub predicates:
+        PlHashMap<PlSmallStr, (Arc<dyn PhysicalExpr>, Option<SpecializedColumnPredicate>)>,
     pub is_sumwise_complete: bool,
 }
 

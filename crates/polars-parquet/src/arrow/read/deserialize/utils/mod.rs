@@ -18,6 +18,7 @@ use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecode
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::schema::Repetition;
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
@@ -597,9 +598,10 @@ impl<D: Decoder> PageDecoder<D> {
                     // Handle the case where column is held equal to Null. This can be the same for all
                     // non-nested columns.
                     Some(Filter::Predicate(p))
-                        if p.predicate
-                            .to_equals_scalar()
-                            .is_some_and(|sc| sc.is_null()) =>
+                        if matches!(
+                            p.predicate.as_specialized(),
+                            Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null)),
+                        ) =>
                     {
                         if state.is_optional {
                             match &state.page_validity {

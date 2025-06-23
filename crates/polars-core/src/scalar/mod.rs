@@ -116,4 +116,9 @@ impl Scalar {
         self.update(value);
         self
     }
+
+    #[inline(always)]
+    pub fn any_value_mut(&mut self) -> &mut AnyValue<'static> {
+        &mut self.value
+    }
 }

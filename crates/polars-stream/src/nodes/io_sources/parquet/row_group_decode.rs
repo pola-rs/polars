@@ -10,7 +10,7 @@ use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::{
-    ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicateExpr,
+    ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicate,
 };
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::_internal::calc_prefilter_cost;
@@ -367,8 +367,7 @@ fn decode_column_in_filter(
             column_predicates.predicates.get(&arrow_field.name)
         {
             constant = specialized.as_ref().and_then(|s| match s {
-                SpecializedColumnPredicateExpr::Eq(sc) if !sc.is_null() => Some(sc),
-                SpecializedColumnPredicateExpr::EqMissing(sc) => Some(sc),
+                SpecializedColumnPredicate::Equal(sc) if !sc.is_null() => Some(sc),
                 _ => None,
             });
 

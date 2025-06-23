@@ -11,6 +11,7 @@ use crate::parquet::encoding::{Encoding, delta_byte_array, delta_length_byte_arr
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::read::deserialize::utils::{self};
+use crate::read::expr::SpecializedParquetColumnExpr;
 
 mod optional;
 mod optional_masked;
@@ -165,7 +166,8 @@ pub fn decode_plain(
             verify_utf8,
         ),
         (Some(Filter::Predicate(p)), page_validity) => {
-            let Some(needle) = p.predicate.to_equals_scalar() else {
+            let Some(SpecializedParquetColumnExpr::Equal(needle)) = p.predicate.as_specialized()
+            else {
                 unreachable!();
             };
 
@@ -413,7 +415,10 @@ impl utils::Decoder for BinViewDecoder {
         has_predicate_specialization |=
             matches!(state.translation, StateTranslation::Dictionary(_));
         has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
-            && predicate.predicate.to_equals_scalar().is_some();
+            && matches!(
+                predicate.predicate.as_specialized(),
+                Some(SpecializedParquetColumnExpr::Equal(_))
+            );
 
         // @TODO: This should be implemented
         has_predicate_specialization &= state.page_validity.is_none();
