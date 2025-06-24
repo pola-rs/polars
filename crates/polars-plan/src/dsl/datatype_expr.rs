@@ -212,7 +212,7 @@ impl DataTypeExpr {
     }
 
     pub fn to_string(self) -> Expr {
-        Expr::DataTypeFunction(DataTypeFunction::ToString(self))
+        Expr::DataTypeFunction(DataTypeFunction::ToStringExpr(self))
     }
 
     pub fn element_bitsize(self) -> Expr {
@@ -324,10 +324,9 @@ impl fmt::Debug for DataTypeExpr {
             },
             Self::Int(dt_expr, t) => {
                 fmt::Debug::fmt(dt_expr.as_ref(), f)?;
-                f.write_str(".int")?;
                 match t {
-                    IntDataTypeExpr::ToUnsigned => f.write_str(".to_unsigned()"),
-                    IntDataTypeExpr::ToSigned => f.write_str(".to_signed()"),
+                    IntDataTypeExpr::ToUnsigned => f.write_str(".to_unsigned_integer()"),
+                    IntDataTypeExpr::ToSigned => f.write_str(".to_signed_integer()"),
                 }
             },
             Self::Struct(dt_expr, t) => {

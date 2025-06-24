@@ -13,7 +13,6 @@ This page gives an overview of all public Polars expressions.
    :hidden:
 
    dt_functions
-   dt_int
    dt_enum
    dt_list
    dt_array

@@ -42,7 +42,7 @@ pub enum DataTypeKind {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DataTypeFunction {
     /// Get a `str` repr of the DataType expression.
-    ToString(DataTypeExpr),
+    ToStringExpr(DataTypeExpr),
     /// Return whether two datatype expressions are equal.
     Eq(DataTypeExpr, DataTypeExpr),
 
@@ -100,15 +100,15 @@ pub enum EnumDataTypeFunction {
 impl fmt::Debug for DataTypeFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ToString(dt_expr) => write!(f, "{dt_expr:?}.to_string()"),
+            Self::ToStringExpr(dt_expr) => write!(f, "{dt_expr:?}.to_string_expr()"),
             Self::Eq(l, r) => write!(f, "[{l:?} == {r:?}]"),
             Self::IsKind(dt_expr, kind) => {
                 fmt::Debug::fmt(dt_expr, f)?;
                 match kind {
                     DataTypeKind::Numeric => f.write_str(".is_numeric()"),
                     DataTypeKind::Integer => f.write_str(".is_integer()"),
-                    DataTypeKind::SignedInteger => f.write_str(".int.is_signed()"),
-                    DataTypeKind::UnsignedInteger => f.write_str(".int.is_unsigned()"),
+                    DataTypeKind::SignedInteger => f.write_str(".is_signed_integer()"),
+                    DataTypeKind::UnsignedInteger => f.write_str(".is_unsigned_integer()"),
                     DataTypeKind::Float => f.write_str(".is_float()"),
                     DataTypeKind::Decimal => f.write_str(".is_decimal()"),
                     DataTypeKind::Categorical => f.write_str(".is_categorical()"),

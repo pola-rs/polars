@@ -133,19 +133,19 @@ impl PyDataTypeExpr {
         self.inner.clone().wrap_in_array(width).into()
     }
 
-    pub fn int_to_unsigned(&self) -> Self {
+    pub fn to_unsigned_integer(&self) -> Self {
         self.inner.clone().int().to_unsigned().into()
     }
 
-    pub fn int_to_signed(&self) -> Self {
+    pub fn to_signed_integer(&self) -> Self {
         self.inner.clone().int().to_signed().into()
     }
 
-    pub fn int_is_unsigned(&self) -> PyExpr {
+    pub fn is_unsigned_integer(&self) -> PyExpr {
         self.inner.clone().int().is_unsigned().into()
     }
 
-    pub fn int_is_signed(&self) -> PyExpr {
+    pub fn is_signed_integer(&self) -> PyExpr {
         self.inner.clone().int().is_signed().into()
     }
 

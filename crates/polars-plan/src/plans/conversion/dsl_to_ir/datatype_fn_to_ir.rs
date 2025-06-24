@@ -17,7 +17,7 @@ pub fn datatype_fn_to_aexpr(
 ) -> PolarsResult<(AExpr, PlSmallStr)> {
     use DataTypeFunction as DTF;
     Ok(match f {
-        DTF::ToString(dt) => (
+        DTF::ToStringExpr(dt) => (
             AExpr::Literal(LiteralValue::Scalar(Scalar::from(PlSmallStr::from_string(
                 dt.into_datatype(schema)?.to_string(),
             )))),

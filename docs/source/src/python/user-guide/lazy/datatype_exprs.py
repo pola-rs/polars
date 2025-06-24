@@ -14,14 +14,14 @@ dtype_expr.collect_dtype(schema)
 # --8<-- [start:basic-manipulation]
 dtype_expr.wrap_in_list().collect_dtype(schema)
 
-dtype_expr.int.to_signed().collect_dtype(schema)
+dtype_expr.to_signed_integer().collect_dtype(schema)
 # --8<-- [end:basic-manipulation]
 
 # --8<-- [start:basic-inspect]
 df = schema.to_frame()
 df.select(
-    userid_dtype_name = pl.dtype_of('UserID').to_string(),
-    userid_is_signed  = pl.dtype_of('UserID').int.is_signed(),
+    userid_dtype_name = pl.dtype_of('UserID').to_string_expr(),
+    userid_is_signed  = pl.dtype_of('UserID').is_signed_integer(),
 )
 # --8<-- [end:basic-inspect]
 

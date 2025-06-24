@@ -64,7 +64,6 @@ class DataTypeExpr:
         "arr",
         "enum",
         "list",
-        "int",
         "struct",
     }
 
@@ -97,7 +96,7 @@ class DataTypeExpr:
         """Get the inner DataType of a List or Array."""
         return DataTypeExpr._from_pydatatype_expr(self._pydatatype_expr.inner_dtype())
 
-    def to_string(self) -> pl.Expr:
+    def to_string_expr(self) -> pl.Expr:
         """
         Get a formatted version of the output DataType.
 
@@ -111,9 +110,9 @@ class DataTypeExpr:
         ...     }
         ... )
         >>> df.select(
-        ...     a=pl.dtype_of("a").to_string(),
-        ...     b=pl.dtype_of("b").to_string(),
-        ...     c=pl.dtype_of("c").to_string(),
+        ...     a=pl.dtype_of("a").to_string_expr(),
+        ...     b=pl.dtype_of("b").to_string_expr(),
+        ...     c=pl.dtype_of("c").to_string_expr(),
         ... ).transpose(include_header=True, column_names=["dtype"])
         shape: (3, 2)
         ┌────────┬───────┐
@@ -234,10 +233,87 @@ class DataTypeExpr:
             self._pydatatype_expr.wrap_in_array(width)
         )
 
-    @property
-    def int(self) -> DataTypeExprIntNameSpace:
-        """Create an object namespace of all integer related methods."""
-        return DataTypeExprIntNameSpace(self)
+    def to_unsigned_integer(self) -> pl.DataTypeExpr:
+        """
+        Get the unsigned integer version of the same bitsize.
+
+        Examples
+        --------
+        >>> int32 = pl.Int32.to_dtype_expr()
+        >>> int32.to_unsigned_integer().collect_dtype({})
+        UInt32
+        """
+        return pl.DataTypeExpr._from_pydatatype_expr(
+            self._pydatatype_expr.to_unsigned_integer()
+        )
+
+    def to_signed_integer(self) -> pl.DataTypeExpr:
+        """
+        Get the signed integer version of the same bitsize.
+
+        Examples
+        --------
+        >>> uint32 = pl.UInt32.to_dtype_expr()
+        >>> uint32.to_signed_integer().collect_dtype({})
+        Int32
+        """
+        return pl.DataTypeExpr._from_pydatatype_expr(
+            self._pydatatype_expr.to_signed_integer()
+        )
+
+    def is_unsigned_integer(self) -> pl.Expr:
+        """
+        Get whether the given integer is unsigned.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     [
+        ...         pl.Series("a", [1, 2, 3], pl.Int32()),
+        ...         pl.Series("b", [1, 2, 3], pl.UInt64()),
+        ...     ]
+        ... )
+        >>> df.select(
+        ...     is_a_unsigned=pl.dtype_of("a").is_unsigned_integer(),
+        ...     is_b_unsigned=pl.dtype_of("b").is_unsigned_integer(),
+        ... )
+        shape: (1, 2)
+        ┌───────────────┬───────────────┐
+        │ is_a_unsigned ┆ is_b_unsigned │
+        │ ---           ┆ ---           │
+        │ bool          ┆ bool          │
+        ╞═══════════════╪═══════════════╡
+        │ false         ┆ true          │
+        └───────────────┴───────────────┘
+        """
+        return pl.Expr._from_pyexpr(self._pydatatype_expr.is_unsigned_integer())
+
+    def is_signed_integer(self) -> pl.Expr:
+        """
+        Get whether the given integer is signed.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     [
+        ...         pl.Series("a", [1, 2, 3], pl.Int32()),
+        ...         pl.Series("b", [1, 2, 3], pl.UInt64()),
+        ...     ]
+        ... )
+        >>> df.select(
+        ...     is_a_signed=pl.dtype_of("a").is_signed_integer(),
+        ...     is_b_signed=pl.dtype_of("b").is_signed_integer(),
+        ... )
+        shape: (1, 2)
+        ┌─────────────┬─────────────┐
+        │ is_a_signed ┆ is_b_signed │
+        │ ---         ┆ ---         │
+        │ bool        ┆ bool        │
+        ╞═════════════╪═════════════╡
+        │ true        ┆ false       │
+        └─────────────┴─────────────┘
+        """
+        return pl.Expr._from_pyexpr(self._pydatatype_expr.is_signed_integer())
 
     @property
     def enum(self) -> DataTypeExprEnumNameSpace:
