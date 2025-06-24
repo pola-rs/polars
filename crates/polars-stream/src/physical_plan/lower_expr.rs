@@ -619,15 +619,13 @@ fn lower_exprs_with_ctx(
                 function: IRFunctionExpr::Shift,
                 options: _,
             } => {
-                let tmp_name = unique_column_name();
-                let data_col_expr =
-                    ExprIR::new(inner_exprs[0].node(), OutputName::Alias(tmp_name.clone()));
-
-                let trans_data_column = build_select_stream_with_ctx(input, &[data_col_expr], ctx)?;
+                let trans_data_column =
+                    build_select_stream_with_ctx(input, &[inner_exprs[0].clone()], ctx)?;
                 let trans_input_offset =
                     build_select_stream_with_ctx(input, &[inner_exprs[1].clone()], ctx)?;
 
                 let output_schema = ctx.phys_sm[trans_data_column.node].output_schema.clone();
+                let name = output_schema.get_at_index(0).unwrap().0.clone();
 
                 let node_key = ctx.phys_sm.insert(PhysNode::new(
                     output_schema,
@@ -638,7 +636,7 @@ fn lower_exprs_with_ctx(
                 ));
 
                 input_streams.insert(PhysStream::first(node_key));
-                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(name.clone())));
             },
 
             AExpr::Function {

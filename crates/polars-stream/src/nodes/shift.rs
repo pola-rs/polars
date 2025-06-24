@@ -198,8 +198,6 @@ impl ComputeNode for ShiftNode {
             State::Uninit => {
                 let slf = self;
                 let receiver = recv_ports[1].take().unwrap().serial();
-                //let _ = recv_ports[0].take().unwrap();
-                //let _ = send_ports[0].take().unwrap();
 
                 scope.spawn_task(TaskPriority::Low, async move {
                     slf.state = init(receiver).await?;
