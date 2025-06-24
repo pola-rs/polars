@@ -13,7 +13,6 @@ __all__ = [
     # field_overwrites
     "UseDictionaryEncoding",
     "ParquetFieldOverwrites",
-
     # functions
     "read_parquet",
     "read_parquet_metadata",
