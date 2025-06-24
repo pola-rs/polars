@@ -940,6 +940,17 @@ impl DataType {
             // We don't allow the other way around, only if our current type is
             // null and the schema isn't we allow it.
             (DataType::Null, _) => Ok(true),
+            #[cfg(feature = "dtype-categorical")]
+            (DataType::NewCategorical(l, _), DataType::NewCategorical(r, _)) => {
+                ensure_same_categories(l, r)?;
+                Ok(false)
+            }
+            #[cfg(feature = "dtype-categorical")]
+            (DataType::NewEnum(l, _), DataType::NewEnum(r, _)) => {
+                ensure_same_frozen_categories(l, r)?;
+                Ok(false)
+            }
+
             (l, r) if l == r => Ok(false),
             (l, r) => {
                 polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
@@ -967,6 +978,15 @@ impl DataType {
         match self {
             DataType::NewCategorical(cats, _) => Some(cats.physical()),
             DataType::NewEnum(fcats, _) => Some(fcats.physical()),
+            _ => None
+        }
+    }
+
+    /// If this dtype is a Categorical or Enum, returns the underlying mapping.
+    pub fn cat_mapping(&self) -> Option<&Arc<CategoricalMapping>> {
+        match self {
+            DataType::NewCategorical(_, mapping) |
+            DataType::NewEnum(_, mapping) => Some(mapping),
             _ => None
         }
     }
