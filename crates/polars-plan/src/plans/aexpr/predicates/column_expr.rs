@@ -232,24 +232,16 @@ pub fn aexpr_to_column_predicates(
                                     (O::Eq | O::EqValidity, _) => {
                                         Some(SpecializedColumnPredicate::Equal(scalar))
                                     },
-                                    (O::Lt, true) | (O::Gt, false)
-                                        if dtype.to_physical().is_integer() =>
-                                    {
+                                    (O::Lt, true) | (O::Gt, false) => {
                                         is_between(&dtype, None, Some(scalar), false, false)
                                     },
-                                    (O::Lt, false) | (O::Gt, true)
-                                        if dtype.to_physical().is_integer() =>
-                                    {
+                                    (O::Lt, false) | (O::Gt, true) => {
                                         is_between(&dtype, Some(scalar), None, false, false)
                                     },
-                                    (O::LtEq, true) | (O::GtEq, false)
-                                        if dtype.to_physical().is_integer() =>
-                                    {
+                                    (O::LtEq, true) | (O::GtEq, false) => {
                                         is_between(&dtype, None, Some(scalar), false, true)
                                     },
-                                    (O::LtEq, false) | (O::GtEq, true)
-                                        if dtype.to_physical().is_integer() =>
-                                    {
+                                    (O::LtEq, false) | (O::GtEq, true) => {
                                         is_between(&dtype, Some(scalar), None, true, false)
                                     },
                                     _ => None,
@@ -275,14 +267,18 @@ fn is_between(
     mut low_closed: bool,
     mut high_closed: bool,
 ) -> Option<SpecializedColumnPredicate> {
-    assert!(dtype.is_integer());
+    let dtype = dtype.to_physical();
+
+    if !dtype.is_integer() {
+        return None;
+    }
     assert!(low.is_some() || high.is_some());
 
     low_closed &= low.is_some();
     high_closed &= high.is_some();
 
-    let mut low = low.unwrap_or_else(|| dtype.min().unwrap());
-    let mut high = high.unwrap_or_else(|| dtype.max().unwrap());
+    let mut low = low.map_or_else(|| dtype.min().unwrap(), |sc| sc.to_physical());
+    let mut high = high.map_or_else(|| dtype.max().unwrap(), |sc| sc.to_physical());
 
     macro_rules! ints {
         ($($t:ident),+) => {
