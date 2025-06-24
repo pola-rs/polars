@@ -1,7 +1,6 @@
 use std::io::Write;
 use std::sync::Mutex;
 
-use arrow::datatypes::PhysicalType;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
@@ -13,6 +12,7 @@ use polars_parquet::write::{
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
 use super::{KeyValueMetadata, MetadataKeyValue, ParquetFieldOverwrites, ParquetWriteOptions};
+use crate::parquet::write::options::UseDictionaryEncoding;
 use crate::prelude::ChildFieldOverwrites;
 use crate::shared::schema_to_arrow_checked;
 
@@ -185,6 +185,7 @@ fn to_column_write_options_rec(
 
         // Dummy value.
         children: ChildWriteOptions::Leaf(FieldWriteOptions {
+            use_dictionary_encoding: UseDictionaryEncoding::Auto,
             encoding: Encoding::Plain,
         }),
     };
@@ -192,7 +193,6 @@ fn to_column_write_options_rec(
     if let Some(overwrites) = overwrites {
         column_options.field_id = overwrites.field_id;
         column_options.metadata = convert_metadata(&overwrites.metadata);
-        column_options.required = overwrites.required;
     }
 
     use arrow::datatypes::PhysicalType::*;
@@ -201,6 +201,9 @@ fn to_column_write_options_rec(
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => {
             column_options.children = ChildWriteOptions::Leaf(FieldWriteOptions {
                 encoding: encoding_map(field.dtype()),
+                use_dictionary_encoding: overwrites
+                    .and_then(|o| o.use_dictionary_encoding)
+                    .unwrap_or(UseDictionaryEncoding::Auto),
             });
         },
         List | FixedSizeList | LargeList => {
@@ -276,21 +279,6 @@ pub fn get_column_write_options(
 }
 
 /// Declare encodings
-fn encoding_map(dtype: &ArrowDataType) -> Encoding {
-    match dtype.to_physical_type() {
-        PhysicalType::Dictionary(_)
-        | PhysicalType::LargeBinary
-        | PhysicalType::LargeUtf8
-        | PhysicalType::Utf8View
-        | PhysicalType::BinaryView => Encoding::RleDictionary,
-        PhysicalType::Primitive(dt) => {
-            use arrow::types::PrimitiveType::*;
-            match dt {
-                Float32 | Float64 | Float16 => Encoding::Plain,
-                _ => Encoding::RleDictionary,
-            }
-        },
-        // remaining is plain
-        _ => Encoding::Plain,
-    }
+fn encoding_map(_dtype: &ArrowDataType) -> Encoding {
+    Encoding::Plain
 }

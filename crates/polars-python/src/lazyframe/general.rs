@@ -11,7 +11,7 @@ use polars_plan::dsl::ScanSources;
 use polars_plan::plans::{AExpr, IR};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::python_function::PythonObject;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyDictMethods, PyList};
@@ -1568,6 +1568,24 @@ impl PyLazyFrame {
 }
 
 #[cfg(feature = "parquet")]
+impl<'py> FromPyObject<'py> for Wrap<polars_io::parquet::write::UseDictionaryEncoding> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        use polars_io::parquet::write::UseDictionaryEncoding;
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => UseDictionaryEncoding::Auto,
+            "never" => UseDictionaryEncoding::Never,
+            "always" => UseDictionaryEncoding::Always,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`use_dictionary_encoding` must be one of {{'auto', 'never', 'always'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "parquet")]
 impl<'py> FromPyObject<'py> for Wrap<polars_io::parquet::write::ParquetFieldOverwrites> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         use polars_io::parquet::write::ParquetFieldOverwrites;
@@ -1612,12 +1630,18 @@ impl<'py> FromPyObject<'py> for Wrap<polars_io::parquet::write::ParquetFieldOver
             .map(|v| v.extract::<bool>())
             .transpose()?;
 
+        let use_dictionary_encoding = PyDictMethods::get_item(&parsed, "use_dictionary_encoding")?
+            .map(|v| v.extract::<Wrap<UseDictionaryEncoding>>())
+            .transpose()?
+            .map(|v| v.0);
+
         Ok(Wrap(ParquetFieldOverwrites {
             name,
             children,
             field_id,
             metadata,
             required,
+            use_dictionary_encoding,
         }))
     }
 }

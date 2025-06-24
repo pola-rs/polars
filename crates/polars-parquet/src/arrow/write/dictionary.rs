@@ -199,6 +199,7 @@ pub(crate) fn encode_as_dictionary_optional(
     nested: &[Nested],
     type_: PrimitiveType,
     options: WriteOptions,
+    force: bool,
 ) -> Option<PolarsResult<DynIter<'static, PolarsResult<Page>>>> {
     if array.is_empty() {
         let array = DictionaryArray::<u32>::new_empty(ArrowDataType::Dictionary(
@@ -232,29 +233,29 @@ pub(crate) fn encode_as_dictionary_optional(
         _ => DictionaryDecision::TryAgain,
     };
 
-    match fast_dictionary {
-        DictionaryDecision::NotWorth => return None,
-        DictionaryDecision::Found(dictionary_array) => {
-            return Some(array_to_pages(
-                &dictionary_array,
-                type_,
-                nested,
-                options,
-                Encoding::RleDictionary,
-            ));
-        },
-        DictionaryDecision::TryAgain => {},
+    if let DictionaryDecision::Found(dictionary_array) = fast_dictionary {
+        return Some(array_to_pages(
+            &dictionary_array,
+            type_,
+            nested,
+            options,
+            Encoding::RleDictionary,
+        ));
     }
 
-    let dtype = Box::new(array.dtype().clone());
+    if !force {
+        if matches!(fast_dictionary, DictionaryDecision::NotWorth) {
+            return None;
+        }
 
-    let estimated_cardinality = polars_compute::cardinality::estimate_cardinality(array);
-
-    if array.len() > 128 && (estimated_cardinality as f64) / (array.len() as f64) > 0.75 {
-        return None;
+        let estimated_cardinality = polars_compute::cardinality::estimate_cardinality(array);
+        if array.len() > 128 && (estimated_cardinality as f64) / (array.len() as f64) > 0.75 {
+            return None;
+        }
     }
 
     // This does the group by.
+    let dtype = Box::new(array.dtype().clone());
     let array = polars_compute::cast::cast(
         array,
         &ArrowDataType::Dictionary(IntegerType::UInt32, dtype, false),

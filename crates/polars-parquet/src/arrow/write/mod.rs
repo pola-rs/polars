@@ -79,6 +79,19 @@ pub enum EncodeNullability {
     Optional,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum UseDictionaryEncoding {
+    /// Do a cardinality estimation and determine based on that whether we use a dictionary
+    /// encoding or not.
+    Auto,
+    /// Never use a dictionary encoding, will not write a dictionary page.
+    Never,
+    /// Always use a dictionary.
+    Always,
+}
+
 /// Currently supported options to write to parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOptions {
@@ -123,6 +136,7 @@ impl ColumnWriteOptions {
 
 #[derive(Clone)]
 pub struct FieldWriteOptions {
+    pub use_dictionary_encoding: UseDictionaryEncoding,
     pub encoding: Encoding,
 }
 
@@ -139,7 +153,10 @@ impl ColumnWriteOptions {
 
 impl FieldWriteOptions {
     pub fn default_with_encoding(encoding: Encoding) -> Self {
-        Self { encoding }
+        Self {
+            encoding,
+            use_dictionary_encoding: UseDictionaryEncoding::Auto,
+        }
     }
 
     pub fn into_default_column_write_options(self) -> ColumnWriteOptions {
@@ -354,7 +371,7 @@ pub fn array_to_pages(
     options: WriteOptions,
     field_options: &FieldWriteOptions,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
-    let mut encoding = field_options.encoding;
+    let encoding = field_options.encoding;
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
@@ -366,18 +383,29 @@ pub fn array_to_pages(
             )
         });
     };
-    if let Encoding::RleDictionary = encoding {
-        // Only take this path for primitive columns
-        if matches!(nested.first(), Some(Nested::Primitive(_))) {
-            if let Some(result) =
-                encode_as_dictionary_optional(primitive_array, nested, type_.clone(), options)
-            {
+    match field_options.use_dictionary_encoding {
+        UseDictionaryEncoding::Auto => {
+            if let Some(result) = encode_as_dictionary_optional(
+                primitive_array,
+                nested,
+                type_.clone(),
+                options,
+                false,
+            ) {
                 return result;
             }
-        }
-
-        // We didn't succeed, fallback to plain
-        encoding = Encoding::Plain;
+        },
+        UseDictionaryEncoding::Always => {
+            return encode_as_dictionary_optional(
+                primitive_array,
+                nested,
+                type_.clone(),
+                options,
+                true,
+            )
+            .unwrap();
+        },
+        UseDictionaryEncoding::Never => {},
     }
 
     let nested = nested.to_vec();

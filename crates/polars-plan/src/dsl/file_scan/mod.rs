@@ -130,21 +130,6 @@ impl FileScanIR {
             _ => false,
         }
     }
-
-    pub fn streamable(&self) -> bool {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { .. } => true,
-            #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => false,
-            #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => true,
-            #[cfg(feature = "json")]
-            Self::NDJson { .. } => false,
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]

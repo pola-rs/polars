@@ -1,4 +1,5 @@
 use polars_error::PolarsResult;
+pub use polars_parquet::write::UseDictionaryEncoding;
 use polars_parquet::write::{
     BrotliLevel as BrotliLevelParquet, CompressionOptions, GzipLevel as GzipLevelParquet,
     StatisticsOptions, ZstdLevel as ZstdLevelParquet,
@@ -55,6 +56,7 @@ pub struct ParquetFieldOverwrites {
     pub children: ChildFieldOverwrites,
 
     pub required: Option<bool>,
+    pub use_dictionary_encoding: Option<UseDictionaryEncoding>,
     pub field_id: Option<i32>,
     pub metadata: Option<Vec<MetadataKeyValue>>,
 }
