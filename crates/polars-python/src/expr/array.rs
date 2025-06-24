@@ -137,6 +137,30 @@ impl PyExpr {
             .into())
     }
 
+    fn arr_slice(&self, offset: PyExpr, length: Option<PyExpr>, as_array: bool) -> PyResult<Self> {
+        let length = match length {
+            Some(i) => i.inner,
+            None => lit(i64::MAX),
+        };
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .slice(offset.inner, length, as_array)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
+    fn arr_tail(&self, n: PyExpr, as_array: bool) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .tail(n.inner, as_array)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
     fn arr_shift(&self, n: PyExpr) -> Self {
         self.inner.clone().arr().shift(n.inner).into()
     }

@@ -252,6 +252,36 @@ impl LiteralValue {
         }
     }
 
+    pub fn extract_i64(&self) -> PolarsResult<i64> {
+        macro_rules! cast_i64 {
+            ($v:expr) => {
+                i64::try_from($v).map_err(
+                    |_| polars_err!(InvalidOperation: "cannot convert value {} to i64", $v)
+                )
+            }
+        }
+        match &self {
+            Self::Dyn(DynLiteralValue::Int(v)) => cast_i64!(*v),
+            Self::Scalar(sc) => match sc.as_any_value() {
+                AnyValue::UInt8(v) => Ok(v as i64),
+                AnyValue::UInt16(v) => Ok(v as i64),
+                AnyValue::UInt32(v) => cast_i64!(v),
+                AnyValue::UInt64(v) => cast_i64!(v),
+                AnyValue::Int8(v) => cast_i64!(v),
+                AnyValue::Int16(v) => cast_i64!(v),
+                AnyValue::Int32(v) => cast_i64!(v),
+                AnyValue::Int64(v) => Ok(v),
+                AnyValue::Int128(v) => cast_i64!(v),
+                _ => {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                },
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+            },
+        }
+    }
+
     pub fn materialize(self) -> Self {
         match self {
             LiteralValue::Dyn(_) => {

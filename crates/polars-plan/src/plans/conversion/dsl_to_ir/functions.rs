@@ -51,6 +51,7 @@ pub(super) fn convert_functions(
                 A::Shift => IA::Shift,
                 A::Explode { skip_empty } => IA::Explode { skip_empty },
                 A::Concat => IA::Concat,
+                A::Slice(offset, length) => IA::Slice(offset, length),
             })
         },
         F::BinaryExpr(binary_function) => {

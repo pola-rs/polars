@@ -90,6 +90,59 @@ def test_array_lengths() -> None:
     ).arr.len().to_list() == [3, None, 3]
 
 
+@pytest.mark.parametrize(
+    ("as_array"),
+    [True, False],
+)
+def test_arr_slice(as_array: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "arr": [[1, 2, 3], [10, 2, 1]],
+        },
+        schema={"arr": pl.Array(pl.Int64, 3)},
+    )
+
+    assert df.select([pl.col("arr").arr.slice(0, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[1], [10]]}
+    assert df.select([pl.col("arr").arr.slice(1, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2], [2]]}
+    assert df.select([pl.col("arr").arr.slice(-1, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[3], [1]]}
+    assert df.select([pl.col("arr").arr.slice(-2, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2], [2]]}
+    assert df.select([pl.col("arr").arr.slice(-2, 2, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2, 3], [2, 1]]}
+    return
+
+
+@pytest.mark.parametrize(
+    ("as_array"),
+    [True, False],
+)
+def test_arr_slice_on_series(as_array: bool) -> None:
+    vals = [[1, 2, 3, 4], [10, 2, 1, 2]]
+    s = pl.Series("a", vals, dtype=pl.Array(pl.Int64, 4))
+    assert s.arr.head(2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
+    assert s.arr.tail(2, as_array=as_array).to_list() == [[3, 4], [1, 2]]
+    assert s.arr.tail(10, as_array=as_array).to_list() == vals
+    assert s.arr.head(10, as_array=as_array).to_list() == vals
+    assert s.arr.slice(1, 2, as_array=as_array).to_list() == [[2, 3], [2, 1]]
+    assert s.arr.slice(-5, 2, as_array=as_array).to_list() == [[1], [10]]
+    # TODO: there is a bug in list.slice that does not allow negative values for head
+    if as_array:
+        assert s.arr.tail(-1, as_array=as_array).to_list() == [[2, 3, 4], [2, 1, 2]]
+        assert s.arr.tail(-2, as_array=as_array).to_list() == [[3, 4], [1, 2]]
+        assert s.arr.tail(-3, as_array=as_array).to_list() == [[4], [2]]
+        assert s.arr.head(-1, as_array=as_array).to_list() == [[1, 2, 3], [10, 2, 1]]
+        assert s.arr.head(-2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
+        assert s.arr.head(-3, as_array=as_array).to_list() == [[1], [10]]
+
+
 def test_arr_unique() -> None:
     df = pl.DataFrame(
         {"a": pl.Series("a", [[1, 1], [4, 3]], dtype=pl.Array(pl.Int64, 2))}
