@@ -177,24 +177,25 @@ pub fn aexpr_to_column_predicates(
                                 let values = values.to_any_value()?;
 
                                 let values = match values {
-                                    AnyValue::List(v) | AnyValue::Array(v, _) => {
-                                        if v.dtype() != &dtype {
-                                            return None;
-                                        }
-                                        if !nulls_equal && v.has_nulls() {
-                                            return None;
-                                        }
-
-                                        let v = v.rechunk();
-                                        v.iter()
-                                            .map(|av| {
-                                                Scalar::new(dtype.clone(), av.into_static())
-                                            })
-                                            .collect()
-                                    },
+                                    AnyValue::List(v) => v,
+                                    #[cfg(feature = "dtype-array")]
+                                    AnyValue::Array(v, _) => v,
                                     _ => return None,
                                 };
 
+                                if values.dtype() != &dtype {
+                                    return None;
+                                }
+                                if !nulls_equal && values.has_nulls() {
+                                    return None;
+                                }
+
+                                let values = values.rechunk();
+                                let values = values.iter()
+                                    .map(|av| {
+                                        Scalar::new(dtype.clone(), av.into_static())
+                                    })
+                                    .collect();
 
                                 Some(SpecializedColumnPredicate::EqualOneOf(values))
                             },
