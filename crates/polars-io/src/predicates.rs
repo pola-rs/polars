@@ -3,9 +3,8 @@ use std::fmt;
 use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
-use polars_parquet::read::expr::SpecializedParquetColumnExpr;
 #[cfg(feature = "parquet")]
-use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar};
+use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -33,6 +32,7 @@ pub enum SpecializedColumnPredicate {
 pub struct ColumnPredicateExpr {
     column_name: PlSmallStr,
     dtype: DataType,
+    #[cfg(feature = "parquet")]
     specialized: Option<SpecializedParquetColumnExpr>,
     expr: Arc<dyn PhysicalIoExpr>,
 }
@@ -44,7 +44,10 @@ impl ColumnPredicateExpr {
         expr: Arc<dyn PhysicalIoExpr>,
         specialized: Option<SpecializedColumnPredicate>,
     ) -> Self {
-        use {SpecializedColumnPredicate as S, SpecializedParquetColumnExpr as P};
+        use SpecializedColumnPredicate as S;
+        #[cfg(feature = "parquet")]
+        use SpecializedParquetColumnExpr as P;
+        #[cfg(feature = "parquet")]
         let specialized = specialized.and_then(|s| {
             Some(match s {
                 S::Equal(s) => P::Equal(cast_to_parquet_scalar(s)?),
@@ -67,6 +70,7 @@ impl ColumnPredicateExpr {
         Self {
             column_name,
             dtype,
+            #[cfg(feature = "parquet")]
             specialized,
             expr,
         }
