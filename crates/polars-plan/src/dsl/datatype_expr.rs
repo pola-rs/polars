@@ -1,8 +1,8 @@
 use core::fmt;
 use std::fmt::Write;
 
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{DataType, Field, InitHashMaps, PlHashSet};
+use polars_core::error::{PolarsResult, feature_gated, polars_bail, polars_ensure};
+use polars_core::prelude::DataType;
 use polars_core::schema::Schema;
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
@@ -161,6 +161,7 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
             DataType::Array(Box::new(dt_expr.into_datatype(schema)?), width)
         }),
         D::StructWithFields(field_exprs) => feature_gated!("dtype-struct", {
+            use polars_core::prelude::{Field, InitHashMaps, PlHashSet};
             let mut seen = PlHashSet::with_capacity(field_exprs.len());
             let mut fields = Vec::with_capacity(field_exprs.len());
             for (name, dt_expr) in field_exprs {

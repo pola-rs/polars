@@ -1,5 +1,5 @@
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{AnyValue, DataType, NamedFrom};
+use polars_core::error::{PolarsResult, feature_gated, polars_bail, polars_ensure};
+use polars_core::prelude::{AnyValue, DataType, Field, NamedFrom};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -7,10 +7,7 @@ use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::constants::get_literal_name;
-use crate::dsl::{
-    ArrayDataTypeFunction, DataTypeFunction, DataTypeKind, EnumDataTypeFunction,
-    StructDataTypeFunction,
-};
+use crate::dsl::{DataTypeFunction, DataTypeKind, StructDataTypeFunction};
 use crate::plans::{AExpr, LiteralValue};
 
 pub fn datatype_fn_to_aexpr(
@@ -90,16 +87,17 @@ pub fn datatype_fn_to_aexpr(
         DTF::Array(dt_expr, f) => {
             let (inner, width): (DataType, usize) = match dt_expr.into_datatype(schema)? {
                 #[cfg(feature = "dtype-array")]
-                DataType::Array(inner, width) => (inner, width),
+                DataType::Array(inner, width) => (*inner, width),
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not an Array"),
             };
 
             feature_gated!("dtype-array", {
+                use crate::dsl::ArrayDataTypeFunction;
                 let value = match f {
                     ArrayDataTypeFunction::Width => Scalar::from(width as u32),
                     ArrayDataTypeFunction::Dimensions => {
                         let mut dims = vec![width as u32];
-                        let mut inner = *inner;
+                        let mut inner = inner;
                         while let DataType::Array(new_inner, width) = inner {
                             dims.push(width as u32);
                             inner = *new_inner;
@@ -174,6 +172,7 @@ pub fn datatype_fn_to_aexpr(
             (value, get_literal_name().clone())
         },
         DTF::Enum(dt_expr, f) => feature_gated!("dtype-categorical", {
+            use crate::dsl::EnumDataTypeFunction;
             let revmap = match dt_expr.into_datatype(schema)? {
                 DataType::Enum(revmap, _) => revmap,
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not an Enum"),
