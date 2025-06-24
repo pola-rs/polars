@@ -1,6 +1,7 @@
 use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_utils::aliases::PlIndexSet;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
@@ -11,6 +12,7 @@ use crate::parquet::encoding::{Encoding, delta_byte_array, delta_length_byte_arr
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::read::deserialize::utils::{self};
+use crate::read::expr::SpecializedParquetColumnExpr;
 
 mod optional;
 mod optional_masked;
@@ -114,6 +116,135 @@ pub fn decode_plain(
 
     verify_utf8: bool,
 ) -> ParquetResult<()> {
+    if let Some(Filter::Predicate(p)) = filter.as_ref() {
+        assert!(page_validity.is_none());
+        let start_pred_true_num = pred_true_mask.set_bits();
+
+        match p.predicate.as_specialized().unwrap() {
+            SpecializedParquetColumnExpr::Equal(needle) => {
+                assert!(!needle.is_null());
+
+                let needle = if verify_utf8 {
+                    needle.as_str().unwrap().as_bytes()
+                } else {
+                    needle.as_binary().unwrap()
+                };
+
+                predicate::decode_equals(max_num_values, values, needle, pred_true_mask)?;
+
+                if p.include_values {
+                    let pred_true_num = pred_true_mask.set_bits() - start_pred_true_num;
+
+                    if pred_true_num > 0 {
+                        let new_target_len = target.len() + pred_true_num;
+                        let new_total_bytes_len =
+                            target.total_bytes_len() + pred_true_num * needle.len();
+
+                        target.push_value(needle);
+                        let view = *target.views().last().unwrap();
+
+                        // SAFETY: We know that the view is valid since we added it safely and we
+                        // update the total_bytes_len afterwards. The total_buffer_len is not affected.
+                        unsafe {
+                            target.views_mut().resize(new_target_len, view);
+                            target.set_total_bytes_len(new_total_bytes_len);
+                        }
+                    }
+                }
+            },
+            SpecializedParquetColumnExpr::EqualOneOf(needles) if needles.is_empty() => {
+                pred_true_mask.extend_constant(max_num_values, false);
+            },
+            SpecializedParquetColumnExpr::EqualOneOf(needles) => {
+                let mut inline_idx = 0;
+                let mut inlinable_views = [View::default(); 4];
+                let mut needle_views = Vec::new();
+                let mut needle_set = PlIndexSet::default();
+
+                for (i, needle) in needles.iter().enumerate() {
+                    assert!(!needle.is_null());
+
+                    let needle = if verify_utf8 {
+                        needle.as_str().unwrap().as_bytes()
+                    } else {
+                        needle.as_binary().unwrap()
+                    };
+
+                    let view = target.push_value_into_buffer(needle);
+                    if view.is_inline() && inline_idx < 4 && needle_views.is_empty() {
+                        inlinable_views[inline_idx] = view;
+                        inline_idx += 1;
+                    } else {
+                        needle_views.reserve(needles.len() - i);
+                        needle_set.reserve(needles.len() - i);
+
+                        // If there are duplicates we should only push one.
+                        if needle_set.insert(needle) {
+                            needle_views.push(view);
+                        }
+                    }
+                }
+
+                if needle_views.is_empty() {
+                    for i in inline_idx..4 {
+                        inlinable_views[i] = inlinable_views[0];
+                    }
+                }
+
+                let mut total_bytes_len = 0;
+                match (p.include_values, needle_views.is_empty()) {
+                    (false, false) => predicate::decode_is_in_no_values_non_inlinable(
+                        max_num_values,
+                        values,
+                        &needle_set,
+                        pred_true_mask,
+                        &mut total_bytes_len,
+                    )?,
+                    (true, false) => predicate::decode_is_in_non_inlinable(
+                        max_num_values,
+                        values,
+                        &needle_set,
+                        &needle_views,
+                        unsafe { target.views_mut() },
+                        pred_true_mask,
+                        &mut total_bytes_len,
+                    )?,
+                    (false, true) => predicate::decode_is_in_no_values_inlinable(
+                        max_num_values,
+                        values,
+                        &inlinable_views,
+                        pred_true_mask,
+                        &mut total_bytes_len,
+                    )?,
+                    (true, true) => predicate::decode_is_in_inlinable(
+                        max_num_values,
+                        values,
+                        &inlinable_views,
+                        unsafe { target.views_mut() },
+                        pred_true_mask,
+                        &mut total_bytes_len,
+                    )?,
+                }
+
+                let new_total_bytes_len = target.total_bytes_len() + total_bytes_len;
+
+                // SAFETY: We know that the view is valid since we added it safely and we
+                // update the total_bytes_len afterwards. The total_buffer_len is not affected.
+                unsafe {
+                    target.set_total_bytes_len(new_total_bytes_len);
+                }
+            },
+            _ => unreachable!(),
+        }
+
+        if is_optional && p.include_values {
+            let num_pred_true = pred_true_mask.set_bits() - start_pred_true_num;
+            validity.extend_constant(num_pred_true, true);
+        }
+
+        return Ok(());
+    }
+
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, max_num_values);
     }
@@ -164,46 +295,7 @@ pub fn decode_plain(
             &filter_from_range(rng.clone()),
             verify_utf8,
         ),
-        (Some(Filter::Predicate(p)), page_validity) => {
-            let Some(needle) = p.predicate.to_equals_scalar() else {
-                unreachable!();
-            };
-
-            if needle.is_null() || page_validity.is_some() {
-                todo!();
-            }
-
-            let needle = if verify_utf8 {
-                needle.as_str().unwrap().as_bytes()
-            } else {
-                needle.as_binary().unwrap()
-            };
-
-            let start_pred_true_num = pred_true_mask.set_bits();
-            predicate::decode_equals(max_num_values, values, needle, pred_true_mask)?;
-
-            if p.include_values {
-                let pred_true_num = pred_true_mask.set_bits() - start_pred_true_num;
-
-                if pred_true_num > 0 {
-                    let new_target_len = target.len() + pred_true_num;
-                    let new_total_bytes_len =
-                        target.total_bytes_len() + pred_true_num * needle.len();
-
-                    target.push_value(needle);
-                    let view = *target.views().last().unwrap();
-
-                    // SAFETY: We know that the view is valid since we added it safely and we
-                    // update the total_bytes_len afterwards. The total_buffer_len is not affected.
-                    unsafe {
-                        target.views_mut().resize(new_target_len, view);
-                        target.set_total_bytes_len(new_total_bytes_len);
-                    }
-                }
-            }
-
-            Ok(())
-        },
+        (Some(Filter::Predicate(_)), _) => unreachable!(),
     }?;
 
     Ok(())
@@ -413,7 +505,13 @@ impl utils::Decoder for BinViewDecoder {
         has_predicate_specialization |=
             matches!(state.translation, StateTranslation::Dictionary(_));
         has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
-            && predicate.predicate.to_equals_scalar().is_some();
+            && matches!(
+                predicate.predicate.as_specialized(),
+                Some(
+                    SpecializedParquetColumnExpr::Equal(_)
+                        | SpecializedParquetColumnExpr::EqualOneOf(_)
+                )
+            );
 
         // @TODO: This should be implemented
         has_predicate_specialization &= state.page_validity.is_none();

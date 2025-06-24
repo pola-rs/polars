@@ -84,10 +84,17 @@ impl ParquetScalar {
     }
 }
 
-pub enum ParquetScalarRange {
-    Min(ParquetScalar),
-    Max(ParquetScalar),
-    Closed(ParquetScalar, ParquetScalar),
+#[derive(Clone)]
+pub enum SpecializedParquetColumnExpr {
+    Equal(ParquetScalar),
+
+    Between(ParquetScalar, ParquetScalar),
+
+    EqualOneOf(Box<[ParquetScalar]>),
+
+    StartsWith(Box<[u8]>),
+    EndsWith(Box<[u8]>),
+    StartEndsWith(Box<[u8]>, Box<[u8]>),
 }
 
 pub type ParquetColumnExprRef = Arc<dyn ParquetColumnExpr>;
@@ -98,25 +105,7 @@ pub trait ParquetColumnExpr: Send + Sync {
         bm.freeze()
     }
     fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder);
-
     fn evaluate_null(&self) -> bool;
 
-    fn to_equals_scalar(&self) -> Option<ParquetScalar>;
-    fn to_range_scalar(&self) -> Option<ParquetScalarRange>;
-}
-
-impl ParquetScalarRange {
-    pub fn into_closed_with_min_max(
-        self,
-        min: ParquetScalar,
-        max: ParquetScalar,
-    ) -> (ParquetScalar, ParquetScalar) {
-        debug_assert_eq!(std::mem::discriminant(&min), std::mem::discriminant(&max));
-
-        match self {
-            Self::Min(min) => (min, max),
-            Self::Max(max) => (min, max),
-            Self::Closed(min, max) => (min, max),
-        }
-    }
+    fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr>;
 }
