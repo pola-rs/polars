@@ -1323,9 +1323,10 @@ def test_comparisons_bool_series_to_int() -> None:
 
     for op in (ge, gt, le, lt):
         for scalar in (0, 1.0, True, False):
+            op_str = op.__name__.replace("e", "t_eq")
             with pytest.raises(
-                TypeError,
-                match=r"'\W{1,2}' not supported .* 'Series' and '(int|bool|float)'",
+                NotImplementedError,
+                match=rf"Series of type Boolean does not have {op_str} operator",
             ):
                 op(srs_bool, scalar)
 
@@ -2288,3 +2289,14 @@ def test_is_close_invalid_abs_tol() -> None:
 def test_is_close_invalid_rel_tol() -> None:
     with pytest.raises(pl.exceptions.ComputeError):
         pl.select(pl.lit(1.0).is_close(1, rel_tol=1.0))
+
+
+def test_comparisons_structs_raise() -> None:
+    s = pl.Series([{"x": 1}, {"x": 2}, {"x": 3}])
+    rhss = ["", " ", 5, {"x": 1}]
+    for rhs in rhss:
+        with pytest.raises(
+            NotImplementedError,
+            match=r"Series of type Struct\(\{'x': Int64\}\) does not have eq operator",
+        ):
+            s == rhs  # noqa: B015
