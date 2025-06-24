@@ -373,6 +373,7 @@ pub fn array_to_pages(
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     let encoding = field_options.encoding;
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
+        let encoding = Encoding::RleDictionary;
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
@@ -383,29 +384,26 @@ pub fn array_to_pages(
             )
         });
     };
-    match field_options.use_dictionary_encoding {
-        UseDictionaryEncoding::Auto => {
-            if let Some(result) = encode_as_dictionary_optional(
-                primitive_array,
-                nested,
-                type_.clone(),
-                options,
-                false,
-            ) {
-                return result;
-            }
-        },
-        UseDictionaryEncoding::Always => {
-            return encode_as_dictionary_optional(
-                primitive_array,
-                nested,
-                type_.clone(),
-                options,
-                true,
-            )
-            .unwrap();
-        },
-        UseDictionaryEncoding::Never => {},
+
+    if matches!(nested.first(), Some(Nested::Primitive(_)))
+        && !matches!(primitive_array.dtype(), ArrowDataType::Null)
+        && !matches!(
+            field_options.use_dictionary_encoding,
+            UseDictionaryEncoding::Never
+        )
+    {
+        if let Some(result) = encode_as_dictionary_optional(
+            primitive_array,
+            nested,
+            type_.clone(),
+            options,
+            matches!(
+                field_options.use_dictionary_encoding,
+                UseDictionaryEncoding::Always
+            ),
+        ) {
+            return result;
+        }
     }
 
     let nested = nested.to_vec();

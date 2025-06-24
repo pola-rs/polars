@@ -193,6 +193,7 @@ fn to_column_write_options_rec(
     if let Some(overwrites) = overwrites {
         column_options.field_id = overwrites.field_id;
         column_options.metadata = convert_metadata(&overwrites.metadata);
+        column_options.required = overwrites.required;
     }
 
     use arrow::datatypes::PhysicalType::*;
