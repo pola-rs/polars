@@ -29,13 +29,13 @@ class DataTypeExprArrNameSpace:
         --------
         >>> pl.select(pl.Array(pl.Int8, (1, 2, 3)).to_dtype_expr().arr.width())
         shape: (1, 1)
-        ┌───────────┐
-        │ literal   │
-        │ ---       │
-        │ int       │
-        ╞═══════════╡
-        │ 1         │
-        └───────────┘
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ int     │
+        ╞═════════╡
+        │ 1       │
+        └─────────┘
         """
         return pl.Expr._from_pyexpr(self._pydatatype_expr.arr_width())
 
