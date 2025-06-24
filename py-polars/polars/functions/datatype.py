@@ -89,7 +89,7 @@ def struct_with_fields(
     """
     from polars.polars import PyDataTypeExpr
 
-    def preprocess(dtype_expr: pl.DataType | pl.DataTypeExpr) -> PyDataTypeExpr:
+    def preprocess(dtype_expr: PolarsDataType | pl.DataTypeExpr) -> PyDataTypeExpr:
         if isinstance(dtype_expr, pl.DataType):
             return dtype_expr.to_dtype_expr()._pydatatype_expr
         if isinstance(dtype_expr, pl.DataTypeClass):

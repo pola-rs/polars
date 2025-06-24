@@ -32,7 +32,7 @@ class DataTypeExprArrNameSpace:
         ┌─────────┐
         │ literal │
         │ ---     │
-        │ int     │
+        │ u32     │
         ╞═════════╡
         │ 1       │
         └─────────┘
