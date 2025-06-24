@@ -186,6 +186,7 @@ round_series = ["polars-plan/round_series", "polars-ops/round_series", "polars-e
 is_first_distinct = ["polars-plan/is_first_distinct"]
 is_last_distinct = ["polars-plan/is_last_distinct"]
 is_between = ["polars-plan/is_between", "polars-expr/is_between"]
+is_close = ["polars-plan/is_close"]
 is_unique = ["polars-plan/is_unique"]
 cross_join = ["polars-plan/cross_join", "polars-ops/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join", "polars-mem-engine/asof_join"]

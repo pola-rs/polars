@@ -48,6 +48,7 @@ Computation
     Series.hist
     Series.index_of
     Series.is_between
+    Series.is_close
     Series.kurtosis
     Series.last
     Series.log
