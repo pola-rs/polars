@@ -528,7 +528,7 @@ def test_to_pandas(test_data: list[Any]) -> None:
         vals_b = [(None if x is None else x.tolist()) for x in b]
     else:
         v = b.replace({np.nan: None}).values.tolist()
-        vals_b = cast(list[Any], v)
+        vals_b = cast("list[Any]", v)
 
     assert vals_b == test_data
 
@@ -629,7 +629,7 @@ def test_arrow() -> None:
     assert out == pa.nulls(3)
 
     s = cast(
-        pl.Series,
+        "pl.Series",
         pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
     )
     assert s.dtype == pl.List
@@ -1380,6 +1380,16 @@ def test_to_dummies_drop_first() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_to_dummies_drop_nulls() -> None:
+    s = pl.Series("a", [1, 2, None])
+    result = s.to_dummies(drop_nulls=True)
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_2": [0, 1, 0]},
+        schema={"a_1": pl.UInt8, "a_2": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_to_dummies_null_clash_19096() -> None:
     with pytest.raises(
         DuplicateError, match="column with name '_null' has more than one occurrence"
@@ -2036,7 +2046,7 @@ def test_numpy_series_arithmetic() -> None:
     assert_series_equal(result_add1, expected_add)  # type: ignore[arg-type]
     assert_series_equal(result_add2, expected_add)
 
-    result_sub1 = cast(pl.Series, y - sx)  # py37 is different vs py311 on this one
+    result_sub1 = cast("pl.Series", y - sx)  # py37 is different vs py311 on this one
     expected = pl.Series([2.0, 2.0], dtype=pl.Float64)
     assert_series_equal(result_sub1, expected)
     result_sub2 = sx - y
@@ -2242,3 +2252,49 @@ def test_comparisons_structs_raise() -> None:
             match=r"Series of type Struct\(\{'x': Int64\}\) does not have eq operator",
         ):
             s == rhs  # noqa: B015
+def test_is_close() -> None:
+    a = pl.Series(
+        "a",
+        [
+            1.0,
+            1.0,
+            float("-inf"),
+            float("inf"),
+            float("inf"),
+            float("inf"),
+            float("nan"),
+        ],
+    )
+    b = pl.Series(
+        "b", [1.3, 1.7, float("-inf"), float("inf"), float("-inf"), 1.0, float("nan")]
+    )
+    assert a.is_close(b, abs_tol=0.5).to_list() == [
+        True,
+        False,
+        True,
+        True,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_is_close_literal() -> None:
+    a = pl.Series("a", [1.1, 1.2, 1.3, 1.4, float("inf"), float("nan")])
+    assert a.is_close(1.2).to_list() == [False, True, False, False, False, False]
+
+
+def test_is_close_nans_equal() -> None:
+    a = pl.Series("a", [1.0, float("nan")])
+    b = pl.Series("b", [2.0, float("nan")])
+    assert a.is_close(b, nans_equal=True).to_list() == [False, True]
+
+
+def test_is_close_invalid_abs_tol() -> None:
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.select(pl.lit(1.0).is_close(1, abs_tol=-1.0))
+
+
+def test_is_close_invalid_rel_tol() -> None:
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.select(pl.lit(1.0).is_close(1, rel_tol=1.0))

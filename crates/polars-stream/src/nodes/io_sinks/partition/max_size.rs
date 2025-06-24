@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -11,6 +10,7 @@ use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -27,7 +27,7 @@ pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
 
-    base_path: Arc<PathBuf>,
+    base_path: Arc<PlPath>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -54,7 +54,7 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -93,8 +93,9 @@ fn default_file_path_cb(
     _part_idx: usize,
     _in_part_idx: usize,
     _columns: Option<&[Column]>,
-) -> PolarsResult<PathBuf> {
-    Ok(PathBuf::from(format!("{file_idx}.{ext}")))
+    _separator: char,
+) -> PolarsResult<String> {
+    Ok(format!("{file_idx}.{ext}"))
 }
 
 impl SinkNode for MaxSizePartitionSinkNode {
@@ -157,7 +158,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                             Some(c) => c,
                             None => {
                                 let result = open_new_sink(
-                                    base_path.as_path(),
+                                    base_path.as_ref().as_ref(),
                                     file_path_cb.as_ref(),
                                     default_file_path_cb,
                                     file_idx,

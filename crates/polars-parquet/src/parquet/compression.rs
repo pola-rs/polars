@@ -129,6 +129,12 @@ pub fn compress(
     }
 }
 
+pub enum DecompressionContext {
+    Unset,
+    #[cfg(feature = "zstd")]
+    Zstd(zstd::zstd_safe::DCtx<'static>),
+}
+
 /// Decompresses data stored in slice `input_buf` and writes output to `output_buf`.
 /// Returns the total number of bytes written.
 #[allow(unused_variables)]
@@ -136,6 +142,7 @@ pub fn decompress(
     compression: Compression,
     input_buf: &[u8],
     output_buf: &mut [u8],
+    ctx: &mut DecompressionContext,
 ) -> ParquetResult<()> {
     match compression {
         #[cfg(feature = "brotli")]
@@ -211,7 +218,13 @@ pub fn decompress(
         #[cfg(feature = "zstd")]
         Compression::Zstd => {
             use std::io::Read;
-            let mut decoder = zstd::Decoder::with_buffer(input_buf)?;
+            if !matches!(ctx, DecompressionContext::Zstd(_)) {
+                *ctx = DecompressionContext::Zstd(zstd::zstd_safe::DCtx::create());
+            }
+            let DecompressionContext::Zstd(ctx) = ctx else {
+                unreachable!();
+            };
+            let mut decoder = zstd::Decoder::with_context(input_buf, ctx);
             decoder.read_exact(output_buf).map_err(|e| e.into())
         },
         #[cfg(not(feature = "zstd"))]
@@ -318,8 +331,14 @@ mod tests {
         assert!(compressed.len() - offset < data.len());
 
         let mut decompressed = vec![0; data.len()];
-        decompress(c.into(), &compressed[offset..], &mut decompressed)
-            .expect("Error when decompressing");
+        let mut context = DecompressionContext::Unset;
+        decompress(
+            c.into(),
+            &compressed[offset..],
+            &mut decompressed,
+            &mut context,
+        )
+        .expect("Error when decompressing");
         assert_eq!(data, decompressed.as_slice());
     }
 

@@ -6041,6 +6041,64 @@ class Expr:
             self._pyexpr.is_between(lower_bound, upper_bound, closed)
         )
 
+    def is_close(
+        self,
+        other: IntoExpr,
+        *,
+        abs_tol: float = 0.0,
+        rel_tol: float = 1e-09,
+        nans_equal: bool = False,
+    ) -> Expr:
+        r"""
+        Check if this expression is close, i.e. almost equal, to the other expression.
+
+        Two values `a` and `b` are considered close if the following condition holds:
+
+        .. math::
+            |a-b| \le max \{ \text{rel_tol} \cdot max \{ |a|, |b| \}, \text{abs_tol} \}
+
+        Parameters
+        ----------
+        abs_tol
+            Absolute tolerance. This is the maximum allowed absolute difference between
+            two values. Must be non-negative.
+        rel_tol
+            Relative tolerance. This is the maximum allowed difference between two
+            values, relative to the larger absolute value. Must be in the range [0, 1).
+        nans_equal
+            Whether NaN values should be considered equal.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+            The implementation of this method is symmetric and mirrors the behavior of
+            :meth:`math.isclose`. Specifically note that this behavior is different to
+            :meth:`numpy.isclose`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.5, 2.0, 2.5], "b": [1.55, 2.2, 3.0]})
+        >>> df.with_columns(pl.col("a").is_close("b", abs_tol=0.1).alias("is_close"))
+        shape: (3, 3)
+        ┌─────┬──────┬──────────┐
+        │ a   ┆ b    ┆ is_close │
+        │ --- ┆ ---  ┆ ---      │
+        │ f64 ┆ f64  ┆ bool     │
+        ╞═════╪══════╪══════════╡
+        │ 1.5 ┆ 1.55 ┆ true     │
+        │ 2.0 ┆ 2.2  ┆ false    │
+        │ 2.5 ┆ 3.0  ┆ false    │
+        └─────┴──────┴──────────┘
+        """
+        other = parse_into_expression(other)
+        return self._from_pyexpr(
+            self._pyexpr.is_close(other, abs_tol, rel_tol, nans_equal)
+        )
+
     def hash(
         self,
         seed: int = 0,

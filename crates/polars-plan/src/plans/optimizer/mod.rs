@@ -241,8 +241,9 @@ pub fn optimize(
     }
 
     if _cse_plan_changed
-        && get_members_opt!()
-            .is_some_and(|members| members.has_joins_or_unions && members.has_cache)
+        && get_members_opt!().is_some_and(|members| {
+            (members.has_joins_or_unions | members.has_sink_multiple) && members.has_cache
+        })
     {
         // We only want to run this on cse inserted caches
         cache_states::set_cache_states(

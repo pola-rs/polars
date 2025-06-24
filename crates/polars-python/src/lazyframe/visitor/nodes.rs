@@ -408,11 +408,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
                     // will corrupt to `uri:/...`
                     for path in paths.iter() {
-                        if let Some(path) = path.to_str() {
-                            out.append(path)?
-                        } else {
-                            out.append(path)?
-                        }
+                        out.append(path.to_str())?;
                     }
 
                     out.into_py_any(py)?
@@ -644,6 +640,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .ok_or_else(|| {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
+                        .iter()
+                        .map(|p| p.to_str())
+                        .collect::<Vec<_>>()
                         .into_py_any(py)?;
 
                     let scan_type = scan_type_to_pyobject(py, scan_type, cloud_options)?;

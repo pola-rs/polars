@@ -1,3 +1,6 @@
+#[cfg(feature = "is_close")]
+use polars_utils::total_ord::TotalOrdWrap;
+
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -32,11 +35,18 @@ pub enum BooleanFunction {
     IsIn {
         nulls_equal: bool,
     },
+    #[cfg(feature = "is_close")]
+    IsClose {
+        abs_tol: TotalOrdWrap<f64>,
+        rel_tol: TotalOrdWrap<f64>,
+        nans_equal: bool,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
     Not,
 }
+
 impl Display for BooleanFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use BooleanFunction::*;
@@ -61,6 +71,8 @@ impl Display for BooleanFunction {
             IsBetween { .. } => "is_between",
             #[cfg(feature = "is_in")]
             IsIn { .. } => "is_in",
+            #[cfg(feature = "is_close")]
+            IsClose { .. } => "is_close",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",

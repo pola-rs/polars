@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
-from tempfile import NamedTemporaryFile
+from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any
 
 import numpy as np
@@ -919,3 +920,18 @@ def test_cse_cache_leakage_22339() -> None:
     ac = a.join(c, on="x")
 
     assert pl.concat([ab, bc, ac]).collect().to_dict(as_series=False) == {"x": []}
+
+
+@pytest.mark.write_disk
+def test_multiplex_predicate_pushdown() -> None:
+    ldf = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    with TemporaryDirectory() as f:
+        tmppath = Path(f)
+        ldf.sink_parquet(
+            pl.PartitionByKey(tmppath, by="a", include_key=True),
+            sync_on_close="all",
+            mkdir=True,
+        )
+        ldf = pl.scan_parquet(tmppath, hive_partitioning=True)
+        ldf = ldf.filter(pl.col("a").eq(1)).select("b")
+        assert 'SELECTION: [(col("a")) == (1)]' in pl.explain_all([ldf, ldf])

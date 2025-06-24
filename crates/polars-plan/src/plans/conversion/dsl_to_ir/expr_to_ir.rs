@@ -1,5 +1,5 @@
+use super::functions::convert_functions;
 use super::*;
-use crate::plans::conversion::functions::convert_functions;
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>, schema: &Schema) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl(expr, arena, schema)?;

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -29,6 +28,7 @@ use polars_plan::dsl::ExtraColumnsPolicy;
 use polars_plan::prelude::FileType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
@@ -149,7 +149,7 @@ pub enum PhysNodeKind {
 
     PartitionSink {
         input: PhysStream,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
