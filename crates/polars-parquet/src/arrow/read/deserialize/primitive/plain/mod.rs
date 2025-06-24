@@ -196,10 +196,14 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
                     target.resize(target.len() + num_pred_true, needle);
                 }
             },
-            SpecializedParquetColumnExpr::EqualOneOf(needles) if (1..=8).contains(&needles.len()) => {
+            SpecializedParquetColumnExpr::EqualOneOf(needles)
+                if (1..=8).contains(&needles.len()) =>
+            {
                 let mut needles_array = [B::zeroed(); 8];
                 for i in 0..8 {
-                    needles_array[i] = needles[i.min(needles.len() - 1)].to_aligned_bytes::<B>().unwrap();
+                    needles_array[i] = needles[i.min(needles.len() - 1)]
+                        .to_aligned_bytes::<B>()
+                        .unwrap();
                 }
 
                 if p.include_values {

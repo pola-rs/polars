@@ -607,16 +607,18 @@ impl<D: Decoder> PageDecoder<D> {
                             match &state.page_validity {
                                 None => pred_true_mask.extend_constant(page.num_values(), false),
                                 Some(v) => {
-                                    pred_true_mask.extend_from_bitmap(v);
+                                    let start_set_bits = pred_true_mask.set_bits();
+                                    pred_true_mask.extend_from_bitmap(&!v);
                                     if p.include_values {
-                                        target.extend_nulls(v.set_bits());
+                                        target.extend_nulls(
+                                            pred_true_mask.set_bits() - start_set_bits,
+                                        );
                                     }
                                 },
                             }
                         } else {
                             pred_true_mask.extend_constant(page.num_values(), false);
                         }
-                        drop(state);
                     },
 
                     // For now, we have a function that indicates whether the predicate can actually be

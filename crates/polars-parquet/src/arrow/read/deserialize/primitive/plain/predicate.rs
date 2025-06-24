@@ -28,7 +28,7 @@ pub fn decode_is_in_no_values<B: AlignedBytes>(
 ) {
     pred_true_mask.reserve(values.len());
     for &v in values {
-        let is_pred_true = needle.iter().any(|n| *n == B::from_unaligned(v));
+        let is_pred_true = needle.contains(&B::from_unaligned(v));
 
         // SAFETY: We reserved enough before the loop.
         unsafe {
@@ -49,7 +49,7 @@ pub fn decode_is_in<B: AlignedBytes>(
     let mut next_idx = target.len();
     for &v in values {
         let v = B::from_unaligned(v);
-        let is_pred_true = needle.iter().any(|n| *n == v);
+        let is_pred_true = needle.contains(&v);
 
         // SAFETY: We reserved enough before the loop.
         unsafe {
