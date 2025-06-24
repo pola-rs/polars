@@ -116,6 +116,7 @@ pub fn aexpr_to_column_predicates(
                                     None
                                 }
                             },
+                            #[cfg(feature = "is_between")]
                             AExpr::Function {
                                 input,
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
@@ -159,6 +160,7 @@ pub fn aexpr_to_column_predicates(
                                     high_closed,
                                 )
                             },
+                            #[cfg(feature = "is_in")]
                             AExpr::Function {
                                 input,
                                 function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
