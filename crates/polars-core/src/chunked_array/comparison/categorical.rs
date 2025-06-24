@@ -354,3 +354,24 @@ where
         )
     }
 }
+
+
+impl<T: PolarsCategoricalType> ChunkCompareIneq<&str> for NewCategoricalChunked<T> {
+    type Item = BooleanChunked;
+
+    fn gt(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_compare_helper(self, rhs, |l, r| l > r)
+    }
+
+    fn gt_eq(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_compare_helper(self, rhs, |l, r| l >= r)
+    }
+
+    fn lt(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_compare_helper(self, rhs, |l, r| l < r)
+    }
+
+    fn lt_eq(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_compare_helper(self, rhs, |l, r| l <= r)
+    }
+}
