@@ -6,6 +6,383 @@ use crate::chunked_array::cast::CastOptions;
 use crate::prelude::nulls::replace_non_null;
 use crate::prelude::*;
 
+fn cat_equality_helper<T: PolarsCategoricalType, EqPhys>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &NewCategoricalChunked<T>,
+    eq_phys: EqPhys,
+) -> PolarsResult<BooleanChunked>
+where
+    EqPhys:
+        Fn(&ChunkedArray<T::PolarsPhysical>, &ChunkedArray<T::PolarsPhysical>) -> BooleanChunked,
+{
+    lhs.dtype().matches_schema_type(rhs.dtype())?;
+    Ok(eq_phys(lhs.physical(), rhs.physical()))
+}
+
+fn cat_compare_helper<T: PolarsCategoricalType, Cmp>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &NewCategoricalChunked<T>,
+    cmp: Cmp,
+) -> PolarsResult<BooleanChunked>
+where
+    Cmp: Fn(&str, &str) -> bool,
+{
+    lhs.dtype().matches_schema_type(rhs.dtype())?;
+    let mapping = lhs.get_mapping();
+    match (lhs.len(), rhs.len()) {
+        (lhs_len, 1) => {
+            let Some(cat) = rhs.physical().get(0) else {
+                return Ok(BooleanChunked::full_null(lhs.name().clone(), lhs_len));
+            };
+
+            // SAFETY: physical is in range of the mapping.
+            let v = unsafe { mapping.cat_to_str_unchecked(cat.as_cat()) };
+            Ok(lhs
+                .iter_str()
+                .map(|opt_s| opt_s.map(|s| cmp(s, v)))
+                .collect_ca_trusted(lhs.name().clone()))
+        },
+        (1, rhs_len) => {
+            let Some(cat) = lhs.physical().get(0) else {
+                return Ok(BooleanChunked::full_null(lhs.name().clone(), rhs_len));
+            };
+
+            // SAFETY: physical is in range of the mapping.
+            let v = unsafe { mapping.cat_to_str_unchecked(cat.as_cat()) };
+            Ok(rhs
+                .iter_str()
+                .map(|opt_s| opt_s.map(|s| cmp(v, s)))
+                .collect_ca_trusted(lhs.name().clone()))
+        },
+        (lhs_len, rhs_len) => {
+            assert!(lhs_len == rhs_len);
+            Ok(lhs
+                .iter_str()
+                .zip(rhs.iter_str())
+                .map(|(l, r)| match (l, r) {
+                    (None, _) => None,
+                    (_, None) => None,
+                    (Some(l), Some(r)) => Some(cmp(l, r)),
+                })
+                .collect_ca_trusted(lhs.name().clone()))
+        }
+    }
+}
+
+fn cat_str_equality_helper<T: PolarsCategoricalType, Eq, EqPhysScalar, EqStrScalar>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &StringChunked,
+    eq: Eq,
+    eq_phys_scalar: EqPhysScalar,
+    eq_str_scalar: EqStrScalar,
+) -> BooleanChunked
+where
+    Eq: Fn(Option<&str>, Option<&str>) -> Option<bool>,
+    EqPhysScalar: Fn(&ChunkedArray<T::PolarsPhysical>, T::Native) -> BooleanChunked,
+    EqStrScalar: Fn(&StringChunked, &str) -> BooleanChunked,
+{
+    let mapping = lhs.get_mapping();
+    let eq_missing = eq(None, None) == Some(true);
+    match (lhs.len(), rhs.len()) {
+        (lhs_len, 1) => {
+            let Some(s) = rhs.get(0) else {
+                return if eq_missing {
+                    lhs.physical().is_null()
+                } else {
+                    BooleanChunked::full_null(lhs.name().clone(), lhs_len)
+                };
+            };
+            
+            cat_str_scalar_equality_helper(lhs, s, eq_missing, &eq_phys_scalar)
+        },
+        (1, rhs_len) => {
+            let Some(cat) = lhs.get(0) else {
+                return if eq_missing {
+                    rhs.is_null().with_name(lhs.name().clone())
+                } else {
+                    BooleanChunked::full_null(lhs.name().clone(), rhs_len)
+                };
+            };
+
+            // SAFETY: physical is in range of the mapping.
+            let s = unsafe { mapping.cat_to_str_unchecked(cat.as_cat()) };
+            eq_str_scalar(rhs, s).with_name(lhs.name().clone())
+        },
+        (lhs_len, rhs_len) => {
+            assert!(lhs_len == rhs_len);
+            lhs
+                .iter_str()
+                .zip(rhs.iter())
+                .map(|(l, r)| eq(l, r))
+                .collect_ca_trusted(lhs.name().clone())
+        }
+    }
+}
+
+fn cat_str_compare_helper<T: PolarsCategoricalType, Cmp, CmpStrScalar>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &StringChunked,
+    cmp: Cmp,
+    cmp_str_scalar: CmpStrScalar,
+) -> BooleanChunked
+where
+    Cmp: Fn(&str, &str) -> bool,
+    CmpStrScalar: Fn(&str, &StringChunked) -> BooleanChunked,
+{
+    let mapping = lhs.get_mapping();
+    match (lhs.len(), rhs.len()) {
+        (lhs_len, 1) => {
+            let Some(s) = rhs.get(0) else {
+                return BooleanChunked::full_null(lhs.name().clone(), lhs_len);
+            };
+            cat_str_scalar_compare_helper(lhs, s, cmp)
+        },
+        (1, rhs_len) => {
+            let Some(cat) = lhs.get(0) else {
+                return BooleanChunked::full_null(lhs.name().clone(), rhs_len);
+            };
+
+            // SAFETY: physical is in range of the mapping.
+            let s = unsafe { mapping.cat_to_str_unchecked(cat.as_cat()) };
+            cmp_str_scalar(s, rhs).with_name(lhs.name().clone())
+        },
+        (lhs_len, rhs_len) => {
+            assert!(lhs_len == rhs_len);
+            lhs
+                .iter_str()
+                .zip(rhs.iter())
+                .map(|(l, r)| match (l, r) {
+                    (None, _) => None,
+                    (_, None) => None,
+                    (Some(l), Some(r)) => Some(cmp(l, r)),
+                })
+                .collect_ca_trusted(lhs.name().clone())
+        }
+    }
+}
+
+fn cat_str_scalar_equality_helper<T: PolarsCategoricalType, EqPhysScalar>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &str,
+    eq_missing: bool,
+    eq_phys_scalar: EqPhysScalar,
+) -> BooleanChunked
+where
+    EqPhysScalar: Fn(&ChunkedArray<T::PolarsPhysical>, T::Native) -> BooleanChunked,
+{
+    let mapping = lhs.get_mapping();
+    let Some(cat) = mapping.get_cat(rhs) else {
+        return if eq_missing {
+            BooleanChunked::full(lhs.name().clone(), false, lhs.len())
+        } else {
+            // Full false but with original validity mask.
+            arity::unary_mut_values(lhs.physical(), |a| {
+                BooleanArray::full(a.len(), false, ArrowDataType::Boolean)
+            })
+        };
+    };
+
+    eq_phys_scalar(lhs, T::Native::from_cat(cat))
+}
+
+fn cat_str_scalar_compare_helper<T: PolarsCategoricalType, Cmp>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &str,
+    cmp: Cmp,
+) -> BooleanChunked
+where
+    Cmp: Fn(&str, &str) -> bool,
+{
+    lhs.iter_str()
+        .map(|opt_l| opt_l.map(|l| cmp(l, rhs)))
+        .collect_ca_trusted(lhs.name().clone())
+}
+
+
+impl<T: PolarsCategoricalType> ChunkCompareEq<&NewCategoricalChunked<T>>
+    for NewCategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>:
+        for<'a> ChunkCompareEq<&'a ChunkedArray<T::PolarsPhysical>, Item = BooleanChunked>,
+{
+    type Item = PolarsResult<BooleanChunked>;
+
+    fn equal(&self, rhs: &Self) -> Self::Item {
+        cat_equality_helper(self, rhs, |l, r| l.equal(r))
+    }
+
+    fn equal_missing(&self, rhs: &Self) -> Self::Item {
+        cat_equality_helper(self, rhs, |l, r| l.equal_missing(r))
+    }
+
+    fn not_equal(&self, rhs: &Self) -> Self::Item {
+        cat_equality_helper(self, rhs, |l, r| l.not_equal(r))
+    }
+
+    fn not_equal_missing(&self, rhs: &Self) -> Self::Item {
+        cat_equality_helper(self, rhs, |l, r| l.not_equal_missing(r))
+    }
+}
+
+impl<T: PolarsCategoricalType> ChunkCompareIneq<&NewCategoricalChunked<T>>
+    for NewCategoricalChunked<T>
+{
+    type Item = PolarsResult<BooleanChunked>;
+
+    fn gt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+        cat_compare_helper(self, rhs, |l, r| l > r)
+    }
+
+    fn gt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+        cat_compare_helper(self, rhs, |l, r| l >= r)
+    }
+
+    fn lt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+        cat_compare_helper(self, rhs, |l, r| l < r)
+    }
+
+    fn lt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+        cat_compare_helper(self, rhs, |l, r| l <= r)
+    }
+}
+
+impl<T: PolarsCategoricalType> ChunkCompareEq<&StringChunked> for NewCategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>:
+        for<'a> ChunkCompareEq<T::Native, Item = BooleanChunked>,
+{
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_equality_helper(
+            self,
+            rhs,
+            |l, r| l.zip(r).map(|(l, r)| l == r),
+            |l, c| l.equal(c),
+            |r, c| r.equal(c),
+        )
+    }
+
+    fn equal_missing(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_equality_helper(
+            self,
+            rhs,
+            |l, r| Some(l == r),
+            |l, c| l.equal(c),
+            |r, c| r.equal(c),
+        )
+    }
+
+    fn not_equal(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_equality_helper(
+            self,
+            rhs,
+            |l, r| l.zip(r).map(|(l, r)| l != r),
+            |l, c| l.not_equal(c),
+            |r, c| r.not_equal(c),
+        )
+    }
+
+    fn not_equal_missing(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_equality_helper(
+            self,
+            rhs,
+            |l, r| Some(l != r),
+            |l, c| l.not_equal(c),
+            |r, c| r.not_equal(c),
+        )
+    }
+}
+
+impl<T: PolarsCategoricalType> ChunkCompareIneq<&StringChunked> for NewCategoricalChunked<T> {
+    type Item = BooleanChunked;
+
+    fn gt(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_compare_helper(self, rhs, |l, r| l > r, |c, r| r.lt(c))
+    }
+
+    fn gt_eq(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_compare_helper(self, rhs, |l, r| l >= r, |c, r| r.lt_eq(c))
+    }
+
+    fn lt(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_compare_helper(self, rhs, |l, r| l < r, |c, r| r.gt(c))
+    }
+
+    fn lt_eq(&self, rhs: &StringChunked) -> Self::Item {
+        cat_str_compare_helper(self, rhs, |l, r| l <= r, |c, r| r.gt_eq(c))
+    }
+}
+
+impl<T: PolarsCategoricalType> ChunkCompareEq<&str> for NewCategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>:
+        for<'a> ChunkCompareEq<T::Native, Item = BooleanChunked>,
+{
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_equality_helper(
+            self,
+            rhs,
+            false,
+            |l, c| l.equal(c),
+        )
+    }
+
+    fn equal_missing(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_equality_helper(
+            self,
+            rhs,
+            true,
+            |l, c| l.equal(c),
+        )
+    }
+
+    fn not_equal(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_equality_helper(
+            self,
+            rhs,
+            |l, r| l.zip(r).map(|(l, r)| l != r),
+            |l, c| l.not_equal(c),
+            |r, c| r.not_equal(c),
+        )
+    }
+
+    fn not_equal_missing(&self, rhs: &str) -> Self::Item {
+        cat_str_scalar_equality_helper(
+            self,
+            rhs,
+            true,
+            |l, c| l.not_equal(c),
+        )
+    }
+}
+
+
+// impl<T: PolarsCategoricalType> ChunkCompareIneq<&StringChunked>
+//     for NewCategoricalChunked<T>
+// {
+//     type Item = PolarsResult<BooleanChunked>;
+
+//     fn gt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+//         cat_compare_helper(self, rhs, |l, r| l > r)
+//     }
+
+//     fn gt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+//         cat_compare_helper(self, rhs, |l, r| l >= r)
+//     }
+
+//     fn lt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+//         cat_compare_helper(self, rhs, |l, r| l < r)
+//     }
+
+//     fn lt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+//         cat_compare_helper(self, rhs, |l, r| l <= r)
+//     }
+// }
+
+/*
 #[cfg(feature = "dtype-categorical")]
 fn cat_equality_helper<'a, Compare, Missing>(
     lhs: &'a CategoricalChunked,
@@ -93,46 +470,6 @@ where
                 polars_bail!(ComputeError: "Columns are of unequal length: {} vs {}",lhs_len,rhs_len)
             },
         }
-    }
-}
-
-impl ChunkCompareEq<&CategoricalChunked> for CategoricalChunked {
-    type Item = PolarsResult<BooleanChunked>;
-
-    fn equal(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_equality_helper(
-            self,
-            rhs,
-            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, false),
-            UInt32Chunked::equal,
-        )
-    }
-
-    fn equal_missing(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_equality_helper(
-            self,
-            rhs,
-            |lhs| BooleanChunked::full(lhs.name().clone(), false, lhs.len()),
-            UInt32Chunked::equal_missing,
-        )
-    }
-
-    fn not_equal(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_equality_helper(
-            self,
-            rhs,
-            |lhs| replace_non_null(lhs.name().clone(), &lhs.physical().chunks, true),
-            UInt32Chunked::not_equal,
-        )
-    }
-
-    fn not_equal_missing(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_equality_helper(
-            self,
-            rhs,
-            |lhs| BooleanChunked::full(lhs.name().clone(), true, lhs.len()),
-            UInt32Chunked::not_equal_missing,
-        )
     }
 }
 
@@ -479,3 +816,4 @@ impl ChunkCompareIneq<&str> for CategoricalChunked {
         )
     }
 }
+*/
