@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 c = pl.col
 
@@ -39,7 +44,7 @@ def test_expressions(e: pl.Expr, equiv: pl.Expr) -> None:
     )
 
 
-DTYPES = [
+DTYPES: list[tuple[PolarsDataType, str, str, int | None]] = [
     (pl.Null(), "null", "null", 0),
     (pl.Boolean(), "boolean", "bool", 1),
     (pl.String(), "string", "str", None),
@@ -245,32 +250,39 @@ def test_struct_with_fields() -> None:
 
 
 def test_enum() -> None:
-    dtype = pl.Enum(["a", "b"]).to_dtype_expr()
+    dtype_expr = pl.Enum(["a", "b"]).to_dtype_expr()
 
-    assert pl.select(dtype.enum.num_categories()).to_series().item() == 2
-    assert pl.select(dtype.enum.categories()).to_series().item().to_list() == ["a", "b"]
-    assert pl.select(dtype.enum.get_category(0)).to_series().item() == "a"
-    assert pl.select(dtype.enum.get_category(1)).to_series().item() == "b"
-    assert pl.select(dtype.enum.get_category(-2)).to_series().item() == "a"
-    assert pl.select(dtype.enum.get_category(-1)).to_series().item() == "b"
+    assert pl.select(dtype_expr.enum.num_categories()).to_series().item() == 2
+    assert pl.select(dtype_expr.enum.categories()).to_series().item().to_list() == [
+        "a",
+        "b",
+    ]
+    assert pl.select(dtype_expr.enum.get_category(0)).to_series().item() == "a"
+    assert pl.select(dtype_expr.enum.get_category(1)).to_series().item() == "b"
+    assert pl.select(dtype_expr.enum.get_category(-2)).to_series().item() == "a"
+    assert pl.select(dtype_expr.enum.get_category(-1)).to_series().item() == "b"
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.select(dtype.enum.get_category(2))
+        pl.select(dtype_expr.enum.get_category(2))
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.select(dtype.enum.get_category(-3))
+        pl.select(dtype_expr.enum.get_category(-3))
     assert (
-        pl.select(dtype.enum.get_category(2, raise_on_oob=False)).to_series().item()
+        pl.select(dtype_expr.enum.get_category(2, raise_on_oob=False))
+        .to_series()
+        .item()
         is None
     )
     assert (
-        pl.select(dtype.enum.get_category(-3, raise_on_oob=False)).to_series().item()
+        pl.select(dtype_expr.enum.get_category(-3, raise_on_oob=False))
+        .to_series()
+        .item()
         is None
     )
-    assert pl.select(dtype.enum.index_of_category("a")).to_series().item() == 0
-    assert pl.select(dtype.enum.index_of_category("b")).to_series().item() == 1
+    assert pl.select(dtype_expr.enum.index_of_category("a")).to_series().item() == 0
+    assert pl.select(dtype_expr.enum.index_of_category("b")).to_series().item() == 1
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.select(dtype.enum.index_of_category("c"))
+        pl.select(dtype_expr.enum.index_of_category("c"))
     assert (
-        pl.select(dtype.enum.index_of_category("c", raise_on_missing=False))
+        pl.select(dtype_expr.enum.index_of_category("c", raise_on_missing=False))
         .to_series()
         .item()
         is None
