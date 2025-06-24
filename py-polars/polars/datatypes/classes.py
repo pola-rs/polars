@@ -54,23 +54,6 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return _dtype_str_repr(cls)
 
-    @overload  # type: ignore[override]
-    def __eq__(cls, other: pl.DataTypeExpr) -> pl.Expr: ...
-
-    @overload
-    def __eq__(cls, other: PolarsDataType) -> bool: ...
-
-    def __eq__(cls, other: pl.DataTypeExpr | PolarsDataType) -> pl.Expr | bool:
-        if isinstance(other, pl.DataTypeExpr):
-            return cls.to_dtype_expr() == other
-        elif type(other) is DataTypeClass:
-            return issubclass(other, cls)
-        else:
-            return isinstance(other, cls)
-
-    def __hash__(self) -> int:
-        return hash(self.__class__)
-
     # Methods below defined here in signature only to satisfy mypy
 
     @classmethod
