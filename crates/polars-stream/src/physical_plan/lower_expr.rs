@@ -616,7 +616,7 @@ fn lower_exprs_with_ctx(
             },
             AExpr::Function {
                 input: ref inner_exprs,
-                function: FunctionExpr::Shift,
+                function: IRFunctionExpr::Shift,
                 options: _,
             } => {
                 let tmp_name = unique_column_name();
