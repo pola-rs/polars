@@ -79,6 +79,7 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
             };
 
             match (dt, validation) {
+                #[cfg(feature = "dtype-array")]
                 (DataType::Array(inner, _), SequenceKind::Array) => *inner,
                 (DataType::List(inner), SequenceKind::List) => *inner,
                 (dt, SequenceKind::Array) => {
@@ -119,6 +120,7 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
         },
         D::Struct(dt_expr, f) => {
             let fields = match dt_expr.into_datatype(schema)? {
+                #[cfg(feature = "dtype-struct")]
                 DataType::Struct(fields) => fields,
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not a `struct`"),
             };
@@ -155,10 +157,10 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
             }
         },
         D::WrapInList(dt_expr) => DataType::List(Box::new(dt_expr.into_datatype(schema)?)),
-        D::WrapInArray(dt_expr, width) => {
+        D::WrapInArray(dt_expr, width) => feature_gated!("dtype-array", {
             DataType::Array(Box::new(dt_expr.into_datatype(schema)?), width)
-        },
-        D::StructWithFields(field_exprs) => {
+        }),
+        D::StructWithFields(field_exprs) => feature_gated!("dtype-struct", {
             let mut seen = PlHashSet::with_capacity(field_exprs.len());
             let mut fields = Vec::with_capacity(field_exprs.len());
             for (name, dt_expr) in field_exprs {
@@ -172,7 +174,7 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
                 fields.push(Field::new(name, dt));
             }
             DataType::Struct(fields)
-        },
+        }),
     };
 
     Ok(dtype)

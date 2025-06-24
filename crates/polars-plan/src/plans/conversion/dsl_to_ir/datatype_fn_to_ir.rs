@@ -1,5 +1,5 @@
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{AnyValue, DataType, NamedFrom, RevMapping};
+use polars_core::prelude::{AnyValue, DataType, NamedFrom};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -88,32 +88,36 @@ pub fn datatype_fn_to_aexpr(
             (num_bits, get_literal_name().clone())
         },
         DTF::Array(dt_expr, f) => {
-            let (inner, width) = match dt_expr.into_datatype(schema)? {
+            let (inner, width): (DataType, usize) = match dt_expr.into_datatype(schema)? {
+                #[cfg(feature = "dtype-array")]
                 DataType::Array(inner, width) => (inner, width),
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not an Array"),
             };
 
-            let value = match f {
-                ArrayDataTypeFunction::Width => Scalar::from(width as u32),
-                ArrayDataTypeFunction::Dimensions => {
-                    let mut dims = vec![width as u32];
-                    let mut inner = *inner;
-                    while let DataType::Array(new_inner, width) = inner {
-                        dims.push(width as u32);
-                        inner = *new_inner;
-                    }
-                    Scalar::new(
-                        DataType::List(Box::new(DataType::UInt32)),
-                        AnyValue::List(Series::new(PlSmallStr::EMPTY, dims)),
-                    )
-                },
-            };
-            let value = LiteralValue::Scalar(value);
-            let value = AExpr::Literal(value);
-            (value, get_literal_name().clone())
+            feature_gated!("dtype-array", {
+                let value = match f {
+                    ArrayDataTypeFunction::Width => Scalar::from(width as u32),
+                    ArrayDataTypeFunction::Dimensions => {
+                        let mut dims = vec![width as u32];
+                        let mut inner = *inner;
+                        while let DataType::Array(new_inner, width) = inner {
+                            dims.push(width as u32);
+                            inner = *new_inner;
+                        }
+                        Scalar::new(
+                            DataType::List(Box::new(DataType::UInt32)),
+                            AnyValue::List(Series::new(PlSmallStr::EMPTY, dims)),
+                        )
+                    },
+                };
+                let value = LiteralValue::Scalar(value);
+                let value = AExpr::Literal(value);
+                (value, get_literal_name().clone())
+            })
         },
         DTF::Struct(dt_expr, f) => {
-            let fields = match dt_expr.into_datatype(schema)? {
+            let fields: Vec<Field> = match dt_expr.into_datatype(schema)? {
+                #[cfg(feature = "dtype-struct")]
                 DataType::Struct(fields) => fields,
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not an Struct"),
             };
@@ -169,12 +173,13 @@ pub fn datatype_fn_to_aexpr(
             let value = AExpr::Literal(value);
             (value, get_literal_name().clone())
         },
-        DTF::Enum(dt_expr, f) => {
+        DTF::Enum(dt_expr, f) => feature_gated!("dtype-categorical", {
             let revmap = match dt_expr.into_datatype(schema)? {
                 DataType::Enum(revmap, _) => revmap,
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not an Enum"),
             };
 
+            use polars_core::prelude::RevMapping;
             let revmap = revmap.unwrap();
             let RevMapping::Local(categories, _) = revmap.as_ref() else {
                 unreachable!("enums cannot be global");
@@ -231,6 +236,6 @@ pub fn datatype_fn_to_aexpr(
             let value = LiteralValue::Scalar(value);
             let value = AExpr::Literal(value);
             (value, get_literal_name().clone())
-        },
+        }),
     })
 }
