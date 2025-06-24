@@ -9,7 +9,6 @@ use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
-use crate::physical_plan::PhysStream;
 
 /// A style of a graph node.
 enum NodeStyle {

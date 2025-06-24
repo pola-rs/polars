@@ -326,7 +326,6 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
-            | PhysNodeKind::Shift { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::GroupBy { input, .. } => {
                 rec!(input.node);
@@ -369,6 +368,12 @@ fn visit_node_inputs_mut(
                 rec!(input_right.node);
                 visit(input_left);
                 visit(input_right);
+            },
+            PhysNodeKind::Shift { input, offset } => {
+                rec!(input.node);
+                rec!(offset.node);
+                visit(input);
+                visit(offset);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
