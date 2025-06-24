@@ -167,19 +167,19 @@ pub fn aexpr_to_column_predicates(
                                 into_column(input[0].node(), expr_arena, schema, 0)?;
 
                                 let values = constant_evaluate(
-                                    input[0].node(),
+                                    input[1].node(),
                                     expr_arena,
                                     schema,
                                     0,
                                 )??;
                                 let values = values.to_any_value()?;
-                                if !nulls_equal {
-                                    return None;
-                                }
 
                                 let values = match values {
                                     AnyValue::List(v) | AnyValue::Array(v, _) => {
                                         if v.dtype() != &dtype {
+                                            return None;
+                                        }
+                                        if !nulls_equal && v.has_nulls() {
                                             return None;
                                         }
 
@@ -192,6 +192,7 @@ pub fn aexpr_to_column_predicates(
                                     },
                                     _ => return None,
                                 };
+
 
                                 Some(SpecializedColumnPredicate::EqualOneOf(values))
                             },

@@ -199,10 +199,13 @@ where
         has_predicate_specialization |=
             matches!(state.translation, StateTranslation::Dictionary(_));
         has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
-            && matches!(
+            && (matches!(
                 predicate.predicate.as_specialized(),
                 Some(SpecializedParquetColumnExpr::Equal(_))
-            );
+            ) || matches!(
+                predicate.predicate.as_specialized(),
+                Some(SpecializedParquetColumnExpr::EqualOneOf(n)) if (1..=8).contains(&n.len())
+            ));
 
         // @TODO: This should be implemented
         has_predicate_specialization &= state.page_validity.is_none();

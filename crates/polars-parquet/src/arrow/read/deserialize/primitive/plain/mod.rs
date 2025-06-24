@@ -181,6 +181,44 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     target: &mut Vec<B>,
     pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
+    if let Some(Filter::Predicate(p)) = &filter {
+        assert!(page_validity.is_none());
+
+        let start_num_pred_true = pred_true_mask.set_bits();
+        match p.predicate.as_specialized().unwrap() {
+            SpecializedParquetColumnExpr::Equal(needle) => {
+                let needle = needle.to_aligned_bytes::<B>().unwrap();
+
+                predicate::decode_equals_no_values(values, needle, pred_true_mask);
+
+                if p.include_values {
+                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
+                    target.resize(target.len() + num_pred_true, needle);
+                }
+            },
+            SpecializedParquetColumnExpr::EqualOneOf(needles) if (1..=8).contains(&needles.len()) => {
+                let mut needles_array = [B::zeroed(); 8];
+                for i in 0..8 {
+                    needles_array[i] = needles[i.min(needles.len() - 1)].to_aligned_bytes::<B>().unwrap();
+                }
+
+                if p.include_values {
+                    predicate::decode_is_in(values, &needles_array, target, pred_true_mask);
+                } else {
+                    predicate::decode_is_in_no_values(values, &needles_array, pred_true_mask);
+                }
+            },
+            _ => unreachable!(),
+        }
+
+        if is_optional && p.include_values {
+            let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
+            validity.extend_constant(num_pred_true, true);
+        }
+
+        return Ok(());
+    }
+
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
@@ -211,25 +249,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             decode_masked_optional(values, page_validity, filter, target)
         },
-        (Some(Filter::Predicate(p)), None) => {
-            if let Some(SpecializedParquetColumnExpr::Equal(needle)) = p.predicate.as_specialized()
-            {
-                let needle = needle.to_aligned_bytes::<B>().unwrap();
-
-                let start_num_pred_true = pred_true_mask.set_bits();
-                predicate::decode_equals_no_values(values, needle, pred_true_mask);
-
-                if p.include_values {
-                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
-                    target.resize(target.len() + num_pred_true, needle);
-                }
-            } else {
-                unreachable!()
-            }
-
-            Ok(())
-        },
-        (Some(Filter::Predicate(_)), Some(_)) => todo!(),
+        (Some(Filter::Predicate(_)), _) => unreachable!(),
     }?;
 
     Ok(())

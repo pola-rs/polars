@@ -133,7 +133,11 @@ pub(crate) fn append_validity(
 ) {
     match (page_validity, filter) {
         (None, None) => validity.extend_constant(values_len, true),
-        (None, Some(f)) => validity.extend_constant(f.num_rows(values_len), true),
+        (None, Some(Filter::Range(range))) => validity.extend_constant(range.len(), true),
+        (None, Some(Filter::Mask(mask))) => validity.extend_constant(mask.set_bits(), true),
+        (None, Some(Filter::Predicate(_))) => {
+            // Done later.
+        },
         (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
         (Some(page_validity), Some(Filter::Range(rng))) => {
             let page_validity = page_validity.clone();
