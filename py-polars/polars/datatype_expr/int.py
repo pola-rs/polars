@@ -32,7 +32,7 @@ class DataTypeExprIntNameSpace:
         Examples
         --------
         >>> uint32 = pl.UInt32.to_dtype_expr()
-        >>> uint32.int.to_unsigned().collect_dtype({})
+        >>> uint32.int.to_signed().collect_dtype({})
         Int32
         """
         return pl.DataTypeExpr._from_pydatatype_expr(
