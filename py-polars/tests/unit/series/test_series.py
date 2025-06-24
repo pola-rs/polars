@@ -1324,7 +1324,10 @@ def test_comparisons_bool_series_to_int() -> None:
     for op in (ge, gt, le, lt):
         for scalar in (0, 1.0, True, False):
             op_str = op.__name__.replace("e", "t_eq")
+            op_str = op.__name__.replace("e", "t_eq")
             with pytest.raises(
+                NotImplementedError,
+                match=rf"Series of type Boolean does not have {op_str} operator",
                 NotImplementedError,
                 match=rf"Series of type Boolean does not have {op_str} operator",
             ):
