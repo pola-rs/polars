@@ -68,7 +68,7 @@ class DataTypeExpr:
         "struct",
     }
 
-    def __eq__(self, value: PolarsDataType | DataTypeExpr) -> pl.Expr:
+    def __eq__(self, value: PolarsDataType | DataTypeExpr) -> pl.Expr:  # type: ignore[override]
         cmp_with: DataTypeExpr
         if isinstance(value, pl.DataType):
             cmp_with = value.to_dtype_expr()
@@ -84,7 +84,7 @@ class DataTypeExpr:
             self._pydatatype_expr.equals(cmp_with._pydatatype_expr)
         )
 
-    def __ne__(self, value: PolarsDataType | DataTypeExpr) -> pl.Expr:
+    def __ne__(self, value: PolarsDataType | DataTypeExpr) -> pl.Expr:  # type: ignore[override]
         return (self == value).not_()
 
     @classmethod

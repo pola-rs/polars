@@ -2,7 +2,7 @@ use core::fmt;
 use std::fmt::Write;
 
 use polars_core::error::{PolarsResult, feature_gated, polars_bail, polars_ensure};
-use polars_core::prelude::DataType;
+use polars_core::prelude::{DataType, Field};
 use polars_core::schema::Schema;
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
@@ -119,7 +119,7 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
             }
         },
         D::Struct(dt_expr, f) => {
-            let fields = match dt_expr.into_datatype(schema)? {
+            let fields: Vec<Field> = match dt_expr.into_datatype(schema)? {
                 #[cfg(feature = "dtype-struct")]
                 DataType::Struct(fields) => fields,
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not a `struct`"),
