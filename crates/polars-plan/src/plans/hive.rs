@@ -1,7 +1,6 @@
-use std::path::{Path, PathBuf};
-
 use polars_core::prelude::*;
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
+use polars_utils::plpath::PlPath;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -68,7 +67,7 @@ impl From<DataFrame> for HivePartitionsDf {
 /// # Safety
 /// `hive_start_idx <= [min path length]`
 pub fn hive_partitions_from_paths(
-    paths: &[PathBuf],
+    paths: &[PlPath],
     hive_start_idx: usize,
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
@@ -77,9 +76,6 @@ pub fn hive_partitions_from_paths(
     let Some(path) = paths.first() else {
         return Ok(None);
     };
-
-    let sep = separator(path);
-    let path_string = path.to_str().unwrap();
 
     fn parse_hive_string_and_decode(part: &'_ str) -> Option<(&'_ str, std::borrow::Cow<'_, str>)> {
         let (k, v) = parse_hive_string(part)?;
@@ -90,10 +86,11 @@ pub fn hive_partitions_from_paths(
         Some((k, v))
     }
 
+    // generate (k,v) tuples from 'k=v' partition strings
     macro_rules! get_hive_parts_iter {
         ($e:expr) => {{
-            let path_parts = $e[hive_start_idx..].split(sep);
-            let file_index = path_parts.clone().count() - 1;
+            let file_index = $e.get_normal_components().count() - 1;
+            let path_parts = $e.get_normal_components();
 
             path_parts.enumerate().filter_map(move |(index, part)| {
                 if index == file_index {
@@ -106,7 +103,9 @@ pub fn hive_partitions_from_paths(
     }
 
     let hive_schema = if let Some(ref schema) = schema {
-        Arc::new(get_hive_parts_iter!(path_string).map(|(name, _)| {
+        let path = path.as_ref();
+        let path = path.offset_bytes(hive_start_idx);
+        Arc::new(get_hive_parts_iter!(path).map(|(name, _)| {
                 let Some(dtype) = schema.get(name) else {
                     polars_bail!(
                         SchemaFieldNotFound:
@@ -125,11 +124,14 @@ pub fn hive_partitions_from_paths(
                 Ok(Field::new(PlSmallStr::from_str(name), dtype))
             }).collect::<PolarsResult<Schema>>()?)
     } else {
+        let path = path.as_ref();
+        let path = path.offset_bytes(hive_start_idx);
+
         let mut hive_schema = Schema::with_capacity(16);
         let mut schema_inference_map: PlHashMap<&str, PlHashSet<DataType>> =
             PlHashMap::with_capacity(16);
 
-        for (name, _) in get_hive_parts_iter!(path_string) {
+        for (name, _) in get_hive_parts_iter!(path) {
             // If the column is also in the file we can use the dtype stored there.
             if let Some(dtype) = reader_schema.get(name) {
                 let dtype = if !try_parse_dates && dtype.is_temporal() {
@@ -152,7 +154,9 @@ pub fn hive_partitions_from_paths(
 
         if !schema_inference_map.is_empty() {
             for path in paths {
-                for (name, value) in get_hive_parts_iter!(path.to_str().unwrap()) {
+                let path = path.as_ref();
+                let path = path.offset_bytes(hive_start_idx);
+                for (name, value) in get_hive_parts_iter!(path) {
                     let Some(entry) = schema_inference_map.get_mut(name) else {
                         continue;
                     };
@@ -183,8 +187,8 @@ pub fn hive_partitions_from_paths(
     )?;
 
     for path in paths {
-        let path = path.to_str().unwrap();
-
+        let path = path.as_ref();
+        let path = path.offset_bytes(hive_start_idx);
         for (name, value) in get_hive_parts_iter!(path) {
             let Some(index) = hive_schema.index_of(name) else {
                 polars_bail!(
@@ -215,19 +219,6 @@ pub fn hive_partitions_from_paths(
         paths.len(),
         buffers,
     )?)))
-}
-
-/// Determine the path separator for identifying Hive partitions.
-fn separator(url: &Path) -> &[char] {
-    if cfg!(target_family = "windows") {
-        if polars_io::path_utils::is_cloud_url(url) {
-            &['/']
-        } else {
-            &['/', '\\']
-        }
-    } else {
-        &['/']
-    }
 }
 
 /// Parse a Hive partition string (e.g. "column=1.5") into a name and value part.

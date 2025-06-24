@@ -584,6 +584,8 @@ fn test_cte_values() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "ipc")]
 fn test_group_by_2() -> PolarsResult<()> {
+    use polars_utils::plpath::PlPath;
+
     let mut context = SQLContext::new();
     let sql = r#"
     CREATE TABLE foods AS
@@ -604,19 +606,22 @@ fn test_group_by_2() -> PolarsResult<()> {
 
     let df_sql = context.execute(sql)?;
     let df_sql = df_sql.collect()?;
-    let expected = LazyFrame::scan_ipc("../../examples/datasets/foods1.ipc", Default::default())?
-        .select(&[col("*")])
-        .group_by(vec![col("category")])
-        .agg(vec![
-            col("category").count().alias("count"),
-            col("calories").max(),
-            col("fats_g").min(),
-        ])
-        .sort_by_exprs(
-            vec![col("count"), col("category")],
-            SortMultipleOptions::default().with_order_descending_multi([false, true]),
-        )
-        .limit(2);
+    let expected = LazyFrame::scan_ipc(
+        PlPath::new("../../examples/datasets/foods1.ipc"),
+        Default::default(),
+    )?
+    .select(&[col("*")])
+    .group_by(vec![col("category")])
+    .agg(vec![
+        col("category").count().alias("count"),
+        col("calories").max(),
+        col("fats_g").min(),
+    ])
+    .sort_by_exprs(
+        vec![col("count"), col("category")],
+        SortMultipleOptions::default().with_order_descending_multi([false, true]),
+    )
+    .limit(2);
 
     let expected = expected.collect()?;
     assert!(df_sql.equals(&expected));

@@ -116,4 +116,15 @@ impl Scalar {
         self.update(value);
         self
     }
+
+    #[inline(always)]
+    pub fn any_value_mut(&mut self) -> &mut AnyValue<'static> {
+        &mut self.value
+    }
+
+    pub fn to_physical(mut self) -> Scalar {
+        self.dtype = self.dtype.to_physical();
+        self.value = self.value.to_physical();
+        self
+    }
 }

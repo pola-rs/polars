@@ -91,6 +91,8 @@ impl IRArrayFunction {
             A::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "array_count")]
             A::CountMatches => FunctionOptions::elementwise(),
+            A::Concat => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             A::Length
             | A::Min
             | A::Max
@@ -105,7 +107,6 @@ impl IRArrayFunction {
             | A::Reverse
             | A::ArgMin
             | A::ArgMax
-            | A::Concat
             | A::Get(_)
             | A::Join(_)
             | A::Shift

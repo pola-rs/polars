@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) fn prepare_projection(
+pub fn prepare_projection(
     exprs: Vec<Expr>,
     schema: &Schema,
     opt_flags: &mut OptFlags,
@@ -127,7 +127,7 @@ fn expand_regex(
     Ok(())
 }
 
-pub(crate) fn is_regex_projection(name: &str) -> bool {
+pub fn is_regex_projection(name: &str) -> bool {
     name.starts_with('^') && name.ends_with('$')
 }
 
@@ -563,6 +563,10 @@ fn expand_function_inputs(
                 F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
                 | F::DropNulls
             );
+            #[cfg(feature = "dtype-array")]
+            {
+                input_wildcard_expansion |= matches!(function, F::ArrayExpr(ArrayFunction::Concat));
+            }
             #[cfg(feature = "dtype-struct")]
             {
                 input_wildcard_expansion |= matches!(function, F::AsStruct);
@@ -700,7 +704,7 @@ fn toggle_cse(opt_flags: &mut OptFlags) {
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-pub(crate) fn rewrite_projections(
+pub fn rewrite_projections(
     exprs: Vec<Expr>,
     schema: &Schema,
     keys: &[Expr],
@@ -907,7 +911,7 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
     })
 }
 
-pub(crate) fn expand_selectors(
+pub fn expand_selectors(
     s: Vec<Selector>,
     schema: &Schema,
     keys: &[Expr],

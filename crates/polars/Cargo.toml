@@ -172,6 +172,7 @@ fused = ["polars-ops/fused", "polars-lazy?/fused"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
 interpolate_by = ["polars-ops/interpolate_by", "polars-lazy?/interpolate_by"]
 is_between = ["polars-lazy?/is_between", "polars-ops/is_between"]
+is_close = ["polars-lazy?/is_close"]
 is_first_distinct = ["polars-lazy?/is_first_distinct", "polars-ops/is_first_distinct"]
 is_in = ["polars-lazy?/is_in"]
 is_last_distinct = ["polars-lazy?/is_last_distinct", "polars-ops/is_last_distinct"]
@@ -394,6 +395,7 @@ docs-selection = [
   "ndarray",
   "repeat_by",
   "is_between",
+  "is_close",
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",

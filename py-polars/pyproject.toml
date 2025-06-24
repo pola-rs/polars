@@ -234,12 +234,14 @@ addopts = [
 ]
 markers = [
   "ci_only: Tests that should only run on CI by default.",
+  "benchmark: Tests used to benchmark with.",
   "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
   "release: Tests that should be run on a Polars release build.",
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
   "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
+  "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
 ]
 filterwarnings = [
   # Fail on warnings

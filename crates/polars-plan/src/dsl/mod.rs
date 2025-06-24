@@ -70,6 +70,8 @@ use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
+#[cfg(feature = "is_close")]
+use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -956,6 +958,26 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
         self.map_unary(BooleanFunction::IsUnique)
+    }
+
+    /// Check whether floating point values are close to each other.
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_close")]
+    pub fn is_close<E: Into<Expr>>(
+        self,
+        expr: E,
+        abs_tol: f64,
+        rel_tol: f64,
+        nans_equal: bool,
+    ) -> Self {
+        self.map_binary(
+            BooleanFunction::IsClose {
+                abs_tol: TotalOrdWrap(abs_tol),
+                rel_tol: TotalOrdWrap(rel_tol),
+                nans_equal,
+            },
+            expr.into(),
+        )
     }
 
     /// Get the approximate count of unique values.
