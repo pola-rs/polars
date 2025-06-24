@@ -74,8 +74,8 @@ class DataTypeExprEnumNameSpace:
         index
             The category index to get.
         raise_on_oob
-            If the index is greater than the maximum index, should an exception be raised or
-            should a missing value be inserted.
+            If the index is greater than the maximum index, should an exception be
+            raised or should a missing value be inserted.
 
         Examples
         --------
