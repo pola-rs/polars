@@ -1091,6 +1091,7 @@ def test_hive_pruning_str_contains_21706(
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="paths not valid on Windows")
 def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
