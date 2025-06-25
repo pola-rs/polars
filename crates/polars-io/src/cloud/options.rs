@@ -179,7 +179,30 @@ pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::Parse
         if input.starts_with("http://") || input.starts_with("https://") {
             url::Url::parse(input)
         } else {
-            url::Url::parse(&input.replace("%", "%25"))
+            let occurrences: usize = input
+                .as_bytes()
+                .iter()
+                .map(|&c| if c == b'%' || c == b'?' { 1 } else { 0 })
+                .sum();
+
+            if occurrences == 0 {
+                url::Url::parse(input)
+            } else {
+                let mut out: Vec<u8> = Vec::with_capacity(input.len() + occurrences);
+
+                for c in input.as_bytes() {
+                    let c = *c;
+                    if c == b'%' {
+                        out.extend(b"%25");
+                    } else if c == b'?' {
+                        out.extend(b"%3F")
+                    } else {
+                        out.push(c);
+                    }
+                }
+
+                url::Url::parse(&String::from_utf8(out).unwrap())
+            }
         }?
     } else {
         let path = std::path::Path::new(input);
