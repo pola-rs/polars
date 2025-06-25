@@ -323,6 +323,26 @@ impl DataType {
         }
     }
 
+    /// Get the inner data type of a nested type.
+    pub fn into_inner_dtype(self) -> Option<DataType> {
+        match self {
+            DataType::List(inner) => Some(*inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    /// Get the inner data type of a nested type.
+    pub fn try_into_inner_dtype(self) -> PolarsResult<DataType> {
+        match self {
+            DataType::List(inner) => Ok(*inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Ok(*inner),
+            dt => polars_bail!(InvalidOperation: "cannot get inner datatype of `{dt}`"),
+        }
+    }
+
     /// Get the absolute inner data type of a nested type.
     pub fn leaf_dtype(&self) -> &DataType {
         let mut prev = self;
@@ -530,6 +550,10 @@ impl DataType {
     }
     pub fn is_datetime(&self) -> bool {
         matches!(self, DataType::Datetime(..))
+    }
+
+    pub fn is_duration(&self) -> bool {
+        matches!(self, DataType::Duration(..))
     }
 
     pub fn is_object(&self) -> bool {
@@ -958,6 +982,45 @@ impl DataType {
             slf = inner_dtype;
         }
         level
+    }
+
+    /// Get the amount of bits used per value (excl. the validity mask).
+    ///
+    /// Returns None if this number depends on the value.
+    pub fn num_bits_per_element(&self) -> Option<u64> {
+        use DataType as D;
+        Some(match self {
+            D::Null => 0,
+            D::Boolean => 1,
+            D::UInt8 | D::Int8 => 8,
+            D::UInt16 | D::Int16 => 16,
+            D::UInt32 | D::Int32 | D::Float32 | D::Date => 32,
+            D::UInt64 | D::Int64 | D::Float64 | D::Datetime(_, _) | D::Duration(_) | D::Time => 64,
+            D::Int128 => 128,
+            #[cfg(feature = "dtype-decimal")]
+            D::Decimal(_, _) => 128,
+            D::String | D::Binary | D::BinaryOffset | D::List(_) | D::Unknown(_) => {
+                return None;
+            },
+            #[cfg(feature = "object")]
+            D::Object(_) => return None,
+            #[cfg(feature = "dtype-array")]
+            D::Array(dt, width) => dt.num_bits_per_element()? * (*width as u64),
+            #[cfg(feature = "dtype-categorical")]
+            D::Categorical(_, _) | D::Enum(_, _) => 32,
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fs) => {
+                let mut sum = 0;
+                for f in fs {
+                    sum += f.dtype().num_bits_per_element()?;
+                }
+                sum
+            },
+        })
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_integer() | self.is_float() | self.is_decimal()
     }
 }
 
