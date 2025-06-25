@@ -8096,7 +8096,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         context
             Compute context in which queries are executed.
             If none given, it will take the default context.
-        plan_type
+        plan_type: {'plain', 'dot'}
             Whether to give a dot diagram of a plain text
             version of logical plan.
 

@@ -73,7 +73,11 @@ def _patched_cloud(
             if "engine" in kwargs:
                 kwargs.pop("engine")
             df = prev_collect(
-                with_timeout(lambda: lf.remote().distributed().collect(*args, **kwargs))
+                with_timeout(
+                    lambda: lf.remote(plan_type="plain")
+                    .distributed()
+                    .collect(*args, **kwargs)
+                )
             )
             return df
 
@@ -121,9 +125,9 @@ def _patched_cloud(
                         if isinstance(src, io.BytesIO):
                             src[i] = io_to_path(src[i], ext)
 
-                assert isinstance(src, (str, Path)) or (
+                assert isinstance(src, (str, Path, list)) or (
                     isinstance(src, list)
-                    and all(lambda x: isinstance(x, str, Path), src)
+                    and all(isinstance(x, (str, Path)) for x in src)
                 )
 
                 return prev_scan(src, *args, **kwargs)  # type: ignore[no-any-return]
@@ -154,7 +158,9 @@ def _patched_cloud(
                 for u in unsupported:
                     _ = kwargs.pop(u, None)
 
-                sink = getattr(lf.remote().distributed(), f"sink_{ext}")
+                sink = getattr(
+                    lf.remote(plan_type="plain").distributed(), f"sink_{ext}"
+                )
                 q = sink(*args, **kwargs)
                 assert isinstance(q, InteractiveQuery)
                 query = LazyExe(
