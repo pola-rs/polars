@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
 from collections import OrderedDict
@@ -1042,3 +1043,25 @@ print("OK", end="", file=sys.stderr)
 
     for logs in out_str.split("QUERY-FENCE"):
         ensure_caches_dropped(logs)
+
+
+def test_parquet_prefiltering_inserted_column_23268() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]}, schema={"a": pl.Int8})
+
+    f = io.BytesIO()
+
+    df.write_parquet(f)
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(
+                f,
+                schema={"a": pl.Int8, "b": pl.Int16},
+                missing_columns="insert",
+            )
+            .filter(pl.col("a") == 3)
+            .filter(pl.col("b") == 3)
+            .collect()
+        ),
+        pl.DataFrame(schema={"a": pl.Int8, "b": pl.Int16}),
+    )
