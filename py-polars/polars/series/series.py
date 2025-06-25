@@ -819,12 +819,15 @@ class Series:
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
-
+        try:
+            f = get_ffi_func(op + "_<>", self.dtype, self._s)
+        except NotImplementedError:
+            f = None
+        if f is None:
+            msg = f"Series of type {self.dtype} does not have {op} operator"
+            raise NotImplementedError(msg)
         if other is not None:
             other = maybe_cast(other, self.dtype)
-        f = get_ffi_func(op + "_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
 
         return self._from_pyseries(f(other))
 
@@ -5020,7 +5023,8 @@ class Series:
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            msg = f"Series of type {self.dtype} can not be set"
+            raise NotImplementedError(msg)
         return self._from_pyseries(f(filter._s, value))
 
     def scatter(
