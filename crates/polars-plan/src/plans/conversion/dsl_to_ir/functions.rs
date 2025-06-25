@@ -668,7 +668,11 @@ pub(super) fn convert_functions(
             polars_ensure!(&e[2].is_scalar(arena), ComputeError: "'fill_value' must be scalar value");
             I::ShiftAndFill
         },
-        F::Shift => I::Shift,
+        F::Shift => {
+            let offset_dtype = e[1].dtype(schema, Context::Default, arena)?;
+            polars_ensure!(offset_dtype.is_integer() | offset_dtype.is_null(), InvalidOperation: "'offset' must be an integer type");
+            I::Shift
+        },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         #[cfg(feature = "mode")]

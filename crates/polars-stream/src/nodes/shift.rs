@@ -294,9 +294,8 @@ async fn init(mut receiver: Receiver<Morsel>) -> PolarsResult<State> {
     let offset = offset.df();
     polars_ensure!(offset.shape() == (1, 1), InvalidOperation: "expected a scalar as 'offset' in 'shift'");
     let item = offset.get_columns()[0].get(0).unwrap();
-    let offset = item
-        .extract::<i64>()
-        .expect("type checked at dsl resolving");
+    // If null, we return all null, this is easiest with negative
+    let offset = item.extract::<i64>().unwrap_or(i64::MIN);
 
     if offset > 0 {
         Ok(State::PositiveHead {
