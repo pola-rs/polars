@@ -173,6 +173,8 @@ where
 
 /// Casts a `&dyn` [`Array`] containing binary-encoded numbers to a
 /// [`PrimitiveArray`], making any uncastable value a Null.
+/// # Panics
+/// Panics if `Array` is not a `BinaryViewArray`
 pub fn binview_to_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
