@@ -3450,3 +3450,18 @@ def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_downgrade_panic_23307() -> None:
+    lhs = pl.select(a=pl.lit(1, dtype=pl.Int8)).lazy()
+    rhs = pl.select(a=pl.lit(1, dtype=pl.Int16), x=pl.lit(1, dtype=pl.Int32)).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", coalesce=True).filter(pl.col("x") >= 1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.select(
+            a=pl.lit(1, dtype=pl.Int8),
+            x=pl.lit(1, dtype=pl.Int32),
+        ),
+    )

@@ -80,7 +80,18 @@ pub(super) fn process_join(
             _ => {
                 let expr = left_on.get(i).unwrap();
 
-                if let AExpr::Column(name) = expr_arena.get(expr.node()) {
+                let node = if let AExpr::Cast {
+                    expr,
+                    dtype: _,
+                    options: _,
+                } = expr_arena.get(expr.node())
+                {
+                    *expr
+                } else {
+                    expr.node()
+                };
+
+                if let AExpr::Column(name) = expr_arena.get(node) {
                     Some(name)
                 } else {
                     None
@@ -111,7 +122,18 @@ pub(super) fn process_join(
             _ => {
                 let expr = right_on.get(i).unwrap();
 
-                if let AExpr::Column(name) = expr_arena.get(expr.node()) {
+                let node = if let AExpr::Cast {
+                    expr,
+                    dtype: _,
+                    options: _,
+                } = expr_arena.get(expr.node())
+                {
+                    *expr
+                } else {
+                    expr.node()
+                };
+
+                if let AExpr::Column(name) = expr_arena.get(node) {
                     Some(name)
                 } else {
                     None
@@ -372,8 +394,19 @@ fn try_downgrade_join_type(
     /// Note: This may panic if `args.should_coalesce()` is false.
     macro_rules! lhs_input_column_keys_iter {
         () => {{
-            left_on.iter().map(|e| {
-                let AExpr::Column(name) = expr_arena.get(e.node()) else {
+            left_on.iter().map(|expr| {
+                let node = if let AExpr::Cast {
+                    expr,
+                    dtype: _,
+                    options: _,
+                } = expr_arena.get(expr.node())
+                {
+                    *expr
+                } else {
+                    expr.node()
+                };
+
+                let AExpr::Column(name) = expr_arena.get(node) else {
                     // All keys should be columns when coalesce=True
                     unreachable!()
                 };
