@@ -389,6 +389,8 @@ fn try_downgrade_join_type(
         return None;
     }
 
+    let should_coalesce = options.args.should_coalesce();
+
     /// Note: This may panic if `args.should_coalesce()` is false.
     macro_rules! lhs_input_column_keys_iter {
         () => {{
@@ -398,7 +400,7 @@ fn try_downgrade_join_type(
                         expr,
                         dtype: _,
                         options: _,
-                    } if options.args.should_coalesce() => *expr,
+                    } if should_coalesce => *expr,
 
                     _ => expr.node(),
                 };
