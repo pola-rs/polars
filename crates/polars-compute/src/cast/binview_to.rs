@@ -147,7 +147,7 @@ pub(super) fn utf8view_to_date32_dyn(from: &dyn Array) -> PolarsResult<Box<dyn A
     Ok(Box::new(utf8view_to_date32(from)))
 }
 
-/// Casts a [`BinaryArray`] containing binary-encoded numbers to a
+/// Casts a [`BinaryViewArray`] containing binary-encoded numbers to a
 /// [`PrimitiveArray`], making any uncastable value a Null.
 pub(super) fn binview_to_primitive<T>(
     from: &BinaryViewArray,
