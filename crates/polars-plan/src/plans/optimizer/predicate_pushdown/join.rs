@@ -56,6 +56,8 @@ pub(super) fn process_join(
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
 
+    let should_coalesce = options.args.should_coalesce();
+
     // AsOf has the equality join keys under `asof_options.left/right_by`. This code builds an
     // iterator to address these generically without creating a `Box<dyn Iterator>`.
     let get_lhs_column_keys_iter = || {
@@ -85,7 +87,7 @@ pub(super) fn process_join(
                         expr,
                         dtype: _,
                         options: _,
-                    } if options.args.should_coalesce() => *expr,
+                    } if should_coalesce => *expr,
 
                     _ => expr.node(),
                 };
@@ -126,7 +128,7 @@ pub(super) fn process_join(
                         expr,
                         dtype: _,
                         options: _,
-                    } if options.args.should_coalesce() => *expr,
+                    } if should_coalesce => *expr,
 
                     _ => expr.node(),
                 };
