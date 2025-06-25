@@ -488,12 +488,18 @@ impl ScanIOPredicate {
         }
         self.live_columns = Arc::new(live_columns);
 
+        let mut predicate_on_all_null_inserted_column = false;
+
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
             let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
             for (c, v) in constant_columns.iter() {
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
                 let nc = if v.is_null() {
+                    if self.column_predicates.predicates.contains_key(c) {
+                        predicate_on_all_null_inserted_column = true;
+                    }
+
                     AnyValue::Null
                 } else {
                     (0 as IdxSize).into()
@@ -508,11 +514,8 @@ impl ScanIOPredicate {
         }
 
         let mut column_predicates = self.column_predicates.as_ref().clone();
-        let mut predicate_on_all_null_inserted_column = false;
-        for (c, sc) in constant_columns.iter() {
-            if column_predicates.predicates.remove(c).is_some() && sc.is_null() {
-                predicate_on_all_null_inserted_column = true;
-            }
+        for (c, _) in constant_columns.iter() {
+            column_predicates.predicates.remove(c);
         }
         self.column_predicates = Arc::new(column_predicates);
 
