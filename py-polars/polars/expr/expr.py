@@ -3735,6 +3735,47 @@ class Expr:
         │ 2020-01-03 19:45:32 ┆ 2   ┆ 11    ┆ 2     ┆ 9     │
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
+
+        Chain of expressions, counting n_unique elements in lists over a rolling period
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dt": pl.Series(
+        ...             [
+        ...                 "2019-09-01",
+        ...                 "2019-09-02",
+        ...                 "2019-09-03",
+        ...                 "2019-09-04",
+        ...                 "2019-09-05",
+        ...                 "2019-09-06",
+        ...                 "2019-09-07",
+        ...             ]
+        ...         ).str.to_date(),
+        ...         "groups": [[], ["a"], ["b"], ["a", "b"], ["c"], ["d", "e"], []],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("groups")
+        ...     .flatten()
+        ...     .drop_nulls()
+        ...     .n_unique()
+        ...     .rolling(index_column="dt", period="2d")
+        ...     .alias("rolling_n_unique")
+        ... )
+        shape: (7, 3)
+        ┌────────────┬────────────┬──────────────────┐
+        │ dt         ┆ groups     ┆ rolling_n_unique │
+        │ ---        ┆ ---        ┆ ---              │
+        │ date       ┆ list[str]  ┆ u32              │
+        ╞════════════╪════════════╪══════════════════╡
+        │ 2019-09-01 ┆ []         ┆ 0                │
+        │ 2019-09-02 ┆ ["a"]      ┆ 1                │
+        │ 2019-09-03 ┆ ["b"]      ┆ 2                │
+        │ 2019-09-04 ┆ ["a", "b"] ┆ 2                │
+        │ 2019-09-05 ┆ ["c"]      ┆ 3                │
+        │ 2019-09-06 ┆ ["d", "e"] ┆ 3                │
+        │ 2019-09-07 ┆ []         ┆ 2                │
+        └────────────┴────────────┴──────────────────┘
         """
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
