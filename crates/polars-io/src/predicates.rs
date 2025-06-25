@@ -508,10 +508,20 @@ impl ScanIOPredicate {
         }
 
         let mut column_predicates = self.column_predicates.as_ref().clone();
-        for (c, _) in constant_columns.iter() {
-            column_predicates.predicates.remove(c);
+        let mut predicate_on_all_null_inserted_column = false;
+        for (c, sc) in constant_columns.iter() {
+            if column_predicates.predicates.remove(c).is_some() && sc.is_null() {
+                predicate_on_all_null_inserted_column = true;
+            }
         }
         self.column_predicates = Arc::new(column_predicates);
+
+        if predicate_on_all_null_inserted_column {
+            // TODO:
+            // We currently switch this to false because don't skip the batch properly on all-NULL inserted columns.
+            // It can be removed once the batch is being skipped properly.
+            Arc::make_mut(&mut self.column_predicates).is_sumwise_complete = false;
+        }
 
         self.predicate = Arc::new(PhysicalExprWithConstCols {
             constants: constant_columns,

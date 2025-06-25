@@ -492,6 +492,7 @@ impl RowGroupDecoder {
 
         let (live_df_filtered, mut mask) = if use_column_predicates {
             assert!(scan_predicate.column_predicates.is_sumwise_complete);
+            dbg!(&masks);
             if masks.len() == 1 {
                 (
                     DataFrame::new(live_columns).unwrap(),
