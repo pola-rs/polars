@@ -141,3 +141,47 @@ def test_required_struct() -> None:
     schema = pq.read_schema(f)
     assert not schema.field(0).nullable
     assert not schema.field(0).type.fields[0].nullable
+
+
+@pytest.mark.parametrize(
+    ("df", "auto"),
+    [
+        (pl.DataFrame({"a": [0] * 1000}), True),
+        (pl.DataFrame({"a": range(1, 100000, 100)}), False),
+    ],
+)
+def test_use_dictionary_encoding(df: pl.DataFrame, auto: bool) -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": [0] * 1000})
+
+    df.lazy().sink_parquet(
+        f,
+        field_overwrites=ParquetFieldOverwrites(
+            name="a", use_dictionary_encoding="auto"
+        ),
+    )
+    f.truncate()
+    f.seek(0)
+    assert auto == pq.read_metadata(f).row_group(0).column(0).has_dictionary_page
+
+    f.seek(0)
+    df.lazy().sink_parquet(
+        f,
+        field_overwrites=ParquetFieldOverwrites(
+            name="a", use_dictionary_encoding="never"
+        ),
+    )
+    f.truncate()
+    f.seek(0)
+    assert not pq.read_metadata(f).row_group(0).column(0).has_dictionary_page
+
+    f.seek(0)
+    df.lazy().sink_parquet(
+        f,
+        field_overwrites=ParquetFieldOverwrites(
+            name="a", use_dictionary_encoding="always"
+        ),
+    )
+    f.truncate()
+    f.seek(0)
+    assert pq.read_metadata(f).row_group(0).column(0).has_dictionary_page

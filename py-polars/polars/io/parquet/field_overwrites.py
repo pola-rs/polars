@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal, TypeAlias
+
+UseDictionaryEncoding: TypeAlias = Literal["auto", "never", "always"]
 
 
 def _parquet_field_overwrites_dict_to_dict_list(
@@ -45,6 +47,9 @@ def _parquet_field_overwrites_to_dict(pqo: ParquetFieldOverwrites) -> dict[str, 
 
     if pqo.required is not None:
         d["required"] = pqo.required
+
+    if pqo.use_dictionary_encoding is not None:
+        d["use_dictionary_encoding"] = pqo.use_dictionary_encoding
 
     return d
 
@@ -108,6 +113,9 @@ class ParquetFieldOverwrites:
         dict[str, None | str] | None
     )  #: Arrow metadata added to the field before writing
     required: bool | None = None  #: Is the field not allowed to have missing values
+    use_dictionary_encoding: UseDictionaryEncoding | None = (
+        None  #: Use dictionary encoding while writing.
+    )
 
     def __init__(
         self,
@@ -122,6 +130,7 @@ class ParquetFieldOverwrites:
         field_id: int | None = None,
         metadata: Mapping[str, None | str] | None = None,
         required: bool | None = None,
+        use_dictionary_encoding: UseDictionaryEncoding | None = None,
     ) -> None:
         self.name = name
 
@@ -138,3 +147,4 @@ class ParquetFieldOverwrites:
         else:
             self.metadata = metadata
         self.required = required
+        self.use_dictionary_encoding = use_dictionary_encoding
