@@ -24,7 +24,7 @@ enum State {
         offset: usize,
         seq: u64,
     },
-    PositiveTail {
+    PositiveFlush {
         buffer: Buffer,
         tail_shift: usize,
         seq: u64,
@@ -159,7 +159,7 @@ impl ComputeNode for ShiftNode {
                 seq,
             } => {
                 if matches!(recv[0], PortState::Done) {
-                    self.state = State::PositiveTail {
+                    self.state = State::PositiveFlush {
                         buffer: std::mem::take(buffer),
                         tail_shift: *tail_shift,
                         seq: *seq,
@@ -173,12 +173,15 @@ impl ComputeNode for ShiftNode {
                         seq: *seq,
                     }
                 }
+                send[0] = PortState::Ready;
             },
             State::PositiveHead { .. } => {
                 recv[0] = PortState::Ready;
                 send[0] = PortState::Ready;
             },
-            State::PositiveTail { .. } | State::NegativeFlush { .. } => {},
+            State::PositiveFlush { .. } | State::NegativeFlush { .. } => {
+                send[0] = PortState::Ready;
+            },
         }
 
         Ok(())
@@ -238,7 +241,7 @@ impl ComputeNode for ShiftNode {
                     Ok(())
                 })
             },
-            State::PositiveTail {
+            State::PositiveFlush {
                 buffer,
                 tail_shift,
                 mut seq,
