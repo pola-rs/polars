@@ -1045,7 +1045,6 @@ print("OK", end="", file=sys.stderr)
         ensure_caches_dropped(logs)
 
 
-@pytest.mark.write_disk
 def test_parquet_prefiltering_inserted_column_23268() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4]}, schema={"a": pl.Int8})
 
