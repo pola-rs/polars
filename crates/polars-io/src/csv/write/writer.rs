@@ -135,6 +135,12 @@ where
         self
     }
 
+    /// Set the CSV decimal separator.
+    pub fn with_decimal_comma(mut self, decimal_comma: bool) -> Self {
+        self.options.decimal_comma = decimal_comma;
+        self
+    }
+
     /// Set the single byte character used for quoting.
     pub fn with_quote_char(mut self, char: u8) -> Self {
         self.options.quote_char = char;

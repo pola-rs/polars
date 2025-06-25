@@ -339,6 +339,7 @@ fn visualize_plan_rec(
             cast_columns_policy: _,
             missing_columns_policy: _,
             extra_columns_policy: _,
+            deletion_files,
             file_schema: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
@@ -391,6 +392,10 @@ fn visualize_plan_rec(
                 if v != 1 {
                     write!(f, "s").unwrap();
                 }
+            }
+
+            if let Some(deletion_files) = deletion_files {
+                write!(f, "\n{deletion_files}").unwrap();
             }
 
             (out, &[][..])

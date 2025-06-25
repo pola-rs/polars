@@ -3,12 +3,13 @@ use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
 use polars_error::{PolarsError, PolarsResult};
+use polars_utils::plpath::PlPathRef;
 
 use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_from_str};
-use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init, is_cloud_url};
+use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init};
 use crate::pl_async;
 
 pub static FILE_CACHE_PREFIX: LazyLock<Box<Path>> = LazyLock::new(|| {
@@ -62,7 +63,7 @@ pub fn init_entries_from_uri_list(
         .map(|x| x.file_cache_ttl)
         .unwrap_or_else(get_env_file_cache_ttl);
 
-    if is_cloud_url(first_uri) {
+    if PlPathRef::new(first_uri).is_cloud_url() {
         let object_stores = pl_async::get_runtime().block_in_place_on(async {
             futures::future::try_join_all(
                 (0..if first_uri.starts_with("http") {

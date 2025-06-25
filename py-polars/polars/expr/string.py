@@ -11,7 +11,7 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import find_stacklevel, no_default, qualified_type_name
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Time, parse_into_dtype
+from polars.datatypes import Date, Datetime, Time, parse_into_datatype_expr
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
@@ -820,15 +820,15 @@ class ExprStringNameSpace:
         suffix = parse_into_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
-    def pad_start(self, length: int, fill_char: str = " ") -> Expr:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -853,20 +853,21 @@ class ExprStringNameSpace:
         │ null         ┆ null         │
         └──────────────┴──────────────┘
         """
+        length = parse_into_expression(length)
         if not isinstance(fill_char, str):
             msg = f'"pad_start" expects a `str`, given a {qualified_type_name(fill_char)!r}'
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
-    def pad_end(self, length: int, fill_char: str = " ") -> Expr:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is. Can be int or expression.
         fill_char
             The character to pad the string with.
 
@@ -890,6 +891,7 @@ class ExprStringNameSpace:
         │ null         ┆ null         │
         └──────────────┴──────────────┘
         """
+        length = parse_into_expression(length)
         if not isinstance(fill_char, str):
             msg = (
                 f'"pad_end" expects a `str`, given a {qualified_type_name(fill_char)!r}'
@@ -934,6 +936,24 @@ class ExprStringNameSpace:
         │ 999999 ┆ 999999 │
         │ null   ┆ null   │
         └────────┴────────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [-1, 123, 999999, None],
+        ...         "length": [8, 4, 1, 2],
+        ...     }
+        ... )
+        >>> df.with_columns(zfill=pl.col("a").cast(pl.String).str.zfill("length"))
+        shape: (4, 3)
+        ┌────────┬────────┬──────────┐
+        │ a      ┆ length ┆ zfill    │
+        │ ---    ┆ ---    ┆ ---      │
+        │ i64    ┆ i64    ┆ str      │
+        ╞════════╪════════╪══════════╡
+        │ -1     ┆ 8      ┆ -0000001 │
+        │ 123    ┆ 4      ┆ 0123     │
+        │ 999999 ┆ 1      ┆ 999999   │
+        │ null   ┆ 2      ┆ null     │
+        └────────┴────────┴──────────┘
         """
         length = parse_into_expression(length)
         return wrap_expr(self._pyexpr.str_zfill(length))
@@ -1229,7 +1249,7 @@ class ExprStringNameSpace:
 
     def json_decode(
         self,
-        dtype: PolarsDataType | None = None,
+        dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Expr:
@@ -1271,7 +1291,7 @@ class ExprStringNameSpace:
         └─────────────────────┴───────────┘
         """
         if dtype is not None:
-            dtype = parse_into_dtype(dtype)
+            dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
         return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:

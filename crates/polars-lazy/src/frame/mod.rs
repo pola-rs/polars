@@ -9,7 +9,6 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -39,11 +38,10 @@ use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::frame::cached_arenas::CachedArena;
-#[cfg(feature = "streaming")]
-use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
 
 pub trait IntoLazy {
@@ -204,13 +202,6 @@ impl LazyFrame {
         self
     }
 
-    /// Run nodes that are capably of doing so on the streaming engine.
-    #[cfg(feature = "streaming")]
-    pub fn with_streaming(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptFlags::STREAMING, toggle);
-        self
-    }
-
     #[cfg(feature = "new_streaming")]
     pub fn with_new_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::NEW_STREAMING, toggle);
@@ -239,30 +230,18 @@ impl LazyFrame {
         Ok(self.clone().to_alp()?.describe_tree_format())
     }
 
-    // @NOTE: this is used because we want to set the `enable_fmt` flag of `optimize_with_scratch`
-    // to `true` for describe.
-    fn _describe_to_alp_optimized(mut self) -> PolarsResult<IRPlan> {
-        let (mut lp_arena, mut expr_arena) = self.get_arenas();
-        let node = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], true)?;
-
-        Ok(IRPlan::new(node, lp_arena, expr_arena))
-    }
-
     /// Return a String describing the optimized logical plan.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
-        Ok(self.clone()._describe_to_alp_optimized()?.describe())
+        Ok(self.clone().to_alp_optimized()?.describe())
     }
 
     /// Return a String describing the optimized logical plan in tree format.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
-        Ok(self
-            .clone()
-            ._describe_to_alp_optimized()?
-            .describe_tree_format())
+        Ok(self.clone().to_alp_optimized()?.describe_tree_format())
     }
 
     /// Return a String describing the logical plan.
@@ -549,7 +528,7 @@ impl LazyFrame {
     }
 
     /// Cast all frame columns to the given dtype, resulting in a new LazyFrame
-    pub fn cast_all(self, dtype: DataType, strict: bool) -> Self {
+    pub fn cast_all(self, dtype: impl Into<DataTypeExpr>, strict: bool) -> Self {
         self.with_columns(vec![if strict {
             col(PlSmallStr::from_static("*")).strict_cast(dtype)
         } else {
@@ -575,13 +554,12 @@ impl LazyFrame {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
-        self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
+        self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![])
     }
 
     pub fn to_alp_optimized(mut self) -> PolarsResult<IRPlan> {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
-        let node =
-            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], false)?;
+        let node = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])?;
 
         Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
@@ -603,16 +581,10 @@ impl LazyFrame {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
-        enable_fmt: bool,
     ) -> PolarsResult<Node> {
         #[allow(unused_mut)]
         let mut opt_state = self.opt_state;
-        let streaming = self.opt_state.contains(OptFlags::STREAMING);
         let new_streaming = self.opt_state.contains(OptFlags::NEW_STREAMING);
-        #[cfg(feature = "cse")]
-        if streaming && !new_streaming {
-            opt_state &= !OptFlags::COMM_SUBPLAN_ELIM;
-        }
 
         #[cfg(feature = "cse")]
         if new_streaming {
@@ -641,26 +613,6 @@ impl LazyFrame {
             }),
         )?;
 
-        if streaming {
-            #[cfg(feature = "streaming")]
-            {
-                insert_streaming_nodes(
-                    lp_top,
-                    lp_arena,
-                    expr_arena,
-                    scratch,
-                    enable_fmt,
-                    true,
-                    opt_state.contains(OptFlags::ROW_ESTIMATE),
-                )?;
-            }
-            #[cfg(not(feature = "streaming"))]
-            {
-                _ = enable_fmt;
-                panic!("activate feature 'streaming'")
-            }
-        }
-
         Ok(lp_top)
     }
 
@@ -681,8 +633,7 @@ impl LazyFrame {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
 
         let mut scratch = vec![];
-        let lp_top =
-            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
+        let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
 
         post_opt(
             lp_top,
@@ -780,7 +731,6 @@ impl LazyFrame {
             Engine::Streaming => {
                 feature_gated!("new_streaming", self = self.with_new_streaming(true))
             },
-            Engine::OldStreaming => feature_gated!("streaming", self = self.with_streaming(true)),
             _ => {},
         }
         let mut alp_plan = self.clone().to_alp_optimized()?;
@@ -813,16 +763,6 @@ impl LazyFrame {
                     BUILD_STREAMING_EXECUTOR,
                 )?;
                 let mut state = ExecutionState::new();
-                physical_plan.execute(&mut state)
-            },
-            Engine::OldStreaming => {
-                self.opt_state |= OptFlags::STREAMING;
-                let (mut state, mut physical_plan, is_streaming) =
-                    self.prepare_collect(true, None)?;
-                polars_ensure!(
-                    is_streaming,
-                    ComputeError: format!("cannot run the whole query in a streaming order")
-                );
                 physical_plan.execute(&mut state)
             },
         }
@@ -876,10 +816,6 @@ impl LazyFrame {
                     sink_multiple = sink_multiple.with_new_streaming(true)
                 )
             },
-            Engine::OldStreaming => feature_gated!(
-                "streaming",
-                sink_multiple = sink_multiple.with_streaming(true)
-            ),
             _ => {},
         }
         let mut alp_plan = sink_multiple.to_alp_optimized()?;
@@ -944,7 +880,6 @@ impl LazyFrame {
                 });
                 Ok(out?.into_iter().flatten().collect())
             },
-            Engine::OldStreaming => panic!("This is no longer supported"),
             _ => unreachable!(),
         }
     }
@@ -1081,14 +1016,17 @@ impl LazyFrame {
     /// final result doesn't fit into memory. This methods will return an error if the query cannot
     /// be completely done in a streaming fashion.
     #[cfg(feature = "parquet")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_parquet_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_sort_by: Option<Vec<SortColumn>>,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1097,6 +1035,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Parquet(options),
             cloud_options,
+            per_partition_sort_by,
+            finish_callback,
         }))
     }
 
@@ -1104,14 +1044,17 @@ impl LazyFrame {
     /// final result doesn't fit into memory. This methods will return an error if the query cannot
     /// be completely done in a streaming fashion.
     #[cfg(feature = "ipc")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_ipc_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_sort_by: Option<Vec<SortColumn>>,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1120,6 +1063,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Ipc(options),
             cloud_options,
+            per_partition_sort_by,
+            finish_callback,
         }))
     }
 
@@ -1127,14 +1072,17 @@ impl LazyFrame {
     /// result doesn't fit into memory. This methods will return an error if the query cannot be
     /// completely done in a streaming fashion.
     #[cfg(feature = "csv")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_csv_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_sort_by: Option<Vec<SortColumn>>,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1143,6 +1091,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Csv(options),
             cloud_options,
+            per_partition_sort_by,
+            finish_callback,
         }))
     }
 
@@ -1150,14 +1100,17 @@ impl LazyFrame {
     /// result doesn't fit into memory. This methods will return an error if the query cannot be
     /// completely done in a streaming fashion.
     #[cfg(feature = "json")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_json_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_sort_by: Option<Vec<SortColumn>>,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1166,6 +1119,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Json(options),
             cloud_options,
+            per_partition_sort_by,
+            finish_callback,
         }))
     }
 
@@ -1181,7 +1136,6 @@ impl LazyFrame {
             // if it fails in a todo!() error if auto_new_streaming is set.
             let mut new_stream_lazy = self.clone();
             new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
-            new_stream_lazy.opt_state &= !OptFlags::STREAMING;
             let mut alp_plan = match new_stream_lazy.to_alp_optimized() {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
@@ -2156,13 +2110,12 @@ impl LazyFrame {
 
         match &self.logical_plan {
             v @ DslPlan::Scan { scan_type, .. }
-                if !matches!(&**scan_type, FileScan::Anonymous { .. }) =>
+                if !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
             {
                 let DslPlan::Scan {
                     sources,
                     mut unified_scan_args,
                     scan_type,
-                    file_info,
                     cached_ir: _,
                 } = v.clone()
                 else {
@@ -2178,7 +2131,6 @@ impl LazyFrame {
                     sources,
                     unified_scan_args,
                     scan_type,
-                    file_info,
                     cached_ir: Default::default(),
                 }
                 .into()
@@ -2496,7 +2448,6 @@ impl JoinBuilder {
                     allow_parallel: self.allow_parallel,
                     force_parallel: self.force_parallel,
                     args,
-                    ..Default::default()
                 }
                 .into(),
             )
@@ -2580,7 +2531,6 @@ impl JoinBuilder {
             allow_parallel: self.allow_parallel,
             force_parallel: self.force_parallel,
             args,
-            ..Default::default()
         };
 
         let lp = DslPlan::Join {

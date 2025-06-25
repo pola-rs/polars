@@ -61,22 +61,6 @@ def test_predicate_pushdown_with_context_11014() -> None:
     assert out.to_dict(as_series=False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
 
 
-@pytest.mark.xdist_group("streaming")
-def test_streaming_11219() -> None:
-    # https://github.com/pola-rs/polars/issues/11219
-
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
-    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
-
-    with pytest.deprecated_call():
-        context = lf.with_context([lf_other, lf_other2])
-
-    assert context.select(pl.col("b") + pl.col("c").first()).collect(
-        engine="old-streaming"  # type: ignore[call-overload]
-    ).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
-
-
 def test_no_cse_in_with_context() -> None:
     df1 = pl.DataFrame(
         {

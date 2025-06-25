@@ -469,6 +469,8 @@ fn get_encoder(
         | D::Interval(_)
         | D::Dictionary(_, _, _)
         | D::Decimal(_, _)
+        | D::Decimal32(_, _)
+        | D::Decimal64(_, _)
         | D::Decimal256(_, _) => unreachable!(),
 
         // Should be fixed size type
@@ -627,6 +629,8 @@ unsafe fn encode_flat_array(
 
         D::FixedSizeBinary(_) => todo!(),
         D::Decimal(_, _) => todo!(),
+        D::Decimal32(_, _) => todo!(),
+        D::Decimal64(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
 
         D::Union(_) => todo!(),

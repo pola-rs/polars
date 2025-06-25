@@ -64,7 +64,7 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde", "polars-utils/serde", "ir_serde"]
+serde = ["polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
@@ -114,7 +114,6 @@ performant = [
   "dtype-struct",
   "cse",
   "polars-ops/performant",
-  "streaming",
   "fused",
 ]
 
@@ -173,6 +172,7 @@ fused = ["polars-ops/fused", "polars-lazy?/fused"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
 interpolate_by = ["polars-ops/interpolate_by", "polars-lazy?/interpolate_by"]
 is_between = ["polars-lazy?/is_between", "polars-ops/is_between"]
+is_close = ["polars-lazy?/is_close"]
 is_first_distinct = ["polars-lazy?/is_first_distinct", "polars-ops/is_first_distinct"]
 is_in = ["polars-lazy?/is_in"]
 is_last_distinct = ["polars-lazy?/is_last_distinct", "polars-ops/is_last_distinct"]
@@ -217,7 +217,6 @@ index_of = ["polars-lazy?/index_of"]
 search_sorted = ["polars-lazy?/search_sorted"]
 semi_anti_join = ["polars-lazy?/semi_anti_join", "polars-ops/semi_anti_join", "polars-sql?/semi_anti_join"]
 sign = ["polars-lazy?/sign"]
-streaming = ["polars-lazy?/streaming"]
 string_encoding = ["polars-ops/string_encoding", "polars-lazy?/string_encoding", "polars-core/strings"]
 string_pad = ["polars-lazy?/string_pad", "polars-ops/string_pad"]
 string_normalize = ["polars-lazy?/string_normalize", "polars-ops/string_normalize"]
@@ -239,7 +238,8 @@ unique_counts = ["polars-ops/unique_counts", "polars-lazy?/unique_counts"]
 zip_with = ["polars-core/zip_with"]
 
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
-polars_cloud = ["polars-lazy?/polars_cloud"]
+polars_cloud_client = ["polars-lazy?/polars_cloud_client"]
+polars_cloud_server = ["polars-lazy?/polars_cloud_server", "ir_serde"]
 ir_serde = ["polars-plan/ir_serde"]
 
 test = [
@@ -395,6 +395,7 @@ docs-selection = [
   "ndarray",
   "repeat_by",
   "is_between",
+  "is_close",
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",
@@ -433,9 +434,8 @@ docs-selection = [
   "replace",
   "approx_unique",
   "unique_counts",
-  "polars_cloud",
+  "polars_cloud_client",
   "serde",
-  "ir_serde",
   "cloud",
   "async",
 ]

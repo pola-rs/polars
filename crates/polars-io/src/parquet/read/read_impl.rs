@@ -60,41 +60,37 @@ fn should_copy_sortedness(dtype: &DataType) -> bool {
     )
 }
 
-pub fn try_set_sorted_flag(
-    series: &mut Series,
-    col_idx: usize,
-    sorting_map: &PlHashMap<usize, IsSorted>,
-) {
-    if let Some(is_sorted) = sorting_map.get(&col_idx) {
-        if should_copy_sortedness(series.dtype()) {
-            if config::verbose() {
-                eprintln!(
-                    "Parquet conserved SortingColumn for column chunk of '{}' to {is_sorted:?}",
-                    series.name()
-                );
-            }
-
-            series.set_sorted_flag(*is_sorted);
-        }
+pub fn try_set_sorted_flag(series: &mut Series, col_idx: usize, sorting_map: &[(usize, IsSorted)]) {
+    let Some((sorted_col, is_sorted)) = sorting_map.first() else {
+        return;
+    };
+    if *sorted_col != col_idx || !should_copy_sortedness(series.dtype()) {
+        return;
     }
+    if config::verbose() {
+        eprintln!(
+            "Parquet conserved SortingColumn for column chunk of '{}' to {is_sorted:?}",
+            series.name()
+        );
+    }
+
+    series.set_sorted_flag(*is_sorted);
 }
 
-pub fn create_sorting_map(md: &RowGroupMetadata) -> PlHashMap<usize, IsSorted> {
+pub fn create_sorting_map(md: &RowGroupMetadata) -> Vec<(usize, IsSorted)> {
     let capacity = md.sorting_columns().map_or(0, |s| s.len());
-    let mut sorting_map = PlHashMap::with_capacity(capacity);
+    let mut sorting_map = Vec::with_capacity(capacity);
 
     if let Some(sorting_columns) = md.sorting_columns() {
         for sorting in sorting_columns {
-            let prev_value = sorting_map.insert(
+            sorting_map.push((
                 sorting.column_idx as usize,
                 if sorting.descending {
                     IsSorted::Descending
                 } else {
                     IsSorted::Ascending
                 },
-            );
-
-            debug_assert!(prev_value.is_none());
+            ))
         }
     }
 

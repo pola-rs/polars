@@ -198,10 +198,7 @@ impl Series {
     }
 
     /// Take or clone a owned copy of the inner [`ChunkedArray`].
-    pub fn take_inner<T>(self) -> ChunkedArray<T>
-    where
-        T: 'static + PolarsDataType<IsLogical = FalseT>,
-    {
+    pub fn take_inner<T: PolarsPhysicalType>(self) -> ChunkedArray<T> {
         let arc_any = self.0.as_arc_any();
         let downcast = arc_any
             .downcast::<implementations::SeriesWrap<ChunkedArray<T>>>()
@@ -1059,10 +1056,7 @@ impl Default for Series {
     }
 }
 
-impl<T> AsRef<ChunkedArray<T>> for dyn SeriesTrait + '_
-where
-    T: 'static + PolarsDataType<IsLogical = FalseT>,
-{
+impl<T: PolarsPhysicalType> AsRef<ChunkedArray<T>> for dyn SeriesTrait + '_ {
     fn as_ref(&self) -> &ChunkedArray<T> {
         // @NOTE: SeriesTrait `as_any` returns a std::any::Any for the underlying ChunkedArray /
         // Logical (so not the SeriesWrap).
@@ -1078,10 +1072,7 @@ where
     }
 }
 
-impl<T> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_
-where
-    T: 'static + PolarsDataType<IsLogical = FalseT>,
-{
+impl<T: PolarsPhysicalType> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_ {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
         if !self.as_any_mut().is::<ChunkedArray<T>>() {
             panic!(

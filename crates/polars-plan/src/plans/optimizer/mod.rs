@@ -37,7 +37,7 @@ pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
-pub use stack_opt::{OptimizationRule, StackOptimizer};
+pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
 use self::set_order::set_order_flags;
@@ -78,20 +78,6 @@ pub fn optimize(
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
-
-    #[cfg(feature = "python")]
-    if opt_flags.streaming() {
-        polars_warn!(
-            Deprecation,
-            "\
-The old streaming engine is being deprecated and will soon be replaced by the new streaming \
-engine. Starting Polars version 1.23.0 and until the new streaming engine is released, the old \
-streaming engine may become less usable. For people who rely on the old streaming engine, it is \
-suggested to pin your version to before 1.23.0.
-
-More information on the new streaming engine: https://github.com/pola-rs/polars/issues/20947"
-        )
-    }
 
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
@@ -219,7 +205,6 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     if opt_flags.slice_pushdown() {
         let mut slice_pushdown_opt = SlicePushDown::new(
-            opt_flags.streaming(),
             // We don't maintain errors on slice as the behavior is much more predictable that way.
             //
             // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
@@ -256,8 +241,9 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     if _cse_plan_changed
-        && get_members_opt!()
-            .is_some_and(|members| members.has_joins_or_unions && members.has_cache)
+        && get_members_opt!().is_some_and(|members| {
+            (members.has_joins_or_unions | members.has_sink_multiple) && members.has_cache
+        })
     {
         // We only want to run this on cse inserted caches
         cache_states::set_cache_states(

@@ -6,15 +6,13 @@ pub type DatetimeChunked = Logical<DatetimeType, Int64Type>;
 
 impl Int64Chunked {
     pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> DatetimeChunked {
-        let mut dt = DatetimeChunked::new_logical(self);
-        dt.dtype = Some(DataType::Datetime(timeunit, tz));
-        dt
+        DatetimeChunked::new_logical(self, DataType::Datetime(timeunit, tz))
     }
 }
 
 impl LogicalType for DatetimeChunked {
     fn dtype(&self) -> &DataType {
-        self.dtype.as_ref().unwrap()
+        &self.dtype
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {

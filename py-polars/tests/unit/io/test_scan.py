@@ -1023,7 +1023,7 @@ def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
 
     f.seek(0)
     g.seek(0)
-    s = scan([f, g], allow_missing_columns=True)
+    s = scan([f, g], missing_columns="insert")
 
     assert_frame_equal(
         s.select("missing").collect(),
@@ -1089,3 +1089,14 @@ def test_hive_pruning_str_contains_21706(
         df,
         pl.scan_parquet(tmp_path, hive_partitioning=True).collect().filter(f),
     )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="paths not valid on Windows")
+def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    path = tmp_path / "%?.parquet"
+    df = pl.DataFrame({"a": 1})
+    df.write_parquet(path)
+
+    assert_frame_equal(pl.scan_parquet(f"file://{path}", glob=False).collect(), df)

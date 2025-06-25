@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -8,9 +7,10 @@ use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
+use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, ScanSources, SinkOptions, SinkTarget,
+    PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -28,6 +28,7 @@ use polars_plan::dsl::ExtraColumnsPolicy;
 use polars_plan::prelude::FileType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
@@ -147,13 +148,15 @@ pub enum PhysNodeKind {
     },
 
     PartitionSink {
-        base_path: Arc<PathBuf>,
+        input: PhysStream,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
         file_type: FileType,
-        input: PhysStream,
         cloud_options: Option<CloudOptions>,
+        per_partition_sort_by: Option<Vec<SortColumnIR>>,
+        finish_callback: Option<SinkFinishCallback>,
     },
 
     SinkMultiple {
@@ -220,6 +223,8 @@ pub enum PhysNodeKind {
         cast_columns_policy: CastColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
         extra_columns_policy: ExtraColumnsPolicy,
+
+        deletion_files: Option<DeletionFilesList>,
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,

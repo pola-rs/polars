@@ -11,7 +11,7 @@ from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType
@@ -954,7 +954,6 @@ def test_nested_struct_cast_22744() -> None:
     )
 
 
-@pytest.mark.xfail(reason="disabled until after release 1.30.0")
 def test_cast_to_self_is_pruned() -> None:
     q = pl.LazyFrame({"x": 1}, schema={"x": pl.Int64}).with_columns(
         y=pl.col("x").cast(pl.Int64)
@@ -1007,3 +1006,16 @@ def test_cast_temporals_overflow_16039(
             s.cast(to)
     else:
         s.cast(to)
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_prune_superfluous_cast(dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": dtype})
+    result = lf.select(pl.col("a").cast(dtype))
+    assert "strict_cast" not in result.explain()
+
+
+def test_not_prune_necessary_cast() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt16})
+    result = lf.select(pl.col("a").cast(pl.UInt8))
+    assert "strict_cast" in result.explain()

@@ -158,6 +158,10 @@ pub enum ArrowDataType {
     /// scale is the number of decimal places.
     /// The number 999.99 has a precision of 5 and scale of 2.
     Decimal(usize, usize),
+    /// Decimal backed by 32 bits
+    Decimal32(usize, usize),
+    /// Decimal backed by 64 bits
+    Decimal64(usize, usize),
     /// Decimal backed by 256 bits
     Decimal256(usize, usize),
     /// Extension type.
@@ -277,6 +281,8 @@ impl ArrowDataType {
                 PhysicalType::Primitive(PrimitiveType::Int64)
             },
             Decimal(_, _) => PhysicalType::Primitive(PrimitiveType::Int128),
+            Decimal32(_, _) => PhysicalType::Primitive(PrimitiveType::Int32),
+            Decimal64(_, _) => PhysicalType::Primitive(PrimitiveType::Int64),
             Decimal256(_, _) => PhysicalType::Primitive(PrimitiveType::Int256),
             UInt8 => PhysicalType::Primitive(PrimitiveType::UInt8),
             UInt16 => PhysicalType::Primitive(PrimitiveType::UInt16),
@@ -409,6 +415,8 @@ impl ArrowDataType {
                 | D::Float32
                 | D::Float64
                 | D::Decimal(_, _)
+                | D::Decimal32(_, _)
+                | D::Decimal64(_, _)
                 | D::Decimal256(_, _)
         )
     }
@@ -455,6 +463,8 @@ impl ArrowDataType {
             | D::Utf8
             | D::LargeUtf8
             | D::Decimal(_, _)
+            | D::Decimal32(_, _)
+            | D::Decimal64(_, _)
             | D::Decimal256(_, _)
             | D::BinaryView
             | D::Utf8View

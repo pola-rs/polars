@@ -1,3 +1,4 @@
+pub mod deletion_files;
 pub mod predicate;
 pub mod projection;
 pub mod slice;
@@ -39,7 +40,7 @@ impl MultiScanTaskInitializer {
                 "[MultiScanTaskInitializer]: spawn_background_tasks(), {} sources, reader name: {}, {:?}",
                 self.config.sources.len(),
                 self.config.file_reader_builder.reader_name(),
-                self.config.file_reader_builder.reader_capabilities(),
+                self.config.reader_capabilities(),
             );
 
             eprintln!(

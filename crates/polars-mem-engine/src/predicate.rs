@@ -10,7 +10,7 @@ use polars_error::PolarsResult;
 use polars_expr::prelude::{AggregationContext, PhysicalExpr, phys_expr_to_io_expr};
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::{
-    ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicateExpr,
+    ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate,
 };
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -33,6 +33,10 @@ pub struct ScanPredicate {
 
     /// Partial predicates for each column for filter when loading columnar formats.
     pub column_predicates: PhysicalColumnPredicates,
+
+    /// Predicate only referring to hive columns.
+    pub hive_predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub hive_predicate_is_full_predicate: bool,
 }
 
 impl fmt::Debug for ScanPredicate {
@@ -43,13 +47,8 @@ impl fmt::Debug for ScanPredicate {
 
 #[derive(Clone)]
 pub struct PhysicalColumnPredicates {
-    pub predicates: PlHashMap<
-        PlSmallStr,
-        (
-            Arc<dyn PhysicalExpr>,
-            Option<SpecializedColumnPredicateExpr>,
-        ),
-    >,
+    pub predicates:
+        PlHashMap<PlSmallStr, (Arc<dyn PhysicalExpr>, Option<SpecializedColumnPredicate>)>,
     pub is_sumwise_complete: bool,
 }
 
@@ -162,7 +161,9 @@ impl ScanPredicate {
             live_columns: Arc::new(live_columns),
             skip_batch_predicate,
             column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
-                                                               // predicates.
+            // predicates.
+            hive_predicate: None,
+            hive_predicate_is_full_predicate: false,
         }
     }
 
@@ -198,6 +199,8 @@ impl ScanPredicate {
                     .collect(),
                 is_sumwise_complete: self.column_predicates.is_sumwise_complete,
             }),
+            hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
+            hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
         }
     }
 }

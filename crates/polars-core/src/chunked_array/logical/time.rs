@@ -5,12 +5,6 @@ use crate::prelude::*;
 
 pub type TimeChunked = Logical<TimeType, Int64Type>;
 
-impl From<Int64Chunked> for TimeChunked {
-    fn from(ca: Int64Chunked) -> Self {
-        TimeChunked::new_logical(ca)
-    }
-}
-
 impl Int64Chunked {
     pub fn into_time(mut self) -> TimeChunked {
         let mut null_count = 0;
@@ -48,7 +42,7 @@ impl Int64Chunked {
         let int64chunked =
             unsafe { Self::new_with_dims(self.field.clone(), chunks, self.length, null_count) };
 
-        TimeChunked::new_logical(int64chunked)
+        TimeChunked::new_logical(int64chunked, DataType::Time)
     }
 }
 

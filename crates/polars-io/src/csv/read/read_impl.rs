@@ -320,6 +320,10 @@ impl<'a> CoreReader<'a> {
         Ok(df)
     }
 
+    // The code adheres to RFC 4180 in a strict sense, unless explicitly documented otherwise.
+    // Malformed CSV is common, see e.g. the use of lazy_quotes, whitespace and comments.
+    // In case malformed CSV is detected, a warning or an error will be issued.
+    // Not all malformed CSV will be detected, as that would impact performance.
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let (bytes, _) = self.find_starting_point(
             bytes,
@@ -390,10 +394,12 @@ impl<'a> CoreReader<'a> {
 
         let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
         let mut total_offset = 0;
+        let mut previous_total_offset = 0;
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
         pool.scope(|s| {
+            // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
                 if b.is_empty() {
@@ -402,6 +408,9 @@ impl<'a> CoreReader<'a> {
                 debug_assert!(
                     total_offset == 0 || bytes[total_offset - 1] == self.parse_options.eol_char
                 );
+
+                // Count is the number of rows for the next chunk. In case of malformed CSV data,
+                // count may not be as expected.
                 let (count, position) = counter.find_next(b, &mut chunk_size);
                 debug_assert!(count == 0 || b[position] == self.parse_options.eol_char);
 
@@ -420,10 +429,12 @@ impl<'a> CoreReader<'a> {
                     let end = total_offset + position + 1;
                     let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
+                    previous_total_offset = total_offset;
                     total_offset = end;
                     (b, count)
                 };
 
+                // Pass 2: process each individual chunk in parallel (field parsing)
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
@@ -441,7 +452,18 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-                                debug_assert!(df.height() <= count);
+
+                                // Check malformed
+                                if df.height() > count || (df.height() < count && slf.parse_options.comment_prefix.is_none()) {
+                                    // Note: in case data is malformed, df.height() is more likely to be correct than count.
+                                    let msg = format!("CSV malformed: expected {} rows, actual {} rows, in chunk starting at byte offset {}, length {}",
+                                        count, df.height(), previous_total_offset, b.len());
+                                    if slf.ignore_errors {
+                                        polars_warn!(msg);
+                                    } else {
+                                        polars_bail!(ComputeError: msg);
+                                    }
+                                }
 
                                 if slf.n_rows.is_some() {
                                     total_line_count.fetch_add(df.height(), Ordering::Relaxed);

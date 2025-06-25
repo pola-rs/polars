@@ -335,7 +335,17 @@ pub fn assert_series_values_equal(
         (left.clone(), right.clone())
     };
 
-    let unequal = left.not_equal_missing(&right)?;
+    let unequal = match left.not_equal_missing(&right) {
+        Ok(result) => result,
+        Err(_) => {
+            return Err(polars_err!(
+                assertion_error = "Series",
+                "incompatible data types",
+                left.dtype(),
+                right.dtype()
+            ));
+        },
+    };
 
     if comparing_nested_floats(left.dtype(), right.dtype()) {
         let filtered_left = left.filter(&unequal)?;
@@ -349,9 +359,7 @@ pub fn assert_series_values_equal(
             atol,
             categorical_as_str,
         ) {
-            Ok(_) => {
-                return Ok(());
-            },
+            Ok(_) => return Ok(()),
             Err(_) => {
                 return Err(polars_err!(
                     assertion_error = "Series",
@@ -424,7 +432,10 @@ pub fn assert_series_nested_values_equal(
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
     if comparing_lists(left.dtype(), right.dtype()) {
-        let zipped = left.iter().zip(right.iter());
+        let left_rechunked = left.rechunk();
+        let right_rechunked = right.rechunk();
+
+        let zipped = left_rechunked.iter().zip(right_rechunked.iter());
 
         for (s1, s2) in zipped {
             if s1.is_null() || s2.is_null() {
@@ -456,13 +467,16 @@ pub fn assert_series_nested_values_equal(
         let ls = left.struct_()?.clone().unnest();
         let rs = right.struct_()?.clone().unnest();
 
-        let ls_cols = ls.get_columns();
-        let rs_cols = rs.get_columns();
+        for col_name in ls.get_column_names() {
+            let s1_column = ls.column(col_name)?;
+            let s2_column = rs.column(col_name)?;
 
-        for (s1, s2) in ls_cols.iter().zip(rs_cols.iter()) {
+            let s1_series = s1_column.as_materialized_series();
+            let s2_series = s2_column.as_materialized_series();
+
             match assert_series_values_equal(
-                s1.as_series().unwrap(),
-                s2.as_series().unwrap(),
+                s1_series,
+                s2_series,
                 true,
                 check_exact,
                 rtol,
@@ -538,7 +552,7 @@ pub fn assert_series_equal(
     if options.check_dtypes && left.dtype() != right.dtype() {
         return Err(polars_err!(
             assertion_error = "Series",
-            "data type mismatch",
+            "dtype mismatch",
             left.dtype(),
             right.dtype()
         ));
@@ -692,9 +706,6 @@ pub fn assert_dataframe_schema_equal(
     let left_set: PlHashSet<&PlSmallStr> = ordered_left_cols.iter().copied().collect();
     let right_set: PlHashSet<&PlSmallStr> = ordered_right_cols.iter().copied().collect();
 
-    let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
-    let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
-
     // Fast path for equal DataFrames
     if left_schema == right_schema {
         return Ok(());
@@ -708,7 +719,7 @@ pub fn assert_dataframe_schema_equal(
 
         if !left_not_right.is_empty() {
             return Err(polars_err!(
-                assertion_error = "DataFrame",
+                assertion_error = "DataFrames",
                 format!(
                     "columns mismatch: {:?} in left, but not in right",
                     left_not_right
@@ -723,7 +734,7 @@ pub fn assert_dataframe_schema_equal(
                 .collect();
 
             return Err(polars_err!(
-                assertion_error = "DataFrame",
+                assertion_error = "DataFrames",
                 format!(
                     "columns mismatch: {:?} in right, but not in left",
                     right_not_left
@@ -736,20 +747,37 @@ pub fn assert_dataframe_schema_equal(
 
     if check_column_order && ordered_left_cols != ordered_right_cols {
         return Err(polars_err!(
-            assertion_error = "DataFrame",
+            assertion_error = "DataFrames",
             "columns are not in the same order",
             format!("{:?}", ordered_left_cols),
             format!("{:?}", ordered_right_cols)
         ));
     }
 
-    if check_dtypes && (check_column_order || left_dtypes != right_dtypes) {
-        return Err(polars_err!(
-            assertion_error = "DataFrame",
-            "data types do not match",
-            format!("{:?}", left_dtypes),
-            format!("{:?}", right_dtypes)
-        ));
+    if check_dtypes {
+        if check_column_order {
+            let left_dtypes_ordered = left.dtypes();
+            let right_dtypes_ordered = right.dtypes();
+            if left_dtypes_ordered != right_dtypes_ordered {
+                return Err(polars_err!(
+                    assertion_error = "DataFrames",
+                    "dtypes do not match",
+                    format!("{:?}", left_dtypes_ordered),
+                    format!("{:?}", right_dtypes_ordered)
+                ));
+            }
+        } else {
+            let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
+            let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
+            if left_dtypes != right_dtypes {
+                return Err(polars_err!(
+                    assertion_error = "DataFrames",
+                    "dtypes do not match",
+                    format!("{:?}", left_dtypes),
+                    format!("{:?}", right_dtypes)
+                ));
+            }
+        }
     }
 
     Ok(())
@@ -843,10 +871,10 @@ pub fn assert_dataframe_equal(
             options.categorical_as_str,
         ) {
             Ok(_) => {},
-            Err(err) => {
+            Err(_) => {
                 return Err(polars_err!(
-                    assertion_error = "DataFrame",
-                    format!("value mismatch for column {:?}:, {}", col, err),
+                    assertion_error = "DataFrames",
+                    format!("value mismatch for column {:?}", col),
                     format!("{:?}", s_left_series),
                     format!("{:?}", s_right_series)
                 ));

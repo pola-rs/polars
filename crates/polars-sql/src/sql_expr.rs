@@ -382,11 +382,14 @@ impl SQLExprVisitor<'_> {
             if expr_dtype.is_none() && self.active_schema.is_none() {
                 right.clone()
             } else {
-                let left_dtype = expr_dtype.or_else(|| {
-                    self.active_schema
-                        .as_ref()
-                        .and_then(|schema| schema.get(&name))
-                });
+                let left_dtype = expr_dtype.map_or_else(
+                    || {
+                        self.active_schema
+                            .as_ref()
+                            .and_then(|schema| schema.get(&name))
+                    },
+                    |dt| dt.as_literal(),
+                );
                 match left_dtype {
                     Some(DataType::Time) if is_iso_time(s) => {
                         right.clone().str().to_time(StrptimeOptions {
@@ -773,7 +776,7 @@ impl SQLExprVisitor<'_> {
 
         #[cfg(feature = "json")]
         if dtype == &SQLDataType::JSON {
-            return Ok(expr.str().json_decode(None, None));
+            return Ok(expr.str().json_decode(<Option<DataTypeExpr>>::None, None));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
         Ok(match cast_kind {

@@ -8,6 +8,7 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
@@ -15,6 +16,7 @@ pub mod named_serde;
 #[cfg(feature = "serde")]
 mod serde_expr;
 
+use super::datatype_expr::DataTypeExpr;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
@@ -93,7 +95,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        dtype: DataType,
+        dtype: DataTypeExpr,
         options: CastOptions,
     },
     Sort {
@@ -123,7 +125,6 @@ pub enum Expr {
         input: Vec<Expr>,
         /// function to apply
         function: FunctionExpr,
-        options: FunctionOptions,
     },
     Explode {
         input: Arc<Expr>,
@@ -165,7 +166,19 @@ pub enum Expr {
         function: OpaqueColumnUdf,
         /// output dtype of the function
         output_type: GetOutput,
+
         options: FunctionOptions,
+        /// used for formatting
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        fmt_str: Box<PlSmallStr>,
+    },
+    /// Evaluates the `evaluation` expression on the output of the `expr`.
+    ///
+    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    Eval {
+        expr: Arc<Expr>,
+        evaluation: Arc<Expr>,
+        variant: EvalVariant,
     },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
@@ -175,9 +188,8 @@ pub enum Expr {
     /// `Expr::Wildcard`
     /// `Expr::Exclude`
     Selector(super::selector::Selector),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     RenameAlias {
-        function: SpecialEq<Arc<dyn RenameAliasFn>>,
+        function: RenameAliasFn,
         expr: Arc<Expr>,
     },
 }
@@ -296,14 +308,9 @@ impl Hash for Expr {
                 truthy.hash(state);
                 falsy.hash(state);
             },
-            Expr::Function {
-                input,
-                function,
-                options,
-            } => {
+            Expr::Function { input, function } => {
                 input.hash(state);
                 std::mem::discriminant(function).hash(state);
-                options.hash(state);
             },
             Expr::Gather {
                 expr,
@@ -354,15 +361,29 @@ impl Hash for Expr {
                 input.hash(state);
                 excl.hash(state);
             },
-            Expr::RenameAlias { function: _, expr } => expr.hash(state),
+            Expr::RenameAlias { function, expr } => {
+                function.hash(state);
+                expr.hash(state);
+            },
             Expr::AnonymousFunction {
                 input,
                 function: _,
                 output_type: _,
                 options,
+                fmt_str,
             } => {
                 input.hash(state);
                 options.hash(state);
+                fmt_str.hash(state);
+            },
+            Expr::Eval {
+                expr: input,
+                evaluation,
+                variant,
+            } => {
+                input.hash(state);
+                evaluation.hash(state);
+                variant.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -400,10 +421,10 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena)?;
-        expr_arena
-            .get(root)
-            .to_field_and_validate(schema, ctxt, expr_arena)
+        let expr = to_expr_ir(self.clone(), expr_arena, schema)?;
+        let (node, output_name) = expr.into_inner();
+        let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
+        Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 
     /// Extract a constant usize from an expression.
@@ -412,8 +433,32 @@ impl Expr {
             Expr::Literal(n) => n.extract_usize(),
             Expr::Cast { expr, dtype, .. } => {
                 // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
-                if dtype.is_integer() {
+                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) {
                     expr.extract_usize()
+                } else {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                }
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+            },
+        }
+    }
+
+    pub fn extract_i64(&self) -> PolarsResult<i64> {
+        match self {
+            Expr::Literal(n) => n.extract_i64(),
+            Expr::BinaryExpr { left, op, right } => match op {
+                Operator::Minus => {
+                    let left = left.extract_i64()?;
+                    let right = right.extract_i64()?;
+                    Ok(left - right)
+                },
+                _ => unreachable!(),
+            },
+            Expr::Cast { expr, dtype, .. } => {
+                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) {
+                    expr.extract_i64()
                 } else {
                     polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
                 }
@@ -469,11 +514,35 @@ impl Expr {
     #[inline]
     pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
         let function = function.into();
-        let options = function.function_options();
-        Expr::Function {
-            input,
-            function,
-            options,
+        Expr::Function { input, function }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum EvalVariant {
+    /// `list.eval`
+    List,
+
+    /// `cumulative_eval`
+    Cumulative { min_samples: usize },
+}
+
+impl EvalVariant {
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            Self::List => "list.eval",
+            Self::Cumulative { min_samples: _ } => "cumulative_eval",
+        }
+    }
+
+    /// Get the `DataType` of the `pl.element()` value.
+    pub fn element_dtype<'a>(&self, dtype: &'a DataType) -> PolarsResult<&'a DataType> {
+        match (self, dtype) {
+            (Self::List, DataType::List(inner)) => Ok(inner.as_ref()),
+            (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
+            _ => polars_bail!(op = self.to_name(), dtype),
         }
     }
 }
@@ -581,3 +650,45 @@ impl Operator {
         !(self.is_comparison_or_bitwise())
     }
 }
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum RenameAliasFn {
+    Prefix(PlSmallStr),
+    Suffix(PlSmallStr),
+    ToLowercase,
+    ToUppercase,
+    #[cfg(feature = "python")]
+    Python(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+    Rust(SpecialEq<Arc<RenameAliasRustFn>>),
+}
+
+impl RenameAliasFn {
+    pub fn call(&self, name: &PlSmallStr) -> PolarsResult<PlSmallStr> {
+        let out = match self {
+            Self::Prefix(prefix) => format_pl_smallstr!("{prefix}{name}"),
+            Self::Suffix(suffix) => format_pl_smallstr!("{name}{suffix}"),
+            Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
+            Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
+            #[cfg(feature = "python")]
+            Self::Python(lambda) => {
+                let name = name.as_str();
+                pyo3::marker::Python::with_gil(|py| {
+                    let out: PlSmallStr = lambda
+                        .call1(py, (name,))?
+                        .extract::<std::borrow::Cow<str>>(py)?
+                        .as_ref()
+                        .into();
+                    pyo3::PyResult::<_>::Ok(out)
+                }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map' produced an error: {e}."))?
+            },
+            Self::Rust(f) => f(name)?,
+        };
+        Ok(out)
+    }
+}
+
+pub type RenameAliasRustFn =
+    dyn Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + 'static + Send + Sync;

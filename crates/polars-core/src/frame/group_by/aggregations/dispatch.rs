@@ -136,6 +136,8 @@ impl Series {
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => self.cast(&Float64).unwrap().agg_mean(groups),
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -190,6 +192,8 @@ impl Series {
             dt if dt.is_primitive_numeric() => {
                 apply_method_physical_integer!(s, agg_median, groups)
             },
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => self.cast(&Float64).unwrap().agg_median(groups),
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()

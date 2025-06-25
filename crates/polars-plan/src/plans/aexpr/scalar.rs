@@ -31,7 +31,11 @@ pub fn is_scalar_ae(node: Node, expr_arena: &Arena<AExpr>) -> bool {
                 && is_scalar_ae(*falsy, expr_arena)
         },
         AExpr::Agg(_) | AExpr::Len => true,
-        AExpr::Cast { expr, .. } | AExpr::Alias(expr, _) => is_scalar_ae(*expr, expr_arena),
+        AExpr::Cast { expr, .. } => is_scalar_ae(*expr, expr_arena),
+        AExpr::Eval { expr, variant, .. } => match variant {
+            EvalVariant::List => is_scalar_ae(*expr, expr_arena),
+            EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, expr_arena),
+        },
         _ => false,
     }
 }

@@ -7,7 +7,7 @@ mod schema;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub use dsl::*;
 use polars_core::error::feature_gated;
@@ -39,7 +39,7 @@ pub enum FunctionIR {
 
     FastCount {
         sources: ScanSources,
-        scan_type: Box<FileScan>,
+        scan_type: Box<FileScanIR>,
         cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
     },
@@ -70,13 +70,6 @@ pub enum FunctionIR {
         streamable: bool,
         // used for formatting
         fmt_str: PlSmallStr,
-    },
-    /// Streaming engine pipeline
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
-    Pipeline {
-        function: Arc<Mutex<dyn DataFrameUdfMut>>,
-        schema: SchemaRef,
-        original: Option<Arc<IRPlan>>,
     },
 }
 
@@ -122,7 +115,6 @@ impl Hash for FunctionIR {
                 cloud_options.hash(state);
                 alias.hash(state);
             },
-            FunctionIR::Pipeline { .. } => {},
             FunctionIR::Unnest { columns } => columns.hash(state),
             FunctionIR::Rechunk => {},
             FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
@@ -145,7 +137,7 @@ impl FunctionIR {
     pub fn is_streamable(&self) -> bool {
         use FunctionIR::*;
         match self {
-            Rechunk | Pipeline { .. } => false,
+            Rechunk => false,
             FastCount { .. } | Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
@@ -177,7 +169,6 @@ impl FunctionIR {
             Unpivot { .. } => true,
             Rechunk | Unnest { .. } | Explode { .. } => true,
             RowIndex { .. } | FastCount { .. } => false,
-            Pipeline { .. } => unimplemented!(),
         }
     }
 
@@ -191,7 +182,6 @@ impl FunctionIR {
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             RowIndex { .. } => true,
-            Pipeline { .. } => unimplemented!(),
         }
     }
 
@@ -228,19 +218,6 @@ impl FunctionIR {
             Unnest { columns: _columns } => {
                 feature_gated!("dtype-struct", df.unnest(_columns.iter().cloned()))
             },
-            Pipeline { function, .. } => {
-                // we use a global string cache here as streaming chunks all have different rev maps
-                #[cfg(feature = "dtype-categorical")]
-                {
-                    let _sc = StringCacheHolder::hold();
-                    function.lock().unwrap().call_udf(df)
-                }
-
-                #[cfg(not(feature = "dtype-categorical"))]
-                {
-                    function.lock().unwrap().call_udf(df)
-                }
-            },
             Explode { columns, .. } => df.explode(columns.iter().cloned()),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
@@ -250,19 +227,6 @@ impl FunctionIR {
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
         }
-    }
-
-    pub fn to_streaming_lp(&self) -> Option<IRPlanRef> {
-        let Self::Pipeline {
-            function: _,
-            schema: _,
-            original,
-        } = self
-        else {
-            return None;
-        };
-
-        Some(original.as_ref()?.as_ref().as_ref())
     }
 }
 
@@ -281,18 +245,6 @@ impl Display for FunctionIR {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
-            },
-            Pipeline { original, .. } => {
-                if let Some(original) = original {
-                    let ir_display = original.as_ref().display();
-
-                    writeln!(f, "--- STREAMING")?;
-                    write!(f, "{ir_display}")?;
-                    let indent = 2;
-                    write!(f, "{:indent$}--- END STREAMING", "")
-                } else {
-                    write!(f, "STREAMING")
-                }
             },
             FastCount {
                 sources,

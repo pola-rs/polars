@@ -297,4 +297,12 @@ impl ListNameSpace {
     pub fn set_symmetric_difference<E: Into<Expr>>(self, other: E) -> Expr {
         self.set_operation(other.into(), SetOperation::SymmetricDifference)
     }
+
+    pub fn eval<E: Into<Expr>>(self, other: E) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::List,
+        }
+    }
 }

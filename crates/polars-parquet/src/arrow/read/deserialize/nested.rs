@@ -145,6 +145,7 @@ pub fn columns_to_iter_recursive(
                     !md.contains_key(DTYPE_ENUM_VALUES) && !md.contains_key(DTYPE_CATEGORICAL)
                 }) {
                     let (nested, arr, ptm) = PageDecoder::new(
+                        &field.name,
                         columns.pop().unwrap(),
                         ArrowDataType::Utf8View,
                         binview::BinViewDecoder::new_string(),
@@ -164,6 +165,7 @@ pub fn columns_to_iter_recursive(
                     assert!(matches!(key_type, IntegerType::UInt32));
 
                     let (nested, arr, ptm) = PageDecoder::new(
+                        &field.name,
                         columns.pop().unwrap(),
                         field.dtype().clone(),
                         CategoricalDecoder::new(),

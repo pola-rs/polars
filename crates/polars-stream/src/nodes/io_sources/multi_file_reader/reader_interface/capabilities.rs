@@ -31,5 +31,8 @@ bitflags! {
         ///
         /// `PARTIAL_FILTER` should also be enabled if this is enabled.
         const FULL_FILTER = 1 << 4;
+
+        /// Supports applying an external filter mask.
+        const EXTERNAL_FILTER_MASK = 1 << 5;
     }
 }

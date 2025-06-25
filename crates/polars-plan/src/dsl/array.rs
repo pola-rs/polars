@@ -11,10 +11,12 @@ use crate::prelude::*;
 pub struct ArrayNameSpace(pub Expr);
 
 impl ArrayNameSpace {
+    /// Compute the length of every subarray.
     pub fn len(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Length))
     }
+
     /// Compute the maximum of the items in every subarray.
     pub fn max(self) -> Expr {
         self.0
@@ -146,29 +148,59 @@ impl ArrayNameSpace {
 
     #[cfg(feature = "array_to_struct")]
     pub fn to_struct(self, name_generator: Option<ArrToStructNameGenerator>) -> PolarsResult<Expr> {
-        Ok(self
-            .0
-            .map(
-                move |s| {
-                    s.array()?
-                        .to_struct(name_generator.clone())
-                        .map(|s| Some(s.into_column()))
-                },
-                GetOutput::map_dtype(move |dt: &DataType| {
-                    let DataType::Array(inner, width) = dt else {
-                        polars_bail!(InvalidOperation: "expected Array type, got: {}", dt)
-                    };
+        Ok(self.0.map_with_fmt_str(
+            move |s| {
+                s.array()?
+                    .to_struct(name_generator.clone())
+                    .map(|s| Some(s.into_column()))
+            },
+            GetOutput::map_dtype(move |dt: &DataType| {
+                let DataType::Array(inner, width) = dt else {
+                    polars_bail!(InvalidOperation: "expected Array type, got: {}", dt)
+                };
 
-                    let fields = (0..*width)
-                        .map(|i| {
-                            let name = arr_default_struct_name_gen(i);
-                            Field::new(name, inner.as_ref().clone())
-                        })
-                        .collect();
-                    Ok(DataType::Struct(fields))
-                }),
-            )
-            .with_fmt("arr.to_struct"))
+                let fields = (0..*width)
+                    .map(|i| {
+                        let name = arr_default_struct_name_gen(i);
+                        Field::new(name, inner.as_ref().clone())
+                    })
+                    .collect();
+                Ok(DataType::Struct(fields))
+            }),
+            "arr.to_struct",
+        ))
+    }
+
+    /// Slice every subarray.
+    pub fn slice(self, offset: Expr, length: Expr, as_array: bool) -> PolarsResult<Expr> {
+        if as_array {
+            let Ok(offset) = offset.extract_i64() else {
+                polars_bail!(InvalidOperation: "Offset must be a constant `i64` value if `as_array=true`, got: {}", offset)
+            };
+            let Ok(length) = length.extract_i64() else {
+                polars_bail!(InvalidOperation: "Length must be a constant `i64` value if `as_array=true`, got: {}", length)
+            };
+            Ok(self
+                .0
+                .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Slice(
+                    offset, length,
+                ))))
+        } else {
+            Ok(self
+                .0
+                .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::ToList))
+                .map_ternary(FunctionExpr::ListExpr(ListFunction::Slice), offset, length))
+        }
+    }
+
+    /// Get the head of every subarray
+    pub fn head(self, n: Expr, as_array: bool) -> PolarsResult<Expr> {
+        self.slice(lit(0), n, as_array)
+    }
+
+    /// Get the tail of every subarray
+    pub fn tail(self, n: Expr, as_array: bool) -> PolarsResult<Expr> {
+        self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n, as_array)
     }
 
     /// Shift every sub-array.

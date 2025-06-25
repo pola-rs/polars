@@ -15,6 +15,5 @@ pub fn business_day_count(
             week_mask,
             holidays,
         }),
-        options: FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME),
     }
 }

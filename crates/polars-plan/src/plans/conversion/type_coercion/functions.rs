@@ -7,7 +7,7 @@ pub(super) fn get_function_dtypes(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
-    function: &FunctionExpr,
+    function: &IRFunctionExpr,
 ) -> PolarsResult<Option<Vec<DataType>>> {
     let mut dtypes = Vec::with_capacity(input.len());
     let mut first = true;
@@ -38,32 +38,32 @@ pub(super) fn get_function_dtypes(
 
 // `str` namespace belongs to `String`
 // `cat` namespace belongs to `Categorical` etc.
-fn check_namespace(function: &FunctionExpr, first_dtype: &DataType) -> PolarsResult<()> {
+fn check_namespace(function: &IRFunctionExpr, first_dtype: &DataType) -> PolarsResult<()> {
     match function {
         #[cfg(feature = "strings")]
-        FunctionExpr::StringExpr(_) => {
+        IRFunctionExpr::StringExpr(_) => {
             polars_ensure!(first_dtype == &DataType::String, InvalidOperation: "expected String type, got: {}", first_dtype)
         },
-        FunctionExpr::BinaryExpr(_) => {
+        IRFunctionExpr::BinaryExpr(_) => {
             polars_ensure!(first_dtype == &DataType::Binary, InvalidOperation: "expected Binary type, got: {}", first_dtype)
         },
         #[cfg(feature = "temporal")]
-        FunctionExpr::TemporalExpr(_) => {
+        IRFunctionExpr::TemporalExpr(_) => {
             polars_ensure!(first_dtype.is_temporal(), InvalidOperation: "expected Date(time)/Duration type, got: {}", first_dtype)
         },
-        FunctionExpr::ListExpr(_) => {
+        IRFunctionExpr::ListExpr(_) => {
             polars_ensure!(matches!(first_dtype, DataType::List(_)), InvalidOperation: "expected List type, got: {}", first_dtype)
         },
         #[cfg(feature = "dtype-array")]
-        FunctionExpr::ArrayExpr(_) => {
+        IRFunctionExpr::ArrayExpr(_) => {
             polars_ensure!(matches!(first_dtype, DataType::Array(_, _)), InvalidOperation: "expected Array type, got: {}", first_dtype)
         },
         #[cfg(feature = "dtype-struct")]
-        FunctionExpr::StructExpr(_) => {
+        IRFunctionExpr::StructExpr(_) => {
             polars_ensure!(matches!(first_dtype, DataType::Struct(_)), InvalidOperation: "expected Struct type, got: {}", first_dtype)
         },
         #[cfg(feature = "dtype-categorical")]
-        FunctionExpr::Categorical(_) => {
+        IRFunctionExpr::Categorical(_) => {
             polars_ensure!(matches!(first_dtype, DataType::Categorical(_, _)), InvalidOperation: "expected Categorical type, got: {}", first_dtype)
         },
         _ => {},

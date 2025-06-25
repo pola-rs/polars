@@ -21,7 +21,7 @@ pub(super) struct RowGroupData {
     pub(super) row_offset: usize,
     pub(super) slice: Option<(usize, usize)>,
     pub(super) row_group_metadata: RowGroupMetadata,
-    pub(super) sorting_map: PlHashMap<usize, IsSorted>,
+    pub(super) sorting_map: Vec<(usize, IsSorted)>,
 }
 
 pub(super) struct RowGroupDataFetcher {

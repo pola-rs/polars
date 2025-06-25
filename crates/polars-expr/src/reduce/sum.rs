@@ -70,7 +70,7 @@ impl<T> Reducer for NumSumReducer<T>
 where
     T: PolarsNumericType,
     <T as PolarsNumericType>::Native: SumCast,
-    ChunkedArray<T>: ChunkAgg<T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
     type Value = <T::Native as SumCast>::Sum;

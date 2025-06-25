@@ -93,33 +93,39 @@ fn get_scan_columns(
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
     file_path_col: Option<&str>,
+    // When set, the column order will match the order from the provided schema
+    normalize_order_schema: Option<&Schema>,
 ) -> Option<Arc<[PlSmallStr]>> {
-    if !acc_projections.is_empty() {
-        Some(
-            acc_projections
-                .iter()
-                .filter_map(|node| {
-                    let name = column_node_to_name(*node, expr_arena);
-
-                    if let Some(ri) = row_index {
-                        if ri.name == name {
-                            return None;
-                        }
-                    }
-
-                    if let Some(file_path_col) = file_path_col {
-                        if file_path_col == name.as_str() {
-                            return None;
-                        }
-                    }
-
-                    Some(name.clone())
-                })
-                .collect::<Arc<[_]>>(),
-        )
-    } else {
-        None
+    if acc_projections.is_empty() {
+        return None;
     }
+
+    let mut column_names = acc_projections
+        .iter()
+        .filter_map(|node| {
+            let name = column_node_to_name(*node, expr_arena);
+
+            if let Some(ri) = row_index {
+                if ri.name == name {
+                    return None;
+                }
+            }
+
+            if let Some(file_path_col) = file_path_col {
+                if file_path_col == name.as_str() {
+                    return None;
+                }
+            }
+
+            Some(name.clone())
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(schema) = normalize_order_schema {
+        column_names.sort_unstable_by_key(|name| schema.try_get_full(name).unwrap().0);
+    }
+
+    Some(column_names.into_iter().collect::<Arc<[_]>>())
 }
 
 /// split in a projection vec that can be pushed down and a projection vec that should be used
@@ -410,8 +416,15 @@ impl ProjectionPushDown {
                     ctx.process_count_star_at_scan(&options.schema, expr_arena);
                 }
 
-                options.with_columns =
-                    get_scan_columns(&ctx.acc_projections, expr_arena, None, None);
+                let normalize_order_schema = Some(&*options.schema);
+
+                options.with_columns = get_scan_columns(
+                    &ctx.acc_projections,
+                    expr_arena,
+                    None,
+                    None,
+                    normalize_order_schema,
+                );
 
                 options.output_schema = if options.with_columns.is_none() {
                     None
@@ -436,18 +449,18 @@ impl ProjectionPushDown {
                 id: _,
             } => {
                 let do_optimization = match &*scan_type {
-                    FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
+                    FileScanIR::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => true,
+                    FileScanIR::NDJson { .. } => true,
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => true,
+                    FileScanIR::Ipc { .. } => true,
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => true,
+                    FileScanIR::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => true,
+                    FileScanIR::Parquet { .. } => true,
                     // MultiScan will handle it if the PythonDataset cannot do projections.
                     #[cfg(feature = "python")]
-                    FileScan::PythonDataset { .. } => true,
+                    FileScanIR::PythonDataset { .. } => true,
                 };
 
                 #[expect(clippy::never_loop)]
@@ -457,7 +470,7 @@ impl ProjectionPushDown {
                     }
 
                     if self.is_count_star {
-                        if let FileScan::Anonymous { .. } = &*scan_type {
+                        if let FileScanIR::Anonymous { .. } = &*scan_type {
                             // Anonymous scan is not controlled by us, we don't know if it can support
                             // 0-column projections, so we always project one.
                             use either::Either;
@@ -497,6 +510,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         unified_scan_args.row_index.as_ref(),
                         unified_scan_args.include_file_paths.as_deref(),
+                        None,
                     );
 
                     output_schema = if unified_scan_args.projection.is_some() {

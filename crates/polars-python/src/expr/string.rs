@@ -1,6 +1,7 @@
 use polars::prelude::*;
 use pyo3::prelude::*;
 
+use super::datatype::PyDataTypeExpr;
 use crate::PyExpr;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
@@ -164,15 +165,23 @@ impl PyExpr {
         self.inner.clone().str().reverse().into()
     }
 
-    fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().pad_start(length, fill_char).into()
+    fn str_pad_start(&self, length: PyExpr, fill_char: char) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .pad_start(length.inner, fill_char)
+            .into()
     }
 
-    fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().pad_end(length, fill_char).into()
+    fn str_pad_end(&self, length: PyExpr, fill_char: char) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .pad_end(length.inner, fill_char)
+            .into()
     }
 
-    fn str_zfill(&self, length: Self) -> Self {
+    fn str_zfill(&self, length: PyExpr) -> Self {
         self.inner.clone().str().zfill(length.inner).into()
     }
 
@@ -225,7 +234,6 @@ impl PyExpr {
             .clone()
             .str()
             .to_integer(base.inner, strict)
-            .with_fmt("str.to_integer")
             .into()
     }
 
@@ -233,10 +241,10 @@ impl PyExpr {
     #[pyo3(signature = (dtype=None, infer_schema_len=None))]
     fn str_json_decode(
         &self,
-        dtype: Option<Wrap<DataType>>,
+        dtype: Option<PyDataTypeExpr>,
         infer_schema_len: Option<usize>,
     ) -> Self {
-        let dtype = dtype.map(|wrap| wrap.0);
+        let dtype = dtype.map(|wrap| wrap.inner);
         self.inner
             .clone()
             .str()

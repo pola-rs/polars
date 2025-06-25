@@ -37,14 +37,18 @@ pub fn page_iter_to_array(
     let dtype = field.dtype;
 
     Ok(match (physical_type, dtype.to_logical_type()) {
-        (_, Null) => {
-            PageDecoder::new(pages, dtype, null::NullDecoder, init_nested)?.collect_boxed(filter)?
-        },
-        (PhysicalType::Boolean, Boolean) => {
-            PageDecoder::new(pages, dtype, boolean::BooleanDecoder, init_nested)?
-                .collect_boxed(filter)?
-        },
+        (_, Null) => PageDecoder::new(&field.name, pages, dtype, null::NullDecoder, init_nested)?
+            .collect_boxed(filter)?,
+        (PhysicalType::Boolean, Boolean) => PageDecoder::new(
+            &field.name,
+            pages,
+            dtype,
+            boolean::BooleanDecoder,
+            init_nested,
+        )?
+        .collect_boxed(filter)?,
         (PhysicalType::Int32, UInt8) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i32, u8, _>::cast_as(),
@@ -52,6 +56,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int32, UInt16) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i32, u16, _>::cast_as(),
@@ -59,6 +64,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int32, UInt32) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i32, u32, _>::cast_as(),
@@ -66,6 +72,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int64, UInt32) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i64, u32, _>::cast_as(),
@@ -73,6 +80,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int32, Int8) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i32, i8, _>::cast_as(),
@@ -80,6 +88,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int32, Int16) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i32, i16, _>::cast_as(),
@@ -87,6 +96,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int32, Int32 | Date32 | Time32(_)) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i32, _, _>::unit(),
@@ -96,6 +106,7 @@ pub fn page_iter_to_array(
         (PhysicalType::Int64 | PhysicalType::Int96, Timestamp(time_unit, _)) => {
             let time_unit = *time_unit;
             return timestamp(
+                &field.name,
                 pages,
                 physical_type,
                 logical_type,
@@ -109,6 +120,7 @@ pub fn page_iter_to_array(
             let size = FixedSizeBinaryArray::get_size(&dtype);
 
             PageDecoder::new(
+                &field.name,
                 pages,
                 dtype,
                 fixed_size_binary::BinaryDecoder { size },
@@ -121,6 +133,7 @@ pub fn page_iter_to_array(
 
             let n = 12;
             let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
@@ -146,6 +159,7 @@ pub fn page_iter_to_array(
 
             let n = 12;
             let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
@@ -168,6 +182,7 @@ pub fn page_iter_to_array(
             )
         },
         (PhysicalType::Int32, Decimal(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i32, i128, _>::cast_into(),
@@ -175,6 +190,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int64, Decimal(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i64, i128, _>::cast_into(),
@@ -192,6 +208,7 @@ pub fn page_iter_to_array(
             let n = *n;
 
             let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
@@ -213,6 +230,7 @@ pub fn page_iter_to_array(
             )
         },
         (PhysicalType::Int32, Decimal256(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::closure(|x: i32| i256(I256::new(x as i128))),
@@ -220,6 +238,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int64, Decimal256(_, _)) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::closure(|x: i64| i256(I256::new(x as i128))),
@@ -232,6 +251,7 @@ pub fn page_iter_to_array(
             let n = *n;
 
             let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
@@ -258,6 +278,7 @@ pub fn page_iter_to_array(
             let n = *n;
 
             let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 fixed_size_binary::BinaryDecoder { size: n },
@@ -284,6 +305,7 @@ pub fn page_iter_to_array(
             )));
         },
         (PhysicalType::Int32, Date64) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::closure(|x: i32| i64::from(x) * 86400000),
@@ -291,6 +313,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int64, Date64) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i64, _, _>::unit(),
@@ -298,6 +321,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Int64, Int64 | Time64(_) | Duration(_)) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i64, _, _>::unit(),
@@ -306,6 +330,7 @@ pub fn page_iter_to_array(
         .collect_boxed(filter)?,
 
         (PhysicalType::Int64, UInt64) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::IntDecoder::<i64, u64, _>::cast_as(),
@@ -318,6 +343,7 @@ pub fn page_iter_to_array(
             // @NOTE: To reduce code bloat, we just use the FixedSizeBinary decoder.
 
             let (nested, mut fsb_array, ptm) = PageDecoder::new(
+                &field.name,
                 pages,
                 ArrowDataType::FixedSizeBinary(2),
                 fixed_size_binary::BinaryDecoder { size: 2 },
@@ -346,6 +372,7 @@ pub fn page_iter_to_array(
         },
 
         (PhysicalType::Float, Float32) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::FloatDecoder::<f32, _, _>::unit(),
@@ -353,6 +380,7 @@ pub fn page_iter_to_array(
         )?
         .collect_boxed(filter)?,
         (PhysicalType::Double, Float64) => PageDecoder::new(
+            &field.name,
             pages,
             dtype,
             primitive::FloatDecoder::<f64, _, _>::unit(),
@@ -363,6 +391,7 @@ pub fn page_iter_to_array(
         (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
             let is_string = matches!(dtype, LargeUtf8);
             PageDecoder::new(
+                &field.name,
                 pages,
                 dtype,
                 binview::BinViewDecoder { is_string },
@@ -374,6 +403,7 @@ pub fn page_iter_to_array(
         (PhysicalType::ByteArray, BinaryView | Utf8View) => {
             let is_string = matches!(dtype, Utf8View);
             PageDecoder::new(
+                &field.name,
                 pages,
                 dtype,
                 binview::BinViewDecoder { is_string },
@@ -391,10 +421,17 @@ pub fn page_iter_to_array(
                 md.contains_key(DTYPE_ENUM_VALUES) || md.contains_key(DTYPE_CATEGORICAL)
             }) && matches!(key_type, IntegerType::UInt32)
             {
-                PageDecoder::new(pages, dtype, CategoricalDecoder::new(), init_nested)?
-                    .collect_boxed(filter)?
+                PageDecoder::new(
+                    &field.name,
+                    pages,
+                    dtype,
+                    CategoricalDecoder::new(),
+                    init_nested,
+                )?
+                .collect_boxed(filter)?
             } else {
                 let (nested, array, ptm) = PageDecoder::new(
+                    &field.name,
                     pages,
                     ArrowDataType::Utf8View,
                     binview::BinViewDecoder::new_string(),
@@ -487,7 +524,9 @@ pub fn int96_to_i64_s(value: [u32; 3]) -> i64 {
     day_seconds + seconds
 }
 
+#[expect(clippy::too_many_arguments)]
 fn timestamp(
+    field_name: &str,
     pages: BasicDecompressor,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
@@ -499,6 +538,7 @@ fn timestamp(
     if physical_type == &PhysicalType::Int96 {
         return match time_unit {
             TimeUnit::Nanosecond => PageDecoder::new(
+                field_name,
                 pages,
                 dtype,
                 primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
@@ -506,6 +546,7 @@ fn timestamp(
             )?
             .collect_boxed(filter),
             TimeUnit::Microsecond => PageDecoder::new(
+                field_name,
                 pages,
                 dtype,
                 primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
@@ -513,6 +554,7 @@ fn timestamp(
             )?
             .collect_boxed(filter),
             TimeUnit::Millisecond => PageDecoder::new(
+                field_name,
                 pages,
                 dtype,
                 primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
@@ -520,6 +562,7 @@ fn timestamp(
             )?
             .collect_boxed(filter),
             TimeUnit::Second => PageDecoder::new(
+                field_name,
                 pages,
                 dtype,
                 primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
@@ -538,6 +581,7 @@ fn timestamp(
     let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     match (factor, is_multiplier) {
         (1, _) => PageDecoder::new(
+            field_name,
             pages,
             dtype,
             primitive::IntDecoder::<i64, _, _>::unit(),
@@ -545,6 +589,7 @@ fn timestamp(
         )?
         .collect_boxed(filter),
         (a, true) => PageDecoder::new(
+            field_name,
             pages,
             dtype,
             primitive::IntDecoder::closure(|x: i64| x * a),
@@ -552,6 +597,7 @@ fn timestamp(
         )?
         .collect_boxed(filter),
         (a, false) => PageDecoder::new(
+            field_name,
             pages,
             dtype,
             primitive::IntDecoder::closure(|x: i64| x / a),

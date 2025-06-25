@@ -1,41 +1,21 @@
 mod convert_utils;
 mod dsl_to_ir;
-mod expr_expansion;
-mod expr_to_ir;
 mod ir_to_dsl;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "json"
-))]
-mod scans;
 mod stack_opt;
 
-use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 pub use dsl_to_ir::*;
-pub use expr_to_ir::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "json"
-))]
-pub use scans::*;
-mod functions;
-mod join;
 pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
-pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
+pub use dsl_to_ir::{expand_selectors, is_regex_projection, prepare_projection};
 pub(crate) use stack_opt::ConversionOptimizer;
 
 use crate::constants::get_len_name;
@@ -63,24 +43,60 @@ impl IR {
         match lp {
             ir @ IR::Scan { .. } => {
                 let IR::Scan {
-                    sources,
-                    file_info,
+                    ref sources,
+                    ref file_info,
                     hive_parts: _,
                     predicate: _,
-                    scan_type,
+                    ref scan_type,
                     output_schema: _,
-                    unified_scan_args,
+                    ref unified_scan_args,
                     id: _,
-                } = ir.clone()
+                } = ir
                 else {
                     unreachable!()
                 };
 
+                let scan_type = Box::new(match &**scan_type {
+                    #[cfg(feature = "csv")]
+                    FileScanIR::Csv { options } => FileScanDsl::Csv {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "json")]
+                    FileScanIR::NDJson { options } => FileScanDsl::NDJson {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "parquet")]
+                    FileScanIR::Parquet {
+                        options,
+                        metadata: _,
+                    } => FileScanDsl::Parquet {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "ipc")]
+                    FileScanIR::Ipc {
+                        options,
+                        metadata: _,
+                    } => FileScanDsl::Ipc {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "python")]
+                    FileScanIR::PythonDataset {
+                        dataset_object,
+                        cached_ir: _,
+                    } => FileScanDsl::PythonDataset {
+                        dataset_object: dataset_object.clone(),
+                    },
+                    FileScanIR::Anonymous { options, function } => FileScanDsl::Anonymous {
+                        options: options.clone(),
+                        function: function.clone(),
+                        file_info: file_info.clone(),
+                    },
+                });
+
                 DslPlan::Scan {
-                    sources,
-                    file_info: Some(file_info),
+                    sources: sources.clone(),
                     scan_type,
-                    unified_scan_args,
+                    unified_scan_args: unified_scan_args.clone(),
                     cached_ir: Arc::new(Mutex::new(Some(ir))),
                 }
             },
@@ -176,8 +192,10 @@ impl IR {
                 id,
                 cache_hits: _,
             } => {
-                let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache { input, id }
+                let input: Arc<DslPlan> = id
+                    .downcast_arc()
+                    .unwrap_or_else(|| Arc::new(convert_to_lp(input, lp_arena)));
+                DslPlan::Cache { input }
             },
             IR::GroupBy {
                 input,
@@ -221,7 +239,7 @@ impl IR {
                     predicates: Default::default(),
                     left_on,
                     right_on,
-                    options,
+                    options: Arc::new(JoinOptions::from(Arc::unwrap_or_clone(options))),
                 }
             },
             IR::HStack {
@@ -302,6 +320,17 @@ impl IR {
                             },
                         },
                         cloud_options: f.cloud_options,
+                        per_partition_sort_by: f.per_partition_sort_by.map(|sort_by| {
+                            sort_by
+                                .into_iter()
+                                .map(|s| SortColumn {
+                                    expr: s.expr.to_expr(expr_arena),
+                                    descending: s.descending,
+                                    nulls_last: s.descending,
+                                })
+                                .collect()
+                        }),
+                        finish_callback: f.finish_callback,
                     }),
                 };
                 DslPlan::Sink { input, payload }
@@ -330,29 +359,5 @@ impl IR {
             },
             IR::Invalid => unreachable!(),
         }
-    }
-}
-
-fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
-    let plan = lp_arena.get(lp_node);
-    let mut inputs: UnitVec<Node> = unitvec!();
-
-    // Used to get the schema of the input.
-    if is_scan(plan) {
-        inputs.push(lp_node);
-    } else {
-        plan.copy_inputs(&mut inputs);
-    };
-    inputs
-}
-
-fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    let inputs = get_input(lp_arena, lp_node);
-    if inputs.is_empty() {
-        // Files don't have an input, so we must take their schema.
-        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
-    } else {
-        let input = inputs[0];
-        lp_arena.get(input).schema(lp_arena)
     }
 }

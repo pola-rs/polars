@@ -5,6 +5,7 @@ use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
 use chrono::Datelike;
+use num_traits::FromBytes;
 use polars_error::PolarsResult;
 
 use super::CastOptionsImpl;
@@ -61,20 +62,26 @@ pub fn utf8view_to_utf8<O: Offset>(array: &Utf8ViewArray) -> Utf8Array<O> {
         )
     }
 }
-/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub(super) fn binview_to_primitive<T>(
-    from: &BinaryViewArray,
+
+/// Parses a [`Utf8ViewArray`] with text representations of numbers into a
+/// [`PrimitiveArray`], making any unparsable value a Null.
+pub(super) fn utf8view_to_primitive<T>(
+    from: &Utf8ViewArray,
     to: &ArrowDataType,
 ) -> PrimitiveArray<T>
 where
     T: NativeType + Parse,
 {
-    let iter = from.iter().map(|x| x.and_then::<T, _>(|x| T::parse(x)));
+    let iter = from
+        .iter()
+        .map(|x| x.and_then::<T, _>(|x| T::parse(x.as_bytes())));
 
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
 
-pub(super) fn binview_to_primitive_dyn<T>(
+/// Parses a `&dyn` [`Array`] of UTF-8 encoded string representations of numbers
+/// into a [`PrimitiveArray`], making any unparsable value a Null.
+pub(super) fn utf8view_to_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     options: CastOptionsImpl,
@@ -86,7 +93,7 @@ where
     if options.partial {
         unimplemented!()
     } else {
-        Ok(Box::new(binview_to_primitive::<T>(from, to)))
+        Ok(Box::new(utf8view_to_primitive::<T>(from, to)))
     }
 }
 
@@ -138,4 +145,113 @@ pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {
 pub(super) fn utf8view_to_date32_dyn(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(utf8view_to_date32(from)))
+}
+
+/// Casts a [`BinaryViewArray`] containing binary-encoded numbers to a
+/// [`PrimitiveArray`], making any uncastable value a Null.
+pub(super) fn binview_to_primitive<T>(
+    from: &BinaryViewArray,
+    to: &ArrowDataType,
+    is_little_endian: bool,
+) -> PrimitiveArray<T>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let iter = from.iter().map(|x| {
+        x.and_then::<T, _>(|x| {
+            if is_little_endian {
+                Some(<T as FromBytes>::from_le_bytes(x.try_into().ok()?))
+            } else {
+                Some(<T as FromBytes>::from_be_bytes(x.try_into().ok()?))
+            }
+        })
+    });
+
+    PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
+}
+
+/// Casts a `&dyn` [`Array`] containing binary-encoded numbers to a
+/// [`PrimitiveArray`], making any uncastable value a Null.
+/// # Panics
+/// Panics if `Array` is not a `BinaryViewArray`
+pub fn binview_to_primitive_dyn<T>(
+    from: &dyn Array,
+    to: &ArrowDataType,
+    is_little_endian: bool,
+) -> PolarsResult<Box<dyn Array>>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let from = from.as_any().downcast_ref().unwrap();
+    Ok(Box::new(binview_to_primitive::<T>(
+        from,
+        to,
+        is_little_endian,
+    )))
+}
+
+/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any un-castable value a Null.
+///
+/// # Panics
+///    Panics if `to` is not `ArrowDataType::FixedSizeList`.
+pub(super) fn try_binview_to_array_primitive<T>(
+    from: &BinaryViewArray,
+    to: &ArrowDataType,
+    is_little_endian: bool,
+) -> PolarsResult<FixedSizeListArray>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let ArrowDataType::FixedSizeList(_, array_size) = to else {
+        panic!("Bug, non-Array passed in.")
+    };
+    let element_size = std::mem::size_of::<T>();
+    let array_size = *array_size;
+    let mut result = MutableFixedSizeListArray::new(
+        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_size),
+        array_size,
+    );
+
+    from.iter().try_for_each(|x| {
+        if let Some(x) = x {
+            if x.len() != element_size * array_size {
+                result.push_null();
+                return Ok(());
+            }
+
+            result.try_push(Some(x.chunks_exact(element_size).map(|val| {
+                if is_little_endian {
+                    Some(<T as FromBytes>::from_le_bytes(val.try_into().ok()?))
+                } else {
+                    Some(<T as FromBytes>::from_be_bytes(val.try_into().ok()?))
+                }
+            })))
+        } else {
+            result.push_null();
+            Ok(())
+        }
+    })?;
+
+    Ok(result.into())
+}
+
+pub fn binview_to_array_primitive_dyn<T>(
+    from: &dyn Array,
+    to: &ArrowDataType,
+    is_little_endian: bool,
+) -> PolarsResult<Box<dyn Array>>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let from = from.as_any().downcast_ref().unwrap();
+
+    Ok(Box::new(try_binview_to_array_primitive::<T>(
+        from,
+        to,
+        is_little_endian,
+    )?))
 }

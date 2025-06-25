@@ -1,9 +1,12 @@
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{PartitionVariant, SinkOptions, SpecialEq};
+use polars::prelude::{
+    PartitionTargetCallbackResult, PartitionVariant, PlPath, SinkFinishCallback, SinkOptions,
+    SortColumn, SpecialEq,
+};
 use polars_utils::IdxSize;
+use polars_utils::plpath::PlPathRef;
 use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
@@ -23,38 +26,65 @@ pub enum SinkTarget {
 #[derive(Clone)]
 pub struct PyPartitioning {
     #[pyo3(get)]
-    pub base_path: PathBuf,
+    pub base_path: Wrap<PlPath>,
     pub file_path_cb: Option<PythonFunction>,
     pub variant: PartitionVariant,
+    pub per_partition_sort_by: Option<Vec<SortColumn>>,
+    pub finish_callback: Option<SinkFinishCallback>,
+}
+
+fn parse_per_partition_sort_by(sort_by: Option<Vec<PyExpr>>) -> Option<Vec<SortColumn>> {
+    sort_by.map(|exprs| {
+        exprs
+            .into_iter()
+            .map(|e| SortColumn {
+                expr: e.inner,
+                descending: false,
+                nulls_last: false,
+            })
+            .collect()
+    })
 }
 
 #[cfg(feature = "pymethods")]
 #[pymethods]
 impl PyPartitioning {
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, max_size))]
+    #[pyo3(signature = (base_path, file_path_cb, max_size, per_partition_sort_by, finish_callback))]
     pub fn new_max_size(
-        base_path: PathBuf,
+        base_path: Wrap<PlPath>,
         file_path_cb: Option<PyObject>,
         max_size: IdxSize,
+        per_partition_sort_by: Option<Vec<PyExpr>>,
+        finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
+        let finish_callback =
+            finish_callback.map(|f| SinkFinishCallback::Python(PythonObject(f.into_any())));
+
         PyPartitioning {
             base_path,
             file_path_cb,
             variant: PartitionVariant::MaxSize(max_size),
+            per_partition_sort_by: parse_per_partition_sort_by(per_partition_sort_by),
+            finish_callback,
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, finish_callback))]
     pub fn new_by_key(
-        base_path: PathBuf,
+        base_path: Wrap<PlPath>,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
+        per_partition_sort_by: Option<Vec<PyExpr>>,
+        finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
+        let finish_callback =
+            finish_callback.map(|f| SinkFinishCallback::Python(PythonObject(f.into_any())));
+
         PyPartitioning {
             base_path,
             file_path_cb,
@@ -62,18 +92,25 @@ impl PyPartitioning {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
             },
+            per_partition_sort_by: parse_per_partition_sort_by(per_partition_sort_by),
+            finish_callback,
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, finish_callback))]
     pub fn new_parted(
-        base_path: PathBuf,
+        base_path: Wrap<PlPath>,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
+        per_partition_sort_by: Option<Vec<PyExpr>>,
+        finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
+        let finish_callback =
+            finish_callback.map(|f| SinkFinishCallback::Python(PythonObject(f.into_any())));
+
         PyPartitioning {
             base_path,
             file_path_cb,
@@ -81,14 +118,16 @@ impl PyPartitioning {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
             },
+            per_partition_sort_by: parse_per_partition_sort_by(per_partition_sort_by),
+            finish_callback,
         }
     }
 }
 
 impl<'py> FromPyObject<'py> for Wrap<polars_plan::dsl::SinkTarget> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        if let Ok(v) = ob.extract::<PathBuf>() {
-            Ok(Wrap(polars::prelude::SinkTarget::Path(Arc::new(v))))
+        if let Ok(v) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(polars::prelude::SinkTarget::Path(PlPath::new(&v))))
         } else {
             let writer = Python::with_gil(|py| {
                 let py_f = ob.clone();
@@ -106,6 +145,35 @@ impl<'py> FromPyObject<'py> for Wrap<polars_plan::dsl::SinkTarget> {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<PartitionTargetCallbackResult> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(v) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(polars::prelude::PartitionTargetCallbackResult::Str(
+                v.to_string(),
+            )))
+        } else if let Ok(v) = ob.extract::<std::path::PathBuf>() {
+            Ok(Wrap(polars::prelude::PartitionTargetCallbackResult::Str(
+                v.to_str().unwrap().to_string(),
+            )))
+        } else {
+            let writer = Python::with_gil(|py| {
+                let py_f = ob.clone();
+                PyResult::Ok(
+                    crate::file::try_get_pyfile(py, py_f, true)?
+                        .0
+                        .into_writeable(),
+                )
+            })?;
+
+            Ok(Wrap(
+                polars_plan::prelude::PartitionTargetCallbackResult::Dyn(SpecialEq::new(Arc::new(
+                    Mutex::new(Some(writer)),
+                ))),
+            ))
+        }
+    }
+}
+
 impl<'py> FromPyObject<'py> for SinkTarget {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(v) = ob.extract::<PyPartitioning>() {
@@ -119,13 +187,13 @@ impl<'py> FromPyObject<'py> for SinkTarget {
 }
 
 impl SinkTarget {
-    pub fn base_path(&self) -> Option<&Path> {
+    pub fn base_path(&self) -> Option<PlPathRef> {
         match self {
             Self::File(t) => match t {
-                polars::prelude::SinkTarget::Path(p) => Some(p.as_path()),
+                polars::prelude::SinkTarget::Path(p) => Some(p.as_ref()),
                 polars::prelude::SinkTarget::Dyn(_) => None,
             },
-            Self::Partition(p) => Some(&p.base_path),
+            Self::Partition(p) => Some(p.base_path.0.as_ref()),
         }
     }
 }

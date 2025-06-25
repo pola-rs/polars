@@ -47,8 +47,9 @@ pub enum JoinType {
     Left,
     Right,
     Full,
+    // Box is okay because this is inside a `Arc<JoinOptionsIR>`
     #[cfg(feature = "asof_join")]
-    AsOf(AsOfOptions),
+    AsOf(Box<AsOfOptions>),
     #[cfg(feature = "semi_anti_join")]
     Semi,
     #[cfg(feature = "semi_anti_join")]
@@ -197,12 +198,10 @@ impl Debug for CrossJoinOptions {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, IntoStaticStr, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptions {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    #[cfg_attr(feature = "serde", serde(skip))]
     Cross(CrossJoinOptions),
 }
 

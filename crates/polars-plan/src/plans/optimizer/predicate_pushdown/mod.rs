@@ -8,10 +8,7 @@ use polars_core::prelude::*;
 use recursive::recursive;
 use utils::*;
 
-#[cfg(feature = "python")]
-use self::python_dsl::PythonScanSource;
 use super::*;
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
@@ -371,9 +368,9 @@ impl PredicatePushDown<'_> {
 
                 match &*scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => {},
+                    FileScanIR::Parquet { .. } => {},
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => {},
+                    FileScanIR::Ipc { .. } => {},
                     _ => {
                         // Disallow row index pushdown of other scans as they may
                         // not update the row index properly before applying the
@@ -395,10 +392,10 @@ impl PredicatePushDown<'_> {
 
                 let mut do_optimization = match &*scan_type {
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => unified_scan_args.pre_slice.is_none(),
-                    FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
+                    FileScanIR::Csv { .. } => unified_scan_args.pre_slice.is_none(),
+                    FileScanIR::Anonymous { function, .. } => function.allows_predicate_pushdown(),
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => true,
+                    FileScanIR::NDJson { .. } => true,
                     #[allow(unreachable_patterns)]
                     _ => true,
                 };
@@ -645,22 +642,31 @@ impl PredicatePushDown<'_> {
             PythonScan { mut options } => {
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
-                    // For IO plugins we only accept streamable expressions as
-                    // we want to apply the predicates to the batches.
-                    if !is_elementwise_rec(predicate.node(), expr_arena)
-                        && matches!(options.python_source, PythonScanSource::IOPlugin)
-                    {
-                        let lp = PythonScan { options };
-                        return Ok(self.optional_apply_predicate(
-                            lp,
-                            vec![predicate],
-                            lp_arena,
-                            expr_arena,
-                        ));
-                    }
+                    match ExprPushdownGroup::Pushable.update_with_expr_rec(
+                        expr_arena.get(predicate.node()),
+                        expr_arena,
+                        None,
+                    ) {
+                        ExprPushdownGroup::Barrier => {
+                            if cfg!(debug_assertions) {
+                                // Expression should not be pushed here by the optimizer
+                                panic!()
+                            }
 
-                    options.predicate = PythonPredicate::Polars(predicate);
+                            return Ok(self.optional_apply_predicate(
+                                PythonScan { options },
+                                vec![predicate],
+                                lp_arena,
+                                expr_arena,
+                            ));
+                        },
+
+                        ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
+                            options.predicate = PythonPredicate::Polars(predicate);
+                        },
+                    }
                 }
+
                 Ok(PythonScan { options })
             },
             #[cfg(feature = "merge_sorted")]

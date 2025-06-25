@@ -664,3 +664,18 @@ def test_escape_regex() -> None:
         match="escape_regex function supports only `str` type, got `int`",
     ):
         pl.escape_regex(3)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("func", ["var", "std"])
+def test_var_std_lit_23156(func: str) -> None:
+    for n in range(100):
+        input = pl.DataFrame({"x": list(range(n))}).select(pl.col("x"), pl.lit(0))
+        out = getattr(input, func)()
+        if n <= 1:
+            assert_series_equal(
+                out["literal"], pl.Series("literal", [None], dtype=pl.Float64)
+            )
+        else:
+            assert_series_equal(
+                out["literal"], pl.Series("literal", [0.0], dtype=pl.Float64)
+            )

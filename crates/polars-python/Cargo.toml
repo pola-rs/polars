@@ -21,6 +21,7 @@ polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
+polars-testing = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
@@ -80,6 +81,7 @@ features = [
   "is_last_distinct",
   "is_unique",
   "is_between",
+  "is_close",
   "lazy",
   "list_eval",
   "list_to_struct",
@@ -138,7 +140,6 @@ cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 
-streaming = ["polars/streaming"]
 meta = ["polars/meta"]
 index_of = ["polars/index_of"]
 search_sorted = ["polars/search_sorted"]
@@ -247,10 +248,10 @@ io = [
 optimizations = [
   "cse",
   "polars/fused",
-  "streaming",
 ]
 
-polars_cloud = ["polars/polars_cloud", "polars/ir_serde"]
+polars_cloud_client = ["polars/polars_cloud_client"]
+polars_cloud_server = ["polars/polars_cloud_server"]
 
 # also includes simd
 nightly = ["polars/nightly"]
@@ -269,7 +270,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
-  "polars_cloud",
+  "polars_cloud_client",
   "new_streaming",
 ]
 

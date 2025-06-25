@@ -9,11 +9,10 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::evaluate::{constant_evaluate, into_column};
-use super::super::{AExpr, BooleanFunction, Operator, OutputName};
-use crate::dsl::FunctionExpr;
+use super::super::{AExpr, IRBooleanFunction, IRFunctionExpr, Operator};
+use crate::plans::aexpr::builder::IntoAExprBuilder;
 use crate::plans::predicates::get_binary_expr_col_and_lv;
-use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
-use crate::prelude::FunctionOptions;
+use crate::plans::{AExprBuilder, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
 
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and
 /// null count statistics.
@@ -36,105 +35,31 @@ fn does_dtype_have_sufficient_order(dtype: &DataType) -> bool {
     !dtype.is_nested() && !dtype.is_float() && !dtype.is_null() && !dtype.is_categorical()
 }
 
+fn is_stat_defined(
+    expr: impl IntoAExprBuilder,
+    dtype: &DataType,
+    arena: &mut Arena<AExpr>,
+) -> AExprBuilder {
+    let mut expr = expr.into_aexpr_builder();
+    expr = expr.is_not_null(arena);
+    if dtype.is_float() {
+        let is_not_nan = expr.is_not_nan(arena);
+        expr = expr.and(is_not_nan, arena);
+    }
+    expr
+}
+
 #[recursive::recursive]
 fn aexpr_to_skip_batch_predicate_rec(
     e: Node,
-    expr_arena: &mut Arena<AExpr>,
+    arena: &mut Arena<AExpr>,
     schema: &Schema,
     depth: usize,
 ) -> Option<Node> {
     use Operator as O;
 
     macro_rules! rec {
-        ($node:expr) => {{ aexpr_to_skip_batch_predicate_rec($node, expr_arena, schema, depth + 1) }};
-    }
-    macro_rules! and {
-        ($l:expr, $($r:expr),+ $(,)?) => {{
-            let node = $l;
-            $(
-            let node = expr_arena.add(AExpr::BinaryExpr {
-                left: node,
-                op: O::LogicalAnd,
-                right: $r,
-            });
-            )+
-            node
-        }}
-    }
-    macro_rules! or {
-        ($l:expr, $($r:expr),+ $(,)?) => {{
-            let node = $l;
-            $(
-            let node = expr_arena.add(AExpr::BinaryExpr {
-                left: node,
-                op: O::LogicalOr,
-                right: $r,
-            });
-            )+
-            node
-        }}
-    }
-    macro_rules! binexpr {
-        (op: $op:expr, $l:expr, $r:expr) => {{
-            expr_arena.add(AExpr::BinaryExpr {
-                left: $l,
-                op: $op,
-                right: $r,
-            })
-        }};
-        ($op:ident, $l:expr, $r:expr) => {{ binexpr!(op: O::$op, $l, $r) }};
-    }
-    macro_rules! lt {
-        ($l:expr, $r:expr) => {{ binexpr!(Lt, $l, $r) }};
-    }
-    macro_rules! gt {
-        ($l:expr, $r:expr) => {{ binexpr!(Gt, $l, $r) }};
-    }
-    macro_rules! eq {
-        ($l:expr, $r:expr) => {{ binexpr!(Eq, $l, $r) }};
-    }
-    macro_rules! null_count {
-        ($i:expr) => {{
-            expr_arena.add(AExpr::Function {
-                input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                function: FunctionExpr::NullCount,
-                options: FunctionOptions::default(),
-            })
-        }};
-    }
-    macro_rules! has_no_nulls {
-        ($i:expr) => {{
-            let expr = null_count!($i);
-            let idx_zero = lv!(0);
-            eq!(expr, idx_zero)
-        }};
-    }
-    macro_rules! has_nulls {
-        ($i:expr) => {{
-            let expr = null_count!($i);
-            let idx_zero = lv!(0);
-            gt!(expr, idx_zero)
-        }};
-    }
-    macro_rules! is_stat_defined {
-        ($i:expr, $dtype:expr) => {{
-            let mut expr = expr_arena.add(AExpr::Function {
-                input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
-                options: FunctionOptions::default(),
-            });
-
-            if $dtype.is_float() {
-                let is_not_nan = expr_arena.add(AExpr::Function {
-                    input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNan),
-                    options: FunctionOptions::default(),
-                });
-                expr = and!(is_not_nan, expr);
-            }
-
-            expr
-        }};
+        ($node:expr) => {{ aexpr_to_skip_batch_predicate_rec($node, arena, schema, depth + 1) }};
     }
     macro_rules! lv_cases {
         (
@@ -149,44 +74,43 @@ fn aexpr_to_skip_batch_predicate_rec(
                     $non_null_case
                 }
             } else {
-                let lv_is_null = has_nulls!($lv_node);
-                let lv_not_null = has_no_nulls!($lv_node);
+                let lv_node = AExprBuilder::new_from_node($lv_node);
 
-                let null_case = $null_case;
-                let null_case = and!(lv_is_null, null_case);
-                let non_null_case = $non_null_case;
-                let non_null_case = and!(lv_not_null, non_null_case);
+                let lv_is_null = lv_node.has_nulls(arena);
+                let lv_not_null = lv_node.has_no_nulls(arena);
 
-                or!(null_case, non_null_case)
+                let null_case = lv_is_null.and($null_case, arena);
+                let non_null_case = lv_not_null.and($non_null_case, arena);
+
+                null_case.or(non_null_case, arena).node()
             }
         }};
     }
     macro_rules! col {
         (len) => {{ col!(PlSmallStr::from_static("len")) }};
-        ($name:expr) => {{ expr_arena.add(AExpr::Column($name)) }};
+        ($name:expr) => {{ AExprBuilder::new_from_node(arena.add(AExpr::Column($name))) }};
         (min: $name:expr) => {{ col!(format_pl_smallstr!("{}_min", $name)) }};
         (max: $name:expr) => {{ col!(format_pl_smallstr!("{}_max", $name)) }};
         (null_count: $name:expr) => {{ col!(format_pl_smallstr!("{}_nc", $name)) }};
     }
     macro_rules! lv {
-        ($lv:expr) => {{ expr_arena.add(AExpr::Literal(Scalar::from($lv).into())) }};
-        (idx: $lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize($lv))) }};
+        ($lv:expr) => {{ AExprBuilder::lit_scalar(Scalar::from($lv), arena) }};
+        (idx: $lv:expr) => {{ AExprBuilder::lit_scalar(Scalar::new_idxsize($lv), arena) }};
     }
 
     let specialized = (|| {
-        if let Some(Some(lv)) = constant_evaluate(e, expr_arena, schema, 0) {
+        if let Some(Some(lv)) = constant_evaluate(e, arena, schema, 0) {
             if let Some(av) = lv.to_any_value() {
                 return match av {
-                    AnyValue::Null => Some(lv!(true)),
-                    AnyValue::Boolean(b) => Some(lv!(!b)),
+                    AnyValue::Null => Some(lv!(true).node()),
+                    AnyValue::Boolean(b) => Some(lv!(!b).node()),
                     _ => None,
                 };
             }
         }
 
-        match expr_arena.get(e) {
+        match arena.get(e) {
             AExpr::Explode { .. } => None,
-            AExpr::Alias(_, _) => None,
             AExpr::Column(_) => None,
             AExpr::Literal(_) => None,
             AExpr::BinaryExpr { left, op, right } => {
@@ -196,7 +120,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 match op {
                     O::Eq | O::EqValidity => {
                         let ((col, _), (lv, lv_node)) =
-                            get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
+                            get_binary_expr_col_and_lv(left, right, arena, schema)?;
                         let dtype = schema.get(col)?;
 
                         if !does_dtype_have_sufficient_order(dtype) {
@@ -215,37 +139,37 @@ fn aexpr_to_skip_batch_predicate_rec(
                             lv, lv_node,
                             null: {
                                 if matches!(op, O::Eq) {
-                                    lv!(false)
+                                    lv!(false).node()
                                 } else {
                                     let col_nc = col!(null_count: col);
                                     let idx_zero = lv!(idx: 0);
-                                    eq!(col_nc, idx_zero)
+                                    col_nc.eq(idx_zero, arena).node()
                                 }
                             },
                             not_null: {
                                 let col_min = col!(min: col);
                                 let col_max = col!(max: col);
 
-                                let min_is_defined = is_stat_defined!(col_min, dtype);
-                                let max_is_defined = is_stat_defined!(col_max, dtype);
+                                let min_is_defined = is_stat_defined(col_min.node(), dtype, arena);
+                                let max_is_defined = is_stat_defined(col_max.node(), dtype, arena);
 
-                                let min_gt = gt!(col_min, lv_node);
-                                let min_gt = and!(min_is_defined, min_gt);
+                                let min_gt = col_min.gt(lv_node, arena);
+                                let min_gt = min_gt.and(min_is_defined, arena);
 
-                                let max_lt = lt!(col_max, lv_node);
-                                let max_lt = and!(max_is_defined, max_lt);
+                                let max_lt = col_max.lt(lv_node, arena);
+                                let max_lt = max_lt.and(max_is_defined, arena);
 
                                 let col_nc = col!(null_count: col);
                                 let len = col!(len);
-                                let all_nulls = eq!(col_nc, len);
+                                let all_nulls = col_nc.eq(len, arena);
 
-                                or!(all_nulls, min_gt, max_lt)
+                                all_nulls.or(min_gt, arena).or(max_lt, arena).node()
                             }
                         ))
                     },
                     O::NotEq | O::NotEqValidity => {
                         let ((col, _), (lv, lv_node)) =
-                            get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
+                            get_binary_expr_col_and_lv(left, right, arena, schema)?;
                         let dtype = schema.get(col)?;
 
                         if !does_dtype_have_sufficient_order(dtype) {
@@ -264,30 +188,30 @@ fn aexpr_to_skip_batch_predicate_rec(
                             lv, lv_node,
                             null: {
                                 if matches!(op, O::NotEq) {
-                                    lv!(false)
+                                    lv!(false).node()
                                 } else {
                                     let col_nc = col!(null_count: col);
                                     let len = col!(len);
-                                    eq!(col_nc, len)
+                                    col_nc.eq(len, arena).node()
                                 }
                             },
                             not_null: {
                                 let col_min = col!(min: col);
                                 let col_max = col!(max: col);
-                                let min_eq = eq!(col_min, lv_node);
-                                let max_eq = eq!(col_max, lv_node);
+                                let min_eq = col_min.eq(lv_node, arena);
+                                let max_eq = col_max.eq(lv_node, arena);
 
                                 let col_nc = col!(null_count: col);
                                 let idx_zero = lv!(idx: 0);
-                                let no_nulls = eq!(col_nc, idx_zero);
+                                let no_nulls = col_nc.eq(idx_zero, arena);
 
-                                and!(no_nulls, min_eq, max_eq)
+                                no_nulls.and(min_eq, arena).and(max_eq, arena).node()
                             }
                         ))
                     },
                     O::Lt | O::Gt | O::LtEq | O::GtEq => {
                         let ((col, col_node), (lv, lv_node)) =
-                            get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
+                            get_binary_expr_col_and_lv(left, right, arena, schema)?;
                         let dtype = schema.get(col)?;
 
                         if !does_dtype_have_sufficient_order(dtype) {
@@ -329,26 +253,28 @@ fn aexpr_to_skip_batch_predicate_rec(
                             _ => unreachable!(),
                         };
 
-                        let stat_is_defined = is_stat_defined!(stat, dtype);
-                        let cmp_op = binexpr!(op: cmp_op, stat, lv_node);
-                        let mut expr = and!(stat_is_defined, cmp_op);
+                        let stat_is_defined = is_stat_defined(stat, dtype, arena);
+                        let cmp_op = stat.binary_op(lv_node, cmp_op, arena);
+                        let mut expr = stat_is_defined.and(cmp_op, arena);
 
                         if lv_may_be_null {
-                            let has_nulls = has_nulls!(lv_node);
-                            expr = or!(has_nulls, expr);
+                            let has_nulls = lv_node.into_aexpr_builder().has_nulls(arena);
+                            expr = has_nulls.or(expr, arena);
                         }
-                        Some(expr)
+                        Some(expr.node())
                     },
 
                     O::And | O::LogicalAnd => match (rec!(left), rec!(right)) {
-                        (Some(left), Some(right)) => Some(or!(left, right)),
+                        (Some(left), Some(right)) => {
+                            Some(AExprBuilder::new_from_node(left).or(right, arena).node())
+                        },
                         (Some(n), None) | (None, Some(n)) => Some(n),
                         (None, None) => None,
                     },
                     O::Or | O::LogicalOr => {
                         let left = rec!(left)?;
                         let right = rec!(right)?;
-                        Some(and!(left, right))
+                        Some(AExprBuilder::new_from_node(left).and(right, arena).node())
                     },
 
                     O::Plus
@@ -369,21 +295,22 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Agg(..) => None,
             AExpr::Ternary { .. } => None,
             AExpr::AnonymousFunction { .. } => None,
+            AExpr::Eval { .. } => None,
             AExpr::Function {
                 input, function, ..
             } => match function {
-                FunctionExpr::Boolean(f) => match f {
+                IRFunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
-                    BooleanFunction::IsIn { nulls_equal } => {
-                        if !is_scalar_ae(input[1].node(), expr_arena) {
+                    IRBooleanFunction::IsIn { nulls_equal } => {
+                        if !is_scalar_ae(input[1].node(), arena) {
                             return None;
                         }
 
                         let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
-                            into_column(input[0].node(), expr_arena, schema, 0),
-                            constant_evaluate(lv_node, expr_arena, schema, 0),
+                            into_column(input[0].node(), arena, schema, 0),
+                            constant_evaluate(lv_node, arena, schema, 0),
                         ) {
                             (Some(col), Some(_)) => {
                                 let dtype = schema.get(col)?;
@@ -398,99 +325,72 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 //          max(A) < min[B1, ..., Bn]
                                 //      )
                                 let col = col.clone();
+                                let lv_node = lv_node.into_aexpr_builder();
 
-                                let lv_node_exploded = expr_arena.add(AExpr::Explode {
-                                    expr: lv_node,
-                                    skip_empty: true,
-                                });
-                                let lv_min =
-                                    expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
-                                        input: lv_node_exploded,
-                                        propagate_nans: true,
-                                    }));
-                                let lv_max =
-                                    expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Max {
-                                        input: lv_node_exploded,
-                                        propagate_nans: true,
-                                    }));
+                                let lv_node_exploded = lv_node.explode_skip_empty(arena);
+                                let lv_min = lv_node_exploded.min(arena);
+                                let lv_max = lv_node_exploded.max(arena);
 
                                 let col_min = col!(min: col);
                                 let col_max = col!(max: col);
 
-                                let min_is_defined = is_stat_defined!(col_min, dtype);
-                                let max_is_defined = is_stat_defined!(col_max, dtype);
+                                let min_is_defined = is_stat_defined(col_min, dtype, arena);
+                                let max_is_defined = is_stat_defined(col_max, dtype, arena);
 
-                                let min_gt = gt!(col_min, lv_max);
-                                let min_gt = and!(min_is_defined, min_gt);
+                                let min_gt = col_min.gt(lv_max, arena);
+                                let min_gt = min_is_defined.and(min_gt, arena);
 
-                                let max_lt = lt!(col_max, lv_min);
-                                let max_lt = and!(max_is_defined, max_lt);
+                                let max_lt = col_max.lt(lv_min, arena);
+                                let max_lt = max_is_defined.and(max_lt, arena);
 
-                                let expr = or!(min_gt, max_lt);
-
-                                let col_nc = col!(null_count: col);
-                                let idx_zero = lv!(idx: 0);
-                                let col_has_no_nulls = eq!(col_nc, idx_zero);
-
-                                let lv_has_not_nulls = has_no_nulls!(lv_node_exploded);
-                                let null_case = or!(lv_has_not_nulls, col_has_no_nulls);
-
-                                let min_max_is_in = and!(null_case, expr);
+                                let expr = min_gt.or(max_lt, arena);
 
                                 let col_nc = col!(null_count: col);
+                                let col_has_no_nulls = col_nc.has_no_nulls(arena);
 
-                                let min_is_max = binexpr!(Eq, col_min, col_max); // Eq so that (None == None) == None
+                                let lv_has_not_nulls = lv_node_exploded.has_no_nulls(arena);
+                                let null_case = lv_has_not_nulls.or(col_has_no_nulls, arena);
+
+                                let min_max_is_in = null_case.and(expr, arena);
+
+                                let col_nc = col!(null_count: col);
+
+                                let min_is_max = col_min.eq(col_max, arena); // Eq so that (None == None) == None
                                 let idx_zero = lv!(idx: 0);
-                                let has_no_nulls = eq!(col_nc, idx_zero);
+                                let has_no_nulls = col_nc.eq(idx_zero, arena);
 
                                 // The above case does always cover the fallback path. Since there
                                 // is code that relies on the `min==max` always filtering normally,
                                 // we add it here.
-                                let exact_not_in = expr_arena.add(AExpr::Function {
-                                    input: vec![
-                                        ExprIR::new(col_min, OutputName::Alias(PlSmallStr::EMPTY)),
-                                        ExprIR::new(lv_node, OutputName::Alias(PlSmallStr::EMPTY)),
-                                    ],
-                                    function: FunctionExpr::Boolean(BooleanFunction::IsIn {
-                                        nulls_equal,
-                                    }),
-                                    options: BooleanFunction::IsIn { nulls_equal }
-                                        .function_options(),
-                                });
-                                let exact_not_in = expr_arena.add(AExpr::Function {
-                                    input: vec![ExprIR::new(
-                                        exact_not_in,
-                                        OutputName::Alias(PlSmallStr::EMPTY),
-                                    )],
-                                    function: FunctionExpr::Boolean(BooleanFunction::Not),
-                                    options: BooleanFunction::Not.function_options(),
-                                });
-                                let exact_not_in = and!(min_is_max, has_no_nulls, exact_not_in);
+                                let exact_not_in =
+                                    col_min.is_in(lv_node, nulls_equal, arena).not(arena);
+                                let exact_not_in =
+                                    min_is_max.and(has_no_nulls, arena).and(exact_not_in, arena);
 
-                                Some(or!(exact_not_in, min_max_is_in))
+                                Some(exact_not_in.or(min_max_is_in, arena).node())
                             },
                             _ => None,
                         }
                     },
-                    BooleanFunction::IsNull => {
-                        let col = into_column(input[0].node(), expr_arena, schema, 0)?;
+                    IRBooleanFunction::IsNull => {
+                        let col = into_column(input[0].node(), arena, schema, 0)?;
 
                         // col(A).is_null() -> null_count(A) == 0
                         let col_nc = col!(null_count: col);
                         let idx_zero = lv!(idx: 0);
-                        Some(eq!(col_nc, idx_zero))
+                        Some(col_nc.eq(idx_zero, arena).node())
                     },
-                    BooleanFunction::IsNotNull => {
-                        let col = into_column(input[0].node(), expr_arena, schema, 0)?;
+                    IRBooleanFunction::IsNotNull => {
+                        let col = into_column(input[0].node(), arena, schema, 0)?;
 
                         // col(A).is_not_null() -> null_count(A) == LEN
                         let col_nc = col!(null_count: col);
                         let len = col!(len);
-                        Some(eq!(col_nc, len))
+                        Some(col_nc.eq(len, arena).node())
                     },
                     #[cfg(feature = "is_between")]
-                    BooleanFunction::IsBetween { closed } => {
-                        let col = into_column(input[0].node(), expr_arena, schema, 0)?;
+                    IRBooleanFunction::IsBetween { closed } => {
+                        let col = into_column(input[0].node(), arena, schema, 0)?;
                         let dtype = schema.get(col)?;
 
                         if !does_dtype_have_sufficient_order(dtype) {
@@ -505,14 +405,14 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let left_node = input[1].node();
                         let right_node = input[2].node();
 
-                        _ = constant_evaluate(left_node, expr_arena, schema, 0)?;
-                        _ = constant_evaluate(right_node, expr_arena, schema, 0)?;
+                        _ = constant_evaluate(left_node, arena, schema, 0)?;
+                        _ = constant_evaluate(right_node, arena, schema, 0)?;
 
                         let col = col.clone();
                         let closed = *closed;
 
-                        let lhs_no_nulls = has_no_nulls!(left_node);
-                        let rhs_no_nulls = has_no_nulls!(right_node);
+                        let lhs_no_nulls = left_node.into_aexpr_builder().has_no_nulls(arena);
+                        let rhs_no_nulls = right_node.into_aexpr_builder().has_no_nulls(arena);
 
                         let col_min = col!(min: col);
                         let col_max = col!(max: col);
@@ -525,17 +425,22 @@ fn aexpr_to_skip_batch_predicate_rec(
                             ClosedInterval::None => (O::LtEq, O::GtEq),
                         };
 
-                        let left = binexpr!(op: left, col_max, left_node);
-                        let right = binexpr!(op: right, col_min, right_node);
+                        let left = col_max.binary_op(left_node, left, arena);
+                        let right = col_min.binary_op(right_node, right, arena);
 
-                        let min_is_defined = is_stat_defined!(col_min, dtype);
-                        let max_is_defined = is_stat_defined!(col_max, dtype);
+                        let min_is_defined = is_stat_defined(col_min, dtype, arena);
+                        let max_is_defined = is_stat_defined(col_max, dtype, arena);
 
-                        let left = and!(max_is_defined, left);
-                        let right = and!(min_is_defined, right);
+                        let left = max_is_defined.and(left, arena);
+                        let right = min_is_defined.and(right, arena);
 
-                        let interval = or!(left, right);
-                        Some(and!(lhs_no_nulls, rhs_no_nulls, interval))
+                        let interval = left.or(right, arena);
+                        Some(
+                            lhs_no_nulls
+                                .and(rhs_no_nulls, arena)
+                                .and(interval, arena)
+                                .node(),
+                        )
                     },
                     _ => None,
                 },
@@ -558,7 +463,7 @@ fn aexpr_to_skip_batch_predicate_rec(
     // Essentially, what this does is
     //     E -> all(col(A_min) == col(A_max) & col(A_nc) == 0 for A in LIVE(E)) & ~(E)
 
-    let live_columns = PlIndexMap::from_iter(aexpr_to_leaf_names_iter(e, expr_arena).map(|col| {
+    let live_columns = PlIndexMap::from_iter(aexpr_to_leaf_names_iter(e, arena).map(|col| {
         let min_name = format_pl_smallstr!("{col}_min");
         (col, min_name)
     }));
@@ -572,22 +477,18 @@ fn aexpr_to_skip_batch_predicate_rec(
     }
 
     // Rename all uses of column names with the min value.
-    let expr = rename_columns(e, expr_arena, &live_columns);
-    let mut expr = expr_arena.add(AExpr::Function {
-        input: vec![ExprIR::new(expr, OutputName::Alias(PlSmallStr::EMPTY))],
-        function: FunctionExpr::Boolean(BooleanFunction::Not),
-        options: FunctionOptions::elementwise(),
-    });
+    let expr = rename_columns(e, arena, &live_columns);
+    let mut expr = expr.into_aexpr_builder().not(arena);
     for col in live_columns.keys() {
         let col_min = col!(min: col);
         let col_max = col!(max: col);
         let col_nc = col!(null_count: col);
 
-        let min_is_max = binexpr!(Eq, col_min, col_max); // Eq so that (None == None) == None
+        let min_is_max = col_min.eq(col_max, arena); // Eq so that (None == None) == None
         let idx_zero = lv!(idx: 0);
-        let has_no_nulls = eq!(col_nc, idx_zero);
+        let has_no_nulls = col_nc.eq(idx_zero, arena);
 
-        expr = and!(min_is_max, has_no_nulls, expr);
+        expr = min_is_max.and(has_no_nulls, arena).and(expr, arena);
     }
-    Some(expr)
+    Some(expr.node())
 }

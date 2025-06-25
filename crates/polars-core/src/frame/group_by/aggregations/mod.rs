@@ -164,7 +164,6 @@ pub fn _agg_helper_idx<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
@@ -175,7 +174,6 @@ pub fn _agg_helper_idx_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_inner().into_series()
@@ -187,7 +185,6 @@ fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
@@ -198,7 +195,6 @@ fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn(&IdxVec) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> =
         POOL.install(|| groups.all().into_par_iter().map(f).collect());
@@ -209,7 +205,6 @@ pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
@@ -219,7 +214,6 @@ pub fn _agg_helper_slice_no_null<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> T::Native + Send + Sync,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_inner().into_series()
@@ -238,7 +232,6 @@ impl<T> QuantileDispatcher<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Ord,
-    ChunkedArray<T>: IntoSeries,
 {
     fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
         self.quantile_faster(quantile, method)
@@ -274,7 +267,6 @@ unsafe fn agg_quantile_generic<T, K>(
 where
     T: PolarsNumericType,
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
@@ -328,7 +320,7 @@ where
                 };
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
-                ChunkedArray::from(arr).into_series()
+                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
@@ -354,7 +346,6 @@ unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) ->
 where
     T: PolarsNumericType,
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
 {
@@ -386,8 +377,7 @@ unsafe fn bitwise_agg<T: PolarsNumericType>(
     f: fn(&ChunkedArray<T>) -> Option<T::Native>,
 ) -> Series
 where
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     // Prevent a rechunk for every individual group.
 
@@ -423,8 +413,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     /// # Safety
     ///
@@ -452,7 +441,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
     T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Bounded + std::iter::Sum<T::Native>,
-    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
@@ -632,18 +621,18 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<SumWindow<_>, _, _>(
-                            values,
-                            offset_iter,
-                            None,
-                        ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::SumWindow<_>,
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            SumWindow<T::Native, T::Native>,
                             _,
                             _,
-                        >(
-                            values, validity, offset_iter, None
-                        ),
+                        >(values, offset_iter, None),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<
+                                rolling::nulls::SumWindow<T::Native, T::Native>,
+                                _,
+                                _,
+                            >(values, validity, offset_iter, None)
+                        },
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -667,8 +656,7 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries
-        + ChunkVar
+    ChunkedArray<T>: ChunkVar
         + VarAggSeries
         + ChunkQuantile<T::Native>
         + QuantileAggSeries
@@ -737,7 +725,7 @@ where
                             values, validity, offset_iter, None
                         ),
                     };
-                    ChunkedArray::from(arr).into_series()
+                    ChunkedArray::<T>::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -804,7 +792,7 @@ where
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
                     };
-                    ChunkedArray::from(arr).into_series()
+                    ChunkedArray::<T>::from(arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -933,7 +921,7 @@ impl Float64Chunked {
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native> + ChunkVar,
+    ChunkedArray<T>: ChunkAgg<T::Native> + ChunkVar,
     T::Native: NumericNative + Ord,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsType) -> Series {

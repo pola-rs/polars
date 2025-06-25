@@ -6,6 +6,7 @@ mod binary;
 mod bitwise;
 #[cfg(feature = "pymethods")]
 mod categorical;
+pub mod datatype;
 #[cfg(feature = "pymethods")]
 mod datetime;
 #[cfg(feature = "pymethods")]

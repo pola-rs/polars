@@ -3,6 +3,7 @@ from __future__ import annotations
 import decimal
 import functools
 import io
+import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
@@ -1363,12 +1364,12 @@ def test_parquet_pyarrow_map() -> None:
 
     # Test for https://github.com/pola-rs/polars/issues/21317
     # Specifying schema/allow_missing_columns
-    for allow_missing_columns in [True, False]:
+    for missing_columns in ["insert", "raise"]:
         assert_frame_equal(
             pl.read_parquet(
                 f,
                 schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
-                allow_missing_columns=allow_missing_columns,
+                missing_columns=missing_columns,  # type: ignore[arg-type]
             ).explode(["x"]),
             expected,
         )
@@ -2009,17 +2010,18 @@ def test_allow_missing_columns(
     for df, path in zip(dfs, paths):
         df.write_parquet(path)
 
-    expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
+    expected_full = pl.DataFrame({"a": [1, 2], "b": [1, None]})
+    expected = expected_full.select(projection)
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
             engine="streaming" if streaming else "in-memory"
@@ -2029,17 +2031,44 @@ def test_allow_missing_columns(
         pl.read_parquet(
             paths,
             parallel=parallel,  # type: ignore[arg-type]
-            allow_missing_columns=True,
+            missing_columns="insert",
         ).select(projection),
         expected,
     )
 
     assert_frame_equal(
-        pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
+        pl.scan_parquet(paths, parallel=parallel, missing_columns="insert")  # type: ignore[arg-type]
         .select(projection)
         .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
+
+    # Test deprecated parameter
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        with pytest.raises(
+            pl.exceptions.ColumnNotFoundError,
+            match="passing `missing_columns='insert'`",
+        ):
+            assert_frame_equal(
+                pl.scan_parquet(
+                    paths,
+                    parallel=parallel,  # type: ignore[arg-type]
+                    allow_missing_columns=False,
+                ).collect(engine="streaming" if streaming else "in-memory"),
+                expected_full,
+            )
+
+        assert_frame_equal(
+            pl.scan_parquet(
+                paths,
+                parallel=parallel,  # type: ignore[arg-type]
+                allow_missing_columns=True,
+            ).collect(engine="streaming" if streaming else "in-memory"),
+            expected_full,
+        )
 
 
 def test_nested_nonnullable_19158() -> None:
@@ -2127,36 +2156,34 @@ def test_conserve_sortedness(
         }
     )
 
-    pq.write_table(
-        df.to_arrow(),
-        f,
-        sorting_columns=[
-            pq.SortingColumn(0, False, False),
-            pq.SortingColumn(1, False, False),
-            pq.SortingColumn(2, True, True),
-            pq.SortingColumn(3, True, True),
-        ],
-    )
+    for col, descending, nulls_last in [("a", False, False), ("c", True, True)]:
+        col_idx = df.get_column_index(col)
+        f.seek(0)
+        pq.write_table(
+            df.to_arrow(),
+            f,
+            sorting_columns=[
+                pq.SortingColumn(col_idx, descending, nulls_last),
+            ],
+        )
+        f.truncate()
+        f.seek(0)
 
-    f.seek(0)
+        monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+        df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
 
-    df = pl.scan_parquet(f, parallel=parallel).filter(pl.col.f > 1).collect()
+        captured = capfd.readouterr().err
 
-    captured = capfd.readouterr().err
-
-    # @NOTE: We don't conserve sortedness for anything except integers at the
-    # moment.
-    assert captured.count("Parquet conserved SortingColumn for column chunk of") == 2
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'a' to Ascending"
-        in captured
-    )
-    assert (
-        "Parquet conserved SortingColumn for column chunk of 'c' to Descending"
-        in captured
-    )
+        # @NOTE: We don't conserve sortedness for anything except integers at the
+        # moment.
+        assert (
+            captured.count("Parquet conserved SortingColumn for column chunk of") == 1
+        )
+        assert (
+            f"Parquet conserved SortingColumn for column chunk of '{col}' to {'Descending' if descending else 'Ascending'}"
+            in captured
+        )
 
 
 @pytest.mark.parametrize("use_dictionary", [True, False])
@@ -3038,7 +3065,7 @@ def test_scan_parquet_filter_statistics_load_missing_column_21391(
 
     assert_frame_equal(
         (
-            pl.scan_parquet(root, allow_missing_columns=True)
+            pl.scan_parquet(root, missing_columns="insert")
             .filter(pl.col("y") == 1)
             .collect()
         ),
@@ -3254,7 +3281,7 @@ def test_parquet_read_timezone_22506() -> None:
 
 @pytest.mark.parametrize("static", [True, False])
 @pytest.mark.parametrize("lazy", [True, False])
-def test_read_write_metadata(tmp_path: Path, static: bool, lazy: bool) -> None:
+def test_read_write_metadata(static: bool, lazy: bool) -> None:
     metadata = {"hello": "world", "something": "else"}
     md: ParquetMetadata = metadata
     if not static:
@@ -3329,3 +3356,42 @@ def test_field_overwrites_metadata() -> None:
     assert schema[2].metadata[b"struct"] == b"true"
     assert schema[2].type.fields[0].metadata[b"md"] == b"yes"
     assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"
+
+
+def multiple_test_sorting_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 2, 2],
+            "b": [1, 2, 3, 1, 2, 3],
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        sorting_columns=[pq.SortingColumn(0), pq.SortingColumn(1)],
+    )
+
+    f.seek(0)
+    roundtrip = pl.read_parquet(f)
+    assert roundtrip.get_column("a").is_sorted()
+    assert not roundtrip.get_column("b").is_sorted()
+    assert_frame_equal(roundtrip.sort("b"), df.sort("b"))
+
+
+@pytest.mark.write_disk
+def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.parquet"
+
+    df = pl.DataFrame(
+        schema={
+            "a": pl.Boolean,
+            "b": pl.Boolean,
+        }
+    )
+
+    df.write_parquet(path, use_pyarrow=True)
+
+    assert_frame_equal(pl.read_parquet(path), df)

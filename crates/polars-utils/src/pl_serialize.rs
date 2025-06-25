@@ -30,6 +30,7 @@ where
     }
 }
 
+#[cfg(feature = "polars_cloud_server")]
 /// Deserializes the value and collects paths to all unknown fields.
 fn deserialize_with_unknown_fields<T, R>(reader: R) -> PolarsResult<(T, Vec<String>)>
 where
@@ -89,6 +90,7 @@ impl SerializeOptions {
     /// Deserializes the value and collects paths to all unknown fields.
     ///
     /// Supports only the future-compatible format (`FC: true`).
+    #[cfg(feature = "polars_cloud_server")]
     pub fn deserialize_from_reader_with_unknown_fields<T, R>(
         &self,
         reader: R,
@@ -243,6 +245,7 @@ mod tests {
         assert_eq!(r, v);
     }
 
+    #[cfg(feature = "polars_cloud_server")]
     #[test]
     fn test_serde_collect_unknown_fields() {
         #[derive(Clone, Copy, serde::Serialize)]

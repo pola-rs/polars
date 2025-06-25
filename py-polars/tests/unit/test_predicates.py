@@ -1,14 +1,20 @@
+from __future__ import annotations
+
 import re
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
+from polars.io.plugins import register_io_source
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def test_predicate_4906() -> None:
@@ -646,9 +652,6 @@ def test_predicate_pushdown_join_19772(
 
     q = left.join(right, on="k", how=join_type).filter(predicate)  # type: ignore[arg-type]
 
-    plan = q.explain()
-    assert plan.startswith("FILTER")
-
     expect = pl.DataFrame({"k": 1, "v": 7, "b": True})
 
     if join_type == "right":
@@ -1131,3 +1134,24 @@ def test_predicate_pushdown_auto_disable_strict() -> None:
 
     plan = q.explain()
     assert plan.index("FILTER") > plan.index("MARKER")
+
+
+def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
+    def generator(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        df = pl.DataFrame({"row_nr": [1, 2, 3, 4, 5], "y": [0, 1, 0, 1, 1]})
+        assert predicate is not None
+        yield df.filter(predicate)
+
+    q = register_io_source(
+        io_source=generator, schema={"x": pl.Int64, "y": pl.Int64}
+    ).filter(pl.col("y").map_elements(bool))
+
+    plan = q.explain()
+    assert plan.index("map_list") > plan.index("PYTHON SCAN")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))

@@ -6,7 +6,6 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -15,6 +14,7 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
+use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
@@ -555,7 +555,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Paths(Vec<PathBuf>),
+            Paths(Vec<PlPath>),
             Files(Vec<File>),
             Buffers(Vec<MemSlice>),
         }
@@ -1212,8 +1212,12 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(uri: &str, kv: Vec<(String, String)>) -> PyResult<CloudOptions> {
-    let out = CloudOptions::from_untyped_config(uri, kv).map_err(PyPolarsErr::from)?;
+pub(crate) fn parse_cloud_options(
+    uri: &str,
+    kv: impl IntoIterator<Item = (String, String)>,
+) -> PyResult<CloudOptions> {
+    let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
+    let out = CloudOptions::from_untyped_config(uri, iter).map_err(PyPolarsErr::from)?;
     Ok(out)
 }
 
@@ -1240,11 +1244,10 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if ob.is_none() {
             // Initialize the default ScanCastOptions from Python.
-
             static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
 
             let out = DEFAULT.get_or_try_init(ob.py(), || {
-                let ob = PyModule::import(ob.py(), "polars.io.cast_options")
+                let ob = PyModule::import(ob.py(), "polars.io.scan_options.cast_options")
                     .unwrap()
                     .getattr("ScanCastOptions")
                     .unwrap()
@@ -1262,7 +1265,12 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             return Ok(out.clone());
         }
 
-        let integer_upcast = match &*ob.getattr("integer_cast")?.extract::<PyBackedStr>()? {
+        let py = ob.py();
+
+        let integer_upcast = match &*ob
+            .getattr(intern!(py, "integer_cast"))?
+            .extract::<PyBackedStr>()?
+        {
             "upcast" => true,
             "forbid" => false,
             v => {
@@ -1275,7 +1283,9 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
         let mut float_upcast = false;
         let mut float_downcast = false;
 
-        let mut parse_float_cast_option = |v: &str| -> PyResult<()> {
+        let float_cast_object = ob.getattr(intern!(py, "float_cast"))?;
+
+        parse_multiple_options("float_cast", float_cast_object, |v| {
             match v {
                 "forbid" => {},
                 "upcast" => float_upcast = true,
@@ -1288,20 +1298,14 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             }
 
             Ok(())
-        };
-
-        let float_cast_object = ob.getattr("float_cast")?;
-
-        parse_multiple_options(
-            "float_cast",
-            float_cast_object,
-            &mut parse_float_cast_option,
-        )?;
+        })?;
 
         let mut datetime_nanoseconds_downcast = false;
         let mut datetime_convert_timezone = false;
 
-        let mut parse_datetime_cast_option = |v: &str| -> PyResult<()> {
+        let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
+
+        parse_multiple_options("datetime_cast", datetime_cast_object, |v| {
             match v {
                 "forbid" => {},
                 "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
@@ -1314,18 +1318,10 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             };
 
             Ok(())
-        };
-
-        let datetime_cast_object = ob.getattr("datetime_cast")?;
-
-        parse_multiple_options(
-            "datetime_cast",
-            datetime_cast_object,
-            &mut parse_datetime_cast_option,
-        )?;
+        })?;
 
         let missing_struct_fields = match &*ob
-            .getattr("missing_struct_fields")?
+            .getattr(intern!(py, "missing_struct_fields"))?
             .extract::<PyBackedStr>()?
         {
             "insert" => MissingColumnsPolicy::Insert,
@@ -1338,7 +1334,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
         };
 
         let extra_struct_fields = match &*ob
-            .getattr("extra_struct_fields")?
+            .getattr(intern!(py, "extra_struct_fields"))?
             .extract::<PyBackedStr>()?
         {
             "ignore" => ExtraColumnsPolicy::Ignore,
@@ -1361,10 +1357,10 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             extra_struct_fields,
         }));
 
-        fn parse_multiple_options<'a>(
+        fn parse_multiple_options(
             parameter_name: &'static str,
-            py_object: Bound<'a, PyAny>,
-            parser_func: &mut dyn FnMut(&str) -> PyResult<()>,
+            py_object: Bound<'_, PyAny>,
+            mut parser_func: impl FnMut(&str) -> PyResult<()>,
         ) -> PyResult<()> {
             if let Ok(v) = py_object.extract::<PyBackedStr>() {
                 parser_func(&v)?;
@@ -1589,5 +1585,74 @@ impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (deletion_file_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*deletion_file_type {
+            "iceberg-position-delete" => {
+                let dict: Bound<'_, PyDict> = ob.extract()?;
+
+                let mut out = PlIndexMap::new();
+
+                for (k, v) in dict
+                    .try_iter()?
+                    .zip(dict.call_method0("values")?.try_iter()?)
+                {
+                    let k: usize = k?.extract()?;
+                    let v: Bound<'_, PyAny> = v?.extract()?;
+
+                    let files = v
+                        .try_iter()?
+                        .map(|x| {
+                            x.and_then(|x| {
+                                let x: String = x.extract()?;
+                                Ok(x)
+                            })
+                        })
+                        .collect::<PyResult<Arc<[String]>>>()?;
+
+                    if !files.is_empty() {
+                        out.insert(k, files);
+                    }
+                }
+
+                DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown deletion file type: {v}"
+                )));
+            },
+        }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<PlPath> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(path) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(PlPath::new(&path)))
+        } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
+            Ok(Wrap(PlPath::Local(path.into())))
+        } else {
+            Err(
+                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
+                    .into(),
+            )
+        }
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0.to_str().into_pyobject(py)
     }
 }

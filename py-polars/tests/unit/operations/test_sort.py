@@ -230,6 +230,15 @@ def test_arg_sort_nulls(
     assert res == [1.0, 2.0, 3.0, None, None]
 
 
+def test_arg_sort_by_nulls() -> None:
+    order = [0, 2, 1, 3, 4]
+    df = pl.DataFrame({"x": [None] * 5, "y": [None] * 5, "z": order})
+    assert_frame_equal(
+        df.select(pl.arg_sort_by("x", "y", "z")),
+        pl.DataFrame({"x": order}, schema={"x": pl.get_index_type()}),
+    )
+
+
 @pytest.mark.parametrize(
     ("nulls_last", "expected"),
     [

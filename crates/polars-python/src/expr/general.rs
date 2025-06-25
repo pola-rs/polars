@@ -6,11 +6,12 @@ use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::{node_to_expr, to_aexpr};
+use polars_plan::plans::{node_to_expr, to_expr_ir};
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
+use super::datatype::PyDataTypeExpr;
 use crate::PyExpr;
 use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
 use crate::error::PyPolarsErr;
@@ -242,9 +243,7 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
-        let dt = dtype.0;
-
+    fn cast(&self, dtype: PyDataTypeExpr, strict: bool, wrap_numerical: bool) -> Self {
         let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
@@ -253,7 +252,7 @@ impl PyExpr {
             CastOptions::NonStrict
         };
 
-        let expr = self.inner.clone().cast_with_options(dt, options);
+        let expr = self.inner.clone().cast_with_options(dtype.inner, options);
         expr.into()
     }
     fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
@@ -423,6 +422,13 @@ impl PyExpr {
         self.inner
             .clone()
             .is_between(lower.inner, upper.inner, closed.0)
+            .into()
+    }
+
+    fn is_close(&self, other: Self, abs_tol: f64, rel_tol: f64, nans_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .is_close(other.inner, abs_tol, rel_tol, nans_equal)
             .into()
     }
 
@@ -686,10 +692,10 @@ impl PyExpr {
         self.inner.clone().cum_count(reverse).into()
     }
 
-    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
+    fn cumulative_eval(&self, expr: Self, min_samples: usize) -> Self {
         self.inner
             .clone()
-            .cumulative_eval(expr.inner, min_periods, parallel)
+            .cumulative_eval(expr.inner, min_samples)
             .into()
     }
 
@@ -705,11 +711,12 @@ impl PyExpr {
     fn map_batches(
         &self,
         lambda: PyObject,
-        output_type: Option<Wrap<DataType>>,
+        output_type: Option<PyDataTypeExpr>,
         agg_list: bool,
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
+        let output_type = output_type.map(|v| v.inner);
         map_single(
             self,
             lambda,
@@ -917,7 +924,7 @@ impl PyExpr {
         old: PyExpr,
         new: PyExpr,
         default: Option<PyExpr>,
-        return_dtype: Option<Wrap<DataType>>,
+        return_dtype: Option<PyDataTypeExpr>,
     ) -> Self {
         self.inner
             .clone()
@@ -925,7 +932,7 @@ impl PyExpr {
                 old.inner,
                 new.inner,
                 default.map(|e| e.inner),
-                return_dtype.map(|dt| dt.0),
+                return_dtype.map(|dt| dt.inner),
             )
             .into()
     }
@@ -950,7 +957,7 @@ impl PyExpr {
     fn skip_batch_predicate(&self, py: Python<'_>, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
         let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
-            let node = to_aexpr(self.inner.clone(), &mut aexpr_arena)?;
+            let node = to_expr_ir(self.inner.clone(), &mut aexpr_arena, &schema.0)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);

@@ -47,8 +47,8 @@ impl PyExpr {
         Ok(self.inner.clone().list().diff(n, null_behavior.0).into())
     }
 
-    fn list_eval(&self, expr: PyExpr, parallel: bool) -> Self {
-        self.inner.clone().list().eval(expr.inner, parallel).into()
+    fn list_eval(&self, expr: PyExpr, _parallel: bool) -> Self {
+        self.inner.clone().list().eval(expr.inner).into()
     }
 
     #[cfg(feature = "list_filter")]
@@ -56,10 +56,7 @@ impl PyExpr {
         self.inner
             .clone()
             .list()
-            .eval(
-                Expr::Column(PlSmallStr::EMPTY).filter(predicate.inner),
-                false,
-            )
+            .eval(Expr::Column(PlSmallStr::EMPTY).filter(predicate.inner))
             .into()
     }
 
@@ -88,39 +85,19 @@ impl PyExpr {
     }
 
     fn list_mean(&self) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .mean()
-            .with_fmt("list.mean")
-            .into()
+        self.inner.clone().list().mean().into()
     }
 
     fn list_median(&self) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .median()
-            .with_fmt("list.median")
-            .into()
+        self.inner.clone().list().median().into()
     }
 
     fn list_std(&self, ddof: u8) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .std(ddof)
-            .with_fmt("list.std")
-            .into()
+        self.inner.clone().list().std(ddof).into()
     }
 
     fn list_var(&self, ddof: u8) -> Self {
-        self.inner
-            .clone()
-            .list()
-            .var(ddof)
-            .with_fmt("list.var")
-            .into()
+        self.inner.clone().list().var(ddof).into()
     }
 
     fn list_min(&self) -> Self {
@@ -161,7 +138,7 @@ impl PyExpr {
     }
 
     fn list_sum(&self) -> Self {
-        self.inner.clone().list().sum().with_fmt("list.sum").into()
+        self.inner.clone().list().sum().into()
     }
 
     #[cfg(feature = "list_drop_nulls")]

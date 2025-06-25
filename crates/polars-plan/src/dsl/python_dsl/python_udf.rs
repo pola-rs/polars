@@ -1,11 +1,13 @@
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
+use polars_core::prelude::UnknownKind;
 use polars_core::schema::Schema;
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -14,8 +16,9 @@ use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 
 // Will be overwritten on Python Polars start up.
+#[allow(clippy::type_complexity)]
 pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
-    fn(s: Column, lambda: &PyObject) -> PolarsResult<Column>,
+    fn(s: Column, output_dtype: Option<DataType>, lambda: &PyObject) -> PolarsResult<Column>,
 > = None;
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
@@ -27,7 +30,8 @@ pub use polars_utils::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VE
 
 pub struct PythonUdfExpression {
     python_function: PyObject,
-    output_type: Option<DataType>,
+    output_type: Option<DataTypeExpr>,
+    materialized_output_type: OnceLock<DataType>,
     is_elementwise: bool,
     returns_scalar: bool,
 }
@@ -35,13 +39,15 @@ pub struct PythonUdfExpression {
 impl PythonUdfExpression {
     pub fn new(
         lambda: PyObject,
-        output_type: Option<DataType>,
+        output_type: Option<impl Into<DataTypeExpr>>,
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
+        let output_type = output_type.map(Into::into);
         Self {
             python_function: lambda,
             output_type,
+            materialized_output_type: OnceLock::new(),
             is_elementwise,
             returns_scalar,
         }
@@ -72,7 +78,7 @@ impl PythonUdfExpression {
 
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
-        let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
+        let (output_type, is_elementwise, returns_scalar): (Option<DataTypeExpr>, bool, bool) =
             pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         let remainder = &buf[reader.position() as usize..];
@@ -103,14 +109,26 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 }
 
 impl ColumnsUdf for PythonUdfExpression {
+    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
+        if let Some(output_type) = self.output_type.as_ref() {
+            let dtype = output_type.clone().into_datatype(input_schema)?;
+            self.materialized_output_type.get_or_init(|| dtype);
+        }
+        Ok(())
+    }
+
     fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
         let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
 
         let output_type = self
-            .output_type
-            .clone()
-            .unwrap_or_else(|| DataType::Unknown(Default::default()));
-        let mut out = func(s[0].clone(), &self.python_function)?;
+            .materialized_output_type
+            .get()
+            .map_or_else(|| DataType::Unknown(Default::default()), |dt| dt.clone());
+        let mut out = func(
+            s[0].clone(),
+            self.materialized_output_type.get().cloned(),
+            &self.python_function,
+        )?;
         if !matches!(output_type, DataType::Unknown(_)) {
             let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {
                 polars_err!(
@@ -175,12 +193,16 @@ impl ColumnsUdf for PythonUdfExpression {
 
 /// Serializable version of [`GetOutput`] for Python UDFs.
 pub struct PythonGetOutput {
-    return_dtype: Option<DataType>,
+    return_dtype: Option<DataTypeExpr>,
+    materialized_output_type: OnceLock<DataType>,
 }
 
 impl PythonGetOutput {
-    pub fn new(return_dtype: Option<DataType>) -> Self {
-        Self { return_dtype }
+    pub fn new(return_dtype: Option<impl Into<DataTypeExpr>>) -> Self {
+        Self {
+            return_dtype: return_dtype.map(Into::into),
+            materialized_output_type: OnceLock::new(),
+        }
     }
 
     #[cfg(feature = "serde")]
@@ -192,7 +214,7 @@ impl PythonGetOutput {
         let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
-        let return_dtype: Option<DataType> =
+        let return_dtype: Option<DataTypeExpr> =
             pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         Ok(Arc::new(Self::new(return_dtype)) as Arc<dyn FunctionOutputField>)
@@ -202,15 +224,24 @@ impl PythonGetOutput {
 impl FunctionOutputField for PythonGetOutput {
     fn get_field(
         &self,
-        _input_schema: &Schema,
+        input_schema: &Schema,
         _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
         // Take the name of first field, just like [`GetOutput::map_field`].
         let name = fields[0].name();
-        let return_dtype = match self.return_dtype {
-            Some(ref dtype) => dtype.clone(),
-            None => DataType::Unknown(Default::default()),
+        let return_dtype = match self.materialized_output_type.get() {
+            Some(dtype) => dtype.clone(),
+            None => {
+                let dtype = if let Some(output_type) = self.return_dtype.as_ref() {
+                    output_type.clone().into_datatype(input_schema)?
+                } else {
+                    DataType::Unknown(UnknownKind::Any)
+                };
+
+                self.materialized_output_type.get_or_init(|| dtype.clone());
+                dtype
+            },
         };
         Ok(Field::new(name.clone(), return_dtype))
     }
@@ -256,10 +287,10 @@ impl Expr {
             function: new_column_udf(func),
             output_type,
             options: FunctionOptions {
-                fmt_str: name,
                 flags,
                 ..Default::default()
             },
+            fmt_str: Box::new(PlSmallStr::from(name)),
         }
     }
 }

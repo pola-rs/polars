@@ -2,6 +2,7 @@
 use polars_core::chunked_array::arithmetic::{
     _get_decimal_scale_add_sub, _get_decimal_scale_div, _get_decimal_scale_mul,
 };
+use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
@@ -162,10 +163,6 @@ impl AExpr {
 
                 Ok(field)
             },
-            Alias(expr, name) => Ok(Field::new(
-                name.clone(),
-                ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?.dtype,
-            )),
             Column(name) => ctx
                 .schema
                 .get_field(name)
@@ -174,7 +171,7 @@ impl AExpr {
                 *agg_list = false;
                 Ok(match sv {
                     LiteralValue::Series(s) => s.field().into_owned(),
-                    _ => Field::new(sv.output_name().clone(), sv.get_datatype()),
+                    _ => Field::new(sv.output_column_name().clone(), sv.get_datatype()),
                 })
             },
             BinaryExpr { left, right, op } => {
@@ -347,10 +344,11 @@ impl AExpr {
                 output_type,
                 input,
                 options,
+                fmt_str,
                 ..
             } => {
                 let fields = func_args_to_fields(input, ctx, agg_list)?;
-                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
                 let out = output_type
                     .clone()
                     .materialize()?
@@ -363,6 +361,36 @@ impl AExpr {
                 }
 
                 Ok(out)
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant,
+            } => {
+                let field = ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?;
+
+                let element_dtype = variant.element_dtype(field.dtype())?;
+                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+
+                let mut ctx = ToFieldContext {
+                    schema: &schema,
+                    ctx: Context::Default,
+                    arena: ctx.arena,
+                    validate: ctx.validate,
+                };
+                let mut output_field = ctx
+                    .arena
+                    .get(*evaluation)
+                    .to_field_impl(&mut ctx, &mut false)?;
+                output_field.dtype = output_field.dtype.materialize_unknown(false)?;
+
+                output_field.dtype = match variant {
+                    EvalVariant::List => DataType::List(Box::new(output_field.dtype)),
+                    EvalVariant::Cumulative { .. } => output_field.dtype,
+                };
+                output_field.name = field.name;
+
+                Ok(output_field)
             },
             Function {
                 function,
@@ -393,6 +421,60 @@ impl AExpr {
 
                 ctx.arena.get(*input).to_field_impl(ctx, agg_list)
             },
+        }
+    }
+
+    pub fn to_name(&self, expr_arena: &Arena<AExpr>) -> PlSmallStr {
+        use AExpr::*;
+        use IRAggExpr::*;
+        match self {
+            Len => crate::constants::get_len_name(),
+            Window {
+                function: expr,
+                options: _,
+                partition_by: _,
+                order_by: _,
+            }
+            | BinaryExpr { left: expr, .. }
+            | Explode { expr, .. }
+            | Sort { expr, .. }
+            | Gather { expr, .. }
+            | SortBy { expr, .. }
+            | Filter { input: expr, .. }
+            | Cast { expr, .. }
+            | Ternary { truthy: expr, .. }
+            | Eval { expr, .. }
+            | Slice { input: expr, .. }
+            | Agg(Max { input: expr, .. })
+            | Agg(Min { input: expr, .. })
+            | Agg(First(expr))
+            | Agg(Last(expr))
+            | Agg(Sum(expr))
+            | Agg(Median(expr))
+            | Agg(Mean(expr))
+            | Agg(Implode(expr))
+            | Agg(Std(expr, _))
+            | Agg(Var(expr, _))
+            | Agg(NUnique(expr))
+            | Agg(Count(expr, _))
+            | Agg(AggGroups(expr))
+            | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
+            AnonymousFunction { input, fmt_str, .. } => {
+                if input.is_empty() {
+                    fmt_str.as_ref().clone()
+                } else {
+                    input[0].output_name().clone()
+                }
+            },
+            Function {
+                input, function, ..
+            } => match function.output_name().and_then(|v| v.into_inner()) {
+                Some(name) => name.clone(),
+                None if input.is_empty() => format_pl_smallstr!("{}", &function),
+                None => input[0].output_name().clone(),
+            },
+            Column(name) => name.clone(),
+            Literal(lv) => lv.output_column_name().clone(),
         }
     }
 }

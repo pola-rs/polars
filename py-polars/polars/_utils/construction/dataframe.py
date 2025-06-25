@@ -1109,7 +1109,9 @@ def pandas_to_pydf(
     if convert_index:
         for idxcol in data.index.names:
             arrow_dict[str(idxcol)] = plc.pandas_series_to_arrow(
-                data.index.get_level_values(idxcol),
+                # get_level_values accepts `int | str`
+                # but `index.names` returns `Hashable`
+                data.index.get_level_values(idxcol),  # type: ignore[arg-type, unused-ignore]
                 nan_to_null=nan_to_null,
                 length=length,
             )

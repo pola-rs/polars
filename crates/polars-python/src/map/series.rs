@@ -52,6 +52,7 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
 
         let dt = series.dtype();
+        check_nested_object(dt)?;
 
         // Null dtype may be incorrect, fall back to AnyValues logic.
         if dt.is_nested_null() {
@@ -90,6 +91,11 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
         }
     } else if out.is_instance_of::<PyDict>() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
+        let dt = DataType::from(&first.0);
+        if dt.is_nested() {
+            check_nested_object(&dt)?;
+        }
+
         applyer.apply_into_struct(py, lambda, null_count, first.0)
     }
     // this succeeds for numpy ints as well, where checking if it is pyint fails
@@ -105,6 +111,10 @@ fn infer_and_finish<'py, A: ApplyLambda<'py>>(
             )
             .map(|ca| ca.into_series().into())
     } else if let Ok(av) = out.extract::<Wrap<AnyValue>>() {
+        let dt = DataType::from(&av.0);
+        if dt.is_nested() {
+            check_nested_object(&dt)?;
+        }
         applyer
             .apply_extract_any_values(py, lambda, null_count, av.0)
             .map(|s| s.into())
@@ -495,7 +505,6 @@ impl<'py, T> ApplyLambda<'py> for ChunkedArray<T>
 where
     T: PyPolarsNumericType,
     T::Native: IntoPyObject<'py> + FromPyObject<'py>,
-    ChunkedArray<T>: IntoSeries,
 {
     fn apply_lambda_unknown(
         &self,

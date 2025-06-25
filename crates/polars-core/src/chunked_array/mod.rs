@@ -615,7 +615,7 @@ where
     /// Should be used to match the chunk_id of another [`ChunkedArray`].
     /// # Panics
     /// It is the callers responsibility to ensure that this [`ChunkedArray`] has a single chunk.
-    pub(crate) fn match_chunks<I>(&self, chunk_id: I) -> Self
+    pub fn match_chunks<I>(&self, chunk_id: I) -> Self
     where
         I: Iterator<Item = usize>,
     {

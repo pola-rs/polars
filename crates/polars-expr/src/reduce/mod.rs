@@ -15,6 +15,7 @@ use std::marker::PhantomData;
 use arrow::array::{Array, PrimitiveArray, StaticArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 pub use convert::into_reduction;
+pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_core::prelude::*;
 
 use crate::EvictIdx;
@@ -109,7 +110,7 @@ pub trait GroupedReduction: Any + Send + Sync {
 // Helper traits used in the VecGroupedReduction and VecMaskGroupedReduction to
 // reduce code duplication.
 pub trait Reducer: Send + Sync + Clone + 'static {
-    type Dtype: PolarsDataType<IsLogical = FalseT>;
+    type Dtype: PolarsPhysicalType;
     type Value: Clone + Send + Sync + 'static;
     fn init(&self) -> Self::Value;
     #[inline(always)]

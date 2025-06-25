@@ -102,6 +102,17 @@ pub trait BuildHasherTotalExt: BuildHasher {
 
 impl<T: BuildHasher> BuildHasherTotalExt for T {}
 
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+#[cfg_attr(
+    feature = "dsl-schema",
+    derive(schemars::JsonSchema),
+    schemars(transparent)
+)]
 #[repr(transparent)]
 pub struct TotalOrdWrap<T>(pub T);
 unsafe impl<T> TransparentWrapper<T> for TotalOrdWrap<T> {}
@@ -262,6 +273,7 @@ macro_rules! impl_trivial_total {
 
 // We can't do a blanket impl because Rust complains f32 might implement
 // Ord / Eq someday.
+impl_trivial_total!(());
 impl_trivial_total!(bool);
 impl_trivial_total!(u8);
 impl_trivial_total!(u16);

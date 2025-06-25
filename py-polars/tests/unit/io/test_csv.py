@@ -25,7 +25,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import TimeUnit
+    from polars._typing import CsvQuoteStyle, TimeUnit
     from tests.unit.conftest import MemoryUsage
 
 
@@ -2605,3 +2605,163 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     df2 = pl.DataFrame({"c": [99]})
     df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
     assert df3.write_csv() == expected
+
+
+def test_csv_malformed_quote_in_unenclosed_field_22395() -> None:
+    # Note - the malformed detection logic is very basic, and fails to detect many
+    # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
+    # Below is a one pattern that will be flagged (odd number of quotes in a row).
+    malformed = b"""\
+a,b,x"y
+a,x"y,c
+x"y,b,c
+"""
+    # short: non-SIMD code path
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed, has_header=False).collect()
+    with pytest.warns(UserWarning):
+        pl.read_csv(malformed, has_header=False, ignore_errors=True)
+
+    # long: trigger SIMD code path (> 64 bytes)
+    malformed_long = malformed + ("k,l,m\n" * 10).encode()
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed_long, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed_long, has_header=False).collect()
+
+
+# Note: in some cases, marked "(excessive quoting)", the expected value has
+# quoted fields even when that is not strictly necessary.
+# It is okay to relax these tests in the future when code is refactored
+@pytest.mark.parametrize(
+    (
+        "separator",
+        "quote_style",
+        "scientific",
+        "precision",
+        "decimal_comma",
+        "expected",
+    ),
+    [
+        (",", None, None, None, False, b"123.75,60.0,9\n"),
+        (",", None, None, None, True, b'"123,75","60,0",9\n'),
+        (";", None, None, None, True, b"123,75;60,0;9\n"),
+        (",", None, None, 0, True, b"124,60,9\n"),
+        (",", None, None, 3, True, b'"123,750","60,000",9\n'),
+        (";", None, None, 0, True, b"124;60;9\n"),
+        (";", None, None, 3, True, b"123,750;60,000;9\n"),
+        (",", None, True, None, False, b"1.2375e2,6e1,9\n"),
+        (",", None, True, None, True, b'"1,2375e2","6e1",9\n'),  # (excessive quoting)
+        (",", None, False, None, False, b"123.75,60,9\n"),
+        (",", None, False, None, True, b'"123,75","60",9\n'),  # (excessive quoting)
+        (";", None, True, None, True, b"1,2375e2;6e1;9\n"),
+        (";", None, False, None, True, b"123,75;60;9\n"),
+        (",", None, True, 0, True, b"1e2,6e1,9\n"),
+        (",", None, True, 3, True, b'"1,238e2","6,000e1",9\n'),
+        (",", None, False, 0, True, b"124,60,9\n"),
+        (",", None, False, 3, True, b'"123,750","60,000",9\n'),
+        (",", "always", None, None, True, b'"123,75","60,0","9"\n'),
+        (",", "necessary", None, None, True, b'"123,75","60,0",9\n'),
+        (",", "non_numeric", None, None, True, b'"123,75","60,0",9\n'),
+        (",", "never", None, None, True, b"123,75,60,0,9\n"),
+        (";", "always", None, None, True, b'"123,75";"60,0";"9"\n'),
+        (";", "necessary", None, None, True, b"123,75;60,0;9\n"),
+        (";", "non_numeric", None, None, True, b"123,75;60,0;9\n"),
+        (";", "never", None, None, True, b"123,75;60,0;9\n"),
+    ],
+)
+def test_write_csv_decimal_comma(
+    separator: str,
+    quote_style: CsvQuoteStyle | None,
+    scientific: bool | None,
+    precision: int | None,
+    decimal_comma: bool,
+    expected: bytes,
+) -> None:
+    # as Float64 (implicit)
+    df = pl.DataFrame({"a": [123.75], "b": [60.0], "c": [9]})
+    buf = io.BytesIO()
+    df.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        float_precision=precision,
+        float_scientific=scientific,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # as Float32 (explicit)
+    df32 = df.with_columns(pl.col("a", "b").cast(pl.Float32))
+    buf.seek(0)
+    df32.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        float_precision=precision,
+        float_scientific=scientific,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # Invariant testing:
+    #   df == read_csv(write_csv(df)), unless precision affects the value
+    # TODO: drop the separator condition when read_csv supports comma as both the
+    # decimal separator and field separator, see #23157
+    if (precision is None or precision > 2) and separator != ",":
+        # eager
+        buf.seek(0)
+        df.write_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            float_precision=precision,
+            float_scientific=scientific,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        out = pl.read_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        )
+        assert_frame_equal(df, out)
+
+        # lazy
+        buf.seek(0)
+        df.lazy().sink_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            float_precision=precision,
+            float_scientific=scientific,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        out = pl.scan_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        ).collect()
+        assert_frame_equal(df, out)
+
+
+def test_write_csv_large_number_autoformat_decimal_comma() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [12345678901234567890.123457890],
+            "b": [1_000_000_000_000_000_000_000_000.0],
+        }
+    )
+
+    buf = io.BytesIO()
+    df.write_csv(
+        buf,
+        decimal_comma=True,
+        include_header=False,
+    )
+    buf.seek(0)
+    expected = b'"1,2345678901234567e19","1e24"\n'  # note, excessive quoting when fractional is all-zero, ok to relax
+    assert buf.read() == expected

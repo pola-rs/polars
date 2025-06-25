@@ -11,12 +11,10 @@ use base64::Engine as _;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 use memchr::memmem::find;
+use polars_compute::cast::{binview_to_array_primitive_dyn, binview_to_primitive_dyn};
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
-use super::cast_binary_to_numerical::{
-    cast_binview_to_array_primitive_dyn, cast_binview_to_primitive_dyn,
-};
 use super::*;
 
 pub trait BinaryNameSpaceImpl: AsBinary {
@@ -186,7 +184,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 with_match_primitive_type!(ty, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
-                            cast_binview_to_primitive_dyn::<$T>(
+                            binview_to_primitive_dyn::<$T>(
                                 &**chunk,
                                 &arrow_data_type,
                                 is_little_endian,
@@ -222,7 +220,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
-                            cast_binview_to_array_primitive_dyn::<$T>(
+                            binview_to_array_primitive_dyn::<$T>(
                                 &**chunk,
                                 &arrow_data_type,
                                 is_little_endian

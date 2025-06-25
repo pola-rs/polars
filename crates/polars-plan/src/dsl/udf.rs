@@ -44,6 +44,7 @@ impl UserDefinedFunction {
             function: self.fun,
             output_type: self.return_type.clone(),
             options: self.options,
+            fmt_str: Box::new(PlSmallStr::EMPTY),
         }
     }
 }

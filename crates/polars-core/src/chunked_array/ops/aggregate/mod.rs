@@ -254,7 +254,6 @@ where
     T: PolarsNumericType,
     T::Native: WrappingSum,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    ChunkedArray<T>: IntoSeries,
 {
     fn sum_reduce(&self) -> Scalar {
         let v: Option<T::Native> = self.sum();

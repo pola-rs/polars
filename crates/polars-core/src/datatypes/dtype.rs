@@ -170,8 +170,9 @@ impl PartialEq for DataType {
             match (self, other) {
                 #[cfg(feature = "dtype-categorical")]
                 // Don't include rev maps in comparisons
-                // TODO: include ordering in comparison
-                (Categorical(_, _ordering_l), Categorical(_, _ordering_r)) => true,
+                (Categorical(_, ordering_l), Categorical(_, ordering_r)) => {
+                    ordering_l == ordering_r
+                },
                 #[cfg(feature = "dtype-categorical")]
                 // None means select all Enum dtypes. This is for operation `pl.col(pl.Enum)`
                 (Enum(None, _), Enum(_, _)) | (Enum(_, _), Enum(None, _)) => true,
@@ -605,6 +606,19 @@ impl DataType {
         }
     }
 
+    pub fn contains_unknown(&self) -> bool {
+        use DataType as D;
+        match self {
+            D::Unknown(_) => true,
+            D::List(inner) => inner.contains_unknown(),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_unknown(),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_unknown()),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
@@ -909,6 +923,9 @@ impl DataType {
             },
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(l), DataType::Struct(r)) => {
+                if l.len() != r.len() {
+                    polars_bail!(SchemaMismatch: "structs have different number of fields: {} vs {}", l.len(), r.len());
+                }
                 let mut must_cast = false;
                 for (l, r) in l.iter().zip(r.iter()) {
                     must_cast |= l.dtype.matches_schema_type(&r.dtype)?;

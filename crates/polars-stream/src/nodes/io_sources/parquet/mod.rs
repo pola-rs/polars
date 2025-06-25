@@ -281,6 +281,10 @@ impl FileReader for ParquetFileReader {
         self._n_rows_in_file()
     }
 
+    async fn fast_n_rows_in_file(&mut self) -> PolarsResult<Option<IdxSize>> {
+        self._n_rows_in_file().map(Some)
+    }
+
     async fn row_position_after_slice(
         &mut self,
         pre_slice: Option<Slice>,

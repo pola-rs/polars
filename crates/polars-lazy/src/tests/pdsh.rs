@@ -10,7 +10,7 @@ const fn base_path() -> &'static str {
 fn region() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/region.feather"),
+        PlPath::new(&format!("{base_path}/region.feather")),
         ScanArgsIpc::default(),
     )
     .unwrap()
@@ -18,7 +18,7 @@ fn region() -> LazyFrame {
 fn nation() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/nation.feather"),
+        PlPath::new(&format!("{base_path}/nation.feather")),
         ScanArgsIpc::default(),
     )
     .unwrap()
@@ -27,7 +27,7 @@ fn nation() -> LazyFrame {
 fn supplier() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/supplier.feather"),
+        PlPath::new(&format!("{base_path}/supplier.feather")),
         ScanArgsIpc::default(),
     )
     .unwrap()
@@ -35,13 +35,17 @@ fn supplier() -> LazyFrame {
 
 fn part() -> LazyFrame {
     let base_path = base_path();
-    LazyFrame::scan_ipc(format!("{base_path}/part.feather"), ScanArgsIpc::default()).unwrap()
+    LazyFrame::scan_ipc(
+        PlPath::new(&format!("{base_path}/part.feather")),
+        ScanArgsIpc::default(),
+    )
+    .unwrap()
 }
 
 fn partsupp() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        format!("{base_path}/partsupp.feather"),
+        PlPath::new(&format!("{base_path}/partsupp.feather")),
         ScanArgsIpc::default(),
     )
     .unwrap()

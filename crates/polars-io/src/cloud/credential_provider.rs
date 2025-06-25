@@ -395,11 +395,11 @@ impl schemars::JsonSchema for PlCredentialProvider {
 
 /// Avoids calling the credential provider function if we have not yet passed the expiry time.
 #[derive(Debug)]
-struct FetchedCredentialsCache<C>(tokio::sync::Mutex<(C, u64)>);
+struct FetchedCredentialsCache<C>(tokio::sync::Mutex<(C, u64, bool)>);
 
 impl<C: Clone> FetchedCredentialsCache<C> {
     fn new(init_creds: C) -> Self {
-        Self(tokio::sync::Mutex::new((init_creds, 0)))
+        Self(tokio::sync::Mutex::new((init_creds, 0, true)))
     }
 
     async fn get_maybe_update(
@@ -424,7 +424,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
         }
 
         let mut inner = self.0.lock().await;
-        let (last_fetched_credentials, last_fetched_expiry) = &mut *inner;
+        let (last_fetched_credentials, last_fetched_expiry, log_use_cached) = &mut *inner;
 
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -447,6 +447,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
 
             *last_fetched_credentials = credentials;
             *last_fetched_expiry = expiry;
+            *log_use_cached = true;
 
             if expiry < current_time && expiry != 0 {
                 polars_bail!(
@@ -471,7 +472,8 @@ impl<C: Clone> FetchedCredentialsCache<C> {
                     )
                 )
             }
-        } else if verbose {
+        } else if verbose && *log_use_cached {
+            *log_use_cached = false;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

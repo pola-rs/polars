@@ -819,12 +819,15 @@ class Series:
 
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op)(other._s))
-
+        try:
+            f = get_ffi_func(op + "_<>", self.dtype, self._s)
+        except NotImplementedError:
+            f = None
+        if f is None:
+            msg = f"Series of type {self.dtype} does not have {op} operator"
+            raise NotImplementedError(msg)
         if other is not None:
             other = maybe_cast(other, self.dtype)
-        f = get_ffi_func(op + "_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
 
         return self._from_pyseries(f(other))
 
@@ -1732,11 +1735,12 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `True` values,
-            the output is `None`.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1774,11 +1778,12 @@ class Series:
         Parameters
         ----------
         ignore_nulls
-            Ignore null values (default).
 
-            If set to `False`, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no `False` values,
-            the output is `None`.
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -2043,8 +2048,12 @@ class Series:
 
         Notes
         -----
-        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
-        Int64 before summing to prevent overflow issues.
+        * Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+          Int64 before summing to prevent overflow issues.
+        * If there are no non-null values, then the output is `0`.
+          If you would prefer empty sums to return `None`, you can
+          use `s.sum() if s.count() else None` instead
+          of `s.sum()`.
 
         Examples
         --------
@@ -2069,6 +2078,13 @@ class Series:
     def product(self) -> int | float:
         """
         Reduce this Series to the product value.
+
+        Notes
+        -----
+        If there are no non-null values, then the output is `1`.
+        If you would prefer empty products to return `None`, you can
+        use `s.product() if s.count() else None` instead
+        of `s.product()`.
 
         Examples
         --------
@@ -2256,7 +2272,11 @@ class Series:
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
-        self, *, separator: str = "_", drop_first: bool = False
+        self,
+        *,
+        separator: str = "_",
+        drop_first: bool = False,
+        drop_nulls: bool = False,
     ) -> DataFrame:
         """
         Get dummy/indicator variables.
@@ -2267,6 +2287,8 @@ class Series:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variable being encoded.
+        drop_nulls
+            If there are `None` values in the series, a `null` column is not generated
 
         Examples
         --------
@@ -2295,7 +2317,7 @@ class Series:
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator, drop_first))
+        return wrap_df(self._s.to_dummies(separator, drop_first, drop_nulls))
 
     @unstable()
     def cut(
@@ -4485,6 +4507,64 @@ class Series:
 
         return out
 
+    def is_close(
+        self,
+        other: IntoExpr,
+        *,
+        abs_tol: float = 0.0,
+        rel_tol: float = 1e-09,
+        nans_equal: bool = False,
+    ) -> Series:
+        r"""
+        Get a boolean mask of the values being close to the other values.
+
+        Two values `a` and `b` are considered close if the following condition holds:
+
+        .. math::
+            |a-b| \le max \{ \text{rel_tol} \cdot max \{ |a|, |b| \}, \text{abs_tol} \}
+
+        Parameters
+        ----------
+        abs_tol
+            Absolute tolerance. This is the maximum allowed absolute difference between
+            two values. Must be non-negative.
+        rel_tol
+            Relative tolerance. This is the maximum allowed difference between two
+            values, relative to the larger absolute value. Must be in the range [0, 1).
+        nans_equal
+            Whether NaN values should be considered equal.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+            The implementation of this method is symmetric and mirrors the behavior of
+            :meth:`math.isclose`. Specifically note that this behavior is different to
+            :meth:`numpy.isclose`.
+
+        Examples
+        --------
+        >>> s = pl.Series("s", [1.0, 1.2, 1.4, 1.45, 1.6])
+        >>> s.is_close(1.4, abs_tol=0.1)
+        shape: (5,)
+        Series: 's' [bool]
+        [
+            false
+            false
+            true
+            true
+            false
+        ]
+        """
+        return F.select(
+            F.lit(self).is_close(
+                other, abs_tol=abs_tol, rel_tol=rel_tol, nans_equal=nans_equal
+            )
+        ).to_series()
+
     def to_numpy(
         self,
         *,
@@ -4943,7 +5023,8 @@ class Series:
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            msg = f"Series of type {self.dtype} can not be set"
+            raise NotImplementedError(msg)
         return self._from_pyseries(f(filter._s, value))
 
     def scatter(
@@ -7141,7 +7222,7 @@ class Series:
         old
             Value or sequence of values to replace.
             Also accepts a mapping of values to their replacement as syntactic sugar for
-            `replace_all(old=Series(mapping.keys()), new=Series(mapping.values()))`.
+            `replace_strict(old=Series(mapping.keys()), new=Series(mapping.values()))`.
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.

@@ -35,15 +35,15 @@ impl DslBuilder {
 
         Ok(DslPlan::Scan {
             sources: ScanSources::default(),
-            file_info: Some(FileInfo {
-                schema: schema.clone(),
-                reader_schema: Some(either::Either::Right(schema)),
-                ..Default::default()
-            }),
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Anonymous {
+            scan_type: Box::new(FileScanDsl::Anonymous {
                 function,
                 options: Arc::new(options),
+                file_info: FileInfo {
+                    schema: schema.clone(),
+                    reader_schema: Some(either::Either::Right(schema)),
+                    ..Default::default()
+                },
             }),
             cached_ir: Default::default(),
         }
@@ -59,12 +59,8 @@ impl DslBuilder {
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Parquet {
-                options,
-                metadata: None,
-            }),
+            scan_type: Box::new(FileScanDsl::Parquet { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -79,12 +75,8 @@ impl DslBuilder {
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Ipc {
-                options,
-                metadata: None,
-            }),
+            scan_type: Box::new(FileScanDsl::Ipc { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -99,9 +91,8 @@ impl DslBuilder {
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScan::Csv { options }),
+            scan_type: Box::new(FileScanDsl::Csv { options }),
             cached_ir: Default::default(),
         }
         .into())
@@ -115,11 +106,9 @@ impl DslBuilder {
 
         DslPlan::Scan {
             sources: ScanSources::default(),
-            file_info: None,
             unified_scan_args: Default::default(),
-            scan_type: Box::new(FileScan::PythonDataset {
+            scan_type: Box::new(FileScanDsl::PythonDataset {
                 dataset_object: Arc::new(PythonDatasetProvider::new(dataset_object)),
-                cached_ir: Default::default(),
             }),
             cached_ir: Default::default(),
         }
@@ -128,8 +117,7 @@ impl DslBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache { input, id }.into()
+        DslPlan::Cache { input }.into()
     }
 
     pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
@@ -369,7 +357,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 validate_output,
             }),
         }
@@ -395,7 +383,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 fmt_str: name,
             }),
         }

@@ -47,6 +47,7 @@ from polars.convert import (
     json_normalize,
 )
 from polars.dataframe import DataFrame
+from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import (
     Array,
     Binary,
@@ -115,6 +116,7 @@ from polars.functions import (
     datetime,
     datetime_range,
     datetime_ranges,
+    dtype_of,
     duration,
     element,
     escape_regex,
@@ -246,6 +248,8 @@ __all__ = [
     "GPUEngine",
     # schema
     "Schema",
+    # datatype_expr
+    "DataTypeExpr",
     # datatypes
     "Array",
     "Binary",
@@ -332,6 +336,7 @@ __all__ = [
     "arg_where",
     "business_day_count",
     "concat",
+    "dtype_of",
     "date_range",
     "date_ranges",
     "datetime_range",

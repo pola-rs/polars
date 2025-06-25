@@ -32,7 +32,6 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 expr: _,
                 skip_empty: true,
             } => "explode(skip_empty)",
-            AExpr::Alias(_, name) => return write!(f, "alias({name})"),
             AExpr::Column(name) => return write!(f, "col({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
@@ -68,9 +67,10 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 return write!(f, "{}", s.to_lowercase());
             },
             AExpr::Ternary { .. } => "ternary",
-            AExpr::AnonymousFunction { options, .. } => {
-                return write!(f, "anonymous_function: {}", options.fmt_str);
+            AExpr::AnonymousFunction { fmt_str, .. } => {
+                return write!(f, "anonymous_function: {fmt_str}");
             },
+            AExpr::Eval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             AExpr::Window { .. } => "window",
             AExpr::Slice { .. } => "slice",
@@ -106,21 +106,8 @@ fn multiline_expression(expr: &str) -> std::borrow::Cow<'_, str> {
 
 impl<'a> TreeFmtNode<'a> {
     pub fn root_logical_plan(lp: IRPlanRef<'a>) -> Self {
-        if let Some(streaming_lp) = lp.extract_streaming_plan() {
-            return Self::streaming_root_logical_plan(streaming_lp);
-        }
-
         Self {
             h: None,
-            content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
-
-            lp,
-        }
-    }
-
-    fn streaming_root_logical_plan(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            h: Some("Streaming".to_string()),
             content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
 
             lp,
@@ -257,7 +244,7 @@ impl<'a> TreeFmtNode<'a> {
                     } => ND(
                         wh(
                             h,
-                            &format!("CACHE[id: {:x}, cache_hits: {}]", *id, *cache_hits),
+                            &format!("CACHE[id: {:x}, cache_hits: {}]", id, *cache_hits),
                         ),
                         vec![self.lp_node(None, *input)],
                     ),
@@ -347,19 +334,10 @@ impl<'a> TreeFmtNode<'a> {
                         wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
                         vec![self.lp_node(None, *input)],
                     ),
-                    MapFunction { input, function } => {
-                        if let Some(streaming_lp) = function.to_streaming_lp() {
-                            ND(
-                                String::default(),
-                                vec![TreeFmtNode::streaming_root_logical_plan(streaming_lp)],
-                            )
-                        } else {
-                            ND(
-                                wh(h, &format!("{function}")),
-                                vec![self.lp_node(None, *input)],
-                            )
-                        }
-                    },
+                    MapFunction { input, function } => ND(
+                        wh(h, &format!("{function}")),
+                        vec![self.lp_node(None, *input)],
+                    ),
                     ExtContext { input, .. } => {
                         ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
                     },

@@ -699,6 +699,7 @@ def display_dot_graph(
 
         plt.figure(figsize=figsize)
         img = mpimg.imread(BytesIO(graph))
+        plt.axis("off")
         plt.imshow(img)
         plt.show()
         return None
@@ -736,6 +737,8 @@ def require_same_type(current: Any, other: Any) -> None:
     """
     Raise an error if the two arguments are not of the same type.
 
+    The check will not raise an error if one object is of a subclass of the other.
+
     Parameters
     ----------
     current
@@ -743,7 +746,7 @@ def require_same_type(current: Any, other: Any) -> None:
     other
         An object that has to be of the same type.
     """
-    if not isinstance(other, type(current)):
+    if not isinstance(other, type(current)) and not isinstance(current, type(other)):
         msg = (
             f"expected `other` to be a {qualified_type_name(current)!r}, "
             f"not {qualified_type_name(other)!r}"

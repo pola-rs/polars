@@ -20,9 +20,14 @@ use crate::map::lazy::{ToSeries, call_lambda_with_series};
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
 
-fn python_function_caller_series(s: Column, lambda: &PyObject) -> PolarsResult<Column> {
+fn python_function_caller_series(
+    s: Column,
+    output_dtype: Option<DataType>,
+    lambda: &PyObject,
+) -> PolarsResult<Column> {
     Python::with_gil(|py| {
-        let object = call_lambda_with_series(py, s.as_materialized_series(), lambda)?;
+        let object =
+            call_lambda_with_series(py, s.as_materialized_series(), Some(output_dtype), lambda)?;
         object.to_series(py, polars(py), s.name()).map(Column::from)
     })
 }
@@ -128,13 +133,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
             from_py: FromPythonConvertRegistry {
-                sink_target: Arc::new(|py_f| {
+                partition_target_cb_result: Arc::new(|py_f| {
                     Python::with_gil(|py| {
-                        Ok(
-                            Box::new(py_f.extract::<Wrap<polars_plan::dsl::SinkTarget>>(py)?.0)
-                                as _,
-                        )
+                        Ok(Box::new(
+                            py_f.extract::<Wrap<polars_plan::dsl::PartitionTargetCallbackResult>>(
+                                py,
+                            )?
+                            .0,
+                        ) as _)
                     })
+                }),
+            },
+            to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
+                df: Arc::new(|df| {
+                    Python::with_gil(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
                 }),
             },
         });

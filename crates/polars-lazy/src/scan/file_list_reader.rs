@@ -1,10 +1,10 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_plan::prelude::UnionArgs;
+use polars_utils::plpath::PlPath;
 
 use crate::prelude::*;
 
@@ -44,7 +44,7 @@ pub trait LazyFileListReader: Clone {
 
         polars_ensure!(
             !lfs.is_empty(),
-            ComputeError: "no matching files found in {:?}", paths.iter().map(|x| x.to_str().unwrap()).collect::<Vec<_>>()
+            ComputeError: "no matching files found in {:?}", paths.iter().map(|x| x.to_str()).collect::<Vec<_>>()
         );
 
         let mut lf = self.concat_impl(lfs)?;
@@ -92,7 +92,7 @@ pub trait LazyFileListReader: Clone {
 
     /// Set paths of the scanned files.
     #[must_use]
-    fn with_paths(self, paths: Arc<[PathBuf]>) -> Self {
+    fn with_paths(self, paths: Arc<[PlPath]>) -> Self {
         self.with_sources(ScanSources::Paths(paths))
     }
 

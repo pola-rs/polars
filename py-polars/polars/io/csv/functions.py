@@ -88,6 +88,9 @@ def read_csv(
     r"""
     Read a CSV file into a DataFrame.
 
+    Polars expects CSV data to strictly conform to RFC 4180, unless documented
+    otherwise. Malformed data, though common, may lead to undefined behavior.
+
     .. versionchanged:: 0.20.31
         The `dtypes` parameter was renamed `schema_overrides`.
     .. versionchanged:: 0.20.4

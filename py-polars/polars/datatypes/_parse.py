@@ -9,6 +9,7 @@ from decimal import Decimal as PyDecimal
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Union, get_args
 
+import polars._reexport as pl
 from polars.datatypes.classes import (
     Binary,
     Boolean,
@@ -39,6 +40,14 @@ else:  # pragma: no cover
     # Define equivalent for older Python versions
     NoneType = type(None)
     UnionType = UnionTypeOld
+
+
+def parse_into_datatype_expr(input: Any) -> pl.DataTypeExpr:
+    """Parse an input into a DataTypeExpr."""
+    if isinstance(input, pl.DataTypeExpr):
+        return input
+    else:
+        return parse_into_dtype(input).to_dtype_expr()
 
 
 def parse_into_dtype(input: Any) -> PolarsDataType:

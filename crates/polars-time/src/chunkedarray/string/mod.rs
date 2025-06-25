@@ -108,7 +108,7 @@ pub trait StringMethods: AsString {
             (string_ca.len() as f64).sqrt() as usize,
         );
         let ca = unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache));
-        Ok(ca.with_name(string_ca.name().clone()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into_time())
     }
 
     #[cfg(feature = "dtype-date")]
@@ -143,7 +143,7 @@ pub trait StringMethods: AsString {
             }
             None
         });
-        Ok(ca.with_name(string_ca.name().clone()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into_date())
     }
 
     #[cfg(feature = "dtype-datetime")]
@@ -253,7 +253,7 @@ pub trait StringMethods: AsString {
             unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
         };
 
-        Ok(ca.with_name(string_ca.name().clone()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into_date())
     }
 
     #[cfg(feature = "dtype-datetime")]

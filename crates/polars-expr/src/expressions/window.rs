@@ -22,12 +22,12 @@ pub struct WindowExpr {
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
-    pub(crate) out_name: Option<PlSmallStr>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
+    pub(crate) has_different_group_sources: bool,
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -170,14 +170,14 @@ impl WindowExpr {
                     .map(|s| format!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
                 polars_bail!(
-                    expr = self.expr, ComputeError:
+                    expr = self.expr, ShapeMismatch:
                     "the length of the window expression did not match that of the group\
                     \n> group: {}\n> group length: {}\n> output: '{:?}'",
                     comma_delimited(String::new(), &group), group.len(), output.unwrap()
                 );
             } else {
                 polars_bail!(
-                    expr = self.expr, ComputeError:
+                    expr = self.expr, ShapeMismatch:
                     "the length of the window expression did not match that of the group"
                 );
             };
@@ -283,39 +283,6 @@ impl WindowExpr {
             }
         }
         agg_col
-    }
-
-    /// Check if the branches have an aggregation
-    /// when(a > sum)
-    /// then (foo)
-    /// otherwise(bar - sum)
-    fn has_different_group_sources(&self) -> bool {
-        let mut has_arity = false;
-        let mut agg_col = false;
-        for e in &self.expr {
-            if let Expr::Window { function, .. } = e {
-                // or list().alias
-                for e in &**function {
-                    match e {
-                        Expr::Ternary { .. } | Expr::BinaryExpr { .. } => {
-                            has_arity = true;
-                        },
-                        Expr::Alias(_, _) => {},
-                        Expr::Agg(_) => {
-                            agg_col = true;
-                        },
-                        Expr::Function { options, .. }
-                        | Expr::AnonymousFunction { options, .. } => {
-                            if options.flags.returns_scalar() {
-                                agg_col = true;
-                            }
-                        },
-                        _ => {},
-                    }
-                }
-            }
-        }
-        has_arity && agg_col
     }
 
     fn determine_map_strategy(
@@ -449,7 +416,7 @@ impl PhysicalExpr for WindowExpr {
 
         // overwrite sort_groups for some expressions
         // TODO: fully understand the rationale is here.
-        if self.has_different_group_sources() {
+        if self.has_different_group_sources {
             sort_groups = true
         }
 
@@ -525,16 +492,10 @@ impl PhysicalExpr for WindowExpr {
                 if ac.is_literal() {
                     out = out.new_from_index(0, df.height())
                 }
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
                 Ok(out.into_column())
             },
             Explode => {
-                let mut out = ac.aggregated().explode(false)?;
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
+                let out = ac.aggregated().explode(false)?;
                 Ok(out.into_column())
             },
             Map => {
@@ -638,12 +599,7 @@ impl PhysicalExpr for WindowExpr {
                             get_join_tuples()?
                         };
 
-                        let mut out = materialize_column(&join_opt_ids, &out_column);
-
-                        if let Some(name) = &self.out_name {
-                            out.rename(name.clone());
-                        }
-
+                        let out = materialize_column(&join_opt_ids, &out_column);
                         Ok(out.into_column())
                     },
                 }
@@ -713,11 +669,11 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+fn set_numeric<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsType,
+    len: usize,
+) -> Series {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
     // SAFETY:
@@ -763,7 +719,7 @@ where
 
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        ChunkedArray::new_vec(ca.name().clone(), values).into_series()
+        ChunkedArray::<T>::new_vec(ca.name().clone(), values).into_series()
     } else {
         // We don't use a mutable bitmap as bits will have race conditions!
         // A single byte might alias if we write from single threads.

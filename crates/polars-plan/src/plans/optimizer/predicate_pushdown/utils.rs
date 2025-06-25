@@ -472,6 +472,8 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
 
 /// Maps column references within an expression. Used to handle column renaming when pushing
 /// predicates.
+///
+/// This will add a new expression tree in the arena (i.e. it won't mutate the existing node in-place).
 pub(super) fn map_column_references(
     expr: &mut ExprIR,
     expr_arena: &mut Arena<AExpr>,
@@ -492,7 +494,7 @@ pub(super) fn map_column_references(
         .unwrap()
         .node();
 
-    expr.set_node(node);
+    *expr = ExprIR::from_node(node, expr_arena);
 
     struct MapColumnReferences<'a> {
         rename_map: &'a PlHashMap<PlSmallStr, PlSmallStr>,

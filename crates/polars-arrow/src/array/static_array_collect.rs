@@ -862,9 +862,7 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
         #[cfg(feature = "dtype-array")]
         {
             let ArrowDataType::FixedSizeList(_, width) = &dtype else {
-                panic!(
-                    "FixedSizeListArray::arr_from_iter_with_dtype called with non-FixedSizeList dtype"
-                );
+                panic!("FixedSizeListArray::arr_from_iter_with_dtype called with non-Array dtype");
             };
             let iter_values: Vec<_> = iter.into_iter().collect();
             let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
