@@ -80,15 +80,14 @@ pub(super) fn process_join(
             _ => {
                 let expr = left_on.get(i).unwrap();
 
-                let node = if let AExpr::Cast {
-                    expr,
-                    dtype: _,
-                    options: _,
-                } = expr_arena.get(expr.node())
-                {
-                    *expr
-                } else {
-                    expr.node()
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if options.args.should_coalesce() => *expr,
+
+                    _ => expr.node(),
                 };
 
                 if let AExpr::Column(name) = expr_arena.get(node) {
@@ -122,15 +121,14 @@ pub(super) fn process_join(
             _ => {
                 let expr = right_on.get(i).unwrap();
 
-                let node = if let AExpr::Cast {
-                    expr,
-                    dtype: _,
-                    options: _,
-                } = expr_arena.get(expr.node())
-                {
-                    *expr
-                } else {
-                    expr.node()
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if options.args.should_coalesce() => *expr,
+
+                    _ => expr.node(),
                 };
 
                 if let AExpr::Column(name) = expr_arena.get(node) {
@@ -395,15 +393,14 @@ fn try_downgrade_join_type(
     macro_rules! lhs_input_column_keys_iter {
         () => {{
             left_on.iter().map(|expr| {
-                let node = if let AExpr::Cast {
-                    expr,
-                    dtype: _,
-                    options: _,
-                } = expr_arena.get(expr.node())
-                {
-                    *expr
-                } else {
-                    expr.node()
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if options.args.should_coalesce() => *expr,
+
+                    _ => expr.node(),
                 };
 
                 let AExpr::Column(name) = expr_arena.get(node) else {
