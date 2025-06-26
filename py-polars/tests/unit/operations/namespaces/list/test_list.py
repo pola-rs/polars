@@ -1490,21 +1490,22 @@ def test_list_zip_series_mismatched_lengths() -> None:
 
 
 def test_list_zip_error_non_list_input() -> None:
-    """Test that lst_zip raises an error when non-list columns are provided."""
     df = pl.DataFrame(
         {
             "lists": [[1, 2], [3, 4]],
-            "not_list": [10, 20],  # This is not a list column
+            "not_list": [10, 20],
         }
     )
-    
-    # Test error when second argument is not a list
-    with pytest.raises(ComputeError, match="All inputs to lst_zip must be list columns"):
+
+    with pytest.raises(
+        ComputeError, match="All inputs to lst_zip must be list columns"
+    ):
         df.select(pl.col("lists").list.zip(pl.col("not_list")))
-    
-    # Test error in Series API as well
+
     s_list = pl.Series("list_col", [[1, 2], [3, 4]])
     s_not_list = pl.Series("not_list_col", [10, 20])
-    
-    with pytest.raises(ComputeError, match="All inputs to lst_zip must be list columns"):
+
+    with pytest.raises(
+        ComputeError, match="All inputs to lst_zip must be list columns"
+    ):
         s_list.list.zip(s_not_list)
