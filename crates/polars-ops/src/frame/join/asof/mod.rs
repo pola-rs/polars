@@ -10,8 +10,6 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "dtype-categorical")]
-use super::_check_categorical_src;
 use super::{_finish_join, build_tables};
 use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
