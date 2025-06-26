@@ -482,7 +482,7 @@ pub(crate) fn predicate_non_null_column_outputs(
                     input,
                     function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                     options: _,
-                } if !input.is_empty() => input.get(0).unwrap().node(),
+                } if !input.is_empty() => input.first().unwrap().node(),
 
                 Function {
                     input,
@@ -493,7 +493,7 @@ pub(crate) fn predicate_non_null_column_outputs(
                         input,
                         function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
                         options: _,
-                    } if !input.is_empty() => input.get(0).unwrap().node(),
+                    } if !input.is_empty() => input.first().unwrap().node(),
 
                     _ => minterm_node,
                 },
