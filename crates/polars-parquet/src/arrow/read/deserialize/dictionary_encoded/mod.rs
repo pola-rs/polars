@@ -1,6 +1,6 @@
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::{AlignedBytes, Bytes4Alignment4, NativeType};
+use arrow::types::{AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
 
 use super::ParquetError;
@@ -16,7 +16,7 @@ mod required_masked_dense;
 
 /// A mapping from a `u32` to a value. This is used in to map dictionary encoding to a value.
 pub trait IndexMapping {
-    type Output: Copy;
+    type Output: Copy + AlignedBytes;
 
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -29,13 +29,14 @@ pub trait IndexMapping {
 }
 
 // Base mapping used for everything except the CategoricalDecoder.
-impl<T: Copy> IndexMapping for &[T] {
+impl<T: Copy + AlignedBytes> IndexMapping for &[T] {
     type Output = T;
 
     #[inline(always)]
     fn len(&self) -> usize {
         <[T]>::len(self)
     }
+
     #[inline(always)]
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
         *unsafe { <[T]>::get_unchecked(self, idx as usize) }
@@ -43,13 +44,42 @@ impl<T: Copy> IndexMapping for &[T] {
 }
 
 // Unit mapping used in the CategoricalDecoder.
-impl IndexMapping for usize {
+impl IndexMapping for u8 {
+    type Output = Bytes1Alignment1;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        *self as usize
+    }
+
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        bytemuck::must_cast(idx)
+    }
+}
+
+impl IndexMapping for u16 {
+    type Output = Bytes2Alignment2;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        *self as usize
+    }
+
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
+        bytemuck::must_cast(idx)
+    }
+}
+
+impl IndexMapping for u32 {
     type Output = Bytes4Alignment4;
 
     #[inline(always)]
     fn len(&self) -> usize {
-        *self
+        *self as usize
     }
+
     #[inline(always)]
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
         bytemuck::must_cast(idx)
