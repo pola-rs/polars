@@ -504,6 +504,92 @@ def test_str_to_integer_base_literal() -> None:
         )
 
 
+def test_str_to_integer_dtype() -> None:
+    df = pl.DataFrame(
+        {"str": ["1111111", "7f", "127", None, "42"], "base": [2, 16, 10, 8, None]}
+    )
+    out = df.select(
+        i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8),
+        i16=pl.col("str").str.to_integer(base="base", dtype=pl.Int16),
+        i32=pl.col("str").str.to_integer(base="base", dtype=pl.Int32),
+        i64=pl.col("str").str.to_integer(base="base", dtype=pl.Int64),
+        u8=pl.col("str").str.to_integer(base="base", dtype=pl.UInt8),
+        u16=pl.col("str").str.to_integer(base="base", dtype=pl.UInt16),
+        u32=pl.col("str").str.to_integer(base="base", dtype=pl.UInt32),
+        u64=pl.col("str").str.to_integer(base="base", dtype=pl.UInt64),
+    )
+    expected = pl.DataFrame(
+        {
+            "i8": [127, 127, 127, None, None],
+            "i16": [127, 127, 127, None, None],
+            "i32": [127, 127, 127, None, None],
+            "i64": [127, 127, 127, None, None],
+            "u8": [127, 127, 127, None, None],
+            "u16": [127, 127, 127, None, None],
+            "u32": [127, 127, 127, None, None],
+            "u64": [127, 127, 127, None, None],
+        },
+        schema={
+            "i8": pl.Int8,
+            "i16": pl.Int16,
+            "i32": pl.Int32,
+            "i64": pl.Int64,
+            "u8": pl.UInt8,
+            "u16": pl.UInt16,
+            "u32": pl.UInt32,
+            "u64": pl.UInt64,
+        },
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_str_to_integer_large() -> None:
+    df = pl.DataFrame(
+        {
+            "str": [
+                "-6129899454972456276923959272",
+                "1A44E53BFEBA967E6682FBB0",
+                "10100110111110110101110100000100110010101111000100011000000100010101010101101011111111101000",
+                None,
+                "7798994549724957734429272",
+            ],
+            "base": [10, 16, 2, 8, None],
+        }
+    )
+    out = df.select(i128=pl.col("str").str.to_integer(base="base", dtype=pl.Int128))
+    expected = pl.DataFrame(
+        {
+            "i128": [
+                -6129899454972456276923959272,
+                8129899739726392769273592752,
+                3229899454972495776923959272,
+                None,
+                None,
+            ]
+        },
+        schema={"i128": pl.Int128},
+    )
+    assert_frame_equal(out, expected)
+
+    # test strict raise
+    df = pl.DataFrame(
+        {
+            "i128": [
+                "612989945497245627692395927261298994549724562769239592726129899454972456276923959272",
+                "1A44E53BFEBA967E6682FBB0",
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "7798994549724957734429272",
+                None,
+                "7798994549724957734429272",
+            ],
+            "base": [10, 2, 16, 10, 8, None],
+        }
+    )
+
+    with pytest.raises(ComputeError):
+        df.select(pl.col("i128").str.to_integer(base="base", dtype=pl.Int128))
+
+
 def test_str_strip_chars_expr() -> None:
     df = pl.DataFrame(
         {

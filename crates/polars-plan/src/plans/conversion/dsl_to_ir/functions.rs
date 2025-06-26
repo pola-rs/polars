@@ -179,7 +179,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "regex")]
                 S::Find { literal, strict } => IS::Find { literal, strict },
                 #[cfg(feature = "string_to_integer")]
-                S::ToInteger(v) => IS::ToInteger(v),
+                S::ToInteger { dtype, strict } => IS::ToInteger { dtype, strict },
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
                 S::Lowercase => IS::Lowercase,
