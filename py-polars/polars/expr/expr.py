@@ -10875,7 +10875,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.bitwise_trailing_zeros())
 
     def bitwise_and(self) -> Expr:
-        """Perform an aggregation of bitwise ANDs.
+        """Perform an aggregation of bitwise ANDs. Null values will be ignored.
 
         Examples
         --------
@@ -10906,7 +10906,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.bitwise_and())
 
     def bitwise_or(self) -> Expr:
-        """Perform an aggregation of bitwise ORs.
+        """Perform an aggregation of bitwise ORs. Null values will be ignored.
 
         Examples
         --------
@@ -10937,7 +10937,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.bitwise_or())
 
     def bitwise_xor(self) -> Expr:
-        """Perform an aggregation of bitwise XORs.
+        """Perform an aggregation of bitwise XORs. Null values will be ignored.
 
         Examples
         --------

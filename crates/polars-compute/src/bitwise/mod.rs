@@ -215,7 +215,7 @@ impl BitwiseKernel for BooleanArray {
         } else if !self.has_nulls() {
             Some(self.values().unset_bits() == 0)
         } else {
-            Some((self.values() & self.validity().unwrap()).unset_bits() == 0)
+            Some((self.values() | &!self.validity().unwrap()).unset_bits() == 0)
         }
     }
 
