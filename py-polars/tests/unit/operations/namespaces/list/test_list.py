@@ -45,7 +45,6 @@ def test_list_arr_get() -> None:
     with pytest.raises(ComputeError, match="get index is out of bounds"):
         a.list.get(3, null_on_oob=False)
 
-    # Null index.
     out_df = a.to_frame().select(pl.col.a.list.get(pl.lit(None), null_on_oob=False))
     expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
     assert_frame_equal(out_df, expected_df)
@@ -63,7 +62,6 @@ def test_list_arr_get() -> None:
             for i in range(4)
         )
 
-    # get by indexes where some are out of bounds
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
 
     with pytest.raises(ComputeError, match="get index is out of bounds"):
@@ -71,7 +69,6 @@ def test_list_arr_get() -> None:
             as_series=False
         )
 
-    # exact on oob boundary
     df = pl.DataFrame(
         {
             "index": [3, 3, 3],
@@ -1248,7 +1245,6 @@ def test_list_zip_basic() -> None:
         }
     )
 
-    # Test basic two-list zipping
     result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_ab"))
     expected = pl.DataFrame(
         {
@@ -1265,7 +1261,6 @@ def test_list_zip_basic() -> None:
     )
     assert_frame_equal(result, expected)
 
-    # Test three-list zipping
     result_three = df.select(
         pl.col("a").list.zip(pl.col("b"), pl.col("c")).alias("zipped_abc")
     )
@@ -1335,7 +1330,6 @@ def test_list_zip_series() -> None:
     s2 = pl.Series("b", [["x", "y", "z"], ["a", "b"], ["c"]])
     s3 = pl.Series("c", [[1.1, 2.2, 3.3], [4.4, 5.5], [6.6]])
 
-    # Test basic two-series zipping
     result = s1.list.zip(s2)
     expected = pl.Series(
         "a",
@@ -1351,7 +1345,6 @@ def test_list_zip_series() -> None:
     )
     assert_series_equal(result, expected)
 
-    # Test three-series zipping
     result_three = s1.list.zip(s2, s3)
     expected_three = pl.Series(
         "a",
@@ -1418,7 +1411,6 @@ def test_list_zip_mixed_types() -> None:
 
 def test_list_zip_series_comprehensive() -> None:
     """Comprehensive tests for Series.list.zip method including edge cases."""
-    # Test with null series
     s1 = pl.Series("a", [[1, 2], None, [3]])
     s2 = pl.Series("b", [["x", "y"], ["a", "b"], None])
 
@@ -1433,7 +1425,6 @@ def test_list_zip_series_comprehensive() -> None:
     )
     assert_series_equal(result, expected)
 
-    # Test with single element lists
     s1 = pl.Series("single", [[1], [2], [3]])
     s2 = pl.Series("single2", [["a"], ["b"], ["c"]])
 
@@ -1448,7 +1439,6 @@ def test_list_zip_series_comprehensive() -> None:
     )
     assert_series_equal(result, expected)
 
-    # Test with lists containing None values
     s1 = pl.Series("with_none", [[1, None, 3], [None], [4]])
     s2 = pl.Series("with_none2", [["a", "b", None], ["c"], [None]])
 
@@ -1467,12 +1457,10 @@ def test_list_zip_series_comprehensive() -> None:
     )
     assert_series_equal(result, expected)
 
-    # Test zipping series with different names
     s1 = pl.Series("first_series", [[1, 2], [3]])
     s2 = pl.Series("second_series", [["x", "y"], ["z"]])
 
     result = s1.list.zip(s2)
-    # Result should keep the name of the first series
     assert result.name == "first_series"
     expected = pl.Series(
         "first_series",
@@ -1485,7 +1473,6 @@ def test_list_zip_series_comprehensive() -> None:
 
 
 def test_list_zip_series_mismatched_lengths() -> None:
-    """Test Series.list.zip with mismatched inner list lengths."""
     s1 = pl.Series("long", [[1, 2, 3, 4, 5], [6]])
     s2 = pl.Series("short", [["a", "b"], ["c", "d", "e"]])
 

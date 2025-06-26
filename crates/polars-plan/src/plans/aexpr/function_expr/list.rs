@@ -1,7 +1,6 @@
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::utils::SuperTypeOptions;
 use polars_ops::chunked_array::list::*;
-use polars_utils::slice::SliceAble;
 
 use super::*;
 use crate::{map, map_as_slice, wrap};
@@ -797,5 +796,7 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 
 pub(super) fn zip(s: &[Column]) -> PolarsResult<Column> {
     let first = s[0].list()?;
-    first.lst_zip(&s[s.len().min(1)..]).map(|ca| ca.into_column())
+    first
+        .lst_zip(&s[s.len().min(1)..])
+        .map(|ca| ca.into_column())
 }
