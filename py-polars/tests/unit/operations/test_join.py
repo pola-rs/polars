@@ -3450,3 +3450,46 @@ def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_downgrade_panic_23307() -> None:
+    lhs = pl.select(a=pl.lit(1, dtype=pl.Int8)).lazy()
+    rhs = pl.select(a=pl.lit(1, dtype=pl.Int16), x=pl.lit(1, dtype=pl.Int32)).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", coalesce=True).filter(pl.col("x") >= 1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.select(
+            a=pl.lit(1, dtype=pl.Int8),
+            x=pl.lit(1, dtype=pl.Int32),
+        ),
+    )
+
+    lhs = pl.select(a=pl.lit(999, dtype=pl.Int16)).lazy()
+
+    # Note: -25 matches to (999).overflowing_cast(Int8).
+    # This is specially chosen to test that we don't accidentally push the filter
+    # to the RHS.
+    rhs = pl.LazyFrame(
+        {"a": [1, -25], "x": [1, 2]}, schema={"a": pl.Int8, "x": pl.Int32}
+    )
+
+    q = lhs.join(
+        rhs,
+        on=pl.col("a").cast(pl.Int8, strict=False, wrap_numerical=True),
+        how="left",
+        coalesce=False,
+    ).filter(pl.col("a") >= 0)
+
+    expect = pl.DataFrame(
+        {"a": 999, "a_right": -25, "x": 2},
+        schema={"a": pl.Int16, "a_right": pl.Int8, "x": pl.Int32},
+    )
+
+    plan = q.explain()
+
+    assert not plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
