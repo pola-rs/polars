@@ -1,6 +1,5 @@
 use std::fmt::{self, Debug};
 use std::hash::{BuildHasher, Hasher};
-use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use arrow::array::builder::StaticArrayBuilder;
@@ -9,7 +8,6 @@ use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
-use uuid::Uuid;
 
 use crate::prelude::*;
 
@@ -30,9 +28,9 @@ pub enum CategoricalPhysical {
 impl CategoricalPhysical {
     pub fn dtype(&self) -> DataType {
         match self {
-            CategoricalPhysical::U8 => DataType::UInt8,
-            CategoricalPhysical::U16 => DataType::UInt16,
-            CategoricalPhysical::U32 => DataType::UInt32,
+            Self::U8 => DataType::UInt8,
+            Self::U16 => DataType::UInt16,
+            Self::U32 => DataType::UInt32,
         }
     }
 
@@ -40,33 +38,63 @@ impl CategoricalPhysical {
         // We might use T::MAX as an indicator, so the maximum number of categories is T::MAX
         // (giving T::MAX - 1 as the largest category).
         match self {
-            CategoricalPhysical::U8 => u8::MAX as usize,
-            CategoricalPhysical::U16 => u16::MAX as usize,
-            CategoricalPhysical::U32 => u32::MAX as usize,
+            Self::U8 => u8::MAX as usize,
+            Self::U16 => u16::MAX as usize,
+            Self::U32 => u32::MAX as usize,
+        }
+    }
+    
+    pub fn smallest_physical(num_cats: usize) -> PolarsResult<Self> {
+        if num_cats < u8::MAX as usize {
+            Ok(Self::U8)
+        } else if num_cats < u16::MAX as usize {
+            Ok(Self::U16)
+        } else if num_cats < u32::MAX as usize {
+            Ok(Self::U32)
+        } else {
+            polars_bail!(ComputeError: "attempted to insert more categories than the maximum allowed")
         }
     }
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            CategoricalPhysical::U8 => "u8",
-            CategoricalPhysical::U16 => "u16",
-            CategoricalPhysical::U32 => "u32",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
         }
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "u8" => Some(CategoricalPhysical::U8),
-            "u16" => Some(CategoricalPhysical::U16),
-            "u32" => Some(CategoricalPhysical::U32),
+            "u8" => Some(Self::U8),
+            "u16" => Some(Self::U16),
+            "u32" => Some(Self::U32),
             _ => None,
         }
     }
 }
 
-// Used to maintain a 1:1 mapping between Categories' UUID and the Categories objects themselves.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CategoricalId {
+    name: PlSmallStr,
+    namespace: PlSmallStr,
+    physical: CategoricalPhysical
+}
+
+impl CategoricalId {
+    fn global() -> Self {
+        Self {
+            name: PlSmallStr::from_static("__POLARS_GLOBAL_CATEGORIES"),
+            namespace: PlSmallStr::from_static(""),
+            physical: CategoricalPhysical::U32
+        }
+    }
+}
+
+
+// Used to maintain a 1:1 mapping between Categories' ID and the Categories objects themselves.
 // This is important for serialization.
-static CATEGORIES_REGISTRY: LazyLock<Mutex<PlHashMap<Uuid, Weak<Categories>>>> =
+static CATEGORIES_REGISTRY: LazyLock<Mutex<PlHashMap<CategoricalId, Weak<Categories>>>> =
     LazyLock::new(|| Mutex::new(PlHashMap::new()));
 
 // Used to make FrozenCategories unique based on their content. This allows comparison of datatypes
@@ -80,69 +108,45 @@ static FROZEN_CATEGORIES_HASHER: LazyLock<PlSeedableRandomStateQuality> =
 
 static GLOBAL_CATEGORIES: LazyLock<Arc<Categories>> = LazyLock::new(|| {
     let categories = Arc::new(Categories {
-        name: PlSmallStr::from_static("__POLARS_GLOBAL_CATEGORIES"),
-        physical: CategoricalPhysical::U32,
-        uuid: Uuid::nil(),
-        mapping: MaybeGcMapping::Gc(Mutex::new(Weak::new())),
+        id: CategoricalId::global(),
+        mapping: Mutex::new(Weak::new()),
     });
     CATEGORIES_REGISTRY
         .lock()
         .unwrap()
-        .insert(Uuid::nil(), Arc::downgrade(&categories));
+        .insert(CategoricalId::global(), Arc::downgrade(&categories));
     categories
 });
 
-/// A (named) object which is used to indicate which categorical data types
-/// have the same mapping. The underlying mapping is dynamic, and if gc is true
-/// may be automatically cleared when the last reference to it goes away.
-pub struct Categories {
-    name: PlSmallStr,
-    physical: CategoricalPhysical,
-    uuid: Uuid,
-    mapping: MaybeGcMapping,
-}
 
-enum MaybeGcMapping {
-    Gc(Mutex<Weak<CategoricalMapping>>),
-    Persistent(Arc<CategoricalMapping>),
+/// A (named) object which is used to indicate which categorical data types have the same mapping. 
+pub struct Categories {
+    id: CategoricalId,
+    mapping: Mutex<Weak<CategoricalMapping>>,
 }
 
 impl Categories {
-    /// Creates a new Categories object with the given name and physical type.
-    ///
-    /// If gc is true the underlying categories will automatically get cleaned
-    /// up when the last CategoricalMapping reference goes away, otherwise they
-    /// are persistent.
-    pub fn new(name: PlSmallStr, physical: CategoricalPhysical, gc: bool) -> Arc<Self> {
-        Self::new_with_registry(name, physical, gc, &mut CATEGORIES_REGISTRY.lock().unwrap())
-    }
-
-    /// Returns the Categories object with the given UUID. If the UUID is unknown a new one is created.
-    pub fn from_uuid(
+    /// Creates a new Categories object with the given name, namespace and physical type if none exists, otherwise
+    /// get a reference to an existing object with the same name, namespace and physical type.
+    pub fn new(
         name: PlSmallStr,
-        physical: CategoricalPhysical,
-        gc: bool,
-        uuid: Uuid,
+        namespace: PlSmallStr,
+        physical: CategoricalPhysical
     ) -> Arc<Self> {
-        if uuid.is_nil() {
-            return Self::global();
-        }
-
+        let id = CategoricalId { name, namespace, physical };
         let mut registry = CATEGORIES_REGISTRY.lock().unwrap();
-        if let Some(cats_ref) = registry.get(&uuid) {
+        if let Some(cats_ref) = registry.get(&id) {
             if let Some(cats) = cats_ref.upgrade() {
-                assert!(
-                    cats.name == name,
-                    "UUID already exists with a different name"
-                );
-                assert!(
-                    cats.physical == physical,
-                    "UUID already exists with a different physical type"
-                );
                 return cats;
             }
         }
-        Self::new_with_registry(name, physical, gc, &mut registry)
+        let mapping = Mutex::new(Weak::new());
+        let slf = Arc::new(Self {
+            id: id.clone(),
+            mapping,
+        });
+        registry.insert(id, Arc::downgrade(&slf));
+        slf
     }
 
     /// Returns the global Categories.
@@ -150,88 +154,53 @@ impl Categories {
         GLOBAL_CATEGORIES.clone()
     }
 
-    fn new_with_registry(
-        name: PlSmallStr,
-        physical: CategoricalPhysical,
-        gc: bool,
-        registry: &mut PlHashMap<Uuid, Weak<Categories>>,
-    ) -> Arc<Categories> {
-        let uuid = Uuid::new_v4();
-
-        let mapping = if gc {
-            MaybeGcMapping::Gc(Mutex::new(Weak::new()))
-        } else {
-            MaybeGcMapping::Persistent(Arc::new(CategoricalMapping::new(physical.max_categories())))
-        };
-
-        let slf = Arc::new(Self {
-            name,
-            physical,
-            uuid,
-            mapping,
-        });
-        registry.insert(uuid, Arc::downgrade(&slf));
-        slf
-    }
-
-    /// The name of this Categories object (not unique).
+    /// The name of this Categories object.
     pub fn name(&self) -> &PlSmallStr {
-        &self.name
+        &self.id.name
+    }
+    
+    /// The namespace of this Categories object.
+    pub fn namespace(&self) -> &PlSmallStr {
+        &self.id.namespace
     }
     
     /// The physical dtype of the category ids.
     pub fn physical(&self) -> CategoricalPhysical {
-        self.physical
+        self.id.physical
     }
     
-    /// Whether or not this Categories object automatically wipes the CategoricalMapping
-    /// when the last reference to it is dropped.
-    pub fn gc(&self) -> bool {
-        matches!(self.mapping, MaybeGcMapping::Gc(_))
-    }
-
-    /// The uuid of this Categories object (unique).
-    pub fn uuid(&self) -> &Uuid {
-        &self.uuid
-    }
-
     /// The mapping for this Categories object. If no mapping currently exists
     /// it creates a new empty mapping.
     pub fn mapping(&self) -> Arc<CategoricalMapping> {
-        match &self.mapping {
-            MaybeGcMapping::Gc(weak) => {
-                let mut guard = weak.lock().unwrap();
-                if let Some(arc) = guard.upgrade() {
-                    return arc;
-                }
-                let arc = Arc::new(CategoricalMapping::new(self.physical.max_categories()));
-                *guard = Arc::downgrade(&arc);
-                arc
-            },
-            MaybeGcMapping::Persistent(arc) => arc.clone(),
+        let mut guard = self.mapping.lock().unwrap();
+        if let Some(arc) = guard.upgrade() {
+            return arc;
         }
+        let arc = Arc::new(CategoricalMapping::new(self.id.physical.max_categories()));
+        *guard = Arc::downgrade(&arc);
+        arc
     }
 
-    pub fn freeze(&self, physical: CategoricalPhysical) -> Arc<FrozenCategories> {
+    pub fn freeze(&self) -> Arc<FrozenCategories> {
         let mapping = self.mapping();
         let n = mapping.num_cats_upper_bound();
-        FrozenCategories::new(physical, (0..n).flat_map(|i| mapping.cat_to_str(i as CatSize))).unwrap()
+        FrozenCategories::new((0..n).flat_map(|i| mapping.cat_to_str(i as CatSize))).unwrap()
     }
 }
 
 impl Debug for Categories {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Categories")
-            .field("name", &self.name)
-            .field("physical", &self.physical)
-            .field("uuid", &self.uuid)
+            .field("name", &self.id.name)
+            .field("namespace", &self.id.namespace)
+            .field("physical", &self.id.physical)
             .finish()
     }
 }
 
 impl Drop for Categories {
     fn drop(&mut self) {
-        CATEGORIES_REGISTRY.lock().unwrap().remove(&self.uuid);
+        CATEGORIES_REGISTRY.lock().unwrap().remove(&self.id);
     }
 }
 
@@ -251,11 +220,10 @@ impl FrozenCategories {
     /// in case these are already known). Returns an error if the categories are not unique.
     /// It is guaranteed that the nth string ends up with category n (0-indexed).
     pub fn new<'a, I: Iterator<Item = &'a str>>(
-        physical: CategoricalPhysical,
         strings: I,
     ) -> PolarsResult<Arc<Self>> {
         let hasher = *FROZEN_CATEGORIES_HASHER;
-        let mut mapping = CategoricalMapping::with_hasher(physical.max_categories(), hasher);
+        let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
         let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);
         builder.reserve(strings.size_hint().0);
 
@@ -271,7 +239,9 @@ impl FrozenCategories {
 
         let combined_hash = combined_hasher.finish();
         let categories = builder.freeze();
-
+        mapping.set_max_categories(categories.len()); // Don't allow any further inserts.
+        
+        let physical = CategoricalPhysical::smallest_physical(categories.len())?;
         let mut registry = FROZEN_CATEGORIES_REGISTRY.lock().unwrap();
         let mut last_compared = None; // We have to store the strong reference to avoid a race condition.
         match registry.entry(
@@ -279,8 +249,7 @@ impl FrozenCategories {
             |(hash, weak)| {
                 *hash == combined_hash && {
                     if let Some(frozen_cats) = weak.upgrade() {
-                        let cmp = frozen_cats.categories == categories
-                            && frozen_cats.physical == physical;
+                        let cmp = frozen_cats.categories == categories;
                         last_compared = Some(frozen_cats);
                         cmp
                     } else {
@@ -346,15 +315,19 @@ pub fn ensure_same_categories(left: &Arc<Categories>, right: &Arc<Categories>) -
     if Arc::ptr_eq(left, right) {
         return Ok(());
     }
-    
-    if left.name == right.name {
-        polars_bail!(ComputeError: r#"Categories mismatch between two different Categories with the same name.
 
-Two pl.Categories are equal if they are indeed the same object, simply sharing a name is not sufficient."#)
-    } else {
-        polars_bail!(ComputeError: "Categories mismatch, left: '{}', right: '{}'.
+    if left.name() != right.name() {
+        polars_bail!(ComputeError: "Categories name mismatch, left: '{}', right: '{}'.
 
 Operations mixing different Categories are often not supported, you may have to cast.", left.name(), right.name())
+    } else if left.namespace() != right.namespace() {
+        polars_bail!(ComputeError: "Categories have same name ('{}'), but have a mismatch in namespace, left: {}, right: {}.
+
+Operations mixing different Categories are often not supported, you may have to cast.", left.name(), left.namespace(), right.namespace())
+    } else {
+        polars_bail!(ComputeError: "Categories have same name and namespace ('{}', {}), but have a mismatch in dtype, left: {}, right: {}.
+
+Operations mixing different Categories are often not supported, you may have to cast.", left.name(), left.namespace(), left.physical().as_str(), right.physical().as_str())
     }
 }
 

@@ -37,6 +37,11 @@ impl CategoricalMapping {
     pub fn hasher(&self) -> &PlSeedableRandomStateQuality {
         &self.hasher
     }
+    
+    pub fn set_max_categories(&mut self, max_categories: usize) {
+        assert!(max_categories >= self.num_cats_upper_bound());
+        self.max_categories = max_categories
+    }
 
     /// Try to convert a string to a categorical id, but don't insert it if it is missing.
     #[inline(always)]

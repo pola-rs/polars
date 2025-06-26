@@ -1015,7 +1015,7 @@ pub(crate) mod test {
             PlSmallStr::EMPTY,
             &[Some("foo"), None, Some("bar"), Some("ham")],
         );
-        let cats = Categories::new(PlSmallStr::EMPTY, CategoricalPhysical::U32, false);
+        let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U32);
         let ca = ca
             .cast(&DataType::from_categories(cats.clone()))
             .unwrap();
