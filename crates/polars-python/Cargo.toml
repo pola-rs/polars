@@ -158,6 +158,7 @@ cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
 list_filter = ["polars/list_filter"]
 list_gather = ["polars/list_gather"]
+list_zip = ["polars/list_zip"]
 list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
 binary_encoding = ["polars/binary_encoding"]
@@ -208,6 +209,7 @@ operations = [
   "sign",
   "performant",
   "list_gather",
+  "list_zip",
   "list_filter",
   "list_count",
   "list_sets",

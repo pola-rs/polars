@@ -842,6 +842,7 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     /// Zip lists together element-wise into structs.
+    #[cfg(feature = "list_zip")]
     fn lst_zip(&self, others: &[Column]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
 

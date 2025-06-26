@@ -166,6 +166,7 @@ sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
 list_filter = ["polars-ops/list_filter", "polars-plan/list_filter"]
 list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
+list_zip = ["polars-ops/list_zip", "polars-plan/list_zip"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 array_count = ["polars-ops/array_count", "polars-plan/array_count", "dtype-array"]
 true_div = ["polars-plan/true_div"]
@@ -373,6 +374,7 @@ features = [
   "list_eval",
   "list_filter",
   "list_gather",
+  "list_zip",
   "list_sample",
   "list_sets",
   "list_to_struct",

@@ -99,6 +99,7 @@ dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
 list_filter = ["polars-ops/list_filter"]
 list_gather = ["polars-ops/list_gather"]
+list_zip = ["polars-ops/list_zip"]
 list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
 trigonometry = []
@@ -244,6 +245,7 @@ features = [
   "list_any_all",
   "pct_change",
   "list_gather",
+  "list_zip",
   "list_filter",
   "dtype-i16",
   "round_series",
