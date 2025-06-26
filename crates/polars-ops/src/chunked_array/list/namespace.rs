@@ -844,7 +844,6 @@ pub trait ListNameSpaceImpl: AsList {
     /// Zip lists together element-wise into structs.
     fn lst_zip(&self, others: &[Column]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let len = ca.len();
 
         #[cfg(not(feature = "dtype-struct"))]
         {
@@ -853,106 +852,113 @@ pub trait ListNameSpaceImpl: AsList {
 
         #[cfg(feature = "dtype-struct")]
         {
-            let first_inner_dtype = ca.inner_dtype();
-
-            let field_names = (0..(others.len() + 1)).into_iter()
-                .map(|i| format!("field_{}", i))
-                .collect::<Vec<_>>();
-            let field_dtypes = vec![first_inner_dtype; others.len() + 1];
-
-            let struct_fields: Vec<Field> = field_names
-                .iter()
-                .zip(field_dtypes.iter())
-                .map(|(name, dtype)| Field::new(name.as_str().into(), (*dtype).clone()))
-                .collect();
-
-            let first_series = ca.clone().into_series();
-            let other_series: Vec<&Series> = others
-                .into_iter()
-                .map(|other_ca| other_ca.as_series().expect("Expected ListColumn to be a Series"))
-                .collect();
-
-            let mut result_values = Vec::with_capacity(len);
-
-            for i in 0..len {
-                let first_opt = first_series.get(i).ok();
-                if first_opt.is_none() || matches!(first_opt, Some(AnyValue::Null)) {
-                    result_values.push(AnyValue::Null);
-                    continue;
-                }
-
-                let mut any_null = false;
-                let mut other_opts = Vec::new();
-                for other_s in &other_series {
-                    let opt = other_s.get(i).ok();
-                    if opt.is_none() || matches!(opt, Some(AnyValue::Null)) {
-                        any_null = true;
-                        break;
-                    }
-                    other_opts.push(opt.unwrap());
-                }
-
-                if any_null {
-                    result_values.push(AnyValue::Null);
-                    continue;
-                }
-
-                let first_list = match first_opt.unwrap() {
-                    AnyValue::List(s) => s,
-                    _ => {
-                        result_values.push(AnyValue::Null);
-                        continue;
-                    },
-                };
-
-                let other_lists: Vec<Series> = other_opts
-                    .into_iter()
-                    .filter_map(|av| match av {
-                        AnyValue::List(s) => Some(s),
-                        _ => None,
-                    })
-                    .collect();
-
-                if other_lists.len() != others.len() {
-                    result_values.push(AnyValue::Null);
-                    continue;
-                }
-
-                let mut min_len = first_list.len();
-                for other_list in &other_lists {
-                    min_len = min_len.min(other_list.len());
-                }
-
-                let mut struct_values = Vec::with_capacity(min_len);
-
-                for pos in 0..min_len {
-                    let mut field_values = Vec::new();
-
-                    if let Ok(val) = first_list.get(pos) {
-                        field_values.push(val);
-                    } else {
-                        field_values.push(AnyValue::Null);
-                    }
-
-                    for other_list in &other_lists {
-                        if let Ok(val) = other_list.get(pos) {
-                            field_values.push(val);
-                        } else {
-                            field_values.push(AnyValue::Null);
-                        }
-                    }
-
-                    let struct_av =
-                        AnyValue::StructOwned(Box::new((field_values, struct_fields.clone())));
-                    struct_values.push(struct_av);
-                }
-
-                let struct_series = Series::new("".into(), struct_values);
-                result_values.push(AnyValue::List(struct_series));
+            let mut other_list_cas = Vec::with_capacity(others.len());
+            let mut all_inner_types = Vec::with_capacity(others.len() + 1);
+            
+            all_inner_types.push(ca.inner_dtype().clone());
+            
+            for other in others {
+                let other_ca = other.list().map_err(|_| {
+                    polars_err!(ComputeError: "All inputs to lst_zip must be list columns")
+                })?;
+                all_inner_types.push(other_ca.inner_dtype().clone());
+                other_list_cas.push(other_ca);
             }
 
-            let result_series = Series::new(ca.name().clone(), result_values);
-            Ok(result_series.list()?.clone())
+            let field_names: Vec<PlSmallStr> = (0..(others.len() + 1))
+                .map(|i| format!("field_{}", i).into())
+                .collect();
+            
+            let fields: Vec<Field> = field_names
+                .iter()
+                .zip(all_inner_types.iter())
+                .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
+                .collect();
+            
+            let struct_dtype = DataType::Struct(fields);
+
+            let mut iters = Vec::with_capacity(other_list_cas.len());
+            for other_ca in &other_list_cas {
+                iters.push(other_ca.amortized_iter());
+            }
+
+            let mut builder = get_list_builder(
+                &struct_dtype,
+                ca.get_values_size() + other_list_cas.iter().map(|ca| ca.get_values_size()).sum::<usize>(),
+                ca.len(),
+                ca.name().clone(),
+            );
+
+            for first_opt in ca.amortized_iter() {
+                match first_opt {
+                    Some(first_list) => {
+                        let mut other_lists = Vec::with_capacity(iters.len());
+                        let mut any_null = false;
+
+                        for iter in &mut iters {
+                            match iter.next().unwrap() {
+                                Some(s) => other_lists.push(s),
+                                None => {
+                                    any_null = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if any_null {
+                            builder.append_null();
+                            continue;
+                        }
+
+                        let mut min_len = first_list.as_ref().len();
+                        for other_list in &other_lists {
+                            min_len = min_len.min(other_list.as_ref().len());
+                        }
+
+                        if min_len == 0 {
+                            let empty_fields: Vec<Series> = field_names.iter().zip(all_inner_types.iter()).map(|(name, dtype)| {
+                                Series::new_empty(name.clone(), dtype)
+                            }).collect();
+                            
+                            let struct_chunked = StructChunked::from_series(
+                                "".into(),
+                                0,
+                                empty_fields.iter()
+                            )?;
+                            builder.append_series(&struct_chunked.into_series())?;
+                            continue;
+                        }
+
+                        let mut field_series = Vec::with_capacity(field_names.len());
+                        
+                        let mut first_field = first_list.as_ref().slice(0, min_len);
+                        first_field.rename(field_names[0].clone());
+                        field_series.push(first_field);
+
+                        for (i, other_list) in other_lists.iter().enumerate() {
+                            let mut field = other_list.as_ref().slice(0, min_len);
+                            field.rename(field_names[i + 1].clone());
+                            field_series.push(field);
+                        }
+
+                        let struct_chunked = StructChunked::from_series(
+                            "".into(),
+                            min_len,
+                            field_series.iter()
+                        )?;
+                        
+                        builder.append_series(&struct_chunked.into_series())?;
+                    },
+                    None => {
+                        for iter in &mut iters {
+                            iter.next().unwrap();
+                        }
+                        builder.append_null();
+                    }
+                }
+            }
+
+            Ok(builder.finish())
         }
     }
 }
