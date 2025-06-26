@@ -588,8 +588,8 @@ pub trait ListNameSpaceImpl: AsList {
         } else {
             length
         };
-        let length = length.strict_cast(&DataType::UInt64)?;
-        let mut length = length.u64()?.into_iter();
+        let length = length.strict_cast(&IDX_DTYPE)?;
+        let mut length = length.idx()?.into_iter();
 
         let fill_value = if fill_value.len() == 1 {
             &fill_value.new_from_index(0, ca.len())
@@ -598,103 +598,55 @@ pub trait ListNameSpaceImpl: AsList {
         };
         let fill_value = fill_value.cast(&super_type)?;
 
-        let out: ListChunked = match super_type {
-            DataType::Int64 => {
-                let fill_value = fill_value.i64()?;
-                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
-                    let binding = s.unwrap();
-                    let s: &Series = binding.as_ref();
-                    let ca = s.i64().unwrap();
-                    let length = length.next().unwrap().unwrap() as usize;
-                    let mut fill_values;
-                    match length.cmp(&ca.len()) {
+        let fill_value_series = fill_value.as_materialized_series();
+        let mut builder = get_list_builder(&super_type, ca.get_values_size() + 1000, ca.len(), ca.name().clone());
+        
+        for (idx, opt_s) in ca.iter().enumerate() {
+            let target_length = match length.next().unwrap() {
+                Some(len) => len as usize,
+                None => {
+                    return Err(PolarsError::InvalidOperation(
+                        "negative length not supported".into(),
+                    ));
+                }
+            };
+            
+            match opt_s {
+                Some(s) => {
+                    let s_series = unsafe { Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![s.clone()], &ca.inner_dtype()) };
+                    
+                    match target_length.cmp(&s_series.len()) {
                         Ordering::Equal | Ordering::Less => {
-                            fill_values = ca.clone();
+                            let s_casted = s_series.cast(&super_type).unwrap();
+                            builder.append_series(&s_casted).unwrap();
                         },
                         Ordering::Greater => {
-                            fill_values = Int64Chunked::new_vec(
-                                PlSmallStr::EMPTY,
-                                vec![fill_value.unwrap(); length - ca.len()],
-                            );
-                            let _ = fill_values.append(ca);
+                            let pad_count = target_length - s_series.len();
+                            
+                            let fill_val = fill_value_series.get(idx).unwrap();
+                            let fill_series = Series::from_any_values(PlSmallStr::EMPTY, &vec![fill_val; pad_count], false).unwrap();
+                            
+                            let s_casted = s_series.cast(&super_type).unwrap();
+                            
+                            let mut result = fill_series;
+                            result.append(&s_casted).unwrap();
+                            builder.append_series(&result).unwrap();
                         },
-                    };
-                    Some(fill_values.into())
-                })
-            },
+                    }
+                },
+                None => {
+                    builder.append_null();
+                },
+            }
+        }
+        
+        let out = builder.finish();
 
-            DataType::Float64 => {
-                let fill_value = fill_value.f64()?;
-                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
-                    let binding = s.unwrap();
-                    let s: &Series = binding.as_ref();
-                    let ca = s.f64().unwrap();
-                    let length = length.next().unwrap().unwrap() as usize;
-                    let mut fill_values;
-                    match length.cmp(&ca.len()) {
-                        Ordering::Equal | Ordering::Less => {
-                            fill_values = ca.clone();
-                        },
-                        Ordering::Greater => {
-                            fill_values = Float64Chunked::new_vec(
-                                PlSmallStr::EMPTY,
-                                vec![fill_value.unwrap(); length - ca.len()],
-                            );
-                            let _ = fill_values.append(ca);
-                        },
-                    };
-                    Some(fill_values.into())
-                })
-            },
-            DataType::String => {
-                let fill_value = fill_value.str()?;
-                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
-                    let binding = s.unwrap();
-                    let s: &Series = binding.as_ref();
-                    let ca = s.str().unwrap();
-                    let length = length.next().unwrap().unwrap() as usize;
-                    let mut fill_values;
-                    match length.cmp(&ca.len()) {
-                        Ordering::Equal | Ordering::Less => {
-                            fill_values = ca.clone();
-                        },
-                        Ordering::Greater => {
-                            fill_values = StringChunked::new(
-                                PlSmallStr::EMPTY,
-                                vec![fill_value.unwrap(); length - ca.len()],
-                            );
-                            let _ = fill_values.append(ca);
-                        },
-                    };
-                    Some(fill_values.into())
-                })
-            },
-            DataType::Boolean => {
-                let fill_value = fill_value.bool()?;
-                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
-                    let binding = s.unwrap();
-                    let s: &Series = binding.as_ref();
-                    let ca = s.bool().unwrap();
-                    let length = length.next().unwrap().unwrap() as usize;
-                    let mut fill_values;
-                    match length.cmp(&ca.len()) {
-                        Ordering::Equal | Ordering::Less => {
-                            fill_values = ca.clone();
-                        },
-                        Ordering::Greater => {
-                            fill_values = BooleanChunked::new(
-                                PlSmallStr::EMPTY,
-                                vec![fill_value.unwrap(); length - ca.len()],
-                            );
-                            let _ = fill_values.append(ca);
-                        },
-                    };
-                    Some(fill_values.into())
-                })
-            },
-            dt => {
-                polars_bail!(InvalidOperation: "list.pad_start() doesn't work on data type {}", dt)
-            },
+        let final_dtype = DataType::List(Box::new(super_type));
+        let out = if out.dtype() != &final_dtype {
+            out.cast(&final_dtype)?.list().unwrap().clone()
+        } else {
+            out
         };
 
         Ok(out)

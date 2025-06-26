@@ -18,8 +18,8 @@ def test_list_pad_start_with_expr_fill() -> None:
         {"a": [[1], [], [1, 2, 3]], "int": [0, 999, 2], "float": [0.0, 999, 2]}
     )
     result = df.select(
-        filled_int=pl.col("a").list.pad_start(fill_value=pl.col("int"), length=3),
-        filled_float=pl.col("a").list.pad_start(fill_value=pl.col("float"), length=1),
+        filled_int=pl.col("a").list.pad_start(3, pl.col("int")),
+        filled_float=pl.col("a").list.pad_start(1, pl.col("float")),
     )
     expected = pl.DataFrame(
         {
@@ -53,14 +53,14 @@ def test_list_pad_start_with_expr_fill() -> None:
 )
 def test_list_pad_start_with_lit_fill(data: Any, fill_value: Any, expect: Any) -> None:
     df = pl.DataFrame({"a": data})
-    result = df.select(pl.col("a").list.pad_start(fill_value, length=3))
+    result = df.select(pl.col("a").list.pad_start(3, fill_value))
     expected = pl.DataFrame({"a": expect})
     assert_frame_equal(result, expected)
 
 
 def test_list_pad_start_no_slice() -> None:
     df = pl.DataFrame({"a": [[1], [2, 3, 4, 5]]})
-    result = df.select(pl.col("a").list.pad_start(1, length=2))
+    result = df.select(pl.col("a").list.pad_start(2, 1))
     expected = pl.DataFrame(
         {"a": [[1, 1], [2, 3, 4, 5]]}, schema={"a": pl.List(pl.Int64)}
     )
@@ -71,9 +71,9 @@ def test_list_pad_start_with_expr_length() -> None:
     df = pl.DataFrame({"a": [[1], [], [1, 2, 3]], "length": [2, 2, 4]})
     result = df.select(
         length_expr=pl.col("a").list.pad_start(
-            fill_value=999, length=pl.col("a").list.len().max()
+            pl.col("a").list.len().max(), 999
         ),
-        length_col=pl.col("a").list.pad_start(fill_value=999, length=pl.col("length")),
+        length_col=pl.col("a").list.pad_start(pl.col("length"), 999),
     )
     expected = pl.DataFrame(
         {
@@ -86,45 +86,31 @@ def test_list_pad_start_with_expr_length() -> None:
 
 def test_list_pad_start_zero_length() -> None:
     df = pl.DataFrame({"a": [[1], [2, 3]]})
-    result = df.select(pl.col("a").list.pad_start(1, length=0))
+    result = df.select(pl.col("a").list.pad_start(0, 1))
     expected = pl.DataFrame({"a": [[1], [2, 3]]}, schema={"a": pl.List(pl.Int64)})
     assert_frame_equal(result, expected)
 
 
 def test_list_pad_start_casts_to_supertype() -> None:
     df = pl.DataFrame({"a": [["a"], ["a", "b"]]})
-    result = df.select(pl.col("a").list.pad_start(1, length=2))
+    result = df.select(pl.col("a").list.pad_start(2, 1))
     expected = pl.DataFrame({"a": [["1", "a"], ["a", "b"]]})
     assert_frame_equal(result, expected)
 
     with pytest.raises(SchemaError, match="failed to determine supertype"):
         pl.DataFrame({"a": [[]]}, schema={"a": pl.List(pl.Categorical)}).select(
-            pl.col("a").list.pad_start(True, length=2)
+            pl.col("a").list.pad_start(2, True)
         )
 
 
 def test_list_pad_start_errors() -> None:
     df = pl.DataFrame({"a": [["a"], ["a", "b"]]})
 
-    with pytest.raises(TypeError, match="fill_value"):
-        df.select(pl.col("a").list.pad_start(length=2))  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="missing 1 required positional argument"):
+        df.select(pl.col("a").list.pad_start(2))  # type: ignore[call-arg]
     with pytest.raises(InvalidOperationError, match="to String not supported"):
-        df.select(pl.col("a").list.pad_start(timedelta(days=1), length=2))
+        df.select(pl.col("a").list.pad_start(2, timedelta(days=1)))
     with pytest.raises(
-        InvalidOperationError, match="conversion from `i32` to `u64` failed"
+        InvalidOperationError, match="negative length not supported"
     ):
-        df.select(pl.col("a").list.pad_start("foo", length=-1))
-
-
-@pytest.mark.parametrize(
-    ("fill_value", "type"),
-    [
-        (timedelta(days=1), pl.Duration),
-        (date(2022, 1, 1), pl.Date),
-        (datetime(2022, 1, 1, 23), pl.Datetime),
-    ],
-)
-def test_list_pad_start_unsupported_type(fill_value: Any, type: Any) -> None:
-    df = pl.DataFrame({"a": [[], []]}, schema={"a": pl.List(type)})
-    with pytest.raises(InvalidOperationError, match="doesn't work on data type"):
-        df.select(pl.col("a").list.pad_start(fill_value, length=2))
+        df.select(pl.col("a").list.pad_start(-1, "foo"))

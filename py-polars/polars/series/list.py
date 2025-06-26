@@ -1090,28 +1090,48 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def pad_start(self, fill_value: IntoExpr, *, length: IntoExpr) -> Expr:
+    def pad_start(self, length: int | IntoExprColumn, fill_value: IntoExpr) -> Series:
         """
-        Pad the start of a sub-list until it reaches the given length.
+        Pad the start of each list with the given value until it reaches the given length.
 
         Parameters
         ----------
-        fill_value
-            Add this value at the left of the sub-list.
         length
-            Length to which sub-lists will be padded to. If a sub-list has more
-            than `length` elements, then it is not modified. If it has less than
-            `length` elements, `fill_value` is added on the left until `length`
-            is reached.
+            Target length for each list. If a list already has `length` or more
+            elements, it remains unchanged. If it has fewer elements, `fill_value`
+            is prepended until the target length is reached. Can be a literal
+            integer or an expression.
+        fill_value
+            Element to add at the beginning of each list. Can be a literal value
+            or an expression. If an expression is used, it's evaluated per row,
+            allowing different fill values for each list.
 
         Examples
         --------
-        >>> pl.Series([[1], [], [1, 2, 3]]).list.pad_start(0, length=3)
+        >>> pl.Series([[1], [], [1, 2, 3]]).list.pad_start(3, 0)
         shape: (3,)
         Series: '' [list[i64]]
         [
-                [0, 0, 1]
-                [0, 0, 0]
-                [1, 2, 3]
+            [0, 0, 1]
+            [0, 0, 0]
+            [1, 2, 3]
+        ]
+
+        >>> pl.Series([[1, 2], [3]]).list.pad_start(3, 1.5)
+        shape: (2,)
+        Series: '' [list[f64]]
+        [
+            [1.5, 1.0, 2.0]
+            [1.5, 1.5, 3.0]
+        ]
+
+        >>> s = pl.Series([[1], [], [1, 2]])
+        >>> s.list.pad_start(s.list.len().max(), 99)
+        shape: (3,)
+        Series: '' [list[i64]]
+        [
+            [99, 1]
+            [99, 99]
+            [1, 2]
         ]
         """

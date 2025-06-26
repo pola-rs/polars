@@ -800,13 +800,6 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 #[cfg(feature = "list_pad")]
 pub(super) fn pad_start(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].list()?;
-    let Ok(fill_value) = s[1].cast(&ca.inner_dtype()) else {
-        polars_bail!(
-            ComputeError: "Cannot pad list with inner dtype: {} with values of dtype: {}",
-            ca.inner_dtype(), 
-            s[1].dtype()
-        )
-    };
-    let index = s[2].cast(&IDX_DTYPE)?;
-    Ok(ca.lst_pad_start(&fill_value, &index)?.into_column())
+    let index = s[1].cast(&IDX_DTYPE)?;
+    Ok(ca.lst_pad_start(&s[2], &index)?.into_column())
 }

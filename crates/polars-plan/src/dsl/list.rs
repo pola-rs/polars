@@ -309,11 +309,11 @@ impl ListNameSpace {
     /// Add elements in each sub-list until it matches the length of the longest
     /// sub-list.
     #[cfg(feature = "list_pad")]
-    pub fn pad_start(self, fill_value: Expr, length: Expr) -> Expr {
+    pub fn pad_start(self, length: Expr, fill_value: Expr) -> Expr {
         self.0.map_ternary(
             FunctionExpr::ListExpr(ListFunction::PadStart),
-            fill_value, 
-            length,
+            length, 
+            fill_value,
         )
     }
 }
