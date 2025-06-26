@@ -19,15 +19,20 @@ where
     Ok(eq_phys(lhs.physical(), rhs.physical()))
 }
 
-fn cat_compare_helper<T: PolarsCategoricalType, Cmp>(
+fn cat_compare_helper<T: PolarsCategoricalType, Cmp, CmpPhys>(
     lhs: &NewCategoricalChunked<T>,
     rhs: &NewCategoricalChunked<T>,
     cmp: Cmp,
+    cmp_phys: CmpPhys,
 ) -> PolarsResult<BooleanChunked>
 where
     Cmp: Fn(&str, &str) -> bool,
+    CmpPhys: Fn(&ChunkedArray<T::PolarsPhysical>, &ChunkedArray<T::PolarsPhysical>) -> BooleanChunked,
 {
     lhs.dtype().matches_schema_type(rhs.dtype())?;
+    if lhs.is_enum() {
+        return Ok(cmp_phys(lhs.physical(), rhs.physical()));
+    }
     let mapping = lhs.get_mapping();
     match (lhs.len(), rhs.len()) {
         (lhs_len, 1) => {
@@ -223,23 +228,26 @@ where
 
 impl<T: PolarsCategoricalType> ChunkCompareIneq<&NewCategoricalChunked<T>>
     for NewCategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>:
+        for<'a> ChunkCompareIneq<&'a ChunkedArray<T::PolarsPhysical>, Item = BooleanChunked>,
 {
     type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
-        cat_compare_helper(self, rhs, |l, r| l > r)
+        cat_compare_helper(self, rhs, |l, r| l > r, |l, r| l.gt(r))
     }
 
     fn gt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
-        cat_compare_helper(self, rhs, |l, r| l >= r)
+        cat_compare_helper(self, rhs, |l, r| l >= r, |l, r| l.gt_eq(r))
     }
 
     fn lt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
-        cat_compare_helper(self, rhs, |l, r| l < r)
+        cat_compare_helper(self, rhs, |l, r| l < r, |l, r| l.lt(r))
     }
 
     fn lt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
-        cat_compare_helper(self, rhs, |l, r| l <= r)
+        cat_compare_helper(self, rhs, |l, r| l <= r, |l, r| l.lt_eq(r))
     }
 }
 
