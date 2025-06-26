@@ -132,14 +132,12 @@ enum SerializableDataType {
     #[cfg(feature = "dtype-categorical")]
     Categorical {
         name: String,
+        namespace: String,
         physical: CategoricalPhysical,
-        gc: bool,
-        uuid: Uuid,
     },
     #[cfg(feature = "dtype-categorical")]
     Enum {
         strings: Series,
-        physical: CategoricalPhysical
     },
     #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>),
@@ -179,15 +177,13 @@ impl From<&DataType> for SerializableDataType {
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
             NewCategorical(cats, _) => Self::Categorical {
-                name: cats.name().as_str().to_owned(),
+                name: cats.name().to_string(),
+                namespace: cats.namespace().to_string(),
                 physical: cats.physical(),
-                gc: cats.gc(),
-                uuid: cats.uuid().clone(),
             },
             #[cfg(feature = "dtype-categorical")]
             NewEnum(fcats, _) => Self::Enum {
                 strings: StringChunked::with_chunk(PlSmallStr::from_static("categories"), fcats.categories().clone()).into_series(),
-                physical: fcats.physical(),
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
@@ -227,15 +223,15 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical { name, physical, gc, uuid } => {
-                let cats = Categories::from_uuid(PlSmallStr::from(name), physical, gc, uuid);
+            Categorical { name, namespace, physical } => {
+                let cats = Categories::new(PlSmallStr::from(name), PlSmallStr::from(namespace), physical);
                 let mapping = cats.mapping();
                 Self::NewCategorical(cats, mapping)
             },
             #[cfg(feature = "dtype-categorical")]
-            Enum { strings, physical } => {
+            Enum { strings } => {
                 let ca = strings.str().unwrap();
-                let fcats = FrozenCategories::new(physical, ca.iter().flatten()).unwrap();
+                let fcats = FrozenCategories::new(ca.iter().flatten()).unwrap();
                 let mapping = fcats.mapping().clone();
                 Self::NewEnum(fcats, mapping)
             },

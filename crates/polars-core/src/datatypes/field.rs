@@ -186,11 +186,6 @@ impl DataType {
             ArrowDataType::Dictionary(_, value_type, _) => {
                 // The metadata encoding here must match DataType::to_arrow_field.
                 if let Some(mut enum_md) = md.and_then(|md| md.pl_enum_metadata()) {
-                    // phys;(cat_len;cat)*
-                    let phys;
-                    (phys, enum_md) = enum_md.split_once(';').unwrap();
-                    let physical = CategoricalPhysical::from_str(phys).unwrap();
-                    
                     let cats = move || {
                         if enum_md.is_empty() {
                             return None;
@@ -204,23 +199,25 @@ impl DataType {
                         Some(cat)
                     };
 
-                    let fcats = FrozenCategories::new(physical, std::iter::from_fn(cats)).unwrap();
+                    let fcats = FrozenCategories::new(std::iter::from_fn(cats)).unwrap();
                     DataType::from_frozen_categories(fcats)
                 } else if let Some(mut cat_md) = md.and_then(|md| md.pl_categorical_metadata()) {
-                    // phys;uuid;gc;name
-                    let (phys, uuid, gc, name);
-                    (phys, cat_md) = cat_md.split_once(';').unwrap();
-                    (uuid, cat_md) = cat_md.split_once(';').unwrap();
-                    (gc, name) = cat_md.split_once(';').unwrap();
-                    let physical = CategoricalPhysical::from_str(phys).unwrap();
-                    let uuid: Uuid = uuid.parse().unwrap();
-                    let gc = match gc {
-                        "0" => false,
-                        "1" => true,
-                        _ => unreachable!(),
-                    };
+                    let name_len;
+                    (name_len, cat_md) = cat_md.split_once(';').unwrap();
+                    let name_len = name_len.parse::<usize>().unwrap();
+                    let name;
+                    (name, cat_md) = cat_md.split_at(name_len);
+
+                    let namespace_len;
+                    (namespace_len, cat_md) = cat_md.split_once(';').unwrap();
+                    let namespace_len = namespace_len.parse::<usize>().unwrap();
+                    let namespace;
+                    (namespace, cat_md) = cat_md.split_at(namespace_len);
                     
-                    let cats = Categories::from_uuid(PlSmallStr::from_str(name), physical, gc, uuid);
+                    let (physical, _rest) = cat_md.split_once(';').unwrap();
+
+                    let physical = CategoricalPhysical::from_str(physical).unwrap();
+                    let cats = Categories::new(PlSmallStr::from_str(name), PlSmallStr::from_str(namespace), physical);
                     DataType::from_categories(cats)
                 } else if matches!(
                     value_type.as_ref(),

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Metadata};
+use arrow::datatypes::{DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES, Metadata};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -23,7 +23,7 @@ pub trait MetaDataExt: IntoMetadata {
     }
 
     fn pl_categorical_metadata(&self) -> Option<&str> {
-        Some(self.into_metadata_ref().get(DTYPE_CATEGORICAL)?.as_str())
+        Some(self.into_metadata_ref().get(DTYPE_CATEGORICAL_NEW)?.as_str())
     }
 
     fn maintain_type(&self) -> bool {
@@ -703,13 +703,9 @@ impl DataType {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::NewEnum(fcats, _map) => {
-                // phys;(cat_len;cat)*
                 let cats = fcats.categories();
-                let header_size = fcats.physical().as_str().len() + 1;
                 let strings_size: usize = cats.values_iter().map(|s| (s.len() + 1).ilog10() as usize + 1 + s.len()).sum();
-                let mut encoded = String::with_capacity(header_size + strings_size);
-                encoded.push_str(fcats.physical().as_str());
-                encoded.push(';');
+                let mut encoded = String::with_capacity(strings_size);
                 for cat in cats.values_iter() {
                     encoded.push_str(itoa::Buffer::new().format(cat.len()));
                     encoded.push(';');
@@ -722,17 +718,18 @@ impl DataType {
             },
             #[cfg(feature = "dtype-categorical")]
             DataType::NewCategorical(cats, _) => {
-                // phys;uuid;gc;name
                 let mut encoded = String::new();
-                encoded.push_str(cats.physical().as_str());
-                encoded.push(';');
-                encoded.push_str(&cats.uuid().to_string());
-                encoded.push(';');
-                encoded.push(if cats.gc() { '1' } else { '0' });
+                encoded.push_str(itoa::Buffer::new().format(cats.name().len()));
                 encoded.push(';');
                 encoded.push_str(cats.name());
+                encoded.push_str(itoa::Buffer::new().format(cats.namespace().len()));
+                encoded.push(';');
+                encoded.push_str(cats.namespace());
+                encoded.push_str(cats.physical().as_str());
+                encoded.push(';');
+
                 Some(BTreeMap::from([(
-                    PlSmallStr::from_static(DTYPE_CATEGORICAL),
+                    PlSmallStr::from_static(DTYPE_CATEGORICAL_NEW),
                     PlSmallStr::from_string(encoded),
                 )]))
             },

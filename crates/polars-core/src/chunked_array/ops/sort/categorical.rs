@@ -138,7 +138,7 @@ mod test {
         let init = &["c", "b", "a", "d"];
 
         for gc in [false, true] {
-            let cats = Categories::new(PlSmallStr::EMPTY, CategoricalPhysical::U8, gc);
+            let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
             let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::from_categories(cats.clone()))?;
             let ca = s.cat8()?;
@@ -161,7 +161,7 @@ mod test {
         let init = &["c", "b", "a", "a"];
 
         for gc in [false, true] {
-            let cats = Categories::new(PlSmallStr::EMPTY, CategoricalPhysical::U8, gc);
+            let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
             let series = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::from_categories(cats.clone()))?;
 
