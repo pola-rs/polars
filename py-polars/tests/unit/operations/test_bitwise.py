@@ -163,6 +163,71 @@ def test_bit_aggregations(dtype: pl.DataType) -> None:
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_bit_aggregations_lazy_no_nulls(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [0x74, 0x1C, 0x05], dtype)
+
+    lf = s.to_frame().lazy()
+
+    out = lf.select(
+        AND=pl.col.a.bitwise_and(),
+        OR=pl.col.a.bitwise_or(),
+        XOR=pl.col.a.bitwise_xor(),
+    ).collect()
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            [
+                pl.Series("AND", [0x04], dtype),
+                pl.Series("OR", [0x7D], dtype),
+                pl.Series("XOR", [0x6D], dtype),
+            ]
+        ),
+    )
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_bit_aggregations_lazy_some_nulls(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [0x74, None, 0x1C, None, 0x05], dtype)
+    out = (
+        s.to_frame()
+        .lazy()
+        .select(
+            AND=pl.col.a.bitwise_and(),
+            OR=pl.col.a.bitwise_or(),
+            XOR=pl.col.a.bitwise_xor(),
+        )
+        .collect()
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            [
+                pl.Series("AND", [0x04], dtype),
+                pl.Series("OR", [0x7D], dtype),
+                pl.Series("XOR", [0x6D], dtype),
+            ]
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [pl.col("a").bitwise_and(), pl.col("a").bitwise_or(), pl.col("a").bitwise_xor()],
+)
+def test_bit_aggregations_lazy_all_nulls(expr: pl.Expr) -> None:
+    dtype = pl.Int64
+    s = pl.Series("a", [None, None, None], dtype)
+    out = s.to_frame().lazy().select(OUT=expr).collect()
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame([pl.Series("OUT", [None], dtype)]),
+    )
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bit_group_by(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [
@@ -229,7 +294,33 @@ def test_bool_bitwise_with_nulls_23314(expr: pl.Expr, result: list[bool]) -> Non
     expected = pl.DataFrame(
         [result], orient="row", schema=columns, schema_overrides={"f": pl.Boolean}
     )
-    print(expr)
-    print(out)
-    print(expected)
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("expr", "result"),
+    [
+        (pl.all().bitwise_and(), [True, False, False, False, False, None]),
+        (pl.all().bitwise_or(), [True, True, True, False, True, None]),
+        (pl.all().bitwise_xor(), [True, False, True, False, True, None]),
+    ],
+)
+def test_bitwise_boolean(expr: pl.Expr, result: list[bool]) -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [True, True, True],
+            "b": [True, False, True],
+            "c": [False, True, False],
+            "d": [False, False, False],
+            "x": [True, False, None],
+            "z": [None, None, None],
+        },
+        schema_overrides={"z": pl.Boolean},
+    )
+
+    columns = ["a", "b", "c", "d", "x", "z"]
+    expected = pl.DataFrame(
+        [result], orient="row", schema=columns, schema_overrides={"z": pl.Boolean}
+    )
+    out = lf.select(expr).collect()
     assert_frame_equal(out, expected)
