@@ -202,3 +202,34 @@ def test_scalar_bitwise_xor() -> None:
         pl.Series("x", [None, 0x80, 0x00, 0x80, 0x00], pl.UInt8),
         check_names=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("expr", "result"),
+    [
+        (pl.all().bitwise_and(), [True, False, False, True, False, None]),
+        (pl.all().bitwise_or(), [True, True, False, True, False, None]),
+        (pl.all().bitwise_xor(), [False, True, False, True, False, None]),
+    ],
+)
+def test_bool_bitwise_with_nulls_23314(expr: pl.Expr, result: list[bool]) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [True, True, None],
+            "b": [True, False, None],
+            "c": [False, False, None],
+            "d": [True, None, None],
+            "e": [False, None, None],
+            "f": [None, None, None],
+        },
+        schema_overrides={"f": pl.Boolean},
+    )
+    columns = ["a", "b", "c", "d", "e", "f"]
+    out = df.select(expr)
+    expected = pl.DataFrame(
+        [result], orient="row", schema=columns, schema_overrides={"f": pl.Boolean}
+    )
+    print(expr)
+    print(out)
+    print(expected)
+    assert_frame_equal(out, expected)

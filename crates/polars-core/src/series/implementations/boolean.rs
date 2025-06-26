@@ -304,48 +304,39 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
     fn and_reduce(&self) -> PolarsResult<Scalar> {
         let dt = DataType::Boolean;
-        if self.0.null_count() > 0 {
-            return Ok(Scalar::new(dt, AnyValue::Null));
-        }
 
         Ok(Scalar::new(
             dt,
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_and(arr).unwrap())
+                .filter_map(polars_compute::bitwise::BitwiseKernel::reduce_and)
                 .reduce(|a, b| a & b)
                 .map_or(AnyValue::Null, Into::into),
         ))
     }
     fn or_reduce(&self) -> PolarsResult<Scalar> {
         let dt = DataType::Boolean;
-        if self.0.null_count() > 0 {
-            return Ok(Scalar::new(dt, AnyValue::Null));
-        }
 
         Ok(Scalar::new(
             dt,
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_or(arr).unwrap())
+                .filter_map(polars_compute::bitwise::BitwiseKernel::reduce_or)
                 .reduce(|a, b| a | b)
                 .map_or(AnyValue::Null, Into::into),
         ))
     }
     fn xor_reduce(&self) -> PolarsResult<Scalar> {
         let dt = DataType::Boolean;
-        if self.0.null_count() > 0 {
-            return Ok(Scalar::new(dt, AnyValue::Null));
-        }
 
         Ok(Scalar::new(
             dt,
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_xor(arr).unwrap())
+                .filter_map(polars_compute::bitwise::BitwiseKernel::reduce_xor)
                 .reduce(|a, b| a ^ b)
                 .map_or(AnyValue::Null, Into::into),
         ))
