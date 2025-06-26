@@ -5,6 +5,7 @@ use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
+use polars_core::prelude::UnknownKind;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
@@ -221,17 +222,9 @@ impl PythonGetOutput {
 }
 
 impl FunctionOutputField for PythonGetOutput {
-    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
-        if let Some(output_type) = self.return_dtype.as_ref() {
-            let dtype = output_type.clone().into_datatype(input_schema)?;
-            self.materialized_output_type.get_or_init(|| dtype);
-        }
-        Ok(())
-    }
-
     fn get_field(
         &self,
-        _input_schema: &Schema,
+        input_schema: &Schema,
         _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
@@ -239,7 +232,16 @@ impl FunctionOutputField for PythonGetOutput {
         let name = fields[0].name();
         let return_dtype = match self.materialized_output_type.get() {
             Some(dtype) => dtype.clone(),
-            None => DataType::Unknown(Default::default()),
+            None => {
+                let dtype = if let Some(output_type) = self.return_dtype.as_ref() {
+                    output_type.clone().into_datatype(input_schema)?
+                } else {
+                    DataType::Unknown(UnknownKind::Any)
+                };
+
+                self.materialized_output_type.get_or_init(|| dtype.clone());
+                dtype
+            },
         };
         Ok(Field::new(name.clone(), return_dtype))
     }

@@ -1,3 +1,4 @@
+use polars_core::utils::slice_offsets;
 use polars_ops::chunked_array::array::*;
 
 use super::*;
@@ -37,6 +38,7 @@ pub enum IRArrayFunction {
         skip_empty: bool,
     },
     Concat,
+    Slice(i64, i64),
 }
 
 impl IRArrayFunction {
@@ -74,6 +76,9 @@ impl IRArrayFunction {
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Shift => mapper.with_same_dtype(),
             Explode { .. } => mapper.try_map_to_array_inner_dtype(),
+            Slice(offset, length) => {
+                mapper.try_map_dtype(map_to_array_fixed_length(offset, length))
+            },
         }
     }
 
@@ -86,6 +91,8 @@ impl IRArrayFunction {
             A::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "array_count")]
             A::CountMatches => FunctionOptions::elementwise(),
+            A::Concat => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             A::Length
             | A::Min
             | A::Max
@@ -100,10 +107,10 @@ impl IRArrayFunction {
             | A::Reverse
             | A::ArgMin
             | A::ArgMax
-            | A::Concat
             | A::Get(_)
             | A::Join(_)
-            | A::Shift => FunctionOptions::elementwise(),
+            | A::Shift
+            | A::Slice(_, _) => FunctionOptions::elementwise(),
             A::Explode { .. } => FunctionOptions::row_separable(),
         }
     }
@@ -114,6 +121,27 @@ fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> 
         Ok(DataType::List(inner.clone()))
     } else {
         polars_bail!(ComputeError: "expected array dtype")
+    }
+}
+
+fn map_to_array_fixed_length(
+    offset: &i64,
+    length: &i64,
+) -> impl FnOnce(&DataType) -> PolarsResult<DataType> {
+    move |datatype: &DataType| {
+        if let DataType::Array(inner, array_len) = datatype {
+            let length: usize = if *length < 0 {
+                (*array_len as i64 + *length).max(0)
+            } else {
+                *length
+            }.try_into().map_err(|_| {
+                polars_err!(OutOfBounds: "length must be a non-negative integer, got: {}", length)
+            })?;
+            let (_, slice_offset) = slice_offsets(*offset, length, *array_len);
+            Ok(DataType::Array(inner.clone(), slice_offset))
+        } else {
+            polars_bail!(ComputeError: "expected array dtype, got {}", datatype);
+        }
     }
 }
 
@@ -147,6 +175,7 @@ impl Display for IRArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",
+            Slice(_, _) => "slice",
             Explode { .. } => "explode",
         };
         write!(f, "arr.{name}")
@@ -184,6 +213,7 @@ impl From<IRArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             CountMatches => map_as_slice!(count_matches),
             Shift => map_as_slice!(shift),
             Explode { skip_empty } => map_as_slice!(explode, skip_empty),
+            Slice(offset, length) => map!(slice, offset, length),
         }
     }
 }
@@ -327,6 +357,11 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     let n = &s[1];
 
     ca.array_shift(n.as_materialized_series()).map(Column::from)
+}
+
+pub(super) fn slice(s: &Column, offset: i64, length: i64) -> PolarsResult<Column> {
+    let ca = s.array()?;
+    ca.array_slice(offset, length).map(Column::from)
 }
 
 fn explode(c: &[Column], skip_empty: bool) -> PolarsResult<Column> {

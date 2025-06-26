@@ -303,6 +303,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "array_count")]
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
+                IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode { skip_empty } => A::Explode { skip_empty },
             })
         },
@@ -648,6 +649,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::IsBetween { closed } => B::IsBetween { closed },
                 #[cfg(feature = "is_in")]
                 IB::IsIn { nulls_equal } => B::IsIn { nulls_equal },
+                #[cfg(feature = "is_close")]
+                IB::IsClose {
+                    abs_tol,
+                    rel_tol,
+                    nans_equal,
+                } => B::IsClose {
+                    abs_tol,
+                    rel_tol,
+                    nans_equal,
+                },
                 IB::AllHorizontal => B::AllHorizontal,
                 IB::AnyHorizontal => B::AnyHorizontal,
                 IB::Not => B::Not,

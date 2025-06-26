@@ -74,6 +74,7 @@ python:
   implode: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.implode.html
   interpolate: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.interpolate.html
   is_between: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_between.html
+  is_close: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_close.html
   is_duplicated: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_duplicated.html
   is_null: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_null.html
   is_selector: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.is_selector
@@ -183,9 +184,9 @@ python:
   write_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_parquet.html
   Workspace: https://docs.cloud.pola.rs/reference/workspace/workspace.html
   ComputeContext: https://docs.cloud.pola.rs/reference/compute/compute.html
-  LazyFrameExt : https://docs.cloud.pola.rs/reference/query/lazyframeext.html
-  QueryResult : https://docs.cloud.pola.rs/reference/query/query_result.html
-  InteractiveQuery : https://docs.cloud.pola.rs/reference/query/interactive_query.html
+  LazyFrameExt: https://docs.cloud.pola.rs/reference/query/lazyframeext.html
+  QueryResult: https://docs.cloud.pola.rs/reference/query/query_result.html
+  InteractiveQuery: https://docs.cloud.pola.rs/reference/query/interactive_query.html
   BatchQuery: https://docs.cloud.pola.rs/reference/query/batch_query.html
   login: https://docs.cloud.pola.rs/reference/auth/api/polars_cloud.login.html
 
@@ -269,7 +270,7 @@ rust:
   explain: https://docs.rs/polars/latest/polars/prelude/struct.LazyFrame.html#method.explain
   explode: https://docs.rs/polars/latest/polars/frame/struct.DataFrame.html#method.explode
   Expr.arr:
-    name: '`arr` namespace'
+    name: "`arr` namespace"
     link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.arr
     feature_flags: [dtype-array]
   Expr.dt:
@@ -305,6 +306,10 @@ rust:
     name: is_between
     link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.is_between
     feature_flags: [is_between]
+  is_close:
+    name: is_close
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.is_close
+    feature_flags: [is_close]
   is_duplicated: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.is_duplicated
   is_null: https://docs.pola.rs/api/rust/dev/polars/prelude/enum.Expr.html#method.is_null
   is_selector: https://github.com/pola-rs/polars/issues/10594

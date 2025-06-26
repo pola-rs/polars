@@ -102,6 +102,17 @@ pub trait BuildHasherTotalExt: BuildHasher {
 
 impl<T: BuildHasher> BuildHasherTotalExt for T {}
 
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+#[cfg_attr(
+    feature = "dsl-schema",
+    derive(schemars::JsonSchema),
+    schemars(transparent)
+)]
 #[repr(transparent)]
 pub struct TotalOrdWrap<T>(pub T);
 unsafe impl<T> TransparentWrapper<T> for TotalOrdWrap<T> {}

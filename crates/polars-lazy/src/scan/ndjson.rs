@@ -1,14 +1,14 @@
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
 use polars_plan::dsl::{
-    CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScan, MissingColumnsPolicy, ScanSources,
+    CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScanDsl, MissingColumnsPolicy, ScanSources,
 };
 use polars_plan::prelude::{NDJsonReadOptions, UnifiedScanArgs};
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::LazyFrame;
@@ -31,7 +31,7 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
+    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -52,8 +52,8 @@ impl LazyJsonLineReader {
         }
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path.as_ref().to_path_buf()].into()))
+    pub fn new(path: PlPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths([path].into()))
     }
 
     /// Add a row index column.
@@ -152,11 +152,10 @@ impl LazyFileListReader for LazyJsonLineReader {
             schema_overwrite: self.schema_overwrite,
         };
 
-        let scan_type = Box::new(FileScan::NDJson { options });
+        let scan_type = Box::new(FileScanDsl::NDJson { options });
 
         Ok(LazyFrame::from(DslPlan::Scan {
             sources: self.sources,
-            file_info: None,
             unified_scan_args: Box::new(unified_scan_args),
             scan_type,
             cached_ir: Default::default(),

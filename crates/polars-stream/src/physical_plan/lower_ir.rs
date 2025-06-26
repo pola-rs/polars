@@ -10,7 +10,8 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    ExtraColumnsPolicy, FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
+    ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR,
+    SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -504,7 +505,7 @@ pub fn lower_ir(
             } else {
                 let file_reader_builder = match &*scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
+                    FileScanIR::Parquet {
                         options,
                         metadata: first_metadata,
                     } => Arc::new(
@@ -515,7 +516,7 @@ pub fn lower_ir(
                     ) as Arc<dyn FileReaderBuilder>,
 
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
+                    FileScanIR::Ipc {
                         options: polars_io::ipc::IpcScanOptions {},
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
@@ -523,17 +524,17 @@ pub fn lower_ir(
                     }) as Arc<dyn FileReaderBuilder>,
 
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { options } => {
+                    FileScanIR::Csv { options } => {
                         Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
                     },
 
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { options } => {
+                    FileScanIR::NDJson { options } => {
                         Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
                     },
 
                     #[cfg(feature = "python")]
-                    FileScan::PythonDataset {
+                    FileScanIR::PythonDataset {
                         dataset_object: _,
                         cached_ir,
                     } => {
@@ -553,7 +554,7 @@ pub fn lower_ir(
                         )
                     },
 
-                    FileScan::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+                    FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };
 
                 {
@@ -587,7 +588,7 @@ pub fn lower_ir(
                     // as they currently don't expose an API for it to be configured.
                     let extra_columns_policy = match &*scan_type {
                         #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => unified_scan_args.extra_columns_policy,
+                        FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
 
                         _ => {
                             if unified_scan_args.projection.is_some() {

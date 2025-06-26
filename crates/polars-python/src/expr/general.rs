@@ -425,6 +425,13 @@ impl PyExpr {
             .into()
     }
 
+    fn is_close(&self, other: Self, abs_tol: f64, rel_tol: f64, nans_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .is_close(other.inner, abs_tol, rel_tol, nans_equal)
+            .into()
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()

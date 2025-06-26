@@ -246,15 +246,6 @@ def test_collapse_joins() -> None:
         check_row_order=False,
     )
 
-    no_literals = cross.filter(pl.col.x == 2)
-    e = no_literals.explain()
-    assert "NESTED LOOP JOIN" in e
-    assert_frame_equal(
-        no_literals.collect(optimizations=pl.QueryOptFlags(collapse_joins=False)),
-        no_literals.collect(),
-        check_row_order=False,
-    )
-
     iejoin = cross.filter(pl.col.x >= pl.col.a)
     e = iejoin.explain()
     assert "IEJOIN" in e

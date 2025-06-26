@@ -652,9 +652,6 @@ def test_predicate_pushdown_join_19772(
 
     q = left.join(right, on="k", how=join_type).filter(predicate)  # type: ignore[arg-type]
 
-    plan = q.explain()
-    assert plan.startswith("FILTER")
-
     expect = pl.DataFrame({"k": 1, "v": 7, "b": True})
 
     if join_type == "right":

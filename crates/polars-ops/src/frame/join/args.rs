@@ -47,8 +47,9 @@ pub enum JoinType {
     Left,
     Right,
     Full,
+    // Box is okay because this is inside a `Arc<JoinOptionsIR>`
     #[cfg(feature = "asof_join")]
-    AsOf(AsOfOptions),
+    AsOf(Box<AsOfOptions>),
     #[cfg(feature = "semi_anti_join")]
     Semi,
     #[cfg(feature = "semi_anti_join")]
