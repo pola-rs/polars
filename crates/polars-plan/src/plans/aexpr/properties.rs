@@ -420,44 +420,6 @@ pub(crate) fn predicate_non_null_column_outputs(
     let mut minterm_iter = MintermIter::new(predicate_node, expr_arena);
     let stack: &mut UnitVec<Node> = &mut unitvec![];
 
-    // Also catch `col().is_not_null()`, `~col.is_null()`. This is done before because the loop below
-    // requires all expressions to strictly maintain NULLs.
-    {
-        use AExpr::*;
-
-        match expr_arena.get(predicate_node) {
-            Function {
-                input,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
-                options: _,
-            } if !input.is_empty() => {
-                if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
-                    non_null_column_callback(name)
-                }
-            },
-
-            Function {
-                input,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
-                options: _,
-            } if !input.is_empty() => match expr_arena.get(input.first().unwrap().node()) {
-                Function {
-                    input,
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
-                    options: _,
-                } if !input.is_empty() => {
-                    if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
-                        non_null_column_callback(name)
-                    }
-                },
-
-                _ => {},
-            },
-
-            _ => {},
-        }
-    }
-
     /// Only traverse the first input, e.g. `A.is_in(B)` we don't consider B.
     macro_rules! traverse_first_input {
         // &[ExprIR]
