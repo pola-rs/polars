@@ -805,3 +805,39 @@ fn scan_small_dtypes() -> PolarsResult<()> {
     }
     Ok(())
 }
+
+/// Test for https://github.com/pola-rs/polars/issues/13163
+///
+/// This test demonstrates the "Cannot start a runtime from within a runtime" issue
+/// that occurs when using Polars with streaming in a tokio context.
+///
+/// The issue happens because:
+/// 1. User code creates a tokio runtime and calls `rt.block_on()`
+/// 2. Inside that async context, Polars is used
+/// 3. Polars lazily initializes its own tokio runtime via `RuntimeManager::new()`
+/// 4. This triggers tokio's "Cannot start a runtime from within a runtime" panic
+///
+/// This test should panic, demonstrating that the issue exists in the current codebase.
+#[test]
+#[cfg(all(feature = "parquet", feature = "tokio", feature = "new_streaming"))]
+fn test_tokio_runtime_conflict() {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+    init_files();
+
+    // Create a tokio runtime and enter its context
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    // Use block_on to simulate user code running in a tokio runtime context
+    rt.block_on(async {
+        // This should panic when Polars tries to create its own runtime
+        // while we're already inside a tokio runtime context.
+        // The panic occurs in RuntimeManager::new() when it calls Builder::build()
+        let _runtime_manager = polars_io::pl_async::get_runtime();
+
+        // Also try to trigger actual async operations that would use the runtime
+        let _df = scan_foods_parquet(false)
+            .with_new_streaming(true)
+            .collect()
+            .unwrap();
+    });
+}
