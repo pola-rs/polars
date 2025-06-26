@@ -143,7 +143,7 @@ fn test_pivot_categorical() -> PolarsResult<()> {
         "values" => [8, 2, 3, 6, 3, 6, 2, 2],
     ]?;
     df.try_apply("columns", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })?;
 
     let out = pivot(

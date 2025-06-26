@@ -38,7 +38,7 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
                     }
                     let fill_value = if fill_value.dtype().is_string() {
                         fill_value
-                            .cast(&DataType::Categorical(None, Default::default()))
+                            .cast(&DataType::from_categories(Categories::global()))
                             .unwrap()
                     } else {
                         fill_value

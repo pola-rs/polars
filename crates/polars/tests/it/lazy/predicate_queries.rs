@@ -136,10 +136,10 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
     let _sc = StringCacheHolder::hold();
 
     let s = Series::new("x".into(), ["a", "b", "c"])
-        .strict_cast(&DataType::Categorical(None, Default::default()))?;
+        .strict_cast(&DataType::from_categories(Categories::global()))?;
     let out = df
         .lazy()
-        .with_column(col("a").strict_cast(DataType::Categorical(None, Default::default())))
+        .with_column(col("a").strict_cast(DataType::from_categories(Categories::global())))
         .filter(col("a").is_in(lit(s).alias("x"), false))
         .collect()?;
 
@@ -148,7 +148,7 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
         "b" => [1, 2, 3]
     ]?;
     expected.try_apply("a", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })?;
     assert!(out.equals(&expected));
     Ok(())
