@@ -45,6 +45,7 @@ def test_list_arr_get() -> None:
     with pytest.raises(ComputeError, match="get index is out of bounds"):
         a.list.get(3, null_on_oob=False)
 
+    # Null index.
     out_df = a.to_frame().select(pl.col.a.list.get(pl.lit(None), null_on_oob=False))
     expected_df = pl.Series("a", [None, None, None], dtype=pl.Int64).to_frame()
     assert_frame_equal(out_df, expected_df)
@@ -62,6 +63,7 @@ def test_list_arr_get() -> None:
             for i in range(4)
         )
 
+    # get by indexes where some are out of bounds
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
 
     with pytest.raises(ComputeError, match="get index is out of bounds"):
@@ -69,6 +71,7 @@ def test_list_arr_get() -> None:
             as_series=False
         )
 
+    # exact on oob boundary
     df = pl.DataFrame(
         {
             "index": [3, 3, 3],
@@ -1410,7 +1413,6 @@ def test_list_zip_mixed_types() -> None:
 
 
 def test_list_zip_series_comprehensive() -> None:
-    """Comprehensive tests for Series.list.zip method including edge cases."""
     s1 = pl.Series("a", [[1, 2], None, [3]])
     s2 = pl.Series("b", [["x", "y"], ["a", "b"], None])
 
