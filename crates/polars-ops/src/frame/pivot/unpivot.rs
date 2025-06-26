@@ -4,6 +4,7 @@ use polars_core::datatypes::{DataType, PlSmallStr};
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
 use polars_core::prelude::{IntoVec, Series, UnpivotArgsIR};
+use polars_core::utils::merge_dtypes_many;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::aliases::PlHashSet;
 
