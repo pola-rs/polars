@@ -242,9 +242,9 @@ pub fn resolve_join(
         };
     }
 
-    // # Cast lossless
-    //
-    // If we do a full join and keys are coalesced, the cast keys must be added up front.
+    // As an optimization, when inserting casts we only insert them beforehand for full-join.
+    // This means for e.g. left-join, the LHS key preserves its dtype in the output even if it is joined
+    // with an RHS key of wider type.
     let key_cols_coalesced =
         options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
     let mut as_with_columns_l = vec![];

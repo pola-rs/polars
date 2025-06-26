@@ -82,6 +82,7 @@ pub(super) fn process_join(
             _ => {
                 let expr = left_on.get(i).unwrap();
 
+                // For non full-joins coalesce can still insert casts into the key exprs.
                 let node = match expr_arena.get(expr.node()) {
                     AExpr::Cast {
                         expr,
@@ -123,6 +124,7 @@ pub(super) fn process_join(
             _ => {
                 let expr = right_on.get(i).unwrap();
 
+                // For non full-joins coalesce can still insert casts into the key exprs.
                 let node = match expr_arena.get(expr.node()) {
                     AExpr::Cast {
                         expr,
