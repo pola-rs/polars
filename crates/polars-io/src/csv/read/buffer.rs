@@ -783,7 +783,7 @@ impl Buffer {
             Buffer::Categorical(_) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    DataType::Categorical(None, Default::default())
+                    DataType::from_categories(Categories::global())
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]

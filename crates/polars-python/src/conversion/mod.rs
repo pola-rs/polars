@@ -366,7 +366,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Boolean" => DataType::Boolean,
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
-                    "Categorical" => DataType::Categorical(None, Default::default()),
+                    "Categorical" => DataType::from_categories(Categories::global()),
                     "Enum" => DataType::Enum(None, Default::default()),
                     "Date" => DataType::Date,
                     "Time" => DataType::Time,
