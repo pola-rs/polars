@@ -102,6 +102,25 @@ impl IRBooleanFunction {
             B::Not => FunctionOptions::elementwise(),
         }
     }
+
+    pub fn preserves_nulls(&self) -> InputNullPreserve {
+        use IRBooleanFunction as B;
+        match self {
+            B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => InputNullPreserve::First,
+
+            #[cfg(feature = "is_in")]
+            B::IsIn { nulls_equal: false } => InputNullPreserve::First,
+            #[cfg(feature = "is_between")]
+            B::IsBetween { .. } => InputNullPreserve::All,
+
+            #[cfg(feature = "is_close")]
+            B::IsClose { .. } => InputNullPreserve::All,
+
+            B::Not => InputNullPreserve::First,
+
+            _ => InputNullPreserve::None,
+        }
+    }
 }
 
 impl Display for IRBooleanFunction {

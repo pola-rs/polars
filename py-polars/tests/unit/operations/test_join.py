@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -3493,3 +3493,53 @@ def test_join_downgrade_panic_23307() -> None:
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (pl.lit(None, dtype=pl.Int64), lambda x: x >= 1),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda x: ~x.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_between(1, 1)),
+        (1, lambda x: x.is_between(None, 1)),
+        (1, lambda x: x.is_between(1, None)),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_close(1)),
+        (1, lambda x: x.is_close(pl.lit(None, dtype=pl.Int64))),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_not_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_finite()),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_infinite()),
+        #
+        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_not_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_finite()),
+        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_infinite()),
+    ],
+)
+def test_join_downgrade_null_preserving_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    assert (
+        pl.select(expr_first_input)
+        .select(expr_func(pl.first()))
+        .to_series()
+        .is_null()
+        .item()
+    )
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("INNER JOIN")
+
+    out = q.collect()
+
+    assert out.height == 0
+    assert_frame_equal(out, q.collect(optimizations=pl.QueryOptFlags.none()))
