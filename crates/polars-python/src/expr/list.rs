@@ -269,4 +269,9 @@ impl PyExpr {
         }
         .into()
     }
+
+    fn list_zip(&self, others: Vec<PyExpr>) -> Self {
+        let others_exprs: Vec<Expr> = others.into_iter().map(|e| e.inner).collect();
+        self.inner.clone().list().zip(others_exprs).into()
+    }
 }

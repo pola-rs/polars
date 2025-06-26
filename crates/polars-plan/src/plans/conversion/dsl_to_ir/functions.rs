@@ -146,6 +146,7 @@ pub(super) fn convert_functions(
                 L::ToArray(v) => IL::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 L::ToStruct(list_to_struct_args) => IL::ToStruct(list_to_struct_args),
+                L::Zip => IL::Zip,
             })
         },
         #[cfg(feature = "strings")]

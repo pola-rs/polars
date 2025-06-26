@@ -57,6 +57,7 @@ pub enum ListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    Zip,
 }
 
 impl Display for ListFunction {
@@ -119,6 +120,7 @@ impl Display for ListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            Zip => "zip",
         };
         write!(f, "list.{name}")
     }

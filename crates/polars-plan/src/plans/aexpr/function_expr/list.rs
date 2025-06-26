@@ -61,6 +61,7 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    Zip,
 }
 
 impl IRListFunction {
@@ -129,6 +130,7 @@ impl IRListFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
+            Zip => mapper.with_dtype(DataType::List(Box::new(DataType::Struct(mapper.args().to_vec()))))
         }
     }
 
@@ -174,6 +176,7 @@ impl IRListFunction {
             | L::Reverse
             | L::Unique(_)
             | L::Join(_)
+            | L::Zip
             | L::NUnique => FunctionOptions::elementwise(),
             #[cfg(feature = "list_any_all")]
             L::Any | L::All => FunctionOptions::elementwise(),
@@ -256,6 +259,7 @@ impl Display for IRListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            Zip => "zip",
         };
         write!(f, "list.{name}")
     }
@@ -319,6 +323,7 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
+            Zip => map_as_slice!(zip)
         }
     }
 }
@@ -785,4 +790,14 @@ pub(super) fn to_struct(s: &Column, args: &ListToStructArgs) -> PolarsResult<Col
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+pub(super) fn zip(s: &[Column]) -> PolarsResult<Column> {
+    let first = s[0].list()?;
+    let others: Vec<&ListChunked> = s[1..]
+        .iter()
+        .map(|col| col.list())
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    first.lst_zip(&others).map(|ca| ca.into_column())
 }

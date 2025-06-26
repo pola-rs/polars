@@ -840,6 +840,150 @@ pub trait ListNameSpaceImpl: AsList {
         };
         Ok(out)
     }
+
+    /// Zip lists together element-wise into structs.
+    fn lst_zip(&self, others: &[&ListChunked]) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+
+        // Check that all have the same length
+        let len = ca.len();
+        for (i, other_ca) in others.iter().enumerate() {
+            polars_ensure!(
+                other_ca.len() == len,
+                ShapeMismatch: "length mismatch: got {} but expected {} for list column {}",
+                other_ca.len(), len, i + 1
+            );
+        }
+
+        // If we don't have the struct feature, we can't create structs
+        #[cfg(not(feature = "dtype-struct"))]
+        {
+            polars_bail!(ComputeError: "struct dtype not available")
+        }
+
+        #[cfg(feature = "dtype-struct")]
+        {
+            use polars_core::datatypes::Field;
+            use polars_core::series::Series;
+
+            // Get inner data types for all lists
+            let first_inner_dtype = ca.inner_dtype();
+            let mut field_names = vec!["field_0".to_string()];
+            let mut field_dtypes = vec![first_inner_dtype.clone()];
+
+            for (i, other_ca) in others.iter().enumerate() {
+                field_names.push(format!("field_{}", i + 1));
+                field_dtypes.push(other_ca.inner_dtype().clone());
+            }
+
+            // Create struct fields
+            let struct_fields: Vec<Field> = field_names
+                .iter()
+                .zip(field_dtypes.iter())
+                .map(|(name, dtype)| Field::new(name.as_str().into(), dtype.clone()))
+                .collect();
+
+            // Convert all chunked arrays to series for easier manipulation
+            let first_series = ca.clone().into_series();
+            let other_series: Vec<Series> = others
+                .iter()
+                .map(|other_ca| (*other_ca).clone().into_series())
+                .collect();
+
+            // Collect all result values first
+            let mut result_values = Vec::with_capacity(len);
+
+            // Process each row
+            for i in 0..len {
+                // Check if any input is null
+                let first_opt = first_series.get(i).ok();
+                if first_opt.is_none() || matches!(first_opt, Some(AnyValue::Null)) {
+                    result_values.push(AnyValue::Null);
+                    continue;
+                }
+
+                let mut any_null = false;
+                let mut other_opts = Vec::new();
+                for other_s in &other_series {
+                    let opt = other_s.get(i).ok();
+                    if opt.is_none() || matches!(opt, Some(AnyValue::Null)) {
+                        any_null = true;
+                        break;
+                    }
+                    other_opts.push(opt.unwrap());
+                }
+
+                if any_null {
+                    result_values.push(AnyValue::Null);
+                    continue;
+                }
+
+                // Get the lists from each series
+                let first_list = match first_opt.unwrap() {
+                    AnyValue::List(s) => s,
+                    _ => {
+                        result_values.push(AnyValue::Null);
+                        continue;
+                    },
+                };
+
+                let other_lists: Vec<Series> = other_opts
+                    .into_iter()
+                    .filter_map(|av| match av {
+                        AnyValue::List(s) => Some(s),
+                        _ => None,
+                    })
+                    .collect();
+
+                if other_lists.len() != others.len() {
+                    result_values.push(AnyValue::Null);
+                    continue;
+                }
+
+                // Find minimum length
+                let mut min_len = first_list.len();
+                for other_list in &other_lists {
+                    min_len = min_len.min(other_list.len());
+                }
+
+                // Create struct series for each position
+                let mut struct_values = Vec::with_capacity(min_len);
+
+                for pos in 0..min_len {
+                    let mut field_values = Vec::new();
+
+                    // Get value from first list
+                    if let Ok(val) = first_list.get(pos) {
+                        field_values.push(val);
+                    } else {
+                        field_values.push(AnyValue::Null);
+                    }
+
+                    // Get values from other lists
+                    for other_list in &other_lists {
+                        if let Ok(val) = other_list.get(pos) {
+                            field_values.push(val);
+                        } else {
+                            field_values.push(AnyValue::Null);
+                        }
+                    }
+
+                    // Create struct AnyValue
+                    let struct_av =
+                        AnyValue::StructOwned(Box::new((field_values, struct_fields.clone())));
+                    struct_values.push(struct_av);
+                }
+
+                // Create series and convert to AnyValue::List
+                let struct_series = Series::new("".into(), struct_values);
+                result_values.push(AnyValue::List(struct_series));
+            }
+
+            // Create the final result series and convert to ListChunked
+            let result_series = Series::new(ca.name().clone(), result_values);
+            Ok(result_series.list()?.clone())
+        }
+    }
 }
 
 impl ListNameSpaceImpl for ListChunked {}

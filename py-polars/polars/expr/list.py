@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 
@@ -1431,3 +1431,69 @@ class ExprListNameSpace:
         else:
             other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+
+    def zip(self, *others: IntoExpr) -> Expr:
+        """
+        Zip lists together element-wise into structs.
+
+        This combines elements from multiple lists position-wise into struct values.
+        Lists are aligned element-by-element, and the resulting list length is
+        determined by the shortest input list.
+
+        Parameters
+        ----------
+        *others
+            Other list expressions to zip with. Can be list columns or expressions
+            that evaluate to lists.
+
+        Returns
+        -------
+        Expr
+            Expression that evaluates to a list of structs, where each struct
+            contains the corresponding elements from the input lists.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [3], None, [None]],
+        ...         "b": [[10, 20], [30, 35], [40], [35]],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("a").list.zip(pl.col("b")).alias("zipped"))
+        shape: (4, 3)
+        ┌───────────┬─────────────┬──────────────────────┐
+        │ a         ┆ b           ┆ zipped               │
+        │ ---       ┆ ---         ┆ ---                  │
+        │ list[i64] ┆ list[i64]   ┆ list[struct[2]]      │
+        ╞═══════════╪═════════════╪══════════════════════╡
+        │ [1, 2]    ┆ [10, 20]    ┆ [{1,10}, {2,20}]     │
+        │ [3]       ┆ [30, 35]    ┆ [{3,30}]             │
+        │ null      ┆ [40]        ┆ null                 │
+        │ [null]    ┆ [35]        ┆ [{null,35}]          │
+        └───────────┴─────────────┴──────────────────────┘
+
+        Zip with multiple lists:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [3]],
+        ...         "b": [[10, 20], [30]],
+        ...         "c": [[100, 200], [300]],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("a").list.zip(pl.col("b"), pl.col("c")).alias("all_zipped")
+        ... )
+        shape: (2, 4)
+        ┌───────────┬─────────────┬─────────────┬─────────────────────────────┐
+        │ a         ┆ b           ┆ c           ┆ all_zipped                  │
+        │ ---       ┆ ---         ┆ ---         ┆ ---                         │
+        │ list[i64] ┆ list[i64]   ┆ list[i64]   ┆ list[struct[3]]             │
+        ╞═══════════╪═════════════╪═════════════╪═════════════════════════════╡
+        │ [1, 2]    ┆ [10, 20]    ┆ [100, 200]  ┆ [{1,10,100}, {2,20,200}]    │
+        │ [3]       ┆ [30]        ┆ [300]       ┆ [{3,30,300}]                │
+        └───────────┴─────────────┴─────────────┴─────────────────────────────┘
+        """
+        others_pyexprs = parse_into_list_of_expressions(*others)
+        return wrap_expr(self._pyexpr.list_zip(others_pyexprs))

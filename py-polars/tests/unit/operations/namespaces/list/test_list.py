@@ -1237,3 +1237,180 @@ def test_list_contains() -> None:
 def test_list_diff_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1, 2, 3]).list.diff()
+
+
+def test_list_zip_basic() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3], [4, 5], [6]],
+            "b": [["x", "y", "z"], ["a", "b"], ["c"]],
+            "c": [[1.1, 2.2, 3.3], [4.4, 5.5], [6.6]],
+        }
+    )
+
+    # Test basic two-list zipping
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_ab"))
+    expected = pl.DataFrame(
+        {
+            "zipped_ab": [
+                [
+                    {"field_0": 1, "field_1": "x"},
+                    {"field_0": 2, "field_1": "y"},
+                    {"field_0": 3, "field_1": "z"},
+                ],
+                [{"field_0": 4, "field_1": "a"}, {"field_0": 5, "field_1": "b"}],
+                [{"field_0": 6, "field_1": "c"}],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # Test three-list zipping
+    result_three = df.select(
+        pl.col("a").list.zip(pl.col("b"), pl.col("c")).alias("zipped_abc")
+    )
+    expected_three = pl.DataFrame(
+        {
+            "zipped_abc": [
+                [
+                    {"field_0": 1, "field_1": "x", "field_2": 1.1},
+                    {"field_0": 2, "field_1": "y", "field_2": 2.2},
+                    {"field_0": 3, "field_1": "z", "field_2": 3.3},
+                ],
+                [
+                    {"field_0": 4, "field_1": "a", "field_2": 4.4},
+                    {"field_0": 5, "field_1": "b", "field_2": 5.5},
+                ],
+                [{"field_0": 6, "field_1": "c", "field_2": 6.6}],
+            ]
+        }
+    )
+    assert_frame_equal(result_three, expected_three)
+
+
+def test_list_zip_with_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], None, [3]],
+            "b": [["x", "y"], ["a", "b"], None],
+        }
+    )
+
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_with_nulls"))
+    expected = pl.DataFrame(
+        {
+            "zipped_with_nulls": [
+                [{"field_0": 1, "field_1": "x"}, {"field_0": 2, "field_1": "y"}],
+                None,
+                None,
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_different_lengths() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3, 4], [5], [6, 7]],
+            "b": [["x", "y"], ["a", "b", "c"], ["d"]],
+        }
+    )
+
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_diff_len"))
+    expected = pl.DataFrame(
+        {
+            "zipped_diff_len": [
+                [{"field_0": 1, "field_1": "x"}, {"field_0": 2, "field_1": "y"}],
+                [{"field_0": 5, "field_1": "a"}],
+                [{"field_0": 6, "field_1": "d"}],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_series() -> None:
+    s1 = pl.Series("a", [[1, 2, 3], [4, 5], [6]])
+    s2 = pl.Series("b", [["x", "y", "z"], ["a", "b"], ["c"]])
+    s3 = pl.Series("c", [[1.1, 2.2, 3.3], [4.4, 5.5], [6.6]])
+
+    # Test basic two-series zipping
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "a",
+        [
+            [
+                {"field_0": 1, "field_1": "x"},
+                {"field_0": 2, "field_1": "y"},
+                {"field_0": 3, "field_1": "z"},
+            ],
+            [{"field_0": 4, "field_1": "a"}, {"field_0": 5, "field_1": "b"}],
+            [{"field_0": 6, "field_1": "c"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+    # Test three-series zipping
+    result_three = s1.list.zip(s2, s3)
+    expected_three = pl.Series(
+        "a",
+        [
+            [
+                {"field_0": 1, "field_1": "x", "field_2": 1.1},
+                {"field_0": 2, "field_1": "y", "field_2": 2.2},
+                {"field_0": 3, "field_1": "z", "field_2": 3.3},
+            ],
+            [
+                {"field_0": 4, "field_1": "a", "field_2": 4.4},
+                {"field_0": 5, "field_1": "b", "field_2": 5.5},
+            ],
+            [{"field_0": 6, "field_1": "c", "field_2": 6.6}],
+        ],
+    )
+    assert_series_equal(result_three, expected_three)
+
+
+def test_list_zip_empty_lists() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2], []],
+            "b": [[], ["x"], []],
+        }
+    )
+
+    result = df.select(pl.col("a").list.zip(pl.col("b")).alias("zipped_empty"))
+    expected = pl.DataFrame(
+        {"zipped_empty": [[], [{"field_0": 1, "field_1": "x"}], []]}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_zip_mixed_types() -> None:
+    df = pl.DataFrame(
+        {
+            "integers": [[1, 2], [3]],
+            "strings": [["a", "b"], ["c"]],
+            "floats": [[1.5, 2.5], [3.5]],
+            "booleans": [[True, False], [True]],
+        }
+    )
+
+    result = df.select(
+        pl.col("integers")
+        .list.zip(pl.col("strings"), pl.col("floats"), pl.col("booleans"))
+        .alias("mixed_zip")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "mixed_zip": [
+                [
+                    {"field_0": 1, "field_1": "a", "field_2": 1.5, "field_3": True},
+                    {"field_0": 2, "field_1": "b", "field_2": 2.5, "field_3": False},
+                ],
+                [{"field_0": 3, "field_1": "c", "field_2": 3.5, "field_3": True}],
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
