@@ -1,8 +1,8 @@
-use polars_core::prelude::*;
-use polars_core::utils::{slice_offsets, CustomIterTools};
-use polars_core::POOL;
-use rayon::prelude::*;
 use AnyValue::Null;
+use polars_core::POOL;
+use polars_core::prelude::*;
+use polars_core::utils::{CustomIterTools, slice_offsets};
+use rayon::prelude::*;
 
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
@@ -267,16 +267,6 @@ impl PhysicalExpr for SliceExpr {
             .set_original_len(false);
 
         Ok(ac)
-    }
-
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

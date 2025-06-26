@@ -21,6 +21,7 @@ from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
 from polars.exceptions import DuplicateError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     import sys
@@ -32,6 +33,8 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+    from typing_extensions import assert_type
 
 
 # -----------------------------------------------------------------------------------
@@ -729,12 +732,17 @@ def test_init_arrow_dupes() -> None:
         arrays=[
             pa.array([1, 2, 3], type=pa.int32()),
             pa.array([4, 5, 6], type=pa.int32()),
+            pa.array(
+                [7, 8, 9], type=pa.decimal128(38, 10)
+            ),  # included as this triggers a panic during construction alongside duplicate fields
         ],
-        schema=pa.schema([("col", pa.int32()), ("col", pa.int32())]),
+        schema=pa.schema(
+            [("col", pa.int32()), ("col", pa.int32()), ("col3", pa.decimal128(38, 10))]
+        ),
     )
     with pytest.raises(
         DuplicateError,
-        match="column 'col' appears more than once; names must be unique",
+        match=r"""column appears more than once; names must be unique: \["col"\]""",
     ):
         pl.DataFrame(tbl)
 
@@ -1105,6 +1113,9 @@ def test_init_only_columns() -> None:
         assert_frame_equal(df, expected)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert pl.List(pl.UInt8).is_(df.schema["d"])
+
+        if TYPE_CHECKING:
+            assert_type(pl.List(pl.UInt8).is_(df.schema["d"]), bool)
 
         dfe = df.clear()
         assert len(dfe) == 0
@@ -1616,7 +1627,7 @@ def test_df_init_dict_raise_on_expression_input() -> None:
 
     # Passing a list of expressions is allowed
     df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
-    assert df.get_column("a").dtype == pl.Object
+    assert df.get_column("a").dtype.is_object()
 
 
 def test_df_schema_sequences() -> None:
@@ -1699,48 +1710,7 @@ def test_array_construction() -> None:
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
 
 
-class PyCapsuleStreamHolder:
-    """
-    Hold the Arrow C Stream pycapsule.
-
-    A class that exposes the Arrow C Stream interface via Arrow PyCapsules. This
-    ensures that the consumer is seeing _only_ the `__arrow_c_stream__` dunder, and that
-    nothing else (e.g. the dataframe or array interface) is actually being used.
-    """
-
-    arrow_obj: Any
-
-    def __init__(self, arrow_obj: object) -> None:
-        self.arrow_obj = arrow_obj
-
-    def __arrow_c_stream__(self, requested_schema: object = None) -> object:
-        return self.arrow_obj.__arrow_c_stream__(requested_schema)
-
-    def __iter__(self) -> None:
-        return
-
-    def __next__(self) -> None:
-        return
-
-
-class PyCapsuleArrayHolder:
-    """
-    Hold the Arrow C Array pycapsule.
-
-    A class that exposes _only_ the Arrow C Array interface via Arrow PyCapsules. This
-    ensures that the consumer is seeing _only_ the `__arrow_c_array__` dunder, and that
-    nothing else (e.g. the dataframe or array interface) is actually being used.
-    """
-
-    arrow_obj: Any
-
-    def __init__(self, arrow_obj: object) -> None:
-        self.arrow_obj = arrow_obj
-
-    def __arrow_c_array__(self, requested_schema: object = None) -> object:
-        return self.arrow_obj.__arrow_c_array__(requested_schema)
-
-
+@pytest.mark.may_fail_auto_streaming
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
     df = df.rechunk()
     pyarrow_table = df.to_arrow()

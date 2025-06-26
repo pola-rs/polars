@@ -1,13 +1,12 @@
-use arrow::bitmap::bitmask::BitMask;
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-
-const BINARY_SEARCH_LIMIT: usize = 8;
 
 pub fn check_bounds_nulls(idx: &PrimitiveArray<IdxSize>, len: IdxSize) -> PolarsResult<()> {
     let mask = BitMask::from_bitmap(idx.validity().unwrap());
@@ -66,31 +65,27 @@ where
 /// lookup. The first element is always 0, and the last length of arrs
 /// is always ignored (as we already checked that all indices are
 /// in-bounds we don't need to check against the last length).
-fn cumulative_lengths<A: StaticArray>(arrs: &[&A]) -> [IdxSize; BINARY_SEARCH_LIMIT] {
-    assert!(arrs.len() <= BINARY_SEARCH_LIMIT);
-    let mut ret = [IdxSize::MAX; BINARY_SEARCH_LIMIT];
-    ret[0] = 0;
-    for i in 1..arrs.len() {
-        ret[i] = ret[i - 1] + arrs[i - 1].len() as IdxSize;
+fn cumulative_lengths<A: StaticArray>(arrs: &[&A]) -> Vec<IdxSize> {
+    let mut ret = Vec::with_capacity(arrs.len());
+    let mut cumsum: IdxSize = 0;
+    for arr in arrs {
+        ret.push(cumsum);
+        cumsum = cumsum.checked_add(arr.len().try_into().unwrap()).unwrap();
     }
     ret
 }
 
 #[rustfmt::skip]
 #[inline]
-fn resolve_chunked_idx(idx: IdxSize, cumlens: &[IdxSize; BINARY_SEARCH_LIMIT]) -> (usize, usize) {
-    // Branchless bitwise binary search.
-    let mut chunk_idx = 0;
-    chunk_idx += if idx >= cumlens[chunk_idx + 0b100] { 0b0100 } else { 0 };
-    chunk_idx += if idx >= cumlens[chunk_idx + 0b010] { 0b0010 } else { 0 };
-    chunk_idx += if idx >= cumlens[chunk_idx + 0b001] { 0b0001 } else { 0 };
+fn resolve_chunked_idx(idx: IdxSize, cumlens: &[IdxSize]) -> (usize, usize) {
+    let chunk_idx = cumlens.partition_point(|cl| idx >= *cl) - 1;
     (chunk_idx, (idx - cumlens[chunk_idx]) as usize)
 }
 
 #[inline]
 unsafe fn target_value_unchecked<'a, A: StaticArray>(
     targets: &[&'a A],
-    cumlens: &[IdxSize; BINARY_SEARCH_LIMIT],
+    cumlens: &[IdxSize],
     idx: IdxSize,
 ) -> A::ValueT<'a> {
     let (chunk_idx, arr_idx) = resolve_chunked_idx(idx, cumlens);
@@ -101,7 +96,7 @@ unsafe fn target_value_unchecked<'a, A: StaticArray>(
 #[inline]
 unsafe fn target_get_unchecked<'a, A: StaticArray>(
     targets: &[&'a A],
-    cumlens: &[IdxSize; BINARY_SEARCH_LIMIT],
+    cumlens: &[IdxSize],
     idx: IdxSize,
 ) -> Option<A::ValueT<'a>> {
     let (chunk_idx, arr_idx) = resolve_chunked_idx(idx, cumlens);
@@ -147,12 +142,7 @@ where
 {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
-        let rechunked;
-        let mut ca = self;
-        if self.chunks().len() > BINARY_SEARCH_LIMIT {
-            rechunked = self.rechunk();
-            ca = &rechunked;
-        }
+        let ca = self;
         let targets: Vec<_> = ca.downcast_iter().collect();
         let arr = gather_idx_array_unchecked(
             ca.dtype().to_arrow(CompatLevel::newest()),
@@ -182,12 +172,7 @@ where
 {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        let rechunked;
-        let mut ca = self;
-        if self.chunks().len() > BINARY_SEARCH_LIMIT {
-            rechunked = self.rechunk();
-            ca = &rechunked;
-        }
+        let ca = self;
         let targets_have_nulls = ca.null_count() > 0;
         let targets: Vec<_> = ca.downcast_iter().collect();
 
@@ -235,19 +220,35 @@ where
 impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        let rechunked = self.rechunk();
-        let indices = indices.rechunk();
-        let indices_arr = indices.downcast_iter().next().unwrap();
-        let chunks = rechunked
-            .chunks()
-            .iter()
-            .map(|arr| take_unchecked(arr.as_ref(), indices_arr))
-            .collect::<Vec<_>>();
+        let ca = self;
+        let targets_have_nulls = ca.null_count() > 0;
+        let targets: Vec<_> = ca.downcast_iter().collect();
 
-        let mut out = ChunkedArray::from_chunks(self.name().clone(), chunks);
+        let chunks = indices.downcast_iter().map(|idx_arr| {
+            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            if targets.len() == 1 {
+                let target = targets.first().unwrap();
+                take_unchecked(&**target, idx_arr)
+            } else {
+                let cumlens = cumulative_lengths(&targets);
+                if targets_have_nulls {
+                    let arr: BinaryViewArray = idx_arr
+                        .iter()
+                        .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                } else {
+                    let arr: BinaryViewArray = idx_arr
+                        .iter()
+                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                }
+            }
+        });
 
-        let sorted_flag =
-            _update_gather_sorted_flag(self.is_sorted_flag(), indices.is_sorted_flag());
+        let mut out = ChunkedArray::from_chunks(ca.name().clone(), chunks.collect());
+        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
         out.set_sorted_flag(sorted_flag);
         out
     }
@@ -255,9 +256,37 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
 
 impl ChunkTakeUnchecked<IdxCa> for StringChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        self.as_binary()
-            .take_unchecked(indices)
-            .to_string_unchecked()
+        let ca = self;
+        let targets_have_nulls = ca.null_count() > 0;
+        let targets: Vec<_> = ca.downcast_iter().collect();
+
+        let chunks = indices.downcast_iter().map(|idx_arr| {
+            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            if targets.len() == 1 {
+                let target = targets.first().unwrap();
+                take_unchecked(&**target, idx_arr)
+            } else {
+                let cumlens = cumulative_lengths(&targets);
+                if targets_have_nulls {
+                    let arr: Utf8ViewArray = idx_arr
+                        .iter()
+                        .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                } else {
+                    let arr: Utf8ViewArray = idx_arr
+                        .iter()
+                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                }
+            }
+        });
+
+        let mut out = ChunkedArray::from_chunks(ca.name().clone(), chunks.collect());
+        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        out.set_sorted_flag(sorted_flag);
+        out
     }
 }
 
@@ -272,9 +301,8 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for BinaryChunked {
 impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StringChunked {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
-        self.as_binary()
-            .take_unchecked(indices)
-            .to_string_unchecked()
+        let indices = IdxCa::mmap_slice(PlSmallStr::EMPTY, indices.as_ref());
+        self.take_unchecked(&indices)
     }
 }
 
@@ -317,8 +345,8 @@ impl IdxCa {
 impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let chunks = vec![take_unchecked(
-            &self.rechunk().downcast_into_array(),
-            &indices.rechunk().downcast_into_array(),
+            self.rechunk().downcast_as_array(),
+            indices.rechunk().downcast_as_array(),
         )];
         self.copy_with_chunks(chunks)
     }
@@ -335,8 +363,8 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ArrayChunked {
 impl ChunkTakeUnchecked<IdxCa> for ListChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let chunks = vec![take_unchecked(
-            &self.rechunk().downcast_into_array(),
-            &indices.rechunk().downcast_into_array(),
+            self.rechunk().downcast_as_array(),
+            indices.rechunk().downcast_as_array(),
         )];
         self.copy_with_chunks(chunks)
     }

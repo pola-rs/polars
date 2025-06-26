@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use crate::trusted_len::TrustedLen;
 
 pub trait TrustedLenPush<T> {

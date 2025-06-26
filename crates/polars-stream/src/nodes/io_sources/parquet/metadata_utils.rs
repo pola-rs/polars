@@ -1,16 +1,15 @@
-use polars_core::prelude::{ArrowSchema, DataType};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::PolarsResult;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_utils::mmap::MemSlice;
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
-pub(super) async fn read_parquet_metadata_bytes(
+pub async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
 ) -> PolarsResult<(MemSlice, Option<MemSlice>)> {
-    use polars_parquet::parquet::error::ParquetError;
     use polars_parquet::parquet::PARQUET_MAGIC;
+    use polars_parquet::parquet::error::ParquetError;
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
@@ -18,8 +17,7 @@ pub(super) async fn read_parquet_metadata_bytes(
 
     if file_size < FOOTER_HEADER_SIZE {
         return Err(ParquetError::OutOfSpec(format!(
-            "file size ({}) is less than minimum size required to store parquet footer ({})",
-            file_size, FOOTER_HEADER_SIZE
+            "file size ({file_size}) is less than minimum size required to store parquet footer ({FOOTER_HEADER_SIZE})"
         ))
         .into());
     }
@@ -51,8 +49,7 @@ pub(super) async fn read_parquet_metadata_bytes(
 
     if footer_size < 0 {
         return Err(ParquetError::OutOfSpec(format!(
-            "expected positive footer size, got {} instead",
-            footer_size
+            "expected positive footer size, got {footer_size} instead"
         ))
         .into());
     }
@@ -61,8 +58,7 @@ pub(super) async fn read_parquet_metadata_bytes(
 
     if file_size < footer_size {
         return Err(ParquetError::OutOfSpec(format!(
-            "file size ({}) is less than the indicated footer size ({})",
-            file_size, footer_size
+            "file size ({file_size}) is less than the indicated footer size ({footer_size})"
         ))
         .into());
     }
@@ -71,7 +67,7 @@ pub(super) async fn read_parquet_metadata_bytes(
         debug_assert!(!matches!(byte_source, DynByteSource::MemSlice(_)));
         if verbose {
             eprintln!(
-                "[ParquetSource]: Extra {} bytes need to be fetched for metadata \
+                "[ParquetFileReader]: Extra {} bytes need to be fetched for metadata \
             (initial estimate = {}, actual size = {})",
                 footer_size - estimated_metadata_size,
                 bytes.len(),
@@ -93,11 +89,12 @@ pub(super) async fn read_parquet_metadata_bytes(
     } else {
         if verbose && !matches!(byte_source, DynByteSource::MemSlice(_)) {
             eprintln!(
-                "[ParquetSource]: Fetched all bytes for metadata on first try \
-                (initial estimate = {}, actual size = {}, excess = {})",
+                "[ParquetFileReader]: Fetched all bytes for metadata on first try \
+                (initial estimate = {}, actual size = {}, excess = {}, total file size = {})",
                 bytes.len(),
                 footer_size,
                 estimated_metadata_size - footer_size,
+                file_size,
             );
         }
 
@@ -117,30 +114,4 @@ pub(super) async fn read_parquet_metadata_bytes(
             Ok((metadata_bytes, None))
         }
     }
-}
-
-/// Ensures that a parquet file has all the necessary columns for a projection with the correct
-/// dtype. There are no ordering requirements and extra columns are permitted.
-pub(super) fn ensure_schema_has_projected_fields(
-    schema: &ArrowSchema,
-    projected_fields: &ArrowSchema,
-) -> PolarsResult<()> {
-    for field in projected_fields.iter_values() {
-        // Note: We convert to Polars-native dtypes for timezone normalization.
-        let expected_dtype = DataType::from_arrow_field(field);
-        let dtype = {
-            let Some(field) = schema.get(&field.name) else {
-                polars_bail!(ColumnNotFound: "error with column selection, consider enabling `allow_missing_columns`: did not find column in file: {}", field.name)
-            };
-            DataType::from_arrow_field(field)
-        };
-
-        if dtype != expected_dtype {
-            polars_bail!(SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
-                &field.name, expected_dtype, dtype
-            )
-        }
-    }
-
-    Ok(())
 }

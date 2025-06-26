@@ -1,21 +1,19 @@
-use arrow::array::{Array, ValueSize};
+use arrow::array::ValueSize;
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
-use base64::engine::general_purpose;
-#[cfg(feature = "string_encoding")]
 use base64::Engine as _;
+#[cfg(feature = "string_encoding")]
+use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
 use polars_core::prelude::arity::*;
-use polars_utils::cache::FastFixedCache;
-use regex::{escape, Regex};
+use polars_utils::regex_cache::{compile_regex, with_regex_cache};
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
 #[cfg(feature = "string_normalize")]
 use crate::prelude::strings::normalize::UnicodeForm;
-use crate::prelude::strings::starts_with::starts_with_str;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -24,6 +22,84 @@ where
     F: for<'a, 'b> FnMut(Option<&'a str>, Option<&'b str>) -> Option<bool>,
 {
     f
+}
+
+#[cfg(feature = "string_to_integer")]
+// This is a helper function used in the `to_integer` method of the StringNameSpaceImpl trait.
+fn parse_integer<T>(
+    ca: &ChunkedArray<StringType>,
+    base: &UInt32Chunked,
+    strict: bool,
+) -> PolarsResult<Series>
+where
+    T: PolarsIntegerType,
+    T::Native: Num,
+    ChunkedArray<T>: IntoSeries,
+    <<T as polars_core::datatypes::PolarsNumericType>::Native as num_traits::Num>::FromStrRadixErr:
+        std::fmt::Display,
+{
+    let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<T::Native>> {
+        let (Some(s), Some(base)) = (opt_s, opt_base) else {
+            return Ok(None);
+        };
+
+        if !(2..=36).contains(&base) {
+            polars_bail!(ComputeError: "`to_integer` called with invalid base '{base}'");
+        }
+
+        Ok(T::Native::from_str_radix(s, base).ok())
+    };
+    let out: ChunkedArray<T> = broadcast_try_binary_elementwise(ca, base, f)?;
+    if strict && ca.null_count() != out.null_count() {
+        let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
+        let n_failures = failure_mask.num_trues();
+        if n_failures == 0 {
+            return Ok(out.into_series());
+        }
+
+        let some_failures = if ca.len() == 1 {
+            ca.clone()
+        } else {
+            let all_failures = ca.filter(&failure_mask)?;
+            // `.unique()` does not necessarily preserve the original order.
+            let unique_failures_args = all_failures.arg_unique()?;
+            all_failures.take(&unique_failures_args.slice(0, 10))?
+        };
+        let some_error_msg = match base.len() {
+            1 => {
+                // we can ensure that base is not null.
+                let base = base.get(0).unwrap();
+                some_failures
+                    .get(0)
+                    .and_then(|s| T::Native::from_str_radix(s, base).err())
+                    .map_or_else(
+                        || unreachable!("failed to extract ParseIntError"),
+                        |e| format!("{e}"),
+                    )
+            },
+            _ => {
+                let base_failures = base.filter(&failure_mask)?;
+                some_failures
+                    .get(0)
+                    .zip(base_failures.get(0))
+                    .and_then(|(s, base)| T::Native::from_str_radix(s, base).err())
+                    .map_or_else(
+                        || unreachable!("failed to extract ParseIntError"),
+                        |e| format!("{e}"),
+                    )
+            },
+        };
+        polars_bail!(
+            ComputeError:
+            "strict integer parsing failed for {} value(s): {}; error message for the \
+            first shown value: '{}' (consider non-strict parsing)",
+            n_failures,
+            some_failures.into_series().fmt_list(),
+            some_error_msg
+        );
+    }
+
+    Ok(out.into_series())
 }
 
 pub trait StringNameSpaceImpl: AsString {
@@ -64,59 +140,34 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     #[cfg(feature = "string_to_integer")]
-    // Parse a string number with base _radix_ into a decimal (i64)
-    fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
+    // Parse a string number with base _radix_ into a decimal dtype
+    fn to_integer(
+        &self,
+        base: &UInt32Chunked,
+        dtype: Option<DataType>,
+        strict: bool,
+    ) -> PolarsResult<Series> {
         let ca = self.as_string();
-        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
-            match (opt_s, opt_base) {
-                (Some(s), Some(base)) => <i64 as Num>::from_str_radix(s, base).ok(),
-                _ => None,
-            }
-        };
-        let out = broadcast_binary_elementwise(ca, base, f);
-        if strict && ca.null_count() != out.null_count() {
-            let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
-            let all_failures = ca.filter(&failure_mask)?;
-            if all_failures.is_empty() {
-                return Ok(out);
-            }
-            let n_failures = all_failures.len();
-            let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
-            let some_error_msg = match base.len() {
-                1 => {
-                    // we can ensure that base is not null.
-                    let base = base.get(0).unwrap();
-                    some_failures
-                        .get(0)
-                        .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
-                        .map_or_else(
-                            || unreachable!("failed to extract ParseIntError"),
-                            |e| format!("{}", e),
-                        )
-                },
-                _ => {
-                    let base_filures = base.filter(&failure_mask)?;
-                    some_failures
-                        .get(0)
-                        .zip(base_filures.get(0))
-                        .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
-                        .map_or_else(
-                            || unreachable!("failed to extract ParseIntError"),
-                            |e| format!("{}", e),
-                        )
-                },
-            };
-            polars_bail!(
-                ComputeError:
-                "strict integer parsing failed for {} value(s): {}; error message for the \
-                first shown value: '{}' (consider non-strict parsing)",
-                n_failures,
-                some_failures.into_series().fmt_list(),
-                some_error_msg
-            );
-        };
 
-        Ok(out)
+        polars_ensure!(
+            ca.len() == base.len() || ca.len() == 1 || base.len() == 1,
+            length_mismatch = "str.to_integer",
+            ca.len(),
+            base.len()
+        );
+
+        match dtype.unwrap_or(DataType::Int64) {
+            DataType::Int8 => parse_integer::<Int8Type>(ca, base, strict),
+            DataType::Int16 => parse_integer::<Int16Type>(ca, base, strict),
+            DataType::Int32 => parse_integer::<Int32Type>(ca, base, strict),
+            DataType::Int64 => parse_integer::<Int64Type>(ca, base, strict),
+            DataType::Int128 => parse_integer::<Int128Type>(ca, base, strict),
+            DataType::UInt8 => parse_integer::<UInt8Type>(ca, base, strict),
+            DataType::UInt16 => parse_integer::<UInt16Type>(ca, base, strict),
+            DataType::UInt32 => parse_integer::<UInt32Type>(ca, base, strict),
+            DataType::UInt64 => parse_integer::<UInt64Type>(ca, base, strict),
+            dtype => polars_bail!(InvalidOperation: "Invalid dtype {:?}", dtype),
+        }
     }
 
     fn contains_chunked(
@@ -147,29 +198,28 @@ pub trait StringNameSpaceImpl: AsString {
                         src.contains(pat)
                     }))
                 } else if strict {
-                    // A sqrt(n) regex cache is not too small, not too large.
-                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-                    broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
-                        match (opt_src, opt_pat) {
-                            (Some(src), Some(pat)) => {
-                                let reg =
-                                    reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
-                                Ok(Some(reg.is_match(src)))
-                            },
-                            _ => Ok(None),
-                        }
+                    with_regex_cache(|reg_cache| {
+                        broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
+                            match (opt_src, opt_pat) {
+                                (Some(src), Some(pat)) => {
+                                    let reg = reg_cache.compile(pat)?;
+                                    Ok(Some(reg.is_match(src)))
+                                },
+                                _ => Ok(None),
+                            }
+                        })
                     })
                 } else {
-                    // A sqrt(n) regex cache is not too small, not too large.
-                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-                    Ok(broadcast_binary_elementwise(
-                        ca,
-                        pat,
-                        infer_re_match(|src, pat| {
-                            let reg = reg_cache.try_get_or_insert_with(pat?, |p| Regex::new(p));
-                            Some(reg.ok()?.is_match(src?))
-                        }),
-                    ))
+                    with_regex_cache(|reg_cache| {
+                        Ok(broadcast_binary_elementwise(
+                            ca,
+                            pat,
+                            infer_re_match(|src, pat| {
+                                let reg = reg_cache.compile(pat?).ok()?;
+                                Some(reg.is_match(src?))
+                            }),
+                        ))
+                    })
                 }
             },
         }
@@ -205,45 +255,16 @@ pub trait StringNameSpaceImpl: AsString {
                 |src: Option<&str>, pat: Option<&str>| src?.find(pat?).map(|idx| idx as u32),
             ))
         } else {
-            // note: sqrt(n) regex cache is not too small, not too large.
-            let mut rx_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-            let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
-                if let (Some(src), Some(pat)) = (src, pat) {
-                    let rx = rx_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
-                    return Ok(rx.find(src).map(|m| m.start() as u32));
-                }
-                Ok(None)
-            };
-            broadcast_try_binary_elementwise(ca, pat, matcher)
-        }
-    }
-
-    /// Check if strings starts with a substring
-    fn starts_with(&self, sub: &str) -> BooleanChunked {
-        let ca = self.as_string();
-        let iter = ca.downcast_iter().map(|arr| {
-            let out: <BooleanType as PolarsDataType>::Array = arr
-                .views()
-                .iter()
-                .map(|view| starts_with_str(*view, sub, arr.data_buffers()))
-                .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
-
-            out.with_validity_typed(arr.validity().cloned())
-        });
-
-        ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
-    }
-
-    /// This is more performant than the BinaryChunked version because we use the inline prefix
-    /// Use the BinaryChunked::ends_with as there is no specialization here for that
-    fn starts_with_chunked(&self, prefix: &StringChunked) -> BooleanChunked {
-        let ca = self.as_string();
-        match prefix.len() {
-            1 => match prefix.get(0) {
-                Some(s) => self.starts_with(s),
-                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
-            },
-            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
+            with_regex_cache(|reg_cache| {
+                let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
+                    if let (Some(src), Some(pat)) = (src, pat) {
+                        let re = reg_cache.compile(pat)?;
+                        return Ok(re.find(src).map(|m| m.start() as u32));
+                    }
+                    Ok(None)
+                };
+                broadcast_try_binary_elementwise(ca, pat, matcher)
+            })
         }
     }
 
@@ -265,7 +286,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    fn pad_start(&self, length: usize, fill_char: char) -> StringChunked {
+    fn pad_start(&self, length: &UInt64Chunked, fill_char: char) -> StringChunked {
         let ca = self.as_string();
         pad::pad_start(ca, length, fill_char)
     }
@@ -276,7 +297,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    fn pad_end(&self, length: usize, fill_char: char) -> StringChunked {
+    fn pad_end(&self, length: &UInt64Chunked, fill_char: char) -> StringChunked {
         let ca = self.as_string();
         pad::pad_end(ca, length, fill_char)
     }
@@ -296,7 +317,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Check if strings contain a regex pattern.
     fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
-        let res_reg = Regex::new(pat);
+        let res_reg = polars_utils::regex_cache::compile_regex(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
         let out: BooleanChunked = if let Some(reg) = opt_reg {
             unary_elementwise_values(ca, |s| reg.is_match(s))
@@ -322,20 +343,20 @@ pub trait StringNameSpaceImpl: AsString {
     /// Return the index position of a regular expression substring in the target string.
     fn find(&self, pat: &str, strict: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
-        match Regex::new(pat) {
+        match polars_utils::regex_cache::compile_regex(pat) {
             Ok(rx) => Ok(unary_elementwise(ca, |opt_s| {
                 opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
             })),
             Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
-                format!("Invalid regular expression: {}", e).into(),
+                format!("Invalid regular expression: {e}").into(),
             )),
         }
     }
 
     /// Replace the leftmost regex-matched (sub)string with another string
     fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
-        let reg = Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
         let f = |s: &'a str| reg.replace(s, val);
         let ca = self.as_string();
         Ok(ca.apply_values(f))
@@ -385,7 +406,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Replace all regex-matched (sub)strings with another string
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        let reg = Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
         Ok(ca.apply_values(|s| reg.replace_all(s, val)))
     }
 
@@ -434,7 +455,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        let reg = Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
 
         let mut builder =
             ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
@@ -507,15 +528,13 @@ pub trait StringNameSpaceImpl: AsString {
         split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
     }
 
-    fn split(&self, by: &StringChunked) -> ListChunked {
+    fn split(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-
         split_helper(ca, by, str::split)
     }
 
-    fn split_inclusive(&self, by: &StringChunked) -> ListChunked {
+    fn split_inclusive(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-
         split_helper(ca, by, str::split_inclusive)
     }
 
@@ -528,16 +547,16 @@ pub trait StringNameSpaceImpl: AsString {
             pat.len(), ca.len(),
         );
 
-        // A sqrt(n) regex cache is not too small, not too large.
-        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
         let mut builder =
             ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
-        binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
-            (_, None) | (None, _) => builder.append_null(),
-            (Some(s), Some(pat)) => {
-                let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
-                builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
-            },
+        with_regex_cache(|re_cache| {
+            binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
+                (_, None) | (None, _) => builder.append_null(),
+                (Some(s), Some(pat)) => {
+                    let re = re_cache.compile(pat).unwrap();
+                    builder.append_values_iter(re.find_iter(s).map(|m| m.as_str()));
+                },
+            });
         });
         Ok(builder.finish())
     }
@@ -552,15 +571,16 @@ pub trait StringNameSpaceImpl: AsString {
     /// Count all successive non-overlapping regex matches.
     fn count_matches(&self, pat: &str, literal: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
-        let reg = if literal {
-            Regex::new(escape(pat).as_str())?
+        if literal {
+            Ok(unary_elementwise(ca, |opt_s| {
+                opt_s.map(|s| s.matches(pat).count() as u32)
+            }))
         } else {
-            Regex::new(pat)?
-        };
-
-        Ok(unary_elementwise(ca, |opt_s| {
-            opt_s.map(|s| reg.find_iter(s).count() as u32)
-        }))
+            let re = compile_regex(pat)?;
+            Ok(unary_elementwise(ca, |opt_s| {
+                opt_s.map(|s| re.find_iter(s).count() as u32)
+            }))
+        }
     }
 
     /// Count all successive non-overlapping regex matches.
@@ -576,25 +596,26 @@ pub trait StringNameSpaceImpl: AsString {
             pat.len(), ca.len(),
         );
 
-        // A sqrt(n) regex cache is not too small, not too large.
-        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-        let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
-            match (opt_s, opt_pat) {
-                (Some(s), Some(pat)) => {
-                    let reg = reg_cache.get_or_insert_with(pat, |p| {
-                        if literal {
-                            Regex::new(escape(p).as_str()).unwrap()
-                        } else {
-                            Regex::new(p).unwrap()
-                        }
-                    });
-                    Ok(Some(reg.find_iter(s).count() as u32))
-                },
-                _ => Ok(None),
-            }
+        let out: UInt32Chunked = if literal {
+            broadcast_binary_elementwise(ca, pat, |s: Option<&str>, p: Option<&str>| {
+                Some(s?.matches(p?).count() as u32)
+            })
+        } else {
+            with_regex_cache(|re_cache| {
+                let op = move |opt_s: Option<&str>,
+                               opt_pat: Option<&str>|
+                      -> PolarsResult<Option<u32>> {
+                    match (opt_s, opt_pat) {
+                        (Some(s), Some(pat)) => {
+                            let reg = re_cache.compile(pat)?;
+                            Ok(Some(reg.find_iter(s).count() as u32))
+                        },
+                        _ => Ok(None),
+                    }
+                };
+                broadcast_try_binary_elementwise(ca, pat, op)
+            })?
         };
-
-        let out: UInt32Chunked = broadcast_try_binary_elementwise(ca, pat, op)?;
 
         Ok(out.with_name(ca.name().clone()))
     }

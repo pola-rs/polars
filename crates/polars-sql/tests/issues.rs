@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
+use polars_utils::plpath::PlPath;
 
 #[test]
 #[cfg(feature = "csv")]
@@ -23,7 +24,7 @@ fn iss_7437() -> PolarsResult<()> {
         .collect()?
         .sort(["category"], SortMultipleOptions::default())?;
 
-    let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
         .finish()?
         .group_by(vec![col("category").alias("category")])
         .agg(vec![])
@@ -56,7 +57,7 @@ fn iss_7436() {
         .unwrap()
         .collect()
         .unwrap();
-    let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
         .finish()
         .unwrap()
         .select(&[

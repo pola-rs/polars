@@ -1,23 +1,23 @@
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::io::{Error as IoError, ErrorKind};
+use std::io::ErrorKind;
 
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
+use pyo3::PyTypeInfo;
 use pyo3::exceptions::{
     PyDeprecationWarning, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
     PyRuntimeError, PyUserWarning,
 };
 use pyo3::prelude::*;
-use pyo3::PyTypeInfo;
 
+use crate::Wrap;
 use crate::exceptions::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
     SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError,
     StringCacheMismatchError, StructFieldNotFoundError,
 };
-use crate::Wrap;
 
 pub enum PyPolarsErr {
     Polars(PolarsError),
@@ -57,17 +57,14 @@ impl From<PyErr> for PyPolarsErr {
     }
 }
 
-impl From<IoError> for PyPolarsErr {
-    fn from(err: IoError) -> Self {
-        PyPolarsErr::Other(format!("{err:?}"))
-    }
-}
-
 impl From<PyPolarsErr> for PyErr {
     fn from(err: PyPolarsErr) -> PyErr {
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
+                PolarsError::AssertionError(err) => {
+                    pyo3::exceptions::PyAssertionError::new_err(err.to_string())
+                },
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),
@@ -106,6 +103,7 @@ impl From<PyPolarsErr> for PyErr {
                     let tmp = PyPolarsErr::Polars(err.context_trace());
                     PyErr::from(tmp)
                 },
+                PolarsError::Python { error } => error.0,
             },
             Python(err) => err,
             err => PyRuntimeError::new_err(format!("{:?}", &err)),

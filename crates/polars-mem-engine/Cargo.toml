@@ -23,6 +23,7 @@ polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
+recursive = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [features]
@@ -30,7 +31,7 @@ async = [
   "polars-plan/async",
   "polars-io/cloud",
 ]
-python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
+python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python", "polars-error/python"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
 csv = ["polars-io/csv", "polars-plan/csv"]
@@ -51,3 +52,6 @@ object = ["polars-core/object"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "polars-expr/dynamic_group_by"]
 asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-ops/merge_sorted"]
+
+[lints]
+workspace = true

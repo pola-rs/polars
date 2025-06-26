@@ -126,7 +126,7 @@ pub unsafe fn decode_variable_no_order(
         validity.push(sentinel != 0xFF);
         if sentinel == 0xFF {
             array.push_value_ignore_validity("");
-            break;
+            continue;
         }
 
         let length = if sentinel < 0xFE {

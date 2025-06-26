@@ -1,6 +1,6 @@
-use arrow::datatypes::Metadata;
 #[cfg(feature = "dtype-categorical")]
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
+use arrow::datatypes::Metadata;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -12,16 +12,31 @@ use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
 
-use crate::chunked_array::cast::{cast_chunks, CastOptions};
+use crate::chunked_array::cast::{CastOptions, cast_chunks};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
-#[cfg(feature = "timezones")]
-use crate::chunked_array::temporal::parse_fixed_offset;
-#[cfg(feature = "timezones")]
-use crate::chunked_array::temporal::validate_time_zone;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
+    pub fn from_chunk_and_dtype(
+        name: PlSmallStr,
+        chunk: ArrayRef,
+        dtype: &DataType,
+    ) -> PolarsResult<Self> {
+        if &dtype.to_physical().to_arrow(CompatLevel::newest()) != chunk.dtype() {
+            polars_bail!(
+                InvalidOperation: "cannot create a series of type '{dtype}' of arrow chunk with type '{:?}'",
+                chunk.dtype()
+            );
+        }
+
+        // SAFETY: We check that the datatype matches.
+        let series = unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], dtype) };
+        Ok(series)
+    }
+
     /// Takes chunks and a polars datatype and constructs the Series
     /// This is faster than creating from chunks and an arrow datatype because there is no
     /// casting involved
@@ -106,25 +121,25 @@ impl Series {
             Struct(_) => {
                 let mut ca =
                     StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone());
-                ca.propagate_nulls();
+                StructChunked::propagate_nulls_mut(&mut ca);
                 ca.into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => {
-                assert_eq!(chunks.len(), 1);
-                let arr = chunks[0]
-                    .as_any()
-                    .downcast_ref::<FixedSizeBinaryArray>()
-                    .unwrap();
-                // SAFETY:
-                // this is highly unsafe. it will dereference a raw ptr on the heap
-                // make sure the ptr is allocated and from this pid
-                // (the pid is checked before dereference)
-                {
-                    let pe = PolarsExtension::new(arr.clone());
-                    let s = pe.get_series(&name);
-                    pe.take_and_forget();
-                    s
+            Object(_) => {
+                if let Some(arr) = chunks[0].as_any().downcast_ref::<FixedSizeBinaryArray>() {
+                    assert_eq!(chunks.len(), 1);
+                    // SAFETY:
+                    // this is highly unsafe. it will dereference a raw ptr on the heap
+                    // make sure the ptr is allocated and from this pid
+                    // (the pid is checked before dereference)
+                    {
+                        let pe = PolarsExtension::new(arr.clone());
+                        let s = pe.get_series(&name);
+                        pe.take_and_forget();
+                        s
+                    }
+                } else {
+                    unsafe { get_object_builder(name, 0).from_chunks(chunks) }
                 }
             },
             Null => new_null(name, &chunks),
@@ -239,15 +254,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
-                let canonical_tz = DataType::canonical_timezone(tz);
-                let tz = match canonical_tz.as_deref() {
-                    #[cfg(feature = "timezones")]
-                    Some(tz_str) => match validate_time_zone(tz_str) {
-                        Ok(_) => canonical_tz,
-                        Err(_) => Some(parse_fixed_offset(tz_str)?),
-                    },
-                    _ => canonical_tz,
-                };
+                let tz = TimeZone::opt_try_new(tz.clone())?;
                 let chunks =
                     cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
@@ -293,14 +300,72 @@ impl Series {
                     ArrowTimeUnit::Nanosecond => s,
                 })
             },
+            ArrowDataType::Decimal32(precision, scale) => {
+                feature_gated!("dtype-decimal", {
+                    polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
+
+                    let mut chunks = chunks;
+                    for chunk in chunks.iter_mut() {
+                        let old_chunk = chunk
+                            .as_any_mut()
+                            .downcast_mut::<PrimitiveArray<i32>>()
+                            .unwrap();
+
+                        // For now, we just cast the whole data to i128.
+                        let (_, values, validity) = std::mem::take(old_chunk).into_inner();
+                        *chunk = PrimitiveArray::new(
+                            ArrowDataType::Int128,
+                            values.iter().map(|&v| v as i128).collect(),
+                            validity,
+                        )
+                        .to_boxed();
+                    }
+
+                    // @NOTE: We cannot cast here as that will lower the scale.
+                    let s = Int128Chunked::from_chunks(name, chunks)
+                        .into_decimal_unchecked(Some(*precision), *scale)
+                        .into_series();
+                    Ok(s)
+                })
+            },
+            ArrowDataType::Decimal64(precision, scale) => {
+                feature_gated!("dtype-decimal", {
+                    polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
+
+                    let mut chunks = chunks;
+                    for chunk in chunks.iter_mut() {
+                        let old_chunk = chunk
+                            .as_any_mut()
+                            .downcast_mut::<PrimitiveArray<i64>>()
+                            .unwrap();
+
+                        // For now, we just cast the whole data to i128.
+                        let (_, values, validity) = std::mem::take(old_chunk).into_inner();
+                        *chunk = PrimitiveArray::new(
+                            ArrowDataType::Int128,
+                            values.iter().map(|&v| v as i128).collect(),
+                            validity,
+                        )
+                        .to_boxed();
+                    }
+
+                    // @NOTE: We cannot cast here as that will lower the scale.
+                    let s = Int128Chunked::from_chunks(name, chunks)
+                        .into_decimal_unchecked(Some(*precision), *scale)
+                        .into_series();
+                    Ok(s)
+                })
+            },
             ArrowDataType::Decimal(precision, scale)
             | ArrowDataType::Decimal256(precision, scale) => {
                 feature_gated!("dtype-decimal", {
                     polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
-                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals about 38 precision");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
 
+                    // Q? I don't think this is correct for Decimal256?
                     let mut chunks = chunks;
-                    // @NOTE: We cannot cast here as that will lower the scale.
                     for chunk in chunks.iter_mut() {
                         *chunk = std::mem::take(
                             chunk
@@ -311,6 +376,8 @@ impl Series {
                         .to(ArrowDataType::Int128)
                         .to_boxed();
                     }
+
+                    // @NOTE: We cannot cast here as that will lower the scale.
                     let s = Int128Chunked::from_chunks(name, chunks)
                         .into_decimal_unchecked(Some(*precision), *scale)
                         .into_series();
@@ -327,7 +394,7 @@ impl Series {
                 use arrow::datatypes::IntegerType;
                 // don't spuriously call this; triggers a read on mmapped data
                 let arr = if chunks.len() > 1 {
-                    concatenate_owned_unchecked(&chunks)?
+                    concatenate_unchecked(&chunks)?
                 } else {
                     chunks[0].clone()
                 };
@@ -466,7 +533,7 @@ impl Series {
                 unsafe {
                     let mut ca =
                         StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype);
-                    ca.propagate_nulls();
+                    StructChunked::propagate_nulls_mut(&mut ca);
                     Ok(ca.into_series())
                 }
             },
@@ -661,7 +728,7 @@ unsafe fn to_physical_and_dtype(
             (std::mem::take(s.chunks_mut()), dtype)
         },
         dt => {
-            let dtype = DataType::from_arrow(dt, true, md);
+            let dtype = DataType::from_arrow(dt, md);
             (arrays, dtype)
         },
     }

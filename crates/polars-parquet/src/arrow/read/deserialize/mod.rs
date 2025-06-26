@@ -19,7 +19,7 @@ use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
-pub use self::nested_utils::{init_nested, InitNested, NestedState};
+pub use self::nested_utils::{InitNested, NestedState, init_nested};
 pub use self::utils::filter::{Filter, PredicateFilter};
 use self::utils::freeze_validity;
 use super::*;
@@ -136,8 +136,13 @@ fn columns_to_iter_recursive(
     filter: Option<Filter>,
 ) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
     if init.is_empty() && is_primitive(&field.dtype) {
-        let (array, pred_true_mask) =
-            page_iter_to_array(columns.pop().unwrap(), types.pop().unwrap(), field, filter)?;
+        let (_, array, pred_true_mask) = page_iter_to_array(
+            columns.pop().unwrap(),
+            types.pop().unwrap(),
+            field,
+            filter,
+            None,
+        )?;
 
         return Ok((NestedState::default(), array, pred_true_mask));
     }

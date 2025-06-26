@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.mark.slow
@@ -59,3 +60,37 @@ def test_concat_vertically_relaxed() -> None:
         "a": [1.0, 0.2, 1.0, 2.0],
         "b": [None, 0.1, 2.0, 1.0],
     }
+
+
+def test_concat_group_by() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 0, 0, 0, 1, 1, 1, 1],
+            "a": [0, 1, 2, 3, 4, 5, 6, 7],
+            "b": [8, 9, 10, 11, 12, 13, 14, 15],
+        }
+    )
+    out = df.group_by("g").agg(pl.concat([pl.col.a, pl.col.b]))
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "g": [0, 1],
+                "a": [[0, 1, 2, 3, 8, 9, 10, 11], [4, 5, 6, 7, 12, 13, 14, 15]],
+            }
+        ),
+        check_row_order=False,
+    )
+
+
+def test_concat_19877() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    out = df.select(pl.concat([pl.col("a"), pl.col("b")]))
+    assert_frame_equal(out, pl.DataFrame({"a": [1, 2, 3, 4]}))
+
+
+def test_concat_zip_series_21980() -> None:
+    df = pl.DataFrame({"x": 1, "y": 2})
+    out = df.select(pl.concat([pl.col.x, pl.col.y]), pl.Series([3, 4]))
+    assert_frame_equal(out, pl.DataFrame({"x": [1, 2], "": [3, 4]}))

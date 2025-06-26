@@ -20,7 +20,13 @@ fn cum_fold_dtype() -> GetOutput {
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F, E>(acc: Expr, f: F, exprs: E) -> Expr
+pub fn fold_exprs<F, E>(
+    acc: Expr,
+    f: F,
+    exprs: E,
+    returns_scalar: bool,
+    return_dtype: Option<DataType>,
+) -> Expr
 where
     F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
@@ -40,19 +46,23 @@ where
         Ok(Some(acc))
     });
 
+    let output_type = return_dtype
+        .map(GetOutput::from_type)
+        .unwrap_or_else(|| GetOutput::first());
+
+    let options = FunctionOptions::groupwise().with_flags(|mut f| {
+        f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
+        f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+        f
+    });
+
     Expr::AnonymousFunction {
         input: exprs,
         function,
         // Take the type of the accumulator.
-        output_type: GetOutput::first(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "fold",
-            ..Default::default()
-        },
+        output_type,
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("fold")),
     }
 }
 
@@ -86,18 +96,15 @@ where
         }
     });
 
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
+
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: GetOutput::super_type(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "reduce",
-            ..Default::default()
-        },
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("reduce")),
     }
 }
 
@@ -134,18 +141,14 @@ where
         }
     });
 
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "cum_reduce",
-            ..Default::default()
-        },
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("cum_reduce")),
     }
 }
 
@@ -181,18 +184,14 @@ where
             .map(|ca| Some(ca.into_column()))
     });
 
+    let options =
+        FunctionOptions::aggregation().with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION);
     Expr::AnonymousFunction {
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "cum_fold",
-            ..Default::default()
-        },
+        options,
+        fmt_str: Box::new(PlSmallStr::from_static("cum_fold")),
     }
 }
 
@@ -203,16 +202,10 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
     // This will be reduced to `expr & expr` during conversion to IR.
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
-        options: FunctionOptions {
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::ALLOW_EMPTY_INPUTS,
-            ..Default::default()
-        },
-    })
+    Ok(Expr::n_ary(
+        FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
+        exprs,
+    ))
 }
 
 /// Create a new column with the bitwise-or of the elements in each row.
@@ -222,16 +215,10 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
     // This will be reduced to `expr | expr` during conversion to IR.
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
-        options: FunctionOptions {
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::ALLOW_EMPTY_INPUTS,
-            ..Default::default()
-        },
-    })
+    Ok(Expr::n_ary(
+        FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
+        exprs,
+    ))
 }
 
 /// Create a new column with the maximum value per row.
@@ -240,18 +227,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::MaxHorizontal,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR
-                | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
-        },
-    })
+    Ok(Expr::n_ary(FunctionExpr::MaxHorizontal, exprs))
 }
 
 /// Create a new column with the minimum value per row.
@@ -260,67 +236,32 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::MinHorizontal,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR
-                | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
-        },
-    })
+    Ok(Expr::n_ary(FunctionExpr::MinHorizontal, exprs))
 }
 
 /// Sum all values horizontally across columns.
 pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::SumHorizontal { ignore_nulls },
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
-    })
+    Ok(Expr::n_ary(
+        FunctionExpr::SumHorizontal { ignore_nulls },
+        exprs,
+    ))
 }
 
 /// Compute the mean of all values horizontally across columns.
 pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::MeanHorizontal { ignore_nulls },
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
-    })
+    Ok(Expr::n_ary(
+        FunctionExpr::MeanHorizontal { ignore_nulls },
+        exprs,
+    ))
 }
 
 /// Folds the expressions from left to right keeping the first non-null values.
 ///
 /// It is an error to provide an empty `exprs`.
 pub fn coalesce(exprs: &[Expr]) -> Expr {
-    let input = exprs.to_vec();
-    Expr::Function {
-        input,
-        function: FunctionExpr::Coalesce,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-            cast_options: Some(CastingRules::cast_to_supertypes()),
-            ..Default::default()
-        },
-    }
+    Expr::n_ary(FunctionExpr::Coalesce, exprs.to_vec())
 }

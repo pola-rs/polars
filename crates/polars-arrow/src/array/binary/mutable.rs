@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{BinaryArray, MutableBinaryValuesArray, MutableBinaryValuesIter};
 use crate::array::physical_binary::*;

@@ -16,9 +16,8 @@ polars-json = { workspace = true, optional = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 aho-corasick = { workspace = true, optional = true }
-argminmax = { version = "0.6.2", default-features = false, features = ["float"] }
+argminmax = { version = "0.6.3", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
@@ -28,14 +27,15 @@ either = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
+libm = { workspace = true }
 memchr = { workspace = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 regex-syntax = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
@@ -79,6 +79,7 @@ is_last_distinct = []
 is_unique = []
 unique_counts = []
 is_between = []
+is_close = []
 approx_unique = []
 business = ["dtype-date", "chrono"]
 fused = []
@@ -88,7 +89,14 @@ timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezon
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
-serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde"]
+serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde", "polars-compute/serde"]
+dsl-schema = [
+  "dep:schemars",
+  "polars-core/dsl-schema",
+  "polars-utils/dsl-schema",
+  "polars-schema/dsl-schema",
+  "polars-compute/dsl-schema",
+]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -129,6 +137,7 @@ iejoin = []
 semi_anti_join = []
 array_any_all = ["dtype-array"]
 array_count = ["dtype-array"]
+list_filter = []
 list_gather = []
 list_sets = []
 list_any_all = []
@@ -147,3 +156,6 @@ abs = []
 cov = []
 gather = []
 replace = ["is_in"]
+
+[lints]
+workspace = true

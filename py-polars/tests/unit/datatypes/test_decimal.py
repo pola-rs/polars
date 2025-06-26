@@ -9,6 +9,7 @@ from math import ceil, floor
 from random import choice, randrange, seed
 from typing import Any, Callable, NamedTuple
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -303,16 +304,24 @@ def test_decimal_aggregations() -> None:
         "a": [[D("0.1"), D("10.1")], [D("100.01"), D("9000.12")]],
     }
 
-    assert df.group_by("g", maintain_order=True).agg(
+    result = df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
-    ).to_dict(as_series=False) == {
-        "g": [1, 2],
-        "sum": [D("10.20"), D("9100.13")],
-        "min": [D("0.10"), D("100.01")],
-        "max": [D("10.10"), D("9000.12")],
-    }
+        mean=pl.mean("a"),
+        median=pl.median("a"),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "sum": [D("10.20"), D("9100.13")],
+            "min": [D("0.10"), D("100.01")],
+            "max": [D("10.10"), D("9000.12")],
+            "mean": [5.1, 4550.065],
+            "median": [5.1, 4550.065],
+        }
+    )
+    assert_frame_equal(result, expected)
 
     res = df.select(
         sum=pl.sum("a"),
@@ -507,7 +516,7 @@ def test_decimal_streaming() -> None:
         {"group": choice("abc"), "value": randrange(10**32) / scale} for _ in range(20)
     ]
     lf = pl.LazyFrame(data, schema_overrides={"value": pl.Decimal(scale=18)})
-    assert lf.group_by("group").agg(pl.sum("value")).collect(streaming=True).sort(
+    assert lf.group_by("group").agg(pl.sum("value")).collect(engine="streaming").sort(
         "group"
     ).to_dict(as_series=False) == {
         "group": ["a", "b", "c"],
@@ -548,7 +557,7 @@ def test_decimal_strict_scale_inference_17770() -> None:
 
 def test_decimal_round() -> None:
     dtype = pl.Decimal(3, 2)
-    values = [D(f"{float(v) / 100.:.02f}") for v in range(-150, 250, 1)]
+    values = [D(f"{float(v) / 100.0:.02f}") for v in range(-150, 250, 1)]
     i_s = pl.Series("a", values, dtype)
 
     floor_s = pl.Series("a", [floor(v) for v in values], dtype)
@@ -625,6 +634,33 @@ def test_decimal_horizontal_20482() -> None:
     }
 
 
+def test_decimal_horizontal_different_scales_16296() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [D("1.111")],
+            "b": [D("2.22")],
+            "c": [D("3.3")],
+        },
+        schema={
+            "a": pl.Decimal(18, 3),
+            "b": pl.Decimal(18, 2),
+            "c": pl.Decimal(18, 1),
+        },
+    )
+
+    assert (
+        df.select(
+            min=pl.min_horizontal(pl.col("a", "b", "c")),
+            max=pl.max_horizontal(pl.col("a", "b", "c")),
+            sum=pl.sum_horizontal(pl.col("a", "b", "c")),
+        )
+    ).to_dict(as_series=False) == {
+        "min": [D("1.111")],
+        "max": [D("3.300")],
+        "sum": [D("6.631")],
+    }
+
+
 def test_shift_over_12957() -> None:
     df = pl.DataFrame(
         {
@@ -655,8 +691,10 @@ def test_fill_null() -> None:
 
 def test_unique() -> None:
     ser = pl.Series([D("1.1"), D("1.1"), D("2.2")])
+    uniq = pl.Series([D("1.1"), D("2.2")])
 
-    assert ser.unique().to_list() == [D("1.1"), D("2.2")]
+    assert_series_equal(ser.unique(maintain_order=False), uniq, check_order=False)
+    assert_series_equal(ser.unique(maintain_order=True), uniq)
     assert ser.n_unique() == 2
     assert ser.arg_unique().to_list() == [0, 2]
 
@@ -685,3 +723,38 @@ def test_cast_float_to_decimal_12775() -> None:
     # default scale = 0
     assert s.cast(pl.Decimal).to_list() == [D("1")]
     assert s.cast(pl.Decimal(scale=1)).to_list() == [D("1.5")]
+
+
+def test_decimal_min_over_21096() -> None:
+    df = pl.Series("x", [1, 2], pl.Decimal(scale=2)).to_frame()
+    result = df.select(pl.col("x").min().over("x"))
+    assert result["x"].to_list() == [D("1.00"), D("2.00")]
+
+
+def test_decimal32_decimal64_22946() -> None:
+    tbl = pa.Table.from_pydict(
+        mapping={
+            "colx": [D("100.1"), D("200.2"), D("300.3")],
+            "coly": [D("400.4"), D("500.5"), D("600.6")],
+        },
+        schema=pa.schema(
+            [
+                ("colx", pa.decimal32(4, 1)),  # << note: decimal32
+                ("coly", pa.decimal64(4, 1)),  # << note: decimal64
+            ]
+        ),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(tbl),
+        pl.DataFrame(
+            [
+                pl.Series(
+                    "colx", [D("100.1"), D("200.2"), D("300.3")], pl.Decimal(4, 1)
+                ),
+                pl.Series(
+                    "coly", [D("400.4"), D("500.5"), D("600.6")], pl.Decimal(4, 1)
+                ),
+            ]
+        ),
+    )

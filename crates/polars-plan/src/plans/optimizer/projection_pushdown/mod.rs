@@ -5,14 +5,12 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
-use arrow::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::{hive, RowIndex};
+use polars_io::RowIndex;
 use recursive::recursive;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
@@ -23,7 +21,6 @@ use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
-use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::aexpr_to_leaf_names;
 
@@ -96,33 +93,39 @@ fn get_scan_columns(
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
     file_path_col: Option<&str>,
+    // When set, the column order will match the order from the provided schema
+    normalize_order_schema: Option<&Schema>,
 ) -> Option<Arc<[PlSmallStr]>> {
-    if !acc_projections.is_empty() {
-        Some(
-            acc_projections
-                .iter()
-                .filter_map(|node| {
-                    let name = column_node_to_name(*node, expr_arena);
-
-                    if let Some(ri) = row_index {
-                        if ri.name == name {
-                            return None;
-                        }
-                    }
-
-                    if let Some(file_path_col) = file_path_col {
-                        if file_path_col == name.as_str() {
-                            return None;
-                        }
-                    }
-
-                    Some(name.clone())
-                })
-                .collect::<Arc<[_]>>(),
-        )
-    } else {
-        None
+    if acc_projections.is_empty() {
+        return None;
     }
+
+    let mut column_names = acc_projections
+        .iter()
+        .filter_map(|node| {
+            let name = column_node_to_name(*node, expr_arena);
+
+            if let Some(ri) = row_index {
+                if ri.name == name {
+                    return None;
+                }
+            }
+
+            if let Some(file_path_col) = file_path_col {
+                if file_path_col == name.as_str() {
+                    return None;
+                }
+            }
+
+            Some(name.clone())
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(schema) = normalize_order_schema {
+        column_names.sort_unstable_by_key(|name| schema.try_get_full(name).unwrap().0);
+    }
+
+    Some(column_names.into_iter().collect::<Arc<[_]>>())
 }
 
 /// split in a projection vec that can be pushed down and a projection vec that should be used
@@ -172,14 +175,18 @@ fn add_expr_to_accumulated(
 
 fn add_str_to_accumulated(
     name: PlSmallStr,
-    acc_projections: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<PlSmallStr>,
+    ctx: &mut ProjectionContext,
     expr_arena: &mut Arena<AExpr>,
 ) {
-    // if empty: all columns are already projected.
-    if !acc_projections.is_empty() && !projected_names.contains(&name) {
+    // if not pushed down: all columns are already projected.
+    if ctx.has_pushed_down() && !ctx.projected_names.contains(&name) {
         let node = expr_arena.add(AExpr::Column(name));
-        add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
+        add_expr_to_accumulated(
+            node,
+            &mut ctx.acc_projections,
+            &mut ctx.projected_names,
+            expr_arena,
+        );
     }
 }
 
@@ -208,15 +215,12 @@ fn update_scan_schema(
 
 pub struct ProjectionPushDown {
     pub is_count_star: bool,
-    // @TODO: This is a hack to support both pre-NEW_MULTIFILE and post-NEW_MULTIFILE.
-    pub in_new_streaming_engine: bool,
 }
 
 impl ProjectionPushDown {
-    pub(super) fn new(in_new_streaming_engine: bool) -> Self {
+    pub(super) fn new() -> Self {
         Self {
             is_count_star: false,
-            in_new_streaming_engine,
         }
     }
 
@@ -387,6 +391,7 @@ impl ProjectionPushDown {
                 mut output_schema,
                 ..
             } => {
+                // TODO: Just project 0-width morsels.
                 if self.is_count_star {
                     ctx.process_count_star_at_scan(&schema, expr_arena);
                 }
@@ -411,8 +416,15 @@ impl ProjectionPushDown {
                     ctx.process_count_star_at_scan(&options.schema, expr_arena);
                 }
 
-                options.with_columns =
-                    get_scan_columns(&ctx.acc_projections, expr_arena, None, None);
+                let normalize_order_schema = Some(&*options.schema);
+
+                options.with_columns = get_scan_columns(
+                    &ctx.acc_projections,
+                    expr_arena,
+                    None,
+                    None,
+                    normalize_order_schema,
+                );
 
                 options.output_schema = if options.with_columns.is_none() {
                     None
@@ -429,175 +441,87 @@ impl ProjectionPushDown {
             Scan {
                 sources,
                 mut file_info,
-                mut hive_parts,
+                hive_parts,
                 scan_type,
                 predicate,
-                mut file_options,
+                mut unified_scan_args,
                 mut output_schema,
+                id: _,
             } => {
-                if self.is_count_star {
-                    ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
-                }
-                let do_optimization = match scan_type {
-                    FileScan::Anonymous { ref function, .. } => {
-                        function.allows_projection_pushdown()
-                    },
+                let do_optimization = match &*scan_type {
+                    FileScanIR::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => true,
+                    FileScanIR::NDJson { .. } => true,
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => true,
+                    FileScanIR::Ipc { .. } => true,
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => true,
+                    FileScanIR::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => true,
+                    FileScanIR::Parquet { .. } => true,
+                    // MultiScan will handle it if the PythonDataset cannot do projections.
+                    #[cfg(feature = "python")]
+                    FileScanIR::PythonDataset { .. } => true,
                 };
 
-                if do_optimization {
-                    file_options.with_columns = get_scan_columns(
-                        &ctx.acc_projections,
-                        expr_arena,
-                        file_options.row_index.as_ref(),
-                        file_options.include_file_paths.as_deref(),
-                    );
-
-                    if let Some(projection) = file_options.with_columns.as_mut() {
-                        if projection.is_empty() {
-                            match &scan_type {
-                                #[cfg(feature = "parquet")]
-                                FileScan::Parquet { .. } => {},
-                                #[cfg(feature = "ipc")]
-                                FileScan::Ipc { .. } => {},
-                                // Other scan types do not yet support projection of e.g. only the row index or file path
-                                // column - ensure at least 1 column is projected from the file.
-                                _ => {
-                                    *projection = match &file_info.reader_schema {
-                                        Some(Either::Left(s)) => s.iter_names().next(),
-                                        Some(Either::Right(s)) => s.iter_names().next(),
-                                        None => None,
-                                    }
-                                    .into_iter()
-                                    .cloned()
-                                    .collect();
-
-                                    // TODO: Don't know why this works without needing to remove it
-                                    // later.
-                                    ctx.acc_projections.push(ColumnNode(
-                                        expr_arena.add(AExpr::Column(projection[0].clone())),
-                                    ));
-                                },
-                            }
-                        }
+                #[expect(clippy::never_loop)]
+                loop {
+                    if !do_optimization {
+                        break;
                     }
 
-                    output_schema = if let Some(ref with_columns) = file_options.with_columns {
+                    if self.is_count_star {
+                        if let FileScanIR::Anonymous { .. } = &*scan_type {
+                            // Anonymous scan is not controlled by us, we don't know if it can support
+                            // 0-column projections, so we always project one.
+                            use either::Either;
+
+                            let projection: Arc<[PlSmallStr]> = match &file_info.reader_schema {
+                                Some(Either::Left(s)) => s.iter_names().next(),
+                                Some(Either::Right(s)) => s.iter_names().next(),
+                                None => None,
+                            }
+                            .into_iter()
+                            .cloned()
+                            .collect();
+
+                            unified_scan_args.projection = Some(projection.clone());
+
+                            if projection.is_empty() {
+                                output_schema = Some(Default::default());
+                                break;
+                            }
+
+                            ctx.acc_projections.push(ColumnNode(
+                                expr_arena.add(AExpr::Column(projection[0].clone())),
+                            ));
+
+                            unified_scan_args.projection = Some(projection)
+                        } else {
+                            // All nodes in new-streaming support projecting empty morsels with the correct height
+                            // from the file.
+                            unified_scan_args.projection = Some(Arc::from([]));
+                            output_schema = Some(Default::default());
+                            break;
+                        };
+                    }
+
+                    unified_scan_args.projection = get_scan_columns(
+                        &ctx.acc_projections,
+                        expr_arena,
+                        unified_scan_args.row_index.as_ref(),
+                        unified_scan_args.include_file_paths.as_deref(),
+                        None,
+                    );
+
+                    output_schema = if unified_scan_args.projection.is_some() {
                         let mut schema = update_scan_schema(
                             &ctx.acc_projections,
                             expr_arena,
                             &file_info.schema,
-                            scan_type.sort_projection(&file_options),
+                            scan_type.sort_projection(unified_scan_args.row_index.is_some()),
                         )?;
 
-                        hive_parts = if let Some(hive_parts) = hive_parts {
-                            let (new_schema, projected_indices) = hive_parts[0]
-                                .get_projection_schema_and_indices(
-                                    &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
-                                );
-
-                            Some(Arc::new(
-                                hive_parts
-                                    .iter()
-                                    .cloned()
-                                    .map(|mut hp| {
-                                        hp.apply_projection(
-                                            new_schema.clone(),
-                                            projected_indices.as_ref(),
-                                        );
-                                        hp
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ))
-                        } else {
-                            None
-                        };
-
-                        if let Some(ref hive_parts) = hive_parts {
-                            // @TODO:
-                            // This is a hack to support both pre-NEW_MULTIFILE and
-                            // post-NEW_MULTIFILE.
-                            if !self.in_new_streaming_engine
-                                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() != Ok("1")
-                            {
-                                // Skip reading hive columns from the file.
-                                let partition_schema = hive_parts.first().unwrap().schema();
-                                file_options.with_columns = file_options.with_columns.map(|x| {
-                                    x.iter()
-                                        .filter(|x| !partition_schema.contains(x))
-                                        .cloned()
-                                        .collect::<Arc<[_]>>()
-                                });
-
-                                let mut out = Schema::with_capacity(schema.len());
-
-                                // Ensure the ordering of `schema` matches what the reader will give -
-                                // namely, if a hive column also exists in the file it will be projected
-                                // based on its position in the file. This is extremely important for the
-                                // new-streaming engine.
-
-                                // row_index is separate
-                                let opt_row_index_col_name = file_options
-                                    .row_index
-                                    .as_ref()
-                                    .map(|v| &v.name)
-                                    .filter(|v| schema.contains(v))
-                                    .cloned();
-
-                                if let Some(name) = &opt_row_index_col_name {
-                                    out.insert_at_index(
-                                        0,
-                                        name.clone(),
-                                        schema.get(name).unwrap().clone(),
-                                    )
-                                    .unwrap();
-                                }
-
-                                {
-                                    let df_fields_iter = &mut schema
-                                        .iter()
-                                        .filter(|fld| {
-                                            !partition_schema.contains(fld.0)
-                                                && Some(fld.0) != opt_row_index_col_name.as_ref()
-                                        })
-                                        .map(|(a, b)| (a.clone(), b.clone()));
-
-                                    let hive_fields_iter = &mut partition_schema
-                                        .iter()
-                                        .map(|(a, b)| (a.clone(), b.clone()));
-
-                                    // `schema` also contains the `row_index` column here, so we don't need to handle it
-                                    // separately.
-
-                                    macro_rules! do_merge {
-                                        ($schema:expr) => {
-                                            hive::merge_sorted_to_schema_order_impl(
-                                                df_fields_iter,
-                                                hive_fields_iter,
-                                                &mut out,
-                                                &|v| $schema.index_of(&v.0),
-                                            )
-                                        };
-                                    }
-
-                                    match file_info.reader_schema.as_ref().unwrap() {
-                                        Either::Left(reader_schema) => do_merge!(reader_schema),
-                                        Either::Right(reader_schema) => do_merge!(reader_schema),
-                                    }
-                                }
-
-                                schema = out;
-                            }
-                        }
-
-                        if let Some(ref file_path_col) = file_options.include_file_paths {
+                        if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
                             if let Some(i) = schema.index_of(file_path_col) {
                                 let (name, dtype) = schema.shift_remove_index(i).unwrap();
                                 schema.insert_at_index(schema.len(), name, dtype)?;
@@ -606,17 +530,15 @@ impl ProjectionPushDown {
 
                         Some(Arc::new(schema))
                     } else {
-                        file_options.with_columns = maybe_init_projection_excluding_hive(
-                            file_info.reader_schema.as_ref().unwrap(),
-                            hive_parts.as_ref().map(|x| &x[0]),
-                        );
                         None
                     };
+
+                    break;
                 }
 
                 // File builder has a row index, but projected columns
                 // do not include it, so cull.
-                if let Some(RowIndex { ref name, .. }) = file_options.row_index {
+                if let Some(RowIndex { ref name, .. }) = unified_scan_args.row_index {
                     if output_schema
                         .as_ref()
                         .is_some_and(|schema| !schema.contains(name))
@@ -626,11 +548,11 @@ impl ProjectionPushDown {
                         let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
                         file_schema.shift_remove(name);
                         file_info.schema = Arc::new(file_schema);
-                        file_options.row_index = None;
+                        unified_scan_args.row_index = None;
                     }
                 };
 
-                if let Some(col_name) = &file_options.include_file_paths {
+                if let Some(col_name) = &unified_scan_args.include_file_paths {
                     if output_schema
                         .as_ref()
                         .is_some_and(|schema| !schema.contains(col_name))
@@ -640,7 +562,7 @@ impl ProjectionPushDown {
                         let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
                         file_schema.shift_remove(col_name);
                         file_info.schema = Arc::new(file_schema);
-                        file_options.include_file_paths = None;
+                        unified_scan_args.include_file_paths = None;
                     }
                 };
 
@@ -651,19 +573,11 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
-                    file_options,
+                    unified_scan_args,
+                    id: Default::default(),
                 };
 
-                if self.is_count_star {
-                    return Ok(lp);
-                }
-
-                // TODO: Our scans don't perfectly give the right projection order with combinations
-                // of hive columns that exist in the file, so we always add a `Select {}` node here.
-
-                let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
-                let builder = builder.project_simple_nodes(ctx.acc_projections)?;
-                Ok(builder.build())
+                Ok(lp)
             },
             Sort {
                 input,
@@ -696,23 +610,13 @@ impl ProjectionPushDown {
                 if ctx.has_pushed_down() {
                     if let Some(subset) = options.subset.as_ref() {
                         subset.iter().for_each(|name| {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut ctx.acc_projections,
-                                &mut ctx.projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         })
                     } else {
                         // distinct needs all columns
                         let input_schema = lp_arena.get(input).schema(lp_arena);
                         for name in input_schema.iter_names() {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut ctx.acc_projections,
-                                &mut ctx.projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         }
                     }
                 }
@@ -833,7 +737,7 @@ impl ProjectionPushDown {
             } => process_hconcat(self, inputs, schema, options, ctx, lp_arena, expr_arena),
             lp @ Union { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena),
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Sink { .. } => {
+            lp @ Slice { .. } | lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
                 process_generic(self, lp, ctx, lp_arena, expr_arena)
             },
             Cache { .. } => {
@@ -858,12 +762,7 @@ impl ProjectionPushDown {
             } => {
                 if ctx.has_pushed_down() {
                     // make sure that the filter column is projected
-                    add_str_to_accumulated(
-                        key.clone(),
-                        &mut ctx.acc_projections,
-                        &mut ctx.projected_names,
-                        expr_arena,
-                    );
+                    add_str_to_accumulated(key.clone(), &mut ctx, expr_arena);
                 };
 
                 self.pushdown_and_assign(input_left, ctx.clone(), lp_arena, expr_arena)?;

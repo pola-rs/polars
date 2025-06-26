@@ -13,6 +13,7 @@ polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
+polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true }
@@ -20,13 +21,13 @@ polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
+polars-testing = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
 # TODO! remove this once truly activated. This is required to make sdist building work
 # polars-stream = { workspace = true }
 
-ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 arrow = { workspace = true }
 bincode = { workspace = true }
@@ -36,12 +37,12 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true }
+hashbrown = { workspace = true }
 itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
-once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
@@ -80,6 +81,7 @@ features = [
   "is_last_distinct",
   "is_unique",
   "is_between",
+  "is_close",
   "lazy",
   "list_eval",
   "list_to_struct",
@@ -126,11 +128,11 @@ version_check = { workspace = true }
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
 catalog = ["polars-lazy/catalog"]
-parquet = ["polars/parquet", "polars-parquet"]
-ipc = ["polars/ipc"]
+parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
+ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json", "polars/json", "polars-utils/serde"]
+json = ["polars/serde", "serde_json", "polars/json", "polars-utils/serde", "polars-mem-engine/json"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -139,13 +141,12 @@ cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 
-streaming = ["polars/streaming"]
 meta = ["polars/meta"]
 index_of = ["polars/index_of"]
 search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress"]
 regex = ["polars/regex"]
-csv = ["polars/csv"]
+csv = ["polars/csv", "polars-mem-engine/csv"]
 clipboard = ["arboard"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
@@ -156,6 +157,7 @@ performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
+list_filter = ["polars/list_filter"]
 list_gather = ["polars/list_gather"]
 list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
@@ -208,6 +210,7 @@ operations = [
   "sign",
   "performant",
   "list_gather",
+  "list_filter",
   "list_count",
   "list_sets",
   "list_any_all",
@@ -248,10 +251,10 @@ io = [
 optimizations = [
   "cse",
   "polars/fused",
-  "streaming",
 ]
 
-polars_cloud = ["polars/polars_cloud", "polars/ir_serde"]
+polars_cloud_client = ["polars/polars_cloud_client"]
+polars_cloud_server = ["polars/polars_cloud_server"]
 
 # also includes simd
 nightly = ["polars/nightly"]
@@ -270,7 +273,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
-  "polars_cloud",
+  "polars_cloud_client",
   "new_streaming",
 ]
 
@@ -281,3 +284,6 @@ all = [
 default = [
   "all",
 ]
+
+[lints]
+workspace = true

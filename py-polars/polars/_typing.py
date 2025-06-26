@@ -15,6 +15,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    import contextlib
     import sys
     from datetime import date, datetime, time, timedelta
     from decimal import Decimal
@@ -27,8 +28,12 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
+    from polars.dependencies import torch
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import _selector_proxy_
+
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        from polars.polars import PyPartitioning
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -101,6 +106,9 @@ AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
+DeletionFiles: TypeAlias = tuple[
+    Literal["iceberg-position-delete"], dict[int, list[str]]
+]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
@@ -123,8 +131,12 @@ ParquetCompression: TypeAlias = Literal[
 PivotAgg: TypeAlias = Literal[
     "min", "max", "first", "last", "sum", "mean", "median", "len"
 ]
+QuantileMethod: TypeAlias = Literal[
+    "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
+]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
 Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
@@ -150,6 +162,7 @@ StartBy: TypeAlias = Literal[
     "saturday",
     "sunday",
 ]
+SyncOnCloseMethod: TypeAlias = Literal["data", "all"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
@@ -163,9 +176,6 @@ InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
 ]  # JoinType
-RollingInterpolationMethod: TypeAlias = Literal[
-    "nearest", "higher", "lower", "midpoint", "linear"
-]  # QuantileInterpolOptions
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -203,6 +213,7 @@ FrameInitTypes: TypeAlias = Union[
     "pd.DataFrame",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
+    "torch.Tensor",
 ]
 
 # Excel IO
@@ -277,7 +288,6 @@ ConnectionOrCursor: TypeAlias = Union[
     BasicConnection, BasicCursor, Cursor, AlchemyConnection
 ]
 
-
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
 MultiIndexSelector: TypeAlias = Union[
@@ -303,7 +313,11 @@ SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
 MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
+EngineType: TypeAlias = Union[
+    Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
+]
+
+PlanStage: TypeAlias = Literal["ir", "physical"]
 
 FileSource: TypeAlias = Union[
     str,
@@ -317,3 +331,138 @@ FileSource: TypeAlias = Union[
 ]
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+
+DeprecationType: TypeAlias = Literal[
+    "function",
+    "renamed_parameter",
+    "streaming_parameter",
+    "nonkeyword_arguments",
+    "parameter_as_multi_positional",
+]
+
+
+class PartitioningScheme:
+    def __init__(
+        self,
+        py_partitioning: PyPartitioning,
+    ) -> None:
+        self._py_partitioning = py_partitioning
+
+    @property
+    def _base_path(self) -> str | None:
+        return self._py_partitioning.base_path
+
+
+__all__ = [
+    "Ambiguous",
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
+    "AsofJoinStrategy",
+    "AvroCompression",
+    "BooleanMask",
+    "BufferInfo",
+    "CategoricalOrdering",
+    "ClosedInterval",
+    "ColumnFormatDict",
+    "ColumnNameOrSelector",
+    "ColumnTotalsDefinition",
+    "ColumnWidthsDefinition",
+    "ComparisonOperator",
+    "ConcatMethod",
+    "ConditionalFormatDict",
+    "ConnectionOrCursor",
+    "CorrelationMethod",
+    "CsvEncoding",
+    "CsvQuoteStyle",
+    "Cursor",
+    "DbReadEngine",
+    "DbWriteEngine",
+    "DbWriteMode",
+    "DeprecationType",
+    "Endianness",
+    "EngineType",
+    "EpochTimeUnit",
+    "ExcelSpreadsheetEngine",
+    "ExplainFormat",
+    "FileSource",
+    "FillNullStrategy",
+    "FloatFmt",
+    "FrameInitTypes",
+    "FrameType",
+    "IndexOrder",
+    "InterpolationMethod",
+    "IntoExpr",
+    "IntoExprColumn",
+    "IpcCompression",
+    "JSONEncoder",
+    "JaxExportType",
+    "JoinStrategy",
+    "JoinValidation",
+    "Label",
+    "ListToStructWidthStrategy",
+    "MaintainOrderJoin",
+    "MapElementsStrategy",
+    "MultiColSelector",
+    "MultiIndexSelector",
+    "MultiNameSelector",
+    "NonExistent",
+    "NonNestedLiteral",
+    "NullBehavior",
+    "NumericLiteral",
+    "OneOrMoreDataTypes",
+    "Orientation",
+    "ParallelStrategy",
+    "ParametricProfileNames",
+    "ParquetCompression",
+    "PartitioningScheme",
+    "PivotAgg",
+    "PolarsDataType",
+    "PolarsIntegerType",
+    "PolarsTemporalType",
+    "PolarsType",
+    "PythonDataType",
+    "PythonLiteral",
+    "QuantileMethod",
+    "RankMethod",
+    "Roll",
+    "RowTotalsDefinition",
+    "SchemaDefinition",
+    "SchemaDict",
+    "SearchSortedSide",
+    "SelectorType",
+    "SerializationFormat",
+    "SeriesBuffers",
+    "SingleColSelector",
+    "SingleIndexSelector",
+    "SingleNameSelector",
+    "SizeUnit",
+    "StartBy",
+    "SyncOnCloseMethod",
+    "TemporalLiteral",
+    "TimeUnit",
+    "TorchExportType",
+    "TransferEncoding",
+    "UnicodeForm",
+    "UniqueKeepStrategy",
+    "UnstackDirection",
+    "WindowMappingStrategy",
+]
+
+
+class ParquetMetadataContext:
+    """
+    The context given when writing file-level parquet metadata.
+
+    .. warning::
+        This functionality is considered **experimental**. It may be removed or
+        changed at any point without it being considered a breaking change.
+    """
+
+    def __init__(self, *, arrow_schema: str) -> None:
+        self.arrow_schema = arrow_schema
+
+    arrow_schema: str  #: The base64 encoded arrow schema that is going to be written into metadata.
+
+
+ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
+ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]

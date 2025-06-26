@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ptr;
 
 use ndarray::IntoDimension;
 use numpy::npyffi::types::npy_intp;
 use numpy::npyffi::{self, flags};
-use numpy::{Element, PyArray1, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
+use numpy::{Element, PY_ARRAY_API, PyArray1, PyArrayDescrMethods, ToNpyDims};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
@@ -97,7 +98,7 @@ macro_rules! impl_ufuncs {
 
                     debug_assert_eq!(get_refcnt(&out_array), 1);
                     // inserting it in a tuple increase the reference count by 1.
-                    let args = PyTuple::new(py, &[out_array.clone()])?;
+                    let args = PyTuple::new(py, std::slice::from_ref(&out_array))?;
                     debug_assert_eq!(get_refcnt(&out_array), 2);
 
                     // whatever the result, we must take the leaked memory ownership back

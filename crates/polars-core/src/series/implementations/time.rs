@@ -54,14 +54,18 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
         self.0.physical().into_total_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(
         &self,
-        build_hasher: PlRandomState,
+        build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
@@ -156,7 +160,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
-        (a.into_series(), b.into_series())
+        (a.into_time().into_series(), b.into_time().into_series())
     }
 
     fn _sum_as_f64(&self) -> f64 {
@@ -185,7 +189,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .as_any_mut()
                 .downcast_mut::<TimeChunked>()
                 .unwrap()
-                .0,
+                .phys,
         ))
     }
 
@@ -225,7 +229,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_time().into_series()
+        self.0.rechunk().into_owned().into_time().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -328,12 +332,20 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        self.0.physical()
     }
 
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

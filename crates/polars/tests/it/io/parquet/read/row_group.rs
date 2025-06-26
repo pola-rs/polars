@@ -5,7 +5,7 @@ use arrow::datatypes::{ArrowSchemaRef, Field};
 use arrow::record_batch::RecordBatchT;
 use polars::prelude::ArrowSchema;
 use polars_error::PolarsResult;
-use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
+use polars_parquet::arrow::read::{Filter, column_iter_to_arrays};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::read::{BasicDecompressor, PageReader};
 use polars_parquet::read::RowGroupMetadata;

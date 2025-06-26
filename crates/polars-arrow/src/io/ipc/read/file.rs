@@ -1,9 +1,9 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
-use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::FooterRef;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use arrow_format::ipc::planus::ReadAsRoot;
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
@@ -194,11 +194,7 @@ fn deserialize_footer_blocks(
 
     let blocks = blocks
         .iter()
-        .map(|block| {
-            block.try_into().map_err(|err| {
-                polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err))
-            })
-        })
+        .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref)))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok((footer, blocks))
 }
@@ -226,11 +222,9 @@ pub(super) fn iter_recordbatch_blocks_from_footer(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingRecordBatches))?;
 
-    Ok(blocks.iter().map(|block| {
-        block
-            .try_into()
-            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))
-    }))
+    Ok(blocks
+        .into_iter()
+        .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref))))
 }
 
 pub(super) fn iter_dictionary_blocks_from_footer(
@@ -242,11 +236,9 @@ pub(super) fn iter_dictionary_blocks_from_footer(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?;
 
     Ok(dictionaries.map(|dicts| {
-        dicts.into_iter().map(|block| {
-            block.try_into().map_err(|err| {
-                polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err))
-            })
-        })
+        dicts
+            .into_iter()
+            .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref)))
     }))
 }
 

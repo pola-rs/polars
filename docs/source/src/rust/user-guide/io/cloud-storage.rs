@@ -23,7 +23,7 @@ async fn main() {
     let cursor = std::io::Cursor::new(bytes);
     let df = CsvReader::new(cursor).finish().unwrap();
 
-    println!("{:?}", df);
+    println!("{df:?}");
 }
 // --8<-- [end:read_parquet]
 
@@ -38,6 +38,9 @@ async fn main() {
 
 // --8<-- [start:credential_provider_custom_func]
 // --8<-- [end:credential_provider_custom_func]
+
+// --8<-- [start:credential_provider_custom_func_azure]
+// --8<-- [end:credential_provider_custom_func_azure]
 
 // --8<-- [start:scan_pyarrow_dataset]
 // --8<-- [end:scan_pyarrow_dataset]

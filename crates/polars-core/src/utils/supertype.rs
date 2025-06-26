@@ -34,7 +34,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
             v => {
                 // Did we add a new float type?
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -49,7 +49,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
             (Int8, _) | (_, Int8) => Some(Int8),
             v => {
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -63,7 +63,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
             (UInt8, _) | (_, UInt8) => Some(UInt8),
             v => {
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -81,7 +81,7 @@ pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Opti
                 // One side was UInt and we should have already matched against
                 // all the UInt types
                 if cfg!(debug_assertions) {
-                    panic!("{:?}", v)
+                    panic!("{v:?}")
                 } else {
                     None
                 }
@@ -195,9 +195,11 @@ pub fn get_supertype_with_options(
 
 
             #[cfg(feature = "dtype-i128")]
-            (a, Int128) if a.is_integer() => Some(Int128),
+            (a, Int128) if a.is_integer() | a.is_bool() => Some(Int128),
             #[cfg(feature = "dtype-i128")]
             (a, Int128) if a.is_float() => Some(Float64),
+            #[cfg(feature = "dtype-i128")]
+
 
             (Int32, Boolean) => Some(Int32),
             #[cfg(feature = "dtype-i8")]

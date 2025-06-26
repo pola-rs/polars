@@ -12,8 +12,6 @@ mod predicate_queries;
 mod projection_queries;
 mod queries;
 mod schema;
-#[cfg(feature = "streaming")]
-mod streaming;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<IR>) {
     let expr_arena = Arena::with_capacity(16);
@@ -34,12 +32,13 @@ use std::io::Cursor;
 #[cfg(feature = "temporal")]
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use optimization_checks::*;
+#[cfg(feature = "parquet")]
+pub(crate) use polars_core::SINGLE_LOCK;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::df;
 use polars_core::prelude::*;
-#[cfg(feature = "parquet")]
-pub(crate) use polars_core::SINGLE_LOCK;
 use polars_io::prelude::*;
+use polars_utils::plpath::PlPath;
 
 #[cfg(feature = "cov")]
 use crate::dsl::pearson_corr;
@@ -62,17 +61,27 @@ static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 
 #[cfg(feature = "csv")]
 fn scan_foods_csv() -> LazyFrame {
-    LazyCsvReader::new(FOODS_CSV).finish().unwrap()
+    LazyCsvReader::new(PlPath::new(FOODS_CSV)).finish().unwrap()
 }
 
 #[cfg(feature = "ipc")]
 fn scan_foods_ipc() -> LazyFrame {
     init_files();
-    LazyFrame::scan_ipc(FOODS_IPC, Default::default()).unwrap()
+    LazyFrame::scan_ipc(PlPath::new(FOODS_IPC), Default::default()).unwrap()
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn init_files() {
+    if std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/busy")
+        .is_err()
+    {
+        while !std::fs::exists("../../examples/datasets/finished").unwrap() {}
+        return;
+    }
+
     for path in &[
         "../../examples/datasets/foods1.csv",
         "../../examples/datasets/foods2.csv",
@@ -113,6 +122,12 @@ fn init_files() {
             }
         }
     }
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/finished")
+        .unwrap();
 }
 
 #[cfg(feature = "parquet")]
@@ -132,7 +147,7 @@ fn scan_foods_parquet(parallel: bool) -> LazyFrame {
         rechunk: true,
         ..Default::default()
     };
-    LazyFrame::scan_parquet(out_path, args).unwrap()
+    LazyFrame::scan_parquet(PlPath::new(out_path), args).unwrap()
 }
 
 #[cfg(feature = "parquet")]
@@ -152,7 +167,7 @@ fn scan_nutri_score_null_column_parquet(parallel: bool) -> LazyFrame {
         rechunk: true,
         ..Default::default()
     };
-    LazyFrame::scan_parquet(out_path, args).unwrap()
+    LazyFrame::scan_parquet(PlPath::new(out_path), args).unwrap()
 }
 
 pub(crate) fn fruits_cars() -> DataFrame {

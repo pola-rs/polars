@@ -72,21 +72,15 @@ impl Expr {
         include_breakpoint: bool,
     ) -> Self {
         let mut input = vec![self];
-        if let Some(bins) = bins {
-            input.push(bins)
-        }
+        input.extend(bins);
 
-        Expr::Function {
-            input,
-            function: FunctionExpr::Hist {
+        Expr::n_ary(
+            FunctionExpr::Hist {
                 bin_count,
                 include_category,
                 include_breakpoint,
             },
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::GroupWise,
-                ..Default::default()
-            },
-        }
+            input,
+        )
     }
 }

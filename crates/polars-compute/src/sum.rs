@@ -53,11 +53,7 @@ fn wrapping_sum_with_mask_scalar<T: Zero + WrappingAdd + Copy>(vals: &[T], mask:
         .enumerate()
         .map(|(i, x)| {
             // No filter but rather select of 0 for cmov opt.
-            if mask.get(i) {
-                *x
-            } else {
-                T::zero()
-            }
+            if mask.get(i) { *x } else { T::zero() }
         })
         .fold(T::zero(), |a, b| a.wrapping_add(&b))
 }

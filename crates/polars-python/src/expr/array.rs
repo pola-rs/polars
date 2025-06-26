@@ -10,6 +10,10 @@ use crate::expr::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    fn arr_len(&self) -> Self {
+        self.inner.clone().arr().len().into()
+    }
+
     fn arr_max(&self) -> Self {
         self.inner.clone().arr().max().into()
     }
@@ -99,8 +103,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn arr_contains(&self, other: PyExpr) -> Self {
-        self.inner.clone().arr().contains(other.inner).into()
+    fn arr_contains(&self, other: PyExpr, nulls_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .contains(other.inner, nulls_equal)
+            .into()
     }
 
     #[cfg(feature = "array_count")]
@@ -125,6 +133,30 @@ impl PyExpr {
             .clone()
             .arr()
             .to_struct(name_gen)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
+    fn arr_slice(&self, offset: PyExpr, length: Option<PyExpr>, as_array: bool) -> PyResult<Self> {
+        let length = match length {
+            Some(i) => i.inner,
+            None => lit(i64::MAX),
+        };
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .slice(offset.inner, length, as_array)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
+    fn arr_tail(&self, n: PyExpr, as_array: bool) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .tail(n.inner, as_array)
             .map_err(PyPolarsErr::from)?
             .into())
     }

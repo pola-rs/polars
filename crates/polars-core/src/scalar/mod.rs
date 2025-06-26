@@ -1,18 +1,32 @@
 mod from;
+mod new;
 pub mod reduce;
 
+use std::hash::Hash;
+
+use polars_error::PolarsResult;
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::chunked_array::cast::CastOptions;
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::{Column, Series};
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
+}
+
+impl Hash for Scalar {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.dtype.hash(state);
+        self.value.hash_impl(state, true);
+    }
 }
 
 impl Default for Scalar {
@@ -26,12 +40,30 @@ impl Default for Scalar {
 
 impl Scalar {
     #[inline(always)]
-    pub fn new(dtype: DataType, value: AnyValue<'static>) -> Self {
+    pub const fn new(dtype: DataType, value: AnyValue<'static>) -> Self {
         Self { dtype, value }
     }
 
-    pub fn null(dtype: DataType) -> Self {
+    pub const fn null(dtype: DataType) -> Self {
         Self::new(dtype, AnyValue::Null)
+    }
+
+    pub fn new_idxsize(value: IdxSize) -> Self {
+        value.into()
+    }
+
+    pub fn cast_with_options(self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
+        if self.dtype() == dtype {
+            return Ok(self);
+        }
+
+        // @Optimize: If we have fully fleshed out casting semantics, we could just specify the
+        // cast on AnyValue.
+        let s = self
+            .into_series(PlSmallStr::from_static("scalar"))
+            .cast_with_options(dtype, options)?;
+        let value = s.get(0).unwrap();
+        Ok(Self::new(s.dtype().clone(), value.into_static()))
     }
 
     #[inline(always)]
@@ -82,6 +114,17 @@ impl Scalar {
     #[inline(always)]
     pub fn with_value(mut self, value: AnyValue<'static>) -> Self {
         self.update(value);
+        self
+    }
+
+    #[inline(always)]
+    pub fn any_value_mut(&mut self) -> &mut AnyValue<'static> {
+        &mut self.value
+    }
+
+    pub fn to_physical(mut self) -> Scalar {
+        self.dtype = self.dtype.to_physical();
+        self.value = self.value.to_physical();
         self
     }
 }

@@ -2,7 +2,7 @@ use chrono::NaiveTime;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};
-use pyo3::{intern, BoundObject};
+use pyo3::{BoundObject, intern};
 
 use super::datetime::{
     datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
@@ -101,7 +101,8 @@ impl<'py> IntoPyObject<'py> for &Wrap<&TimeChunked> {
 pub(crate) fn time_to_pyobject_iter(
     ca: &TimeChunked,
 ) -> impl '_ + ExactSizeIterator<Item = Option<NaiveTime>> {
-    ca.0.iter()
+    ca.phys
+        .iter()
         .map(move |opt_v| opt_v.map(nanos_since_midnight_to_naivetime))
 }
 

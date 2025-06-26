@@ -2,11 +2,11 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
 use super::PrimitiveArray;
-use crate::array::fmt::write_vec;
 use crate::array::Array;
+use crate::array::fmt::write_vec;
 use crate::datatypes::{IntervalUnit, TimeUnit};
 use crate::temporal_conversions;
-use crate::types::{days_ms, i256, months_days_ns, NativeType};
+use crate::types::{NativeType, days_ms, i256, months_days_ns};
 
 macro_rules! dyn_primitive {
     ($array:expr, $ty:ty, $expr:expr) => {{
@@ -125,6 +125,26 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                 format!("{base}.{decimals}")
             };
             dyn_primitive!(array, i128, display)
+        },
+        Decimal32(_, scale) => {
+            let scale = *scale as u32;
+            let factor = 10i32.pow(scale);
+            let display = move |x: i32| {
+                let base = x / factor;
+                let decimals = (x - base * factor).abs();
+                format!("{base}.{decimals}")
+            };
+            dyn_primitive!(array, i32, display)
+        },
+        Decimal64(_, scale) => {
+            let scale = *scale as u32;
+            let factor = 10i64.pow(scale);
+            let display = move |x: i64| {
+                let base = x / factor;
+                let decimals = (x - base * factor).abs();
+                format!("{base}.{decimals}")
+            };
+            dyn_primitive!(array, i64, display)
         },
         Decimal256(_, scale) => {
             let scale = *scale as u32;

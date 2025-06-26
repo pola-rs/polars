@@ -4,11 +4,18 @@ import contextlib
 import enum
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration
-from polars.dependencies import _check_for_numpy
+from polars.dependencies import (
+    _check_for_numpy,
+    _check_for_pytz,
+    _check_for_torch,
+    pytz,
+    torch,
+)
 from polars.dependencies import numpy as np
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -87,12 +94,29 @@ def lit(
         if value_tz is None:
             tz = dtype_tz
         else:
+            # value has time zone, but dtype does not: keep value time zone
             if dtype_tz is None:
-                # value has time zone, but dtype does not: keep value time zone
-                tz = str(value_tz)
+                if isinstance(value_tz, ZoneInfo) or (
+                    _check_for_pytz(value_tz)
+                    and isinstance(value_tz, pytz.tzinfo.BaseTzInfo)
+                    and value_tz.zone is not None
+                ):
+                    # named timezone
+                    tz = str(value_tz)
+                else:
+                    # fixed offset from UTC (eg: +4:00)
+                    value = value.astimezone(timezone.utc)
+                    tz = "UTC"
+
+            # dtype and value both have same time zone
             elif str(value_tz) == dtype_tz:
-                # dtype and value both have same time zone
                 tz = str(value_tz)
+
+            # given a fixed offset from UTC that matches the dtype tz offset
+            elif hasattr(value_tz, "utcoffset") and getattr(
+                ZoneInfo(dtype_tz).utcoffset(value), "seconds", 0
+            ) == getattr(value_tz.utcoffset(value), "seconds", 1):
+                tz = dtype_tz
             else:
                 # value has time zone that differs from dtype time zone
                 msg = (
@@ -140,6 +164,9 @@ def lit(
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pl.Series("literal", value, dtype=dtype))
 
+    elif _check_for_torch(value) and isinstance(value, torch.Tensor):
+        return lit(pl.Series("literal", value.numpy(force=False), dtype=dtype))
+
     elif isinstance(value, (list, tuple)):
         return wrap_expr(
             plr.lit(
@@ -155,25 +182,21 @@ def lit(
     if dtype:
         return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)
 
-    try:
-        # numpy literals like np.float32(0) have item/dtype
-        item = value.item()
-
-        # numpy item() is py-native datetime/timedelta when units < 'ns'
-        if isinstance(item, (datetime, timedelta)):
+    if _check_for_numpy(value) and isinstance(value, np.generic):
+        # note: the item() is a py-native datetime/timedelta when units < 'ns'
+        if isinstance(item := value.item(), (datetime, timedelta)):
             return lit(item)
 
         # handle 'ns' units
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
             if dtype_name.startswith("datetime64["):
-                time_unit = dtype_name[len("datetime64[") : -1]
+                time_unit = dtype_name[len("datetime64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Datetime(time_unit))
             if dtype_name.startswith("timedelta64["):
-                time_unit = dtype_name[len("timedelta64[") : -1]
+                time_unit = dtype_name[len("timedelta64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Duration(time_unit))
-
-    except AttributeError:
+    else:
         item = value
 
     return wrap_expr(plr.lit(item, allow_object, is_scalar=True))

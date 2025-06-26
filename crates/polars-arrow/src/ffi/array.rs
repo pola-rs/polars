@@ -1,12 +1,12 @@
 //! Contains functionality to load an ArrayData from the C Data Interface
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::ArrowArray;
 use crate::array::*;
-use crate::bitmap::utils::bytes_for;
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::bytes_for;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;

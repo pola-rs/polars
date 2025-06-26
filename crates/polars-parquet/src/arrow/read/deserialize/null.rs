@@ -6,9 +6,9 @@ use arrow::array::NullArray;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 
+use super::PredicateFilter;
 use super::utils::filter::Filter;
 use super::utils::{self};
-use super::PredicateFilter;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 

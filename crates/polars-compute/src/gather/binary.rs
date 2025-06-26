@@ -18,8 +18,8 @@
 use arrow::array::{Array, BinaryArray, PrimitiveArray};
 use arrow::offset::Offset;
 
-use super::generic_binary::*;
 use super::Index;
+use super::generic_binary::*;
 
 /// `take` implementation for utf8 arrays
 /// # Safety

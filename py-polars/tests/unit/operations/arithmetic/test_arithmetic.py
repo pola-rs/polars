@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 import pytest
@@ -24,6 +24,9 @@ from polars import (
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsIntegerType
 
 
 def test_sqrt_neg_inf() -> None:
@@ -193,9 +196,9 @@ def test_fused_arithm() -> None:
         pl.col("c") - pl.col("c") * 2,
     ]:
         q = df.lazy().select(expr)
-        assert all(
-            el not in q.explain() for el in ["fms", "fsm", "fma"]
-        ), f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        assert all(el not in q.explain() for el in ["fms", "fsm", "fma"]), (
+            f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        )
 
 
 def test_literal_no_upcast() -> None:
@@ -210,9 +213,9 @@ def test_literal_no_upcast() -> None:
         )
         .collect()
     )
-    assert set(q.schema.values()) == {
-        pl.Float32
-    }, "Literal * Column (Float32) should not lead upcast"
+    assert set(q.schema.values()) == {pl.Float32}, (
+        "Literal * Column (Float32) should not lead upcast"
+    )
 
 
 def test_boolean_addition() -> None:
@@ -705,8 +708,8 @@ def test_arithmetic_duration_div_multiply() -> None:
             ("a", pl.Duration(time_unit="us")),
             ("b", pl.Duration(time_unit="us")),
             ("c", pl.Duration(time_unit="us")),
-            ("d", pl.Unknown()),
-            ("e", pl.Unknown()),
+            ("d", pl.Duration(time_unit="us")),
+            ("e", pl.Duration(time_unit="us")),
             ("f", pl.Float64()),
         ]
     )
@@ -824,3 +827,50 @@ def test_raise_invalid_shape() -> None:
 def test_integer_divide_scalar_zero_lhs_19142() -> None:
     assert_series_equal(pl.Series([0]) // pl.Series([1, 0]), pl.Series([0, None]))
     assert_series_equal(pl.Series([0]) % pl.Series([1, 0]), pl.Series([0, None]))
+
+
+def test_compound_duration_21389() -> None:
+    # test add
+    lf = pl.LazyFrame(
+        {
+            "ts": datetime(2024, 1, 1, 1, 2, 3),
+            "duration": timedelta(days=1),
+        }
+    )
+    result = lf.select(pl.col("ts") + pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2024, 1, 3, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)
+
+    # test subtract
+    result = lf.select(pl.col("ts") - pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2023, 12, 30, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_arithmetic_i128(dtype: PolarsIntegerType) -> None:
+    s = pl.Series("a", [0, 1, 127], dtype=dtype, strict=False)
+    s128 = pl.Series("a", [0, 0, 0], dtype=pl.Int128)
+    expected = pl.Series("a", [0, 1, 127], dtype=pl.Int128)
+    assert_series_equal(s + s128, expected)
+    assert_series_equal(s128 + s, expected)
+
+
+def test_arithmetic_i128_nonint() -> None:
+    s128 = pl.Series("a", [0], dtype=pl.Int128)
+
+    s = pl.Series("a", [1.0], dtype=pl.Float32)
+    assert_series_equal(s + s128, pl.Series("a", [1.0], dtype=pl.Float64))
+    assert_series_equal(s128 + s, pl.Series("a", [1.0], dtype=pl.Float64))
+
+    s = pl.Series("a", [1.0], dtype=pl.Float64)
+    assert_series_equal(s + s128, s)
+    assert_series_equal(s128 + s, s)
+
+    s = pl.Series("a", [True], dtype=pl.Boolean)
+    assert_series_equal(s + s128, pl.Series("a", [1], dtype=pl.Int128))
+    assert_series_equal(s128 + s, pl.Series("a", [1], dtype=pl.Int128))

@@ -5,6 +5,7 @@ mod binary;
 mod cast;
 mod column;
 mod count;
+mod eval;
 mod filter;
 mod gather;
 mod group_iter;
@@ -29,11 +30,12 @@ pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
+pub(crate) use eval::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
-use polars_io::predicates::{PhysicalIoExpr, SpecializedColumnPredicateExpr};
+use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
@@ -71,6 +73,10 @@ impl AggState {
             AggState::Literal(c) => AggState::Literal(func(c)?),
             AggState::NotAggregated(c) => AggState::NotAggregated(func(c)?),
         })
+    }
+
+    fn is_scalar(&self) -> bool {
+        matches!(self, Self::AggregatedScalar(_))
     }
 }
 
@@ -256,7 +262,7 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    pub(crate) fn det_groups_from_list(&mut self, s: &Series) {
+    fn det_groups_from_list(&mut self, s: &Series) {
         let mut offset = 0 as IdxSize;
         let list = s
             .list()
@@ -330,7 +336,13 @@ impl<'a> AggregationContext<'a> {
         aggregated: bool,
         expr: Option<&Expr>,
     ) -> PolarsResult<&mut Self> {
-        self.with_values_and_args(column, aggregated, expr, false)
+        self.with_values_and_args(
+            column,
+            aggregated,
+            expr,
+            false,
+            self.agg_state().is_scalar(),
+        )
     }
 
     pub(crate) fn with_values_and_args(
@@ -341,9 +353,10 @@ impl<'a> AggregationContext<'a> {
         // if the applied function was a `map` instead of an `apply`
         // this will keep functions applied over literals as literals: F(lit) = lit
         mapped: bool,
+        returns_scalar: bool,
     ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, column.dtype()) {
-            (true, &DataType::List(_)) => {
+            (true, &DataType::List(_)) if !returns_scalar => {
                 if column.len() != self.groups.len() {
                     let fmt_expr = if let Some(e) = expr {
                         format!("'{e:?}' ")
@@ -394,6 +407,22 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
+    pub(crate) fn _implode_no_agg(&mut self) {
+        match self.state.clone() {
+            AggState::NotAggregated(_) => {
+                let _ = self.aggregated();
+                let AggState::AggregatedList(s) = self.state.clone() else {
+                    unreachable!()
+                };
+                self.state = AggState::AggregatedScalar(s);
+            },
+            AggState::AggregatedList(s) => {
+                self.state = AggState::AggregatedScalar(s);
+            },
+            _ => unreachable!("should only be called in non-agg/list-agg state by aggregation.rs"),
+        }
+    }
+
     /// Get the aggregated version of the series.
     pub fn aggregated(&mut self) -> Column {
         // we clone, because we only want to call `self.groups()` if needed.
@@ -408,7 +437,9 @@ impl<'a> AggregationContext<'a> {
                 #[cfg(debug_assertions)]
                 {
                     if self.groups.len() > s.len() {
-                        polars_warn!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic group_by")
+                        polars_warn!(
+                            "groups may be out of bounds; more groups than elements in a series is only possible in dynamic group_by"
+                        )
                     }
                 }
 
@@ -472,7 +503,7 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedScalar(c) => (c, groups),
             AggState::Literal(c) => (c, groups),
             AggState::AggregatedList(c) => {
-                let flattened = c.explode().unwrap();
+                let flattened = c.explode(false).unwrap();
                 let groups = groups.into_owned();
                 // unroll the possible flattened state
                 // say we have groups with overlapping windows:
@@ -517,11 +548,13 @@ impl<'a> AggregationContext<'a> {
                     // panic so we find cases where we accidentally explode overlapping groups
                     // we don't want this as this can create a lot of data
                     if let GroupsType::Slice { rolling: true, .. } = self.groups.as_ref().as_ref() {
-                        panic!("implementation error, polars should not hit this branch for overlapping groups")
+                        panic!(
+                            "implementation error, polars should not hit this branch for overlapping groups"
+                        )
                     }
                 }
 
-                Cow::Owned(c.explode().unwrap())
+                Cow::Owned(c.explode(false).unwrap())
             },
             AggState::AggregatedScalar(c) => Cow::Borrowed(c),
             AggState::Literal(c) => Cow::Borrowed(c),
@@ -602,23 +635,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )>;
-    fn to_column(&self) -> Option<&PlSmallStr> {
-        None
-    }
-
-    /// Can take &dyn Statistics and determine of a file should be
-    /// read -> `true`
-    /// or not -> `false`
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        None
-    }
     fn is_literal(&self) -> bool {
         false
     }
@@ -651,22 +667,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr
             .evaluate(df, &state)
             .map(|c| c.take_materialized_series())
-    }
-
-    #[cfg(feature = "parquet")]
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        self.expr.as_stats_evaluator()
-    }
-
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalIoExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        let (expr, specialized) = self.expr.isolate_column_expr(name)?;
-        Some((phys_expr_to_io_expr(expr), specialized))
     }
 }
 

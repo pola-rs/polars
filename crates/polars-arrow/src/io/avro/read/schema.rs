@@ -1,5 +1,5 @@
 use avro_schema::schema::{Enum, Fixed, Record, Schema as AvroSchema};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::datatypes::*;
@@ -7,12 +7,8 @@ use crate::datatypes::*;
 fn external_props(schema: &AvroSchema) -> Metadata {
     let mut props = Metadata::new();
     match schema {
-        AvroSchema::Record(Record {
-            doc: Some(ref doc), ..
-        })
-        | AvroSchema::Enum(Enum {
-            doc: Some(ref doc), ..
-        }) => {
+        AvroSchema::Record(Record { doc: Some(doc), .. })
+        | AvroSchema::Enum(Enum { doc: Some(doc), .. }) => {
             props.insert(
                 PlSmallStr::from_static("avro::doc"),
                 PlSmallStr::from_str(doc.as_str()),
@@ -144,7 +140,7 @@ fn schema_to_field(
                 PlSmallStr::from_str(name.unwrap_or_default()),
                 ArrowDataType::Dictionary(IntegerType::Int32, Box::new(ArrowDataType::Utf8), false),
                 false,
-            ))
+            ));
         },
         AvroSchema::Fixed(Fixed { size, logical, .. }) => match logical {
             Some(logical) => match logical {

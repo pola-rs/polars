@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use polars_core::prelude::*;
 
 use super::options::CsvReadOptions;
-use super::read_impl::batched::to_batched_owned;
 use super::read_impl::CoreReader;
+use super::read_impl::batched::to_batched_owned;
 use super::{BatchedCsvReader, OwnedBatchedCsvReader};
 use crate::mmap::MmapBytesReader;
 use crate::path_utils::resolve_homedir;
@@ -184,6 +184,14 @@ where
         }
 
         Ok(df)
+    }
+}
+
+impl<R: MmapBytesReader> CsvReader<R> {
+    /// Sets custom CSV read options.
+    pub fn with_options(mut self, options: CsvReadOptions) -> Self {
+        self.options = options;
+        self
     }
 }
 

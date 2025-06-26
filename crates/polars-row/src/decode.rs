@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
@@ -118,7 +119,12 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for _ in 0..*width {
-                let len = dtype_and_data_to_encoded_item_len(fsl_field.dtype(), data, opt, dict);
+                let len = dtype_and_data_to_encoded_item_len(
+                    fsl_field.dtype(),
+                    data,
+                    opt.into_nested(),
+                    dict,
+                );
                 data = &data[len..];
                 item_len += len;
             }
@@ -129,7 +135,12 @@ fn dtype_and_data_to_encoded_item_len(
             let mut item_len = 1; // validity byte
 
             for struct_field in struct_fields {
-                let len = dtype_and_data_to_encoded_item_len(struct_field.dtype(), data, opt, dict);
+                let len = dtype_and_data_to_encoded_item_len(
+                    struct_field.dtype(),
+                    data,
+                    opt.into_nested(),
+                    dict,
+                );
                 data = &data[len..];
                 item_len += len;
             }
@@ -138,6 +149,8 @@ fn dtype_and_data_to_encoded_item_len(
 
         D::Union(_) => todo!(),
         D::Map(_, _) => todo!(),
+        D::Decimal32(_, _) => todo!(),
+        D::Decimal64(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
         D::Extension(_) => todo!(),
         D::Unknown => todo!(),
@@ -171,7 +184,7 @@ fn rows_for_fixed_size_list<'a>(
     // @TODO: This is quite slow since we need to dispatch for possibly every nested type
     for row in rows.iter_mut() {
         for _ in 0..width {
-            let length = dtype_and_data_to_encoded_item_len(dtype, row, opt, dict);
+            let length = dtype_and_data_to_encoded_item_len(dtype, row, opt.into_nested(), dict);
             let v;
             (v, *row) = row.split_at(length);
             nested_rows.push(v);
@@ -218,12 +231,14 @@ unsafe fn decode(
             let values = match dict {
                 None => fields
                     .iter()
-                    .map(|struct_fld| decode(rows, opt, None, struct_fld.dtype()))
+                    .map(|struct_fld| decode(rows, opt.into_nested(), None, struct_fld.dtype()))
                     .collect(),
                 Some(RowEncodingContext::Struct(dicts)) => fields
                     .iter()
                     .zip(dicts)
-                    .map(|(struct_fld, dict)| decode(rows, opt, dict.as_ref(), struct_fld.dtype()))
+                    .map(|(struct_fld, dict)| {
+                        decode(rows, opt.into_nested(), dict.as_ref(), struct_fld.dtype())
+                    })
                     .collect(),
                 _ => unreachable!(),
             };
@@ -234,8 +249,16 @@ unsafe fn decode(
 
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
-            rows_for_fixed_size_list(fsl_field.dtype(), opt, dict, *width, rows, &mut nested_rows);
-            let values = decode(&mut nested_rows, opt, dict, fsl_field.dtype());
+            rows_for_fixed_size_list(
+                fsl_field.dtype(),
+                opt.into_nested(),
+                dict,
+                *width,
+                rows,
+                &mut nested_rows,
+            );
+
+            let values = decode(&mut nested_rows, opt.into_nested(), dict, fsl_field.dtype());
 
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
@@ -256,8 +279,12 @@ unsafe fn decode(
             for (i, row) in rows.iter_mut().enumerate() {
                 while row[0] == list_continuation_token {
                     *row = &row[1..];
-                    let len =
-                        dtype_and_data_to_encoded_item_len(list_field.dtype(), row, opt, dict);
+                    let len = dtype_and_data_to_encoded_item_len(
+                        list_field.dtype(),
+                        row,
+                        opt.into_nested(),
+                        dict,
+                    );
                     nested_rows.push(&row[..len]);
                     *row = &row[len..];
                 }
@@ -285,7 +312,12 @@ unsafe fn decode(
             };
             assert_eq!(offsets.len(), rows.len() + 1);
 
-            let values = decode(&mut nested_rows, opt, dict, list_field.dtype());
+            let values = decode(
+                &mut nested_rows,
+                opt.into_nested(),
+                dict,
+                list_field.dtype(),
+            );
 
             ListArray::<i64>::new(
                 dtype.clone(),

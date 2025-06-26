@@ -8,6 +8,7 @@ use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::dictionary_encoded::{append_validity, constrain_page_validity};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::freeze_validity;
+use crate::read::expr::SpecializedParquetColumnExpr;
 use crate::read::{Filter, ParquetError};
 
 mod predicate;
@@ -33,16 +34,21 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
 
     match filter {
         Some(Filter::Predicate(p))
-            if !can_filter_on_raw_data || p.predicate.to_equals_scalar().is_none() =>
+            if !can_filter_on_raw_data
+                || matches!(
+                    p.predicate.as_specialized(),
+                    Some(SpecializedParquetColumnExpr::Equal(_))
+                ) =>
         {
             let num_values = values.len() / size_of::<P::AlignedBytes>();
 
             // @TODO: Do something smarter with the validity
             let mut unfiltered_target = Vec::with_capacity(num_values);
-            let mut unfiltered_validity = page_validity
-                .is_some()
-                .then(|| BitmapBuilder::with_capacity(num_values))
-                .unwrap_or_default();
+            let mut unfiltered_validity = if page_validity.is_some() {
+                BitmapBuilder::with_capacity(num_values)
+            } else {
+                Default::default()
+            };
 
             decode_no_incompact_predicates(
                 values,
@@ -175,6 +181,48 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     target: &mut Vec<B>,
     pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
+    if let Some(Filter::Predicate(p)) = &filter {
+        assert!(page_validity.is_none());
+
+        let start_num_pred_true = pred_true_mask.set_bits();
+        match p.predicate.as_specialized().unwrap() {
+            SpecializedParquetColumnExpr::Equal(needle) => {
+                let needle = needle.to_aligned_bytes::<B>().unwrap();
+
+                predicate::decode_equals_no_values(values, needle, pred_true_mask);
+
+                if p.include_values {
+                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
+                    target.resize(target.len() + num_pred_true, needle);
+                }
+            },
+            SpecializedParquetColumnExpr::EqualOneOf(needles)
+                if (1..=8).contains(&needles.len()) =>
+            {
+                let mut needles_array = [B::zeroed(); 8];
+                for i in 0..8 {
+                    needles_array[i] = needles[i.min(needles.len() - 1)]
+                        .to_aligned_bytes::<B>()
+                        .unwrap();
+                }
+
+                if p.include_values {
+                    predicate::decode_is_in(values, &needles_array, target, pred_true_mask);
+                } else {
+                    predicate::decode_is_in_no_values(values, &needles_array, pred_true_mask);
+                }
+            },
+            _ => unreachable!(),
+        }
+
+        if is_optional && p.include_values {
+            let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
+            validity.extend_constant(num_pred_true, true);
+        }
+
+        return Ok(());
+    }
+
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
@@ -205,24 +253,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             decode_masked_optional(values, page_validity, filter, target)
         },
-        (Some(Filter::Predicate(p)), None) => {
-            if let Some(needle) = p.predicate.to_equals_scalar() {
-                let needle = needle.to_aligned_bytes::<B>().unwrap();
-
-                let start_num_pred_true = pred_true_mask.set_bits();
-                predicate::decode_equals_no_values(values, needle, pred_true_mask);
-
-                if p.include_values {
-                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
-                    target.resize(target.len() + num_pred_true, needle);
-                }
-            } else {
-                unreachable!()
-            }
-
-            Ok(())
-        },
-        (Some(Filter::Predicate(_)), Some(_)) => todo!(),
+        (Some(Filter::Predicate(_)), _) => unreachable!(),
     }?;
 
     Ok(())
@@ -431,7 +462,7 @@ fn decode_masked_optional<B: AlignedBytes>(
     let mut num_rows_left = num_rows;
     let mut value_offset = 0;
 
-    let mut iter = |mut f: u64, mut v: u64, len: usize| {
+    let mut iter = |mut f: u64, mut v: u64| {
         if num_rows_left == 0 {
             return false;
         }
@@ -483,7 +514,7 @@ fn decode_masked_optional<B: AlignedBytes>(
         unsafe {
             target_ptr = target_ptr.add(num_written);
         }
-        value_offset += len;
+        value_offset += num_chunk_values;
         num_rows_left -= num_written;
         num_values_left -= num_chunk_values;
 
@@ -491,19 +522,112 @@ fn decode_masked_optional<B: AlignedBytes>(
     };
 
     for (f, v) in mask_iter.by_ref().zip(validity_iter.by_ref()) {
-        if !iter(f, v, 56) {
+        if !iter(f, v) {
             break;
         }
     }
 
     let (f, fl) = mask_iter.remainder();
     let (v, vl) = validity_iter.remainder();
-
     assert_eq!(fl, vl);
-
-    iter(f, v, fl);
+    iter(f, v);
 
     unsafe { target.set_len(start_length + num_rows) };
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::proptest::bitmap;
+    use proptest::collection::size_range;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn values_and_mask() -> impl Strategy<Value = (Vec<u32>, Bitmap)> {
+        any_with::<Vec<u32>>(size_range(0..100).lift()).prop_flat_map(|vec| {
+            let len = vec.len();
+            (Just(vec), bitmap(len))
+        })
+    }
+
+    fn validity_values_and_mask() -> impl Strategy<Value = (Bitmap, Vec<u32>, Bitmap)> {
+        bitmap(0..100).prop_flat_map(|validity| {
+            let len = validity.len();
+            let values_length = validity.set_bits();
+
+            (
+                Just(validity),
+                any_with::<Vec<u32>>(size_range(values_length).lift()),
+                bitmap(len),
+            )
+        })
+    }
+
+    fn _test_decode_masked_required(values: &Vec<u32>, mask: &Bitmap) {
+        let mut reference_result = Vec::with_capacity(mask.set_bits());
+        for (value, is_selected) in values.iter().zip(mask.iter()) {
+            if is_selected {
+                reference_result.push(*value);
+            }
+        }
+
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode_masked_required(
+            ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
+            mask.clone(),
+            &mut result,
+        )
+        .unwrap();
+
+        let result = bytemuck::cast_vec::<_, u32>(result);
+        assert_eq!(reference_result, result);
+    }
+
+    fn _test_decode_masked_optional(validity: &Bitmap, values: &Vec<u32>, mask: &Bitmap) {
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode_masked_optional(
+            ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
+            validity.clone(),
+            mask.clone(),
+            &mut result,
+        )
+        .unwrap();
+
+        let result = bytemuck::cast_vec::<_, u32>(result);
+
+        let mut result_i = 0;
+        let mut values_i = 0;
+        for (is_valid, is_selected) in validity.iter().zip(mask.iter()) {
+            if is_selected {
+                if is_valid {
+                    assert_eq!(result[result_i], values[values_i]);
+                }
+                result_i += 1;
+            }
+
+            if is_valid {
+                values_i += 1;
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_required(
+            (ref values, ref mask) in values_and_mask()
+        ) {
+            _test_decode_masked_required(values, mask)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_optional(
+            (ref validity, ref values, ref mask) in validity_values_and_mask()
+        ) {
+            _test_decode_masked_optional(validity, values, mask)
+        }
+    }
 }

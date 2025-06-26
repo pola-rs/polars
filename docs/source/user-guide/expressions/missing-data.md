@@ -125,14 +125,16 @@ You can find other fill strategies in the API docs.
 
 ### Fill with interpolation
 
-Additionally, you can fill missing data with interpolation by using the function `interpolate`
-instead of the function `fill_null`:
+Additionally, you can fill intermediate missing data with interpolation by using the function
+`interpolate` instead of the function `fill_null`:
 
 {{code_block('user-guide/expressions/missing-data','fillinterpolate',['interpolate'])}}
 
 ```python exec="on" result="text" session="user-guide/missing-data"
 --8<-- "python/user-guide/expressions/missing-data.py:fillinterpolate"
 ```
+
+Note: With interpolate, nulls at the beginning and end of the series remain null.
 
 ## Not a Number, or `NaN` values
 

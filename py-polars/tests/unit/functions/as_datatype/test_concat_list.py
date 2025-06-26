@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 import polars as pl
@@ -61,6 +63,9 @@ def test_concat_list_in_agg_6397() -> None:
     df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
 
     # single list
+    # TODO: this shouldn't be allowed and raise
+    # Currently this do a cast to list in the expression and
+    # therefore leads to different nesting
     assert df.group_by("group").agg(
         [
             # this casts every element to a list
@@ -78,7 +83,7 @@ def test_concat_list_in_agg_6397() -> None:
         ]
     ).sort("group").to_dict(as_series=False) == {
         "group": [1, 2, 3],
-        "result": [[["a"]], [["b", "c"]], [["d"]]],
+        "result": [["a"], ["b", "c"], ["d"]],
     }
 
 
@@ -182,8 +187,8 @@ def test_cross_join_concat_list_18587() -> None:
     lf3 = lf.select(pl.struct(pl.all()).alias("3"))
 
     result = (
-        lf1.join(lf2, how="cross")
-        .join(lf3, how="cross")
+        lf1.join(lf2, how="cross", maintain_order="left_right")
+        .join(lf3, how="cross", maintain_order="left_right")
         .select(pl.concat_list("1", "2", "3"))
         .collect()
     )
@@ -192,3 +197,24 @@ def test_cross_join_concat_list_18587() -> None:
     expected = [[a, b, c] for a in vals for b in vals for c in vals]
 
     assert result["1"].to_list() == expected
+
+
+def test_datetime_broadcast_concat_list_23102() -> None:
+    df = pl.DataFrame(
+        {"timestamps": [[datetime(2024, 1, 1)], [datetime(2024, 1, 2)]]},
+        schema={"timestamps": pl.List(pl.Datetime())},
+    )
+
+    new_timestamp = pl.lit([datetime(2024, 2, 1)], dtype=pl.List(pl.Datetime()))
+
+    out = df.with_columns(pl.col("timestamps").list.concat(new_timestamp))
+    expected = pl.DataFrame(
+        {
+            "timestamps": [
+                [datetime(2024, 1, 1), datetime(2024, 2, 1)],
+                [datetime(2024, 1, 2), datetime(2024, 2, 1)],
+            ]
+        },
+        schema={"timestamps": pl.List(pl.Datetime())},
+    )
+    assert_frame_equal(out, expected)

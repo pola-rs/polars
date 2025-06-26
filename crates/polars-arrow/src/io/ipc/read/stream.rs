@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use arrow_format::ipc::planus::ReadAsRoot;
-use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;

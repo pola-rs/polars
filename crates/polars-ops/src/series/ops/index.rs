@@ -1,8 +1,8 @@
 use num_traits::{Signed, Zero};
-use polars_core::error::{polars_ensure, PolarsResult};
+use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::{
-    ChunkedArray, Column, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE,
+    ChunkedArray, Column, DataType, IDX_DTYPE, IdxCa, PolarsIntegerType, Series,
 };
 use polars_utils::index::ToIdx;
 

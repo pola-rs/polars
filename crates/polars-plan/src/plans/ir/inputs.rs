@@ -80,7 +80,7 @@ impl IR {
             },
             Cache { id, cache_hits, .. } => Cache {
                 input: inputs[0],
-                id: *id,
+                id: id.clone(),
                 cache_hits: *cache_hits,
             },
             Distinct { options, .. } => Distinct {
@@ -101,21 +101,24 @@ impl IR {
                 hive_parts,
                 output_schema,
                 predicate,
-                file_options: options,
+                unified_scan_args,
                 scan_type,
+                id: _,
             } => {
                 let mut new_predicate = None;
                 if predicate.is_some() {
                     new_predicate = exprs.pop()
                 }
+
                 Scan {
                     sources: sources.clone(),
                     file_info: file_info.clone(),
                     hive_parts: hive_parts.clone(),
                     output_schema: output_schema.clone(),
-                    file_options: options.clone(),
+                    unified_scan_args: unified_scan_args.clone(),
                     predicate: new_predicate,
                     scan_type: scan_type.clone(),
+                    id: Default::default(),
                 }
             },
             DataFrameScan {
@@ -140,6 +143,7 @@ impl IR {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            SinkMultiple { .. } => SinkMultiple { inputs },
             SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
@@ -162,7 +166,12 @@ impl IR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use IR::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | SinkMultiple { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
             Select { expr, .. } => container.extend_from_slice(expr),
@@ -185,8 +194,19 @@ impl IR {
             DataFrameScan { .. } => {},
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
+            Sink { payload, .. } => {
+                if let SinkTypeIR::Partition(p) = payload {
+                    match &p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => {
+                            container.extend_from_slice(key_exprs)
+                        },
+                        _ => (),
+                    }
+                }
+            },
             HConcat { .. } => {},
-            ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            ExtContext { .. } | SimpleProjection { .. } => {},
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => {},
             Invalid => unreachable!(),
@@ -209,11 +229,7 @@ impl IR {
     {
         use IR::*;
         let input = match self {
-            Union { inputs, .. } => {
-                container.extend(inputs.iter().cloned());
-                return;
-            },
-            HConcat { inputs, .. } => {
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
                 container.extend(inputs.iter().cloned());
                 return;
             },

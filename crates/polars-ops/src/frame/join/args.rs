@@ -15,19 +15,19 @@ pub type ChunkJoinOptIds = Vec<NullableIdxSize>;
 #[cfg(not(feature = "chunked_ids"))]
 pub type ChunkJoinIds = Vec<IdxSize>;
 
-use once_cell::sync::Lazy;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct JoinArgs {
     pub how: JoinType,
     pub validation: JoinValidation,
     pub suffix: Option<PlSmallStr>,
     pub slice: Option<(i64, usize)>,
-    pub join_nulls: bool,
+    pub nulls_equal: bool,
     pub coalesce: JoinCoalesce,
     pub maintain_order: MaintainOrderJoin,
 }
@@ -40,14 +40,16 @@ impl JoinArgs {
 
 #[derive(Clone, PartialEq, Eq, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinType {
     #[default]
     Inner,
     Left,
     Right,
     Full,
+    // Box is okay because this is inside a `Arc<JoinOptionsIR>`
     #[cfg(feature = "asof_join")]
-    AsOf(AsOfOptions),
+    AsOf(Box<AsOfOptions>),
     #[cfg(feature = "semi_anti_join")]
     Semi,
     #[cfg(feature = "semi_anti_join")]
@@ -61,6 +63,7 @@ pub enum JoinType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinCoalesce {
     #[default]
     JoinSpecific,
@@ -76,7 +79,7 @@ impl JoinCoalesce {
             Left | Inner | Right => {
                 matches!(self, JoinSpecific | CoalesceColumns)
             },
-            Full { .. } => {
+            Full => {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]
@@ -92,6 +95,7 @@ impl JoinCoalesce {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum MaintainOrderJoin {
     #[default]
@@ -121,7 +125,7 @@ impl JoinArgs {
             validation: Default::default(),
             suffix: None,
             slice: None,
-            join_nulls: false,
+            nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
         }
@@ -138,8 +142,8 @@ impl JoinArgs {
     }
 
     pub fn suffix(&self) -> &PlSmallStr {
-        static DEFAULT: Lazy<PlSmallStr> = Lazy::new(|| PlSmallStr::from_static("_right"));
-        self.suffix.as_ref().unwrap_or(&*DEFAULT)
+        const DEFAULT: &PlSmallStr = &PlSmallStr::from_static("_right");
+        self.suffix.as_ref().unwrap_or(DEFAULT)
     }
 }
 
@@ -194,12 +198,10 @@ impl Debug for CrossJoinOptions {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, IntoStaticStr, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptions {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    #[cfg_attr(feature = "serde", serde(skip))]
     Cross(CrossJoinOptions),
 }
 
@@ -239,6 +241,39 @@ impl JoinType {
         )
     }
 
+    pub fn is_semi_anti(&self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, JoinType::Semi | JoinType::Anti)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_semi(&self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, JoinType::Semi)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_anti(&self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, JoinType::Anti)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            false
+        }
+    }
+
     pub fn is_asof(&self) -> bool {
         #[cfg(feature = "asof_join")]
         {
@@ -268,6 +303,7 @@ impl JoinType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinValidation {
     /// No unique checks
     #[default]
@@ -313,7 +349,7 @@ impl JoinValidation {
         s_left: &Series,
         s_right: &Series,
         build_shortest_table: bool,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<()> {
         // In default, probe is the left series.
         //
@@ -331,7 +367,7 @@ impl JoinValidation {
             // The other side use `validate_build` to check
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => {
-                if !join_nulls && probe.null_count() > 0 {
+                if !nulls_equal && probe.null_count() > 0 {
                     probe.n_unique()? - 1 == probe.len() - probe.null_count()
                 } else {
                     probe.n_unique()? == probe.len()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from collections import OrderedDict
+from collections.abc import Iterator, Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -26,6 +27,7 @@ from polars.exceptions import (
     OutOfBoundsError,
     ShapeError,
 )
+from polars.polars import PySeries
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -40,8 +42,22 @@ if TYPE_CHECKING:
     from polars._typing import JoinStrategy, UniqueKeepStrategy
 
 
+class MappingObject(Mapping[str, Any]):  # noqa: D101
+    def __init__(self, **values: Any) -> None:
+        self._data = {**values}
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 def test_version() -> None:
-    pl.__version__
+    isinstance(pl.__version__, str)
 
 
 def test_null_count() -> None:
@@ -71,7 +87,7 @@ def test_special_char_colname_init() -> None:
     cols = [(c, pl.Int8) for c in punctuation]
     df = pl.DataFrame(schema=cols)
 
-    assert len(cols) == len(df.columns)
+    assert len(cols) == df.width
     assert len(df.rows()) == 0
     assert df.is_empty()
 
@@ -226,7 +242,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         override_schema = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
-        assert df.rows() == expected_data[: (len(df))]
+        assert df.rows() == expected_data[: (df.height)]
 
     # init from record batches with overrides
     df = pl.DataFrame(
@@ -778,6 +794,38 @@ def test_to_dummies_drop_first() -> None:
     ]
 
 
+def test_to_dummies_drop_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [0, 1, None],
+            "bar": [3, None, 5],
+            "baz": [None, "y", "z"],
+        }
+    )
+
+    dm = df.to_dummies(drop_nulls=True)
+
+    expected = pl.DataFrame(
+        {
+            "foo_0": [1, 0, 0],
+            "foo_1": [0, 1, 0],
+            "bar_3": [1, 0, 0],
+            "bar_5": [0, 0, 1],
+            "baz_y": [0, 1, 0],
+            "baz_z": [0, 0, 1],
+        },
+        schema={
+            "foo_0": pl.UInt8,
+            "foo_1": pl.UInt8,
+            "bar_3": pl.UInt8,
+            "bar_5": pl.UInt8,
+            "baz_y": pl.UInt8,
+            "baz_z": pl.UInt8,
+        },
+    )
+    assert_frame_equal(dm, expected)
+
+
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
     # pyarrow cannot convert a time64 w/ non-zero nanoseconds
@@ -992,6 +1040,28 @@ def test_is_finite_is_infinite() -> None:
         True,
     ]
     assert df.select(pl.col("nrs").is_finite())["nrs"].to_list() == [True, True, False]
+
+
+def test_is_finite_is_infinite_null_series() -> None:
+    df = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Null)})
+    result = df.select(
+        pl.col("a").is_finite().alias("finite"),
+        pl.col("a").is_infinite().alias("infinite"),
+    )
+    expected = pl.DataFrame(
+        {
+            "finite": pl.Series([None, None, None], dtype=pl.Boolean),
+            "infinite": pl.Series([None, None, None], dtype=pl.Boolean),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_is_nan_null_series() -> None:
+    df = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Null)})
+    result = df.select(pl.col("a").is_nan())
+    expected = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Boolean)})
+    assert_frame_equal(result, expected)
 
 
 def test_len() -> None:
@@ -1298,27 +1368,67 @@ def test_from_rows() -> None:
     assert data == df.rows()
 
 
-def test_from_rows_of_dicts() -> None:
-    records = [
-        {"id": 1, "value": 100, "_meta": "a"},
-        {"id": 2, "value": 101, "_meta": "b"},
-    ]
-    df_init: Callable[..., Any]
+@pytest.mark.parametrize(
+    "records",
+    [
+        [
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+        ],
+        [
+            None,
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+        ],
+        [
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+            None,
+        ],
+        [
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+        ],
+        [
+            None,
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+        ],
+        [
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+            None,
+        ],
+    ],
+)
+def test_from_rows_of_dicts(records: list[dict[str, Any]]) -> None:
     for df_init in (pl.from_dicts, pl.DataFrame):
-        df1 = df_init(records)
+        df1 = df_init(records).remove(pl.col("id").is_null())
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
 
         overrides = {
             "id": pl.Int16,
             "value": pl.Int32,
         }
-        df2 = df_init(records, schema_overrides=overrides)
+        df2 = df_init(records, schema_overrides=overrides).remove(
+            pl.col("id").is_null()
+        )
         assert df2.rows() == [(1, 100, "a"), (2, 101, "b")]
         assert df2.schema == {"id": pl.Int16, "value": pl.Int32, "_meta": pl.String}
 
-        df3 = df_init(records, schema=overrides)
+        df3 = df_init(records, schema=overrides).remove(pl.col("id").is_null())
         assert df3.rows() == [(1, 100), (2, 101)]
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
+
+        # explicitly check "anyvalue" conversion for dict/mapping dtypes
+        py_s = PySeries.new_from_any_values("s", records, True)
+        assert py_s.dtype() == pl.Struct(
+            {
+                "id": pl.Int64,
+                "value": pl.Int64,
+                "_meta": pl.String,
+            }
+        )
 
 
 def test_from_records_with_schema_overrides_12032() -> None:
@@ -1370,11 +1480,7 @@ def test_repeat_by_unequal_lengths_panic() -> None:
             "a": ["x", "y", "z"],
         }
     )
-    with pytest.raises(
-        ComputeError,
-        match="repeat_by argument and the Series should have equal length, "
-        "or at least one of them should have length 1",
-    ):
+    with pytest.raises(ShapeError):
         df.select(pl.col("a").repeat_by(pl.Series([2, 2])))
 
 
@@ -1471,7 +1577,7 @@ def test_join_dates() -> None:
         }
     )
     out = df.join(df, on="datetime")
-    assert len(out) == len(df)
+    assert out.height == df.height
 
 
 def test_asof_cross_join() -> None:
@@ -1495,6 +1601,118 @@ def test_asof_cross_join() -> None:
 
     left.lazy().join(right.lazy(), how="cross").collect()
     assert out.shape == (15, 4)
+
+
+def test_join_bad_input_type() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3]})
+    right = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        left.join(right.lazy(), on="a")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    right = DummyDataFrameSubclass(right)
+
+    left.join(right, on="a")
+
+
+def test_join_where() -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    out = east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 100, 100, 101, 101],
+            "dur": [120, 120, 120, 140, 140],
+            "rev": [12, 12, 12, 14, 14],
+            "cores": [2, 2, 2, 8, 8],
+            "t_id": [498, 676, 742, 676, 742],
+            "time": [130, 150, 170, 150, 170],
+            "cost": [13, 15, 16, 15, 16],
+            "cores_right": [2, 1, 4, 1, 4],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_join_where_bad_input_type() -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        east.join_where(
+            west.lazy(),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        east.join_where(
+            pl.Series(west),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    west = DummyDataFrameSubclass(west)
+
+    east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    )
 
 
 def test_str_concat() -> None:
@@ -1554,21 +1772,17 @@ def test_reproducible_hash_with_seeds() -> None:
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)
-    import platform
-
-    # m1 hash different random source seed
-    if platform.mac_ver()[-1] != "arm64":
-        expected = pl.Series(
-            "s",
-            [8661293245726181094, 9565952849861441858, 2921274555702885622],
-            dtype=pl.UInt64,
-        )
-        result = df.hash_rows(*seeds)
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
-        result = df["s"].hash(*seeds)
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
-        result = df.select([pl.col("s").hash(*seeds)])["s"]
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
+    expected = pl.Series(
+        "s",
+        [10832467230526607564, 3044502640115867787, 17228373233104406792],
+        dtype=pl.UInt64,
+    )
+    result = df.hash_rows(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df["s"].hash(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df.select([pl.col("s").hash(*seeds)])["s"]
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
 @pytest.mark.slow
@@ -1814,31 +2028,45 @@ def test_extension() -> None:
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
-    # foos and sys.getrefcount have a reference.
+
+    # foos and sys.getrefcount both have a reference.
     base_count = 2
-    assert sys.getrefcount(foos[0]) == base_count
+
+    # We compute the refcount on a separate line otherwise pytest's assert magic
+    # might add reference counts.
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count
 
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
-    assert sys.getrefcount(foos[0]) == base_count + 1
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 1
     del df
-    assert sys.getrefcount(foos[0]) == base_count
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count
 
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
-    assert sys.getrefcount(foos[0]) == base_count + 1
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 1
 
     out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
-    assert sys.getrefcount(foos[0]) == base_count + 2
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 2
     s = out["a"].list.explode()
-    assert sys.getrefcount(foos[0]) == base_count + 3
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 3
     del s
-    assert sys.getrefcount(foos[0]) == base_count + 2
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 2
 
     assert out["a"].list.explode().to_list() == foos
-    assert sys.getrefcount(foos[0]) == base_count + 2
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 2
     del out
-    assert sys.getrefcount(foos[0]) == base_count + 1
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 1
     del df
-    assert sys.getrefcount(foos[0]) == base_count
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count
 
 
 @pytest.mark.parametrize("name", [None, "n", ""])
@@ -1902,6 +2130,7 @@ def test_empty_projection() -> None:
     assert empty_df.shape == (0, 0)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert_frame_equal(df.fill_null(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
@@ -1926,8 +2155,8 @@ def test_fill_null() -> None:
     )
 
     assert df.select(
-        pl.all().forward_fill().name.suffix("_forward"),
-        pl.all().backward_fill().name.suffix("_backward"),
+        pl.all().fill_null(strategy="forward").name.suffix("_forward"),
+        pl.all().fill_null(strategy="backward").name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "c_forward": [
             ["Apple", "Orange"],
@@ -1975,6 +2204,7 @@ def test_fill_nan() -> None:
     assert df.fill_nan(2.0).dtypes == [pl.Float64, pl.Datetime]
 
 
+#
 def test_forward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
     fill = df.select(pl.col("a").forward_fill())["a"]
@@ -2223,6 +2453,30 @@ def test_asof_by_multiple_keys() -> None:
     ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
     assert_frame_equal(result, expected)
+
+
+def test_asof_bad_input_type() -> None:
+    lhs = pl.DataFrame({"a": [1, 2, 3]})
+    rhs = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        lhs.join_asof(rhs.lazy(), on="a")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        lhs.join_asof(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    rhs = DummyDataFrameSubclass(rhs)
+
+    lhs.join_asof(rhs, on="a")
 
 
 def test_list_of_list_of_struct() -> None:
@@ -2788,7 +3042,9 @@ def test_deadlocks_3409() -> None:
     assert (
         pl.DataFrame({"col1": [1, 2, 3]})
         .with_columns(
-            pl.col("col1").cumulative_eval(pl.element().map_batches(lambda x: 0))
+            pl.col("col1").cumulative_eval(
+                pl.element().map_batches(lambda x: 0, pl.Int64, returns_scalar=True)
+            )
         )
         .to_dict(as_series=False)
     ) == {"col1": [0, 0, 0]}
@@ -2986,7 +3242,7 @@ def test_get_column_index() -> None:
 def test_dataframe_creation_with_different_series_lengths_19795() -> None:
     with pytest.raises(
         ShapeError,
-        match='could not create a new DataFrame: series "a" has length 2 while series "b" has length 1',
+        match=r"could not create a new DataFrame: height of column 'b' \(1\) does not match height of column 'a' \(2\)",
     ):
         pl.DataFrame({"a": [1, 2], "b": [1]})
 
@@ -3015,3 +3271,41 @@ def test_select_oob_element_20775_too_large(idx: int) -> None:
         match=f"index {idx} is out of bounds for sequence of length 3",
     ):
         df[idx, "a"]
+
+
+def test_nan_to_null() -> None:
+    a = np.array([np.nan, 1])
+
+    df1 = pl.DataFrame(a, nan_to_null=True)
+    df2 = pl.DataFrame(
+        (a,),
+        nan_to_null=True,
+    )
+
+    assert_frame_equal(df1, df2)
+
+
+# Below 3 tests for https://github.com/pola-rs/polars/issues/17879
+
+
+def test_with_columns_dict_direct_typeerror() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1)
+    with pytest.raises(
+        TypeError, match="Cannot pass a dictionary as a single positional argument"
+    ):
+        df.with_columns(data)
+
+
+def test_with_columns_dict_unpacking() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(**data)
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)
+
+
+def test_with_columns_generator_alias() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)

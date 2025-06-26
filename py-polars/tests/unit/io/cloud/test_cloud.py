@@ -6,7 +6,6 @@ from functools import partial
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 
 
 @pytest.mark.slow
@@ -31,7 +30,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
     assert isinstance(result, pl.LazyFrame)
 
     # Upon collection, it should fail
-    with pytest.raises(ComputeError):
+    with pytest.raises(IOError):
         result.collect()
 
 

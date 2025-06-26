@@ -66,9 +66,9 @@ def test_df_getitem_row_slice(df: pl.DataFrame) -> None:
         sliced_py_data = py_data[s]
         sliced_df_data = df[s].rows()
 
-        assert (
-            sliced_py_data == sliced_df_data
-        ), f"slice [{start}:{stop}:{step}] failed on df w/len={len(df)}"
+        assert sliced_py_data == sliced_df_data, (
+            f"slice [{start}:{stop}:{step}] failed on df w/len={df.height}"
+        )
 
 
 def test_df_getitem_col_single_name() -> None:

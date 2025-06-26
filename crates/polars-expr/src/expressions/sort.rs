@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
@@ -103,16 +103,6 @@ impl PhysicalExpr for SortExpr {
         }
 
         Ok(ac)
-    }
-
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

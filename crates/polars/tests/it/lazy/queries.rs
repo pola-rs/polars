@@ -220,7 +220,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
             multiply,
             [col("A"), col("B")],
             GetOutput::from_type(DataType::Int32),
-            true,
+            false,
         )])
         .collect()?;
 
@@ -265,9 +265,7 @@ fn test_group_by_on_lists() -> PolarsResult<()> {
     // a list of lists
     assert_eq!(
         out.column("arrays")?.dtype(),
-        &DataType::List(Box::new(DataType::List(Box::new(DataType::List(
-            Box::new(DataType::Int32)
-        )))))
+        &DataType::List(Box::new(DataType::List(Box::new(DataType::Int32))))
     );
 
     Ok(())

@@ -1,25 +1,24 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
-use once_cell::sync::Lazy;
+use object_store::local::LocalFileSystem;
 use polars_core::config::{self, verbose_print_sensitive};
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 use url::Url;
 
-use super::{parse_url, CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
+use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore, parse_url};
 use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
 /// Other reasons are connection pools that must be shared between as much as possible.
 #[allow(clippy::type_complexity)]
-static OBJECT_STORE_CACHE: Lazy<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
-    Lazy::new(Default::default);
+static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
+    LazyLock::new(Default::default);
 
 #[allow(dead_code)]
 fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn ObjectStore>> {
@@ -63,7 +62,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
 
     verbose_print_sensitive(|| format!("object store cache key: {} {:?}", url, &cache_key));
 
-    return pl_serialize::serialize_to_bytes(&cache_key).unwrap();
+    return pl_serialize::serialize_to_bytes::<_, false>(&cache_key).unwrap();
 
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]

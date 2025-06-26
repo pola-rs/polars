@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Mul};
+use std::ops::{AddAssign, Mul};
 
 use arity::unary_elementwise_values;
 use arrow::array::BooleanArray;
@@ -8,16 +8,16 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float::IsFloat;
+use polars_utils::min_max::MinMax;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+    T: Copy + MinMax,
 {
     match v {
         Some(v) => {
-            if v > *state {
-                *state = v
-            }
+            *state = MinMax::max_ignore_nan(*state, v);
             Some(Some(*state))
         },
         None => Some(None),
@@ -26,13 +26,11 @@ where
 
 fn det_min<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+    T: Copy + MinMax,
 {
     match v {
         Some(v) => {
-            if v < *state {
-                *state = v
-            }
+            *state = MinMax::min_ignore_nan(*state, v);
             Some(Some(*state))
         },
         None => Some(None),
@@ -41,7 +39,7 @@ where
 
 fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+    T: Copy + AddAssign,
 {
     match v {
         Some(v) => {
@@ -54,7 +52,7 @@ where
 
 fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + Mul<Output = T>,
+    T: Copy + Mul<Output = T>,
 {
     match v {
         Some(v) => {
@@ -65,31 +63,50 @@ where
     }
 }
 
-fn cum_max_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+fn cum_scan_numeric<T, F>(
+    ca: &ChunkedArray<T>,
+    reverse: bool,
+    init: T::Native,
+    update: F,
+) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
+    F: Fn(&mut T::Native, Option<T::Native>) -> Option<Option<T::Native>>,
 {
-    let init = Bounded::min_value();
-
     let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_max).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_max).collect_reversed(),
+        false => ca.iter().scan(init, update).collect_trusted(),
+        true => ca.iter().rev().scan(init, update).collect_reversed(),
     };
     out.with_name(ca.name().clone())
+}
+
+fn cum_max_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: MinMax + Bounded,
+    ChunkedArray<T>: FromIterator<Option<T::Native>>,
+{
+    let init = if T::Native::is_float() {
+        T::Native::nan_value()
+    } else {
+        Bounded::min_value()
+    };
+    cum_scan_numeric(ca, reverse, init, det_max)
 }
 
 fn cum_min_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = Bounded::max_value();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_min).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_min).collect_reversed(),
+    let init = if T::Native::is_float() {
+        T::Native::nan_value()
+    } else {
+        Bounded::max_value()
     };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_min)
 }
 
 fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
@@ -154,11 +171,7 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     let init = T::Native::zero();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_sum).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_sum).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_sum)
 }
 
 fn cum_prod_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
@@ -167,11 +180,7 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     let init = T::Native::one();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_prod).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_prod).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_prod)
 }
 
 /// Get an array with the cumulative product computed at every element.

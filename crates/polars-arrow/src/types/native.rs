@@ -7,8 +7,8 @@ use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrd, TotalOrdWrap};
 
-use super::aligned_bytes::*;
 use super::PrimitiveType;
+use super::aligned_bytes::*;
 
 /// Sealed trait implemented by all physical types that can be allocated,
 /// serialized and deserialized by this crate.

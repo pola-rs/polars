@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Used to speed up TotalEq and TotalOrd of elements within an array.
 
 use std::cmp::Ordering;
@@ -88,17 +89,6 @@ pub trait TotalEqInner: Send + Sync {
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool;
 }
 
-pub trait TotalOrdInner: Send + Sync {
-    /// # Safety
-    /// Does not do any bound checks.
-    unsafe fn cmp_element_unchecked(
-        &self,
-        idx_a: usize,
-        idx_b: usize,
-        nulls_last: bool,
-    ) -> Ordering;
-}
-
 impl<T> TotalEqInner for T
 where
     T: GetInner + Send + Sync,
@@ -144,6 +134,17 @@ where
     }
 }
 
+pub trait TotalOrdInner: Send + Sync {
+    /// # Safety
+    /// Does not do any bound checks.
+    unsafe fn cmp_element_unchecked(
+        &self,
+        idx_a: usize,
+        idx_b: usize,
+        nulls_last: bool,
+    ) -> Ordering;
+}
+
 impl<T> TotalOrdInner for T
 where
     T: GetInner + Send + Sync,
@@ -159,6 +160,18 @@ where
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
         a.null_order_cmp(&b, nulls_last)
+    }
+}
+
+impl TotalOrdInner for &NullChunked {
+    #[inline]
+    unsafe fn cmp_element_unchecked(
+        &self,
+        _idx_a: usize,
+        _idx_b: usize,
+        _nulls_last: bool,
+    ) -> Ordering {
+        Ordering::Equal
     }
 }
 
@@ -180,6 +193,12 @@ where
             ChunkedArrayLayout::MultiNoNull(ca) => Box::new(NonNull(ca)),
             ChunkedArrayLayout::Multi(ca) => Box::new(ca),
         }
+    }
+}
+
+impl<'a> IntoTotalOrdInner<'a> for &'a NullChunked {
+    fn into_total_ord_inner(self) -> Box<dyn TotalOrdInner + 'a> {
+        Box::new(self)
     }
 }
 

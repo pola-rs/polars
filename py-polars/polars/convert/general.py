@@ -16,10 +16,19 @@ from polars._utils.construction.dataframe import (
     sequence_to_pydf,
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
-from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import _cast_repr_strings_with_schema
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
+from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
+from polars._utils.various import (
+    _cast_repr_strings_with_schema,
+    issue_warning,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_df, wrap_s
-from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
+from polars.datatypes import N_INFER_DEFAULT, Categorical, String
+from polars.dependencies import _check_for_pyarrow
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -28,8 +37,16 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from polars import DataFrame, Series
-    from polars._typing import Orientation, SchemaDefinition, SchemaDict
+    from polars._typing import (
+        ArrowArrayExportable,
+        ArrowStreamExportable,
+        Orientation,
+        PolarsDataType,
+        SchemaDefinition,
+        SchemaDict,
+    )
     from polars.dependencies import numpy as np
+    from polars.dependencies import torch
     from polars.interchange.protocol import SupportsInterchange
 
 
@@ -347,14 +364,95 @@ def from_numpy(
     """
     return wrap_df(
         numpy_to_pydf(
-            data, schema=schema, orient=orient, schema_overrides=schema_overrides
+            data=data,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            orient=orient,
+        )
+    )
+
+
+def from_torch(
+    tensor: torch.Tensor,
+    schema: SchemaDefinition | None = None,
+    *,
+    schema_overrides: SchemaDict | None = None,
+    orient: Orientation | None = None,
+    force: bool = False,
+) -> DataFrame:
+    """
+    Construct a DataFrame from a PyTorch Tensor.
+
+    Parameters
+    ----------
+    tensor : :class:`torch.Tensor`
+        A PyTorch `Tensor` object of one or more dimensions.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the columns param will be overridden.
+    orient : {None, 'col', 'row'}
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is inferred by matching the columns and data dimensions. If
+        this does not yield conclusive results, column orientation is used.
+    force : bool
+        If False, the conversion is performed only if the Tensor is on CPU, does not
+        require grad, does not have its conjugate bit set, and is of a dtype (and
+        layout) that NumPy supports; this will typically be zero-copy. If True, it
+        is equivalent to calling `.detach().cpu().resolve_conj().resolve_neg()`
+        before passing the Tensor to Polars.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+    >>> import torch
+    >>> data = torch.tensor(
+    ...     [
+    ...         [1234.5, 200.0, 3000.5],
+    ...         [8000.0, 500.5, 6000.0],
+    ...     ]
+    ... )
+    >>> df = pl.from_torch(
+    ...     data,
+    ...     schema=["colx", "coly", "colz"],
+    ...     schema_overrides={"colz": pl.Float64},
+    ... )
+    >>> df
+    shape: (2, 3)
+    ┌────────┬───────┬────────┐
+    │ colx   ┆ coly  ┆ colz   │
+    │ ---    ┆ ---   ┆ ---    │
+    │ f32    ┆ f32   ┆ f64    │
+    ╞════════╪═══════╪════════╡
+    │ 1234.5 ┆ 200.0 ┆ 3000.5 │
+    │ 8000.0 ┆ 500.5 ┆ 6000.0 │
+    └────────┴───────┴────────┘
+    """
+    return wrap_df(
+        numpy_to_pydf(
+            data=tensor.numpy(force=force),
+            schema=schema,
+            schema_overrides=schema_overrides,
+            orient=orient,
         )
     )
 
 
 # Note: we cannot @overload the typing (Series vs DataFrame) here, as pyarrow
-# does not implement any support for type hints; attempts to hint here will
-# simply result in mypy inferring "Any", which isn't useful...
+# does not (yet?) implement any support for type hints; attempts to hint here
+# will simply result in mypy inferring "Any", which isn't at all useful...
 
 
 def from_arrow(
@@ -364,6 +462,8 @@ def from_arrow(
         | pa.ChunkedArray
         | pa.RecordBatch
         | Iterable[pa.RecordBatch | pa.Table]
+        | ArrowArrayExportable
+        | ArrowStreamExportable
     ),
     schema: SchemaDefinition | None = None,
     *,
@@ -379,7 +479,8 @@ def from_arrow(
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
-        Data representing an Arrow Table, Array, or sequence of RecordBatches or Tables.
+        Data representing an Arrow Table, Array, sequence of RecordBatches or Tables, or other
+        object that supports the Arrow PyCapsule interface.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -431,7 +532,15 @@ def from_arrow(
         3
     ]
     """  # noqa: W505
-    if isinstance(data, (pa.Table, pa.RecordBatch)):
+    if is_pycapsule(data) and not _check_for_pyarrow(data):
+        return pycapsule_to_frame(
+            data,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            rechunk=rechunk,
+        )
+
+    elif isinstance(data, (pa.Table, pa.RecordBatch)):
         return wrap_df(
             arrow_to_pydf(
                 data=data,
@@ -449,6 +558,7 @@ def from_arrow(
             schema_overrides=schema_overrides,
         ).to_series()
         return s if (name or schema or schema_overrides) else s.alias("")
+
     elif not data:
         return pl.DataFrame(
             schema=schema,
@@ -470,7 +580,7 @@ def from_arrow(
             )
         )
 
-    msg = f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
+    msg = f"expected PyArrow Table, Array, or one or more RecordBatches; got {qualified_type_name(data)!r}"
     raise TypeError(msg)
 
 
@@ -593,7 +703,7 @@ def from_pandas(
             )
         )
     else:
-        msg = f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
+        msg = f"expected pandas DataFrame or Series, got {qualified_type_name(data)!r}"
         raise TypeError(msg)
 
 
@@ -601,6 +711,9 @@ def from_pandas(
 def from_repr(data: str) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from its string representation.
+
+    .. versionchanged:: 0.20.17
+        The `tbl` parameter was renamed to `data`.
 
     Parameters
     ----------
@@ -611,12 +724,13 @@ def from_repr(data: str) -> DataFrame | Series:
 
     Notes
     -----
-    This function handles the default UTF8_FULL and UTF8_FULL_CONDENSED DataFrame
-    tables (with or without rounded corners). Truncated columns/rows are omitted,
-    wrapped headers are accounted for, and dtypes automatically identified.
+    This function handles the default UTF8_FULL (and UTF8_FULL_CONDENSED) DataFrame
+    tables, with or without rounded corners. Truncated columns/rows are omitted,
+    wrapped headers are accounted for, and dtypes are automatically identified.
 
     Currently compound/nested dtypes such as List and Struct are not supported;
-    neither are Object dtypes.
+    neither are Object dtypes. The DuckDB table/relation repr is also compatible
+    with this function.
 
     See Also
     --------
@@ -691,24 +805,47 @@ def from_repr(data: str) -> DataFrame | Series:
 def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     """Reconstruct a DataFrame from a regex-matched table repr."""
     from polars.datatypes.convert import dtype_short_repr_to_dtype
+    from polars.io.database._inference import dtype_from_database_typename
+
+    def _dtype_from_name(tp: str | None) -> PolarsDataType | None:
+        return (
+            None
+            if tp is None
+            else (
+                dtype_short_repr_to_dtype(tp)
+                or dtype_from_database_typename(tp, raise_unmatched=False)
+            )
+        )
 
     # extract elements from table structure
     lines = m.group().split("\n")[1:-1]
     rows = [
         [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
-        for row in [re.split("[┆|]", row.rstrip("│ ")) for row in lines]
+        for row in [re.split("[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines]
         if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
     ]
 
     # determine beginning/end of the header block
     table_body_start = 2
+    found_header_divider = False
     for idx, (elem, *_) in enumerate(rows):
-        if re.match(r"^\W*╞", elem):
+        if re.match(r"^\W*[╞]", elem):
+            found_header_divider = True
             table_body_start = idx
             break
 
     # handle headers with wrapped column names and determine headers/dtypes
-    header_block = ["".join(h).split("---") for h in zip(*rows[:table_body_start])]
+    header_rows = rows[:table_body_start]
+    header_block: list[Sequence[str]]
+    if (
+        not found_header_divider
+        and len(header_rows) == 2
+        and not any("---" in h for h in header_rows)
+    ):
+        header_block = list(zip(*header_rows))
+    else:
+        header_block = ["".join(h).split("---") for h in zip(*header_rows)]
+
     dtypes: list[str | None]
     if all(len(h) == 1 for h in header_block):
         headers = [h[0] for h in header_block]
@@ -717,6 +854,11 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         headers, dtypes = (list(h) for h in itertools.zip_longest(*header_block))
 
     body = rows[table_body_start + 1 :]
+    if not headers[0] and not dtypes[0]:
+        body = [row[1:] for row in body]
+        headers = headers[1:]
+        dtypes = dtypes[1:]
+
     no_dtypes = all(d is None for d in dtypes)
 
     # transpose rows into columns, detect/omit truncated columns
@@ -731,16 +873,16 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
     # init cols as String Series, handle "null" -> None, create schema from repr dtype
     data = [
-        pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
+        pl.Series([(None if v in ("null", "NULL") else v) for v in cd], dtype=String)
         for cd in coldata
     ]
-    schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
+    schema = dict(zip(headers, (_dtype_from_name(d) for d in dtypes)))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
 
     for dtype in set(schema.values()):
-        if dtype in (List, Struct, Object):
+        if dtype is not None and (dtype.is_nested() or dtype.is_object()):
             msg = (
                 f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
@@ -819,35 +961,49 @@ def _from_series_repr(m: re.Match[str]) -> Series:
         ).to_series()
 
 
-def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
+def from_dataframe(
+    df: SupportsInterchange | ArrowArrayExportable | ArrowStreamExportable,
+    *,
+    allow_copy: bool | None = None,
+    rechunk: bool = True,
+) -> DataFrame:
     """
-    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+    Build a Polars DataFrame from any dataframe supporting the PyCapsule Interface.
+
+    .. versionchanged:: 1.23.0
+
+       `from_dataframe` uses the PyCapsule Interface instead of the Dataframe
+       Interchange Protocol for conversion, only using the latter as a fallback.
 
     Parameters
     ----------
     df
-        Object supporting the dataframe interchange protocol, i.e. must have implemented
-        the `__dataframe__` method.
+        Object supporting the dataframe PyCapsule Interface.
     allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, causes
+        Allow memory to be copied to perform the conversion. If set to False, may cause
         conversions that are not zero-copy to fail.
+
+        .. deprecated: 1.23.0
+            `allow_copy` is deprecated and will be removed in a future version.
+    rechunk : bool, default True
+        Make sure that all data is in contiguous memory.
 
     Notes
     -----
-    Details on the Python dataframe interchange protocol:
-    https://data-apis.org/dataframe-protocol/latest/index.html
-
-    Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
-    efficient method of conversion.
+    - Details on the PyCapsule Interface:
+      https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
+    - Details on the Python dataframe interchange protocol:
+      https://data-apis.org/dataframe-protocol/latest/index.html.
+      Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is
+      a more efficient method of conversion.
 
     Examples
     --------
-    Convert a pandas dataframe to Polars through the interchange protocol.
+    Convert a pandas dataframe to Polars.
 
     >>> import pandas as pd
     >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-    >>> dfi = df_pd.__dataframe__()
-    >>> pl.from_dataframe(dfi)
+    >>> pl.from_dataframe(df_pd)
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
@@ -858,6 +1014,25 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
     """
+    if allow_copy is not None:
+        issue_deprecation_warning(
+            "`allow_copy` is deprecated and will be removed in a future version.",
+            version="1.23",
+        )
+    else:
+        allow_copy = True
+    if is_pycapsule(df):
+        try:
+            return pycapsule_to_frame(df, rechunk=rechunk)
+        except Exception as exc:
+            issue_warning(
+                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
+                "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
+                UserWarning,
+            )
     from polars.interchange.from_dataframe import from_dataframe
 
-    return from_dataframe(df, allow_copy=allow_copy)
+    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
+    if rechunk:
+        return result.rechunk()
+    return result

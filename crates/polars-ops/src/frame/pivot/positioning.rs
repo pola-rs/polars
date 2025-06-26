@@ -99,7 +99,7 @@ pub(super) fn position_aggregates(
     })
 }
 
-pub(super) fn position_aggregates_numeric<T>(
+pub(super) fn position_aggregates_numeric<T: PolarsNumericType>(
     n_rows: usize,
     n_cols: usize,
     row_locations: &[IdxSize],
@@ -107,11 +107,7 @@ pub(super) fn position_aggregates_numeric<T>(
     value_agg_phys: &ChunkedArray<T>,
     logical_type: &DataType,
     headers: &StringChunked,
-) -> Vec<Column>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+) -> Vec<Column> {
     let mut buf = vec![None; n_rows * n_cols];
     let start_ptr = buf.as_mut_ptr() as usize;
 
@@ -289,12 +285,11 @@ pub(super) fn compute_col_idx(
                 .as_materialized_series()
                 .phys_iter()
                 .map(|v| {
-                    let idx = *col_to_idx.entry(v).or_insert_with(|| {
+                    *col_to_idx.entry(v).or_insert_with(|| {
                         let old_idx = idx;
                         idx += 1;
                         old_idx
-                    });
-                    idx
+                    })
                 })
                 .collect()
         },
@@ -310,11 +305,10 @@ fn compute_row_index<'a, T>(
     logical_type: &DataType,
 ) -> (Vec<IdxSize>, usize, Option<Vec<Column>>)
 where
-    T: PolarsDataType,
+    T: PolarsPhysicalType,
     T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
     ChunkedArray<T>: FromIterator<Option<T::Physical<'a>>>,
-    ChunkedArray<T>: IntoSeries,
 {
     let mut row_to_idx =
         PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
@@ -458,12 +452,11 @@ pub(super) fn compute_row_idx(
                     .as_materialized_series()
                     .phys_iter()
                     .map(|v| {
-                        let idx = *row_to_idx.entry(v).or_insert_with(|| {
+                        *row_to_idx.entry(v).or_insert_with(|| {
                             let old_idx = idx;
                             idx += 1;
                             old_idx
-                        });
-                        idx
+                        })
                     })
                     .collect::<Vec<_>>();
 

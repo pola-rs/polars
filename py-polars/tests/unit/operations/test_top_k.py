@@ -525,3 +525,40 @@ def test_sorted_top_k_duplicates(
         .pipe(func, 2, by="a", reverse=reverse),
         expect,
     )
+
+
+def test_top_k_list_dtype() -> None:
+    s = pl.Series([[1, 2], [3, 4], [], [0]], dtype=pl.List(pl.Int64))
+    assert s.top_k(2).to_list() == [[3, 4], [1, 2]]
+
+    s = pl.Series([[[1, 2], [3]], [[4], []], [[0]]], dtype=pl.List(pl.List(pl.Int64)))
+    assert s.top_k(2).to_list() == [[[4], []], [[1, 2], [3]]]
+
+
+def test_top_k_sorted_21260() -> None:
+    s = pl.Series([1, 2, 3, 4, 5])
+    assert s.top_k(3).sort().to_list() == [3, 4, 5]
+    assert s.sort(descending=False).top_k(3).sort().to_list() == [3, 4, 5]
+    assert s.sort(descending=True).top_k(3).sort().to_list() == [3, 4, 5]
+
+    assert s.bottom_k(3).sort().to_list() == [1, 2, 3]
+    assert s.sort(descending=False).bottom_k(3).sort().to_list() == [1, 2, 3]
+    assert s.sort(descending=True).bottom_k(3).sort().to_list() == [1, 2, 3]
+
+
+def test_top_k_by() -> None:
+    # expression
+    s = pl.Series("a", [3, 8, 1, 5, 2])
+
+    assert_series_equal(
+        s.top_k_by("a", 3), pl.Series("a", [8, 5, 3]), check_order=False
+    )
+
+
+def test_bottom_k_by() -> None:
+    # expression
+    s = pl.Series("a", [3, 8, 1, 5, 2])
+
+    assert_series_equal(
+        s.bottom_k_by("a", 4), pl.Series("a", [3, 2, 1, 5]), check_order=False
+    )

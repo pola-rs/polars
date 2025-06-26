@@ -57,10 +57,25 @@ impl<'de> Deserialize<'de> for Series {
     where
         D: Deserializer<'de>,
     {
-        deserialize_map_bytes(deserializer, &mut |b| {
+        deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
             Self::deserialize_from_reader(v)
         })?
         .map_err(D::Error::custom)
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for Series {
+    fn schema_name() -> String {
+        "Series".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "Series"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }

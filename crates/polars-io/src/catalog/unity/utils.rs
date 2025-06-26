@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, to_compute_err};
 use polars_utils::error::TruncateErrorDetail;
 use reqwest::RequestBuilder;
 

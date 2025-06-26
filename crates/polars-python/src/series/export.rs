@@ -1,7 +1,8 @@
 use polars_core::prelude::*;
+use polars_ffi::version_0::SeriesExport;
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList};
-use pyo3::IntoPyObjectExt;
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
@@ -35,7 +36,7 @@ impl PySeries {
                     series.categorical().map_err(PyPolarsErr::from)?.iter_str(),
                 )?,
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => {
+                DataType::Object(_) => {
                     let v = PyList::empty(py);
                     for i in 0..series.len() {
                         let obj: Option<&ObjectValue> = series.get_object(i).map(|any| any.into());
@@ -110,10 +111,10 @@ impl PySeries {
                 DataType::Null => {
                     let null: Option<u8> = None;
                     let n = series.len();
-                    let iter = std::iter::repeat(null).take(n);
-                    use std::iter::{Repeat, Take};
+                    let iter = std::iter::repeat_n(null, n);
+                    use std::iter::RepeatN;
                     struct NullIter {
-                        iter: Take<Repeat<Option<u8>>>,
+                        iter: RepeatN<Option<u8>>,
                         n: usize,
                     }
                     impl Iterator for NullIter {
@@ -145,7 +146,7 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<PyObject> {
+    fn to_arrow(&mut self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
@@ -159,10 +160,17 @@ impl PySeries {
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema=None))]
     fn __arrow_c_stream__<'py>(
-        &'py self,
+        &self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         series_to_stream(&self.series, py)
+    }
+
+    pub fn _export(&mut self, _py: Python<'_>, location: usize) {
+        let export = polars_ffi::version_0::export_series(&self.series);
+        unsafe {
+            (location as *mut SeriesExport).write(export);
+        }
     }
 }

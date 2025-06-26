@@ -4,7 +4,9 @@ import contextlib
 from datetime import date
 from typing import TYPE_CHECKING
 
+from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -17,6 +19,8 @@ if TYPE_CHECKING:
     from polars._typing import IntoExprColumn
 
 
+@unstable()
+@deprecate_nonkeyword_arguments(allowed_args=["start", "end"], version="1.27.0")
 def business_day_count(
     start: date | IntoExprColumn,
     end: date | IntoExprColumn,
@@ -25,6 +29,13 @@ def business_day_count(
 ) -> Expr:
     """
     Count the number of business days between `start` and `end` (not including `end`).
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    .. versionchanged:: 1.27.0
+        Parameters after `start` and `end` should now be passed as keyword arguments.
 
     Parameters
     ----------
@@ -83,7 +94,9 @@ def business_day_count(
 
     >>> week_mask = (True, True, True, True, True, True, False)
     >>> df.with_columns(
-    ...     business_day_count=pl.business_day_count("start", "end", week_mask),
+    ...     business_day_count=pl.business_day_count(
+    ...         "start", "end", week_mask=week_mask
+    ...     ),
     ... )
     shape: (2, 3)
     ┌────────────┬────────────┬────────────────────┐

@@ -29,6 +29,21 @@ impl Serialize for DataType {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for DataType {
+    fn schema_name() -> String {
+        SerializableDataType::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        SerializableDataType::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        SerializableDataType::json_schema(generator)
+    }
+}
+
 #[cfg(feature = "dtype-categorical")]
 struct Wrap<T>(T);
 
@@ -75,6 +90,8 @@ impl<'de> serde::Deserialize<'de> for Wrap<Utf8ViewArray> {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[serde(rename = "DataType")]
 enum SerializableDataType {
     Boolean,
     UInt8,
@@ -90,6 +107,7 @@ enum SerializableDataType {
     Float64,
     String,
     Binary,
+    BinaryOffset,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -136,6 +154,7 @@ impl From<&DataType> for SerializableDataType {
             Float64 => Self::Float64,
             String => Self::String,
             Binary => Self::Binary,
+            BinaryOffset => Self::BinaryOffset,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(*tu, tz.clone()),
             Duration(tu) => Self::Duration(*tu),
@@ -170,8 +189,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
-            Object(name, _) => Self::Object(name.to_string()),
-            dt => panic!("{dt:?} not supported"),
+            Object(name) => Self::Object(name.to_string()),
         }
     }
 }
@@ -193,6 +211,7 @@ impl From<SerializableDataType> for DataType {
             Float64 => Self::Float64,
             String => Self::String,
             Binary => Self::Binary,
+            BinaryOffset => Self::BinaryOffset,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(tu, tz),
             Duration(tu) => Self::Duration(tu),
@@ -230,7 +249,7 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
-            Object(_) => Self::Object("unknown", None),
+            Object(_) => Self::Object("unknown"),
         }
     }
 }

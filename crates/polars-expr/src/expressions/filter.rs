@@ -1,6 +1,6 @@
 use arrow::legacy::is_valid::IsValid;
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -48,7 +48,10 @@ impl PhysicalExpr for FilterExpr {
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
         // Check if the groups are still equal, otherwise aggregate.
         // TODO! create a special group iters that don't materialize
-        if ac_s.groups.as_ref() as *const _ != ac_predicate.groups.as_ref() as *const _ {
+        if !std::ptr::eq(
+            ac_s.groups.as_ref() as *const _,
+            ac_predicate.groups.as_ref() as *const _,
+        ) {
             let _ = ac_s.aggregated();
             let _ = ac_predicate.aggregated();
         }
@@ -97,7 +100,7 @@ impl PhysicalExpr for FilterExpr {
             // Filter the indexes that are true.
             else {
                 let predicate = predicate.rechunk();
-                let predicate = predicate.downcast_iter().next().unwrap();
+                let predicate = predicate.downcast_as_array();
                 POOL.install(|| {
                     match groups.as_ref().as_ref() {
                         GroupsType::Idx(groups) => {
@@ -145,16 +148,6 @@ impl PhysicalExpr for FilterExpr {
                 .set_original_len(false);
             Ok(ac_s)
         }
-    }
-
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

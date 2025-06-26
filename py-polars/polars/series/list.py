@@ -7,8 +7,7 @@ from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-    from datetime import date, datetime, time
+    from collections.abc import Collection, Sequence
 
     from polars import Expr, Series
     from polars._typing import (
@@ -38,6 +37,10 @@ class ListNameSpace:
         Series
             Series of data type :class:`Boolean`.
 
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `True`.
+
         Examples
         --------
         >>> s = pl.Series(
@@ -65,6 +68,10 @@ class ListNameSpace:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -169,6 +176,10 @@ class ListNameSpace:
     def sum(self) -> Series:
         """
         Sum all the arrays in the list.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `0`.
 
         Examples
         --------
@@ -410,8 +421,9 @@ class ListNameSpace:
             Index to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
+
+            * True -> set as null
+            * False -> raise an error
 
         Examples
         --------
@@ -557,9 +569,7 @@ class ListNameSpace:
         ]
         """
 
-    def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
-    ) -> Series:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
         Check if sublists contain the given item.
 
@@ -567,6 +577,8 @@ class ListNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -915,11 +927,10 @@ class ListNameSpace:
             s.to_frame()
             .select(
                 F.col(s.name).list.to_struct(
-                    # note: in eager mode, 'upper_bound' is always zero, as (unlike
+                    # note: in eager mode, 'upper_bound' is always None, as (unlike
                     # in lazy mode) there is no need to determine/track the schema.
                     n_field_strategy,
                     fields,
-                    upper_bound=0,
                     _eager=True,
                 )
             )
@@ -955,7 +966,31 @@ class ListNameSpace:
         ]
         """
 
-    def set_union(self, other: Series) -> Series:
+    def filter(self, predicate: Expr) -> Series:
+        """
+        Filter elements in each list by a boolean expression, returning a new Series of lists.
+
+        Parameters
+        ----------
+        predicate
+            A boolean expression evaluated on each list element.
+            Use `pl.element()` to refer to the current element.
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> s = pl.Series("a", [[1, 4], [8, 5], [3, 2]])
+        >>> s.list.filter(pl.element() % 2 == 0)
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [4]
+            [8]
+            [2]
+        ]
+        """  # noqa: W505
+
+    def set_union(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
 
@@ -979,7 +1014,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_difference(self, other: Series) -> Series:
+    def set_difference(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
@@ -1007,7 +1042,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_intersection(self, other: Series) -> Series:
+    def set_intersection(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
@@ -1031,7 +1066,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_symmetric_difference(self, other: Series) -> Series:
+    def set_symmetric_difference(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 

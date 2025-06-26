@@ -58,11 +58,11 @@ def test_empty_all_any_horizontally() -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
     assert_frame_equal(
         df.select(pl.any_horizontal(cs.string().is_null())),
-        pl.DataFrame({"literal": False}),
+        pl.DataFrame({"any_horizontal": False}),
     )
     assert_frame_equal(
         df.select(pl.all_horizontal(cs.string().is_null())),
-        pl.DataFrame({"literal": True}),
+        pl.DataFrame({"all_horizontal": True}),
     )
 
 
@@ -655,3 +655,13 @@ def test_horizontal_mean_with_null_col_ignore_strategy(
         values = [None, None, None]  # type: ignore[list-item]
     expected = pl.LazyFrame(pl.Series("null", values, dtype=dtype_out))
     assert_frame_equal(result, expected)
+
+
+def test_raise_invalid_types_21835() -> None:
+    df = pl.DataFrame({"x": [1, 2], "y": ["three", "four"]})
+
+    with pytest.raises(
+        ComputeError,
+        match=r"cannot compare string with numeric type \(i64\)",
+    ):
+        df.select(pl.min_horizontal("x", "y"))

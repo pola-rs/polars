@@ -351,6 +351,7 @@ def test_replace_strict_str_to_int() -> None:
         (contextlib.nullcontext(), pl.Enum(["a", "b", "OTHER"])),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_replace_strict_cat_str(
     context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
     dtype: pl.DataType,
@@ -378,6 +379,7 @@ def test_replace_strict_cat_str(
 @pytest.mark.parametrize(
     "context", [pl.StringCache(), pytest.warns(CategoricalRemappingWarning)]
 )
+@pytest.mark.may_fail_auto_streaming
 def test_replace_strict_cat_cat(
     context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
 ) -> None:
@@ -407,3 +409,31 @@ def test_replace_strict_single_argument_not_mapping() -> None:
         match="`new` argument is required if `old` argument is not a Mapping type",
     ):
         df.select(pl.col("a").replace_strict("b"))
+
+
+def test_replace_strict_unique_22134() -> None:
+    df = pl.LazyFrame({"mapped_column": ["Jelly", "Soap", "Jelly"]})
+    mapping = {
+        "Jelly": "Jelly",
+        "Soap": "Soap",
+    }
+    df = df.with_columns(pl.col("mapped_column").replace_strict(mapping, default=None))
+    df = df.select(["mapped_column"]).unique()
+    assert_frame_equal(
+        df.collect(),
+        pl.DataFrame({"mapped_column": ["Jelly", "Soap"]}),
+        check_row_order=False,
+    )
+
+
+def test_replace_strict_nested_mapping_22554() -> None:
+    assert_series_equal(
+        pl.Series([1, 2, 3]).replace_strict(
+            {
+                1: [42],
+                2: [13],
+                3: [37],
+            }
+        ),
+        pl.Series([[42], [13], [37]]),
+    )

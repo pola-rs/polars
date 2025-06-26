@@ -338,8 +338,8 @@ def test_extend_to_an_enum() -> None:
 
 def test_series_init_uninstantiated_enum() -> None:
     with pytest.raises(
-        ComputeError,
-        match="can not cast / initialize Enum without categories present",
+        InvalidOperationError,
+        match="cannot cast / initialize Enum without categories present",
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
@@ -707,6 +707,7 @@ def test_init_series_from_int_enum(EnumBase: tuple[type, ...]) -> None:
     assert_series_equal(expected, s)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_read_enum_from_csv() -> None:
     df = pl.DataFrame(
         {

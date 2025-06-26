@@ -44,6 +44,17 @@ impl OutputName {
         self.get().expect("no output name set")
     }
 
+    pub fn into_inner(self) -> Option<PlSmallStr> {
+        match self {
+            OutputName::Alias(name) => Some(name),
+            OutputName::ColumnLhs(name) => Some(name),
+            OutputName::LiteralLhs(name) => Some(name),
+            #[cfg(feature = "dtype-struct")]
+            OutputName::Field(name) => Some(name),
+            OutputName::None => None,
+        }
+    }
+
     pub(crate) fn is_none(&self) -> bool {
         matches!(self, OutputName::None)
     }
@@ -136,7 +147,7 @@ impl ExprIR {
                 } => {
                     match function {
                         #[cfg(feature = "dtype-struct")]
-                        FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
+                        IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)) => {
                             out.output_name = OutputName::Field(name.clone());
                         },
                         _ => {
@@ -150,22 +161,17 @@ impl ExprIR {
                     }
                     break;
                 },
-                AExpr::AnonymousFunction { input, options, .. } => {
+                AExpr::AnonymousFunction { input, fmt_str, .. } => {
                     if input.is_empty() {
-                        out.output_name =
-                            OutputName::LiteralLhs(PlSmallStr::from_static(options.fmt_str));
+                        out.output_name = OutputName::LiteralLhs(fmt_str.as_ref().clone());
                     } else {
                         out.output_name = input[0].output_name.clone();
                     }
                     break;
                 },
-                AExpr::Len => out.output_name = OutputName::LiteralLhs(get_len_name()),
-                AExpr::Alias(_, _) => {
-                    // Should be removed during conversion.
-                    #[cfg(debug_assertions)]
-                    {
-                        unreachable!()
-                    }
+                AExpr::Len => {
+                    out.output_name = OutputName::LiteralLhs(get_len_name());
+                    break;
                 },
                 _ => {},
             }
@@ -197,6 +203,22 @@ impl ExprIR {
         self.output_name = OutputName::Alias(name)
     }
 
+    pub fn with_alias(&self, name: PlSmallStr) -> Self {
+        Self {
+            output_name: OutputName::Alias(name),
+            node: self.node,
+            output_dtype: self.output_dtype.clone(),
+        }
+    }
+
+    pub(crate) fn set_columnlhs(&mut self, name: PlSmallStr) {
+        debug_assert!(matches!(
+            self.output_name,
+            OutputName::ColumnLhs(_) | OutputName::None
+        ));
+        self.output_name = OutputName::ColumnLhs(name)
+    }
+
     pub fn output_name_inner(&self) -> &OutputName {
         &self.output_name
     }
@@ -209,7 +231,9 @@ impl ExprIR {
         let out = node_to_expr(self.node, expr_arena);
 
         match &self.output_name {
-            OutputName::Alias(name) => out.alias(name.clone()),
+            OutputName::Alias(name) if expr_arena.get(self.node).to_name(expr_arena) != name => {
+                out.alias(name.clone())
+            },
             _ => out,
         }
     }
@@ -271,6 +295,10 @@ impl ExprIR {
         let dtype = self.dtype(schema, ctxt, expr_arena)?;
         let name = self.output_name();
         Ok(Field::new(name.clone(), dtype.clone()))
+    }
+
+    pub fn into_inner(self) -> (Node, OutputName) {
+        (self.node, self.output_name)
     }
 }
 

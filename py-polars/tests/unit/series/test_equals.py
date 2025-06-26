@@ -30,6 +30,25 @@ def test_equals() -> None:
     assert s3.equals(s4, null_equal=False) is False
     assert s3.dt.convert_time_zone("Asia/Tokyo").equals(s4) is True
 
+    with pytest.raises(
+        TypeError,
+        match="expected `other` to be a 'Series'.* not 'DataFrame'",
+    ):
+        s1.equals(pl.DataFrame(s2), check_names=False)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` to be a 'Series'.* not 'LazyFrame'",
+    ):
+        s1.equals(pl.DataFrame(s2).lazy(), check_names=False)  # type: ignore[arg-type]
+
+    s5 = pl.Series("a", [1, 2, 3])
+
+    class DummySeriesSubclass(pl.Series):
+        pass
+
+    assert s5.equals(DummySeriesSubclass(s5)) is True
+
 
 def test_series_equals_check_names() -> None:
     s1 = pl.Series("foo", [1, 2, 3])
@@ -48,7 +67,8 @@ def test_eq_list_cmp_list() -> None:
 def test_eq_list_cmp_int() -> None:
     s = pl.Series([[1], [1, 2]])
     with pytest.raises(
-        TypeError, match="cannot convert Python type 'int' to List\\(Int64\\)"
+        NotImplementedError,
+        match=r"Series of type List\(Int64\) does not have eq operator",
     ):
         s == 1  # noqa: B015
 
@@ -63,8 +83,8 @@ def test_eq_array_cmp_list() -> None:
 def test_eq_array_cmp_int() -> None:
     s = pl.Series([[1, 3], [1, 2]], dtype=pl.Array(pl.Int16, 2))
     with pytest.raises(
-        TypeError,
-        match="cannot convert Python type 'int' to Array\\(Int16, shape=\\(2,\\)\\)",
+        NotImplementedError,
+        match=r"Series of type Array\(Int16, shape=\(2,\)\) does not have eq operator",
     ):
         s == 1  # noqa: B015
 

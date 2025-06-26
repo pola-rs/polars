@@ -3,13 +3,15 @@ use either::Either;
 use super::specification::try_check_offsets_bounds;
 use super::{Array, GenericBinaryArray, Splitable};
 use crate::array::iterator::NonNullValuesIter;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -19,7 +21,9 @@ mod mutable_values;
 pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`BinaryArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<Vec<u8>>>`.
 /// It implements [`Array`].

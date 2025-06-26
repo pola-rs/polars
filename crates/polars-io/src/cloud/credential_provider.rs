@@ -13,9 +13,10 @@ pub use object_store::azure::AzureCredential;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GcpCredential;
 use polars_core::config;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
-use polars_utils::python_function::PythonFunction;
+use polars_utils::python_function::PythonObject;
 #[cfg(feature = "python")]
 use python_impl::PythonCredentialProvider;
 
@@ -24,7 +25,7 @@ pub enum PlCredentialProvider {
     /// Prefer using [`PlCredentialProvider::from_func`] instead of constructing this directly
     Function(CredentialProviderFunction),
     #[cfg(feature = "python")]
-    Python(python_impl::PythonCredentialProvider),
+    Python(PythonCredentialProvider),
 }
 
 impl PlCredentialProvider {
@@ -35,23 +36,20 @@ impl PlCredentialProvider {
         // Internal notes
         // * This function is exposed as the Rust API for `PlCredentialProvider`
         func: impl Fn() -> Pin<
-                Box<dyn Future<Output = PolarsResult<(ObjectStoreCredential, u64)>> + Send + Sync>,
-            > + Send
-            + Sync
-            + 'static,
+            Box<dyn Future<Output = PolarsResult<(ObjectStoreCredential, u64)>> + Send + Sync>,
+        > + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self::Function(CredentialProviderFunction(Arc::new(func)))
     }
 
+    /// Intended to be called with an internal `CredentialProviderBuilder` from
+    /// py-polars.
     #[cfg(feature = "python")]
-    pub fn from_python_func(func: PythonFunction) -> Self {
-        Self::Python(python_impl::PythonCredentialProvider(Arc::new(func)))
-    }
-
-    #[cfg(feature = "python")]
-    pub fn from_python_func_object(func: pyo3::PyObject) -> Self {
-        Self::Python(python_impl::PythonCredentialProvider(Arc::new(
-            PythonFunction(func),
+    pub fn from_python_builder(func: pyo3::PyObject) -> Self {
+        Self::Python(python_impl::PythonCredentialProvider::Builder(Arc::new(
+            PythonObject(func),
         )))
     }
 
@@ -59,7 +57,19 @@ impl PlCredentialProvider {
         match self {
             Self::Function(CredentialProviderFunction(v)) => Arc::as_ptr(v) as *const () as usize,
             #[cfg(feature = "python")]
-            Self::Python(PythonCredentialProvider(v)) => Arc::as_ptr(v) as *const () as usize,
+            Self::Python(v) => v.func_addr(),
+        }
+    }
+
+    /// Python passes a `CredentialProviderBuilder`, this calls the builder to build the final
+    /// credential provider.
+    ///
+    /// This returns `Option` as the auto-initialization case is fallible and falls back to None.
+    pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+        match self {
+            Self::Function(_) => Ok(Some(self)),
+            #[cfg(feature = "python")]
+            Self::Python(v) => Ok(v.try_into_initialized()?.map(Self::Python)),
         }
     }
 }
@@ -139,6 +149,10 @@ pub trait IntoCredentialProvider: Sized {
     fn into_gcp_provider(self) -> object_store::gcp::GcpCredentialProvider {
         unimplemented!()
     }
+
+    /// Note, technically shouldn't be under the `IntoCredentialProvider` trait, but it's here
+    /// for convenience.
+    fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>>;
 }
 
 impl IntoCredentialProvider for PlCredentialProvider {
@@ -166,6 +180,14 @@ impl IntoCredentialProvider for PlCredentialProvider {
             Self::Function(v) => v.into_gcp_provider(),
             #[cfg(feature = "python")]
             Self::Python(v) => v.into_gcp_provider(),
+        }
+    }
+
+    fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
+        match self {
+            Self::Function(v) => v.storage_update_options(),
+            #[cfg(feature = "python")]
+            Self::Python(v) => v.storage_update_options(),
         }
     }
 }
@@ -212,7 +234,7 @@ impl IntoCredentialProvider for CredentialProviderFunction {
             async fn get_credential(&self) -> object_store::Result<Arc<Self::Credential>> {
                 self.1
                     .get_maybe_update(async {
-                        let (creds, expiry) = self.0 .0().await?;
+                        let (creds, expiry) = self.0.0().await?;
                         PolarsResult::Ok((creds.unwrap_aws(), expiry))
                     })
                     .await
@@ -245,7 +267,7 @@ impl IntoCredentialProvider for CredentialProviderFunction {
             async fn get_credential(&self) -> object_store::Result<Arc<Self::Credential>> {
                 self.1
                     .get_maybe_update(async {
-                        let (creds, expiry) = self.0 .0().await?;
+                        let (creds, expiry) = self.0.0().await?;
                         PolarsResult::Ok((creds.unwrap_azure(), expiry))
                     })
                     .await
@@ -274,7 +296,7 @@ impl IntoCredentialProvider for CredentialProviderFunction {
             async fn get_credential(&self) -> object_store::Result<Arc<Self::Credential>> {
                 self.1
                     .get_maybe_update(async {
-                        let (creds, expiry) = self.0 .0().await?;
+                        let (creds, expiry) = self.0.0().await?;
                         PolarsResult::Ok((creds.unwrap_gcp(), expiry))
                     })
                     .await
@@ -288,6 +310,10 @@ impl IntoCredentialProvider for CredentialProviderFunction {
                 bearer: String::new(),
             })),
         ))
+    }
+
+    fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
+        Ok(vec![])
     }
 }
 
@@ -317,14 +343,14 @@ impl Hash for CredentialProviderFunction {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for PlCredentialProvider {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[cfg(feature = "python")]
         {
             Ok(Self::Python(PythonCredentialProvider::deserialize(
-                deserializer,
+                _deserializer,
             )?))
         }
         #[cfg(not(feature = "python"))]
@@ -337,7 +363,7 @@ impl<'de> serde::Deserialize<'de> for PlCredentialProvider {
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for PlCredentialProvider {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -345,20 +371,35 @@ impl serde::Serialize for PlCredentialProvider {
 
         #[cfg(feature = "python")]
         if let PlCredentialProvider::Python(v) = self {
-            return v.serialize(serializer);
+            return v.serialize(_serializer);
         }
 
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PlCredentialProvider {
+    fn schema_name() -> String {
+        "PlCredentialProvider".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlCredentialProvider"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
 /// Avoids calling the credential provider function if we have not yet passed the expiry time.
 #[derive(Debug)]
-struct FetchedCredentialsCache<C>(tokio::sync::Mutex<(C, u64)>);
+struct FetchedCredentialsCache<C>(tokio::sync::Mutex<(C, u64, bool)>);
 
 impl<C: Clone> FetchedCredentialsCache<C> {
     fn new(init_creds: C) -> Self {
-        Self(tokio::sync::Mutex::new((init_creds, 0)))
+        Self(tokio::sync::Mutex::new((init_creds, 0, true)))
     }
 
     async fn get_maybe_update(
@@ -383,7 +424,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
         }
 
         let mut inner = self.0.lock().await;
-        let (last_fetched_credentials, last_fetched_expiry) = &mut *inner;
+        let (last_fetched_credentials, last_fetched_expiry, log_use_cached) = &mut *inner;
 
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -406,6 +447,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
 
             *last_fetched_credentials = credentials;
             *last_fetched_expiry = expiry;
+            *log_use_cached = true;
 
             if expiry < current_time && expiry != 0 {
                 polars_bail!(
@@ -430,7 +472,8 @@ impl<C: Clone> FetchedCredentialsCache<C> {
                     )
                 )
             }
-        } else if verbose {
+        } else if verbose && *log_use_cached {
+            *log_use_cached = false;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -452,35 +495,104 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
-    use polars_error::PolarsError;
-    use polars_utils::python_function::PythonFunction;
+    use polars_error::{PolarsError, PolarsResult};
+    use polars_utils::pl_str::PlSmallStr;
+    use polars_utils::python_function::PythonObject;
+    use pyo3::Python;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-    use pyo3::Python;
 
     use super::IntoCredentialProvider;
 
     #[derive(Clone, Debug)]
-    pub struct PythonCredentialProvider(pub(super) Arc<PythonFunction>);
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    pub enum PythonCredentialProvider {
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                serialize_with = "PythonObject::serialize_with_pyversion",
+                deserialize_with = "PythonObject::deserialize_with_pyversion"
+            )
+        )]
+        /// Indicates `py_object` is a `CredentialProviderBuilder`.
+        Builder(Arc<PythonObject>),
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                serialize_with = "PythonObject::serialize_with_pyversion",
+                deserialize_with = "PythonObject::deserialize_with_pyversion"
+            )
+        )]
+        /// Indicates `py_object` is an instantiated credential provider
+        Provider(Arc<PythonObject>),
+    }
 
-    impl From<PythonFunction> for PythonCredentialProvider {
-        fn from(value: PythonFunction) -> Self {
-            Self(Arc::new(value))
+    impl PythonCredentialProvider {
+        /// Performs initialization if necessary.
+        ///
+        /// This exists as a separate step that must be called beforehand. This approach is easier
+        /// as the alternative is to refactor the `IntoCredentialProvider` trait to return
+        /// `PolarsResult<Option<T>>` for every single function.
+        pub(super) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+            match self {
+                Self::Builder(py_object) => {
+                    let opt_initialized_py_object = Python::with_gil(|py| {
+                        let build_fn = py_object.getattr(py, "build_credential_provider")?;
+
+                        let v = build_fn.call0(py)?;
+                        let v = (!v.is_none(py)).then_some(v);
+
+                        pyo3::PyResult::Ok(v)
+                    })?;
+
+                    Ok(opt_initialized_py_object
+                        .map(PythonObject)
+                        .map(Arc::new)
+                        .map(Self::Provider))
+                },
+                Self::Provider(_) => {
+                    // Note: We don't expect to hit here.
+                    Ok(Some(self))
+                },
+            }
+        }
+
+        fn unwrap_as_provider(self) -> Arc<PythonObject> {
+            match self {
+                Self::Builder(_) => panic!(),
+                Self::Provider(v) => v,
+            }
+        }
+
+        pub(crate) fn unwrap_as_provider_ref(&self) -> &Arc<PythonObject> {
+            match self {
+                Self::Builder(_) => panic!(),
+                Self::Provider(v) => v,
+            }
+        }
+
+        pub(super) fn func_addr(&self) -> usize {
+            (match self {
+                Self::Builder(v) => Arc::as_ptr(v),
+                Self::Provider(v) => Arc::as_ptr(v),
+            }) as *const () as usize
         }
     }
 
     impl IntoCredentialProvider for PythonCredentialProvider {
         #[cfg(feature = "aws")]
         fn into_aws_provider(self) -> object_store::aws::AwsCredentialProvider {
-            use polars_error::{to_compute_err, PolarsResult};
+            use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
+            let func = self.unwrap_as_provider();
+
             CredentialProviderFunction(Arc::new(move || {
-                let func = self.0.clone();
+                let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = object_store::aws::AwsCredential {
                         key_id: String::new(),
@@ -518,14 +630,13 @@ mod python_impl {
                                         "aws_access_key_id",
                                         "aws_secret_access_key",
                                         "aws_session_token"
-                                    )))
+                                    )));
                                 },
                             }
                         }
 
                         pyo3::PyResult::Ok(expiry.unwrap_or(u64::MAX))
-                    })
-                    .map_err(to_compute_err)?;
+                    })?;
 
                     if credentials.key_id.is_empty() {
                         return Err(PolarsError::ComputeError(
@@ -548,14 +659,16 @@ mod python_impl {
         #[cfg(feature = "azure")]
         fn into_azure_provider(self) -> object_store::azure::AzureCredentialProvider {
             use object_store::azure::AzureAccessKey;
-            use polars_error::{to_compute_err, PolarsResult};
+            use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
+            let func = self.unwrap_as_provider();
+
             CredentialProviderFunction(Arc::new(move || {
-                let func = self.0.clone();
+                let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = None;
 
@@ -586,22 +699,19 @@ mod python_impl {
                                 },
                                 v => {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
-                                        "unknown configuration key for azure: {}, {}",
-                                        v, VALID_KEYS_MSG
-                                    )))
+                                        "unknown configuration key for azure: {v}, {VALID_KEYS_MSG}"
+                                    )));
                                 },
                             }
                         }
 
                         pyo3::PyResult::Ok(expiry.unwrap_or(u64::MAX))
-                    })
-                    .map_err(to_compute_err)?;
+                    })?;
 
                     let Some(credentials) = credentials else {
                         return Err(PolarsError::ComputeError(
                             format!(
-                                "did not find a valid configuration key for azure, {}",
-                                VALID_KEYS_MSG
+                                "did not find a valid configuration key for azure, {VALID_KEYS_MSG}"
                             )
                             .into(),
                         ));
@@ -615,14 +725,16 @@ mod python_impl {
 
         #[cfg(feature = "gcp")]
         fn into_gcp_provider(self) -> object_store::gcp::GcpCredentialProvider {
-            use polars_error::{to_compute_err, PolarsResult};
+            use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
+            let func = self.unwrap_as_provider();
+
             CredentialProviderFunction(Arc::new(move || {
-                let func = self.0.clone();
+                let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = object_store::gcp::GcpCredential {
                         bearer: String::new(),
@@ -644,14 +756,13 @@ mod python_impl {
                                         "unknown configuration key for gcp: {}, \
                                     valid configuration keys are: {}",
                                         v, "bearer_token",
-                                    )))
+                                    )));
                                 },
                             }
                         }
 
                         pyo3::PyResult::Ok(expiry.unwrap_or(u64::MAX))
-                    })
-                    .map_err(to_compute_err)?;
+                    })?;
 
                     if credentials.bearer.is_empty() {
                         return Err(PolarsError::ComputeError(
@@ -664,13 +775,41 @@ mod python_impl {
             }))
             .into_gcp_provider()
         }
+
+        /// # Panics
+        /// Panics if `self` is not an initialized provider.
+        fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
+            let py_object = self.unwrap_as_provider_ref();
+
+            Python::with_gil(|py| {
+                py_object
+                    .getattr(py, "_storage_update_options")
+                    .map_or(Ok(vec![]), |f| {
+                        let v = f.call0(py)?.extract::<pyo3::Bound<'_, PyDict>>(py)?;
+
+                        let mut out = Vec::with_capacity(v.len());
+
+                        for dict_item in v.call_method0("items")?.try_iter()? {
+                            let (key, value) =
+                                dict_item?.extract::<(PyBackedStr, PyBackedStr)>()?;
+
+                            out.push(((&*key).into(), (&*value).into()))
+                        }
+
+                        Ok(out)
+                    })
+            })
+        }
     }
+
+    // Note: We don't consider `is_builder` for hash/eq - we don't expect the same Arc<PythonObject>
+    // to be referenced as both true and false from the `is_builder` field.
 
     impl Eq for PythonCredentialProvider {}
 
     impl PartialEq for PythonCredentialProvider {
         fn eq(&self, other: &Self) -> bool {
-            Arc::ptr_eq(&self.0, &other.0)
+            self.func_addr() == other.func_addr()
         }
     }
 
@@ -680,33 +819,7 @@ mod python_impl {
             // * Inner is an `Arc`
             // * Visibility is limited to super
             // * No code in `mod python_impl` or `super` mutates the Arc inner.
-            state.write_usize(Arc::as_ptr(&self.0) as *const () as usize)
-        }
-    }
-
-    #[cfg(feature = "serde")]
-    mod _serde_impl {
-        use polars_utils::python_function::PySerializeWrap;
-
-        use super::PythonCredentialProvider;
-
-        impl serde::Serialize for PythonCredentialProvider {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: serde::Serializer,
-            {
-                PySerializeWrap(self.0.as_ref()).serialize(serializer)
-            }
-        }
-
-        impl<'a> serde::Deserialize<'a> for PythonCredentialProvider {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'a>,
-            {
-                PySerializeWrap::<super::PythonFunction>::deserialize(deserializer)
-                    .map(|x| x.0.into())
-            }
+            state.write_usize(self.func_addr())
         }
     }
 }

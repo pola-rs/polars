@@ -1,3 +1,5 @@
+use std::hash::BuildHasher;
+
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
@@ -52,7 +54,6 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|partition_no| {
-                let build_hasher = build_hasher.clone();
                 let hashes_and_keys = &hashes_and_keys;
                 let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
                     PlHashMap::with_hasher(build_hasher);
@@ -111,7 +112,7 @@ fn probe_outer<T, F, G, H>(
     swap_fn_no_match: G,
     // Function that get index_b from the build table that did not match any in A and pushes to result
     swap_fn_drain: H,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) where
     T: TotalHash + TotalEq + ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + IsNull,
@@ -139,7 +140,7 @@ fn probe_outer<T, F, G, H>(
             match entry {
                 // match and remove
                 RawEntryMut::Occupied(mut occupied) => {
-                    if key.is_null() && !join_nulls {
+                    if key.is_null() && !nulls_equal {
                         let (l, r) = swap_fn_no_match(idx_a);
                         results.0.push(l);
                         results.1.push(r);
@@ -182,7 +183,7 @@ pub(super) fn hash_join_tuples_outer<T, I, J>(
     build: Vec<J>,
     swapped: bool,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
     I: IntoIterator<Item = T>,
@@ -225,10 +226,10 @@ where
     } else {
         prepare_hashed_relation_threaded(build)
     };
-    let random_state = hash_tbls[0].hasher().clone();
+    let random_state = hash_tbls[0].hasher();
 
     // we pre hash the probing values
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
+    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(*random_state));
 
     let n_tables = hash_tbls.len();
     try_raise_keyboard_interrupt();
@@ -247,7 +248,7 @@ where
             |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
             |idx_a| (None, Some(idx_a)),
             |idx_b| (Some(idx_b), None),
-            join_nulls,
+            nulls_equal,
         )
     } else {
         probe_outer(
@@ -258,7 +259,7 @@ where
             |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
             |idx_a| (Some(idx_a), None),
             |idx_b| (None, Some(idx_b)),
-            join_nulls,
+            nulls_equal,
         )
     }
     Ok((results.0.into(), results.1.into()))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -181,7 +182,7 @@ class ExprCatNameSpace:
         └────────┘
         """
         if not isinstance(prefix, str):
-            msg = f"'prefix' must be a string; found {type(prefix)!r}"
+            msg = f"'prefix' must be a string; found {qualified_type_name(prefix)!r}"
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_starts_with(prefix))
 
@@ -234,6 +235,72 @@ class ExprCatNameSpace:
         └────────┘
         """
         if not isinstance(suffix, str):
-            msg = f"'suffix' must be a string; found {type(suffix)!r}"
+            msg = f"'suffix' must be a string; found {qualified_type_name(suffix)!r}"
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_ends_with(suffix))
+
+    def slice(self, offset: int, length: int | None = None) -> Expr:
+        """
+        Extract a substring from the string representation of each value.
+
+        Parameters
+        ----------
+        offset
+            Start index. Negative indexing is supported.
+        length
+            Length of the slice. If set to `None` (default), the slice is taken to the
+            end of the string.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Notes
+        -----
+        Both the `offset` and `length` inputs are defined in terms of the number
+        of characters in the (UTF8) string. A character is defined as a
+        `Unicode scalar value`_. A single character is represented by a single byte
+        when working with ASCII text, and a maximum of 4 bytes otherwise.
+
+        .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": pl.Series(
+        ...             ["pear", None, "papaya", "dragonfruit"],
+        ...             dtype=pl.Categorical,
+        ...         )
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("s").cat.slice(-3).alias("slice"))
+        shape: (4, 2)
+        ┌─────────────┬───────┐
+        │ s           ┆ slice │
+        │ ---         ┆ ---   │
+        │ cat         ┆ str   │
+        ╞═════════════╪═══════╡
+        │ pear        ┆ ear   │
+        │ null        ┆ null  │
+        │ papaya      ┆ aya   │
+        │ dragonfruit ┆ uit   │
+        └─────────────┴───────┘
+
+        Using the optional `length` parameter
+
+        >>> df.with_columns(pl.col("s").cat.slice(4, length=3).alias("slice"))
+        shape: (4, 2)
+        ┌─────────────┬───────┐
+        │ s           ┆ slice │
+        │ ---         ┆ ---   │
+        │ cat         ┆ str   │
+        ╞═════════════╪═══════╡
+        │ pear        ┆       │
+        │ null        ┆ null  │
+        │ papaya      ┆ ya    │
+        │ dragonfruit ┆ onf   │
+        └─────────────┴───────┘
+        """
+        return wrap_expr(self._pyexpr.cat_slice(offset, length))

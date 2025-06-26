@@ -41,6 +41,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
+polars_cloud = ["polars_cloud >= 0.0.1a1"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -64,8 +65,8 @@ database = ["polars[adbc,connectorx,sqlalchemy]"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 0.19.0"]
-iceberg = ["pyiceberg >= 0.5.0"]
+deltalake = ["deltalake >= 1.0.0"]
+iceberg = ["pyiceberg >= 0.7.1"]
 
 # Other
 async = ["gevent"]
@@ -107,6 +108,7 @@ module = [
   "arrow_odbc",
   "backports",
   "connectorx",
+  "dateutil.*",
   "deltalake.*",
   "fsspec.*",
   "gevent",
@@ -117,6 +119,7 @@ module = [
   "moto.server",
   "openpyxl",
   "polars.polars",
+  "polars_cloud",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
@@ -231,12 +234,14 @@ addopts = [
 ]
 markers = [
   "ci_only: Tests that should only run on CI by default.",
+  "benchmark: Tests used to benchmark with.",
   "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
   "release: Tests that should be run on a Polars release build.",
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
   "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
+  "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
 ]
 filterwarnings = [
   # Fail on warnings
@@ -261,9 +266,6 @@ filterwarnings = [
   "ignore:Deprecated API features detected.*:DeprecationWarning",
   # numpy import can generate this warning in Python 3.13 on certain runners
   "ignore:.*numpy\\.longdouble.*:UserWarning",
-  # The old streaming engine is deprecated, until the new streaming engine is
-  # done just ignore the deprecation warnings.
-  "ignore:The old streaming engine*:DeprecationWarning",
 ]
 xfail_strict = true
 
@@ -281,4 +283,14 @@ exclude_lines = [
   "except ImportError",
   "if TYPE_CHECKING:",
   "from typing_extensions import ",
+]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch" },
 ]

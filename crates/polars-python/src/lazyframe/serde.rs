@@ -1,6 +1,5 @@
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read};
 
-use polars_utils::pl_serialize;
 use pyo3::prelude::*;
 
 use super::PyLazyFrame;
@@ -13,18 +12,15 @@ use crate::utils::EnterPolarsExt;
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
     /// Serialize into binary data.
-    fn serialize_binary(&self, py: Python, py_f: PyObject) -> PyResult<()> {
+    fn serialize_binary(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        py.enter_polars(|| {
-            pl_serialize::SerializeOptions::default()
-                .serialize_into_writer(writer, &self.ldf.logical_plan)
-        })
+        py.enter_polars(|| self.ldf.logical_plan.serialize_versioned(writer))
     }
 
     /// Serialize into a JSON string.
     #[cfg(feature = "json")]
-    fn serialize_json(&self, py: Python, py_f: PyObject) -> PyResult<()> {
+    fn serialize_json(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
@@ -35,19 +31,18 @@ impl PyLazyFrame {
 
     /// Deserialize a file-like object containing binary data into a LazyFrame.
     #[staticmethod]
-    fn deserialize_binary(py: Python, py_f: PyObject) -> PyResult<Self> {
+    fn deserialize_binary(py: Python<'_>, py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
-        let lp: DslPlan = py.enter_polars(|| {
-            pl_serialize::SerializeOptions::default().deserialize_from_reader(reader)
-        })?;
+
+        let lp: DslPlan = py.enter_polars(|| DslPlan::deserialize_versioned(reader))?;
         Ok(LazyFrame::from(lp).into())
     }
 
     /// Deserialize a file-like object containing JSON string data into a LazyFrame.
     #[staticmethod]
     #[cfg(feature = "json")]
-    fn deserialize_json(py: Python, py_f: PyObject) -> PyResult<Self> {
+    fn deserialize_json(py: Python<'_>, py_f: PyObject) -> PyResult<Self> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
         // so don't bother with files.
         let mut json = String::new();

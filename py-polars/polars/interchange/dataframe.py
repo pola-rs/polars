@@ -21,7 +21,7 @@ class PolarsDataFrame(InterchangeDataFrame):
 
     Parameters
     ----------
-    column
+    df
         The Polars DataFrame backing the dataframe object.
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,

@@ -1,114 +1,10 @@
-#[cfg(feature = "json")]
-use std::num::NonZeroUsize;
-use std::path::PathBuf;
-
 use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
-#[cfg(feature = "csv")]
-use polars_io::csv::write::CsvWriterOptions;
-#[cfg(feature = "ipc")]
-use polars_io::ipc::IpcWriterOptions;
-#[cfg(feature = "json")]
-use polars_io::json::JsonWriterOptions;
-#[cfg(feature = "parquet")]
-use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::{is_cloud_url, HiveOptions, RowIndex};
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::dsl::Selector;
-use crate::plans::{ExprIR, PlSmallStr};
-#[cfg(feature = "python")]
-use crate::prelude::python_udf::PythonFunction;
-
-pub type FileCount = u32;
-
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-/// Generic options for all file types.
-pub struct FileScanOptions {
-    pub slice: Option<(i64, usize)>,
-    pub with_columns: Option<Arc<[PlSmallStr]>>,
-    pub cache: bool,
-    pub row_index: Option<RowIndex>,
-    pub rechunk: bool,
-    pub file_counter: FileCount,
-    pub hive_options: HiveOptions,
-    pub glob: bool,
-    pub include_file_paths: Option<PlSmallStr>,
-    pub allow_missing_columns: bool,
-}
-
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct UnionOptions {
-    pub slice: Option<(i64, usize)>,
-    // known row_output, estimated row output
-    pub rows: (Option<usize>, usize),
-    pub parallel: bool,
-    pub from_partitioned_ds: bool,
-    pub flattened_by_opt: bool,
-    pub rechunk: bool,
-    pub maintain_order: bool,
-}
-
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct HConcatOptions {
-    pub parallel: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct GroupbyOptions {
-    #[cfg(feature = "dynamic_group_by")]
-    pub dynamic: Option<DynamicGroupOptions>,
-    #[cfg(feature = "dynamic_group_by")]
-    pub rolling: Option<RollingGroupOptions>,
-    /// Take only a slice of the result
-    pub slice: Option<(i64, usize)>,
-}
-
-impl GroupbyOptions {
-    pub(crate) fn is_rolling(&self) -> bool {
-        #[cfg(feature = "dynamic_group_by")]
-        {
-            self.rolling.is_some()
-        }
-        #[cfg(not(feature = "dynamic_group_by"))]
-        {
-            false
-        }
-    }
-
-    pub(crate) fn is_dynamic(&self) -> bool {
-        #[cfg(feature = "dynamic_group_by")]
-        {
-            self.dynamic.is_some()
-        }
-        #[cfg(not(feature = "dynamic_group_by"))]
-        {
-            false
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct DistinctOptionsDSL {
-    /// Subset of columns that will be taken into account.
-    pub subset: Option<Vec<Selector>>,
-    /// This will maintain the order of the input.
-    /// Note that this is more expensive.
-    /// `maintain_order` is not supported in the streaming
-    /// engine.
-    pub maintain_order: bool,
-    /// Which rows to keep.
-    pub keep_strategy: UniqueKeepStrategy,
-}
+use crate::plans::PlSmallStr;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -126,24 +22,10 @@ pub struct DistinctOptionsIR {
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ApplyOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    /// e.g. [g1, g1, g2] -> [[g1, g1], g2]
-    GroupWise,
-    /// collect groups to a list and then apply
-    /// e.g. [g1, g1, g2] -> list([g1, g1, g2])
-    ApplyList,
-    /// do not collect before apply
-    /// e.g. [g1, g1, g2] -> [g1, g1, g2]
-    ElementWise,
-}
-
 // a boolean that can only be set to `false` safely
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UnsafeBool(bool);
 impl Default for UnsafeBool {
     fn default() -> Self {
@@ -151,21 +33,49 @@ impl Default for UnsafeBool {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for FunctionFlags {
+    fn schema_name() -> String {
+        "FunctionFlags".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "FunctionFlags"))
+    }
+
+    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        use serde_json::{Map, Value};
+
+        let name_to_bits: Map<String, Value> = Self::all()
+            .iter_names()
+            .map(|(name, flag)| (name.to_owned(), flag.bits().into()))
+            .collect();
+
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            format: Some("bitflags".to_owned()),
+            extensions: schemars::Map::from_iter([
+                // Add a map of flag names and bit patterns to detect schema changes
+                ("bitflags".to_owned(), Value::Object(name_to_bits)),
+            ]),
+            ..Default::default()
+        })
+    }
+}
+
 bitflags!(
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-        pub struct FunctionFlags: u8 {
-            // Raise if use in group by
+        pub struct FunctionFlags: u16 {
+            /// Raise if use in group by
             const ALLOW_GROUP_AWARE = 1 << 0;
-            // For example a `unique` or a `slice`
-            const CHANGES_LENGTH = 1 << 1;
-            // The physical expression may rename the output of this function.
-            // If set to `false` the physical engine will ensure the left input
-            // expression is the output name.
+            /// The physical expression may rename the output of this function.
+            /// If set to `false` the physical engine will ensure the left input
+            /// expression is the output name.
             const ALLOW_RENAME = 1 << 2;
-            // if set, then the `Series` passed to the function in the group_by operation
-            // will ensure the name is set. This is an extra heap allocation per group.
+            /// if set, then the `Series` passed to the function in the group_by operation
+            /// will ensure the name is set. This is an extra heap allocation per group.
             const PASS_NAME_TO_APPLY = 1 << 3;
             /// There can be two ways of expanding wildcards:
             ///
@@ -188,6 +98,8 @@ bitflags!(
             ///
             /// head_1(x) -> {1}
             /// sum(x) -> {4}
+            ///
+            /// mutually exclusive with `RETURNS_SCALAR`
             const RETURNS_SCALAR = 1 << 5;
             /// This can happen with UDF's that use Polars within the UDF.
             /// This can lead to recursively entering the engine and sometimes deadlocks.
@@ -195,8 +107,34 @@ bitflags!(
             const OPTIONAL_RE_ENTRANT = 1 << 6;
             /// Whether this function allows no inputs.
             const ALLOW_EMPTY_INPUTS = 1 << 7;
+
+            /// Given a function f and a column of values [v1, ..., vn]
+            /// f is row-separable i.f.f.
+            /// f([v1, ..., vn]) = concat(f(v1, ... vm), f(vm+1, ..., vn))
+            const ROW_SEPARABLE = 1 << 8;
+            /// Given a function f and a column of values [v1, ..., vn]
+            /// f is length preserving i.f.f. len(f([v1, ..., vn])) = n
+            ///
+            /// mutually exclusive with `RETURNS_SCALAR`
+            const LENGTH_PRESERVING = 1 << 9;
+            /// Aggregate the values of the expression into a list before applying the function.
+            const APPLY_LIST = 1 << 10;
         }
 );
+
+impl FunctionFlags {
+    pub fn set_elementwise(&mut self) {
+        *self |= Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING;
+    }
+
+    pub fn is_elementwise(self) -> bool {
+        self.contains(Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING)
+    }
+
+    pub fn returns_scalar(self) -> bool {
+        self.contains(Self::RETURNS_SCALAR)
+    }
+}
 
 impl Default for FunctionFlags {
     fn default() -> Self {
@@ -220,22 +158,16 @@ impl CastingRules {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(any(feature = "serde"), derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FunctionOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    pub collect_groups: ApplyOptions,
-
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
     pub flags: FunctionFlags,
 
-    // used for formatting, (only for anonymous functions)
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub fmt_str: &'static str,
     /// Options used when deciding how to cast the arguments of the function.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     pub cast_options: Option<CastingRules>,
 }
 
@@ -248,133 +180,86 @@ impl FunctionOptions {
         self.check_lengths.0
     }
 
+    pub fn set_elementwise(&mut self) {
+        self.flags.set_elementwise();
+    }
+
     pub fn is_elementwise(&self) -> bool {
-        matches!(
-            self.collect_groups,
-            ApplyOptions::ElementWise | ApplyOptions::ApplyList
-        ) && !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
-            && !self.flags.contains(FunctionFlags::RETURNS_SCALAR)
+        self.flags.is_elementwise()
     }
 
     pub fn is_length_preserving(&self) -> bool {
-        !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
+        self.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+    }
+
+    pub fn returns_scalar(&self) -> bool {
+        self.flags.returns_scalar()
+    }
+
+    pub fn elementwise() -> FunctionOptions {
+        FunctionOptions {
+            ..Default::default()
+        }
+        .with_flags(|f| f | FunctionFlags::ROW_SEPARABLE | FunctionFlags::LENGTH_PRESERVING)
+    }
+
+    pub fn elementwise_with_infer() -> FunctionOptions {
+        Self::length_preserving()
+    }
+
+    pub fn row_separable() -> FunctionOptions {
+        FunctionOptions {
+            ..Default::default()
+        }
+        .with_flags(|f| f | FunctionFlags::ROW_SEPARABLE)
+    }
+
+    pub fn length_preserving() -> FunctionOptions {
+        FunctionOptions {
+            ..Default::default()
+        }
+        .with_flags(|f| f | FunctionFlags::LENGTH_PRESERVING)
+    }
+
+    pub fn groupwise() -> FunctionOptions {
+        FunctionOptions {
+            ..Default::default()
+        }
+    }
+
+    pub fn aggregation() -> FunctionOptions {
+        let mut options = Self::groupwise();
+        options.flags |= FunctionFlags::RETURNS_SCALAR;
+        options
+    }
+
+    pub fn with_supertyping(self, supertype_options: SuperTypeOptions) -> FunctionOptions {
+        self.with_casting_rules(CastingRules::Supertype(supertype_options))
+    }
+
+    pub fn with_casting_rules(mut self, casting_rules: CastingRules) -> FunctionOptions {
+        self.cast_options = Some(casting_rules);
+        self
+    }
+
+    pub fn with_flags(mut self, f: impl Fn(FunctionFlags) -> FunctionFlags) -> FunctionOptions {
+        self.flags = f(self.flags);
+        self
     }
 }
 
 impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
             check_lengths: UnsafeBool(true),
-            fmt_str: Default::default(),
             cast_options: Default::default(),
             flags: Default::default(),
         }
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct LogicalPlanUdfOptions {
-    ///  allow predicate pushdown optimizations
-    pub predicate_pd: bool,
-    ///  allow projection pushdown optimizations
-    pub projection_pd: bool,
-    // used for formatting
-    pub fmt_str: &'static str,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg(feature = "python")]
-pub struct PythonOptions {
-    /// A function that returns a Python Generator.
-    /// The generator should produce Polars DataFrame's.
-    pub scan_fn: Option<PythonFunction>,
-    /// Schema of the file.
-    pub schema: SchemaRef,
-    /// Schema the reader will produce when the file is read.
-    pub output_schema: Option<SchemaRef>,
-    // Projected column names.
-    pub with_columns: Option<Arc<[PlSmallStr]>>,
-    // Which interface is the python function.
-    pub python_source: PythonScanSource,
-    /// A `head` call passed to the reader.
-    pub n_rows: Option<usize>,
-    /// Optional predicate the reader must apply.
-    pub predicate: PythonPredicate,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum PythonScanSource {
-    Pyarrow,
-    Cuda,
-    #[default]
-    IOPlugin,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum PythonPredicate {
-    // A pyarrow predicate python expression
-    // can be evaluated with python.eval
-    PyArrow(String),
-    Polars(ExprIR),
-    #[default]
-    None,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct AnonymousScanOptions {
-    pub skip_rows: Option<usize>,
-    pub fmt_str: &'static str,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum SinkType {
-    Memory,
-    File {
-        path: Arc<PathBuf>,
-        file_type: FileType,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-    },
-}
-
-impl SinkType {
-    pub(crate) fn is_cloud_destination(&self) -> bool {
-        if let Self::File { path, .. } = self {
-            if is_cloud_url(path.as_ref()) {
-                return true;
-            }
-        }
-
-        false
-    }
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
-pub struct FileSinkOptions {
-    pub path: Arc<PathBuf>,
-    pub file_type: FileType,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum FileType {
-    #[cfg(feature = "parquet")]
-    Parquet(ParquetWriteOptions),
-    #[cfg(feature = "ipc")]
-    Ipc(IpcWriterOptions),
-    #[cfg(feature = "csv")]
-    Csv(CsvWriterOptions),
-    #[cfg(feature = "json")]
-    Json(JsonWriterOptions),
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectionOptions {
     pub run_parallel: bool,
@@ -403,57 +288,4 @@ impl ProjectionOptions {
             should_broadcast: self.should_broadcast | other.should_broadcast,
         }
     }
-}
-
-// Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UnionArgs {
-    pub parallel: bool,
-    pub rechunk: bool,
-    pub to_supertypes: bool,
-    pub diagonal: bool,
-    // If it is a union from a scan over multiple files.
-    pub from_partitioned_ds: bool,
-    pub maintain_order: bool,
-}
-
-impl Default for UnionArgs {
-    fn default() -> Self {
-        Self {
-            parallel: true,
-            rechunk: false,
-            to_supertypes: false,
-            diagonal: false,
-            from_partitioned_ds: false,
-            maintain_order: true,
-        }
-    }
-}
-
-impl From<UnionArgs> for UnionOptions {
-    fn from(args: UnionArgs) -> Self {
-        UnionOptions {
-            slice: None,
-            parallel: args.parallel,
-            rows: (None, 0),
-            from_partitioned_ds: args.from_partitioned_ds,
-            flattened_by_opt: false,
-            rechunk: args.rechunk,
-            maintain_order: args.maintain_order,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg(feature = "json")]
-pub struct NDJsonReadOptions {
-    pub n_threads: Option<usize>,
-    pub infer_schema_length: Option<NonZeroUsize>,
-    pub chunk_size: NonZeroUsize,
-    pub low_memory: bool,
-    pub ignore_errors: bool,
-    pub schema: Option<SchemaRef>,
-    pub schema_overwrite: Option<SchemaRef>,
 }

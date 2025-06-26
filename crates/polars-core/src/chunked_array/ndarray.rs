@@ -3,8 +3,8 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::*;
 use crate::POOL;
+use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -47,7 +47,7 @@ impl ListChunked {
         let mut row_idx = 0;
         let mut ndarray = ndarray::Array::uninit((self.len(), width));
 
-        let series = series.cast(&N::get_dtype())?;
+        let series = series.cast(&N::get_static_dtype())?;
         let ca = series.unpack::<N>()?;
         let a = ca.to_ndarray()?;
         let mut row = ndarray.slice_mut(s![row_idx, ..]);
@@ -59,7 +59,7 @@ impl ListChunked {
                 series.len() == width,
                 ShapeMismatch: "unable to create a 2-D array, series have different lengths"
             );
-            let series = series.cast(&N::get_dtype())?;
+            let series = series.cast(&N::get_static_dtype())?;
             let ca = series.unpack::<N>()?;
             let a = ca.to_ndarray()?;
             let mut row = ndarray.slice_mut(s![row_idx, ..]);
@@ -108,7 +108,7 @@ impl DataFrame {
         let columns = self.get_columns();
         POOL.install(|| {
             columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
-                let s = s.as_materialized_series().cast(&N::get_dtype())?;
+                let s = s.as_materialized_series().cast(&N::get_static_dtype())?;
                 let s = match s.dtype() {
                     DataType::Float32 => {
                         let ca = s.f32().unwrap();

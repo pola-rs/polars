@@ -6,10 +6,12 @@ mod scalar;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx512;
 
-use arrow::array::growable::make_growable;
-use arrow::array::{new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray};
-use arrow::bitmap::utils::SlicesIterator;
+use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use arrow::array::{
+    Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray, new_empty_array,
+};
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::SlicesIterator;
 use arrow::with_match_primitive_type_full;
 pub use boolean::filter_boolean_kernel;
 
@@ -78,17 +80,31 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
             }
             .boxed()
         },
-        // Should go via BinaryView
         Utf8View => {
-            unreachable!()
+            let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            let views = array.views();
+            let validity = array.validity();
+            let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
+            unsafe {
+                BinaryViewArray::new_unchecked_unknown_md(
+                    arrow::datatypes::ArrowDataType::BinaryView,
+                    views.into(),
+                    array.data_buffers().clone(),
+                    validity,
+                    Some(array.total_buffer_len()),
+                )
+                .to_utf8view_unchecked()
+            }
+            .boxed()
         },
         _ => {
             let iter = SlicesIterator::new(mask);
-            let mut mutable = make_growable(&[array], false, iter.slots());
-            // SAFETY:
-            // we are in bounds
-            iter.for_each(|(start, len)| unsafe { mutable.extend(0, start, len) });
-            mutable.as_box()
+            let mut mutable = make_builder(array.dtype());
+            mutable.reserve(iter.slots());
+            iter.for_each(|(start, len)| {
+                mutable.subslice_extend(array, start, len, ShareStrategy::Always)
+            });
+            mutable.freeze()
         },
     }
 }

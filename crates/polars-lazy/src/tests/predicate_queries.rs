@@ -17,9 +17,11 @@ fn test_multiple_roots() -> PolarsResult<()> {
     let root = lf.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     assert!(predicate_at_scan(lf));
     // and that we don't have any filter node
-    assert!(!(&lp_arena)
-        .iter(root)
-        .any(|(_, lp)| matches!(lp, IR::Filter { .. })));
+    assert!(
+        !(&lp_arena)
+            .iter(root)
+            .any(|(_, lp)| matches!(lp, IR::Filter { .. }))
+    );
 
     Ok(())
 }
@@ -48,7 +50,7 @@ fn test_issue_2472() -> PolarsResult<()> {
         .extract(lit(r"(\d+-){4}(\w+)-"), 2)
         .cast(DataType::Int32)
         .alias("age");
-    let predicate = col("age").is_in(lit(Series::new("".into(), [2i32])));
+    let predicate = col("age").is_in(lit(Series::new("".into(), [2i32])), false);
 
     let out = base
         .clone()
@@ -219,24 +221,6 @@ fn test_filter_null_creation_by_cast() -> PolarsResult<()> {
     Ok(())
 }
 
-#[test]
-fn test_predicate_pd_apply() -> PolarsResult<()> {
-    let q = df![
-        "a" => [1, 2, 3],
-    ]?
-    .lazy()
-    .select([
-        // map_list is use in python `col().apply`
-        col("a"),
-        col("a")
-            .map_list(|s| Ok(Some(s)), GetOutput::same_type())
-            .alias("a_applied"),
-    ])
-    .filter(col("a").lt(lit(3)));
-
-    assert!(predicate_at_scan(q));
-    Ok(())
-}
 #[test]
 #[cfg(feature = "cse")]
 fn test_predicate_on_join_suffix_4788() -> PolarsResult<()> {

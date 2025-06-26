@@ -87,6 +87,7 @@ def test_map_groups_none() -> None:
                 exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
                 function=lambda x: x[0] * x[1] + x[2].sum(),
                 return_dtype=pl.Float64,
+                returns_scalar=False,
             ).alias("multiple")
         )
     )["multiple"]
@@ -106,7 +107,9 @@ def test_map_groups_none() -> None:
     out = (
         df.group_by("g", maintain_order=True).agg(
             pl.map_groups(
-                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], function=func
+                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
+                function=func,
+                returns_scalar=False,
             ).alias("multiple")
         )
     )["multiple"]
@@ -131,6 +134,7 @@ def test_map_groups_object_output() -> None:
             [pl.col("dates"), pl.col("names")],
             lambda s: Foo(dict(zip(s[0], s[1]))),
             return_dtype=pl.Object,
+            returns_scalar=True,
         )
     )
 
@@ -147,7 +151,9 @@ def test_map_groups_numpy_output_3057() -> None:
     )
 
     result = df.group_by("id", maintain_order=True).agg(
-        pl.map_groups(["y", "t"], lambda lst: np.mean([lst[0], lst[1]])).alias("result")
+        pl.map_groups(
+            ["y", "t"], lambda lst: np.mean([lst[0], lst[1]]), returns_scalar=True
+        ).alias("result")
     )
 
     expected = pl.DataFrame({"id": [0, 1], "result": [2.266666, 7.333333]})
@@ -161,7 +167,7 @@ def test_map_groups_return_all_null_15260() -> None:
     assert_frame_equal(
         pl.DataFrame({"key": [0, 0, 1], "a": [None, None, None]})
         .group_by("key")
-        .agg(pl.map_groups(exprs=["a"], function=foo))  # type: ignore[arg-type]
+        .agg(pl.map_groups(exprs=["a"], function=foo, returns_scalar=True))  # type: ignore[arg-type]
         .sort("key"),
         pl.DataFrame({"key": [0, 1], "a": [None, None]}),
     )

@@ -160,15 +160,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t…\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t…\n\t5\n]"
 
     pl.Config.set_tbl_rows(3)
     assert (
@@ -184,16 +176,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t…\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t…\n\t5\n]"
 
     pl.Config.set_tbl_rows(4)
     assert (
@@ -209,17 +192,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t…\n"
-        "\t4\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t…\n\t4\n\t5\n]"
 
     df = pl.DataFrame(
         {
@@ -245,17 +218,7 @@ def test_set_tbl_rows() -> None:
     )
 
     pl.Config.set_tbl_rows(-1)
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t3\n"
-        "\t4\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t3\n\t4\n\t5\n]"
 
     pl.Config.set_tbl_hide_dtype_separator(True)
     assert (
@@ -370,6 +333,15 @@ def test_set_tbl_width_chars() -> None:
 
     with pl.Config(tbl_width_chars=87):
         assert max(len(line) for line in str(df).split("\n")) == 87
+
+    # check that -1 is interpreted as no limit
+    df = pl.DataFrame({str(i): ["a" * 25] for i in range(5)})
+    for tbl_width_chars, expected_width in [
+        (None, 100),
+        (-1, 141),
+    ]:
+        with pl.Config(tbl_width_chars=tbl_width_chars):
+            assert max(len(line) for line in str(df).split("\n")) == expected_width
 
 
 def test_shape_below_table_and_inlined_dtype() -> None:
@@ -965,6 +937,7 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
+        ("POLARS_ENGINE_AFFINITY", "set_engine_affinity", "gpu", "gpu"),
         ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
         ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),

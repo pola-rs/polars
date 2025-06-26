@@ -66,20 +66,18 @@ def test_cov_corr_f32_type() -> None:
 
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
-    cov_a_b = pl.cov(pl.col("A"), pl.col("B"))
-    cov_ab = pl.cov("A", "B")
-    assert cast(float, ldf.select(cov_a_b).collect().item()) == -2.5
-    assert cast(float, ldf.select(cov_ab).collect().item()) == -2.5
+    for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):
+        assert cast(float, ldf.select(cov_ab).collect().item()) == -2.5
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().std().collect()["A"][0] == pytest.approx(
-        1.5811388300841898
-    )
+    res = fruits_cars.lazy().std().collect()
+    assert res["A"][0] == pytest.approx(1.5811388300841898)
 
 
 def test_var(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().var().collect()["A"][0] == pytest.approx(2.5)
+    res = fruits_cars.lazy().var().collect()
+    assert res["A"][0] == pytest.approx(2.5)
 
 
 def test_max(fruits_cars: pl.DataFrame) -> None:
@@ -145,3 +143,8 @@ def test_kurtosis_same_vals() -> None:
     assert_frame_equal(
         df.select(pl.col("a").kurtosis()), pl.select(a=pl.lit(float("nan")))
     )
+
+
+def test_correction_shape_mismatch_22080() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))

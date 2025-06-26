@@ -7,8 +7,8 @@ use polars_utils::_limit_path_len_io_err;
 use polars_utils::mmap::MemSlice;
 
 use crate::cloud::{
-    build_object_store, object_path_from_str, CloudLocation, CloudOptions, ObjectStorePath,
-    PolarsObjectStore,
+    CloudLocation, CloudOptions, ObjectStorePath, PolarsObjectStore, build_object_store,
+    object_path_from_str,
 };
 
 #[allow(async_fn_in_trait)]
@@ -85,7 +85,7 @@ impl ObjectStoreByteSource {
 
 impl ByteSource for ObjectStoreByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
-        Ok(self.store.head(&self.path).await?.size)
+        Ok(self.store.head(&self.path).await?.size as usize)
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<MemSlice> {

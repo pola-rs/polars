@@ -6,8 +6,8 @@ One additional benefit of the lazy API is that it allows queries to be executed 
 manner. Instead of processing all the data at once, Polars can execute the query in batches allowing
 you to process datasets that do not fit in memory.
 
-To tell Polars we want to execute a query in streaming mode we pass the `streaming=True` argument to
-`collect`
+To tell Polars we want to execute a query in streaming mode we pass the `engine="streaming"`
+argument to `collect`
 
 {{code_block('user-guide/concepts/streaming','streaming',['collect'])}}
 

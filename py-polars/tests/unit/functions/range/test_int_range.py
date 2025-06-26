@@ -210,14 +210,14 @@ def test_int_range_null_input() -> None:
 
 def test_int_range_invalid_conversion() -> None:
     with pytest.raises(
-        InvalidOperationError, match="conversion from `i32` to `u32` failed"
+        InvalidOperationError, match="conversion from `i128` to `u32` failed"
     ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
 
 
 def test_int_range_non_integer_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
+        ComputeError, match="non-integer `dtype` passed to `int_range`: 'f64'"
     ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]
 
@@ -267,7 +267,7 @@ def test_int_ranges_broadcasting() -> None:
 # https://github.com/pola-rs/polars/issues/15307
 def test_int_range_non_int_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_range`: String"
+        ComputeError, match="non-integer `dtype` passed to `int_range`: 'str'"
     ):
         pl.int_range(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
 
@@ -275,6 +275,21 @@ def test_int_range_non_int_dtype() -> None:
 # https://github.com/pola-rs/polars/issues/15307
 def test_int_ranges_non_int_dtype() -> None:
     with pytest.raises(
-        ComputeError, match="non-integer `dtype` passed to `int_ranges`: String"
+        ComputeError, match="non-integer `dtype` passed to `int_ranges`: 'str'"
     ):
         pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
+
+
+# https://github.com/pola-rs/polars/issues/22640
+def test_int_ranges_non_numeric_input_should_error() -> None:
+    df = pl.DataFrame(
+        {
+            "start": ["a", "b"],
+            "end": ["c", "d"],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError) as excinfo:
+        _ = df.select(pl.int_ranges("start", "end"))
+
+    assert "conversion from `str` to `i64` failed" in str(excinfo.value)

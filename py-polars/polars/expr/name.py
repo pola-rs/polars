@@ -102,7 +102,9 @@ class ExprNameNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.all().reverse().name.map(lambda c: c.rstrip("_reverse").lower())
+        ...     pl.all()
+        ...     .reverse()
+        ...     .name.map(lambda c: c.removesuffix("_reverse").lower())
         ... )
         shape: (3, 4)
         ┌───────────┬───────────┬─────┬─────┐

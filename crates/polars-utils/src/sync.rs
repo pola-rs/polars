@@ -33,7 +33,7 @@ impl<T> SyncPtr<T> {
     /// # Safety
     /// Derefs a raw pointer, no guarantees whatsoever.
     pub unsafe fn deref_unchecked(&self) -> &'static T {
-        &*(self.0 as *const T)
+        unsafe { &*(self.0 as *const T) }
     }
 }
 

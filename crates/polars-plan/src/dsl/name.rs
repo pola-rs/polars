@@ -1,4 +1,3 @@
-use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
 
@@ -30,35 +29,54 @@ impl ExprNameNameSpace {
     where
         F: Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + 'static + Send + Sync,
     {
-        let function = SpecialEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
+        let function = SpecialEq::new(Arc::new(function) as Arc<RenameAliasRustFn>);
         Expr::RenameAlias {
             expr: Arc::new(self.0),
-            function,
+            function: RenameAliasFn::Rust(function),
+        }
+    }
+
+    /// Define an alias by mapping a python lambda over the original root column name.
+    #[cfg(feature = "python")]
+    pub fn map_udf(self, function: polars_utils::python_function::PythonObject) -> Expr {
+        Expr::RenameAlias {
+            expr: Arc::new(self.0),
+            function: RenameAliasFn::Python(SpecialEq::new(Arc::new(function))),
         }
     }
 
     /// Add a prefix to the root column name.
     pub fn prefix(self, prefix: &str) -> Expr {
-        let prefix = prefix.to_string();
-        self.map(move |name| Ok(format_pl_smallstr!("{prefix}{name}")))
+        Expr::RenameAlias {
+            expr: Arc::new(self.0),
+            function: RenameAliasFn::Prefix(prefix.into()),
+        }
     }
 
     /// Add a suffix to the root column name.
     pub fn suffix(self, suffix: &str) -> Expr {
-        let suffix = suffix.to_string();
-        self.map(move |name| Ok(format_pl_smallstr!("{name}{suffix}")))
+        Expr::RenameAlias {
+            expr: Arc::new(self.0),
+            function: RenameAliasFn::Suffix(suffix.into()),
+        }
     }
 
     /// Update the root column name to use lowercase characters.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_lowercase(self) -> Expr {
-        self.map(move |name| Ok(PlSmallStr::from_string(name.to_lowercase())))
+        Expr::RenameAlias {
+            expr: Arc::new(self.0),
+            function: RenameAliasFn::ToLowercase,
+        }
     }
 
     /// Update the root column name to use uppercase characters.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_uppercase(self) -> Expr {
-        self.map(move |name| Ok(PlSmallStr::from_string(name.to_uppercase())))
+        Expr::RenameAlias {
+            expr: Arc::new(self.0),
+            function: RenameAliasFn::ToUppercase,
+        }
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -93,10 +111,18 @@ impl ExprNameNameSpace {
         )
     }
 
+    #[cfg(all(feature = "dtype-struct", feature = "python"))]
+    pub fn map_fields_udf(self, function: polars_utils::python_function::PythonObject) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::StructExpr(StructFunction::MapFieldNames(
+                SpecialEq::new(Arc::new(function)),
+            )))
+    }
+
     #[cfg(feature = "dtype-struct")]
     pub fn prefix_fields(self, prefix: &str) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::PrefixFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::PrefixFields(
                 PlSmallStr::from_str(prefix),
             )))
     }
@@ -104,7 +130,7 @@ impl ExprNameNameSpace {
     #[cfg(feature = "dtype-struct")]
     pub fn suffix_fields(self, suffix: &str) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::SuffixFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::SuffixFields(
                 PlSmallStr::from_str(suffix),
             )))
     }

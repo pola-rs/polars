@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 import pytest
 
@@ -171,6 +172,14 @@ def test_series_duration_var_overflow() -> None:
         s.var()
 
 
+@pytest.mark.parametrize("other", [24, pl.Series([24])])
+def test_series_duration_div_multiply(other: Any) -> None:
+    s = pl.Series([timedelta(hours=1)])
+    assert (s * other).to_list() == [timedelta(days=1)]
+    assert (other * s).to_list() == [timedelta(days=1)]
+    assert (s / other).to_list() == [timedelta(minutes=2, seconds=30)]
+
+
 def test_series_duration_units() -> None:
     td = timedelta
 
@@ -208,3 +217,8 @@ def test_comparison_with_string_raises_9461() -> None:
     df = pl.DataFrame({"duration": [timedelta(hours=2)]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.filter(pl.col("duration") > "1h")
+
+
+def test_duration_invalid_cast_22258() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(a=pl.duration(days=[1, 2, 3, 4]))  # type: ignore[arg-type]

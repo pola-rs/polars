@@ -1,7 +1,7 @@
 //! Contains [`RecordBatchT`], a container of [`Array`] where every array has the
 //! same length.
 
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::{Array, ArrayRef};
 use crate::datatypes::{ArrowSchema, ArrowSchemaRef};

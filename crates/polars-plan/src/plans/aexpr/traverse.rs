@@ -11,7 +11,6 @@ impl AExpr {
 
         match self {
             Column(_) | Literal(_) | Len => {},
-            Alias(e, _) => container.extend([*e]),
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -42,7 +41,7 @@ impl AExpr {
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
-            Explode(e) => container.extend([*e]),
+            Explode { expr: e, .. } => container.extend([*e]),
             Window {
                 function,
                 partition_by,
@@ -54,6 +53,15 @@ impl AExpr {
                 }
                 container.extend(partition_by.iter().rev().cloned());
                 container.extend([*function]);
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                // We don't use the evaluation here because it does not contain inputs.
+                _ = evaluation;
+                container.extend([*expr]);
             },
             Slice {
                 input,
@@ -69,9 +77,8 @@ impl AExpr {
         use AExpr::*;
         let input = match &mut self {
             Column(_) | Literal(_) | Len => return self,
-            Alias(input, _) => input,
             Cast { expr, .. } => expr,
-            Explode(input) => input,
+            Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
                 *left = inputs[0];
                 *right = inputs[1];
@@ -121,6 +128,15 @@ impl AExpr {
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
                 }
+                return self;
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                *expr = inputs[0];
+                _ = evaluation; // Intentional.
                 return self;
             },
             Slice {

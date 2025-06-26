@@ -1,7 +1,8 @@
-use polars_core::error::{feature_gated, polars_bail, PolarsResult};
-use polars_io::catalog::schema::table_info_to_schemas;
+use polars_core::error::{PolarsResult, feature_gated, polars_bail};
 use polars_io::catalog::unity::models::{DataSourceFormat, TableInfo};
+use polars_io::catalog::unity::schema::table_info_to_schemas;
 use polars_io::cloud::CloudOptions;
+use polars_utils::plpath::PlPath;
 
 use crate::frame::LazyFrame;
 
@@ -18,6 +19,7 @@ impl LazyFrame {
             polars_bail!(ComputeError: "scan_catalog_table requires Some(_) for storage_location")
         };
 
+        let storage_location = PlPath::new(storage_location);
         match data_source_format {
             DataSourceFormat::Parquet => feature_gated!("parquet", {
                 use polars_io::HiveOptions;

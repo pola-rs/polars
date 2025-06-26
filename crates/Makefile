@@ -54,6 +54,7 @@ test:  ## Run tests
 		-p polars-plan \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-testing \
 		-p polars-time \
 		-p polars-utils \
 		-- \
@@ -70,6 +71,7 @@ nextest:  ## Run tests with nextest
 		-p polars-plan \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-testing \
 		-p polars-time \
 		-p polars-utils \
 
@@ -83,6 +85,7 @@ test-doc:  ## Run doc examples
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
+		-p polars-testing \
 		-p polars-sql
 
 .PHONY: bench-save
@@ -116,6 +119,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-core
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
+	cargo publish --allow-dirty -p polars-testing
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
@@ -123,7 +127,6 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-expr
 	cargo publish --allow-dirty -p polars-mem-engine
 	cargo publish --allow-dirty -p polars-stream
-	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
@@ -149,6 +152,7 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features extract_jsonpath   \
 		--exclude-features fmt                \
 		--exclude-features gcp                \
+		--exclude-features csv                \
 		--exclude-features ipc                \
 		--exclude-features ipc_streaming      \
 		--exclude-features json               \

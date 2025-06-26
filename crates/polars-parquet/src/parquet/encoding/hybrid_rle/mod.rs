@@ -1,9 +1,11 @@
 // See https://github.com/apache/parquet-format/blob/master/Encodings.md#run-length-encoding--bit-packing-hybrid-rle--3
 mod bitmap;
 mod encoder;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
-pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
-pub use encoder::{encode, Encoder};
+pub use bitmap::{BitmapIter, encode_bool as bitpacked_encode};
+pub use encoder::{Encoder, encode};
 
 use super::{bitpacked, uleb128};
 use crate::parquet::error::{ParquetError, ParquetResult};

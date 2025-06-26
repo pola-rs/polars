@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 
@@ -310,3 +311,42 @@ def test_slice_pushdown_panic_20216() -> None:
 
     assert_frame_equal(q.slice(0, 1).collect(), pl.DataFrame({"A": ["1"]}))
     assert_frame_equal(q.collect(), pl.DataFrame({"A": ["1"]}))
+
+
+def test_slice_empty_morsel_input() -> None:
+    q = pl.LazyFrame({"a": []})
+    assert_frame_equal(q.slice(999, 3).slice(999, 3).collect(), q.collect().clear())
+    assert_frame_equal(q.slice(-999, 3).slice(-999, 3).collect(), q.collect().clear())
+
+
+@pytest.mark.parametrize(
+    "base_query",
+    [
+        (
+            pl.LazyFrame({"a": [[1]]})
+            .select("a", BARRIER=pl.col("a").sort())
+            .with_columns(MARKER=1)
+            .with_columns(b=pl.col("a").list.get(1, null_on_oob=False))
+        ),
+        (  # Variant to ensure cluster_with_columns runs after slice pushdown.
+            pl.LazyFrame({"a": [[1]]})
+            .with_columns(BARRIER=pl.col("a").sort())
+            .with_columns(MARKER=1)
+            .with_columns(b=pl.col("a").list.get(1, null_on_oob=False))
+        ),
+    ],
+)
+def test_slice_pushdown_pushes_past_fallible(
+    base_query: pl.LazyFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ensure baseline fails
+    with pytest.raises(ComputeError, match="index is out of bounds"):
+        base_query.collect()
+
+    q = base_query.head(0)
+
+    plan = q.explain()
+
+    assert plan.index("BARRIER") > plan.index("SLICE") > plan.index("MARKER")
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema=q.collect_schema()))

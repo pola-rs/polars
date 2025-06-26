@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
 
 import polars._reexport as pl
 import polars.datatypes
@@ -29,12 +29,20 @@ if TYPE_CHECKING:
     )
 
 
-class classinstmethod(classmethod):  # type: ignore[type-arg]
+T = TypeVar("T")
+R = TypeVar("R")
+
+
+class classinstmethod(Generic[R]):
     """Decorator that allows a method to be called from the class OR instance."""
 
-    def __get__(self, instance: Any, type_: type) -> Any:  # type: ignore[override]
-        get = super().__get__ if instance is None else self.__func__.__get__
-        return get(instance, type_)
+    def __init__(self, func: Callable[..., R]) -> None:
+        self.func = func
+
+    def __get__(self, instance: Any, type_: Any) -> Callable[..., R]:
+        if instance is not None:
+            return self.func.__get__(instance, type_)
+        return self.func.__get__(type_, type_)
 
 
 class DataTypeClass(type):
@@ -69,6 +77,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_object(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_signed_integer(cls) -> bool:  # noqa: D102
         ...
 
@@ -94,6 +106,10 @@ class DataTypeClass(type):
 
     @classmethod
     def to_python(cls) -> PythonDataType:  # noqa: D102
+        ...
+
+    @classmethod
+    def to_dtype_expr(cls) -> pl.DataTypeExpr:  # noqa: D102
         ...
 
 
@@ -131,7 +147,7 @@ class DataType(metaclass=DataTypeClass):
         """
         return cls
 
-    @classinstmethod  # type: ignore[arg-type]
+    @classinstmethod
     def is_(self, other: PolarsDataType) -> bool:
         """
         Check if this DataType is the same as another DataType.
@@ -167,6 +183,11 @@ class DataType(metaclass=DataTypeClass):
     def is_integer(cls) -> bool:
         """Check whether the data type is an integer type."""
         return issubclass(cls, IntegerType)
+
+    @classmethod
+    def is_object(cls) -> bool:
+        """Check whether the data type is an object type."""
+        return issubclass(cls, ObjectType)
 
     @classmethod
     def is_signed_integer(cls) -> bool:
@@ -218,7 +239,7 @@ class DataType(metaclass=DataTypeClass):
 
         return parse_into_dtype(py_type)
 
-    @classinstmethod  # type: ignore[arg-type]
+    @classinstmethod
     def to_python(self) -> PythonDataType:
         """
         Return the Python type corresponding to this Polars data type.
@@ -235,6 +256,20 @@ class DataType(metaclass=DataTypeClass):
         from polars.datatypes import dtype_to_py_type
 
         return dtype_to_py_type(self)
+
+    @classinstmethod
+    def to_dtype_expr(self) -> pl.DataTypeExpr:
+        """
+        Return a :class:`DataTypeExpr` with a static :class:`DataType`.
+
+        Examples
+        --------
+        >>> pl.Int16().to_dtype_expr().collect_dtype({})
+        Int16
+        """
+        from polars.polars import PyDataTypeExpr
+
+        return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
 
 
 class NumericType(DataType):
@@ -301,6 +336,10 @@ class TemporalType(DataType):
 
 class NestedType(DataType):
     """Base class for nested data types."""
+
+
+class ObjectType(DataType):
+    """Base class for object data types."""
 
 
 class Int8(SignedIntegerType):
@@ -385,7 +424,7 @@ class Decimal(NumericType):
         from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
-            "The Decimal data type is considered unstable."
+            "the Decimal data type is considered unstable."
             " It is a work-in-progress feature and may not always work as expected."
         )
 
@@ -447,6 +486,44 @@ class Time(TemporalType):
     The underlying representation of this type is a 64-bit signed integer.
     The integer indicates the number of nanoseconds since midnight.
     """
+
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.max() == 86_399_999_999_999)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.min() == 0)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
 
 
 class Datetime(TemporalType):
@@ -595,11 +672,6 @@ class Enum(DataType):
     """
     A fixed categorical encoding of a unique set of strings.
 
-    .. warning::
-        This functionality is considered **unstable**.
-        It is a work-in-progress feature and may not always work as expected.
-        It may be changed at any point without it being considered a breaking change.
-
     Parameters
     ----------
     categories
@@ -623,15 +695,6 @@ class Enum(DataType):
     categories: Series
 
     def __init__(self, categories: Series | Iterable[str] | type[enum.Enum]) -> None:
-        # Issuing the warning on `__init__` does not trigger when the class is used
-        # without being instantiated, but it's better than nothing
-        from polars._utils.unstable import issue_unstable_warning
-
-        issue_unstable_warning(
-            "The Enum data type is considered unstable."
-            " It is a work-in-progress feature and may not always work as expected."
-        )
-
         if isclass(categories) and issubclass(categories, enum.Enum):
             for enum_subclass in (enum.Flag, enum.IntEnum):
                 if issubclass(categories, enum_subclass):
@@ -690,7 +753,7 @@ class Enum(DataType):
     __or__ = union
 
 
-class Object(DataType):
+class Object(ObjectType):
     """Data type for wrapping arbitrary Python objects."""
 
 
@@ -767,8 +830,13 @@ class Array(NestedType):
     ----------
     inner
         The `DataType` of the values within each array.
+    shape
+        The shape of the arrays.
     width
         The length of the arrays.
+
+        .. deprecated:: 0.20.31
+            The `width` parameter for `Array` is deprecated. Use `shape` instead.
 
     Examples
     --------
@@ -797,7 +865,7 @@ class Array(NestedType):
             from polars._utils.deprecation import issue_deprecation_warning
 
             issue_deprecation_warning(
-                "The `width` parameter for `Array` is deprecated. Use `shape` instead.",
+                "the `width` parameter for `Array` is deprecated. Use `shape` instead.",
                 version="0.20.31",
             )
             shape = width
@@ -861,7 +929,7 @@ class Array(NestedType):
         from polars._utils.deprecation import issue_deprecation_warning
 
         issue_deprecation_warning(
-            "The `width` attribute for `Array` is deprecated. Use `size` instead.",
+            "the `width` attribute for `Array` is deprecated. Use `size` instead.",
             version="0.20.31",
         )
         return self.size

@@ -137,15 +137,21 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'LazyFrame'.* not 'pandas.core.frame.DataFrame'",
+    ):
+        df_left.lazy().join_asof(df_right.to_pandas(), on="Id")  # type: ignore[arg-type]
 
 
 def test_projection_update_schema_missing_column() -> None:
@@ -248,7 +254,7 @@ def test_window_expression_different_group_length() -> None:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
             pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")
         )
-    except ComputeError as exc:
+    except ShapeError as exc:
         msg = str(exc)
         assert (
             "the length of the window expression did not match that of the group" in msg

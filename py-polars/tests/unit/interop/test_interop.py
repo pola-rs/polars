@@ -68,7 +68,6 @@ def test_arrow_dict_to_polars() -> None:
         name="pa_dict",
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
-
     assert_series_equal(s, pl.Series("pa_dict", pa_dict))
 
 
@@ -236,6 +235,31 @@ def test_from_arrow() -> None:
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
 
 
+def test_from_arrow_with_bigquery_metadata() -> None:
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64()).with_metadata(
+                {"ARROW:extension:name": "google:sqlType:integer"}
+            ),
+            pa.field(
+                "misc",
+                pa.struct([("num", pa.int32()), ("val", pa.string())]),
+            ).with_metadata({"ARROW:extension:name": "google:sqlType:struct"}),
+        ]
+    )
+    arrow_tbl = pa.Table.from_pylist(
+        [{"id": 1, "misc": None}, {"id": 2, "misc": None}],
+        schema=arrow_schema,
+    )
+
+    expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
+    expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
+    assert_frame_equal(
+        pl.DataFrame(expected_data, schema=expected_schema),
+        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
+    )
+
+
 def test_from_optional_not_available() -> None:
     from polars.dependencies import _LazyModule
 
@@ -349,7 +373,11 @@ def test_from_pyarrow_map() -> None:
         ),
     )
 
-    result = cast(pl.DataFrame, pl.from_arrow(pa_table))
+    # Convert from an empty table to trigger an ArrowSchema -> native schema
+    # conversion (checks that ArrowDataType::Map is handled in Rust).
+    pl.DataFrame(pa_table.slice(0, 0))
+
+    result = pl.DataFrame(pa_table)
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
         "mapping": [
@@ -446,25 +474,27 @@ def test_dataframe_from_repr() -> None:
     )
     assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.String, "other": pl.String}))
 
-    # empty frame with non-standard/blank 'null'
+    # empty frame with a non-standard/blank 'null' in numeric col
     df = cast(
         pl.DataFrame,
         pl.from_repr(
             """
-            ┌─────┬─────┐
-            │ c1  ┆ c2  │
-            │ --- ┆ --- │
-            │ i32 ┆ f64 │
-            ╞═════╪═════╡
-            │     │     │
-            └─────┴─────┘
+            ┌─────┬──────┐
+            │ c1  ┆  c2  │
+            │ --- ┆  --- │
+            │ i32 ┆  f64 │
+            ╞═════╪══════╡
+            │     │ NULL │
+            └─────┴──────┘
             """
         ),
     )
     assert_frame_equal(
         df,
         pl.DataFrame(
-            data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}, orient="row"
+            data=[(None, None)],
+            schema={"c1": pl.Int32, "c2": pl.Float64},
+            orient="row",
         ),
     )
 
@@ -555,6 +585,42 @@ def test_dataframe_from_repr() -> None:
         "ident": pl.String,
         "timestamp": pl.Datetime("us", "Asia/Tokyo"),
     }
+
+
+def test_dataframe_from_duckdb_repr() -> None:
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            # misc streaming stats
+            ┌────────────┬───────┬───────────────────┬───┬────────────────┬───────────────────┐
+            │   As Of    │ Rank  │ Year to Date Rank │ … │ Days In Top 10 │ Streaming Seconds │
+            │    date    │ int32 │      varchar      │   │     int16      │      int128       │
+            ├────────────┼───────┼───────────────────┼───┼────────────────┼───────────────────┤
+            │ 2025-05-09 │     1 │ 1                 │ … │             29 │  1864939402857430 │
+            │ 2025-05-09 │     2 │ 2                 │ … │             15 │   658937443590045 │
+            │ 2025-05-09 │     3 │ 3                 │ … │              9 │   267876522242076 │
+            └────────────┴───────┴───────────────────┴───┴────────────────┴───────────────────┘
+            """
+        ),
+    )
+    expected = pl.DataFrame(
+        {
+            "As Of": [date(2025, 5, 9), date(2025, 5, 9), date(2025, 5, 9)],
+            "Rank": [1, 2, 3],
+            "Year to Date Rank": ["1", "2", "3"],
+            "Days In Top 10": [29, 15, 9],
+            "Streaming Seconds": [1864939402857430, 658937443590045, 267876522242076],
+        },
+        schema={
+            "As Of": pl.Date,
+            "Rank": pl.Int32,
+            "Year to Date Rank": pl.String,
+            "Days In Top 10": pl.Int16,
+            "Streaming Seconds": pl.Int128,
+        },
+    )
+    assert_frame_equal(expected, df)
 
 
 def test_series_from_repr() -> None:
@@ -796,12 +862,12 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
         df.to_arrow(compat_level=newest)["bin_col"][0], pa.BinaryViewScalar
     )
 
-    assert len(df.write_ipc(None).getbuffer()) == 786
-    assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 914
-    assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 786
-    assert len(df.write_ipc_stream(None).getbuffer()) == 544
-    assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 672
-    assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 544
+    assert len(df.write_ipc(None).getbuffer()) == 738
+    assert len(df.write_ipc(None, compat_level=oldest).getbuffer()) == 866
+    assert len(df.write_ipc(None, compat_level=newest).getbuffer()) == 738
+    assert len(df.write_ipc_stream(None).getbuffer()) == 520
+    assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 648
+    assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 520
 
 
 def test_df_pycapsule_interface() -> None:
@@ -812,13 +878,23 @@ def test_df_pycapsule_interface() -> None:
             "c": ["fooooooooooooooooooooo", "bar", "looooooooooooooooong string"],
         }
     )
-    out = pa.table(PyCapsuleStreamHolder(df))
+
+    capsule_df = PyCapsuleStreamHolder(df)
+    out = pa.table(capsule_df)
     assert df.shape == out.shape
     assert df.schema.names() == out.schema.names
 
-    df2 = pl.from_arrow(out)
-    assert isinstance(df2, pl.DataFrame)
-    assert df.equals(df2)
+    schema_overrides = {"a": pl.Int128}
+    expected_schema = pl.Schema([("a", pl.Int128), ("b", pl.String), ("c", pl.String)])
+
+    for arrow_obj in (
+        pl.from_arrow(capsule_df),  # capsule
+        out,  # table loaded from capsule
+    ):
+        df_res = pl.from_arrow(arrow_obj, schema_overrides=schema_overrides)
+        assert expected_schema == df_res.schema  # type: ignore[union-attr]
+        assert isinstance(df_res, pl.DataFrame)
+        assert df.equals(df_res)
 
 
 def test_misaligned_nested_arrow_19097() -> None:
@@ -862,3 +938,21 @@ def test_from_arrow_string_cache_20271() -> None:
 def test_to_arrow_empty_chunks_20627() -> None:
     df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
     assert df.to_arrow().shape == (1, 1)
+
+
+def test_from_arrow_recorbatch() -> None:
+    n_legs = pa.array([2, 2, 4, 4, 5, 100])
+    animals = pa.array(
+        ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]
+    )
+    names = ["n_legs", "animals"]
+    record_batch = pa.RecordBatch.from_arrays([n_legs, animals], names=names)
+    assert_frame_equal(
+        pl.DataFrame(record_batch),
+        pl.DataFrame(
+            {
+                "n_legs": n_legs,
+                "animals": animals,
+            }
+        ),
+    )

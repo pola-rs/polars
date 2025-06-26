@@ -1,5 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use arrow::offset::OffsetsBuffer;
+use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;
 
@@ -28,6 +29,7 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
+mod nesting_utils;
 pub(crate) mod nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]
@@ -43,6 +45,7 @@ pub(crate) mod unique;
 pub mod zip;
 
 pub use chunkops::_set_check_length;
+pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
@@ -81,11 +84,11 @@ pub trait ChunkAnyValue {
 
 /// Explode/flatten a List or String Series
 pub trait ChunkExplode {
-    fn explode(&self) -> PolarsResult<Series> {
-        self.explode_and_offsets().map(|t| t.0)
+    fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
+        self.explode_and_offsets(skip_empty).map(|t| t.0)
     }
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
+    fn explode_and_offsets(&self, skip_empty: bool) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {
@@ -397,7 +400,7 @@ pub trait ChunkSort<T: PolarsDataType> {
         by: &[Column],
         _options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        polars_bail!(opq = arg_sort_multiple, T::get_dtype());
+        polars_bail!(opq = arg_sort_multiple, T::get_static_dtype());
     }
 }
 
@@ -405,6 +408,7 @@ pub type FillNullLimit = Option<IdxSize>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum FillNullStrategy {
     /// previous value in array
     Backward(FillNullLimit),
@@ -420,10 +424,6 @@ pub enum FillNullStrategy {
     Zero,
     /// replace with the value one
     One,
-    /// replace with the maximum value of that data type
-    MaxBound,
-    /// replace with the minimal value of that data type
-    MinBound,
 }
 
 impl FillNullStrategy {
@@ -650,7 +650,7 @@ pub trait ChunkApplyKernel<A: Array> {
 /// Mask the first unique values as `true`
 pub trait IsFirstDistinct<T: PolarsDataType> {
     fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first_distinct, T::get_dtype());
+        polars_bail!(opq = is_first_distinct, T::get_static_dtype());
     }
 }
 
@@ -658,6 +658,6 @@ pub trait IsFirstDistinct<T: PolarsDataType> {
 /// Mask the last unique values as `true`
 pub trait IsLastDistinct<T: PolarsDataType> {
     fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last_distinct, T::get_dtype());
+        polars_bail!(opq = is_last_distinct, T::get_static_dtype());
     }
 }

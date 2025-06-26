@@ -370,6 +370,35 @@ def test_string_replace() -> None:
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
+def test_string_split() -> None:
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz", "", None]})
+    res = df.sql("SELECT *, STRING_TO_ARRAY(s,',') AS s_array FROM self")
+
+    assert res.schema == {"s": pl.String, "s_array": pl.List(pl.String)}
+    assert res.to_dict(as_series=False) == {
+        "s": ["xx,yy,zz", "abc,,xyz", "", None],
+        "s_array": [["xx", "yy", "zz"], ["abc", "", "xyz"], [""], None],
+    }
+
+
+def test_string_split_part() -> None:
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz,???,hmm", "", None]})
+    res = df.sql(
+        """
+        SELECT
+          SPLIT_PART(s,',',1) AS "s+1",
+          SPLIT_PART(s,',',3) AS "s+3",
+          SPLIT_PART(s,',',-2) AS "s-2",
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "s+1": ["xx", "abc", "", None],
+        "s+3": ["zz", "xyz", "", None],
+        "s-2": ["yy", "???", "", None],
+    }
+
+
 def test_string_substr() -> None:
     df = pl.DataFrame(
         {"scol": ["abcdefg", "abcde", "abc", None], "n": [-2, 3, 2, None]}
@@ -379,13 +408,13 @@ def test_string_substr() -> None:
             """
             SELECT
               -- note: sql is 1-indexed
-              SUBSTR(scol,1)    AS s1,
-              SUBSTR(scol,2)    AS s2,
-              SUBSTR(scol,3)    AS s3,
-              SUBSTR(scol,1,5)  AS s1_5,
-              SUBSTR(scol,2,2)  AS s2_2,
-              SUBSTR(scol,3,1)  AS s3_1,
-              SUBSTR(scol,-3)   AS "s-3",
+              SUBSTR(scol,1) AS s1,
+              SUBSTR(scol,2) AS s2,
+              SUBSTR(scol,3) AS s3,
+              SUBSTR(scol,1,5) AS s1_5,
+              SUBSTR(scol,2,2) AS s2_2,
+              SUBSTR(scol,3,1) AS s3_1,
+              SUBSTR(scol,-3) AS "s-3",
               SUBSTR(scol,-3,3) AS "s-3_3",
               SUBSTR(scol,-3,4) AS "s-3_4",
               SUBSTR(scol,-3,5) AS "s-3_5",

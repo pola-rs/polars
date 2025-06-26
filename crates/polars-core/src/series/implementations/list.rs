@@ -1,4 +1,3 @@
-use self::sort::arg_sort_row_fmt;
 use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
@@ -98,20 +97,11 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        let slf = (*self).clone();
-        let slf = slf.into_column();
-        arg_sort_row_fmt(
-            &[slf],
-            options.descending,
-            options.nulls_last,
-            options.multithreaded,
-        )
-        .unwrap()
+        self.0.arg_sort(options)
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        let idxs = self.arg_sort(options);
-        Ok(unsafe { self.take_unchecked(&idxs) })
+        Ok(self.0.sort_with(options).into_series())
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -162,11 +152,21 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
+    }
+
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        self.0
+            .trim_lists_to_normalized_offsets()
+            .map(IntoSeries::into_series)
+    }
+
+    fn propagate_nulls(&self) -> Option<Series> {
+        self.0.propagate_nulls().map(IntoSeries::into_series)
     }
 
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
@@ -256,12 +256,20 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        &self.0
     }
 
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

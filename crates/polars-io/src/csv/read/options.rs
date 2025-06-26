@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use crate::RowIndex;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvReadOptions {
     pub path: Option<PathBuf>,
     // Performance related options
@@ -44,6 +46,7 @@ pub struct CsvReadOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CsvParseOptions {
     pub separator: u8,
     pub quote_char: Option<u8>,
@@ -223,7 +226,9 @@ impl CsvReadOptions {
         self
     }
 
-    /// Number of rows to use for schema inference. Pass [None] to use all rows.
+    /// Set the number of rows to use when inferring the csv schema.
+    /// The default is 100 rows.
+    /// Setting to [None] will do a full table scan, which is very slow.
     pub fn with_infer_schema_length(mut self, infer_schema_length: Option<usize>) -> Self {
         self.infer_schema_length = infer_schema_length;
         self
@@ -327,6 +332,7 @@ impl CsvParseOptions {
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum CsvEncoding {
     /// Utf8 encoding.
     #[default]
@@ -337,6 +343,7 @@ pub enum CsvEncoding {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum CommentPrefix {
     /// A single byte character that indicates the start of a comment line.
     Single(u8),
@@ -375,6 +382,7 @@ impl From<&str> for CommentPrefix {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum NullValues {
     /// A single value that's used for all columns
     AllColumnsSingle(PlSmallStr),

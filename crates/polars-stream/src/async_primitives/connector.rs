@@ -1,8 +1,9 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::task::{Context, Poll, Waker};
 
 use atomic_waker::AtomicWaker;
@@ -22,7 +23,9 @@ pub fn connector<T>() -> (Sender<T>, Receiver<T>) {
 /*
     For UnsafeCell safety, a sender may only set the FULL_BIT (giving exclusive
     access to value to the receiver), and a receiver may only unset the FULL_BIT
-    (giving exclusive access back to the sender).
+    (giving exclusive access back to the sender). Setting/clearing the FULL_BIT
+    must be done with a Release ordering, and before reading/writing the value
+    the FULL_BIT must be checked with an Acquire ordering.
 
     The exception is when the closed bit is set, at that point the unclosed
     end has full exclusive access.
@@ -51,16 +54,6 @@ impl<T> Default for Connector<T> {
     }
 }
 
-impl<T> Drop for Connector<T> {
-    fn drop(&mut self) {
-        if self.state.load(Ordering::Acquire) & FULL_BIT == FULL_BIT {
-            unsafe {
-                self.value.get().drop_in_place();
-            }
-        }
-    }
-}
-
 pub enum SendError<T> {
     Full(T),
     Closed(T),
@@ -76,14 +69,14 @@ pub enum RecvError {
 impl<T> Connector<T> {
     unsafe fn poll_send(&self, value: &mut Option<T>, waker: &Waker) -> Poll<Result<(), T>> {
         if let Some(v) = value.take() {
-            let mut state = self.state.load(Ordering::Relaxed);
+            let mut state = self.state.load(Ordering::Acquire);
             if state & FULL_BIT == FULL_BIT {
                 self.send_waker.register(waker);
                 let (Ok(s) | Err(s)) = self.state.compare_exchange(
                     state,
                     state | WAITING_BIT,
-                    Ordering::Release,
                     Ordering::Relaxed,
+                    Ordering::Acquire, // Receiver updated, re-acquire.
                 );
                 state = s;
             }
@@ -111,11 +104,13 @@ impl<T> Connector<T> {
 
         unsafe {
             self.value.get().write(MaybeUninit::new(value));
-            let state = self.state.swap(FULL_BIT, Ordering::AcqRel);
+            let state = self.state.swap(FULL_BIT, Ordering::Release);
             if state & WAITING_BIT == WAITING_BIT {
                 self.recv_waker.wake();
             }
             if state & CLOSED_BIT == CLOSED_BIT {
+                // SAFETY: no synchronization needed, we are the only one left.
+                // Restore the closed bit we just overwrote.
                 self.state.store(CLOSED_BIT, Ordering::Relaxed);
                 return Err(SendError::Closed(self.value.get().read().assume_init()));
             }
@@ -131,8 +126,8 @@ impl<T> Connector<T> {
             let (Ok(s) | Err(s)) = self.state.compare_exchange(
                 state,
                 state | WAITING_BIT,
-                Ordering::Release,
-                Ordering::Acquire,
+                Ordering::Relaxed,
+                Ordering::Acquire, // Sender updated, re-acquire.
             );
             state = s;
         }
@@ -148,11 +143,12 @@ impl<T> Connector<T> {
         if state & FULL_BIT == FULL_BIT {
             unsafe {
                 let ret = self.value.get().read().assume_init();
-                let state = self.state.swap(0, Ordering::Acquire);
+                let state = self.state.swap(0, Ordering::Release);
                 if state & WAITING_BIT == WAITING_BIT {
                     self.send_waker.wake();
                 }
                 if state & CLOSED_BIT == CLOSED_BIT {
+                    // Restore the closed bit we just overwrote.
                     self.state.store(CLOSED_BIT, Ordering::Relaxed);
                 }
                 return Ok(ret);
@@ -169,7 +165,7 @@ impl<T> Connector<T> {
     }
 
     unsafe fn try_send(&self, value: T) -> Result<(), SendError<T>> {
-        self.try_send_impl(value, self.state.load(Ordering::Relaxed))
+        self.try_send_impl(value, self.state.load(Ordering::Acquire))
     }
 
     unsafe fn try_recv(&self) -> Result<T, RecvError> {
@@ -177,12 +173,18 @@ impl<T> Connector<T> {
     }
 
     /// # Safety
-    /// After calling close as a sender/receiver, you may not access
-    /// this connector anymore as that end.
-    unsafe fn close(&self) {
+    /// You may not access this connector anymore as a sender after this call.
+    unsafe fn close_send(&self) {
         self.state.fetch_or(CLOSED_BIT, Ordering::Relaxed);
-        self.send_waker.wake();
         self.recv_waker.wake();
+    }
+
+    /// # Safety
+    /// You may not access this connector anymore as a receiver after this call.
+    unsafe fn close_recv(&self) {
+        let state = self.state.fetch_or(CLOSED_BIT, Ordering::Acquire);
+        drop(self.try_recv_impl(state));
+        self.send_waker.wake();
     }
 }
 
@@ -194,7 +196,7 @@ unsafe impl<T: Send> Send for Sender<T> {}
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
-        unsafe { self.connector.close() }
+        unsafe { self.connector.close_send() }
     }
 }
 
@@ -206,7 +208,7 @@ unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        unsafe { self.connector.close() }
+        unsafe { self.connector.close_recv() }
     }
 }
 

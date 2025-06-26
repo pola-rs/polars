@@ -15,9 +15,9 @@ polars-row = { workspace = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
+boxcar = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
@@ -29,16 +29,20 @@ indexmap = { workspace = true }
 itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
+uuid = { workspace = true }
 xxhash-rust = { workspace = true }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
 bincode = { workspace = true }
@@ -120,18 +124,26 @@ dtype-struct = []
 
 # scale to terabytes?
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
-python = []
+python = ["polars-error/python"]
 
 serde = [
   "dep:serde",
   "bitflags/serde",
   "polars-schema/serde",
   "polars-utils/serde",
+  "polars-compute/serde",
   "arrow/io_ipc",
   "arrow/io_ipc_compression",
   "serde_json",
 ]
 serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
+dsl-schema = [
+  "serde",
+  "dep:schemars",
+  "polars-schema/dsl-schema",
+  "polars-utils/dsl-schema",
+  "polars-compute/dsl-schema",
+]
 
 docs-selection = [
   "ndarray",
@@ -169,3 +181,6 @@ docs-selection = [
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

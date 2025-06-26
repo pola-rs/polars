@@ -17,7 +17,7 @@ from polars.exceptions import (
 )
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import ODBCCursorProxy, SurrealDBCursorProxy
-from polars.io.database._inference import _infer_dtype_from_cursor_description
+from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
@@ -324,7 +324,7 @@ class ConnectionExecutor:
                 msg = f"column {nm!r} appears more than once in the query/result cursor"
                 raise DuplicateError(msg)
             elif desc is not None and nm not in schema_overrides:
-                dtype = _infer_dtype_from_cursor_description(self.cursor, desc)
+                dtype = dtype_from_cursor_description(self.cursor, desc)
                 if dtype is not None:
                     schema_overrides[nm] = dtype  # type: ignore[index]
             dupe_check.add(nm)
@@ -528,7 +528,7 @@ class ConnectionExecutor:
         fall back to initialising with row-level data if no other option.
         """
         if self.result is None:
-            msg = "Cannot return a frame before executing a query"
+            msg = "cannot return a frame before executing a query"
             raise RuntimeError(msg)
 
         can_close = self.can_close_cursor

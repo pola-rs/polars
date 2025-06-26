@@ -1,3 +1,5 @@
+use arrow::compute::concatenate::concatenate_unchecked;
+
 use super::*;
 
 #[allow(clippy::all)]
@@ -20,7 +22,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 DataType::Categorical(None, _) | DataType::Enum(None, _)
             ) =>
         {
-            let array = concatenate_owned_unchecked(chunks).unwrap();
+            let array = concatenate_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {
@@ -52,7 +54,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 DataType::Categorical(None, _) | DataType::Enum(None, _)
             ) =>
         {
-            let array = concatenate_owned_unchecked(chunks).unwrap();
+            let array = concatenate_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {
@@ -159,7 +161,7 @@ where
         <I as IntoIterator>::Item: Array,
     {
         assert_eq!(
-            std::mem::discriminant(&T::get_dtype()),
+            std::mem::discriminant(&T::get_static_dtype()),
             std::mem::discriminant(&field.dtype)
         );
 
@@ -182,7 +184,7 @@ where
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn from_chunks(name: PlSmallStr, mut chunks: Vec<ArrayRef>) -> Self {
-        let dtype = match T::get_dtype() {
+        let dtype = match T::get_static_dtype() {
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
             #[cfg(feature = "dtype-array")]
             dtype @ DataType::Array(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
@@ -260,7 +262,10 @@ where
         buffer: Option<Bitmap>,
     ) -> Self {
         let arr = to_array::<T>(values, buffer);
-        ChunkedArray::new_with_compute_len(Arc::new(Field::new(name, T::get_dtype())), vec![arr])
+        ChunkedArray::new_with_compute_len(
+            Arc::new(Field::new(name, T::get_static_dtype())),
+            vec![arr],
+        )
     }
 
     /// Create a temporary [`ChunkedArray`] from a slice.
@@ -282,6 +287,13 @@ impl BooleanChunked {
     pub unsafe fn mmap_slice(name: PlSmallStr, values: &[u8], offset: usize, len: usize) -> Self {
         let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
         Self::with_chunk(name, arr)
+    }
+
+    pub fn from_bitmap(name: PlSmallStr, bitmap: Bitmap) -> Self {
+        Self::with_chunk(
+            name,
+            BooleanArray::new(ArrowDataType::Boolean, bitmap, None),
+        )
     }
 }
 

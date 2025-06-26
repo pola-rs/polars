@@ -1,9 +1,9 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::trusted_len::TrustedLen;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
-use polars_core::POOL;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use crate::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum ClosedWindow {
     Left,
@@ -23,6 +24,7 @@ pub enum ClosedWindow {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum Label {
     Left,
@@ -32,6 +34,7 @@ pub enum Label {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum StartBy {
     WindowBound,
@@ -148,7 +151,7 @@ pub fn group_by_windows(
     include_lower_bound: bool,
     include_upper_bound: bool,
     start_by: StartBy,
-) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
+) -> PolarsResult<(GroupsSlice, Vec<i64>, Vec<i64>)> {
     let start = time[0];
     // the boundary we define here is not yet correct. It doesn't take 'period' into account
     // and it doesn't have the proper starting point. This boundary is used as a proxy to find
@@ -181,15 +184,13 @@ pub fn group_by_windows(
         #[cfg(feature = "timezones")]
         Some(tz) => {
             update_groups_and_bounds(
-                window
-                    .get_overlapping_bounds_iter(
-                        boundary,
-                        closed_window,
-                        tu,
-                        tz.parse::<Tz>().ok().as_ref(),
-                        start_by,
-                    )
-                    .unwrap(),
+                window.get_overlapping_bounds_iter(
+                    boundary,
+                    closed_window,
+                    tu,
+                    tz.parse::<Tz>().ok().as_ref(),
+                    start_by,
+                )?,
                 start_offset,
                 time,
                 closed_window,
@@ -202,9 +203,7 @@ pub fn group_by_windows(
         },
         _ => {
             update_groups_and_bounds(
-                window
-                    .get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)
-                    .unwrap(),
+                window.get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)?,
                 start_offset,
                 time,
                 closed_window,
@@ -217,7 +216,7 @@ pub fn group_by_windows(
         },
     };
 
-    (groups, lower_bound, upper_bound)
+    Ok((groups, lower_bound, upper_bound))
 }
 
 // t is right at the end of the window
@@ -613,6 +612,10 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
+    if time.is_empty() {
+        return Ok(GroupsSlice::from(vec![]));
+    }
+
     let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);

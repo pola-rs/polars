@@ -1,33 +1,33 @@
 pub(super) mod batched;
 
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
-use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
 use rayon::prelude::*;
 
+use super::CsvParseOptions;
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
 use super::parser::{
-    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_lines_naive, skip_this_line,
-    CountLines, SplitLines,
+    CountLines, SplitLines, is_comment_line, parse_lines, skip_bom, skip_line_ending,
+    skip_lines_naive, skip_this_line,
 };
 use super::reader::prepare_csv_schema;
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
-use super::CsvParseOptions;
+use crate::RowIndex;
 use crate::csv::read::parser::skip_this_line_naive;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::compression::SupportedCompression;
 use crate::utils::update_row_counts2;
-use crate::RowIndex;
 
 pub fn cast_columns(
     df: &mut DataFrame,
@@ -92,6 +92,8 @@ pub fn cast_columns(
                 df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
             }
         }
+
+        df.clear_schema();
     }
     Ok(())
 }
@@ -147,7 +149,7 @@ impl<'a> CoreReader<'a> {
         ignore_errors: bool,
         schema: Option<SchemaRef>,
         columns: Option<Arc<[PlSmallStr]>>,
-        mut n_threads: Option<usize>,
+        n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
         chunk_size: usize,
@@ -200,7 +202,6 @@ impl<'a> CoreReader<'a> {
                     skip_lines,
                     skip_rows_after_header,
                     raise_if_empty,
-                    &mut n_threads,
                 )?;
                 Arc::new(inferred_schema)
             },
@@ -319,6 +320,10 @@ impl<'a> CoreReader<'a> {
         Ok(df)
     }
 
+    // The code adheres to RFC 4180 in a strict sense, unless explicitly documented otherwise.
+    // Malformed CSV is common, see e.g. the use of lazy_quotes, whitespace and comments.
+    // In case malformed CSV is detected, a warning or an error will be issued.
+    // Not all malformed CSV will be detected, as that would impact performance.
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let (bytes, _) = self.find_starting_point(
             bytes,
@@ -389,10 +394,12 @@ impl<'a> CoreReader<'a> {
 
         let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
         let mut total_offset = 0;
+        let mut previous_total_offset = 0;
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
         pool.scope(|s| {
+            // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
                 if b.is_empty() {
@@ -401,12 +408,16 @@ impl<'a> CoreReader<'a> {
                 debug_assert!(
                     total_offset == 0 || bytes[total_offset - 1] == self.parse_options.eol_char
                 );
+
+                // Count is the number of rows for the next chunk. In case of malformed CSV data,
+                // count may not be as expected.
                 let (count, position) = counter.find_next(b, &mut chunk_size);
                 debug_assert!(count == 0 || b[position] == self.parse_options.eol_char);
 
                 let (b, count) = if count == 0
-                    && unsafe { b.as_ptr().add(b.len()) == bytes.as_ptr().add(bytes.len()) }
-                {
+                    && unsafe {
+                        std::ptr::eq(b.as_ptr().add(b.len()), bytes.as_ptr().add(bytes.len()))
+                    } {
                     total_offset = bytes.len();
                     (b, 1)
                 } else {
@@ -418,10 +429,12 @@ impl<'a> CoreReader<'a> {
                     let end = total_offset + position + 1;
                     let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
+                    previous_total_offset = total_offset;
                     total_offset = end;
                     (b, count)
                 };
 
+                // Pass 2: process each individual chunk in parallel (field parsing)
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
@@ -439,7 +452,18 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-                                debug_assert!(df.height() <= count);
+
+                                // Check malformed
+                                if df.height() > count || (df.height() < count && slf.parse_options.comment_prefix.is_none()) {
+                                    // Note: in case data is malformed, df.height() is more likely to be correct than count.
+                                    let msg = format!("CSV malformed: expected {} rows, actual {} rows, in chunk starting at byte offset {}, length {}",
+                                        count, df.height(), previous_total_offset, b.len());
+                                    if slf.ignore_errors {
+                                        polars_warn!(msg);
+                                    } else {
+                                        polars_bail!(ComputeError: msg);
+                                    }
+                                }
 
                                 if slf.n_rows.is_some() {
                                     total_line_count.fetch_add(df.height(), Ordering::Relaxed);
@@ -448,13 +472,13 @@ impl<'a> CoreReader<'a> {
                                 // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
                                 if let Some(rc) = &slf.row_index {
                                     // is first chunk
-                                    let offset = if b.as_ptr() == bytes.as_ptr() {
+                                    let offset = if std::ptr::eq(b.as_ptr(), bytes.as_ptr()) {
                                         Some(rc.offset)
                                     } else {
                                         None
                                     };
 
-                                    df.with_row_index_mut(rc.name.clone(), offset);
+                                    unsafe { df.with_row_index_mut(rc.name.clone(), offset) };
                                 };
 
                                 if let Some(predicate) = slf.predicate.as_ref() {

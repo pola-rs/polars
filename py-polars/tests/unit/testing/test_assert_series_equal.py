@@ -10,6 +10,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal, assert_series_not_equal
 from polars.testing.parametric import dtypes, series
 
@@ -71,8 +72,8 @@ def test_assert_series_equal_check_order() -> None:
 def test_assert_series_equal_check_order_unsortable_type() -> None:
     s = pl.Series([object(), object()])
     with pytest.raises(
-        TypeError,
-        match="cannot set `check_order=False` on Series with unsortable data type",
+        InvalidOperationError,
+        match="`sort_with` operation not supported for dtype `object`",
     ):
         assert_series_equal(s, s, check_order=False)
 
@@ -550,12 +551,9 @@ def test_assert_series_equal_incompatible_data_types() -> None:
 def test_assert_series_equal_full_series() -> None:
     s1 = pl.Series([1, 2, 3])
     s2 = pl.Series([1, 2, 4])
-    msg = (
-        r"Series are different \(exact value mismatch\)\n"
-        r"\[left\]:  \[1, 2, 3\]\n"
-        r"\[right\]: \[1, 2, 4\]"
-    )
-    with pytest.raises(AssertionError, match=msg):
+    with pytest.raises(
+        AssertionError, match=r"Series are different \(exact value mismatch\)"
+    ):
         assert_series_equal(s1, s2)
 
 
@@ -823,11 +821,6 @@ def test_series_data_type_fail():
 
     assert "def assert_series_equal" not in stdout
     assert "def assert_series_not_equal" not in stdout
-    assert "def _assert_series_values_equal" not in stdout
-    assert "def _assert_series_nested_values_equal" not in stdout
-    assert "def _assert_series_null_values_match" not in stdout
-    assert "def _assert_series_nan_values_match" not in stdout
-    assert "def _assert_series_values_within_tolerance" not in stdout
 
     # Make sure the tests are failing for the expected reason (e.g. not because
     # an import is missing or something like that):

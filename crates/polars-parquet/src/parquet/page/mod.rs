@@ -1,6 +1,6 @@
 use super::CowBuffer;
 use crate::parquet::compression::Compression;
-use crate::parquet::encoding::{get_length, Encoding};
+use crate::parquet::encoding::{Encoding, get_length};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::Descriptor;
 pub use crate::parquet::parquet_bridge::{DataPageHeaderExt, PageType};

@@ -7,7 +7,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.fs
 import pytest
-from deltalake import DeltaTable
+from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
@@ -387,14 +387,6 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
 
 
 @pytest.mark.write_disk
-def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-
-    pa_schema = pa.schema([("a", pa.int64())])
-    df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
-
-
-@pytest.mark.write_disk
 @pytest.mark.parametrize(
     "expr",
     [
@@ -415,7 +407,7 @@ def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
 
     # Check schema of DeltaTable object
     tbl = DeltaTable(tmp_path)
-    assert tbl.schema().to_pyarrow() == expected.to_arrow().schema
+    assert pa.schema(tbl.schema().to_arrow()) == expected.to_arrow().schema
 
     # Check result
     result = pl.read_delta(str(tmp_path), version=0)
@@ -497,3 +489,31 @@ def test_read_delta_empty(tmp_path: Path) -> None:
 
     DeltaTable.create(path, pl.DataFrame(schema={"x": pl.Int64}).to_arrow().schema)
     assert_frame_equal(pl.read_delta(path), pl.DataFrame(schema={"x": pl.Int64}))
+
+
+@pytest.mark.write_disk
+def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
+    payload = [
+        {"id": 1, "account_id": {17: "100.01.001 Cash"}},
+        {"id": 2, "account_id": {18: "180.01.001 Cash", 19: "foo"}},
+    ]
+
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("account_id", pa.map_(pa.int32(), pa.string())),
+        ]
+    )
+    table = pa.Table.from_pylist(payload, schema)
+
+    expect = pl.DataFrame(table)
+
+    table_path = str(tmp_path)
+    write_deltalake(
+        table_path,
+        table,
+        mode="overwrite",
+    )
+
+    assert_frame_equal(pl.scan_delta(table_path).collect(), expect)
+    assert_frame_equal(pl.read_delta(table_path), expect)

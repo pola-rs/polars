@@ -80,7 +80,7 @@ impl<T> Clone for NumMeanReducer<T> {
 impl<T> Reducer for NumMeanReducer<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: ChunkAgg<T::Native> + IntoSeries,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
     type Value = (f64, usize);

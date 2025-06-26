@@ -1,11 +1,11 @@
 use std::mem::MaybeUninit;
 
 use num_traits::FromPrimitive;
-use rayon::prelude::*;
 use rayon::ThreadPool;
+use rayon::prelude::*;
 
-use crate::total_ord::TotalOrd;
 use crate::IdxSize;
+use crate::total_ord::TotalOrd;
 
 /// This is a perfect sort particularly useful for an arg_sort of an arg_sort
 /// The second arg_sort sorts indices from `0` to `len` so can be just assigned to the
@@ -37,13 +37,13 @@ pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &
                 // SAFETY:
                 // idx_location is in bounds by invariant of this function
                 // and we ensured we have at least `idx.len()` capacity
-                *ptr.add(*idx_location as usize) = *idx_val;
+                unsafe { *ptr.add(*idx_location as usize) = *idx_val };
             }
         });
     });
     // SAFETY:
     // all elements are written
-    out.set_len(idx.len());
+    unsafe { out.set_len(idx.len()) };
 }
 
 // wasm alternative with different signature
@@ -78,7 +78,7 @@ pub unsafe fn perfect_sort(
 }
 
 unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
-    &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
+    unsafe { &mut *(slice as *mut [MaybeUninit<T>] as *mut [T]) }
 }
 
 pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, Idx, I: IntoIterator<Item = T>>(

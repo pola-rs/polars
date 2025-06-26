@@ -1,15 +1,16 @@
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 
 use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
-use polars_core::{with_match_physical_float_polars_type, POOL};
+use polars_core::{POOL, with_match_physical_float_polars_type};
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use rayon::prelude::*;
 
 use super::*;
 
-fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &PlRandomState) -> u64
+fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &PlSeedableRandomStateQuality) -> u64
 where
     T: PolarsNumericType,
     T::Native: TotalHash + ToTotalOrd,
@@ -44,7 +45,10 @@ where
     hash_agg
 }
 
-pub(crate) fn hash(ca: &mut ListChunked, build_hasher: PlRandomState) -> UInt64Chunked {
+pub(crate) fn hash(
+    ca: &mut ListChunked,
+    build_hasher: PlSeedableRandomStateQuality,
+) -> UInt64Chunked {
     if !ca.inner_dtype().to_physical().is_primitive_numeric() {
         panic!(
             "Hashing a list with a non-numeric inner type not supported. Got dtype: {:?}",

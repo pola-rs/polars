@@ -13,7 +13,6 @@ pub(crate) struct RollingExpr {
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
-    pub(crate) out_name: Option<PlSmallStr>,
     pub(crate) options: RollingGroupOptions,
     pub(crate) expr: Expr,
 }
@@ -33,20 +32,17 @@ impl PhysicalExpr for RollingExpr {
         let groups = match groups {
             Some(groups) => groups,
             None => {
-                let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
+                let (_time_key, groups) = df.rolling(None, &self.options)?;
                 state.window_cache.insert_groups(groups_key, groups.clone());
                 groups
             },
         };
 
-        let mut out = self
+        let out = self
             .phys_function
             .evaluate_on_groups(df, &groups, state)?
             .finalize();
         polars_ensure!(out.len() == groups.len(), agg_len = out.len(), groups.len());
-        if let Some(name) = &self.out_name {
-            out.rename(name.clone());
-        }
         Ok(out.into_column())
     }
 
@@ -57,16 +53,6 @@ impl PhysicalExpr for RollingExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "rolling expression not allowed in aggregation");
-    }
-
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

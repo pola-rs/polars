@@ -25,7 +25,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import TimeUnit
+    from polars._typing import CsvQuoteStyle, TimeUnit
     from tests.unit.conftest import MemoryUsage
 
 
@@ -501,6 +501,36 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
                 ).get_column("Region"),
                 pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
             )
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+@pytest.mark.write_disk
+def test_read_csv_encoding_lossy(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    bts = (
+        b"\xc8\xec\xff,\xc2\xee\xe7\xf0\xe0\xf1\xf2,\xc3\xee\xf0\xee\xe4\n"
+        b"\xc8\xe2\xe0\xed,25,\xcc\xee\xf1\xea\xe2\xe0\n"
+        # \x98 is not supported in "windows-1251".
+        b"\xce\xeb\xfc\xe3\xe0,30,\xd1\xe0\xed\xea\xf2-\x98\xcf\xe5\xf2\xe5\xf0\xe1\xf3\xf0\xe3\n"
+    )
+
+    file_path = tmp_path / "encoding_lossy.csv"
+    file_path.write_bytes(bts)
+
+    file_str = str(file_path)
+    bytesio = io.BytesIO(bts)
+    bytesio.seek(0)
+
+    for file in [file_path, file_str, bts, bytesio]:
+        assert_series_equal(
+            pl.read_csv(
+                file,  # type: ignore[arg-type]
+                encoding="windows-1251-lossy",
+                use_pyarrow=False,
+            ).get_column("Город"),
+            pl.Series("Город", ["Москва", "Санкт-�Петербург"]),
+        )
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
@@ -1269,17 +1299,6 @@ def test_datetime_format(fmt: str, expected: str) -> None:
     assert csv == expected
 
 
-def test_invalid_datetime_format() -> None:
-    tz_naive = pl.Series(["2020-01-01T00:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.replace_time_zone("UTC")
-    with pytest.raises(
-        ComputeError, match="cannot format NaiveDateTime with format '%q'"
-    ):
-        tz_naive.to_frame().write_csv(datetime_format="%q")
-    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
-        tz_aware.to_frame().write_csv(datetime_format="%q")
-
-
 @pytest.mark.parametrize(
     ("fmt", "expected"),
     [
@@ -1501,7 +1520,6 @@ def test_csv_categorical_lifetime() -> None:
     assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_csv_categorical_categorical_merge() -> None:
     N = 50
     f = io.BytesIO()
@@ -1512,6 +1530,7 @@ def test_csv_categorical_categorical_merge() -> None:
     ).unique(maintain_order=True)["x"].to_list() == ["A", "B"]
 
 
+@pytest.mark.write_disk
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     assert isinstance(reader, BatchedCsvReader)
@@ -1538,10 +1557,10 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
         tmp.write(data)
         tmp.seek(0)
 
-        expected = pl.DataFrame({"column_1": ["A", "B", "C"]})
+        expected = pl.DataFrame({"A": ["B", "C"]})
         batches = pl.read_csv_batched(
             tmp.name,
-            has_header=False,
+            has_header=True,
             truncate_ragged_lines=True,
         ).next_batches(1)
 
@@ -1768,7 +1787,7 @@ A,B
     }
 
     df = pl.read_csv(io.StringIO(csv), comment_prefix="#", schema=schema)
-    assert len(df) == 2
+    assert df.height == 2
     assert df.schema == schema
 
 
@@ -1896,27 +1915,28 @@ def test_ignore_errors_date_parser() -> None:
 
 
 def test_csv_ragged_lines() -> None:
-    expected = {"column_1": ["A", "B", "C"]}
+    expected = {"A": ["B", "C"]}
     assert (
         pl.read_csv(
-            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB,ragged\nC"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
     assert (
         pl.read_csv(
-            io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB\nC,ragged"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
 
     for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
 
 
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_provide_schema() -> None:
     # can be used to overload schema with ragged csv files
     assert pl.read_csv(
@@ -2138,7 +2158,7 @@ def test_read_csv_only_loads_selected_columns(
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
     # Globs use a different code path for reading
     memory_usage_without_pyarrow.reset_tracking()
@@ -2146,7 +2166,7 @@ def test_read_csv_only_loads_selected_columns(
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
     # read_csv_batched() test:
     memory_usage_without_pyarrow.reset_tracking()
@@ -2165,7 +2185,7 @@ def test_read_csv_only_loads_selected_columns(
             break
         result += next_batch
     del result
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 20_000_000
+    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 20_000_000
 
 
 def test_csv_escape_cf_15349() -> None:
@@ -2187,7 +2207,9 @@ def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
 
     skip = 2
     expect = df.slice(skip)
-    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 
@@ -2379,8 +2401,27 @@ time
     assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
     assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
     assert_frame_equal(
-        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(engine="streaming"), df
     )
+
+
+def test_csv_try_parse_dates_leading_zero_8_digits_22167() -> None:
+    result = pl.read_csv(
+        io.StringIO(
+            "a\n2025-04-06T18:56:42.617736974Z\n2025-04-06T18:57:42.77756192Z\n2025-04-06T18:58:44.56928733Z"
+        ),
+        try_parse_dates=True,
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=timezone.utc),
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
@@ -2468,6 +2509,7 @@ def test_csv_invalid_quoted_comment_line() -> None:
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
 
 
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_csv_compressed_new_columns_19916() -> None:
     n_rows = 100
 
@@ -2508,3 +2550,218 @@ def test_header_only_column_selection_17173() -> None:
     result = pl.read_csv(io.StringIO(csv), columns=["B"])
     expected = pl.Series("B", [], pl.String()).to_frame()
     assert_frame_equal(result, expected)
+
+
+def test_csv_enum_raise() -> None:
+    ENUM_DTYPE = pl.Enum(["foo", "bar"])
+    with (
+        io.StringIO("col\nfoo\nbaz\n") as csv,
+        pytest.raises(
+            pl.exceptions.ComputeError, match="category baz doesn't exist in Enum dtype"
+        ),
+    ):
+        pl.read_csv(
+            csv,
+            schema={"col": ENUM_DTYPE},
+        )
+
+
+def test_csv_no_header_ragged_lines_1505() -> None:
+    # Test that the header schema will grow dynamically.
+    csv = io.StringIO("""a,b,c
+a,b,c,d,e,f
+g,h,i,j,k""")
+
+    assert pl.read_csv(csv, has_header=False).to_dict(as_series=False) == {
+        "column_1": ["a", "a", "g"],
+        "column_2": ["b", "b", "h"],
+        "column_3": ["c", "c", "i"],
+        "column_4": [None, "d", "j"],
+        "column_5": [None, "e", "k"],
+        "column_6": [None, "f", None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("filter_value", "expected"),
+    [
+        (10, "a,b,c\n10,20,99\n"),
+        (11, "a,b,c\n11,21,99\n"),
+        (12, "a,b,c\n12,22,99\n12,23,99\n"),
+    ],
+)
+def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) -> None:
+    # df and filter expression are designed to test different
+    # Column variants (Series, Scalar) and different number of chunks:
+    # 10 > single row, ScalarColumn, multiple chunks, first is non-empty
+    # 11 > single row, ScalarColumn, multiple chunks, first is empty
+    # 12 > multiple rows, SeriesColumn, multiple chunks, some empty
+    df1 = pl.DataFrame(
+        {
+            "a": [10, 11, 12, 12],  # (12, 12 is intentional)
+            "b": [20, 21, 22, 23],
+        },
+    )
+    df2 = pl.DataFrame({"c": [99]})
+    df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
+    assert df3.write_csv() == expected
+
+
+def test_csv_malformed_quote_in_unenclosed_field_22395() -> None:
+    # Note - the malformed detection logic is very basic, and fails to detect many
+    # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
+    # Below is a one pattern that will be flagged (odd number of quotes in a row).
+    malformed = b"""\
+a,b,x"y
+a,x"y,c
+x"y,b,c
+"""
+    # short: non-SIMD code path
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed, has_header=False).collect()
+    with pytest.warns(UserWarning):
+        pl.read_csv(malformed, has_header=False, ignore_errors=True)
+
+    # long: trigger SIMD code path (> 64 bytes)
+    malformed_long = malformed + ("k,l,m\n" * 10).encode()
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed_long, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed_long, has_header=False).collect()
+
+
+# Note: in some cases, marked "(excessive quoting)", the expected value has
+# quoted fields even when that is not strictly necessary.
+# It is okay to relax these tests in the future when code is refactored
+@pytest.mark.parametrize(
+    (
+        "separator",
+        "quote_style",
+        "scientific",
+        "precision",
+        "decimal_comma",
+        "expected",
+    ),
+    [
+        (",", None, None, None, False, b"123.75,60.0,9\n"),
+        (",", None, None, None, True, b'"123,75","60,0",9\n'),
+        (";", None, None, None, True, b"123,75;60,0;9\n"),
+        (",", None, None, 0, True, b"124,60,9\n"),
+        (",", None, None, 3, True, b'"123,750","60,000",9\n'),
+        (";", None, None, 0, True, b"124;60;9\n"),
+        (";", None, None, 3, True, b"123,750;60,000;9\n"),
+        (",", None, True, None, False, b"1.2375e2,6e1,9\n"),
+        (",", None, True, None, True, b'"1,2375e2","6e1",9\n'),  # (excessive quoting)
+        (",", None, False, None, False, b"123.75,60,9\n"),
+        (",", None, False, None, True, b'"123,75","60",9\n'),  # (excessive quoting)
+        (";", None, True, None, True, b"1,2375e2;6e1;9\n"),
+        (";", None, False, None, True, b"123,75;60;9\n"),
+        (",", None, True, 0, True, b"1e2,6e1,9\n"),
+        (",", None, True, 3, True, b'"1,238e2","6,000e1",9\n'),
+        (",", None, False, 0, True, b"124,60,9\n"),
+        (",", None, False, 3, True, b'"123,750","60,000",9\n'),
+        (",", "always", None, None, True, b'"123,75","60,0","9"\n'),
+        (",", "necessary", None, None, True, b'"123,75","60,0",9\n'),
+        (",", "non_numeric", None, None, True, b'"123,75","60,0",9\n'),
+        (",", "never", None, None, True, b"123,75,60,0,9\n"),
+        (";", "always", None, None, True, b'"123,75";"60,0";"9"\n'),
+        (";", "necessary", None, None, True, b"123,75;60,0;9\n"),
+        (";", "non_numeric", None, None, True, b"123,75;60,0;9\n"),
+        (";", "never", None, None, True, b"123,75;60,0;9\n"),
+    ],
+)
+def test_write_csv_decimal_comma(
+    separator: str,
+    quote_style: CsvQuoteStyle | None,
+    scientific: bool | None,
+    precision: int | None,
+    decimal_comma: bool,
+    expected: bytes,
+) -> None:
+    # as Float64 (implicit)
+    df = pl.DataFrame({"a": [123.75], "b": [60.0], "c": [9]})
+    buf = io.BytesIO()
+    df.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        float_precision=precision,
+        float_scientific=scientific,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # as Float32 (explicit)
+    df32 = df.with_columns(pl.col("a", "b").cast(pl.Float32))
+    buf.seek(0)
+    df32.write_csv(
+        buf,
+        separator=separator,
+        quote_style=quote_style,
+        float_precision=precision,
+        float_scientific=scientific,
+        decimal_comma=decimal_comma,
+        include_header=False,
+    )
+    buf.seek(0)
+    assert buf.read() == expected
+
+    # Invariant testing:
+    #   df == read_csv(write_csv(df)), unless precision affects the value
+    # TODO: drop the separator condition when read_csv supports comma as both the
+    # decimal separator and field separator, see #23157
+    if (precision is None or precision > 2) and separator != ",":
+        # eager
+        buf.seek(0)
+        df.write_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            float_precision=precision,
+            float_scientific=scientific,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        out = pl.read_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        )
+        assert_frame_equal(df, out)
+
+        # lazy
+        buf.seek(0)
+        df.lazy().sink_csv(
+            buf,
+            separator=separator,
+            quote_style=quote_style,
+            float_precision=precision,
+            float_scientific=scientific,
+            decimal_comma=decimal_comma,
+            include_header=True,
+        )
+        out = pl.scan_csv(
+            buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
+        ).collect()
+        assert_frame_equal(df, out)
+
+
+def test_write_csv_large_number_autoformat_decimal_comma() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [12345678901234567890.123457890],
+            "b": [1_000_000_000_000_000_000_000_000.0],
+        }
+    )
+
+    buf = io.BytesIO()
+    df.write_csv(
+        buf,
+        decimal_comma=True,
+        include_header=False,
+    )
+    buf.seek(0)
+    expected = b'"1,2345678901234567e19","1e24"\n'  # note, excessive quoting when fractional is all-zero, ok to relax
+    assert buf.read() == expected

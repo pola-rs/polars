@@ -1,10 +1,9 @@
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
-#[cfg(feature = "object")]
-use crate::chunked_array::object::registry::ObjectRegistry;
+use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
@@ -20,6 +19,48 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     fn new(name: PlSmallStr, values: T) -> Self {
         let values = values.as_ref();
         Series::from_any_values(name, values, true).expect("data types of values should match")
+    }
+}
+
+fn initialize_empty_categorical_revmap_rec(dtype: &DataType) -> Cow<DataType> {
+    use DataType as T;
+    match dtype {
+        #[cfg(feature = "dtype-categorical")]
+        T::Categorical(None, o) => {
+            Cow::Owned(T::Categorical(Some(Arc::new(RevMapping::default())), *o))
+        },
+        T::List(inner_dtype) => match initialize_empty_categorical_revmap_rec(inner_dtype) {
+            Cow::Owned(inner_dtype) => Cow::Owned(T::List(Box::new(inner_dtype))),
+            _ => Cow::Borrowed(dtype),
+        },
+        #[cfg(feature = "dtype-array")]
+        T::Array(inner_dtype, width) => {
+            match initialize_empty_categorical_revmap_rec(inner_dtype) {
+                Cow::Owned(inner_dtype) => Cow::Owned(T::Array(Box::new(inner_dtype), *width)),
+                _ => Cow::Borrowed(dtype),
+            }
+        },
+        #[cfg(feature = "dtype-struct")]
+        T::Struct(fields) => {
+            for (i, field) in fields.iter().enumerate() {
+                if let Cow::Owned(field_dtype) =
+                    initialize_empty_categorical_revmap_rec(field.dtype())
+                {
+                    let mut new_fields = Vec::with_capacity(fields.len());
+                    new_fields.extend(fields[..i].iter().cloned());
+                    new_fields.push(Field::new(field.name().clone(), field_dtype));
+                    new_fields.extend(fields[i + 1..].iter().map(|field| {
+                        let field_dtype =
+                            initialize_empty_categorical_revmap_rec(field.dtype()).into_owned();
+                        Field::new(field.name().clone(), field_dtype)
+                    }));
+                    return Cow::Owned(T::Struct(new_fields));
+                }
+            }
+
+            Cow::Borrowed(dtype)
+        },
+        _ => Cow::Borrowed(dtype),
     }
 }
 
@@ -91,7 +132,12 @@ impl Series {
         strict: bool,
     ) -> PolarsResult<Self> {
         if values.is_empty() {
-            return Ok(Self::new_empty(name, dtype));
+            return Ok(Self::new_empty(
+                name,
+                // This is given categoricals with empty revmaps, but we need to always return
+                // categoricals with non-empty revmaps.
+                initialize_empty_categorical_revmap_rec(dtype).as_ref(),
+            ));
         }
 
         let mut s = match dtype {
@@ -114,6 +160,7 @@ impl Series {
             DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
             DataType::String => any_values_to_string(values, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(values, strict)?.into_series(),
+            DataType::BinaryOffset => any_values_to_binary_offset(values, strict)?.into_series(),
             #[cfg(feature = "dtype-date")]
             DataType::Date => any_values_to_date(values, strict)?.into_series(),
             #[cfg(feature = "dtype-time")]
@@ -140,7 +187,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
             #[cfg(feature = "object")]
-            DataType::Object(_, registry) => any_values_to_object(values, registry)?,
+            DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
             dt => {
                 polars_bail!(
@@ -175,12 +222,12 @@ fn any_values_to_integer<T: PolarsIntegerType>(
                     let opt_val = av.extract::<T::Native>();
                     let val = match opt_val {
                         Some(v) => v,
-                        None => return Err(invalid_value_error(&T::get_dtype(), av)),
+                        None => return Err(invalid_value_error(&T::get_static_dtype(), av)),
                     };
                     builder.append_value(val)
                 },
                 AnyValue::Null => builder.append_null(),
-                av => return Err(invalid_value_error(&T::get_dtype(), av)),
+                av => return Err(invalid_value_error(&T::get_static_dtype(), av)),
             }
         }
         Ok(builder.finish())
@@ -323,6 +370,31 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
     }
 }
 
+fn any_values_to_binary_offset(
+    values: &[AnyValue],
+    strict: bool,
+) -> PolarsResult<BinaryOffsetChunked> {
+    let mut builder = MutableBinaryArray::<i64>::new();
+    for av in values {
+        match av {
+            AnyValue::Binary(s) => builder.push(Some(*s)),
+            AnyValue::BinaryOwned(s) => builder.push(Some(&**s)),
+            AnyValue::Null => builder.push_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Binary, av));
+                } else {
+                    builder.push_null();
+                };
+            },
+        }
+    }
+    Ok(BinaryOffsetChunked::with_chunk(
+        Default::default(),
+        builder.into(),
+    ))
+}
+
 #[cfg(feature = "dtype-date")]
 fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChunked> {
     let mut builder = PrimitiveChunkedBuilder::<Int32Type>::new(PlSmallStr::EMPTY, values.len());
@@ -341,7 +413,7 @@ fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChu
             },
         }
     }
-    Ok(builder.finish().into())
+    Ok(builder.finish().into_date())
 }
 
 #[cfg(feature = "dtype-time")]
@@ -362,7 +434,7 @@ fn any_values_to_time(values: &[AnyValue], strict: bool) -> PolarsResult<TimeChu
             },
         }
     }
-    Ok(builder.finish().into())
+    Ok(builder.finish().into_time())
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -626,7 +698,7 @@ fn any_values_to_list(
         },
 
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => polars_bail!(nyi = "Nested object types"),
+        DataType::Object(_) => polars_bail!(nyi = "Nested object types"),
 
         _ => {
             let list_inner_type = match inner_type {
@@ -864,44 +936,22 @@ fn any_values_to_struct(
 }
 
 #[cfg(feature = "object")]
-fn any_values_to_object(
-    values: &[AnyValue],
-    registry: &Option<Arc<ObjectRegistry>>,
-) -> PolarsResult<Series> {
-    let mut builder = match registry {
-        None => {
-            use crate::chunked_array::object::registry;
-            let converter = registry::get_object_converter();
-            let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
-            for av in values {
-                match av {
-                    AnyValue::Object(val) => builder.append_value(val.as_any()),
-                    AnyValue::Null => builder.append_null(),
-                    _ => {
-                        // This is needed because in Python users can send mixed types.
-                        // This only works if you set a global converter.
-                        let any = converter(av.as_borrowed());
-                        builder.append_value(&*any)
-                    },
-                }
-            }
-            builder
-        },
-        Some(registry) => {
-            let mut builder = (*registry.builder_constructor)(PlSmallStr::EMPTY, values.len());
-            for av in values {
-                match av {
-                    AnyValue::Object(val) => builder.append_value(val.as_any()),
-                    AnyValue::ObjectOwned(val) => builder.append_value(val.0.as_any()),
-                    AnyValue::Null => builder.append_null(),
-                    _ => {
-                        polars_bail!(SchemaMismatch: "expected object");
-                    },
-                }
-            }
-            builder
-        },
-    };
+fn any_values_to_object(values: &[AnyValue]) -> PolarsResult<Series> {
+    use crate::chunked_array::object::registry;
+    let converter = registry::get_object_converter();
+    let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
+    for av in values {
+        match av {
+            AnyValue::Object(val) => builder.append_value(val.as_any()),
+            AnyValue::Null => builder.append_null(),
+            _ => {
+                // This is needed because in Python users can send mixed types.
+                // This only works if you set a global converter.
+                let any = converter(av.as_borrowed());
+                builder.append_value(&*any)
+            },
+        }
+    }
 
     Ok(builder.to_series())
 }

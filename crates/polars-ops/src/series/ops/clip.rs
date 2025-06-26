@@ -8,6 +8,24 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
         s.dtype().to_physical().is_primitive_numeric(),
         InvalidOperation: "`clip` only supports physical numeric types"
     );
+    let n = [s.len(), min.len(), max.len()]
+        .into_iter()
+        .find(|l| *l != 1)
+        .unwrap_or(1);
+
+    for (i, (name, length)) in [("self", s.len()), ("min", min.len()), ("max", max.len())]
+        .into_iter()
+        .enumerate()
+    {
+        polars_ensure!(
+            length == n || length == 1,
+            length_mismatch = "clip",
+            length,
+            n,
+            argument = name,
+            argument_idx = i
+        );
+    }
 
     let original_type = s.dtype();
     let (min, max) = (min.strict_cast(s.dtype())?, max.strict_cast(s.dtype())?);
@@ -41,6 +59,12 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
         s.dtype().to_physical().is_primitive_numeric(),
         InvalidOperation: "`clip` only supports physical numeric types"
     );
+    polars_ensure!(
+        s.len() == max.len() || s.len() == 1 || max.len() == 1,
+        length_mismatch = "clip(max)",
+        s.len(),
+        max.len()
+    );
 
     let original_type = s.dtype();
     let max = max.strict_cast(s.dtype())?;
@@ -68,6 +92,12 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
     polars_ensure!(
         s.dtype().to_physical().is_primitive_numeric(),
         InvalidOperation: "`clip` only supports physical numeric types"
+    );
+    polars_ensure!(
+        s.len() == min.len() || s.len() == 1 || min.len() == 1,
+        length_mismatch = "clip(min)",
+        s.len(),
+        min.len()
     );
 
     let original_type = s.dtype();

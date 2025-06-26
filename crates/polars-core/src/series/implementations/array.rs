@@ -3,10 +3,10 @@ use std::borrow::Cow;
 
 use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
-use super::{private, StatisticsFlags};
+use super::{IsSorted, StatisticsFlags, private};
+use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -112,7 +112,13 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         let idxs = self.arg_sort(options);
-        Ok(unsafe { self.take_unchecked(&idxs) })
+        let mut result = unsafe { self.take_unchecked(&idxs) };
+        result.set_sorted_flag(if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        });
+        Ok(result)
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -164,11 +170,21 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
+    }
+
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        self.0
+            .trim_lists_to_normalized_offsets()
+            .map(IntoSeries::into_series)
+    }
+
+    fn propagate_nulls(&self) -> Option<Series> {
+        self.0.propagate_nulls().map(IntoSeries::into_series)
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
@@ -212,12 +228,20 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        &self.0
     }
 
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

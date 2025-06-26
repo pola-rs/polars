@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 
 use parking_lot::Mutex;
@@ -35,34 +35,6 @@ impl WaitGroup {
         let was_waiting = self.inner.is_waiting.swap(true, Ordering::Relaxed);
         assert!(!was_waiting);
         WaitGroupFuture { inner: &self.inner }.await
-    }
-}
-
-// Wait group with an associated index.
-pub struct IndexedWaitGroup {
-    index: usize,
-    wait_group: WaitGroup,
-}
-
-impl IndexedWaitGroup {
-    pub fn new(index: usize) -> Self {
-        Self {
-            index,
-            wait_group: Default::default(),
-        }
-    }
-
-    pub fn index(&self) -> usize {
-        self.index
-    }
-
-    pub fn token(&self) -> WaitToken {
-        self.wait_group.token()
-    }
-
-    pub async fn wait(self) -> Self {
-        self.wait_group.wait().await;
-        self
     }
 }
 

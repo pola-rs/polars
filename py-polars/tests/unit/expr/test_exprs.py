@@ -234,7 +234,7 @@ def test_list_eval_expression() -> None:
     for parallel in [True, False]:
         assert df.with_columns(
             pl.concat_list(["a", "b"])
-            .list.eval(pl.first().rank(), parallel=parallel)
+            .list.eval(pl.element().rank(), parallel=parallel)
             .alias("rank")
         ).to_dict(as_series=False) == {
             "a": [1, 8, 3],
@@ -243,7 +243,7 @@ def test_list_eval_expression() -> None:
         }
 
         assert df["a"].reshape((1, -1)).arr.to_list().list.eval(
-            pl.first(), parallel=parallel
+            pl.element(), parallel=parallel
         ).to_list() == [[1, 8, 3]]
 
 
@@ -650,3 +650,10 @@ def test_function_expr_scalar_identification_18755() -> None:
         pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
         pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
     )
+
+
+def test_concat_deprecation() -> None:
+    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+        pl.Series(["foo"]).str.concat()
+    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+        pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())

@@ -14,7 +14,7 @@ fn apply_offsets_to_datetime(
         1 => match offsets.get(0) {
             Some(offset) => {
                 let offset = &Duration::parse(offset);
-                if offset.is_constant_duration(datetime.time_zone().as_deref()) {
+                if offset.is_constant_duration(datetime.time_zone().as_ref()) {
                     // fastpath!
                     let mut duration = match datetime.time_unit() {
                         TimeUnit::Milliseconds => offset.duration_ms(),
@@ -24,7 +24,7 @@ fn apply_offsets_to_datetime(
                     if offset.negative() {
                         duration = -duration;
                     }
-                    Ok(datetime.0.clone().wrapping_add_scalar(duration))
+                    Ok(datetime.phys.clone().wrapping_add_scalar(duration))
                 } else {
                     let offset_fn = match datetime.time_unit() {
                         TimeUnit::Milliseconds => Duration::add_ms,
@@ -32,11 +32,11 @@ fn apply_offsets_to_datetime(
                         TimeUnit::Nanoseconds => Duration::add_ns,
                     };
                     datetime
-                        .0
+                        .phys
                         .try_apply_nonnull_values_generic(|v| offset_fn(offset, v, time_zone))
                 }
             },
-            _ => Ok(datetime.0.apply(|_| None)),
+            _ => Ok(datetime.phys.apply(|_| None)),
         },
         _ => {
             let offset_fn = match datetime.time_unit() {
@@ -49,7 +49,7 @@ fn apply_offsets_to_datetime(
                 offset_opt,
             ) {
                 (Some(timestamp), Some(offset)) => {
-                    offset_fn(&Duration::parse(offset), timestamp, time_zone).map(Some)
+                    offset_fn(&Duration::try_parse(offset)?, timestamp, time_zone).map(Some)
                 },
                 _ => Ok(None),
             })
@@ -59,6 +59,14 @@ fn apply_offsets_to_datetime(
 
 pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let offsets = offsets.str()?;
+
+    polars_ensure!(
+        ts.len() == offsets.len() || offsets.len() == 1 || ts.len() == 1,
+        length_mismatch = "dt.offset_by",
+        ts.len(),
+        offsets.len()
+    );
+
     let dtype = ts.dtype();
 
     // Sortedness may not be preserved for non-constant durations,
@@ -72,8 +80,8 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let preserve_sortedness = match offsets.len() {
         1 => match offsets.get(0) {
             Some(offset) => {
-                let offset = Duration::parse(offset);
-                offset.is_constant_duration(tz.as_deref())
+                let offset = Duration::try_parse(offset)?;
+                offset.is_constant_duration(tz.as_ref())
             },
             None => false,
         },
@@ -96,7 +104,7 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
 
             let out = match tz {
                 #[cfg(feature = "timezones")]
-                Some(ref tz) => {
+                Some(tz) => {
                     apply_offsets_to_datetime(datetime, offsets, tz.parse::<Tz>().ok().as_ref())?
                 },
                 _ => apply_offsets_to_datetime(datetime, offsets, None)?,

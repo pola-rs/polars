@@ -89,16 +89,6 @@ impl PhysicalExpr for GatherExpr {
         Ok(ac)
     }
 
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.phys_expr.to_field(input_schema)
     }
@@ -176,7 +166,13 @@ impl GatherExpr {
                 taken.as_list().into_column()
             };
 
-            ac.with_values(taken, true, Some(&self.expr))?;
+            ac.with_values_and_args(taken, true, Some(&self.expr), false, self.returns_scalar)?;
+
+            if self.returns_scalar {
+                ac.with_update_groups(UpdateGroups::No);
+            } else {
+                ac.with_update_groups(UpdateGroups::WithSeriesLen);
+            }
             Ok(ac)
         } else {
             self.gather_aggregated_expensive(ac, idx)
@@ -195,7 +191,7 @@ impl GatherExpr {
             .try_apply_amortized(|s| s.as_ref().take(idx))?;
 
         ac.with_values(out.into_column(), true, Some(&self.expr))?;
-        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 
@@ -243,7 +239,12 @@ impl GatherExpr {
                     };
 
                     ac.with_values(taken, true, Some(&self.expr))?;
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+
+                    if self.returns_scalar {
+                        ac.with_update_groups(UpdateGroups::No);
+                    } else {
+                        ac.with_update_groups(UpdateGroups::WithSeriesLen);
+                    }
                     Ok(ac)
                 },
             }
@@ -278,6 +279,7 @@ impl GatherExpr {
         }
         let out = builder.finish().into_column();
         ac.with_agg_state(AggState::AggregatedList(out));
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 }

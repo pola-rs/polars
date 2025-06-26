@@ -14,36 +14,25 @@ pub(super) fn process_unpivot(
         // restart projection pushdown
         proj_pd.no_pushdown_restart_opt(lp, ctx, lp_arena, expr_arena)
     } else {
-        let (mut acc_projections, mut local_projections, mut projected_names) =
-            split_acc_projections(
-                ctx.acc_projections,
-                lp_arena.get(input).schema(lp_arena).as_ref(),
-                expr_arena,
-                false,
-            );
+        let (acc_projections, mut local_projections, projected_names) = split_acc_projections(
+            ctx.acc_projections,
+            lp_arena.get(input).schema(lp_arena).as_ref(),
+            expr_arena,
+            false,
+        );
 
         if !local_projections.is_empty() {
             local_projections.extend_from_slice(&acc_projections);
         }
+        let mut ctx = ProjectionContext::new(acc_projections, projected_names, ctx.inner);
 
         // make sure that the requested columns are projected
-        args.index.iter().for_each(|name| {
-            add_str_to_accumulated(
-                name.clone(),
-                &mut acc_projections,
-                &mut projected_names,
-                expr_arena,
-            )
-        });
-        args.on.iter().for_each(|name| {
-            add_str_to_accumulated(
-                name.clone(),
-                &mut acc_projections,
-                &mut projected_names,
-                expr_arena,
-            )
-        });
-        let ctx = ProjectionContext::new(acc_projections, projected_names, ctx.inner);
+        args.index
+            .iter()
+            .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
+        args.on
+            .iter()
+            .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
 
         proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 

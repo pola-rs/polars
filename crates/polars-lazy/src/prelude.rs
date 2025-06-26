@@ -10,12 +10,10 @@ pub use polars_io::parquet::write::ParquetWriteOptions;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
 #[cfg(feature = "rank")]
 pub use polars_ops::prelude::{RankMethod, RankOptions};
-#[cfg(feature = "polars_cloud")]
+#[cfg(feature = "polars_cloud_client")]
 pub use polars_plan::client::prepare_cloud_plan;
-pub use polars_plan::plans::{
-    AnonymousScan, AnonymousScanArgs, AnonymousScanOptions, DslPlan, Literal, LiteralValue, Null,
-    NULL,
-};
+pub use polars_plan::dsl::AnonymousScanOptions;
+pub use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, Literal, LiteralValue, NULL, Null};
 pub use polars_plan::prelude::UnionArgs;
 pub(crate) use polars_plan::prelude::*;
 #[cfg(feature = "rolling_window_by")]

@@ -1,15 +1,16 @@
-use std::mem::ManuallyDrop;
+use std::hash::BuildHasher;
 
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars::prelude::*;
+use polars_ffi::version_0::SeriesExport;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::PyList;
-use pyo3::IntoPyObjectExt;
+use pyo3::types::{PyList, PyType};
 
 use self::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use super::PyDataFrame;
@@ -48,50 +49,50 @@ impl PyDataFrame {
             .collect()
     }
 
-    pub fn add(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+    pub fn add(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df + &s.series)
     }
 
-    pub fn sub(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+    pub fn sub(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df - &s.series)
     }
 
-    pub fn mul(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+    pub fn mul(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df * &s.series)
     }
 
-    pub fn div(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+    pub fn div(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df / &s.series)
     }
 
-    pub fn rem(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+    pub fn rem(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df % &s.series)
     }
 
-    pub fn add_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+    pub fn add_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df + &s.df)
     }
 
-    pub fn sub_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+    pub fn sub_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df - &s.df)
     }
 
-    pub fn mul_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+    pub fn mul_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df * &s.df)
     }
 
-    pub fn div_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+    pub fn div_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df / &s.df)
     }
 
-    pub fn rem_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+    pub fn rem_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
         py.enter_polars_df(|| &self.df % &s.df)
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
     pub fn sample_n(
         &self,
-        py: Python,
+        py: Python<'_>,
         n: &PySeries,
         with_replacement: bool,
         shuffle: bool,
@@ -103,7 +104,7 @@ impl PyDataFrame {
     #[pyo3(signature = (frac, with_replacement, shuffle, seed=None))]
     pub fn sample_frac(
         &self,
-        py: Python,
+        py: Python<'_>,
         frac: &PySeries,
         with_replacement: bool,
         shuffle: bool,
@@ -175,14 +176,14 @@ impl PyDataFrame {
         self.df.is_empty()
     }
 
-    pub fn hstack(&self, py: Python, columns: Vec<PySeries>) -> PyResult<Self> {
+    pub fn hstack(&self, py: Python<'_>, columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
         // @scalar-opt
         let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
         py.enter_polars_df(|| self.df.hstack(&columns))
     }
 
-    pub fn hstack_mut(&mut self, py: Python, columns: Vec<PySeries>) -> PyResult<()> {
+    pub fn hstack_mut(&mut self, py: Python<'_>, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = columns.to_series();
         // @scalar-opt
         let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
@@ -190,16 +191,16 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn vstack(&self, py: Python, other: &PyDataFrame) -> PyResult<Self> {
+    pub fn vstack(&self, py: Python<'_>, other: &PyDataFrame) -> PyResult<Self> {
         py.enter_polars_df(|| self.df.vstack(&other.df))
     }
 
-    pub fn vstack_mut(&mut self, py: Python, other: &PyDataFrame) -> PyResult<()> {
+    pub fn vstack_mut(&mut self, py: Python<'_>, other: &PyDataFrame) -> PyResult<()> {
         py.enter_polars(|| self.df.vstack_mut(&other.df))?;
         Ok(())
     }
 
-    pub fn extend(&mut self, py: Python, other: &PyDataFrame) -> PyResult<()> {
+    pub fn extend(&mut self, py: Python<'_>, other: &PyDataFrame) -> PyResult<()> {
         py.enter_polars(|| self.df.extend(&other.df))?;
         Ok(())
     }
@@ -244,17 +245,17 @@ impl PyDataFrame {
         Ok(series)
     }
 
-    pub fn select(&self, py: Python, columns: Vec<PyBackedStr>) -> PyResult<Self> {
+    pub fn select(&self, py: Python<'_>, columns: Vec<PyBackedStr>) -> PyResult<Self> {
         py.enter_polars_df(|| self.df.select(columns.iter().map(|x| &**x)))
     }
 
-    pub fn gather(&self, py: Python, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
+    pub fn gather(&self, py: Python<'_>, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("".into(), indices);
         py.enter_polars_df(|| self.df.take(&indices))
     }
 
-    pub fn gather_with_series(&self, py: Python, indices: &PySeries) -> PyResult<Self> {
+    pub fn gather_with_series(&self, py: Python<'_>, indices: &PySeries) -> PyResult<Self> {
         let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
         py.enter_polars_df(|| self.df.take(indices))
     }
@@ -281,7 +282,7 @@ impl PyDataFrame {
     }
 
     #[pyo3(signature = (offset, length=None))]
-    pub fn slice(&self, py: Python, offset: i64, length: Option<usize>) -> PyResult<Self> {
+    pub fn slice(&self, py: Python<'_>, offset: i64, length: Option<usize>) -> PyResult<Self> {
         py.enter_polars_df(|| {
             Ok(self
                 .df
@@ -289,11 +290,11 @@ impl PyDataFrame {
         })
     }
 
-    pub fn head(&self, py: Python, n: usize) -> PyResult<Self> {
+    pub fn head(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
         py.enter_polars_df(|| Ok(self.df.head(Some(n))))
     }
 
-    pub fn tail(&self, py: Python, n: usize) -> PyResult<Self> {
+    pub fn tail(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
         py.enter_polars_df(|| Ok(self.df.tail(Some(n))))
     }
 
@@ -305,7 +306,7 @@ impl PyDataFrame {
         py.enter_polars_series(|| self.df.is_duplicated())
     }
 
-    pub fn equals(&self, py: Python, other: &PyDataFrame, null_equal: bool) -> PyResult<bool> {
+    pub fn equals(&self, py: Python<'_>, other: &PyDataFrame, null_equal: bool) -> PyResult<bool> {
         if null_equal {
             py.enter_polars_ok(|| self.df.equals_missing(&other.df))
         } else {
@@ -316,7 +317,7 @@ impl PyDataFrame {
     #[pyo3(signature = (name, offset=None))]
     pub fn with_row_index(
         &self,
-        py: Python,
+        py: Python<'_>,
         name: &str,
         offset: Option<IdxSize>,
     ) -> PyResult<Self> {
@@ -380,7 +381,7 @@ impl PyDataFrame {
     #[pyo3(signature = (on, index, value_name=None, variable_name=None))]
     pub fn unpivot(
         &self,
-        py: Python,
+        py: Python<'_>,
         on: Vec<PyBackedStr>,
         index: Vec<PyBackedStr>,
         value_name: Option<&str>,
@@ -401,7 +402,7 @@ impl PyDataFrame {
     #[pyo3(signature = (on, index, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
-        py: Python,
+        py: Python<'_>,
         on: Vec<String>,
         index: Option<Vec<String>>,
         values: Option<Vec<String>>,
@@ -427,7 +428,7 @@ impl PyDataFrame {
 
     pub fn partition_by(
         &self,
-        py: Python,
+        py: Python<'_>,
         by: Vec<String>,
         maintain_order: bool,
         include_key: bool,
@@ -448,21 +449,23 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    #[pyo3(signature = (columns, separator, drop_first=false))]
+    #[pyo3(signature = (columns, separator, drop_first=false, drop_nulls=false))]
     pub fn to_dummies(
         &self,
-        py: Python,
+        py: Python<'_>,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
         drop_first: bool,
+        drop_nulls: bool,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| match columns {
             Some(cols) => self.df.columns_to_dummies(
                 cols.iter().map(|x| x as &str).collect(),
                 separator,
                 drop_first,
+                drop_nulls,
             ),
-            None => self.df.to_dummies(separator, drop_first),
+            None => self.df.to_dummies(separator, drop_first, drop_nulls),
         })
     }
 
@@ -508,20 +511,22 @@ impl PyDataFrame {
 
     pub fn hash_rows(
         &mut self,
-        py: Python,
+        py: Python<'_>,
         k0: u64,
         k1: u64,
         k2: u64,
         k3: u64,
     ) -> PyResult<PySeries> {
-        let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
+        // TODO: don't expose all these seeds.
+        let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
+        let hb = PlSeedableRandomStateQuality::seed_from_u64(seed);
         py.enter_polars_series(|| self.df.hash_rows(Some(hb)))
     }
 
     #[pyo3(signature = (keep_names_as, column_names))]
     pub fn transpose(
         &mut self,
-        py: Python,
+        py: Python<'_>,
         keep_names_as: Option<&str>,
         column_names: &Bound<PyAny>,
     ) -> PyResult<Self> {
@@ -537,7 +542,7 @@ impl PyDataFrame {
 
     pub fn upsample(
         &self,
-        py: Python,
+        py: Python<'_>,
         by: Vec<String>,
         index_column: &str,
         every: &str,
@@ -555,12 +560,12 @@ impl PyDataFrame {
 
     pub fn to_struct(
         &self,
-        py: Python,
+        py: Python<'_>,
         name: &str,
         invalid_indices: Vec<usize>,
     ) -> PyResult<PySeries> {
         py.enter_polars_series(|| {
-            let ca = self.df.clone().into_struct(name.into());
+            let mut ca = self.df.clone().into_struct(name.into());
 
             if !invalid_indices.is_empty() {
                 let mut validity = MutableBitmap::with_capacity(ca.len());
@@ -568,7 +573,7 @@ impl PyDataFrame {
                 for i in invalid_indices {
                     validity.set(i, false);
                 }
-                let ca = ca.rechunk();
+                ca.rechunk_mut();
                 Ok(ca.with_outer_validity(Some(validity.freeze())))
             } else {
                 Ok(ca)
@@ -580,26 +585,46 @@ impl PyDataFrame {
         py.enter_polars_df(|| Ok(self.df.clear()))
     }
 
-    #[allow(clippy::wrong_self_convention)]
-    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
-        // Used for polars-lazy python node. This takes the dataframe from
-        // underneath of you, so don't use this anywhere else.
-        let df = std::mem::take(&mut self.df);
-        let cols = df.take_columns();
-        let mut md_cols = ManuallyDrop::new(cols);
-        let ptr = md_cols.as_mut_ptr();
-        let len = md_cols.len();
-        let cap = md_cols.capacity();
-        (ptr as usize, len, cap)
+    /// Export the columns via polars-ffi
+    /// # Safety
+    /// Needs a preallocated *mut SeriesExport that has allocated space for n_columns.
+    pub unsafe fn _export_columns(&mut self, location: usize) {
+        use polars_ffi::version_0::export_column;
+
+        let cols = self.df.get_columns();
+
+        let location = location as *mut SeriesExport;
+
+        for (i, col) in cols.iter().enumerate() {
+            let e = export_column(col);
+            // SAFETY:
+            // Caller should ensure address is allocated.
+            // Be careful not to drop `e` here as that should be dropped by the ffi consumer
+            unsafe { core::ptr::write(location.add(i), e) };
+        }
+    }
+
+    /// Import [`Self`] via polars-ffi
+    /// # Safety
+    /// [`location`] should be an address that contains [`width`] properly initialized
+    /// [`SeriesExport`]s
+    #[classmethod]
+    pub unsafe fn _import_columns(
+        _cls: &Bound<PyType>,
+        location: usize,
+        width: usize,
+    ) -> PyResult<Self> {
+        use polars_ffi::version_0::import_df;
+
+        let location = location as *mut SeriesExport;
+
+        let df = unsafe { import_df(location, width) }.map_err(PyPolarsErr::from)?;
+        Ok(PyDataFrame { df })
     }
 
     /// Internal utility function to allow direct access to the row encoding from python.
     #[pyo3(signature = (opts))]
-    fn _row_encode<'py>(
-        &'py self,
-        py: Python<'py>,
-        opts: Vec<(bool, bool, bool)>,
-    ) -> PyResult<PySeries> {
+    fn _row_encode(&self, py: Python<'_>, opts: Vec<(bool, bool, bool)>) -> PyResult<PySeries> {
         py.enter_polars_series(|| {
             let name = PlSmallStr::from_static("row_enc");
             let is_unordered = opts.first().is_some_and(|(_, _, v)| *v);

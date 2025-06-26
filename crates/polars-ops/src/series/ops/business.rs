@@ -13,6 +13,7 @@ use crate::prelude::replace_time_zone;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Roll {
     Forward,
     Backward,
@@ -37,6 +38,7 @@ pub fn business_day_count(
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
 
+    // Sort now so we can use `binary_search` in the hot for-loop.
     let holidays = normalise_holidays(holidays, &week_mask);
     let start_dates = start.date()?;
     let end_dates = end.date()?;
@@ -73,15 +75,23 @@ pub fn business_day_count(
                 Int32Chunked::full_null(start_dates.name().clone(), end_dates.len())
             }
         },
-        _ => binary_elementwise_values(start_dates, end_dates, |start_date, end_date| {
-            business_day_count_impl(
-                start_date,
-                end_date,
-                &week_mask,
-                n_business_days_in_week_mask,
-                &holidays,
-            )
-        }),
+        _ => {
+            polars_ensure!(
+                start_dates.len() == end_dates.len(),
+                length_mismatch = "business_day_count",
+                start_dates.len(),
+                end_dates.len()
+            );
+            binary_elementwise_values(start_dates, end_dates, |start_date, end_date| {
+                business_day_count_impl(
+                    start_date,
+                    end_date,
+                    &week_mask,
+                    n_business_days_in_week_mask,
+                    &holidays,
+                )
+            })
+        },
     };
     Ok(out.into_series())
 }
@@ -93,7 +103,7 @@ fn business_day_count_impl(
     mut end_date: i32,
     week_mask: &[bool; 7],
     n_business_days_in_week_mask: i32,
-    holidays: &[i32],
+    holidays: &[i32], // Caller's responsibility to ensure it's sorted.
 ) -> i32 {
     let swapped = start_date > end_date;
     if swapped {
@@ -118,11 +128,7 @@ fn business_day_count_impl(
         start_date += 1;
         start_day_of_week = increment_day_of_week(start_day_of_week);
     }
-    if swapped {
-        -count
-    } else {
-        count
-    }
+    if swapped { -count } else { count }
 }
 
 /// Add a given number of business days.
@@ -195,6 +201,7 @@ pub fn add_business_days(
         _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", start.dtype()),
     }
 
+    // Sort now so we can use `binary_search` in the hot for-loop.
     let holidays = normalise_holidays(holidays, &week_mask);
     let start_dates = start.date()?;
     let n = match &n.dtype() {
@@ -244,23 +251,31 @@ pub fn add_business_days(
                 Int32Chunked::full_null(start_dates.name().clone(), n.len())
             }
         },
-        _ => try_binary_elementwise(start_dates, n, |opt_start_date, opt_n| {
-            match (opt_start_date, opt_n) {
-                (Some(start_date), Some(n)) => {
-                    let (start_date, day_of_week) =
-                        roll_start_date(start_date, roll, &week_mask, &holidays)?;
-                    Ok::<Option<i32>, PolarsError>(Some(add_business_days_impl(
-                        start_date,
-                        day_of_week,
-                        n,
-                        &week_mask,
-                        n_business_days_in_week_mask,
-                        &holidays,
-                    )))
-                },
-                _ => Ok(None),
-            }
-        })?,
+        _ => {
+            polars_ensure!(
+                start_dates.len() == n.len(),
+                length_mismatch = "dt.add_business_days",
+                start_dates.len(),
+                n.len()
+            );
+            try_binary_elementwise(start_dates, n, |opt_start_date, opt_n| {
+                match (opt_start_date, opt_n) {
+                    (Some(start_date), Some(n)) => {
+                        let (start_date, day_of_week) =
+                            roll_start_date(start_date, roll, &week_mask, &holidays)?;
+                        Ok::<Option<i32>, PolarsError>(Some(add_business_days_impl(
+                            start_date,
+                            day_of_week,
+                            n,
+                            &week_mask,
+                            n_business_days_in_week_mask,
+                            &holidays,
+                        )))
+                    },
+                    _ => Ok(None),
+                }
+            })?
+        },
     };
     Ok(out.into_date().into_series())
 }
@@ -273,7 +288,7 @@ fn add_business_days_impl(
     mut n: i32,
     week_mask: &[bool; 7],
     n_business_days_in_week_mask: i32,
-    holidays: &[i32],
+    holidays: &[i32], // Caller's responsibility to ensure it's sorted.
 ) -> i32 {
     if n > 0 {
         let holidays_begin = find_first_ge_index(holidays, date);
@@ -288,7 +303,7 @@ fn add_business_days_impl(
             // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
             if unsafe {
                 (*week_mask.get_unchecked(day_of_week))
-                    && (!holidays[holidays_begin..].contains(&date))
+                    && (holidays[holidays_begin..].binary_search(&date).is_err())
             } {
                 n -= 1;
             }
@@ -307,7 +322,7 @@ fn add_business_days_impl(
             // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
             if unsafe {
                 (*week_mask.get_unchecked(day_of_week))
-                    && (!holidays[..holidays_end].contains(&date))
+                    && (holidays[..holidays_end].binary_search(&date).is_err())
             } {
                 n += 1;
             }
@@ -316,17 +331,64 @@ fn add_business_days_impl(
     }
 }
 
+/// Determine if a day lands on a business day.
+///
+/// # Arguments
+/// - `week_mask`: A boolean array of length 7, where `true` indicates that the day is a business day.
+/// - `holidays`: timestamps that are holidays. Must be provided as i32, i.e. the number of
+///   days since the UNIX epoch.
+pub fn is_business_day(
+    dates: &Series,
+    week_mask: [bool; 7],
+    holidays: &[i32],
+) -> PolarsResult<Series> {
+    if !week_mask.iter().any(|&x| x) {
+        polars_bail!(ComputeError:"`week_mask` must have at least one business day");
+    }
+
+    match dates.dtype() {
+        DataType::Date => {},
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, None) => {
+            return is_business_day(&dates.cast(&DataType::Date)?, week_mask, holidays);
+        },
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => {
+            let dates_local = replace_time_zone(
+                dates.datetime().unwrap(),
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?;
+            return is_business_day(&dates_local.cast(&DataType::Date)?, week_mask, holidays);
+        },
+        _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", dates.dtype()),
+    }
+
+    // Sort now so we can use `binary_search` in the hot for-loop.
+    let holidays = normalise_holidays(holidays, &week_mask);
+    let dates = dates.date()?;
+    let out: BooleanChunked = dates.apply_nonnull_values_generic(DataType::Boolean, |date| {
+        let day_of_week = get_day_of_week(date);
+        // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
+        unsafe { (*week_mask.get_unchecked(day_of_week)) && holidays.binary_search(&date).is_err() }
+    });
+    Ok(out.into_series())
+}
+
 fn roll_start_date(
     mut date: i32,
     roll: Roll,
     week_mask: &[bool; 7],
-    holidays: &[i32],
+    holidays: &[i32], // Caller's responsibility to ensure it's sorted.
 ) -> PolarsResult<(i32, usize)> {
     let mut day_of_week = get_day_of_week(date);
     match roll {
         Roll::Raise => {
             // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
-            if holidays.contains(&date) | unsafe { !*week_mask.get_unchecked(day_of_week) } {
+            if holidays.binary_search(&date).is_ok()
+                | unsafe { !*week_mask.get_unchecked(day_of_week) }
+            {
                 let date = DateTime::from_timestamp(date as i64 * SECONDS_IN_DAY, 0)
                     .unwrap()
                     .format("%Y-%m-%d");
@@ -337,14 +399,18 @@ fn roll_start_date(
         },
         Roll::Forward => {
             // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
-            while holidays.contains(&date) | unsafe { !*week_mask.get_unchecked(day_of_week) } {
+            while holidays.binary_search(&date).is_ok()
+                | unsafe { !*week_mask.get_unchecked(day_of_week) }
+            {
                 date += 1;
                 day_of_week = increment_day_of_week(day_of_week);
             }
         },
         Roll::Backward => {
             // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
-            while holidays.contains(&date) | unsafe { !*week_mask.get_unchecked(day_of_week) } {
+            while holidays.binary_search(&date).is_ok()
+                | unsafe { !*week_mask.get_unchecked(day_of_week) }
+            {
                 date -= 1;
                 day_of_week = decrement_day_of_week(day_of_week);
             }
@@ -378,17 +444,9 @@ fn get_day_of_week(x: i32) -> usize {
 }
 
 fn increment_day_of_week(x: usize) -> usize {
-    if x == 6 {
-        0
-    } else {
-        x + 1
-    }
+    if x == 6 { 0 } else { x + 1 }
 }
 
 fn decrement_day_of_week(x: usize) -> usize {
-    if x == 0 {
-        6
-    } else {
-        x - 1
-    }
+    if x == 0 { 6 } else { x - 1 }
 }

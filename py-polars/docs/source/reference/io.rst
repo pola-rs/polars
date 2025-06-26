@@ -85,6 +85,7 @@ Iceberg
    :toctree: api/
 
    scan_iceberg
+   DataFrame.write_iceberg
 
 JSON
 ~~~~
@@ -98,16 +99,49 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
+
+Partition
+~~~~~~~~~
+Sink to disk with differing partitioning strategies.
+
+.. autosummary::
+   :toctree: api/
+
+   PartitionByKey
+   PartitionMaxSize
+   PartitionParted
+
+.. currentmodule:: polars.io.partition
+
+.. autosummary::
+   :toctree: api/
+
+   KeyedPartition
+   BasePartitionContext
+   KeyedPartitionContext
+
+.. currentmodule:: polars
+
 Parquet
 ~~~~~~~
 .. autosummary::
    :toctree: api/
 
    read_parquet
+   read_parquet_metadata
    read_parquet_schema
    scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
+
+.. currentmodule:: polars.io.parquet
+
+.. autosummary::
+   :toctree: api/
+
+   ParquetFieldOverwrites
+
+.. currentmodule:: polars
 
 PyArrow Datasets
 ~~~~~~~~~~~~~~~~
@@ -129,3 +163,12 @@ Configuration for cloud credential provisioning.
    CredentialProviderAWS
    CredentialProviderAzure
    CredentialProviderGCP
+
+Scan Cast Options
+~~~~~~~~~~~~~~~~~
+Configuration for type-casting during scans.
+
+.. autosummary::
+   :toctree: api/
+
+   ScanCastOptions

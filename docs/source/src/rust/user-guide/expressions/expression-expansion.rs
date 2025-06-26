@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "year_low" => [164.08, 39.23, 324.39, 121.46, 118.35],
     )?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:df]
 
     // --8<-- [start:col-with-names]
@@ -24,19 +24,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_column(
             (cols(["price", "day_high", "day_low", "year_high", "year_low"]) / lit(eur_usd_rate))
-                .round(2),
+                .round(2, RoundMode::default()),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:col-with-names]
 
     // --8<-- [start:expression-list]
     let exprs = [
-        (col("price") / lit(eur_usd_rate)).round(2),
-        (col("day_high") / lit(eur_usd_rate)).round(2),
-        (col("day_low") / lit(eur_usd_rate)).round(2),
-        (col("year_high") / lit(eur_usd_rate)).round(2),
-        (col("year_low") / lit(eur_usd_rate)).round(2),
+        (col("price") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("day_high") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("day_low") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("year_high") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("year_low") / lit(eur_usd_rate)).round(2, RoundMode::default()),
     ];
 
     let result2 = df.clone().lazy().with_columns(exprs).collect()?;
@@ -47,9 +47,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = df
         .clone()
         .lazy()
-        .with_column((dtype_col(&DataType::Float64) / lit(eur_usd_rate)).round(2))
+        .with_column(
+            (dtype_col(&DataType::Float64) / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:col-with-dtype]
 
     // --8<-- [start:col-with-dtypes]
@@ -57,7 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_column(
-            (dtype_cols([DataType::Float32, DataType::Float64]) / lit(eur_usd_rate)).round(2),
+            (dtype_cols([DataType::Float32, DataType::Float64]) / lit(eur_usd_rate))
+                .round(2, RoundMode::default()),
         )
         .collect()?;
     println!("{}", result.equals(&result2));
@@ -70,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([cols(["ticker", "^.*_high$", "^.*_low$"])])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:col-with-regex]
 
     // --8<-- [start:all]
@@ -84,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([all().exclude(["^day_.*$"])])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:all-exclude]
 
     // --8<-- [start:col-exclude]
@@ -93,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([dtype_col(&DataType::Float64).exclude(["^day_.*$"])])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:col-exclude]
 
     // --8<-- [start:duplicate-error]
@@ -108,8 +111,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect();
     match result {
-        Ok(df) => println!("{}", df),
-        Err(e) => println!("{}", e),
+        Ok(df) => println!("{df}"),
+        Err(e) => println!("{e}"),
     };
     // --8<-- [end:duplicate-error]
 
@@ -137,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .suffix("_gbp"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:prefix-suffix]
 
     // --8<-- [start:name-map]
@@ -149,31 +152,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .name()
             .map(|name| Ok(PlSmallStr::from_string(name.to_ascii_uppercase())))])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:name-map]
 
     // --8<-- [start:for-with_columns]
     let mut result = df.clone().lazy();
     for tp in ["day", "year"] {
-        let high = format!("{}_high", tp);
-        let low = format!("{}_low", tp);
-        let aliased = format!("{}_amplitude", tp);
+        let high = format!("{tp}_high");
+        let low = format!("{tp}_low");
+        let aliased = format!("{tp}_amplitude");
         result = result.with_column((col(high) - col(low)).alias(aliased))
     }
     let result = result.collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:for-with_columns]
 
     // --8<-- [start:yield-expressions]
     let mut exprs: Vec<Expr> = vec![];
     for tp in ["day", "year"] {
-        let high = format!("{}_high", tp);
-        let low = format!("{}_low", tp);
-        let aliased = format!("{}_amplitude", tp);
+        let high = format!("{tp}_high");
+        let low = format!("{tp}_low");
+        let aliased = format!("{tp}_amplitude");
         exprs.push((col(high) - col(low)).alias(aliased))
     }
     let result = df.clone().lazy().with_columns(exprs).collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:yield-expressions]
 
     // --8<-- [start:selectors]

@@ -260,4 +260,18 @@ def test_object_polars_dtypes_20572() -> None:
             "e": pl.String(),
         }
     )
-    assert all(dt == pl.Object() for dt in df.schema.dtypes())
+    assert all(dt.is_object() for dt in df.schema.dtypes())
+
+
+def test_err_nested_object() -> None:
+    a = object()
+    df = pl.DataFrame({"obj": [a]})
+
+    def mapper(x: object) -> list[object]:
+        return [x]
+
+    with pytest.raises(ValueError):
+        df.select(pl.col("obj").map_elements(mapper))
+
+    with pytest.raises(ValueError):
+        df.select(pl.col("obj").map_elements(mapper, return_dtype=pl.List(pl.Object)))

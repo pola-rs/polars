@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::Array;
-use arrow::legacy::kernels::rolling;
-use arrow::legacy::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
+use polars_compute::rolling;
+use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
@@ -58,11 +59,7 @@ pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     }
 }
 
-unsafe fn group_nan_max<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
-where
-    T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries,
-{
+unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
@@ -109,7 +106,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from(arr).into_series()
+                ChunkedArray::<T>::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -127,11 +124,7 @@ where
     }
 }
 
-unsafe fn group_nan_min<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
-where
-    T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries,
-{
+unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
@@ -178,7 +171,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from(arr).into_series()
+                ChunkedArray::<T>::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);

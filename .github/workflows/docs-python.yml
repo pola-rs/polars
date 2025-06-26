@@ -16,6 +16,15 @@ on:
   repository_dispatch:
     types:
       - python-release
+  # To build older versions, specify the commit and the version
+  workflow_dispatch:
+    inputs:
+      polars_version:
+        description: 'Specify Polars version (e.g., py-0.20.1)'
+        required: true
+      git_commit:
+        description: 'Which commit to build'
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,9 +33,33 @@ jobs:
   build-python-docs:
     runs-on: ubuntu-latest
     steps:
+      - name: Parse the tag to find the major version of Polars
+        id: version
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
+          regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
+          if [[ $tag =~ $regex ]]; then
+            major=${BASH_REMATCH[1]}
+            minor=${BASH_REMATCH[2]}
+
+            if [[ "$major" == "0" ]]; then
+              version="$major.$minor"  # Keep "0.X" for 0.x.y versions
+            else
+              version="$major"          # Use only major for 1.x.y+
+            fi
+
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "Error: Invalid version format. Cancelling workflow."
+            exit 1
+          fi
+
+      # Chooses the manually given commit if manually triggered.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.client_payload.sha }}
+          ref: ${{ github.event.inputs.git_commit || github.event.client_payload.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -47,8 +80,16 @@ jobs:
       - name: Build Python documentation
         working-directory: py-polars/docs
         env:
-          POLARS_VERSION: ${{ github.event.client_payload.tag || 'main' }}
+          POLARS_VERSION: ${{ github.event.inputs.polars_version || github.event.client_payload.tag || 'main' }}
         run: make html
+
+      - name: Deploy Python docs for latest release version - versioned
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: py-polars/docs/build/html
+          target-folder: api/python/version/${{ steps.version.outputs.version }}
+          single-commit: true
 
       - name: Deploy Python docs for latest development version
         if: github.event_name == 'push' && github.ref_name == 'main'
@@ -58,28 +99,9 @@ jobs:
           target-folder: api/python/dev
           single-commit: true
 
-      - name: Parse the tag to find the major version of Polars
-        id: version
-        if: github.event_name == 'repository_dispatch'
-        shell: bash
-        run: |
-          tag="${{ github.event.client_payload.tag }}"
-          regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
-          [[ $tag =~ $regex ]]
-          version=${BASH_REMATCH[1]}
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy Python docs for latest release version - versioned
-        if: github.event_name == 'repository_dispatch'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: py-polars/docs/build/html
-          target-folder: api/python/version/${{ steps.version.outputs.version }}
-          single-commit: true
-
       - name: Deploy Python docs for latest release version - stable
-        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false'
-        uses: JamesIves/github-pages-deploy-action@v4
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false' || (github.event_name == 'workflow_dispatch' && steps.version.outputs.version == '1') 
+        uses: JamesIves/github-pages-deploy-action@v4 
         with:
           folder: py-polars/docs/build/html
           target-folder: api/python/stable
@@ -87,7 +109,7 @@ jobs:
 
       # Build global docs _after_ this workflow to avoid contention on the gh-pages branch
       - name: Trigger global docs workflow
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' 
         uses: peter-evans/repository-dispatch@v3
         with:
           event-type: python-release-docs

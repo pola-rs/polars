@@ -74,7 +74,7 @@ class PolarsDataset(TensorDataset):  # type: ignore[misc]
     ... )
 
     Create a Dataset from a Polars DataFrame, standardising the dtype and
-    distinguishing the label/feature columns.
+    separating the label/feature columns.
 
     >>> ds = df.to_torch("dataset", label="lbl", dtype=pl.Float32)
     >>> ds  # doctest: +IGNORE_RESULT

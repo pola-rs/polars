@@ -58,7 +58,12 @@ fn compute_keys(
     df: &DataFrame,
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
-    keys.iter().map(|s| s.evaluate(df, state)).collect()
+    let evaluated = keys
+        .iter()
+        .map(|s| s.evaluate(df, state))
+        .collect::<PolarsResult<_>>()?;
+    let df = check_expand_literals(df, keys, evaluated, false, Default::default())?;
+    Ok(df.take_columns())
 }
 
 fn run_partitions(
@@ -149,11 +154,8 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
         Ok(finish(&groups))
     } else {
         let offset = (keys[0].len() / 2) as i64;
-        let keys = keys
-            .iter()
-            .map(|s| s.slice(offset, sample_size))
-            .collect::<Vec<_>>();
-        let df = unsafe { DataFrame::new_no_checks_height_from_first(keys) };
+        let df = unsafe { DataFrame::new_no_checks_height_from_first(keys.to_vec()) };
+        let df = df.slice(offset, sample_size);
         let names = df.get_column_names().into_iter().cloned();
         let gb = df.group_by(names).unwrap();
         Ok(finish(gb.get_groups()))
@@ -232,13 +234,17 @@ fn can_run_partitioned(
                 Ok(true)
             } else {
                 if state.verbose() {
-                    eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                    eprintln!(
+                        "PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION"
+                    );
                 }
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {
             if state.verbose() {
-                eprintln!("estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION")
+                eprintln!(
+                    "estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION"
+                )
             }
             Ok(false)
         } else {

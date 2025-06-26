@@ -1,10 +1,9 @@
 //! Functionality for writing a DataFrame partitioned into multiple files.
 
-use std::path::Path;
-
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::POOL;
+use polars_utils::plpath::PlPathRef;
 use rayon::prelude::*;
 
 use crate::cloud::CloudOptions;
@@ -13,16 +12,16 @@ use crate::parquet::write::ParquetWriteOptions;
 use crate::prelude::IpcWriterOptions;
 use crate::prelude::URL_ENCODE_CHAR_SET;
 use crate::utils::file::try_get_writeable;
-use crate::{is_cloud_url, SerWriter, WriteDataFrameToFile};
+use crate::{SerWriter, WriteDataFrameToFile};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
     fn write_df_to_file(
         &self,
         df: &mut DataFrame,
-        path: &str,
+        addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(path, cloud_options)?;
+        let f = try_get_writeable(addr, cloud_options)?;
         self.to_writer(f).finish(df)?;
         Ok(())
     }
@@ -33,10 +32,10 @@ impl WriteDataFrameToFile for IpcWriterOptions {
     fn write_df_to_file(
         &self,
         df: &mut DataFrame,
-        path: &str,
+        addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
-        let f = try_get_writeable(path, cloud_options)?;
+        let f = try_get_writeable(addr, cloud_options)?;
         self.to_writer(f).finish(df)?;
         Ok(())
     }
@@ -45,7 +44,7 @@ impl WriteDataFrameToFile for IpcWriterOptions {
 /// Write a partitioned parquet dataset. This functionality is unstable.
 pub fn write_partitioned_dataset(
     df: &mut DataFrame,
-    path: &Path,
+    addr: PlPathRef<'_>,
     partition_by: Vec<PlSmallStr>,
     file_write_options: &(dyn WriteDataFrameToFile + Send + Sync),
     cloud_options: Option<&CloudOptions>,
@@ -96,16 +95,15 @@ pub fn write_partitioned_dataset(
         }
     };
 
-    let base_path = path;
-    let is_cloud = is_cloud_url(base_path);
+    let base_path = addr;
     let groups = df.group_by(partition_by)?.take_groups();
 
     let init_part_base_dir = |part_df: &DataFrame| {
         let path_part = get_hive_path_part(part_df);
         let dir = base_path.join(path_part);
 
-        if !is_cloud {
-            std::fs::create_dir_all(&dir)?;
+        if let Some(dir) = dir.as_ref().as_local_path() {
+            std::fs::create_dir_all(dir)?;
         }
 
         PolarsResult::Ok(dir)
@@ -113,7 +111,7 @@ pub fn write_partitioned_dataset(
 
     fn get_path_for_index(i: usize) -> String {
         // Use a fixed-width file name so that it sorts properly.
-        format!("{:08x}.parquet", i)
+        format!("{i:08x}.parquet")
     }
 
     let get_n_files_and_rows_per_file = |part_df: &DataFrame| {
@@ -122,8 +120,8 @@ pub fn write_partitioned_dataset(
         (n_files, rows_per_file)
     };
 
-    let write_part = |mut df: DataFrame, path: &Path| {
-        file_write_options.write_df_to_file(&mut df, path.to_str().unwrap(), cloud_options)?;
+    let write_part = |mut df: DataFrame, addr: PlPathRef| {
+        file_write_options.write_df_to_file(&mut df, addr, cloud_options)?;
         PolarsResult::Ok(())
     };
 
@@ -136,7 +134,10 @@ pub fn write_partitioned_dataset(
         let (n_files, rows_per_file) = get_n_files_and_rows_per_file(&df);
 
         if n_files == 1 {
-            write_part(df.clone(), &dir_path.join(get_path_for_index(0)))
+            write_part(
+                df.clone(),
+                dir_path.as_ref().join(get_path_for_index(0)).as_ref(),
+            )
         } else {
             (0..df.height())
                 .step_by(rows_per_file)
@@ -148,7 +149,10 @@ pub fn write_partitioned_dataset(
                         .into_par_iter()
                         .map(|&(idx, slice_start)| {
                             let df = df.slice(slice_start as i64, rows_per_file);
-                            write_part(df.clone(), &dir_path.join(get_path_for_index(idx)))
+                            write_part(
+                                df.clone(),
+                                dir_path.as_ref().join(get_path_for_index(idx)).as_ref(),
+                            )
                         })
                         .reduce(
                             || PolarsResult::Ok(()),

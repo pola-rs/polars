@@ -452,15 +452,6 @@ def test_ie_join_with_floats(
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def test_raise_on_ambiguous_name() -> None:
-    df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="'join_where' predicate only refers to columns from a single table",
-    ):
-        df.join_where(df, pl.col("id") >= pl.col("id"))
-
-
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
     with pytest.raises(
@@ -570,15 +561,23 @@ def test_ie_join_projection_pd_19005() -> None:
     assert out.shape == (0, 2)
 
 
-def test_raise_invalid_predicate() -> None:
-    left = pl.LazyFrame({"a": [1, 2]}).with_row_index()
-    right = pl.LazyFrame({"b": [1, 2]}).with_row_index()
+def test_single_sided_predicate() -> None:
+    left = pl.LazyFrame({"a": [1, -1, 2]}).with_row_index()
+    right = pl.LazyFrame({"b": [1, 2]})
 
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="'join_where' predicate only refers to columns from a single table",
-    ):
-        left.join_where(right, pl.col.index >= pl.col.a).collect()
+    result = (
+        left.join_where(right, pl.col.index >= pl.col.a)
+        .collect()
+        .sort("index", "a", "b")
+    )
+    expected = pl.DataFrame(
+        {
+            "index": pl.Series([1, 1, 2, 2], dtype=pl.get_index_type()),
+            "a": [-1, -1, 2, 2],
+            "b": [1, 2, 1, 2],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_join_on_strings() -> None:
@@ -662,8 +661,8 @@ def test_join_where_literal_20061() -> None:
     assert df_left.join_where(
         df_right,
         pl.col("value_left") > pl.col("value_right"),
-        pl.col("flag_right").cast(pl.Int32) == 1,
-    ).sort("id").to_dict(as_series=False) == {
+        pl.col("flag_right") == pl.lit(1, dtype=pl.Int8),
+    ).sort(pl.all()).to_dict(as_series=False) == {
         "id": [1, 2, 3, 3],
         "value_left": [10, 20, 30, 30],
         "flag": [1, 0, 1, 1],

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
@@ -78,6 +79,10 @@ impl RowEncodingOptions {
         Self::NO_ORDER
     }
 
+    pub fn is_ordered(self) -> bool {
+        !self.contains(Self::NO_ORDER)
+    }
+
     pub fn null_sentinel(self) -> u8 {
         if self.contains(Self::NULLS_LAST) {
             0xFF
@@ -124,6 +129,15 @@ impl RowEncodingOptions {
         } else {
             EMPTY_STR_TOKEN
         }
+    }
+
+    pub fn into_nested(mut self) -> RowEncodingOptions {
+        // Correct nested ordering (see #22557)
+        self.set(
+            RowEncodingOptions::NULLS_LAST,
+            self.contains(RowEncodingOptions::DESCENDING),
+        );
+        self
     }
 }
 

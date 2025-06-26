@@ -1,16 +1,17 @@
 use bytemuck::Zeroable;
 use polars_utils::no_call_const;
 
-use super::growable::{Growable, GrowableFixedSizeList};
 use crate::array::binview::BinaryViewValueIter;
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder, make_builder};
+use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray,
     FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray, PrimitiveArray,
     StructArray, Utf8Array, Utf8ValuesIter, Utf8ViewArray,
 };
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::datatypes::ArrowDataType;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
@@ -94,7 +95,7 @@ pub trait StaticArray:
     fn full_null(length: usize, dtype: ArrowDataType) -> Self;
 
     fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
-        Self::arr_from_iter_with_dtype(dtype, std::iter::repeat(value).take(length))
+        Self::arr_from_iter_with_dtype(dtype, std::iter::repeat_n(value, length))
     }
 }
 
@@ -394,10 +395,11 @@ impl StaticArray for FixedSizeListArray {
     }
 
     fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
-        let singular_arr = FixedSizeListArray::new(dtype, 1, value, None);
-        let mut arr = GrowableFixedSizeList::new(vec![&singular_arr], false, length);
-        unsafe { arr.extend_copies(0, 0, 1, length) }
-        arr.into()
+        let singular_arr = FixedSizeListArray::new(dtype.clone(), 1, value, None);
+        let inner_dt = dtype.inner_dtype().unwrap();
+        let mut builder = FixedSizeListArrayBuilder::new(dtype.clone(), make_builder(inner_dt));
+        builder.subslice_extend_repeated(&singular_arr, 0, 1, length, ShareStrategy::Always);
+        builder.freeze()
     }
 }
 
