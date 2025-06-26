@@ -130,7 +130,9 @@ impl IRListFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
-            Zip => mapper.with_dtype(DataType::List(Box::new(DataType::Struct(mapper.args().to_vec()))))
+            Zip => mapper.with_dtype(DataType::List(Box::new(DataType::Struct(
+                mapper.args().to_vec(),
+            )))),
         }
     }
 
@@ -323,7 +325,7 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
-            Zip => map_as_slice!(zip)
+            Zip => map_as_slice!(zip),
         }
     }
 }

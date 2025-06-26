@@ -1104,12 +1104,6 @@ class ListNameSpace:
             Other list expressions to zip with. Can be list columns or expressions
             that evaluate to lists.
 
-        Returns
-        -------
-        Series
-            Series with a list of structs, where each struct contains the 
-            corresponding elements from the input lists.
-
         Examples
         --------
         >>> s1 = pl.Series("a", [[1, 2], [3], None, [None]])

@@ -1418,11 +1418,10 @@ def test_list_zip_mixed_types() -> None:
 
 def test_list_zip_series_comprehensive() -> None:
     """Comprehensive tests for Series.list.zip method including edge cases."""
-    
     # Test with null series
     s1 = pl.Series("a", [[1, 2], None, [3]])
     s2 = pl.Series("b", [["x", "y"], ["a", "b"], None])
-    
+
     result = s1.list.zip(s2)
     expected = pl.Series(
         "a",
@@ -1433,11 +1432,11 @@ def test_list_zip_series_comprehensive() -> None:
         ],
     )
     assert_series_equal(result, expected)
-    
+
     # Test with single element lists
     s1 = pl.Series("single", [[1], [2], [3]])
     s2 = pl.Series("single2", [["a"], ["b"], ["c"]])
-    
+
     result = s1.list.zip(s2)
     expected = pl.Series(
         "single",
@@ -1448,11 +1447,11 @@ def test_list_zip_series_comprehensive() -> None:
         ],
     )
     assert_series_equal(result, expected)
-    
+
     # Test with lists containing None values
     s1 = pl.Series("with_none", [[1, None, 3], [None], [4]])
     s2 = pl.Series("with_none2", [["a", "b", None], ["c"], [None]])
-    
+
     result = s1.list.zip(s2)
     expected = pl.Series(
         "with_none",
@@ -1467,11 +1466,11 @@ def test_list_zip_series_comprehensive() -> None:
         ],
     )
     assert_series_equal(result, expected)
-    
+
     # Test zipping series with different names
     s1 = pl.Series("first_series", [[1, 2], [3]])
     s2 = pl.Series("second_series", [["x", "y"], ["z"]])
-    
+
     result = s1.list.zip(s2)
     # Result should keep the name of the first series
     assert result.name == "first_series"
@@ -1489,7 +1488,7 @@ def test_list_zip_series_mismatched_lengths() -> None:
     """Test Series.list.zip with mismatched inner list lengths."""
     s1 = pl.Series("long", [[1, 2, 3, 4, 5], [6]])
     s2 = pl.Series("short", [["a", "b"], ["c", "d", "e"]])
-    
+
     result = s1.list.zip(s2)
     expected = pl.Series(
         "long",
