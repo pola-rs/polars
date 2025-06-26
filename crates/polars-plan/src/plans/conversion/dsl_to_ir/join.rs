@@ -242,7 +242,7 @@ pub fn resolve_join(
         };
     }
 
-    // As an optimization, when inserting casts we only insert them beforehand for full-join.
+    // As an optimization, when inserting casts for coalescing joins we only insert them beforehand for full-join.
     // This means for e.g. left-join, the LHS key preserves its dtype in the output even if it is joined
     // with an RHS key of wider type.
     let key_cols_coalesced =
