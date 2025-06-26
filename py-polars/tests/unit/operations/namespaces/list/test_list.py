@@ -1414,3 +1414,88 @@ def test_list_zip_mixed_types() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_list_zip_series_comprehensive() -> None:
+    """Comprehensive tests for Series.list.zip method including edge cases."""
+    
+    # Test with null series
+    s1 = pl.Series("a", [[1, 2], None, [3]])
+    s2 = pl.Series("b", [["x", "y"], ["a", "b"], None])
+    
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "a",
+        [
+            [{"field_0": 1, "field_1": "x"}, {"field_0": 2, "field_1": "y"}],
+            None,
+            None,
+        ],
+    )
+    assert_series_equal(result, expected)
+    
+    # Test with single element lists
+    s1 = pl.Series("single", [[1], [2], [3]])
+    s2 = pl.Series("single2", [["a"], ["b"], ["c"]])
+    
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "single",
+        [
+            [{"field_0": 1, "field_1": "a"}],
+            [{"field_0": 2, "field_1": "b"}],
+            [{"field_0": 3, "field_1": "c"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+    
+    # Test with lists containing None values
+    s1 = pl.Series("with_none", [[1, None, 3], [None], [4]])
+    s2 = pl.Series("with_none2", [["a", "b", None], ["c"], [None]])
+    
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "with_none",
+        [
+            [
+                {"field_0": 1, "field_1": "a"},
+                {"field_0": None, "field_1": "b"},
+                {"field_0": 3, "field_1": None},
+            ],
+            [{"field_0": None, "field_1": "c"}],
+            [{"field_0": 4, "field_1": None}],
+        ],
+    )
+    assert_series_equal(result, expected)
+    
+    # Test zipping series with different names
+    s1 = pl.Series("first_series", [[1, 2], [3]])
+    s2 = pl.Series("second_series", [["x", "y"], ["z"]])
+    
+    result = s1.list.zip(s2)
+    # Result should keep the name of the first series
+    assert result.name == "first_series"
+    expected = pl.Series(
+        "first_series",
+        [
+            [{"field_0": 1, "field_1": "x"}, {"field_0": 2, "field_1": "y"}],
+            [{"field_0": 3, "field_1": "z"}],
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
+def test_list_zip_series_mismatched_lengths() -> None:
+    """Test Series.list.zip with mismatched inner list lengths."""
+    s1 = pl.Series("long", [[1, 2, 3, 4, 5], [6]])
+    s2 = pl.Series("short", [["a", "b"], ["c", "d", "e"]])
+    
+    result = s1.list.zip(s2)
+    expected = pl.Series(
+        "long",
+        [
+            [{"field_0": 1, "field_1": "a"}, {"field_0": 2, "field_1": "b"}],
+            [{"field_0": 6, "field_1": "c"}],
+        ],
+    )
+    assert_series_equal(result, expected)

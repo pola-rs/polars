@@ -1089,3 +1089,51 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+    def zip(self, *others: IntoExpr) -> Series:
+        """
+        Zip lists together element-wise into structs.
+
+        This combines elements from multiple lists position-wise into struct values.
+        Lists are aligned element-by-element, and the resulting list length is
+        determined by the shortest input list.
+
+        Parameters
+        ----------
+        *others
+            Other list expressions to zip with. Can be list columns or expressions
+            that evaluate to lists.
+
+        Returns
+        -------
+        Series
+            Series with a list of structs, where each struct contains the 
+            corresponding elements from the input lists.
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [[1, 2], [3], None, [None]])
+        >>> s2 = pl.Series("b", [[10, 20], [30, 35], [40], [35]])
+        >>> s1.list.zip(s2)
+        shape: (4,)
+        Series: 'a' [list[struct[2]]]
+        [
+            [{1,10}, {2,20}]
+            [{3,30}]
+            null
+            [{null,35}]
+        ]
+
+        Zip with multiple lists:
+
+        >>> s1 = pl.Series("a", [[1, 2], [3]])
+        >>> s2 = pl.Series("b", [[10, 20], [30]])
+        >>> s3 = pl.Series("c", [[100, 200], [300]])
+        >>> s1.list.zip(s2, s3)
+        shape: (2,)
+        Series: 'a' [list[struct[3]]]
+        [
+            [{1,10,100}, {2,20,200}]
+            [{3,30,300}]
+        ]
+        """
