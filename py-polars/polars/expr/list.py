@@ -1434,7 +1434,7 @@ class ExprListNameSpace:
 
     def pad_start(self, length: IntoExpr, fill_value: IntoExpr) -> Expr:
         """
-        Pad the start of each list with the given value until it reaches the given length.
+        Pad the start of each list with fill_value until it reaches the given length.
 
         Parameters
         ----------
@@ -1453,31 +1453,27 @@ class ExprListNameSpace:
         >>> df = pl.DataFrame({"a": [[1], [], [1, 2, 3]]})
         >>> df.select(pl.col("a").list.pad_start(3, 0))
         shape: (3, 1)
-        ┌─────────────┐
-        │ a           │
-        │ ---         │
-        │ list[i64]   │
-        ╞═════════════╡
-        │ [0, 0, 1]   │
-        │ [0, 0, 0]   │
-        │ [1, 2, 3]   │
-        └─────────────┘
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [0, 0, 1] │
+        │ [0, 0, 0] │
+        │ [1, 2, 3] │
+        └───────────┘
 
-        >>> df = pl.DataFrame({
-        ...     "a": [[1], [], [1, 2, 3]], 
-        ...     "fill": [0, 999, 2]
-        ... })
-        >>> df.select(pl.col("a").list.pad_start(4, pl.col("fill")))
+        >>> df = pl.DataFrame({"a": [[1], [], [1, 2, 3]], "fill": [0, 999, 2]})
+        >>> df.select(pl.col("a").list.pad_start(3, pl.col("fill")))
         shape: (3, 1)
         ┌─────────────────┐
         │ a               │
         │ ---             │
         │ list[i64]       │
         ╞═════════════════╡
-        │ [0, 0, 0, 1]    │
-        │ [999, 999, 999, │
-        │ 999]            │
-        │ [2, 1, 2, 3]    │
+        │ [0, 0, 1]       │
+        │ [999, 999, 999] │
+        │ [1, 2, 3]       │
         └─────────────────┘
 
         >>> df = pl.DataFrame({"a": [[1, 2], [3]]})
@@ -1493,9 +1489,7 @@ class ExprListNameSpace:
         └─────────────────┘
 
         >>> df = pl.DataFrame({"a": [["a"], [], ["b", "c", "d"]]})
-        >>> df.select(
-        ...     pl.col("a").list.pad_start(pl.col("a").list.len().max(), "foo")
-        ... )
+        >>> df.select(pl.col("a").list.pad_start(pl.col("a").list.len().max(), "foo"))
         shape: (3, 1)
         ┌───────────────────────┐
         │ a                     │

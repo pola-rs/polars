@@ -312,7 +312,7 @@ impl ListNameSpace {
     pub fn pad_start(self, length: Expr, fill_value: Expr) -> Expr {
         self.0.map_ternary(
             FunctionExpr::ListExpr(ListFunction::PadStart),
-            length, 
+            length,
             fill_value,
         )
     }

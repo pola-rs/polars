@@ -62,7 +62,7 @@ pub enum IRListFunction {
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
     #[cfg(feature = "list_pad")]
-    PadStart
+    PadStart,
 }
 
 impl IRListFunction {
@@ -188,7 +188,7 @@ impl IRListFunction {
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(ListToStructArgs::InferWidth { .. }) => FunctionOptions::groupwise(),
             #[cfg(feature = "list_pad")]
-            L::PadStart => FunctionOptions::elementwise()
+            L::PadStart => FunctionOptions::elementwise(),
         }
     }
 }

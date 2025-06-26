@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -70,9 +70,7 @@ def test_list_pad_start_no_slice() -> None:
 def test_list_pad_start_with_expr_length() -> None:
     df = pl.DataFrame({"a": [[1], [], [1, 2, 3]], "length": [2, 2, 4]})
     result = df.select(
-        length_expr=pl.col("a").list.pad_start(
-            pl.col("a").list.len().max(), 999
-        ),
+        length_expr=pl.col("a").list.pad_start(pl.col("a").list.len().max(), 999),
         length_col=pl.col("a").list.pad_start(pl.col("length"), 999),
     )
     expected = pl.DataFrame(
@@ -110,7 +108,5 @@ def test_list_pad_start_errors() -> None:
         df.select(pl.col("a").list.pad_start(2))  # type: ignore[call-arg]
     with pytest.raises(InvalidOperationError, match="to String not supported"):
         df.select(pl.col("a").list.pad_start(2, timedelta(days=1)))
-    with pytest.raises(
-        InvalidOperationError, match="negative length not supported"
-    ):
+    with pytest.raises(InvalidOperationError, match="negative length not supported"):
         df.select(pl.col("a").list.pad_start(-1, "foo"))

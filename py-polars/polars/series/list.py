@@ -1092,7 +1092,7 @@ class ListNameSpace:
 
     def pad_start(self, length: int | IntoExprColumn, fill_value: IntoExpr) -> Series:
         """
-        Pad the start of each list with the given value until it reaches the given length.
+        Pad the start of each list with fill_value until it reaches the given length.
 
         Parameters
         ----------

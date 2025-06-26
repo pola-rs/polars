@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -599,8 +599,13 @@ pub trait ListNameSpaceImpl: AsList {
         let fill_value = fill_value.cast(&super_type)?;
 
         let fill_value_series = fill_value.as_materialized_series();
-        let mut builder = get_list_builder(&super_type, ca.get_values_size() + 1000, ca.len(), ca.name().clone());
-        
+        let mut builder = get_list_builder(
+            &super_type,
+            ca.get_values_size() + 1000,
+            ca.len(),
+            ca.name().clone(),
+        );
+
         for (idx, opt_s) in ca.iter().enumerate() {
             let target_length = match length.next().unwrap() {
                 Some(len) => len as usize,
@@ -608,13 +613,13 @@ pub trait ListNameSpaceImpl: AsList {
                     return Err(PolarsError::InvalidOperation(
                         "negative length not supported".into(),
                     ));
-                }
+                },
             };
-            
+
             match opt_s {
                 Some(s) => {
-                    let s_series = unsafe { Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![s.clone()], &ca.inner_dtype()) };
-                    
+                    let s_series = Series::from_arrow(PlSmallStr::EMPTY, s)?;
+
                     match target_length.cmp(&s_series.len()) {
                         Ordering::Equal | Ordering::Less => {
                             let s_casted = s_series.cast(&super_type).unwrap();
@@ -622,12 +627,17 @@ pub trait ListNameSpaceImpl: AsList {
                         },
                         Ordering::Greater => {
                             let pad_count = target_length - s_series.len();
-                            
+
                             let fill_val = fill_value_series.get(idx).unwrap();
-                            let fill_series = Series::from_any_values(PlSmallStr::EMPTY, &vec![fill_val; pad_count], false).unwrap();
-                            
+                            let fill_series = Series::from_any_values(
+                                PlSmallStr::EMPTY,
+                                &vec![fill_val; pad_count],
+                                false,
+                            )
+                            .unwrap();
+
                             let s_casted = s_series.cast(&super_type).unwrap();
-                            
+
                             let mut result = fill_series;
                             result.append(&s_casted).unwrap();
                             builder.append_series(&result).unwrap();
@@ -639,7 +649,7 @@ pub trait ListNameSpaceImpl: AsList {
                 },
             }
         }
-        
+
         let out = builder.finish();
 
         let final_dtype = DataType::List(Box::new(super_type));
