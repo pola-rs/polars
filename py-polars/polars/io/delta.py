@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from polars._utils.unstable import issue_unstable_warning
 from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
+from polars.io.scan_options import ScanCastOptions
 from polars.schema import Schema
 
 if TYPE_CHECKING:
@@ -172,6 +174,7 @@ def scan_delta(
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     rechunk: bool | None = None,
+    cast_options: ScanCastOptions | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -213,6 +216,13 @@ def scan_delta(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+    cast_options
+        Configuration for column type-casting during scans. Useful for datasets
+        containing files that have differing schemas.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -342,6 +352,10 @@ def scan_delta(
         msg = "To make use of pyarrow_options, set use_pyarrow to True"
         raise ValueError(msg)
 
+    if cast_options is not None:
+        msg = "The `cast_options` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     from deltalake.exceptions import DeltaProtocolError
     from deltalake.table import (
         MAX_SUPPORTED_READER_VERSION,
@@ -409,6 +423,7 @@ def scan_delta(
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         rechunk=rechunk or False,
+        cast_options=cast_options,
     )
 
 
