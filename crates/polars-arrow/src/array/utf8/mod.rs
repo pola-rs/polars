@@ -123,12 +123,12 @@ impl<O: Offset> Utf8Array<O> {
     }
 
     /// Returns an iterator of `Option<&str>`
-    pub fn iter(&self) -> ZipValidity<&str, Utf8ValuesIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&str, Utf8ValuesIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity())
     }
 
     /// Returns an iterator of `&str`
-    pub fn values_iter(&self) -> Utf8ValuesIter<O> {
+    pub fn values_iter(&self) -> Utf8ValuesIter<'_, O> {
         Utf8ValuesIter::new(self)
     }
 

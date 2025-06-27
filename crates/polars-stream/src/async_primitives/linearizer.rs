@@ -21,6 +21,7 @@ impl<T: Ord> PartialEq for LinearedItem<T> {
 }
 impl<T: Ord> Eq for LinearedItem<T> {}
 impl<T: Ord> PartialOrd for LinearedItem<T> {
+    #[allow(clippy::non_canonical_partial_ord_impl)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.value.cmp(&other.value))
     }

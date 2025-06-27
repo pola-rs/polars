@@ -188,7 +188,7 @@ impl MutableBitmap {
     }
 
     /// constructs a new iterator over the bits of [`MutableBitmap`].
-    pub fn iter(&self) -> BitmapIter {
+    pub fn iter(&self) -> BitmapIter<'_> {
         BitmapIter::new(&self.buffer, 0, self.length)
     }
 
@@ -377,12 +377,12 @@ impl MutableBitmap {
     /// Returns an iterator over bits in bit chunks [`BitChunk`].
     ///
     /// This iterator is useful to operate over multiple bits via e.g. bitwise.
-    pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
+    pub fn chunks<T: BitChunk>(&self) -> BitChunks<'_, T> {
         BitChunks::new(&self.buffer, 0, self.length)
     }
 
     /// Returns an iterator over mutable slices, [`BitChunksExactMut`]
-    pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
+    pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<'_, T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
     }
 

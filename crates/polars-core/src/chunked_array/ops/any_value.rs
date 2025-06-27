@@ -143,7 +143,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
 
 #[cfg(feature = "dtype-struct")]
 impl<'a> AnyValue<'a> {
-    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue> {
+    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue<'_>> {
         match self {
             AnyValue::Struct(idx, arr, flds) => {
                 let idx = *idx;
@@ -227,66 +227,66 @@ where
     T: PolarsNumericType,
 {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for BooleanChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for StringChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for BinaryChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for BinaryOffsetChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for ListChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
@@ -294,11 +294,11 @@ impl ChunkAnyValue for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkAnyValue for ArrayChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
@@ -306,25 +306,25 @@ impl ChunkAnyValue for ArrayChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         match self.get_object_unchecked(index) {
             None => AnyValue::Null,
             Some(v) => AnyValue::Object(v),
         }
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for NullChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, _index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, _index: usize) -> AnyValue<'_> {
         AnyValue::Null
     }
 
-    fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue<'_>> {
         Ok(AnyValue::Null)
     }
 }

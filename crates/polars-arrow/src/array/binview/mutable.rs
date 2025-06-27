@@ -585,7 +585,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> MutableBinaryViewValueIter<T> {
+    pub fn values_iter(&self) -> MutableBinaryViewValueIter<'_, T> {
         MutableBinaryViewValueIter::new(self)
     }
 

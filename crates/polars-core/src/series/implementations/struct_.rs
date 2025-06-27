@@ -14,7 +14,7 @@ impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {
 }
 
 impl PrivateSeries for SeriesWrap<StructChunked> {
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
 
@@ -91,7 +91,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.rename(name)
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
 
@@ -176,7 +176,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.cast_with_options(dtype, cast_options)
     }
 
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 

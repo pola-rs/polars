@@ -438,7 +438,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Returns an iterator over the lengths of the chunks of the array.
-    pub fn chunk_lengths(&self) -> ChunkLenIter {
+    pub fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 

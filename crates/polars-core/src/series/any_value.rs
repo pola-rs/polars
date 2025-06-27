@@ -22,7 +22,7 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     }
 }
 
-fn initialize_empty_categorical_revmap_rec(dtype: &DataType) -> Cow<DataType> {
+fn initialize_empty_categorical_revmap_rec(dtype: &DataType) -> Cow<'_, DataType> {
     use DataType as T;
     match dtype {
         #[cfg(feature = "dtype-categorical")]

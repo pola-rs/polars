@@ -166,7 +166,7 @@ impl<'a> BitMask<'a> {
         self.len - self.unset_bits()
     }
 
-    pub fn fast_iter_u56(&self) -> FastU56BitmapIter {
+    pub fn fast_iter_u56(&self) -> FastU56BitmapIter<'_> {
         FastU56BitmapIter::new(self.bytes, self.offset, self.len)
     }
 
@@ -306,7 +306,7 @@ impl<'a> BitMask<'a> {
         }
     }
 
-    pub fn iter(&self) -> BitmapIter {
+    pub fn iter(&self) -> BitmapIter<'_> {
         BitmapIter::new(self.bytes, self.offset, self.len)
     }
 }

@@ -187,7 +187,7 @@ impl<'py> FromPyObject<'py> for SinkTarget {
 }
 
 impl SinkTarget {
-    pub fn base_path(&self) -> Option<PlPathRef> {
+    pub fn base_path(&self) -> Option<PlPathRef<'_>> {
         match self {
             Self::File(t) => match t {
                 polars::prelude::SinkTarget::Path(p) => Some(p.as_ref()),

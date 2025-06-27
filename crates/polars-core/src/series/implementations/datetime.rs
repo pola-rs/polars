@@ -21,7 +21,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Owned(self.0.field())
     }
     fn _dtype(&self) -> &DataType {
@@ -155,7 +155,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
     fn name(&self) -> &PlSmallStr {
@@ -286,7 +286,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 
