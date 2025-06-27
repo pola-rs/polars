@@ -29,7 +29,7 @@ def _patched_cloud(
 
         from polars_cloud import ComputeContext, ComputeContextStatus, InteractiveQuery
 
-        TIMEOUT_SECS = 4
+        TIMEOUT_SECS = 20
 
         T = TypeVar("T")
 
