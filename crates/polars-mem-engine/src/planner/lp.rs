@@ -398,23 +398,6 @@ fn create_physical_plan_impl(
             let mut streamable =
                 is_elementwise_rec(predicate.node(), expr_arena);
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            if streamable {
-                // This can cause problems with string caches
-                streamable = !input_schema
-                    .iter_values()
-                    .any(|dt| dt.contains_categoricals())
-                    || {
-                        #[cfg(feature = "dtype-categorical")]
-                        {
-                            polars_core::using_string_cache()
-                        }
-
-                        #[cfg(not(feature = "dtype-categorical"))]
-                        {
-                            false
-                        }
-                    }
-            }
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true);
             let predicate = create_physical_expr(
