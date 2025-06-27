@@ -170,7 +170,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     }
 
     /// Returns an iterator of `&[u8]`
-    pub fn iter(&self) -> ArrayValuesIter<Self> {
+    pub fn iter(&self) -> ArrayValuesIter<'_, Self> {
         ArrayValuesIter::new(self)
     }
 

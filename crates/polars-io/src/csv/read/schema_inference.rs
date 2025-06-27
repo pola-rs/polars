@@ -169,7 +169,7 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
 }
 
 #[inline]
-fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> PolarsResult<Cow<str>> {
+fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> PolarsResult<Cow<'_, str>> {
     Ok(match encoding {
         CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
             .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence"))?

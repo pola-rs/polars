@@ -50,7 +50,7 @@ impl fmt::Display for PlCloudPath {
 }
 
 impl PlCloudPath {
-    pub fn as_ref(&self) -> PlCloudPathRef {
+    pub fn as_ref(&self) -> PlCloudPathRef<'_> {
         PlCloudPathRef {
             scheme: self.scheme,
             uri: self.uri.as_ref(),
@@ -175,7 +175,7 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn as_cloud_addr(&self) -> Option<PlCloudPathRef> {
+    pub fn as_cloud_addr(&self) -> Option<PlCloudPathRef<'_>> {
         match self {
             Self::Local(_) => None,
             Self::Cloud(p) => Some(*p),
@@ -212,7 +212,7 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn display(&self) -> AddressDisplay {
+    pub fn display(&self) -> AddressDisplay<'_> {
         AddressDisplay { addr: *self }
     }
 
@@ -345,7 +345,7 @@ impl PlPath {
         PlPathRef::new(uri).into_owned()
     }
 
-    pub fn display(&self) -> AddressDisplay {
+    pub fn display(&self) -> AddressDisplay<'_> {
         AddressDisplay {
             addr: match self {
                 Self::Local(p) => PlPathRef::Local(p.as_ref()),
@@ -366,7 +366,7 @@ impl PlPath {
         Self::new(&uri)
     }
 
-    pub fn as_ref(&self) -> PlPathRef {
+    pub fn as_ref(&self) -> PlPathRef<'_> {
         match self {
             Self::Local(p) => PlPathRef::Local(p.as_ref()),
             Self::Cloud(p) => PlPathRef::Cloud(p.as_ref()),

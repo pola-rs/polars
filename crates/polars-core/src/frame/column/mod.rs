@@ -181,7 +181,7 @@ impl Column {
     }
 
     #[inline]
-    pub fn field(&self) -> Cow<Field> {
+    pub fn field(&self) -> Cow<'_, Field> {
         match self {
             Column::Series(s) => s.field(),
             Column::Partitioned(s) => s.field(),
@@ -1420,7 +1420,7 @@ impl Column {
     }
 
     #[inline]
-    pub fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+    pub fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(index < self.len(), oob = index, self.len());
 
         // SAFETY: Bounds check done just before.
@@ -1430,7 +1430,7 @@ impl Column {
     ///
     /// Does not perform bounds check on `index`
     #[inline(always)]
-    pub unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    pub unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         debug_assert!(index < self.len());
 
         match self {
@@ -1483,7 +1483,7 @@ impl Column {
         }
     }
 
-    pub(crate) fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
+    pub(crate) fn str_value(&self, index: usize) -> PolarsResult<Cow<'_, str>> {
         Ok(self.get(index)?.str_value())
     }
 

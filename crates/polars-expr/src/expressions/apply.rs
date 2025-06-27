@@ -94,7 +94,7 @@ impl ApplyExpr {
         Ok(ac)
     }
 
-    fn get_input_schema(&self, _df: &DataFrame) -> Cow<Schema> {
+    fn get_input_schema(&self, _df: &DataFrame) -> Cow<'_, Schema> {
         Cow::Borrowed(self.input_schema.as_ref())
     }
 

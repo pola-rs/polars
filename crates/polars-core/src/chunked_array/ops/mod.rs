@@ -76,10 +76,10 @@ pub trait ChunkAnyValue {
     ///
     /// # Safety
     /// Does not do any bounds checking.
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue;
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_>;
 
     /// Get a single value. Beware this is slow.
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>>;
 }
 
 /// Explode/flatten a List or String Series

@@ -219,7 +219,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     }
 
     /// Returns an iterator of `&str`
-    pub fn iter(&self) -> ArrayValuesIter<Self> {
+    pub fn iter(&self) -> ArrayValuesIter<'_, Self> {
         ArrayValuesIter::new(self)
     }
 

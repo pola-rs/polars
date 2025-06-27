@@ -559,7 +559,7 @@ fn decode_nested(
 }
 
 /// Return the definition and repetition level iterators for this page.
-fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDecoder)> {
+fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder<'_>, HybridRleDecoder<'_>)> {
     let split = split_buffer(page)?;
     let def = split.def;
     let rep = split.rep;

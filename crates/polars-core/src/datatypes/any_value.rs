@@ -1583,12 +1583,12 @@ pub trait GetAnyValue {
     /// # Safety
     ///
     /// Get an value without doing bound checks.
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue;
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_>;
 }
 
 impl GetAnyValue for ArrayRef {
     // Should only be called with physical types
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         match self.dtype() {
             ArrowDataType::Int8 => {
                 let arr = self

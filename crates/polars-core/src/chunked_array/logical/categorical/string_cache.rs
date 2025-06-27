@@ -226,11 +226,11 @@ impl StringCache {
     }
 
     /// Lock the string cache
-    pub(crate) fn lock_map(&self) -> RwLockWriteGuard<SCacheInner> {
+    pub(crate) fn lock_map(&self) -> RwLockWriteGuard<'_, SCacheInner> {
         self.0.write().unwrap()
     }
 
-    pub(crate) fn read_map(&self) -> RwLockReadGuard<SCacheInner> {
+    pub(crate) fn read_map(&self) -> RwLockReadGuard<'_, SCacheInner> {
         self.0.read().unwrap()
     }
 
