@@ -1406,13 +1406,4 @@ impl IRFunctionExpr {
             F::ExtendConstant => FunctionOptions::groupwise(),
         }
     }
-
-    pub fn preserves_nulls(&self) -> InputNullPreserve {
-        use IRFunctionExpr as F;
-        match self {
-            F::Boolean(e) => e.preserves_nulls(),
-
-            _ => InputNullPreserve::None,
-        }
-    }
 }

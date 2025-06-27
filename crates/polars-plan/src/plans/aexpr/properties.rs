@@ -506,12 +506,19 @@ pub(crate) fn predicate_non_null_column_outputs(
 
             Function {
                 input,
-                function,
-                options: _,
-            } => match function.preserves_nulls() {
-                InputNullPreserve::None => false,
-                InputNullPreserve::First => traverse_first_input!(input),
-                InputNullPreserve::All => true,
+                function: _,
+                options,
+            } => {
+                if options
+                    .flags
+                    .contains(FunctionFlags::PRESERVES_NULL_FIRST_INPUT)
+                {
+                    traverse_first_input!(input)
+                } else {
+                    options
+                        .flags
+                        .contains(FunctionFlags::PRESERVES_NULL_ALL_INPUTS)
+                }
             },
 
             Column(name) => {
@@ -526,13 +533,4 @@ pub(crate) fn predicate_non_null_column_outputs(
             ae.inputs_rev(stack);
         }
     }
-}
-
-/// Whether NULL input rows are preserved.
-pub enum InputNullPreserve {
-    None,
-    /// Only the first input
-    First,
-    /// NULL on any input is propagated to output.
-    All,
 }
