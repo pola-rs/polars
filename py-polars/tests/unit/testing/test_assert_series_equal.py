@@ -70,12 +70,13 @@ def test_assert_series_equal_check_order() -> None:
 
 
 def test_assert_series_equal_check_order_unsortable_type() -> None:
-    s = pl.Series([object(), object()])
+    s1 = pl.Series([object(), object()])
+    s2 = pl.Series([object(), object()])
     with pytest.raises(
         InvalidOperationError,
         match="`sort_with` operation not supported for dtype `object`",
     ):
-        assert_series_equal(s, s, check_order=False)
+        assert_series_equal(s1, s2, check_order=False)
 
 
 def test_compare_series_nans_assert_equal() -> None:
