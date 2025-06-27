@@ -886,22 +886,23 @@ pub(super) fn serializer_for<'a>(
             array,
         ),
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(rev_map, _) | DataType::Enum(rev_map, _) => {
-            let rev_map = rev_map.as_deref().unwrap();
-            string_serializer(
-                |iter| {
-                    let &idx: &u32 = Iterator::next(iter).expect(TOO_MANY_MSG)?;
-                    Some(rev_map.get(idx))
-                },
-                options,
-                |arr| {
-                    arr.as_any()
-                        .downcast_ref::<PrimitiveArray<u32>>()
-                        .expect(ARRAY_MISMATCH_MSG)
-                        .iter()
-                },
-                array,
-            )
+        DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping) => {
+            polars_core::with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+                string_serializer(
+                    |iter| {
+                        let &idx: &<$C as PolarsCategoricalType>::Native = Iterator::next(iter).expect(TOO_MANY_MSG)?;
+                        Some(unsafe { mapping.cat_to_str_unchecked(idx.as_cat()) })
+                    },
+                    options,
+                    |arr| {
+                        arr.as_any()
+                            .downcast_ref::<PrimitiveArray<<$C as PolarsCategoricalType>::Native>>()
+                            .expect(ARRAY_MISMATCH_MSG)
+                            .iter()
+                    },
+                    array,
+                )
+            })
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {

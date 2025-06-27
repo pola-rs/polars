@@ -150,10 +150,10 @@ fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
 
         // @TODO: Cast to string
         #[cfg(feature = "dtype-categorical")]
-        A::Categorical(_, _, _)
-        | A::CategoricalOwned(_, _, _)
-        | A::Enum(_, _, _)
-        | A::EnumOwned(_, _, _) => return None,
+        A::Categorical(_, _)
+        | A::CategoricalOwned(_, _)
+        | A::Enum(_, _)
+        | A::EnumOwned(_, _) => return None,
 
         A::String(v) => P::String(v.into()),
         A::StringOwned(v) => P::String(v.as_str().into()),
