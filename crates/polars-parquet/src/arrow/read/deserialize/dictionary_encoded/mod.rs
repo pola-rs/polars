@@ -54,7 +54,7 @@ impl IndexMapping for u8 {
 
     #[inline(always)]
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
-        bytemuck::must_cast(idx)
+        bytemuck::must_cast(idx as u8)
     }
 }
 
@@ -68,7 +68,7 @@ impl IndexMapping for u16 {
 
     #[inline(always)]
     unsafe fn get_unchecked(&self, idx: u32) -> Self::Output {
-        bytemuck::must_cast(idx)
+        bytemuck::must_cast(idx as u16)
     }
 }
 

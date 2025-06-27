@@ -219,9 +219,10 @@ impl FrozenCategories {
     /// Creates a new FrozenCategories object (or returns a reference to an existing one
     /// in case these are already known). Returns an error if the categories are not unique.
     /// It is guaranteed that the nth string ends up with category n (0-indexed).
-    pub fn new<'a, I: Iterator<Item = &'a str>>(
+    pub fn new<'a, I: IntoIterator<Item = &'a str>>(
         strings: I,
     ) -> PolarsResult<Arc<Self>> {
+        let strings = strings.into_iter();
         let hasher = *FROZEN_CATEGORIES_HASHER;
         let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
         let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);

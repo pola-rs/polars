@@ -281,18 +281,15 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
-            DataType::Categorical(_, ordering) => {
+            DataType::NewCategorical(_, _) => {
                 let class = pl.getattr(intern!(py, "Categorical"))?;
-                class.call1((Wrap(*ordering),))
+                class.call1((Wrap(CategoricalOrdering::Lexical),))
             },
-            DataType::Enum(rev_map, _) => {
+            DataType::NewEnum(_, mapping) => {
                 // we should always have an initialized rev_map coming from rust
-                let categories = rev_map.as_ref().unwrap().get_categories();
+                let categories = mapping.to_ca().into_series();
                 let class = pl.getattr(intern!(py, "Enum"))?;
-                let s =
-                    Series::from_arrow(PlSmallStr::from_static("category"), categories.to_boxed())
-                        .map_err(PyPolarsErr::from)?;
-                let series = to_series(py, s.into())?;
+                let series = to_series(py, categories.into())?;
                 class.call1((series,))
             },
             DataType::Time => pl.getattr(intern!(py, "Time")),
@@ -367,7 +364,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
                     "Categorical" => DataType::from_categories(Categories::global()),
-                    "Enum" => DataType::Enum(None, Default::default()),
+                    "Enum" => DataType::from_frozen_categories(FrozenCategories::new([]).unwrap()),
                     "Date" => DataType::Date,
                     "Time" => DataType::Time,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
@@ -402,16 +399,15 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "String" => DataType::String,
             "Binary" => DataType::Binary,
             "Categorical" => {
-                let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
-                let ordering = ordering.extract::<Wrap<CategoricalOrdering>>()?.0;
-                DataType::Categorical(None, ordering)
+                DataType::from_categories(Categories::global())
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
-                create_enum_dtype(categories)
+                assert!(!categories.has_nulls());
+                DataType::from_frozen_categories(FrozenCategories::new(categories.values_iter()).unwrap())
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
@@ -470,17 +466,17 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
     }
 }
 
+enum CategoricalOrdering {
+    Lexical,
+}
+
 impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
     type Target = PyString;
     type Output = Bound<'py, Self::Target>;
     type Error = Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        match self.0 {
-            CategoricalOrdering::Physical => "physical",
-            CategoricalOrdering::Lexical => "lexical",
-        }
-        .into_pyobject(py)
+        "lexical".into_pyobject(py)
     }
 }
 
@@ -791,8 +787,11 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
 impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "physical" => CategoricalOrdering::Physical,
             "lexical" => CategoricalOrdering::Lexical,
+            "physical" => {
+                polars_warn!(Deprecation, "physical ordering is deprecated, will use lexical ordering instead");
+                CategoricalOrdering::Lexical
+            }
             v => {
                 return Err(PyValueError::new_err(format!(
                     "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",

@@ -150,7 +150,7 @@ impl CategoricalMapping {
     
     pub fn to_ca(&self) -> StringChunked {
         unsafe {
-            StringChunked::from_chunks(PlSmallStr::EMPTY, vec![self.to_arrow(CompatLevel::newest())])
+            StringChunked::from_chunks(PlSmallStr::from_static("category"), vec![self.to_arrow(CompatLevel::newest())])
         }
     }
 }

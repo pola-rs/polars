@@ -79,21 +79,11 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Boolean(v) => v.into_bound_py_any(py),
         AnyValue::String(v) => v.into_bound_py_any(py),
         AnyValue::StringOwned(v) => v.into_bound_py_any(py),
-        AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
-            let s = if arr.is_null() {
-                rev.get(idx)
-            } else {
-                unsafe { arr.deref_unchecked().value(idx as usize) }
-            };
-            s.into_bound_py_any(py)
+        AnyValue::Categorical(cat, map) | AnyValue::Enum(cat, map) => {
+            unsafe { map.cat_to_str_unchecked(cat).into_bound_py_any(py) }
         },
-        AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
-            let s = if arr.is_null() {
-                rev.get(idx)
-            } else {
-                unsafe { arr.deref_unchecked().value(idx as usize) }
-            };
-            s.into_bound_py_any(py)
+        AnyValue::CategoricalOwned(cat, map) | AnyValue::EnumOwned(cat, map) => {
+            unsafe { map.cat_to_str_unchecked(cat).into_bound_py_any(py) }
         },
         AnyValue::Date(v) => {
             let date = date32_to_date(v);
