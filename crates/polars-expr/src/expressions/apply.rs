@@ -364,6 +364,9 @@ impl PhysicalExpr for ApplyExpr {
             match self.flags.is_elementwise() {
                 false if self.flags.contains(FunctionFlags::APPLY_LIST) => {
                     let c = self.eval_and_flatten(&mut [ac.aggregated()])?;
+                    if !self.flags.returns_scalar() {
+                        polars_ensure!(c.dtype().is_list(), SchemaMismatch: "got a scalar\n\n`return_scalar` flag not set correctly")
+                    }
                     ac.with_values(c, true, Some(&self.expr))?;
                     Ok(ac)
                 },

@@ -42,9 +42,9 @@ def test_map_elements_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
     with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         assert df.group_by("A").agg(
-            pl.col("B").map_elements(
-                lambda x: x + 1.0, return_dtype=pl.List(pl.Float64)
-            )
+            pl.col("B")
+            .implode()
+            .map_elements(lambda x: x + 1.0, return_dtype=pl.List(pl.Float64))
         )["B"].to_list() == [[3.0, 4.0]]
 
 
@@ -158,7 +158,9 @@ def test_map_elements_type_propagation() -> None:
             [
                 pl.when(~pl.col("b").has_nulls())
                 .then(
-                    pl.col("b").map_elements(
+                    pl.col("b")
+                    .implode()
+                    .map_elements(
                         lambda s: s[0]["c"],
                         return_dtype=pl.Float64,
                     )
@@ -268,7 +270,7 @@ def test_map_elements_pass_name() -> None:
         return pl.Series([mapper[s.name]])
 
     assert df.group_by("bar", maintain_order=True).agg(
-        pl.col("foo").map_elements(element_mapper, pass_name=True),
+        pl.col("foo").implode().map_elements(element_mapper, pass_name=True),
     ).to_dict(as_series=False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}
 
 

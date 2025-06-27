@@ -1152,6 +1152,6 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     ).filter(pl.col("y").map_elements(bool))
 
     plan = q.explain()
-    assert plan.index("map_list") > plan.index("PYTHON SCAN")
+    assert plan.index("SELECTION") > plan.index("PYTHON SCAN")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))

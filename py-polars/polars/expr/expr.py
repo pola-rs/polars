@@ -4581,19 +4581,6 @@ class Expr:
             consider :meth:`.with_columns <polars.DataFrame.with_columns>`
             and :meth:`.with_fields <polars.Expr.struct.with_fields>`.
 
-        The UDF is applied to each element of a column. Note that, in a GroupBy
-        context, the column will have been pre-aggregated and so each element
-        will itself be a Series. Therefore, depending on the context,
-        requirements for `function` differ:
-
-        * Selection
-            Expects `function` to be of type `Callable[[Any], Any]`.
-            Applies a Python function to each individual value in the column.
-        * GroupBy
-            Expects `function` to be of type `Callable[[Series], Any]`.
-            For each group, applies a Python function to the slice of the column
-            corresponding to that group.
-
         Parameters
         ----------
         function
@@ -4607,9 +4594,8 @@ class Expr:
         pass_name
             Pass the Series name to the custom function (this is more expensive).
         returns_scalar
-            If the function passed does a reduction
-            (e.g. sum, min, etc), Polars must be informed of this otherwise
-            the schema might be incorrect.
+            .. deprecated:: 1.32.0
+            Is ignored and will be removed in 2.0.
         strategy : {'thread_local', 'threading'}
             The threading strategy to use.
 
@@ -4676,28 +4662,10 @@ class Expr:
         ...     (pl.col("a") * 2).alias("a_times_2"),
         ... )  # doctest: +IGNORE_RESULT
 
-        In a GroupBy context, each element of the column is itself a Series:
-
-        >>> (
-        ...     df.lazy().group_by("b").agg(pl.col("a")).collect()
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (3, 2)
-        ┌─────┬───────────┐
-        │ b   ┆ a         │
-        │ --- ┆ ---       │
-        │ str ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ a   ┆ [1]       │
-        │ b   ┆ [2]       │
-        │ c   ┆ [3, 1]    │
-        └─────┴───────────┘
-
-        Therefore, from the user's point-of-view, the function is applied per-group:
-
         >>> (
         ...     df.lazy()
         ...     .group_by("b")
-        ...     .agg(pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64))
+        ...     .agg(pl.col("a").implode().map_elements(lambda x: x.sum(), return_dtype=pl.Int64))
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
@@ -4796,9 +4764,10 @@ class Expr:
         if strategy == "thread_local":
             return self.map_batches(
                 wrap_f,
-                agg_list=True,
+                agg_list=False,
                 return_dtype=return_dtype,
-                returns_scalar=returns_scalar,
+                returns_scalar=False,
+                is_elementwise=True
             )
         elif strategy == "threading":
 
@@ -4807,9 +4776,9 @@ class Expr:
                     return df.lazy().select(
                         F.col("x").map_batches(
                             wrap_f,
-                            agg_list=True,
+                            agg_list=False,
                             return_dtype=return_dtype,
-                            returns_scalar=returns_scalar,
+                            returns_scalar=False,
                         )
                     )
 
@@ -4844,9 +4813,10 @@ class Expr:
 
             return self.map_batches(
                 wrap_threading,
-                agg_list=True,
+                agg_list=False,
                 return_dtype=return_dtype,
-                returns_scalar=returns_scalar,
+                returns_scalar=False,
+                is_elementwise=True
             )
         else:
             msg = f"strategy {strategy!r} is not supported"

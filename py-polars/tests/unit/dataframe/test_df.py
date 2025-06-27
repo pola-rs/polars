@@ -705,14 +705,6 @@ def test_shift() -> None:
     assert_frame_equal(a, b)
 
 
-def test_custom_group_by() -> None:
-    df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
-    out = df.group_by("b", maintain_order=True).agg(
-        [pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)]
-    )
-    assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
-
-
 def test_multiple_columns_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
     # List input
