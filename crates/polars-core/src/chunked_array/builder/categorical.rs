@@ -26,6 +26,10 @@ impl<T: PolarsCategoricalType> NewCategoricalChunkedBuilder<T> {
         }
     }
     
+    pub fn dtype(&self) -> &DataType {
+        &self.dtype
+    }
+    
     pub fn reserve(&mut self, len: usize) {
         self.cats.reserve(len);
         self.validity.reserve(len);
