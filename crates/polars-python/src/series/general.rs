@@ -46,17 +46,15 @@ impl PySeries {
     }
 
     pub fn cat_uses_lexical_ordering(&self) -> PyResult<bool> {
-        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(ca.uses_lexical_ordering())
+        Ok(true)
     }
 
     pub fn cat_is_local(&self) -> PyResult<bool> {
-        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(ca.get_rev_map().is_local())
+        Ok(false)
     }
 
     pub fn cat_to_local(&self, py: Python) -> PyResult<Self> {
-        py.enter_polars_series(|| Ok(self.series.categorical()?.to_local()))
+        Ok(self.clone())
     }
 
     fn estimated_size(&self) -> usize {
@@ -86,7 +84,7 @@ impl PySeries {
     /// Returns the string format of a single element of the Series.
     fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
         let v = format!("{}", self.series.get(index).unwrap());
-        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
+        if let DataType::String | DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) =
             self.series.dtype()
         {
             let v_no_quotes = &v[1..v.len() - 1];

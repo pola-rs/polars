@@ -72,19 +72,6 @@ impl UnknownKind {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default, IntoStaticStr)]
-#[cfg_attr(
-    any(feature = "serde-lazy", feature = "serde"),
-    derive(Serialize, Deserialize)
-)]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum CategoricalOrdering {
-    #[default]
-    Physical,
-    Lexical,
-}
-
 #[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
