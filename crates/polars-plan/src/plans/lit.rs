@@ -360,7 +360,8 @@ impl LiteralValue {
         match self {
             Self::Scalar(sc) => sc.is_null(),
             Self::Series(s) => s.len() == 1 && s.null_count() == 1,
-            _ => false,
+            Self::Dyn(_) => false,
+            Self::Range(_) => false,
         }
     }
 
