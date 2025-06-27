@@ -1,8 +1,19 @@
 use std::borrow::Cow;
-use std::cmp::Ordering;
+#[cfg(feature = "list_pad")]
+use std::cmp::max;
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
+#[cfg(feature = "list_pad")]
+use arrow::{
+    array::{
+        Array as ArrowArray, ListArray, ValueSize,
+        builder::{ShareStrategy, make_builder},
+    },
+    bitmap::BitmapBuilder,
+    legacy::is_valid::IsValid,
+    offset::Offsets,
+    pushable::Pushable,
+};
 #[cfg(feature = "list_gather")]
 use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
@@ -12,6 +23,8 @@ use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
+#[cfg(feature = "list_pad")]
+use polars_core::with_match_physical_numeric_type;
 
 use super::*;
 #[cfg(feature = "list_any_all")]
@@ -574,92 +587,75 @@ pub trait ListNameSpaceImpl: AsList {
 
     #[cfg(feature = "list_pad")]
     fn lst_pad_start(&self, fill_value: &Column, length: &Column) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        let inner_dtype = ca.inner_dtype();
-        let fill_dtype = fill_value.dtype();
-        let super_type = try_get_supertype(inner_dtype, fill_dtype)?;
+        let list_ca = self.as_list();
+        Ok(
+            with_match_physical_numeric_type!(length.dtype().to_physical(), |$T| {
+                let length = length.$T().unwrap();
+                arity::binary(list_ca, length, |list_arr, length_arr| {
+                    let rows = list_arr.len();
+                    let values_arr: &dyn ArrowArray = list_arr.values().as_ref();
+                    let inner_dtype = values_arr.dtype().clone();
+                    let raw_offsets = list_arr.offsets().as_slice();
 
-        let dtype = &DataType::List(Box::new(super_type.clone()));
-        let ca = ca.cast(dtype)?;
-        let ca = ca.list().unwrap();
+                    let total_inner = list_arr
+                        .offsets()
+                        .windows(2)
+                        .map(|o| max(o[1] - o[0] - 1, 0) as usize)
+                        .sum();
 
-        let length = if length.len() == 1 {
-            &length.new_from_index(0, ca.len())
-        } else {
-            length
-        };
-        let length = length.strict_cast(&IDX_DTYPE)?;
-        let mut length = length.idx()?.into_iter();
+                    let fill_value_is_scalar = fill_value.len() == 1;
+                    let fill_value = fill_value.to_owned().rechunk_to_arrow(CompatLevel::newest());
 
-        let fill_value = if fill_value.len() == 1 {
-            &fill_value.new_from_index(0, ca.len())
-        } else {
-            fill_value
-        };
-        let fill_value = fill_value.cast(&super_type)?;
+                    let mut builder = make_builder(&inner_dtype);
+                    builder.reserve(total_inner);
 
-        let fill_value_series = fill_value.as_materialized_series();
-        let mut builder = get_list_builder(
-            &super_type,
-            ca.get_values_size() + 1000,
-            ca.len(),
-            ca.name().clone(),
-        );
+                    let mut validity = BitmapBuilder::with_capacity(rows);
+                    let mut offsets = Offsets::with_capacity(rows + 1);
 
-        for (idx, opt_s) in ca.iter().enumerate() {
-            let target_length = match length.next().unwrap() {
-                Some(len) => len as usize,
-                None => {
-                    return Err(PolarsError::InvalidOperation(
-                        "negative length not supported".into(),
-                    ));
-                },
-            };
+                    for row in 0..rows {
+                        let idx_row = if length_arr.len() == 1 { 0 } else { row };
 
-            match opt_s {
-                Some(s) => {
-                    let s_series = Series::from_arrow(PlSmallStr::EMPTY, s)?;
+                        let row_is_valid =
+                            unsafe { list_arr.is_valid_unchecked(row) && length_arr.is_valid_unchecked(idx_row) };
+                        if !row_is_valid {
+                            offsets.push_null();
+                            validity.push(false);
+                            continue;
+                        }
 
-                    match target_length.cmp(&s_series.len()) {
-                        Ordering::Equal | Ordering::Less => {
-                            let s_casted = s_series.cast(&super_type).unwrap();
-                            builder.append_series(&s_casted).unwrap();
-                        },
-                        Ordering::Greater => {
-                            let pad_count = target_length - s_series.len();
+                        let start = unsafe { *raw_offsets.get_unchecked(row) } as usize;
+                        let end = unsafe { *raw_offsets.get_unchecked(row + 1) } as usize;
+                        let row_len = end - start;
 
-                            let fill_val = fill_value_series.get(idx).unwrap();
-                            let fill_series = Series::from_any_values(
-                                PlSmallStr::EMPTY,
-                                &vec![fill_val; pad_count],
-                                false,
-                            )
-                            .unwrap();
+                        let target_length = unsafe { length_arr.value_unchecked(idx_row).to_usize().unwrap() };
+                        let pad_count = target_length.saturating_sub(row_len);
 
-                            let s_casted = s_series.cast(&super_type).unwrap();
+                        if pad_count > 0 {
+                            let fill_value_start = if fill_value_is_scalar {
+                                0
+                            } else {
+                                start
+                            };
+                            builder.subslice_extend_each_repeated(fill_value.as_ref(), fill_value_start, 1, pad_count, ShareStrategy::Always);
+                        }
+                        let right_offset = max(row_len, target_length);
+                        builder.subslice_extend(values_arr, start, row_len, ShareStrategy::Always);
 
-                            let mut result = fill_series;
-                            result.append(&s_casted).unwrap();
-                            builder.append_series(&result).unwrap();
-                        },
+                        offsets.push(right_offset);
+                        validity.push(true);
                     }
-                },
-                None => {
-                    builder.append_null();
-                },
-            }
-        }
 
-        let out = builder.finish();
-
-        let final_dtype = DataType::List(Box::new(super_type));
-        let out = if out.dtype() != &final_dtype {
-            out.cast(&final_dtype)?.list().unwrap().clone()
-        } else {
-            out
-        };
-
-        Ok(out)
+                    let values = builder.freeze_reset();
+                    let list_dtype = ListArray::<i64>::default_datatype(inner_dtype);
+                    LargeListArray::new(
+                        list_dtype,
+                        offsets.into(),
+                        values,
+                        validity.into_opt_validity(),
+                    )
+                })
+            }),
+        )
     }
 
     #[cfg(feature = "list_sample")]

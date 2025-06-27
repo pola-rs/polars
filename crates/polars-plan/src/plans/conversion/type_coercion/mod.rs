@@ -545,6 +545,65 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 );
                 None
             },
+            // cast fill_value and inner list dtype to common super type.
+            #[cfg(feature = "list_pad")]
+            AExpr::Function {
+                function: IRFunctionExpr::ListExpr(IRListFunction::PadStart),
+                ref input,
+                options,
+            } => {
+                let list_node = input[0].node();
+                let fill_value_node = input[2].node();
+                let (list_val, type_list) =
+                    unpack!(get_aexpr_and_type(expr_arena, list_node, schema));
+                let inner_list_type = match type_list {
+                    DataType::List(inner_dtype) => inner_dtype,
+                    _ => polars_bail!(InvalidOperation: "expected a list type, got: {}", type_list),
+                };
+                let (fill_value, type_fill_value) =
+                    unpack!(get_aexpr_and_type(expr_arena, fill_value_node, schema));
+
+                unpack!(early_escape(&inner_list_type, &type_fill_value));
+
+                let super_type = unpack!(get_supertype(&inner_list_type, &type_fill_value));
+                let super_type = modify_supertype(
+                    super_type,
+                    list_val,
+                    fill_value,
+                    &inner_list_type,
+                    &type_fill_value,
+                );
+
+                let mut input = input.clone();
+                let new_node_left = if *inner_list_type != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: list_node,
+                        dtype: DataType::List(Box::new(super_type.clone())),
+                        options: CastOptions::NonStrict,
+                    })
+                } else {
+                    list_node
+                };
+
+                let new_node_fill_value = if type_fill_value != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: fill_value_node,
+                        dtype: super_type.clone(),
+                        options: CastOptions::NonStrict,
+                    })
+                } else {
+                    fill_value_node
+                };
+
+                input[0].set_node(new_node_left);
+                input[2].set_node(new_node_fill_value);
+
+                Some(AExpr::Function {
+                    function: IRFunctionExpr::ListExpr(IRListFunction::PadStart),
+                    input,
+                    options,
+                })
+            },
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:

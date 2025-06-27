@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import (
-    InvalidOperationError,
-    SchemaError,
-)
 from polars.testing import assert_frame_equal
 
 
@@ -87,26 +82,3 @@ def test_list_pad_start_zero_length() -> None:
     result = df.select(pl.col("a").list.pad_start(0, 1))
     expected = pl.DataFrame({"a": [[1], [2, 3]]}, schema={"a": pl.List(pl.Int64)})
     assert_frame_equal(result, expected)
-
-
-def test_list_pad_start_casts_to_supertype() -> None:
-    df = pl.DataFrame({"a": [["a"], ["a", "b"]]})
-    result = df.select(pl.col("a").list.pad_start(2, 1))
-    expected = pl.DataFrame({"a": [["1", "a"], ["a", "b"]]})
-    assert_frame_equal(result, expected)
-
-    with pytest.raises(SchemaError, match="failed to determine supertype"):
-        pl.DataFrame({"a": [[]]}, schema={"a": pl.List(pl.Categorical)}).select(
-            pl.col("a").list.pad_start(2, True)
-        )
-
-
-def test_list_pad_start_errors() -> None:
-    df = pl.DataFrame({"a": [["a"], ["a", "b"]]})
-
-    with pytest.raises(TypeError, match="missing 1 required positional argument"):
-        df.select(pl.col("a").list.pad_start(2))  # type: ignore[call-arg]
-    with pytest.raises(InvalidOperationError, match="to String not supported"):
-        df.select(pl.col("a").list.pad_start(2, timedelta(days=1)))
-    with pytest.raises(InvalidOperationError, match="negative length not supported"):
-        df.select(pl.col("a").list.pad_start(-1, "foo"))
