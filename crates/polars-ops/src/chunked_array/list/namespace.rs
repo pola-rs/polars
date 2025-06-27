@@ -600,7 +600,8 @@ pub trait ListNameSpaceImpl: AsList {
                     let total_inner = list_arr
                         .offsets()
                         .windows(2)
-                        .map(|o| max(o[1] - o[0] - 1, 0) as usize)
+                        .zip(length_arr.values().iter())
+                        .map(|(o_list, length)| max(o_list[1] - o_list[0] - 1, max(*length as i64, 0)) as usize)
                         .sum();
 
                     let fill_value_is_scalar = fill_value.len() == 1;
