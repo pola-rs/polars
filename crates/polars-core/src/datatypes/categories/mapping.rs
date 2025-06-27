@@ -147,6 +147,12 @@ impl CategoricalMapping {
             builder.freeze().boxed()
         }
     }
+    
+    pub fn to_ca(&self) -> StringChunked {
+        unsafe {
+            StringChunked::from_chunks(PlSmallStr::EMPTY, vec![self.to_arrow(CompatLevel::newest())])
+        }
+    }
 }
 
 impl fmt::Debug for CategoricalMapping {

@@ -21,7 +21,7 @@ fn compares_cat_to_string(type_left: &DataType, type_right: &DataType, op: Opera
                 type_left,
                 type_right,
                 DataType::String | DataType::Unknown(UnknownKind::Str),
-                DataType::Categorical(_, _) | DataType::Enum(_, _)
+                DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)
             )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -38,7 +38,7 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
             type_left,
             type_right,
             DataType::String,
-            DataType::Categorical(_, _) | DataType::Enum(_, _)
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)
         )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -170,15 +170,15 @@ pub(super) fn process_binary(
             return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
-        (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op)
-        | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
+        (String | Unknown(UnknownKind::Str) | NewCategorical(_, _), dt, op)
+        | (dt, Unknown(UnknownKind::Str) | String | NewCategorical(_, _), op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
             return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
-        (Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op)
-        | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
+        (Unknown(UnknownKind::Str) | String | NewEnum(_, _), dt, op)
+        | (dt, Unknown(UnknownKind::Str) | String | NewEnum(_, _), op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
             return Ok(None);

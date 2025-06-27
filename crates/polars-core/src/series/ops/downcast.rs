@@ -161,7 +161,7 @@ impl Series {
 
     #[cfg(feature = "dtype-categorical")]
     pub fn try_cat<T: PolarsCategoricalType>(&self) -> Option<&NewCategoricalChunked<T>> {
-        try_unpack_chunked!(self, dt @ DataType::NewEnum(_, _) | dt @ DataType::NewCategorical(_, _) if dt.cat_physical() == Some(T::physical()) => NewCategoricalChunked<T>)
+        try_unpack_chunked!(self, dt @ DataType::NewEnum(_, _) | dt @ DataType::NewCategorical(_, _) if dt.cat_physical().unwrap() == T::physical() => NewCategoricalChunked<T>)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt8.
