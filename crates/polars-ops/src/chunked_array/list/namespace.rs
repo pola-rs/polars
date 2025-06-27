@@ -7,7 +7,7 @@ use arrow::array::ValueSize;
 #[cfg(feature = "list_pad")]
 use arrow::{
     array::{
-        Array as ArrowArray, ListArray, 
+        Array as ArrowArray, ListArray,
         builder::{ShareStrategy, make_builder},
     },
     bitmap::BitmapBuilder,
