@@ -5,7 +5,6 @@ use std::fmt::Write;
 
 use arrow::array::ValueSize;
 #[cfg(feature = "list_pad")]
-#[cfg(feature = "list_pad")]
 use arrow::{
     array::{
         Array as ArrowArray, ListArray,
