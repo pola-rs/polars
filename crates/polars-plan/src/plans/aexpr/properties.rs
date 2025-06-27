@@ -439,7 +439,7 @@ pub(crate) fn predicate_non_null_column_outputs(
             node
         } else if let Some(minterm_node) = minterm_iter.next() {
             // Some additional leaf exprs can be pruned.
-            match expr_arena.get(minterm_node) {
+            let node_after_prune = match expr_arena.get(minterm_node) {
                 Function {
                     input,
                     function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
@@ -461,6 +461,35 @@ pub(crate) fn predicate_non_null_column_outputs(
                 },
 
                 _ => minterm_node,
+            };
+
+            match expr_arena.get(node_after_prune) {
+                #[cfg(feature = "is_in")]
+                Function {
+                    input,
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: true }),
+                    options: _,
+                } if !input.is_empty()
+                    && input.get(1).is_none_or(|haystack| {
+                        let AExpr::Literal(lv) = expr_arena.get(haystack.node()) else {
+                            return false;
+                        };
+
+                        if let LiteralValue::Series(s) = lv {
+                            if let Ok(lst_ca) = s.list() {
+                                lst_ca.downcast_iter().all(|x| !x.values().has_nulls())
+                            } else {
+                                !s.has_nulls()
+                            }
+                        } else {
+                            !lv.is_null()
+                        }
+                    }) =>
+                {
+                    input.first().unwrap().node()
+                },
+
+                _ => node_after_prune,
             }
         } else {
             break;

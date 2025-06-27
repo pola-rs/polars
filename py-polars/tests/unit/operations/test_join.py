@@ -3505,6 +3505,20 @@ def test_join_downgrade_panic_23307() -> None:
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_in([1])),
         (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_in([1], nulls_equal=True)),
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_in([], nulls_equal=True)),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in(
+                pl.Series([[]], dtype=pl.List(pl.Int64)), nulls_equal=True
+            ),
+        ),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in(
+                pl.Series([None], dtype=pl.List(pl.Int64)), nulls_equal=True
+            ),
+        ),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
         (1, lambda col: col.is_between(None, 1)),
@@ -3554,7 +3568,6 @@ def test_join_downgrade_null_preserving_exprs(
 @pytest.mark.parametrize(
     ("expr_first_input", "expr_func"),
     [
-        # TODO: We can technically push this by inspecting the RHS for NULLs
         (pl.lit(None, dtype=pl.Int64), lambda x: x.is_in([1, None], nulls_equal=True)),
     ],
 )
