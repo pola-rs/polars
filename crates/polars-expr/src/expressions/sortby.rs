@@ -229,7 +229,7 @@ impl PhysicalExpr for SortByExpr {
                     .map(|(i, e)| {
                         let column = e.evaluate(df, state).map(|c| match c.dtype() {
                             #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) | DataType::Enum(_, _) => c,
+                            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => c,
                             _ => c.to_physical_repr(),
                         })?;
 
@@ -311,7 +311,7 @@ impl PhysicalExpr for SortByExpr {
                 let c = c.flat_naive();
                 match c.dtype() {
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                    DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
                         c.as_materialized_series().clone()
                     },
                     // @scalar-opt
