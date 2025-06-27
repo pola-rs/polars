@@ -1,7 +1,3 @@
-// used only if feature="is_in", feature="dtype-categorical"
-#[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
-use polars_core::{SINGLE_LOCK, StringCacheHolder, disable_string_cache};
-
 use super::*;
 
 #[test]
@@ -130,10 +126,6 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
         "a" => ["a", "b", "c", "d", "e"],
         "b" => [1, 2, 3, 4, 5]
     ]?;
-
-    let _guard = SINGLE_LOCK.lock();
-    disable_string_cache();
-    let _sc = StringCacheHolder::hold();
 
     let s = Series::new("x".into(), ["a", "b", "c"])
         .strict_cast(&DataType::from_categories(Categories::global()))?;
