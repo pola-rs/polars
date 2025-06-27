@@ -606,7 +606,7 @@ impl ChunkReader {
         alt_count_lines: Option<Arc<CountLinesWithComments>>,
     ) -> PolarsResult<Self> {
         let mut fields_to_cast: Vec<Field> = options.fields_to_cast.clone();
-        let has_categorical = prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
+        prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
 
         let parse_options = options.parse_options.clone();
 

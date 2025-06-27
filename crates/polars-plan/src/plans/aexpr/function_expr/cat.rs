@@ -1,5 +1,3 @@
-use polars_core::with_match_categorical_physical_type;
-
 use super::*;
 use crate::map;
 

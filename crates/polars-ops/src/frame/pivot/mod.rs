@@ -7,7 +7,6 @@ use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::{POOL, downcast_as_macro_arg_physical};
-use polars_core::with_match_categorical_physical_type;
 use polars_utils::format_pl_smallstr;
 use rayon::prelude::*;
 pub use unpivot::UnpivotDF;

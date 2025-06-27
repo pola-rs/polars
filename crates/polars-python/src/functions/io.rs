@@ -1,6 +1,5 @@
 use std::io::BufReader;
 
-use arrow::array::Utf8ViewArray;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
 use pyo3::prelude::*;
@@ -9,7 +8,6 @@ use pyo3::types::PyDict;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{EitherRustPythonFile, get_either_file};
-use crate::prelude::ArrowDataType;
 
 #[cfg(feature = "ipc")]
 #[pyfunction]

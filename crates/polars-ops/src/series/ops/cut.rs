@@ -48,7 +48,7 @@ fn map_cats(
                     brk_vals.append_null();
                 },
                 Some(idx) => unsafe {
-                    bld.append_str(labels.get_unchecked(idx));
+                    bld.append_str(labels.get_unchecked(idx)).unwrap();
                     brk_vals.append_value(*right_ends.get_unchecked(idx));
                 },
             });

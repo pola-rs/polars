@@ -53,7 +53,7 @@ impl PySeries {
         Ok(false)
     }
 
-    pub fn cat_to_local(&self, py: Python) -> PyResult<Self> {
+    pub fn cat_to_local(&self, _py: Python) -> PyResult<Self> {
         Ok(self.clone())
     }
 
