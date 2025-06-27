@@ -571,6 +571,18 @@ macro_rules! with_match_physical_integer_polars_type {(
     }
 })}
 
+#[macro_export]
+macro_rules! with_match_categorical_physical_type {(
+    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    match $dtype {
+        CategoricalPhysical::U8 => __with_ty__! { Categorical8Type },
+        CategoricalPhysical::U16 => __with_ty__! { Categorical16Type },
+        CategoricalPhysical::U32 => __with_ty__! { Categorical32Type },
+    }
+})}
+
 /// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]

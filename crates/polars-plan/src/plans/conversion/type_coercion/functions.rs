@@ -64,7 +64,7 @@ fn check_namespace(function: &IRFunctionExpr, first_dtype: &DataType) -> PolarsR
         },
         #[cfg(feature = "dtype-categorical")]
         IRFunctionExpr::Categorical(_) => {
-            polars_ensure!(matches!(first_dtype, DataType::Categorical(_, _)), InvalidOperation: "expected Categorical type, got: {}", first_dtype)
+            polars_ensure!(matches!(first_dtype, DataType::NewCategorical(_, _)), InvalidOperation: "expected Categorical type, got: {}", first_dtype)
         },
         _ => {},
     }

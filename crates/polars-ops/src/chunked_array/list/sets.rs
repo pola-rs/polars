@@ -428,14 +428,6 @@ pub fn list_set_operation(
     a.prune_empty_chunks();
     b.prune_empty_chunks();
 
-    // Make categoricals compatible
-    #[cfg(feature = "dtype-categorical")]
-    if let (DataType::Categorical(_, _), DataType::Categorical(_, _)) =
-        (&a.inner_dtype(), &b.inner_dtype())
-    {
-        (a, b) = make_rhs_list_categoricals_compatible(a, b)?;
-    }
-
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {
         arity::try_binary_unchecked_same_type(

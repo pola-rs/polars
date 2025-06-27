@@ -108,7 +108,7 @@ impl PyDataFrame {
                 .filter(|(_i, s)| {
                     matches!(
                         s.dtype(),
-                        DataType::Categorical(_, _) | DataType::Enum(_, _)
+                        DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)
                     )
                 })
                 .map(|(i, _)| i)

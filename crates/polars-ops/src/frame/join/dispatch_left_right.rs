@@ -42,9 +42,6 @@ pub fn materialize_left_join_from_series(
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
-    #[cfg(feature = "dtype-categorical")]
-    _check_categorical_src(s_left.dtype(), s_right.dtype())?;
-
     let mut s_left = s_left.clone();
     // Eagerly limit left if possible.
     if let Some((offset, len)) = args.slice {

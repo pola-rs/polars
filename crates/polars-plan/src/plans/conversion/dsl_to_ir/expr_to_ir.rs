@@ -353,9 +353,10 @@ pub(super) fn to_aexpr_impl(
                         match e {
                             #[cfg(feature = "dtype-categorical")]
                             AExpr::Cast {
-                                dtype: DataType::Categorical(_, _) | DataType::Enum(_, _),
+                                dtype: DataType::NewCategorical(_, _) | DataType::NewEnum(_, _),
                                 ..
                             } => {
+                                // TODO @ cat-rework: why not?
                                 polars_bail!(
                                     ComputeError: "casting to categorical not allowed in `list.eval`"
                                 )

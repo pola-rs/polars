@@ -69,6 +69,11 @@ impl PlSmallStr {
     pub fn as_mut_str(&mut self) -> &mut str {
         self.0.as_mut_str()
     }
+    
+    #[inline(always)]
+    pub fn to_string(&self) -> String {
+        self.0.as_str().to_owned()
+    }
 
     #[inline(always)]
     pub fn into_string(self) -> String {

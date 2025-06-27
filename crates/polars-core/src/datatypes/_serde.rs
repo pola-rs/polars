@@ -7,6 +7,9 @@
 #[cfg(feature = "dtype-categorical")]
 use serde::de::SeqAccess;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::datatypes::categories::CategoricalPhysical;
 
 use super::*;
 
@@ -127,11 +130,17 @@ enum SerializableDataType {
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
     #[cfg(feature = "dtype-categorical")]
-    Categorical(Option<Series>, CategoricalOrdering),
+    Categorical {
+        name: String,
+        namespace: String,
+        physical: CategoricalPhysical,
+    },
+    #[cfg(feature = "dtype-categorical")]
+    Enum {
+        strings: Series,
+    },
     #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>),
-    #[cfg(feature = "dtype-categorical")]
-    Enum(Option<Series>, CategoricalOrdering),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -167,25 +176,15 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(Some(rev_map), ordering) => Self::Categorical(
-                Some(
-                    StringChunked::with_chunk(PlSmallStr::EMPTY, rev_map.get_categories().clone())
-                        .into_series(),
-                ),
-                *ordering,
-            ),
+            NewCategorical(cats, _) => Self::Categorical {
+                name: cats.name().to_string(),
+                namespace: cats.namespace().to_string(),
+                physical: cats.physical(),
+            },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(None, ordering) => Self::Categorical(None, *ordering),
-            #[cfg(feature = "dtype-categorical")]
-            Enum(Some(rev_map), ordering) => Self::Enum(
-                Some(
-                    StringChunked::with_chunk(PlSmallStr::EMPTY, rev_map.get_categories().clone())
-                        .into_series(),
-                ),
-                *ordering,
-            ),
-            #[cfg(feature = "dtype-categorical")]
-            Enum(None, ordering) => Self::Enum(None, *ordering),
+            NewEnum(fcats, _) => Self::Enum {
+                strings: StringChunked::with_chunk(PlSmallStr::from_static("categories"), fcats.categories().clone()).into_series(),
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
@@ -224,28 +223,18 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(Some(categories), ordering) => Self::Categorical(
-                Some(Arc::new(RevMapping::build_local(
-                    categories.0.rechunk().chunks()[0]
-                        .as_any()
-                        .downcast_ref::<Utf8ViewArray>()
-                        .unwrap()
-                        .clone(),
-                ))),
-                ordering,
-            ),
+            Categorical { name, namespace, physical } => {
+                let cats = Categories::new(PlSmallStr::from(name), PlSmallStr::from(namespace), physical);
+                let mapping = cats.mapping();
+                Self::NewCategorical(cats, mapping)
+            },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(None, ordering) => Self::Categorical(None, ordering),
-            #[cfg(feature = "dtype-categorical")]
-            Enum(Some(categories), _) => create_enum_dtype(
-                categories.rechunk().chunks()[0]
-                    .as_any()
-                    .downcast_ref::<Utf8ViewArray>()
-                    .unwrap()
-                    .clone(),
-            ),
-            #[cfg(feature = "dtype-categorical")]
-            Enum(None, ordering) => Self::Enum(None, ordering),
+            Enum { strings } => {
+                let ca = strings.str().unwrap();
+                let fcats = FrozenCategories::new(ca.iter().flatten()).unwrap();
+                let mapping = fcats.mapping().clone();
+                Self::NewEnum(fcats, mapping)
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]

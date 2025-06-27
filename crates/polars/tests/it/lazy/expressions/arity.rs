@@ -116,8 +116,6 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "dtype-categorical")]
 fn test_when_then_otherwise_cats() -> PolarsResult<()> {
-    polars::enable_string_cache();
-
     let lf = df!["book" => [Some("bookA"),
         None,
         Some("bookB"),
@@ -130,8 +128,8 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
     ]?.lazy();
 
     let out = lf
-        .with_column(col("book").cast(DataType::Categorical(None, Default::default())))
-        .with_column(col("user").cast(DataType::Categorical(None, Default::default())))
+        .with_column(col("book").cast(DataType::from_categories(Categories::global())))
+        .with_column(col("user").cast(DataType::from_categories(Categories::global())))
         .with_column(
             when(col("book").is_null())
                 .then(col("user"))
@@ -142,7 +140,7 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
 
     assert_eq!(
         out.column("a")?
-            .categorical()?
+            .cat32()?
             .iter_str()
             .flatten()
             .collect::<Vec<_>>(),

@@ -296,8 +296,6 @@ where
             polars_ensure!(lhs.dtype() == rhs.dtype(),
                 ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
             );
-            #[cfg(feature = "dtype-categorical")]
-            _check_categorical_src(lhs.dtype(), rhs.dtype())?;
         }
 
         // TODO: @scalar-opt.
@@ -526,8 +524,6 @@ pub trait AsofJoinBy: IntoDf {
                 .iter_mut()
                 .zip(right_by.get_columns_mut().iter_mut())
             {
-                #[cfg(feature = "dtype-categorical")]
-                _check_categorical_src(l.dtype(), r.dtype())?;
                 *l = l.to_physical_repr();
                 *r = r.to_physical_repr();
             }

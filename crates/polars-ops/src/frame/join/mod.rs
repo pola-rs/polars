@@ -1,8 +1,6 @@
 mod args;
 #[cfg(feature = "asof_join")]
 mod asof;
-#[cfg(feature = "dtype-categorical")]
-mod checks;
 mod cross_join;
 mod dispatch_left_right;
 mod general;
@@ -20,8 +18,6 @@ pub use args::*;
 use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
-#[cfg(feature = "dtype-categorical")]
-pub(crate) use checks::*;
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -222,19 +218,6 @@ pub trait DataFrameJoinOps: IntoDf {
                     )
             );
         };
-
-        #[cfg(feature = "dtype-categorical")]
-        for (l, r) in selected_left.iter_mut().zip(selected_right.iter_mut()) {
-            match _check_categorical_src(l.dtype(), r.dtype()) {
-                Ok(_) => {},
-                Err(_) => {
-                    let (ca_left, ca_right) =
-                        make_rhs_categoricals_compatible(l.categorical()?, r.categorical()?)?;
-                    *l = ca_left.into_series().with_name(l.name().clone());
-                    *r = ca_right.into_series().with_name(r.name().clone());
-                },
-            }
-        }
 
         #[cfg(feature = "iejoin")]
         if let JoinType::IEJoin = args.how {
@@ -559,8 +542,6 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         drop_names: Option<Vec<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
-        #[cfg(feature = "dtype-categorical")]
-        _check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let ((join_tuples_left, join_tuples_right), sorted) =
             _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.nulls_equal)?;
 

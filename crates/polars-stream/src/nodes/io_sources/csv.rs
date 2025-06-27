@@ -2,8 +2,6 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::StringCacheHolder;
 use polars_core::prelude::{Column, Field};
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
@@ -590,8 +588,6 @@ struct ChunkReader {
     reader_schema: SchemaRef,
     parse_options: Arc<CsvParseOptions>,
     fields_to_cast: Vec<Field>,
-    #[cfg(feature = "dtype-categorical")]
-    _cat_lock: Option<StringCacheHolder>,
     ignore_errors: bool,
     projection: Vec<usize>,
     null_values: Option<NullValuesCompiled>,
@@ -610,10 +606,7 @@ impl ChunkReader {
         alt_count_lines: Option<Arc<CountLinesWithComments>>,
     ) -> PolarsResult<Self> {
         let mut fields_to_cast: Vec<Field> = options.fields_to_cast.clone();
-        let has_categorical = prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
-
-        #[cfg(feature = "dtype-categorical")]
-        let _cat_lock = has_categorical.then(polars_core::StringCacheHolder::hold);
+        prepare_csv_schema(&mut reader_schema, &mut fields_to_cast)?;
 
         let parse_options = options.parse_options.clone();
 
@@ -632,8 +625,6 @@ impl ChunkReader {
             reader_schema,
             parse_options,
             fields_to_cast,
-            #[cfg(feature = "dtype-categorical")]
-            _cat_lock,
             ignore_errors: options.ignore_errors,
             projection,
             null_values,

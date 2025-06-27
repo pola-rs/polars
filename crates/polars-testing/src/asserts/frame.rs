@@ -55,7 +55,6 @@ macro_rules! assert_dataframe_equal {
 mod tests {
     #[allow(unused_imports)]
     use polars_core::prelude::*;
-    use polars_core::{disable_string_cache, enable_string_cache};
 
     // Testing default struct implementation
     #[test]
@@ -534,46 +533,21 @@ mod tests {
     #[test]
     #[should_panic(expected = "dtypes do not match")]
     fn test_dataframe_categorical_as_string_mismatch() {
-        enable_string_cache();
-
-        let mut categorical = Series::new("categories".into(), &["a", "b", "c", "a"]);
-        categorical = categorical
-            .cast(&DataType::Categorical(None, Default::default()))
-            .unwrap();
-
-        let df1 = DataFrame::new(vec![categorical.into()]).unwrap();
-
-        let df2 = DataFrame::new(vec![
-            Series::new("categories".into(), &["a", "b", "c", "a"]).into(),
-        ])
-        .unwrap();
-
-        assert_dataframe_equal!(&df1, &df2);
-
-        disable_string_cache();
-    }
-
-    #[test]
-    fn test_dataframe_categorical_as_string_match() {
-        enable_string_cache();
-
         let mut categorical1 = Series::new("categories".into(), &["a", "b", "c", "a"]);
         categorical1 = categorical1
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let df1 = DataFrame::new(vec![categorical1.into()]).unwrap();
 
         let mut categorical2 = Series::new("categories".into(), &["a", "b", "c", "a"]);
         categorical2 = categorical2
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let df2 = DataFrame::new(vec![categorical2.into()]).unwrap();
 
         let options =
             crate::asserts::DataFrameEqualOptions::default().with_categorical_as_str(true);
         assert_dataframe_equal!(&df1, &df2, options);
-
-        disable_string_cache();
     }
 
     // Testing nested types

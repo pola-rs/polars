@@ -768,17 +768,11 @@ where
     #[cfg(not(debug_assertions))]
     let thread_boundary = 100_000;
 
-    // Temporary until categorical min/max multithreading implementation is corrected.
-    #[cfg(feature = "dtype-categorical")]
-    let is_categorical = matches!(s.dtype(), &DataType::Categorical(_, _));
-    #[cfg(not(feature = "dtype-categorical"))]
-    let is_categorical = false;
     // threading overhead/ splitting work stealing is costly..
 
     if !allow_threading
         || s.len() < thread_boundary
         || POOL.current_thread_has_pending_tasks().unwrap_or(false)
-        || is_categorical
     {
         return f(s);
     }

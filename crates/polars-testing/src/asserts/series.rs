@@ -50,7 +50,6 @@ macro_rules! assert_series_equal {
 #[cfg(test)]
 mod tests {
     use polars_core::prelude::*;
-    use polars_core::{disable_string_cache, enable_string_cache};
 
     // Testing default struct implementation
     #[test]
@@ -314,27 +313,23 @@ mod tests {
     #[test]
     #[should_panic(expected = "exact value mismatch")]
     fn test_series_categorical_mismatch() {
-        enable_string_cache();
-
         let s1 = Series::new("".into(), &["apple", "banana", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let s2 = Series::new("".into(), &["apple", "orange", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
 
         assert_series_equal!(&s1, &s2);
-
-        disable_string_cache();
     }
 
     #[test]
     fn test_series_categorical_match() {
         let s1 = Series::new("".into(), &["apple", "banana", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let s2 = Series::new("".into(), &["apple", "banana", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
 
         assert_series_equal!(&s1, &s2);
@@ -344,10 +339,10 @@ mod tests {
     #[should_panic(expected = "exact value mismatch")]
     fn test_series_categorical_str_mismatch() {
         let s1 = Series::new("".into(), &["apple", "banana", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let s2 = Series::new("".into(), &["apple", "orange", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
 
         let options = crate::asserts::SeriesEqualOptions::default().with_categorical_as_str(true);
@@ -358,10 +353,10 @@ mod tests {
     #[test]
     fn test_series_categorical_str_match() {
         let s1 = Series::new("".into(), &["apple", "banana", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let s2 = Series::new("".into(), &["apple", "banana", "cherry"])
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
 
         let options = crate::asserts::SeriesEqualOptions::default().with_categorical_as_str(true);
