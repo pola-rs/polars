@@ -3554,6 +3554,7 @@ def test_join_downgrade_null_preserving_exprs(
 @pytest.mark.parametrize(
     ("expr_first_input", "expr_func"),
     [
+        # TODO: We can technically push this by inspecting the RHS for NULLs
         (pl.lit(None, dtype=pl.Int64), lambda x: x.is_in([1, None], nulls_equal=True)),
     ],
 )
