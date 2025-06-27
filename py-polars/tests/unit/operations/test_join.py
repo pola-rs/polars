@@ -3498,24 +3498,30 @@ def test_join_downgrade_panic_23307() -> None:
 @pytest.mark.parametrize(
     ("expr_first_input", "expr_func"),
     [
-        (pl.lit(None, dtype=pl.Int64), lambda x: x >= 1),
-        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col >= 1),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (col >= 1).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (~(col >= 1)).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~(col >= 1).is_null()),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_in([1])),
         (pl.lit(None, dtype=pl.Int64), lambda x: ~x.is_in([1])),
-        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_between(1, 1)),
-        (1, lambda x: x.is_between(None, 1)),
-        (1, lambda x: x.is_between(1, None)),
-        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_close(1)),
-        (1, lambda x: x.is_close(pl.lit(None, dtype=pl.Int64))),
         #
-        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_nan()),
-        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_not_nan()),
-        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_finite()),
-        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_infinite()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
+        (1, lambda col: col.is_between(None, 1)),
+        (1, lambda col: col.is_between(1, None)),
         #
-        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_nan()),
-        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_not_nan()),
-        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_finite()),
-        (pl.lit(None, dtype=pl.Float64), lambda x: x.is_infinite()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_close(1)),
+        (1, lambda col: col.is_close(pl.lit(None, dtype=pl.Int64))),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_infinite()),
+        #
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_infinite()),
     ],
 )
 def test_join_downgrade_null_preserving_exprs(
@@ -3527,8 +3533,8 @@ def test_join_downgrade_null_preserving_exprs(
     assert (
         pl.select(expr_first_input)
         .select(expr_func(pl.first()))
+        .select(pl.first().is_null() | ~pl.first())
         .to_series()
-        .is_null()
         .item()
     )
 
