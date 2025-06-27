@@ -5,6 +5,7 @@ use std::fmt::Write;
 
 use arrow::array::ValueSize;
 #[cfg(feature = "list_pad")]
+#[cfg(feature = "list_pad")]
 use arrow::{
     array::{
         Array as ArrowArray, ListArray,
@@ -15,7 +16,7 @@ use arrow::{
     offset::Offsets,
     pushable::Pushable,
 };
-#[cfg(feature = "list_gather")]
+#[cfg(any(feature = "list_gather", feature = "list_pad"))]
 use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
 use num_traits::{NumCast, Signed, Zero};
