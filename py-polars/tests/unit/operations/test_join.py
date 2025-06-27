@@ -3543,3 +3543,25 @@ def test_join_downgrade_null_preserving_exprs(
 
     assert out.height == 0
     assert_frame_equal(out, q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (pl.lit(None, dtype=pl.Int64), lambda x: x.is_in([1, None], nulls_equal=True)),
+    ],
+)
+def test_join_downgrade_forbid_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
