@@ -971,20 +971,20 @@ impl DataType {
     }
     
     /// If this dtype is a Categorical or Enum, returns the physical backing type.
-    pub fn cat_physical(&self) -> Option<CategoricalPhysical> {
+    pub fn cat_physical(&self) -> PolarsResult<CategoricalPhysical> {
         match self {
-            DataType::NewCategorical(cats, _) => Some(cats.physical()),
-            DataType::NewEnum(fcats, _) => Some(fcats.physical()),
-            _ => None
+            DataType::NewCategorical(cats, _) => Ok(cats.physical()),
+            DataType::NewEnum(fcats, _) => Ok(fcats.physical()),
+            _ => polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
         }
     }
 
     /// If this dtype is a Categorical or Enum, returns the underlying mapping.
-    pub fn cat_mapping(&self) -> Option<&Arc<CategoricalMapping>> {
+    pub fn cat_mapping(&self) -> PolarsResult<&Arc<CategoricalMapping>> {
         match self {
             DataType::NewCategorical(_, mapping) |
-            DataType::NewEnum(_, mapping) => Some(mapping),
-            _ => None
+            DataType::NewEnum(_, mapping) => Ok(mapping),
+            _ => polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
         }
     }
     

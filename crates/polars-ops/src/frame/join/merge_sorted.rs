@@ -136,7 +136,7 @@ where
 }
 
 fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
-    if let Some(cat_phys) = lhs.dtype().cat_physical() {
+    if let Ok(cat_phys) = lhs.dtype().cat_physical() {
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();
             let rhs = rhs.cat::<$C>().unwrap();
