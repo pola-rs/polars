@@ -4406,7 +4406,8 @@ class Expr:
             Dtype of the output Series.
             If not set, the dtype will be inferred based on the first non-null value
             that is returned by the function.
-        agg_list : deprecated
+        agg_list
+            First implode when in a group-by aggregation.
 
             .. deprecated:: 1.32.0
 
@@ -4558,8 +4559,9 @@ Consider using {self}.implode() instead"""
         pass_name
             Pass the Series name to the custom function (this is more expensive).
         returns_scalar
+
             .. deprecated:: 1.32.0
-            Is ignored and will be removed in 2.0.
+                Is ignored and will be removed in 2.0.
         strategy : {'thread_local', 'threading'}
             The threading strategy to use.
 
@@ -4691,6 +4693,7 @@ Consider using {self}.implode() instead"""
         >>> df.with_columns(
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
         ... ).sort("key")  # doctest: +IGNORE_RESULT
+
         """
         if strategy == "threading":
             issue_unstable_warning(
@@ -10815,7 +10818,7 @@ Consider using {self}.implode() instead"""
         return self._from_pyexpr(self._pyexpr.bitwise_trailing_zeros())
 
     def bitwise_and(self) -> Expr:
-        """Perform an aggregation of bitwise ANDs. Null values will be ignored.
+        """Perform an aggregation of bitwise ANDs.
 
         Examples
         --------
@@ -10846,7 +10849,7 @@ Consider using {self}.implode() instead"""
         return self._from_pyexpr(self._pyexpr.bitwise_and())
 
     def bitwise_or(self) -> Expr:
-        """Perform an aggregation of bitwise ORs. Null values will be ignored.
+        """Perform an aggregation of bitwise ORs.
 
         Examples
         --------
@@ -10877,7 +10880,7 @@ Consider using {self}.implode() instead"""
         return self._from_pyexpr(self._pyexpr.bitwise_or())
 
     def bitwise_xor(self) -> Expr:
-        """Perform an aggregation of bitwise XORs. Null values will be ignored.
+        """Perform an aggregation of bitwise XORs.
 
         Examples
         --------
