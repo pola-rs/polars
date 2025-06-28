@@ -61,6 +61,8 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    #[cfg(feature = "list_zip")]
+    Zip,
 }
 
 impl IRListFunction {
@@ -129,6 +131,10 @@ impl IRListFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
+            #[cfg(feature = "list_zip")]
+            Zip => mapper.with_dtype(DataType::List(Box::new(DataType::Struct(
+                mapper.args().to_vec(),
+            )))),
         }
     }
 
@@ -183,6 +189,8 @@ impl IRListFunction {
             L::ToStruct(ListToStructArgs::FixedWidth(_)) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(ListToStructArgs::InferWidth { .. }) => FunctionOptions::groupwise(),
+            #[cfg(feature = "list_zip")]
+            L::Zip => FunctionOptions::elementwise(),
         }
     }
 }
@@ -256,6 +264,8 @@ impl Display for IRListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_zip")]
+            Zip => "zip",
         };
         write!(f, "list.{name}")
     }
@@ -319,6 +329,8 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
+            #[cfg(feature = "list_zip")]
+            Zip => map_as_slice!(zip),
         }
     }
 }
@@ -785,4 +797,12 @@ pub(super) fn to_struct(s: &Column, args: &ListToStructArgs) -> PolarsResult<Col
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+#[cfg(feature = "list_zip")]
+pub(super) fn zip(s: &[Column]) -> PolarsResult<Column> {
+    let first = s[0].list()?;
+    first
+        .lst_zip(&s[s.len().min(1)..])
+        .map(|ca| ca.into_column())
 }
