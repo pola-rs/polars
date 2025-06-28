@@ -57,6 +57,8 @@ pub enum ListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    #[cfg(feature = "list_pad")]
+    PadStart,
 }
 
 impl Display for ListFunction {
@@ -119,6 +121,8 @@ impl Display for ListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_pad")]
+            PadStart => "pad_start",
         };
         write!(f, "list.{name}")
     }

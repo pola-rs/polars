@@ -399,6 +399,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IL::ToArray(v) => L::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 IL::ToStruct(list_to_struct_args) => L::ToStruct(list_to_struct_args),
+                #[cfg(feature = "list_pad")]
+                IL::PadStart => L::PadStart,
             })
         },
         #[cfg(feature = "strings")]
