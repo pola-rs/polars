@@ -4407,8 +4407,9 @@ class Expr:
             If not set, the dtype will be inferred based on the first non-null value
             that is returned by the function.
         agg_list
+
             .. deprecated:: 1.32.0
-            Use `expr.implode().map_batches(..)` instead.
+                Use `expr.implode().map_batches(..)` instead.
         is_elementwise
             If set to true this can run in the streaming engine, but may yield
             incorrect results in group-by. Ensure you know what you are doing!
