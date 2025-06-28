@@ -866,9 +866,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::Sink { input, payload } => {
+            #[cfg(feature = "python")]
+            let (input, payload) = match payload {
+                SinkType::Dataset(f) => dataset::iceberg::iceberg_dataset_to_dsl(
+                    input.as_ref().clone(),
+                    f.dataset.as_ref(),
+                    f.cloud_options,
+                    f.mode,
+                )?,
+                p => (input, p),
+            };
+
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
             let payload = match payload {
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::File(f) => SinkTypeIR::File(f),
@@ -929,6 +941,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     },
                     finish_callback: f.finish_callback,
                 }),
+                #[cfg(feature = "python")]
+                SinkType::Dataset(_) => unreachable!(),
             };
 
             let lp = IR::Sink { input, payload };
