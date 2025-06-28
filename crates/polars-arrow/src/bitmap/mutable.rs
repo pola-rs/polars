@@ -184,7 +184,8 @@ impl MutableBitmap {
     /// It's undefined behavior if index >= self.len().
     #[inline]
     pub unsafe fn and_pos_unchecked(&mut self, index: usize, value: bool) {
-        *self.buffer.get_unchecked_mut(index / 8) &= (value as u8) << (index % 8);
+        *self.buffer.get_unchecked_mut(index / 8) &=
+            (0xfe + (value as u8)).rotate_left(index as u32);
     }
 
     /// constructs a new iterator over the bits of [`MutableBitmap`].
