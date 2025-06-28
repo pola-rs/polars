@@ -182,27 +182,30 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn join(&self, other: impl AsRef<Path>) -> PlPath {
+    pub fn join(&self, other: impl AsRef<str>) -> PlPath {
+        let other = other.as_ref();
+        if other.is_empty() {
+            return self.into_owned();
+        }
+
         match self {
             Self::Local(p) => PlPath::Local(p.join(other).into()),
             Self::Cloud(p) => {
-                let other = other.as_ref();
-                let mut out = String::with_capacity(
-                    p.uri.len() + usize::from(other.is_relative()) + other.as_os_str().len(),
-                );
+                let needs_slash = !p.uri.ends_with('/') && !other.starts_with('/');
+
+                let mut out =
+                    String::with_capacity(p.uri.len() + usize::from(needs_slash) + other.len());
+
                 out.push_str(p.uri);
-                if other.is_relative() {
+                if needs_slash {
                     out.push('/');
                 }
-                for c in other.components() {
-                    use std::path::Component as C;
-                    match c {
-                        C::RootDir => {},
-                        C::Normal(s) => out.push_str(s.to_str().unwrap()),
-                        C::CurDir | C::ParentDir | C::Prefix(_) => unreachable!(),
-                    }
-                    out.push('/');
-                }
+                // NOTE: This has as a consequence that pushing an absolute path into a URI
+                // just pushes the slashes while for a path it will make that absolute path the new
+                // path. I think this is acceptable as I don't really know what the alternative
+                // would be.
+                out.push_str(other);
+
                 let uri = out.into();
                 PlPath::Cloud(PlCloudPath {
                     scheme: p.scheme,
@@ -392,5 +395,70 @@ impl PlPath {
             PlPath::Local(path) => Some(path),
             PlPath::Cloud(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plpath_join() {
+        macro_rules! assert_plpath_join {
+            ($base:literal + $added:literal => $result:literal$(, $uri_result:literal)?) => {
+                // Normal path test
+                let path_base = $base.chars().map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                }).collect::<String>();
+                let path_added = $added.chars().map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                }).collect::<String>();
+                let path_result = $result.chars().map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                }).collect::<String>();
+                assert_eq!(PlPath::new(&path_base).as_ref().join(path_added).to_str(), path_result);
+
+                // URI path test
+                let uri_base = format!("file://{}", $base);
+                #[allow(unused_variables)]
+                let result = {
+                    let x = $result;
+                    $(let x = $uri_result;)?
+                    x
+                };
+                let uri_result = format!("file://{result}");
+                assert_eq!(
+                    PlPath::new(uri_base.as_str())
+                        .as_ref()
+                        .join($added)
+                        .to_str(),
+                    uri_result.as_str()
+                );
+            };
+        }
+
+        assert_plpath_join!("a/b/c/" + "d/e" => "a/b/c/d/e");
+        assert_plpath_join!("a/b/c" + "d/e" => "a/b/c/d/e");
+        assert_plpath_join!("a/b/c" + "d/e/" => "a/b/c/d/e/");
+        assert_plpath_join!("a/b/c" + "" => "a/b/c");
+        assert_plpath_join!("a/b/c" + "/d" => "/d", "a/b/c/d");
+        assert_plpath_join!("a/b/c" + "/d/" => "/d/", "a/b/c/d/");
+        assert_plpath_join!("" + "/d/" => "/d/");
+        assert_plpath_join!("/" + "/d/" => "/d/", "//d/");
+        assert_plpath_join!("/x/y" + "/d/" => "/d/", "/x/y/d/");
+        assert_plpath_join!("/x/y" + "/d" => "/d", "/x/y/d");
+        assert_plpath_join!("/x/y" + "d" => "/x/y/d");
+
+        assert_plpath_join!("/a/longer" + "path" => "/a/longer/path");
+        assert_plpath_join!("/a/longer" + "/path" => "/path", "/a/longer/path");
+        assert_plpath_join!("/a/longer" + "path/wow" => "/a/longer/path/wow");
+        assert_plpath_join!("/a/longer" + "/path/wow" => "/path/wow", "/a/longer/path/wow");
+        assert_plpath_join!("/an/even/longer" + "path" => "/an/even/longer/path");
+        assert_plpath_join!("/an/even/longer" + "/path" => "/path", "/an/even/longer/path");
+        assert_plpath_join!("/an/even/longer" + "path/wow" => "/an/even/longer/path/wow");
+        assert_plpath_join!("/an/even/longer" + "/path/wow" => "/path/wow", "/an/even/longer/path/wow");
     }
 }
