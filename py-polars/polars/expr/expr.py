@@ -4421,7 +4421,8 @@ class Expr:
         Warnings
         --------
         If `return_dtype` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
+        We allow this, but it is considered a bug in the user's query. In the
+        future this will raise in `Lazy` queries.
 
         See Also
         --------
@@ -4445,48 +4446,6 @@ class Expr:
         ╞══════╪════════╡
         │ 1    ┆ 0      │
         └──────┴────────┘
-
-        In a group-by context, the `agg_list` parameter can improve performance if used
-        correctly. The following example has `agg_list` set to `False`, which causes
-        the function to be applied once per group. The input of the function is a
-        Series of type `Int64`. This is less efficient.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [0, 1, 0, 1],
-        ...         "b": [1, 2, 3, 4],
-        ...     }
-        ... )
-        >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x + 2, agg_list=False)
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ i64 ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ 1   ┆ [4, 6]    │
-        │ 0   ┆ [3, 5]    │
-        └─────┴───────────┘
-
-        Using `agg_list=True` would be more efficient. In this example, the input of
-        the function is a Series of type `List(Int64)`.
-
-        >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(
-        ...         lambda x: x.list.eval(pl.element() + 2), agg_list=True
-        ...     )
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ i64 ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ 0   ┆ [3, 5]    │
-        │ 1   ┆ [4, 6]    │
-        └─────┴───────────┘
 
         Here's an example of a function that returns a scalar, where we want it
         to stay as a scalar:
@@ -4549,7 +4508,6 @@ Consider using {self}.implode() instead"""
             self._pyexpr.map_batches(
                 self._map_batches_wrapper(function),
                 return_dtype,
-                agg_list,
                 is_elementwise,
                 returns_scalar,
             )

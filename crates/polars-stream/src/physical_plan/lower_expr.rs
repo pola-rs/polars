@@ -68,16 +68,7 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
     // Some other functions are also marked as elementwise for filter pushdown
     // but aren't actually elementwise (e.g. arguments aren't same length).
     match expr {
-        AExpr::AnonymousFunction { options, .. } => {
-            options.flags.contains(FunctionFlags::APPLY_LIST)
-        },
-        AExpr::Function {
-            function, options, ..
-        } => {
-            if options.flags.contains(FunctionFlags::APPLY_LIST) {
-                return true;
-            }
-
+        AExpr::Function { function, .. } => {
             use IRFunctionExpr as F;
             match function {
                 #[cfg(feature = "is_in")]

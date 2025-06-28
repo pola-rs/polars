@@ -301,6 +301,7 @@ def test_parse_invalid_function(func: str) -> None:
     "ignore:invalid value encountered:RuntimeWarning",
     "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
+@pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -344,6 +345,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     "ignore:invalid value encountered:RuntimeWarning",
     "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
+@pytest.mark.may_fail_auto_streaming  # dtype is not set
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
