@@ -1420,9 +1420,21 @@ impl PyLazyFrame {
         maintain_order: bool,
         subset: Option<Vec<PyExpr>>,
         keep: Wrap<UniqueKeepStrategy>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        let subset = subset.map(|e| e.to_exprs());
+        let subset = subset
+            .map(|e| {
+                e.to_exprs()
+                    .into_iter()
+                    .map(|e| {
+                        Expr::into_selector(e).ok_or_else(
+                            || polars_err!(InvalidOperation: "subset can only include selectors"),
+                        )
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()
+            })
+            .transpose()
+            .map(to_py_err)?;
         match maintain_order {
             true => ldf.unique_stable_generic(subset, keep.0),
             false => ldf.unique_generic(subset, keep.0),

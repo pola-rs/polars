@@ -74,9 +74,6 @@ impl StructNameSpace {
                         this.field_by_names_impl(names)
                     })
                 },
-                Expr::Exclude(_, _) => {
-                    polars_bail!(InvalidOperation: "'exclude' not allowed in 'field'")
-                },
                 _ => Ok(e),
             })
         }

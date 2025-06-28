@@ -12,6 +12,7 @@ use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
 use super::datatype::PyDataTypeExpr;
+use super::selector::PySelector;
 use crate::PyExpr;
 use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
 use crate::error::PyPolarsErr;
@@ -967,5 +968,10 @@ impl PyExpr {
                 inner: skip_batch_predicate,
             }))
         })
+    }
+
+    #[staticmethod]
+    fn new_selector(selector: PySelector) -> Self {
+        Expr::Selector(selector.inner).into()
     }
 }

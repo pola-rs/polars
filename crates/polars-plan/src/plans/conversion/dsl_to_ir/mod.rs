@@ -270,7 +270,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             // note: if given an Expr::Columns, count the individual cols
             let n_by_exprs = if by_column.len() == 1 {
                 match &by_column[0] {
-                    Expr::Columns(cols) => cols.len(),
+                    // @TODO
+                    // Expr::Columns(cols) => cols.len(),
                     _ => 1,
                 }
             } else {
@@ -587,7 +588,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let subset = options
                 .subset
                 .map(|s| {
-                    let cols = expand_selectors(s, input_schema.as_ref(), &[])?;
+                    let cols = expand_selectors(s, input_schema.as_ref())?;
 
                     // Checking if subset columns exist in the dataframe
                     for col in cols.iter() {
@@ -619,7 +620,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     columns,
                     allow_empty,
                 } => {
-                    let columns = expand_selectors(columns, &input_schema, &[])?;
+                    let columns = expand_selectors(columns, &input_schema)?;
                     validate_columns_in_input(columns.as_ref(), &input_schema, "explode")?;
                     polars_ensure!(!columns.is_empty() || allow_empty, InvalidOperation: "no columns provided in explode");
                     if columns.is_empty() {
@@ -669,7 +670,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     return run_conversion(lp, ctxt, "fill_nan");
                 },
                 DslFunction::Drop(DropFunction { to_drop, strict }) => {
-                    let to_drop = expand_selectors(to_drop, &input_schema, &[])?;
+                    let to_drop = expand_selectors(to_drop, &input_schema)?;
                     let to_drop = to_drop.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>();
 
                     if strict {
@@ -982,13 +983,13 @@ fn expand_filter(
     let schema = lp_arena.get(input).schema(lp_arena);
     let predicate = if has_expr(&predicate, |e| match e {
         Expr::Column(name) => is_regex_projection(name),
-        Expr::Wildcard
-        | Expr::Selector(_)
-        | Expr::RenameAlias { .. }
-        | Expr::Columns(_)
-        | Expr::DtypeColumn(_)
-        | Expr::IndexColumn(_)
-        | Expr::Nth(_) => true,
+        // Expr::Wildcard
+        Expr::Selector(_)
+        | Expr::RenameAlias { .. } => true,
+        // | Expr::Columns(_)
+        // | Expr::DtypeColumn(_)
+        // | Expr::IndexColumn(_)
+        // | Expr::Nth(_) => true,
         #[cfg(feature = "dtype-struct")]
         Expr::Function {
             function: FunctionExpr::StructExpr(StructFunction::FieldByIndex(_)),
@@ -996,7 +997,7 @@ fn expand_filter(
         } => true,
         _ => false,
     }) {
-        let mut rewritten = rewrite_projections(vec![predicate], &schema, &[], opt_flags)?;
+        let mut rewritten = rewrite_projections(vec![predicate], &schema, opt_flags)?;
         match rewritten.len() {
             1 => {
                 // all good
@@ -1089,7 +1090,7 @@ fn resolve_group_by(
 ) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let input_schema = input_schema.as_ref();
-    let mut keys = rewrite_projections(keys, input_schema, &[], opt_flags)?;
+    let mut keys = rewrite_projections(keys, input_schema, opt_flags)?;
 
     // Initialize schema from keys
     let mut output_schema = expressions_to_schema(&keys, input_schema, Context::Default)?;
@@ -1120,7 +1121,8 @@ fn resolve_group_by(
     }
     let keys_index_len = output_schema.len();
 
-    let aggs = rewrite_projections(aggs, input_schema, &keys, opt_flags)?;
+    // @TODO: Check correctness
+    let aggs = rewrite_projections(aggs, input_schema, opt_flags)?;
     if pop_keys {
         let _ = keys.pop();
     }

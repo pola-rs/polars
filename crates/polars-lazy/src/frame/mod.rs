@@ -2249,13 +2249,8 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col(PlSmallStr::from_static("*"))
-            .exclude(keys.iter().cloned())
-            .head(n)])
-            .explode_impl(
-                [col(PlSmallStr::from_static("*")).exclude(keys.iter().cloned())],
-                true,
-            )
+        self.agg([all().exclude(keys.iter().cloned()).into_expr().head(n)])
+            .explode_impl([all().exclude(keys.iter().cloned())], true)
     }
 
     /// Return last n rows of each group
@@ -2266,13 +2261,8 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col(PlSmallStr::from_static("*"))
-            .exclude(keys.iter().cloned())
-            .tail(n)])
-            .explode_impl(
-                [col(PlSmallStr::from_static("*")).exclude(keys.iter().cloned())],
-                true,
-            )
+        self.agg([all().exclude(keys.iter().cloned()).into_expr().tail(n)])
+            .explode_impl([all().exclude(keys.iter().cloned())], true)
     }
 
     /// Apply a function over the groups as a new DataFrame.
