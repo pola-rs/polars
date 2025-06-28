@@ -180,15 +180,26 @@ fn try_lower_elementwise_scalar_agg_expr(
         ) =>
         {
             assert!(inner_exprs.len() == 1);
-            let inner_expr = inner_exprs[0].clone();
+
+            let input = inner_exprs[0].clone().node();
             let inner_fn = *inner_fn;
             let options = *options;
+
+            if is_input_independent(input, expr_arena, expr_cache) {
+                // TODO: we could simply return expr here, but we first need an is_scalar function, because if
+                // it is not a scalar we need to return expr.implode().
+                return None;
+            }
+
+            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
+                return None;
+            }
+
             let agg_id = expr_merger.get_uniq_id(expr).unwrap();
             let name = uniq_agg_exprs
                 .entry(agg_id)
                 .or_insert_with(|| {
-                    let input_node = inner_expr.node();
-                    let input_id = expr_merger.get_uniq_id(input_node).unwrap();
+                    let input_id = expr_merger.get_uniq_id(input).unwrap();
                     let input_col = uniq_input_exprs
                         .entry(input_id)
                         .or_insert_with(unique_column_name)

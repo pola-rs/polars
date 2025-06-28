@@ -16,10 +16,10 @@ pub fn new_bitwise_and_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         _ if dtype.is_integer() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                    Box::new(VMGR::new(dtype, NumReducer::<BitwiseAnd<$T>>::new()))
+                Box::new(VMGR::new(dtype, NumReducer::<BitwiseAnd<$T>>::new()))
             })
         },
-        _ => todo!(),
+        _ => unimplemented!(),
     }
 }
 
@@ -30,7 +30,7 @@ pub fn new_bitwise_or_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         _ if dtype.is_integer() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                    Box::new(VMGR::new(dtype, NumReducer::<BitwiseOr<$T>>::new()))
+                Box::new(VMGR::new(dtype, NumReducer::<BitwiseOr<$T>>::new()))
             })
         },
         _ => todo!(),
@@ -44,7 +44,7 @@ pub fn new_bitwise_xor_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         Boolean => Box::new(BoolXorGroupedReduction::default()),
         _ if dtype.is_integer() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                    Box::new(VMGR::new(dtype, NumReducer::<BitwiseXor<$T>>::new()))
+                Box::new(VMGR::new(dtype, NumReducer::<BitwiseXor<$T>>::new()))
             })
         },
         _ => todo!(),
@@ -193,7 +193,7 @@ impl GroupedReduction for BoolXorGroupedReduction {
                 if g.should_evict() {
                     self.evicted_values.push(self.values.get_unchecked(g.idx()));
                     self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
-                    self.values.xor_pos_unchecked(g.idx(), ov.unwrap_or(false));
+                    self.values.set_unchecked(g.idx(), ov.unwrap_or(false));
                     self.mask.set_unchecked(g.idx(), ov.is_some());
                 } else {
                     self.values.xor_pos_unchecked(g.idx(), ov.unwrap_or(false));

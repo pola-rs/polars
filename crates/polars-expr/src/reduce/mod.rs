@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+#[cfg(feature = "bitwise")]
 mod bitwise;
 mod convert;
 mod count;

@@ -3,6 +3,7 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use super::*;
+#[cfg(feature = "bitwise")]
 use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
 };
@@ -87,7 +88,7 @@ pub fn into_reduction(
                 IRBitwiseFunction::And => (new_bitwise_and_reduction(get_dt(input)?), input),
                 IRBitwiseFunction::Or => (new_bitwise_or_reduction(get_dt(input)?), input),
                 IRBitwiseFunction::Xor => (new_bitwise_xor_reduction(get_dt(input)?), input),
-                _ => todo!(),
+                _ => unreachable!(),
             }
         },
         _ => unreachable!(),
