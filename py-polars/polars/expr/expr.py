@@ -4665,7 +4665,11 @@ class Expr:
         >>> (
         ...     df.lazy()
         ...     .group_by("b")
-        ...     .agg(pl.col("a").implode().map_elements(lambda x: x.sum(), return_dtype=pl.Int64))
+        ...     .agg(
+        ...         pl.col("a")
+        ...         .implode()
+        ...         .map_elements(lambda x: x.sum(), return_dtype=pl.Int64)
+        ...     )
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
@@ -4699,7 +4703,9 @@ class Expr:
         ... )
         >>> df.with_columns(
         ...     scaled=pl.col("val")
+        ...     .implode()
         ...     .map_elements(lambda s: s * len(s), return_dtype=pl.List(pl.Int64))
+        ...     .explode()
         ...     .over("key"),
         ... ).sort("key")
         shape: (6, 3)
@@ -4767,7 +4773,7 @@ class Expr:
                 agg_list=False,
                 return_dtype=return_dtype,
                 returns_scalar=False,
-                is_elementwise=True
+                is_elementwise=True,
             )
         elif strategy == "threading":
 
@@ -4816,7 +4822,7 @@ class Expr:
                 agg_list=False,
                 return_dtype=return_dtype,
                 returns_scalar=False,
-                is_elementwise=True
+                is_elementwise=True,
             )
         else:
             msg = f"strategy {strategy!r} is not supported"
