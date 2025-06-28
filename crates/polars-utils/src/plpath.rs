@@ -407,7 +407,19 @@ mod tests {
         macro_rules! assert_plpath_join {
             ($base:literal + $added:literal => $result:literal$(, $uri_result:literal)?) => {
                 // Normal path test
-                assert_eq!(PlPath::new($base).as_ref().join($added).to_str(), $result);
+                let path_base = $base.chars().map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                }).collect::<String>();
+                let path_added = $added.chars().map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                }).collect::<String>();
+                let path_result = $result.chars().map(|c| match c {
+                    '/' => std::path::MAIN_SEPARATOR,
+                    c => c,
+                }).collect::<String>();
+                assert_eq!(PlPath::new(&path_base).as_ref().join(path_added).to_str(), path_result);
 
                 // URI path test
                 let uri_base = format!("file://{}", $base);
