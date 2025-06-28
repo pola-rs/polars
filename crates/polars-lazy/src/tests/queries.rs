@@ -289,7 +289,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
                 )
                 .alias("diff_cases"),
         ])
-        .explode([col("day"), col("diff_cases")])
+        .explode([Selector::col("day"), Selector::col("diff_cases")])
         .join(
             base_df,
             [col("uid"), col("day")],
@@ -1102,7 +1102,7 @@ fn test_multiple_explode() -> PolarsResult<()> {
         .lazy()
         .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
-        .explode([col("c_list"), col("b_list")])
+        .explode([Selector::col("c_list"), Selector::col("b_list")])
         .collect()?;
     assert_eq!(out.shape(), (5, 3));
 
@@ -1580,7 +1580,7 @@ fn test_exclude_regex() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .select([col("*").exclude(["^(fruits|cars)$"])])
+        .select([all() - Selector::Matches("^(fruits|cars)$").as_expr()])
         .collect()?;
 
     assert_eq!(out.get_column_names(), &["A", "B"]);

@@ -1012,6 +1012,10 @@ impl DataType {
         let mapping = fcats.mapping().clone();
         Self::Enum(fcats, mapping)
     }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_integer() || self.is_float() || self.is_decimal()
+    }
 }
 
 impl Display for DataType {

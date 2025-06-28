@@ -326,6 +326,7 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
             pl.when(pl.int_range(0, pl.len(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
+            .name.keep()
             .name.suffix("_nulls")
         )
         .cast(dtype)

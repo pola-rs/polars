@@ -50,7 +50,6 @@ TableFormatNames: TypeAlias = Literal[
 # and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
     "POLARS_WARN_UNSTABLE",
-    "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_NUM_DECIMAL",
@@ -517,27 +516,10 @@ class Config(contextlib.ContextDecorator):
         """
         Allow multi-output expressions to be automatically turned into Structs.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-        >>> with pl.Config(set_auto_structify=True):
-        ...     out = df.select(pl.all())
-        >>> out
-        shape: (3, 1)
-        ┌───────────┐
-        │ v         │
-        │ ---       │
-        │ struct[2] │
-        ╞═══════════╡
-        │ {1,4}     │
-        │ {2,5}     │
-        │ {3,6}     │
-        └───────────┘
+        .. note::
+            This setting does not do anything since 1.32.0.
         """
-        if active is None:
-            os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
-        else:
-            os.environ["POLARS_AUTO_STRUCTIFY"] = str(int(active))
+        # noop
         return cls
 
     @classmethod

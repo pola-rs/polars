@@ -107,14 +107,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .agg([
             len(),
             col("height").max().alias("tallest"),
-            cols(["weight", "height"]).mean().name().prefix("avg_"),
+            cols(["weight", "height"])
+                .as_expr()
+                .mean()
+                .name()
+                .prefix("avg_"),
         ])
         .collect()?;
     println!("{result}");
     // --8<-- [end:group_by-3]
 
     // --8<-- [start:expression-expansion-1]
-    let expr = (dtype_col(&DataType::Float64) * lit(1.1))
+    let expr = (dtype_col(&DataType::Float64).as_expr() * lit(1.1))
         .name()
         .suffix("*1.1");
     let result = df.clone().lazy().select([expr.clone()]).collect()?;

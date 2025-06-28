@@ -215,8 +215,8 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
     let q = df
         .lazy()
         .group_by([col("groups")])
-        .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
-            .then(all().exclude(["groups"]).sum())
+        .agg([when(all().exclude_cols(["groups"]).as_expr().sum().eq(lit(1)))
+            .then(all().exclude_cols(["groups"]).as_expr().sum())
             .otherwise(lit(LiteralValue::untyped_null()))])
         .sort(["groups"], Default::default());
 
