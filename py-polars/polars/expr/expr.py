@@ -6189,9 +6189,16 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> Expr:
+    @deprecate_renamed_parameter("fmt", "f_string", version="1.22.0")
+    def inspect(self, f_string: str = "{}") -> Expr:
         """
         Print the value that this expression evaluates to and pass on the value.
+
+        Parameters
+        ----------
+        f_string
+            A string with a single placeholder, for example: "hello_{}" or "{}_world".
+
 
         Examples
         --------
@@ -6217,7 +6224,7 @@ class Expr:
         """
 
         def inspect(s: Series) -> Series:  # pragma: no cover
-            print(fmt.format(s))
+            print(f_string.format(s))
             return s
 
         return self.map_batches(inspect, return_dtype=F.dtype_of(self), agg_list=True)
