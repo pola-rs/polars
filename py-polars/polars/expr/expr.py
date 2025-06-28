@@ -4406,8 +4406,7 @@ class Expr:
             Dtype of the output Series.
             If not set, the dtype will be inferred based on the first non-null value
             that is returned by the function.
-        agg_list
-
+        agg_list : deprecated
             .. deprecated:: 1.32.0
                 Use `expr.implode().map_batches(..)` instead.
         is_elementwise
