@@ -1938,7 +1938,7 @@ class ExprStringNameSpace:
         value
             String that will replace the matched substring.
         literal
-            Treat `pattern` as a literal string.
+            Treat `pattern` as a literal string, not a regex.
         n
             Number of matches to replace.
 
@@ -2054,7 +2054,7 @@ class ExprStringNameSpace:
         value
             String that will replace the matched substring.
         literal
-            Treat `pattern` as a literal string.
+            Treat `pattern` as a literal string, not a regex.
 
         See Also
         --------
