@@ -4407,10 +4407,11 @@ class Expr:
             If not set, the dtype will be inferred based on the first non-null value
             that is returned by the function.
         agg_list
-            Aggregate the values of the expression into a list before applying the
-            function. This parameter only works in a group-by context.
-            The function will be invoked only once on a list of groups, rather than
-            once per group.
+            First implode when in a group-by aggregation.
+
+            .. deprecated:: 1.32.0
+
+                Use `expr.implode().map_batches(..)` instead.
         is_elementwise
             If set to true this can run in the streaming engine, but may yield
             incorrect results in group-by. Ensure you know what you are doing!
@@ -4423,7 +4424,8 @@ class Expr:
         Warnings
         --------
         If `return_dtype` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
+        We allow this, but it is considered a bug in the user's query. In the
+        future this will raise in `Lazy` queries.
 
         See Also
         --------
@@ -4447,48 +4449,6 @@ class Expr:
         ╞══════╪════════╡
         │ 1    ┆ 0      │
         └──────┴────────┘
-
-        In a group-by context, the `agg_list` parameter can improve performance if used
-        correctly. The following example has `agg_list` set to `False`, which causes
-        the function to be applied once per group. The input of the function is a
-        Series of type `Int64`. This is less efficient.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [0, 1, 0, 1],
-        ...         "b": [1, 2, 3, 4],
-        ...     }
-        ... )
-        >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x + 2, agg_list=False)
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ i64 ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ 1   ┆ [4, 6]    │
-        │ 0   ┆ [3, 5]    │
-        └─────┴───────────┘
-
-        Using `agg_list=True` would be more efficient. In this example, the input of
-        the function is a Series of type `List(Int64)`.
-
-        >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(
-        ...         lambda x: x.list.eval(pl.element() + 2), agg_list=True
-        ...     )
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ b         │
-        │ --- ┆ ---       │
-        │ i64 ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ 0   ┆ [3, 5]    │
-        │ 1   ┆ [4, 6]    │
-        └─────┴───────────┘
 
         Here's an example of a function that returns a scalar, where we want it
         to stay as a scalar:
@@ -4538,6 +4498,12 @@ class Expr:
         │ 3   ┆ 4   ┆ 12        │
         └─────┴─────┴───────────┘
         """
+        if agg_list:
+            msg = f"""using 'agg_list=True' is deprecated and will be removed in 2.0
+
+Consider using {self}.implode() instead"""
+            raise DeprecationWarning(msg)
+            self = self.implode()
         if return_dtype is not None:
             return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
@@ -4545,7 +4511,6 @@ class Expr:
             self._pyexpr.map_batches(
                 self._map_batches_wrapper(function),
                 return_dtype,
-                agg_list,
                 is_elementwise,
                 returns_scalar,
             )
@@ -4581,19 +4546,6 @@ class Expr:
             consider :meth:`.with_columns <polars.DataFrame.with_columns>`
             and :meth:`.with_fields <polars.Expr.struct.with_fields>`.
 
-        The UDF is applied to each element of a column. Note that, in a GroupBy
-        context, the column will have been pre-aggregated and so each element
-        will itself be a Series. Therefore, depending on the context,
-        requirements for `function` differ:
-
-        * Selection
-            Expects `function` to be of type `Callable[[Any], Any]`.
-            Applies a Python function to each individual value in the column.
-        * GroupBy
-            Expects `function` to be of type `Callable[[Series], Any]`.
-            For each group, applies a Python function to the slice of the column
-            corresponding to that group.
-
         Parameters
         ----------
         function
@@ -4607,9 +4559,9 @@ class Expr:
         pass_name
             Pass the Series name to the custom function (this is more expensive).
         returns_scalar
-            If the function passed does a reduction
-            (e.g. sum, min, etc), Polars must be informed of this otherwise
-            the schema might be incorrect.
+
+            .. deprecated:: 1.32.0
+                Is ignored and will be removed in 2.0.
         strategy : {'thread_local', 'threading'}
             The threading strategy to use.
 
@@ -4676,28 +4628,14 @@ class Expr:
         ...     (pl.col("a") * 2).alias("a_times_2"),
         ... )  # doctest: +IGNORE_RESULT
 
-        In a GroupBy context, each element of the column is itself a Series:
-
-        >>> (
-        ...     df.lazy().group_by("b").agg(pl.col("a")).collect()
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (3, 2)
-        ┌─────┬───────────┐
-        │ b   ┆ a         │
-        │ --- ┆ ---       │
-        │ str ┆ list[i64] │
-        ╞═════╪═══════════╡
-        │ a   ┆ [1]       │
-        │ b   ┆ [2]       │
-        │ c   ┆ [3, 1]    │
-        └─────┴───────────┘
-
-        Therefore, from the user's point-of-view, the function is applied per-group:
-
         >>> (
         ...     df.lazy()
         ...     .group_by("b")
-        ...     .agg(pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64))
+        ...     .agg(
+        ...         pl.col("a")
+        ...         .implode()
+        ...         .map_elements(lambda x: x.sum(), return_dtype=pl.Int64)
+        ...     )
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
@@ -4731,7 +4669,9 @@ class Expr:
         ... )
         >>> df.with_columns(
         ...     scaled=pl.col("val")
+        ...     .implode()
         ...     .map_elements(lambda s: s * len(s), return_dtype=pl.List(pl.Int64))
+        ...     .explode()
         ...     .over("key"),
         ... ).sort("key")
         shape: (6, 3)
@@ -4753,6 +4693,7 @@ class Expr:
         >>> df.with_columns(
         ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
         ... ).sort("key")  # doctest: +IGNORE_RESULT
+
         """
         if strategy == "threading":
             issue_unstable_warning(
@@ -4796,9 +4737,10 @@ class Expr:
         if strategy == "thread_local":
             return self.map_batches(
                 wrap_f,
-                agg_list=True,
+                agg_list=False,
                 return_dtype=return_dtype,
-                returns_scalar=returns_scalar,
+                returns_scalar=False,
+                is_elementwise=True,
             )
         elif strategy == "threading":
 
@@ -4807,9 +4749,9 @@ class Expr:
                     return df.lazy().select(
                         F.col("x").map_batches(
                             wrap_f,
-                            agg_list=True,
+                            agg_list=False,
                             return_dtype=return_dtype,
-                            returns_scalar=returns_scalar,
+                            returns_scalar=False,
                         )
                     )
 
@@ -4844,9 +4786,10 @@ class Expr:
 
             return self.map_batches(
                 wrap_threading,
-                agg_list=True,
+                agg_list=False,
                 return_dtype=return_dtype,
-                returns_scalar=returns_scalar,
+                returns_scalar=False,
+                is_elementwise=True,
             )
         else:
             msg = f"strategy {strategy!r} is not supported"
@@ -6220,7 +6163,7 @@ class Expr:
             print(fmt.format(s))
             return s
 
-        return self.map_batches(inspect, return_dtype=F.dtype_of(self), agg_list=True)
+        return self.map_batches(inspect, return_dtype=F.dtype_of(self))
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Expr:
         """
@@ -10875,7 +10818,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.bitwise_trailing_zeros())
 
     def bitwise_and(self) -> Expr:
-        """Perform an aggregation of bitwise ANDs. Null values will be ignored.
+        """Perform an aggregation of bitwise ANDs.
 
         Examples
         --------
@@ -10906,7 +10849,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.bitwise_and())
 
     def bitwise_or(self) -> Expr:
-        """Perform an aggregation of bitwise ORs. Null values will be ignored.
+        """Perform an aggregation of bitwise ORs.
 
         Examples
         --------
@@ -10937,7 +10880,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.bitwise_or())
 
     def bitwise_xor(self) -> Expr:
-        """Perform an aggregation of bitwise XORs. Null values will be ignored.
+        """Perform an aggregation of bitwise XORs.
 
         Examples
         --------

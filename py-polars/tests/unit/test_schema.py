@@ -129,9 +129,8 @@ def test_schema_in_map_elements_returns_scalar() -> None:
     )
     q = ldf.group_by("portfolio").agg(
         pl.col("amounts")
-        .map_elements(
-            lambda x: float(x.sum()), return_dtype=pl.Float64, returns_scalar=True
-        )
+        .implode()
+        .map_elements(lambda x: float(x.sum()), return_dtype=pl.Float64)
         .alias("irr")
     )
     assert q.collect_schema() == schema

@@ -12,7 +12,6 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
-use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 
 // Will be overwritten on Python Polars start up.
@@ -256,12 +255,8 @@ impl FunctionOutputField for PythonGetOutput {
 }
 
 impl Expr {
-    pub fn map_python(self, func: PythonUdfExpression, agg_list: bool) -> Expr {
-        let name = if agg_list {
-            MAP_LIST_NAME
-        } else {
-            "python_udf"
-        };
+    pub fn map_python(self, func: PythonUdfExpression) -> Expr {
+        const NAME: &str = "python_udf";
 
         let returns_scalar = func.returns_scalar;
         let return_dtype = func.output_type.clone();
@@ -272,9 +267,6 @@ impl Expr {
         ));
 
         let mut flags = FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT;
-        if agg_list {
-            flags |= FunctionFlags::APPLY_LIST;
-        }
         if func.is_elementwise {
             flags.set_elementwise();
         }
@@ -290,7 +282,7 @@ impl Expr {
                 flags,
                 ..Default::default()
             },
-            fmt_str: Box::new(PlSmallStr::from(name)),
+            fmt_str: Box::new(PlSmallStr::from(NAME)),
         }
     }
 }

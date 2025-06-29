@@ -707,24 +707,16 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise, returns_scalar))]
+    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<PyDataTypeExpr>,
-        agg_list: bool,
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
         let output_type = output_type.map(|v| v.inner);
-        map_single(
-            self,
-            lambda,
-            output_type,
-            agg_list,
-            is_elementwise,
-            returns_scalar,
-        )
+        map_single(self, lambda, output_type, is_elementwise, returns_scalar)
     }
 
     fn dot(&self, other: Self) -> Self {

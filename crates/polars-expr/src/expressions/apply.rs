@@ -359,30 +359,16 @@ impl PhysicalExpr for ApplyExpr {
             ComputeError: "this expression cannot run in the group_by context",
         );
         if self.inputs.len() == 1 {
-            let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
+            let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
             match self.flags.is_elementwise() {
-                false if self.flags.contains(FunctionFlags::APPLY_LIST) => {
-                    let c = self.eval_and_flatten(&mut [ac.aggregated()])?;
-                    ac.with_values(c, true, Some(&self.expr))?;
-                    Ok(ac)
-                },
                 false => self.apply_single_group_aware(ac),
                 true => self.apply_single_elementwise(ac),
             }
         } else {
-            let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
+            let acs = self.prepare_multiple_inputs(df, groups, state)?;
 
             match self.flags.is_elementwise() {
-                false if self.flags.contains(FunctionFlags::APPLY_LIST) => {
-                    let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-                    let c = self.eval_and_flatten(&mut c)?;
-                    // take the first aggregation context that as that is the input series
-                    let mut ac = acs.swap_remove(0);
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_values(c, true, Some(&self.expr))?;
-                    Ok(ac)
-                },
                 false => self.apply_multiple_group_aware(acs, df),
                 true => {
                     let mut has_agg_list = false;

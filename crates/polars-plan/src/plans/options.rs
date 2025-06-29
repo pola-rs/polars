@@ -117,8 +117,6 @@ bitflags!(
             ///
             /// mutually exclusive with `RETURNS_SCALAR`
             const LENGTH_PRESERVING = 1 << 9;
-            /// Aggregate the values of the expression into a list before applying the function.
-            const APPLY_LIST = 1 << 10;
         }
 );
 
