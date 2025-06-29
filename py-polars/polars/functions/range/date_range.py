@@ -21,9 +21,10 @@ if TYPE_CHECKING:
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    periods: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
@@ -32,9 +33,10 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    periods: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
@@ -45,7 +47,8 @@ def date_range(
 def date_range(
     start: date | datetime | IntoExprColumn,
     end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    interval: str | timedelta | None = None,
+    periods: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: bool,
@@ -53,15 +56,19 @@ def date_range(
 
 
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = "1d",
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
+    periods: int | None = None,
     *,
     closed: ClosedInterval = "both",
     eager: bool = False,
 ) -> Series | Expr:
     """
     Generate a date range.
+
+    Exactly three of 'start', 'end', 'interval', and 'periods' must be provided to
+    construct the date range.
 
     Parameters
     ----------
@@ -73,6 +80,9 @@ def date_range(
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
         Must consist of full days.
+    periods
+        Number of periods in the date range. This corresponds to the number of points in
+        the output array, and is thus one more than the number of intervals.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
@@ -111,9 +121,12 @@ def date_range(
     Using Polars duration string to specify the interval:
 
     >>> from datetime import date
-    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True).alias(
-    ...     "date"
-    ... )
+    >>> pl.date_range(
+    ...     start=date(2022, 1, 1),
+    ...     end=date(2022, 3, 1),
+    ...     interval="1mo",
+    ...     eager=True
+    ... ).alias("date")
     shape: (3,)
     Series: 'date' [date]
     [
@@ -126,9 +139,9 @@ def date_range(
 
     >>> from datetime import timedelta
     >>> pl.date_range(
-    ...     date(1985, 1, 1),
-    ...     date(1985, 1, 10),
-    ...     timedelta(days=2),
+    ...     start=date(1985, 1, 1),
+    ...     end=date(1985, 1, 10),
+    ...     interval=timedelta(days=2),
     ...     eager=True,
     ... ).alias("date")
     shape: (5,)
@@ -141,6 +154,33 @@ def date_range(
         1985-01-09
     ]
 
+    Using 'periods' to specify the number of periods:
+
+    >>> pl.date_range(
+    ...     start=date(1985, 1, 1),
+    ...     end=date(1985, 1, 10),
+    ...     periods=5,
+    ... ).alias("date")
+    shape(5)
+    [
+        1985-01-01
+        1985-01-03
+        1985-01-05
+        1985-01-07
+        1985-01-09
+    ]
+    >>> pl.date_range(
+    ...     start=date(1985, 1, 1),
+    ...     interval="3d",
+    ...     periods=4,
+    ... ).alias("date")
+    shape(5)
+    [
+        1985-01-01
+        1985-01-04
+        1985-01-07
+        1985-01-10
+    ]
     Omit `eager=True` if you want to use `date_range` as an expression:
 
     >>> df = pl.DataFrame(
@@ -175,7 +215,15 @@ def date_range(
 
     start_pyexpr = parse_into_expression(start)
     end_pyexpr = parse_into_expression(end)
-    result = wrap_expr(plr.date_range(start_pyexpr, end_pyexpr, interval, closed))
+    result = wrap_expr(
+        plr.date_range(
+            start_pyexpr,
+            end_pyexpr,
+            interval,
+            periods,
+            closed,
+        )
+    )
 
     if eager:
         return F.select(result).to_series()
@@ -227,6 +275,9 @@ def date_ranges(
     """
     Create a column of date ranges.
 
+    Exactly three of 'start', 'end', 'interval', and 'periods' must be provided to
+    construct the column of date ranges.
+
     Parameters
     ----------
     start
@@ -237,6 +288,9 @@ def date_ranges(
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
         Must consist of full days.
+    periods
+        Number of periods in the date range. This corresponds to the number of points in
+        the output array, and is thus one more than the number of intervals.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager

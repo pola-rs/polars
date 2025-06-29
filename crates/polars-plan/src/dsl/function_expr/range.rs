@@ -10,6 +10,15 @@ use serde::{Deserialize, Serialize};
 use super::{DataTypeExpr, FunctionExpr};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
+pub enum DateRangeArgs {
+    StartEndInterval,
+    StartEndSamples,
+    StartIntervalSamples,
+    EndIntervalSamples,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Hash)]
 pub enum RangeFunction {
@@ -29,8 +38,9 @@ pub enum RangeFunction {
     },
     #[cfg(feature = "dtype-date")]
     DateRange {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-date")]
     DateRanges {
@@ -39,10 +49,11 @@ pub enum RangeFunction {
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRange {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRanges {
