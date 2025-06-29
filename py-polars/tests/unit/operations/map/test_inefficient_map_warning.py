@@ -487,6 +487,7 @@ def test_parse_apply_series(
         assert_series_equal(expected_series, result_series)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_expr_exact_warning_message() -> None:
     red, green, end_escape = (
         ("\x1b[31m", "\x1b[32m", "\x1b[0m")
