@@ -117,6 +117,10 @@ bitflags!(
             ///
             /// mutually exclusive with `RETURNS_SCALAR`
             const LENGTH_PRESERVING = 1 << 9;
+            /// NULLs on the first input are propagated to the output.
+            const PRESERVES_NULL_FIRST_INPUT = 1 << 10;
+            /// NULLs on any input are propagated to the output.
+            const PRESERVES_NULL_ALL_INPUTS = 1 << 11;
         }
 );
 
