@@ -324,3 +324,41 @@ def test_bitwise_boolean(expr: pl.Expr, result: list[bool]) -> None:
     )
     out = lf.select(expr).collect()
     assert_frame_equal(out, expected)
+
+
+# Although there is no way to deterministically trigger the `evict` path
+# in the code, the below test will do so with high likelihood
+# POLARS_MAX_THREADS only be honored when tested in isolation, see issue #22070
+def test_bitwise_boolean_evict_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    monkeypatch.setenv("DEFAULT_HOT_TABLE_SIZE", "1")
+    n_groups = 1000
+    group_size_pairs = 10
+    group_size = group_size_pairs * 2
+
+    col_a = list(range(group_size)) * n_groups
+    col_b = [True, False] * group_size_pairs * n_groups
+    df = pl.DataFrame({"a": pl.Series(col_a), "b": pl.Series(col_b)}).sort("a")
+
+    out = (
+        df.lazy()
+        .group_by("a")
+        .agg(
+            [
+                pl.col("b").bitwise_and().alias("bitwise_and"),
+                pl.col("b").bitwise_or().alias("bitwise_or"),
+                pl.col("b").bitwise_xor().alias("bitwise_xor"),
+            ]
+        )
+        .sort("a")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "a": list(range(group_size)),
+            "bitwise_and": [True, False] * group_size_pairs,
+            "bitwise_or": [True, False] * group_size_pairs,
+            "bitwise_xor": [n_groups % 2 == 1, False] * group_size_pairs,
+        }
+    )
+    assert_frame_equal(out, expected)

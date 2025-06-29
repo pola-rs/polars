@@ -33,7 +33,7 @@ pub fn new_bitwise_or_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
                 Box::new(VMGR::new(dtype, NumReducer::<BitwiseOr<$T>>::new()))
             })
         },
-        _ => todo!(),
+        _ => unimplemented!(),
     }
 }
 
@@ -47,7 +47,7 @@ pub fn new_bitwise_xor_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
                 Box::new(VMGR::new(dtype, NumReducer::<BitwiseXor<$T>>::new()))
             })
         },
-        _ => todo!(),
+        _ => unimplemented!(),
     }
 }
 
