@@ -730,7 +730,34 @@ impl SQLContext {
             replace: vec![],
         };
 
-        let projections = self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+        let mut projections =
+            self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+
+        // Dataframe Level explode (UNNEST CLAUSE)
+        let mut explode_columns = Vec::with_capacity(projections.len());
+        for expr in &projections {
+            expr.into_iter().for_each(|e| {
+                if let Expr::Explode { input, .. } = e {
+                    if let Expr::Column(name) = input.as_ref() {
+                        explode_columns.push(col(name.clone()));
+                    }
+                }
+            });
+        }
+
+        if !explode_columns.is_empty() {
+            explode_columns.dedup();
+            lf = lf.explode(explode_columns);
+            projections = projections
+                .into_iter()
+                .map(|p| {
+                    p.map_expr(|e| match e {
+                        Expr::Explode { input, .. } => input.as_ref().clone(),
+                        _ => e,
+                    })
+                })
+                .collect();
+        }
 
         // Check for "GROUP BY ..." (after determining projections)
         let mut group_by_keys: Vec<Expr> = Vec::new();
@@ -836,7 +863,6 @@ impl SQLContext {
                     // height. E.g.:
                     //
                     // * SELECT COUNT(*) FROM df ORDER BY sort_key;
-                    // * SELECT UNNEST(list_col) FROM df ORDER BY sort_key;
                     //
                     // For these cases we truncate / extend the sorting columns with NULLs to match
                     // the output height. We do this by projecting independently and then joining
