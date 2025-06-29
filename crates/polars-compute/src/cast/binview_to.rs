@@ -4,13 +4,14 @@ use arrow::compute::decimal::deserialize_decimal;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use num_traits::FromBytes;
 use polars_error::PolarsResult;
 
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
 use super::temporal::EPOCH_DAYS_FROM_CE;
+use crate::cast::temporal::time_unit_multiple;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
@@ -145,6 +146,25 @@ pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {
 pub(super) fn utf8view_to_date32_dyn(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(utf8view_to_date32(from)))
+}
+
+pub(super) fn utf8view_to_time64(from: &Utf8ViewArray, time_unit: TimeUnit) -> PrimitiveArray<i64> {
+    let iter = from.iter().map(|x| {
+        x.and_then(|x| {
+            x.parse::<chrono::NaiveTime>()
+                .ok()
+                .map(|x| x.num_seconds_from_midnight() as i64 * time_unit_multiple(time_unit))
+        })
+    });
+    PrimitiveArray::<i64>::from_trusted_len_iter(iter).to(ArrowDataType::Time64(time_unit))
+}
+
+pub(super) fn utf8view_to_time64_dyn(
+    from: &dyn Array,
+    time_unit: TimeUnit,
+) -> PolarsResult<Box<dyn Array>> {
+    let from = from.as_any().downcast_ref().unwrap();
+    Ok(Box::new(utf8view_to_time64(from, time_unit)))
 }
 
 /// Casts a [`BinaryViewArray`] containing binary-encoded numbers to a

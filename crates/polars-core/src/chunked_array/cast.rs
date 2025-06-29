@@ -340,8 +340,7 @@ impl ChunkCast for StringChunked {
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
                 let result = cast_chunks(&self.chunks, dtype, options)?;
-                let out = Series::try_from((self.name().clone(), result))?;
-                Ok(out)
+                Series::try_from((self.name().clone(), result))
             },
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(time_unit, time_zone) => match time_zone {
@@ -360,6 +359,11 @@ impl ChunkCast for StringChunked {
                         cast_chunks(&self.chunks, &Datetime(time_unit.to_owned(), None), options)?;
                     Series::try_from((self.name().clone(), result))
                 },
+            },
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => {
+                let result = cast_chunks(&self.chunks, dtype, options)?;
+                Series::try_from((self.name().clone(), result))
             },
             _ => cast_impl(self.name().clone(), &self.chunks, dtype, options),
         }

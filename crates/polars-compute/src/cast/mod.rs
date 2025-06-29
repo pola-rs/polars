@@ -24,7 +24,7 @@ use arrow::offset::{Offset, Offsets};
 pub use binview_to::binview_to_primitive_dyn;
 use binview_to::{
     binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
-    utf8view_to_naive_timestamp_dyn, view_to_binary,
+    utf8view_to_naive_timestamp_dyn, utf8view_to_time64_dyn, view_to_binary,
 };
 use dictionary_to::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
@@ -552,6 +552,7 @@ pub fn cast(
                 Decimal(precision, scale) => {
                     Ok(binview_to_decimal(&arr.to_binview(), Some(*precision), *scale).to_boxed())
                 },
+                Time64(time_unit) => utf8view_to_time64_dyn(array, *time_unit),
                 _ => polars_bail!(InvalidOperation:
                     "casting from {from_type:?} to {to_type:?} not supported",
                 ),
