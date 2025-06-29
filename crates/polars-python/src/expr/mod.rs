@@ -19,6 +19,7 @@ mod meta;
 mod name;
 #[cfg(feature = "pymethods")]
 mod rolling;
+pub mod selector;
 #[cfg(feature = "pymethods")]
 mod serde;
 #[cfg(feature = "pymethods")]

@@ -136,11 +136,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("birthdate").dt().year() / lit(10) * lit(10)).alias("decade"),
             col("name").str().split(lit(" ")).list().first(),
         ])
-        .select([all().exclude(["birthdate"])])
+        .select([all().exclude(["birthdate"]).into_expr()])
         .group_by([col("decade")])
         .agg([
             col("name"),
             cols(["weight", "height"])
+                .into_expr(),
                 .mean()
                 .round(2, RoundMode::default())
                 .name()

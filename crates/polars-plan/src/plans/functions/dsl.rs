@@ -103,8 +103,8 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let on = expand_selectors(args.on, input_schema, &[])?;
-                let index = expand_selectors(args.index, input_schema, &[])?;
+                let on = expand_selectors(args.on, input_schema)?;
+                let index = expand_selectors(args.index, input_schema)?;
                 validate_columns_in_input(on.as_ref(), input_schema, "unpivot")?;
                 validate_columns_in_input(index.as_ref(), input_schema, "unpivot")?;
 
@@ -127,7 +127,7 @@ impl DslFunction {
                 schema: Default::default(),
             },
             DslFunction::Unnest(selectors) => {
-                let columns = expand_selectors(selectors, input_schema, &[])?;
+                let columns = expand_selectors(selectors, input_schema)?;
                 validate_columns_in_input(columns.as_ref(), input_schema, "unnest")?;
                 FunctionIR::Unnest { columns }
             },

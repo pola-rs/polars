@@ -135,7 +135,7 @@ impl DslBuilder {
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().fill_null(fill_value)],
+            vec![all().into_expr().fill_null(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()
@@ -147,7 +147,11 @@ impl DslBuilder {
         let is_nan = match subset {
             Some(subset) if subset.is_empty() => return self,
             Some(subset) => subset.into_iter().map(Expr::is_nan).collect(),
-            None => vec![dtype_cols([DataType::Float32, DataType::Float64]).is_nan()],
+            None => vec![
+                dtype_cols([DataType::Float32, DataType::Float64])
+                    .into_expr()
+                    .is_nan(),
+            ],
         };
         self.remove(any_horizontal(is_nan).unwrap())
     }
@@ -156,7 +160,7 @@ impl DslBuilder {
         let is_not_null = match subset {
             Some(subset) if subset.is_empty() => return self,
             Some(subset) => subset.into_iter().map(Expr::is_not_null).collect(),
-            None => vec![all().is_not_null()],
+            None => vec![all().into_expr().is_not_null()],
         };
         self.filter(all_horizontal(is_not_null).unwrap())
     }

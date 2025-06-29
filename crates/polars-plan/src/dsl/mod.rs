@@ -1016,9 +1016,9 @@ impl Expr {
     /// Should be used in aggregation context. If you want to filter on a
     /// DataFrame level, use `LazyFrame::filter`.
     pub fn filter<E: Into<Expr>>(self, predicate: E) -> Self {
-        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
-            panic!("filter '*' not allowed, use LazyFrame::filter")
-        };
+        // if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
+        //     panic!("filter '*' not allowed, use LazyFrame::filter")
+        // };
         Expr::Filter {
             input: Arc::new(self),
             by: Arc::new(predicate.into()),
@@ -1111,23 +1111,6 @@ impl Expr {
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
         self.map_unary(FunctionExpr::Mode)
-    }
-
-    /// Exclude a column from a wildcard/regex selection.
-    ///
-    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
-    pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Expr {
-        let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
-        Expr::Exclude(Arc::new(self), v)
-    }
-
-    pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Expr {
-        let v = dtypes
-            .as_ref()
-            .iter()
-            .map(|dt| Excluded::Dtype(dt.clone()))
-            .collect();
-        Expr::Exclude(Arc::new(self), v)
     }
 
     #[cfg(feature = "interpolate")]
@@ -1800,15 +1783,15 @@ pub fn len() -> Expr {
 
 /// First column in a DataFrame.
 pub fn first() -> Expr {
-    Expr::Nth(0)
+    nth(0)
 }
 
 /// Last column in a DataFrame.
 pub fn last() -> Expr {
-    Expr::Nth(-1)
+    nth(-1)
 }
 
 /// Nth column in a DataFrame.
 pub fn nth(n: i64) -> Expr {
-    Expr::Nth(n)
+    Expr::Selector(Selector::AtIndex([n].into()))
 }
