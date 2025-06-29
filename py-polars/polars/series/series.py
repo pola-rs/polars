@@ -131,7 +131,6 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         MultiIndexSelector,
-        NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
         PolarsDataType,
@@ -3643,7 +3642,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: NonNestedLiteral | None,
+        element: PythonLiteral | None | np.ndarray[Any, Any],
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
@@ -3652,7 +3651,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
+        element: Expr | Series,
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
@@ -3660,7 +3659,7 @@ class Series:
 
     def search_sorted(
         self,
-        element: IntoExpr | np.ndarray[Any, Any] | None,
+        element: IntoExpr | np.ndarray[Any, Any],
         side: SearchSortedSide = "any",
         *,
         descending: bool = False,
@@ -3674,6 +3673,17 @@ class Series:
         ----------
         element
             Expression or scalar value.
+            If this value matches the dtype of values in self, the return result is an
+            integer.
+            If self's dtype is ``pl.List``/``pl.Array``, we assume an element that is
+            ``list`` or NumPy array is a single value, and return an integer.
+            If this is a ``Series`` or ``Expr``, the return result is a ``Series``.
+
+            .. note::
+               For dtypes other than ``pl.List``/``pl.Array``, a ``list``/NumPy array
+               element is assumed to be searching for multiple values, and the return
+               result is a ``Series``. This behavior is deprecated, and you should
+               switch to using a ``Series`` if you want to search for multiple values.
         side : {'any', 'left', 'right'}
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
@@ -3717,11 +3727,22 @@ class Series:
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
-        if isinstance(element, (list, Series, pl.Expr)):
+        # These types unambiguously return a Series:
+        #
+        # * Series means we want to search for multiple values.
+        # * Expr because that always returns a Series, matching Expr.search_sorted().
+        if isinstance(element, (Series, pl.Expr)):
             return df.to_series()
-        elif _check_for_numpy(element) and isinstance(element, np.ndarray):
+
+        if (
+            isinstance(element, list)
+            or (_check_for_numpy(element) and isinstance(element, np.ndarray))
+        ) and not isinstance(self.dtype, (List, Array)):
             return df.to_series()
         else:
+            # This will be going away in Polars 2.0 probably.
+            # @TAG: 2.0
+            assert len(df) == 1
             return df.item()
 
     def unique(self, *, maintain_order: bool = False) -> Series:
