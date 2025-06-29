@@ -3,6 +3,10 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use super::*;
+#[cfg(feature = "bitwise")]
+use crate::reduce::bitwise::{
+    new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
+};
 use crate::reduce::count::CountReduce;
 use crate::reduce::first_last::{new_first_reduction, new_last_reduction};
 use crate::reduce::len::LenReduce;
@@ -70,6 +74,21 @@ pub fn into_reduction(
                 let expr = expr_arena.add(AExpr::Len);
 
                 (out, expr)
+            }
+        },
+        #[cfg(feature = "bitwise")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Bitwise(inner_fn),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            match inner_fn {
+                IRBitwiseFunction::And => (new_bitwise_and_reduction(get_dt(input)?), input),
+                IRBitwiseFunction::Or => (new_bitwise_or_reduction(get_dt(input)?), input),
+                IRBitwiseFunction::Xor => (new_bitwise_xor_reduction(get_dt(input)?), input),
+                _ => unreachable!(),
             }
         },
         _ => unreachable!(),

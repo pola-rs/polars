@@ -188,6 +188,15 @@ impl MutableBitmap {
             (0xFE | u8::from(value)).rotate_left(index as u32);
     }
 
+    /// Sets the position `index` to the XOR of its original value and `value`.
+    ///
+    /// # Safety
+    /// It's undefined behavior if index >= self.len().
+    #[inline]
+    pub unsafe fn xor_pos_unchecked(&mut self, index: usize, value: bool) {
+        *self.buffer.get_unchecked_mut(index / 8) ^= (value as u8) << (index % 8);
+    }
+
     /// constructs a new iterator over the bits of [`MutableBitmap`].
     pub fn iter(&self) -> BitmapIter<'_> {
         BitmapIter::new(&self.buffer, 0, self.length)
