@@ -109,11 +109,11 @@ pub fn resolve_join(
 
     let mut left_on = left_on
         .into_iter()
-        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_left))
+        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, ctxt.opt_flags, &schema_left))
         .collect::<PolarsResult<Vec<_>>>()?;
     let mut right_on = right_on
         .into_iter()
-        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_right))
+        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, ctxt.opt_flags, &schema_right))
         .collect::<PolarsResult<Vec<_>>>()?;
     let mut joined_on = PlHashSet::new();
 
@@ -438,7 +438,7 @@ fn resolve_join_where(
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
-        let predicate = to_expr_ir_materialized_lit(e, arena, &schema_merged)?;
+        let predicate = to_expr_ir_materialized_lit(e, arena, ctxt.opt_flags, &schema_merged)?;
         let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean

@@ -1,34 +1,42 @@
 use super::functions::convert_functions;
 use super::*;
 
-pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>, schema: &Schema) -> PolarsResult<ExprIR> {
-    let (node, output_name) = to_aexpr_impl(expr, arena, schema)?;
+pub fn to_expr_ir(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
+    schema: &Schema,
+) -> PolarsResult<ExprIR> {
+    let (node, output_name) = to_aexpr_impl(expr, arena, opt_flags, schema)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
 pub fn to_expr_ir_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
     schema: &Schema,
 ) -> PolarsResult<ExprIR> {
-    let (node, output_name) = to_aexpr_impl_materialized_lit(expr, arena, schema)?;
+    let (node, output_name) = to_aexpr_impl_materialized_lit(expr, arena, opt_flags, schema)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
 pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
     schema: &Schema,
 ) -> PolarsResult<Vec<ExprIR>> {
     input
         .into_iter()
-        .map(|e| to_expr_ir(e, arena, schema))
+        .map(|e| to_expr_ir(e, arena, opt_flags, schema))
         .collect()
 }
 
 fn to_aexpr_impl_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
     schema: &Schema,
 ) -> PolarsResult<(Node, PlSmallStr)> {
     // Already convert `Lit Float and Lit Int` expressions that are not used in a binary / function expression.
@@ -43,7 +51,7 @@ fn to_aexpr_impl_materialized_lit(
         },
         e => e,
     };
-    to_aexpr_impl(e, arena, schema)
+    to_aexpr_impl(e, arena, opt_flags, schema)
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -51,13 +59,14 @@ fn to_aexpr_impl_materialized_lit(
 pub(super) fn to_aexpr_impl(
     expr: Expr,
     arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
     schema: &Schema,
 ) -> PolarsResult<(Node, PlSmallStr)> {
     let owned = Arc::unwrap_or_clone;
 
     macro_rules! recurse {
         ($input:expr) => {
-            to_aexpr_impl($input, arena, schema)
+            to_aexpr_impl($input, arena, opt_flags, schema)
         };
     }
     macro_rules! recurse_arc {
@@ -68,7 +77,7 @@ pub(super) fn to_aexpr_impl(
 
     macro_rules! to_aexpr_mat_lit {
         ($input:expr) => {
-            to_aexpr_impl_materialized_lit($input, arena, schema)
+            to_aexpr_impl_materialized_lit($input, arena, opt_flags, schema)
         };
     }
 
@@ -276,7 +285,7 @@ pub(super) fn to_aexpr_impl(
             options,
             fmt_str,
         } => {
-            let e = to_expr_irs(input, arena, schema)?;
+            let e = to_expr_irs(input, arena, opt_flags, schema)?;
             let output_name = if e.is_empty() {
                 fmt_str.as_ref().clone()
             } else {
@@ -300,7 +309,7 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::Function { input, function } => {
-            return convert_functions(input, function, arena, schema);
+            return convert_functions(input, function, arena, opt_flags, schema);
         },
         Expr::Window {
             function,
@@ -320,7 +329,7 @@ pub(super) fn to_aexpr_impl(
                     function,
                     partition_by: partition_by
                         .into_iter()
-                        .map(|e| Ok(to_aexpr_impl_materialized_lit(e, arena, schema)?.0))
+                        .map(|e| Ok(to_aexpr_mat_lit!(e)?.0))
                         .collect::<PolarsResult<_>>()?,
                     order_by,
                     options,
@@ -354,7 +363,8 @@ pub(super) fn to_aexpr_impl(
             let expr_dtype = arena.get(expr).to_dtype(schema, Context::Default, arena)?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
             let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
-            let (evaluation, _) = to_aexpr_impl(owned(evaluation), arena, &evaluation_schema)?;
+            let (evaluation, _) =
+                to_aexpr_impl(owned(evaluation), arena, opt_flags, &evaluation_schema)?;
 
             match variant {
                 EvalVariant::List => {

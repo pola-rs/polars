@@ -10,12 +10,13 @@ pub(super) fn convert_functions(
     input: Vec<Expr>,
     function: FunctionExpr,
     arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
     schema: &Schema,
 ) -> PolarsResult<(Node, PlSmallStr)> {
     use {FunctionExpr as F, IRFunctionExpr as I};
 
     // Converts inputs
-    let e = to_expr_irs(input, arena, schema)?;
+    let e = to_expr_irs(input, arena, opt_flags, schema)?;
     let mut set_elementwise = false;
 
     // Return before converting inputs
