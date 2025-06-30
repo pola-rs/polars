@@ -70,7 +70,20 @@ pub(super) fn convert_functions(
                 B::Base64Encode => IB::Base64Encode,
                 B::Size => IB::Size,
                 #[cfg(feature = "binary_encoding")]
-                B::FromBuffer(data_type, v) => IB::FromBuffer(data_type.into_datatype(schema)?, v),
+                B::FromBuffer(dtype_expr, v) => {
+                    let dtype = dtype_expr.into_datatype(schema)?;
+                    let physical_dtype = dtype.to_physical();
+                    polars_ensure!(
+                        physical_dtype.is_primitive_numeric() || (
+                            physical_dtype.is_array() && physical_dtype.inner_dtype().map(|dt|dt.is_primitive_numeric()) == Some(true)
+                        ),
+                        InvalidOperation:
+                        "cannot reinterpret binary to dtype {:?} (with physical dtype {:?}). Only dtypes physically represented by primitive numerics, or Arrays of these, are supported. Hint: To cast to a nested Array, first cast to a linear Array, and then use reshape",
+                        dtype,
+                        physical_dtype
+                    );
+                    IB::FromBuffer(dtype, v)
+                },
             })
         },
         #[cfg(feature = "dtype-categorical")]
