@@ -24,7 +24,7 @@ def date_range(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    periods: int | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
@@ -36,7 +36,7 @@ def date_range(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    periods: int | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
@@ -48,7 +48,7 @@ def date_range(
     start: date | datetime | IntoExprColumn,
     end: date | datetime | IntoExprColumn,
     interval: str | timedelta | None = None,
-    periods: int | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = ...,
     eager: bool,
@@ -59,7 +59,7 @@ def date_range(
     start: date | datetime | IntoExprColumn | None = None,
     end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
-    periods: int | None = None,
+    num_samples: int | None = None,
     *,
     closed: ClosedInterval = "both",
     eager: bool = False,
@@ -67,7 +67,7 @@ def date_range(
     """
     Generate a date range.
 
-    Exactly three of 'start', 'end', 'interval', and 'periods' must be provided to
+    Exactly three of 'start', 'end', 'interval', and 'num_samples' mus be provided to
     construct the date range.
 
     Parameters
@@ -80,7 +80,7 @@ def date_range(
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
         Must consist of full days.
-    periods
+    num_samples
         Number of periods in the date range. This corresponds to the number of points in
         the output array, and is thus one more than the number of intervals.
     closed : {'both', 'left', 'right', 'none'}
@@ -154,12 +154,12 @@ def date_range(
         1985-01-09
     ]
 
-    Using 'periods' to specify the number of periods:
+    Using 'num_samples' to specify the number of periods:
 
     >>> pl.date_range(
     ...     start=date(1985, 1, 1),
     ...     end=date(1985, 1, 10),
-    ...     periods=5,
+    ...     num_samples=5,
     ... ).alias("date")
     shape(5)
     [
@@ -172,7 +172,7 @@ def date_range(
     >>> pl.date_range(
     ...     start=date(1985, 1, 1),
     ...     interval="3d",
-    ...     periods=4,
+    ...     num_samples=4,
     ... ).alias("date")
     shape(5)
     [
@@ -181,6 +181,7 @@ def date_range(
         1985-01-07
         1985-01-10
     ]
+
     Omit `eager=True` if you want to use `date_range` as an expression:
 
     >>> df = pl.DataFrame(
@@ -215,12 +216,13 @@ def date_range(
 
     start_pyexpr = parse_into_expression(start)
     end_pyexpr = parse_into_expression(end)
+    num_samples = parse_into_expression(num_samples)
     result = wrap_expr(
         plr.date_range(
             start_pyexpr,
             end_pyexpr,
             interval,
-            periods,
+            num_samples,
             closed,
         )
     )
