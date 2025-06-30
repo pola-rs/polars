@@ -180,7 +180,9 @@ pub trait BinaryNameSpaceImpl: AsBinary {
 
         match dtype.to_arrow(CompatLevel::newest()).to_physical_type() {
             PhysicalType::Primitive(ty) => {
-                let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
+                let arrow_data_type = dtype
+                    .to_arrow(CompatLevel::newest())
+                    .underlying_physical_type();
                 with_match_primitive_type!(ty, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {

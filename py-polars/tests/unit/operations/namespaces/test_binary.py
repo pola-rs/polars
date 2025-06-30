@@ -94,9 +94,7 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(
-        as_series=False
-    ) == {
+    ).to_dict(as_series=False) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -275,35 +273,42 @@ def test_reinterpret_to_array_numeric_types(
 @pytest.mark.parametrize(
     ("dtype", "binary_value", "expected_values"),
     [
-        (pl.Array(pl.Date(), 1), b"\x06\x00\x00\x00", [[date(1970, 1, 7)]]),
+        (pl.Date(), b"\x06\x00\x00\x00", [date(1970, 1, 7)]),
         (
-            pl.Array(pl.Datetime(), 1),
+            pl.Datetime(),
             b"\x40\xb6\xfd\xe3\x7c\x00\x00\x00",
-            [[datetime(1970, 1, 7, 5, 0, 1)]],
+            [datetime(1970, 1, 7, 5, 0, 1)],
         ),
         (
-            pl.Array(pl.Duration(), 1),
+            pl.Duration(),
             b"\x03\x00\x00\x00\x00\x00\x00\x00",
-            [[timedelta(microseconds=3)]],
+            [timedelta(microseconds=3)],
         ),
         (
-            pl.Array(pl.Time(), 1),
+            pl.Time(),
             b"\x58\x1b\x00\x00\x00\x00\x00\x00",
-            [[time(microsecond=7)]],
+            [time(microsecond=7)],
         ),
         (
-            pl.Array(pl.Int128(), 1),
+            pl.Int128(),
             b"\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-            [[6]],
+            [6],
         ),
     ],
 )
-def test_reinterpret_to_array_other_types(
+def test_reinterpret_to_additional_types(
     dtype: PolarsDataType, binary_value: bytes, expected_values: list[object]
 ) -> None:
     series = pl.Series([binary_value])
+
+    # Direct conversion:
     result = series.bin.reinterpret(dtype=dtype, endianness="little")
     assert_series_equal(result, pl.Series(expected_values, dtype=dtype))
+
+    # Array conversion:
+    dtype = pl.Array(dtype, 1)
+    result = series.bin.reinterpret(dtype=dtype, endianness="little")
+    assert_series_equal(result, pl.Series([expected_values], dtype=dtype))
 
 
 def test_reinterpret_to_array_resulting_in_nulls() -> None:
