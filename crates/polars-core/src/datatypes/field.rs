@@ -2,7 +2,7 @@ use arrow::datatypes::{DTYPE_ENUM_VALUES, Metadata};
 use polars_utils::pl_str::PlSmallStr;
 use uuid::Uuid;
 
-use crate::datatypes::categories::CategoricalPhysical;
+use polars_dtype::categorical::CategoricalPhysical;
 
 use super::*;
 pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";

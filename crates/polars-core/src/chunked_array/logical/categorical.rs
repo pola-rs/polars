@@ -15,6 +15,20 @@ pub type NewCategorical8Chunked = NewCategoricalChunked<Categorical8Type>;
 pub type NewCategorical16Chunked = NewCategoricalChunked<Categorical16Type>;
 pub type NewCategorical32Chunked = NewCategoricalChunked<Categorical32Type>;
 
+pub trait CategoricalPhysicalDtypeExt {
+    fn dtype(&self) -> DataType;
+}
+
+impl CategoricalPhysicalDtypeExt for CategoricalPhysical {
+    fn dtype(&self) -> DataType {
+        match self {
+            Self::U8 => DataType::UInt8,
+            Self::U16 => DataType::UInt16,
+            Self::U32 => DataType::UInt32,
+        }
+    }
+}
+
 impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -187,7 +201,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
     pub fn to_arrow(&self, compat_level: CompatLevel) -> DictionaryArray<T::Native> {
         let keys = self.physical().rechunk();
         let keys = keys.downcast_as_array();
-        let values = self.get_mapping().to_arrow(compat_level);
+        let values = self.get_mapping().to_arrow(compat_level != CompatLevel::oldest());
         let values_dtype = Box::new(values.dtype().clone());
         let dtype = ArrowDataType::Dictionary(<T::Native as DictionaryKey>::KEY_TYPE, values_dtype, false);
         unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }

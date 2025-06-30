@@ -10,8 +10,6 @@
 mod _serde;
 mod aliases;
 mod any_value;
-#[cfg(feature = "dtype-categorical")]
-mod categories;
 mod dtype;
 mod field;
 mod into_scalar;
@@ -36,7 +34,7 @@ pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
 #[cfg(feature = "dtype-categorical")]
-pub use categories::{CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories, ensure_same_categories, ensure_same_frozen_categories};
+pub use polars_dtype::categorical::{CatNative, CatSize, CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories, ensure_same_categories, ensure_same_frozen_categories};
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
@@ -116,47 +114,6 @@ where
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 pub trait PolarsFloatType: PolarsNumericType {}
-
-/// The in-register representation of category ids.
-pub type CatSize = u32;
-
-pub trait CatNative {
-    fn as_cat(&self) -> CatSize;
-    fn from_cat(cat: CatSize) -> Self;
-}
-
-impl CatNative for u8 {
-    fn as_cat(&self) -> CatSize { *self as CatSize }
-    fn from_cat(cat: CatSize) -> Self {
-        #[cfg(debug_assertions)]
-        { cat.try_into().unwrap() }
-
-        #[cfg(not(debug_assertions))]
-        { cat as Self }
-    }
-}
-
-impl CatNative for u16 {
-    fn as_cat(&self) -> CatSize { *self as CatSize }
-    fn from_cat(cat: CatSize) -> Self {
-        #[cfg(debug_assertions)]
-        { cat.try_into().unwrap() }
-
-        #[cfg(not(debug_assertions))]
-        { cat as Self }
-    }
-}
-
-impl CatNative for u32 {
-    fn as_cat(&self) -> CatSize { *self as CatSize }
-    fn from_cat(cat: CatSize) -> Self {
-        #[cfg(debug_assertions)]
-        { cat.try_into().unwrap() }
-
-        #[cfg(not(debug_assertions))]
-        { cat as Self }
-    }
-}
 
 pub unsafe trait PolarsCategoricalType: PolarsDataType {
     type Native: NumericNative + CatNative + DictionaryKey + PartialEq + Eq + Hash;

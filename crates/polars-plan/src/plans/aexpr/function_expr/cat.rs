@@ -94,7 +94,7 @@ impl From<IRCategoricalFunction> for IRFunctionExpr {
 
 fn get_categories(s: &Column) -> PolarsResult<Column> {
     let mapping = s.dtype().cat_mapping()?;
-    let ca = mapping.to_ca().with_name(s.name().clone());
+    let ca = unsafe { StringChunked::from_chunks(s.name().clone(), vec![mapping.to_arrow(true)]) };
     Ok(Column::from(ca.into_series()))
 }
 
@@ -102,7 +102,7 @@ fn get_categories(s: &Column) -> PolarsResult<Column> {
 // For global, this is the global indexes.
 fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     let mapping = col.dtype().cat_mapping().unwrap();
-    let cats = mapping.to_ca().with_name(col.name().clone());
+    let cats = unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
     let phys = col.to_physical_repr().as_materialized_series().clone();
     (cats, phys)
 }

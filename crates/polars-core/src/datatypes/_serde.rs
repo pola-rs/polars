@@ -7,9 +7,8 @@
 #[cfg(feature = "dtype-categorical")]
 use serde::de::SeqAccess;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-use crate::datatypes::categories::CategoricalPhysical;
+use polars_dtype::categorical::CategoricalPhysical;
 
 use super::*;
 

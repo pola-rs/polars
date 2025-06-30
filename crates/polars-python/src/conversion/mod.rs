@@ -286,10 +286,9 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 class.call1((Wrap(CategoricalOrdering::Lexical),))
             },
             DataType::NewEnum(_, mapping) => {
-                // we should always have an initialized rev_map coming from rust
-                let categories = mapping.to_ca().into_series();
+                let categories = unsafe { StringChunked::from_chunks(PlSmallStr::from_static("category"), vec![mapping.to_arrow(true)]) };
                 let class = pl.getattr(intern!(py, "Enum"))?;
-                let series = to_series(py, categories.into())?;
+                let series = to_series(py, categories.into_series().into())?;
                 class.call1((series,))
             },
             DataType::Time => pl.getattr(intern!(py, "Time")),
