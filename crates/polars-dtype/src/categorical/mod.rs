@@ -224,12 +224,10 @@ impl FrozenCategories {
         let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);
         builder.reserve(strings.size_hint().0);
 
-        let hasher = PlFixedStateQuality::default();
-        let mut combined_hasher = hasher.build_hasher();
+        let mut combined_hasher = PlFixedStateQuality::default().build_hasher();
         for s in strings {
-            let hash = hasher.hash_one(s);
-            combined_hasher.write_u64(hash);
-            mapping.insert_cat_with_hash(s, hash)?;
+            combined_hasher.write(s.as_bytes());
+            mapping.insert_cat(s)?;
             builder.push_value_ignore_validity(s);
             polars_ensure!(mapping.len() == builder.len(), ComputeError: "FrozenCategories must contain unique strings; found duplicate '{s}'");
         }

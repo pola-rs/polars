@@ -121,7 +121,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         match (s.dtype(), &self.inner_dtype) {
             (DataType::Null, _) => {},
             (dt, None) => self.inner_dtype = Some(dt.clone()),
-            (dt, Some(set_dt)) => polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}"),
+            (dt, Some(set_dt)) => polars_ensure!(dt == set_dt, ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}"),
         }
         if s.is_empty() {
             self.append_empty();

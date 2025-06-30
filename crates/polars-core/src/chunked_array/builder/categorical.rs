@@ -50,7 +50,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunkedBuilder<T> {
     pub fn append_str(&mut self, val: &str) -> PolarsResult<()> {
         let cat = if self.is_enum {
             self.mapping.get_cat(val).ok_or_else(|| {
-                polars_err!(ComputeError: "attempted to insert {val} into Enum which does not contain this string")
+                polars_err!(ComputeError: "attempted to insert '{val}' into Enum which does not contain this string")
             })?
         } else {
             self.mapping.insert_cat(val)?

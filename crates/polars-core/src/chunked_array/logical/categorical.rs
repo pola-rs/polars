@@ -177,7 +177,6 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
             },
             DataType::NewEnum(fcats, mapping) => {
                 assert!(fcats.physical() == T::physical());
-                let mut validity = BitmapBuilder::with_capacity(hint);
                 for opt_s in strings {
                     cat_ids.push(
                         if let Some(cat) = opt_s.and_then(|s| mapping.get_cat(s)) {
