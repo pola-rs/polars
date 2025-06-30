@@ -1343,3 +1343,21 @@ def test_group_by_implode_22870() -> None:
         pl.DataFrame({"x": ["a", "b"], "y": [[1], [2]]}),
         check_row_order=False,
     )
+
+
+# Note: the underlying bug is not guaranteed to manifest itself as it depends
+# on the internal group order, i.e., for the bug to materialize, there must be
+# empty groups before the non-empty group
+def test_group_by_empty_groups_23338() -> None:
+    # We need one non-empty and many groups
+    df = pl.DataFrame(
+        {
+            "k": [10, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+            "a": [1, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        }
+    )
+    out = df.group_by("k").agg(
+        pl.col("a").filter(pl.col("a") == 1).fill_nan(None).sum()
+    )
+    expected = df.group_by("k").agg(pl.col("a").filter(pl.col("a") == 1).sum())
+    assert_frame_equal(out.sort("k"), expected.sort("k"))
