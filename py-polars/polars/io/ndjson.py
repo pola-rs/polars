@@ -144,32 +144,6 @@ def read_ndjson(
     │ 3   ┆ 8   │
     └─────┴─────┘
     """
-    if not (
-        isinstance(source, (str, Path))
-        or (
-            isinstance(source, Sequence)
-            and source
-            and isinstance(source[0], (str, Path))
-        )
-    ):
-        # TODO: A lot of the parameters aren't applied for BytesIO
-        if isinstance(source, StringIO):
-            source = BytesIO(source.getvalue().encode())
-
-        pydf = PyDataFrame.read_ndjson(
-            source,
-            ignore_errors=ignore_errors,
-            schema=schema,
-            schema_overrides=schema_overrides,
-        )
-
-        df = wrap_df(pydf)
-
-        if n_rows:
-            df = df.head(n_rows)
-
-        return df
-
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "read_ndjson"
     )
