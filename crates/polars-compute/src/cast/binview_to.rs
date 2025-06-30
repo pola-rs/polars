@@ -192,7 +192,7 @@ where
     )))
 }
 
-/// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any un-castable value a Null.
+/// Casts a [`BinaryArray`] to a [`FixedSizeListArray`], making any un-castable value a Null.
 ///
 /// # Panics
 ///    Panics if `to` is not `ArrowDataType::FixedSizeList`.
@@ -206,8 +206,7 @@ where
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let ArrowDataType::FixedSizeList(_, array_size) = to else {
-        // Higher levels should have made this impossible, we're only supposed
-        // to get FixedSizeList:
+        // Higher-level code should have ensured we only get FixedSizeList:
         unreachable!();
     };
     let element_size = std::mem::size_of::<T>();
@@ -240,6 +239,10 @@ where
     Ok(result.into())
 }
 
+/// Casts a `dyn` [`Array`] to a [`FixedSizeListArray`], making any un-castable value a Null.
+///
+/// # Panics
+///    Panics if `to` is not `ArrowDataType::FixedSizeList`, or `from` is not `BinaryViewArray`.
 pub fn binview_to_array_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
