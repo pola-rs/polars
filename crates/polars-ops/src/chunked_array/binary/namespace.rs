@@ -195,27 +195,22 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             #[cfg(feature = "dtype-array")]
             PhysicalType::FixedSizeList => {
-                if matches!(dtype.inner_dtype(), Some(DataType::Array(..))) {
-                    polars_bail!(
-                        InvalidOperation:
-                        "to cast to a nested Array, first cast to a linear Array, and then use reshape()"
-                    );
-                }
-                let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
-
-                let leaf_physical_type = dtype
+                // In theory the IR dispatch should've made sure we have the
+                // correct types, but we can't prove it so check again. In
+                // particular, no nesting beyond the top-level Array:
+                polars_ensure!(
+                    dtype.inner_dtype().map(|dt| dt.is_nested()) == Some(false),
+                    InvalidOperation: "{:?}", dtype
+                );
+                let PhysicalType::Primitive(primitive_type) = dtype
                     .leaf_dtype()
                     .to_arrow(CompatLevel::newest())
-                    .to_physical_type();
-                polars_ensure!(
-                    dtype.inner_dtype().map(|dt| dt.to_physical().is_primitive_numeric()) == Some(true),
-                    InvalidOperation:
-                    "cannot reinterpret from binary dtype to {:?}. When casting to arrays, the inner type must be physically represented by a numeric type.",
-                    dtype,
-                );
-                let PhysicalType::Primitive(primitive_type) = leaf_physical_type else {
-                    panic!("Shouldn't ever be reached.")
+                    .to_physical_type()
+                else {
+                    // We should only have primitive dtypes as inner type at this point.
+                    polars_bail!(InvalidOperation: "{:?}", dtype);
                 };
+                let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
 
                 let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
                     unsafe {
