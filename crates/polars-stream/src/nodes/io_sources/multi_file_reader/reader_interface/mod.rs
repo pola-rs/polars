@@ -200,8 +200,8 @@ impl std::fmt::Debug for FileReaderCallbacks {
         f.write_str(&format!(
             "\
         FileReaderCallbacks: \
-        file_schema_tx: {:?} \
-        n_rows_in_file_tx: {:?} \
+        file_schema_tx: {:?}, \
+        n_rows_in_file_tx: {:?}, \
         row_position_on_end_tx: {:?} \
         ",
             file_schema_tx.as_ref().map(|_| ""),

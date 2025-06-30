@@ -3395,3 +3395,118 @@ def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
     df.write_parquet(path, use_pyarrow=True)
 
     assert_frame_equal(pl.read_parquet(path), df)
+
+
+@pytest.mark.parametrize(
+    ("value", "scan_dtype", "filter_expr"),
+    [
+        (pl.lit(1, dtype=pl.Int8), pl.Int16, pl.col("x") > 1),
+        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") > 1.0),
+        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") > 1.0),
+        (
+            pl.lit(
+                datetime(2025, 1, 1),
+                dtype=pl.Datetime(time_unit="ns", time_zone="Europe/Amsterdam"),
+            ),
+            pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            pl.col("x")
+            != pl.lit(
+                datetime(2025, 1, 1, 10),
+                dtype=pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            ),
+        ),
+        # Note: This is not implemented at all
+        # (
+        #     pl.lit({"a": 1}, dtype=pl.Struct({"a": pl.Int8})),
+        #     pl.Struct({"a": pl.Int64}),
+        #     pl.col("x").struct.field("a") > 1,
+        # ),
+    ],
+)
+def test_scan_parquet_filter_with_cast(
+    value: Any,
+    scan_dtype: pl.DataType,
+    filter_expr: pl.Expr,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+
+    df = pl.select(x=value)
+
+    df.write_parquet(f)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"x": scan_dtype},
+        cast_options=pl.ScanCastOptions(
+            integer_cast="upcast",
+            float_cast=["upcast", "downcast"],
+            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            missing_struct_fields="insert",
+        ),
+    ).filter(filter_expr)
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 0 / 1 row groups" in capfd.readouterr().err
+
+    assert_frame_equal(out, pl.DataFrame(schema={"x": scan_dtype}))
+
+
+@pytest.mark.parametrize(
+    ("value", "scan_dtype", "filter_expr"),
+    [
+        (pl.lit(1, dtype=pl.Int8), pl.Int16, pl.col("x") == 1),
+        (pl.lit(1.0, dtype=pl.Float64), pl.Float32, pl.col("x") == 1.0),
+        (pl.lit(1.0, dtype=pl.Float32), pl.Float64, pl.col("x") == 1.0),
+        (
+            pl.lit(
+                datetime(2025, 1, 1),
+                dtype=pl.Datetime(time_unit="ns", time_zone="Europe/Amsterdam"),
+            ),
+            pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            pl.col("x")
+            == pl.lit(
+                datetime(2025, 1, 1, 10),
+                dtype=pl.Datetime(time_unit="ms", time_zone="Australia/Sydney"),
+            ),
+        ),
+        (
+            pl.lit({"a": 1}, dtype=pl.Struct({"a": pl.Int8})),
+            pl.Struct({"a": pl.Int64}),
+            pl.col("x").struct.field("a") == 1,
+        ),
+    ],
+)
+def test_scan_parquet_filter_with_cast_inclusions(
+    value: Any,
+    scan_dtype: pl.DataType,
+    filter_expr: pl.Expr,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+
+    df = pl.select(x=value)
+
+    df.write_parquet(f)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"x": scan_dtype},
+        cast_options=pl.ScanCastOptions(
+            integer_cast="upcast",
+            float_cast=["upcast", "downcast"],
+            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            missing_struct_fields="insert",
+        ),
+    ).filter(filter_expr)
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 1 / 1 row groups" in capfd.readouterr().err
+
+    assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
