@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
-from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath
-from polars._utils.wrap import wrap_df, wrap_ldf
+from polars._utils.wrap import wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
 from polars.io.cloud.credential_provider._builder import (
@@ -16,7 +14,7 @@ from polars.io.cloud.credential_provider._builder import (
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PyLazyFrame
+    from polars.polars import PyLazyFrame
 
 if TYPE_CHECKING:
     from io import IOBase
