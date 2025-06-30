@@ -246,9 +246,6 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::read_ipc_schema))
         .unwrap();
     #[cfg(feature = "parquet")]
-    m.add_wrapped(wrap_pyfunction!(functions::read_parquet_schema))
-        .unwrap();
-    #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
     #[cfg(feature = "clipboard")]
