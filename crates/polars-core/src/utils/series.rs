@@ -51,6 +51,18 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         return Ok(());
     }
 
+    if let (DataType::String, DataType::Date | DataType::Datetime(_, _)) =
+        (input.dtype(), output.dtype())
+    {
+        polars_warn!(
+            Deprecation,
+            "Casting operations that require parsing ambiguous inputs is deprecated.
+            Consider using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string.
+
+            See https://github.com/pola-rs/polars/issues/23363 for more information."
+        );
+    }
+
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
 
@@ -63,11 +75,6 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     let failures = input.take_slice(&idxs[..num_failures.min(10)])?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
-        (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {
-            "\n\nYou might want to try:\n\
-            - setting `strict=False` to set values that cannot be converted to `null`\n\
-            - using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string"
-        },
         #[cfg(feature = "dtype-categorical")]
         (DataType::String, DataType::Enum(_, _)) => {
             "\n\nEnsure that all values in the input column are present in the categories of the enum datatype."
