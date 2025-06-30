@@ -209,18 +209,11 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::index_cols))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::duration))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::first)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::nth)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))

@@ -1782,16 +1782,16 @@ pub fn len() -> Expr {
 }
 
 /// First column in a DataFrame.
-pub fn first() -> Expr {
+pub fn first() -> Selector {
     nth(0)
 }
 
 /// Last column in a DataFrame.
-pub fn last() -> Expr {
+pub fn last() -> Selector {
     nth(-1)
 }
 
 /// Nth column in a DataFrame.
-pub fn nth(n: i64) -> Expr {
-    Expr::Selector(Selector::AtIndex([n].into()))
+pub fn nth(n: i64) -> Selector {
+    Selector::AtIndex([n].into())
 }

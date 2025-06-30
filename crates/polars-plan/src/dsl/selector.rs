@@ -1,4 +1,4 @@
-use std::ops::{Add, BitAnd, BitXor, Sub};
+use std::ops::{Add, BitAnd, BitXor, BitOr, Sub};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,10 @@ impl Selector {
             },
             Selector::Exclude(input, excludes) => {
                 let mut input = input.into_columns(schema)?;
+                dbg!(&input);
+                dbg!(&excludes);
                 for exclude in excludes.iter() {
+                    // @PERF: This is quadratic
                     match exclude {
                         #[cfg(feature = "regex")]
                         Excluded::Name(regex_str) if is_regex_projection(regex_str) => {
@@ -74,6 +77,8 @@ impl Selector {
                             .retain(|name| !dtypes_match(schema.get(name).unwrap(), excluded_dt)),
                     }
                 }
+                dbg!(&input);
+                out.extend(input);
             },
 
             Selector::WithDataTypes(data_types) => {
@@ -127,7 +132,7 @@ impl Selector {
     /// Exclude a column from a wildcard/regex selection.
     ///
     /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
-    pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Self {
+    pub fn exclude_cols(self, columns: impl IntoVec<PlSmallStr>) -> Self {
         let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
         Self::Exclude(Arc::new(self), v)
     }
@@ -166,10 +171,11 @@ fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
     }
 }
 
-impl Add for Selector {
+impl BitOr for Selector {
     type Output = Selector;
 
-    fn add(self, rhs: Self) -> Self::Output {
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn bitor(self, rhs: Self) -> Self::Output {
         Selector::Union(Arc::new(self), Arc::new(rhs))
     }
 }

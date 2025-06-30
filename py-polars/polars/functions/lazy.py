@@ -719,7 +719,7 @@ def nth(*indices: int | Sequence[int]) -> Expr:
     if len(indices) == 1 and isinstance(indices[0], Sequence):
         indices = indices[0]  # type: ignore[assignment]
 
-    return wrap_expr(plr.index_cols(indices))
+    return pl.Selector.nth(indices).as_expr()
 
 
 def head(column: str, n: int = 10) -> Expr:

@@ -813,7 +813,9 @@ fn expand_expression_by_combination(
             DidExpand::Expanded
         ) {
             results.reserve(exprs.len());
-            results.extend((0..i).map(|j| (DidExpand::NoExpansion, start_len - i + j)));
+            results.extend((0..i).map(|j| (DidExpand::NoExpansion, start_len - i + j - 1)));
+            dbg!(&out.len());
+            dbg!(&start_len);
             expansion_size = out.len() - start_len;
             results.push((DidExpand::Expanded, start_len));
             break;
@@ -832,9 +834,11 @@ fn expand_expression_by_combination(
         let start_len = out.len();
         let did_expand = expand_expression(expr, schema, out, opt_flags)?;
         let size = out.len() - start_len;
-        polars_ensure!(size == expansion_size, InvalidOperation: "cannot combine selectors that produce a different number of columns");
+        polars_ensure!(matches!(did_expand, DidExpand::NoExpansion) || size == expansion_size, InvalidOperation: "cannot combine selectors that produce a different number of columns");
         results.push((did_expand, start_len));
     }
+
+    dbg!(&expansion_size);
 
     let mut scratch = Vec::with_capacity(exprs.len());
     let mut tmp_out = Vec::with_capacity(expansion_size);
@@ -849,8 +853,12 @@ fn expand_expression_by_combination(
         tmp_out.push(f(&scratch));
     }
 
+    dbg!(&tmp_out);
+
     out.truncate(results[0].1);
     out.extend(tmp_out);
+
+    dbg!(&out);
     Ok(DidExpand::Expanded)
 }
 

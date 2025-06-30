@@ -39,6 +39,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.parse.expr import parse_into_list_of_selectors
 from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -114,7 +115,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr, PyPartitioning
+        from polars.polars import PyExpr, PyPartitioning, PySelector
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -6071,7 +6072,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = parse_into_list_of_expressions(*columns)
+        drop_cols = parse_into_list_of_selectors(list(columns))
         return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
     def rename(
@@ -7225,9 +7226,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
         """
+        selector_subset: list[PySelector] | None = None
         if subset is not None:
-            subset = parse_into_list_of_expressions(subset)
-        return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
+            selector_subset = parse_into_list_of_selectors(subset)
+        return self._from_pyldf(self._ldf.unique(maintain_order, selector_subset, keep))
 
     def drop_nans(
         self,
@@ -7313,9 +7315,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ NaN ┆ 5.25 ┆ 10.5  │
         └─────┴──────┴───────┘
         """
+        selector_subset: list[PySelector] | None = None
         if subset is not None:
-            subset = parse_into_list_of_expressions(subset)
-        return self._from_pyldf(self._ldf.drop_nans(subset))
+            selector_subset = parse_into_list_of_selectors(subset)
+        return self._from_pyldf(self._ldf.drop_nans(selector_subset))
 
     def drop_nulls(
         self,
@@ -7396,9 +7399,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ 1   ┆ 1    │
         └──────┴─────┴──────┘
         """
+        selector_subset: list[PySelector] | None = None
         if subset is not None:
-            subset = parse_into_list_of_expressions(subset)
-        return self._from_pyldf(self._ldf.drop_nulls(subset))
+            selector_subset = parse_into_list_of_selectors(subset)
+        return self._from_pyldf(self._ldf.drop_nulls(selector_subset))
 
     def unpivot(
         self,
@@ -7471,10 +7475,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 version="1.5.0",
             )
 
-        on = [] if on is None else parse_into_list_of_expressions(on)
-        index = [] if index is None else parse_into_list_of_expressions(index)
+        selector_on: list[PySelector] | None = (
+            [] if on is None else parse_into_list_of_selectors(on)
+        )
+        selector_index: list[PySelector] | None = (
+            [] if on is None else parse_into_list_of_selectors(index)
+        )
 
-        return self._from_pyldf(self._ldf.unpivot(on, index, value_name, variable_name))
+        return self._from_pyldf(
+            self._ldf.unpivot(selector_on, selector_index, value_name, variable_name)
+        )
 
     def map_batches(
         self,

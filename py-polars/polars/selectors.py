@@ -110,6 +110,9 @@ def is_selector(obj: Any) -> bool:
     >>> is_selector(cs.first() | cs.last())
     True
     """
+    print(obj)
+    print(type(obj))
+    print(isinstance(obj, Selector))
     # note: don't want to expose the "_selector_proxy_" object
     return isinstance(obj, Selector)
 
@@ -323,6 +326,21 @@ class Selector(Expr):
         slf._pyexpr = PyExpr.new_selector(pyselector)
         return slf
 
+    @classmethod
+    def nth(cls, n: int | Sequence[int]) -> Selector:
+        if isinstance(n, int):
+            return cls._from_pyselector(PySelector.nth(n))
+        else:
+            return cls._from_pyselector(PySelector.at_index(n))
+
+    @classmethod
+    def cols(cls, names: list[str]) -> Selector:
+        return cls._from_pyselector(PySelector.with_name(names))
+
+    @classmethod
+    def dtype_cols(cls, dtypes: list[PolarsDataType]) -> Selector:
+        return cls._from_pyselector(PySelector.with_datatype(dtypes))
+
     def __hash__(self) -> int:
         # note: this is a suitable hash for selectors (but NOT expressions in general),
         # as the repr is guaranteed to be unique across all selector/param permutations
@@ -428,6 +446,55 @@ class Selector(Expr):
         if is_column(other):  # @2.0: remove
             other = by_name(other.meta.output_name())
         return self.as_expr().__rxor__(other)
+
+    def exclude(
+        self,
+        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
+        *more_columns: str | PolarsDataType,
+    ) -> Selector:
+        """
+        Exclude columns from a multi-column expression.
+
+        Only works after a wildcard or regex column selection, and you cannot provide
+        both string column names *and* dtypes (you may prefer to use selectors instead).
+
+        Parameters
+        ----------
+        columns
+            The name or datatype of the column(s) to exclude. Accepts regular expression
+            input. Regular expressions should start with `^` and end with `$`.
+        *more_columns
+            Additional names or datatypes of columns to exclude, specified as positional
+            arguments.
+        """
+        exclude_cols: list[str] = []
+        exclude_dtypes: list[PolarsDataType] = []
+        for item in (
+            *(
+                columns
+                if isinstance(columns, Collection) and not isinstance(columns, str)
+                else [columns]
+            ),
+            *more_columns,
+        ):
+            if isinstance(item, str):
+                exclude_cols.append(item)
+            elif is_polars_dtype(item):
+                exclude_dtypes.append(item)
+            else:
+                msg = (
+                    "invalid input for `exclude`"
+                    f"\n\nExpected one or more `str` or `DataType`; found {item!r} instead."
+                )
+                raise TypeError(msg)
+
+        if exclude_cols and exclude_dtypes:
+            msg = "cannot exclude by both column name and dtype; use a selector instead"
+            raise TypeError(msg)
+        elif exclude_dtypes:
+            return self._from_pyselector(self._pyselector.exclude_dtype(exclude_dtypes))
+        else:
+            return self._from_pyselector(self._pyselector.exclude_columns(exclude_cols))
 
     def as_expr(self) -> Expr:
         """
@@ -541,7 +608,7 @@ def all() -> Selector:
     │ 2024-01-01 │
     └────────────┘
     """
-    return Selector._pyexpr(PySelector.all())
+    return Selector._from_pyselector(PySelector.all())
 
 
 def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> Selector:  # noqa: FBT001
@@ -926,9 +993,7 @@ def by_dtype(
             msg = f"invalid dtype: {tp!r}"
             raise TypeError(msg)
 
-    return Selector._from_pyselector(
-        F.col(all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
-    )
+    return F.col(all_dtypes).meta.as_selector()
 
 
 def by_index(*indices: int | range | Sequence[int | range]) -> Selector:
@@ -1122,13 +1187,11 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
     selector_params: dict[str, Any] = {"*names": all_names}
     match_cols: list[str] | str = all_names
     if not require_all:
-        match_cols = f"^({'|'.join(re_escape(nm) for nm in all_names)})$"
+        match_cols = [f"^({'|'.join(re_escape(nm) for nm in all_names)})$"]
         selector_params["require_all"] = require_all
 
-    return Selector(
-        F.col(match_cols),
-        name="by_name",
-        parameters=selector_params,
+    return Selector._from_pyselector(
+        PySelector.with_name(match_cols),
     )
 
 
@@ -1706,7 +1769,7 @@ def duration(
         time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
 
     duration_dtypes = [Duration(tu) for tu in time_unit]
-    return Selector._from_pyselector(PySelector(duration_dtypes))
+    return Selector._from_pyselector(PySelector.with_datatype(duration_dtypes))
 
 
 def ends_with(*suffix: str) -> Selector:
@@ -1895,7 +1958,7 @@ def first() -> Selector:
     │ 456 ┆ 5.5 ┆ 1   │
     └─────┴─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.at_index([0]))
+    return Selector._from_pyselector(PySelector.first())
 
 
 def float() -> Selector:
@@ -1948,7 +2011,7 @@ def float() -> Selector:
     │ y   ┆ 456 │
     └─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(FLOAT_DTYPES))
+    return Selector._from_pyselector(PySelector.with_datatype(list(FLOAT_DTYPES)))
 
 
 def integer() -> Selector:
@@ -2001,7 +2064,7 @@ def integer() -> Selector:
     │ y   ┆ 5.5 │
     └─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(INTEGER_DTYPES))
+    return Selector._from_pyselector(PySelector.with_datatype(list(INTEGER_DTYPES)))
 
 
 def signed_integer() -> Selector:
@@ -2066,7 +2129,9 @@ def signed_integer() -> Selector:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(SIGNED_INTEGER_DTYPES))
+    return Selector._from_pyselector(
+        PySelector.with_datatype(list(SIGNED_INTEGER_DTYPES))
+    )
 
 
 def unsigned_integer() -> Selector:
@@ -2133,7 +2198,9 @@ def unsigned_integer() -> Selector:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(UNSIGNED_INTEGER_DTYPES))
+    return Selector._from_pyselector(
+        PySelector.with_datatype(list(UNSIGNED_INTEGER_DTYPES))
+    )
 
 
 def last() -> Selector:
@@ -2183,7 +2250,7 @@ def last() -> Selector:
     │ y   ┆ 456 ┆ 5.5 │
     └─────┴─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.at_index([-1]))
+    return Selector._from_pyselector(PySelector.last())
 
 
 def matches(pattern: str) -> Selector:
@@ -2306,7 +2373,7 @@ def numeric() -> Selector:
     │ y   │
     └─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(NUMERIC_DTYPES))
+    return Selector._from_pyselector(PySelector.with_datatype(list(NUMERIC_DTYPES)))
 
 
 def object() -> Selector:
@@ -2560,7 +2627,7 @@ def temporal() -> Selector:
     │ 2.3456 │
     └────────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(TEMPORAL_DTYPES))
+    return Selector._from_pyselector(PySelector.with_datatype(list(TEMPORAL_DTYPES)))
 
 
 def time() -> Selector:

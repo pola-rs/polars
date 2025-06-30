@@ -421,6 +421,14 @@ impl Expr {
         }
     }
 
+    pub fn try_into_selector(self) -> PolarsResult<Selector> {
+        match self {
+            Expr::Column(name) => Ok(Selector::ByName([name].into())),
+            Expr::Selector(selector) => Ok(selector),
+            expr => Err(polars_err!(InvalidOperation: "cannot turn `{expr}` into selector")),
+        }
+    }
+
     /// Extract a constant usize from an expression.
     pub fn extract_usize(&self) -> PolarsResult<usize> {
         match self {

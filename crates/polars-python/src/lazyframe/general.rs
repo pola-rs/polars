@@ -18,8 +18,9 @@ use pyo3::types::{PyDict, PyDictMethods, PyList};
 
 use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
-use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
+use crate::expr::selector::PySelector;
+use crate::expr::{ToExprs, ToSelectors};
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::io::PyScanOptions;
 use crate::lazyframe::visit::NodeTraverser;
@@ -1403,9 +1404,9 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn explode(&self, column: Vec<PyExpr>) -> Self {
+    fn explode(&self, column: Vec<PySelector>) -> Self {
         let ldf = self.ldf.clone();
-        let column = column.to_exprs();
+        let column = column.to_selectors();
         ldf.explode(column).into()
     }
 
@@ -1418,23 +1419,11 @@ impl PyLazyFrame {
     fn unique(
         &self,
         maintain_order: bool,
-        subset: Option<Vec<PyExpr>>,
+        subset: Option<Vec<PySelector>>,
         keep: Wrap<UniqueKeepStrategy>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let ldf = self.ldf.clone();
-        let subset = subset
-            .map(|e| {
-                e.to_exprs()
-                    .into_iter()
-                    .map(|e| {
-                        Expr::into_selector(e).ok_or_else(
-                            || polars_err!(InvalidOperation: "subset can only include selectors"),
-                        )
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()
-            })
-            .transpose()
-            .map(to_py_err)?;
+        let subset = subset.map(|e| e.to_selectors());
         match maintain_order {
             true => ldf.unique_stable_generic(subset, keep.0),
             false => ldf.unique_generic(subset, keep.0),
@@ -1471,14 +1460,16 @@ impl PyLazyFrame {
     #[pyo3(signature = (on, index, value_name, variable_name))]
     fn unpivot(
         &self,
-        on: Vec<PyExpr>,
-        index: Vec<PyExpr>,
+        on: Vec<PySelector>,
+        index: Vec<PySelector>,
         value_name: Option<String>,
         variable_name: Option<String>,
     ) -> Self {
+        let on = on.to_selectors();
+        let index = index.to_selectors();
         let args = UnpivotArgsDSL {
-            on: on.into_iter().map(|e| e.inner.into()).collect(),
-            index: index.into_iter().map(|e| e.inner.into()).collect(),
+            on,
+            index,
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
         };
@@ -1521,9 +1512,9 @@ impl PyLazyFrame {
             .into()
     }
 
-    fn drop(&self, columns: Vec<PyExpr>, strict: bool) -> Self {
+    fn drop(&self, columns: Vec<PySelector>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
-        let columns = columns.to_exprs();
+        let columns = columns.to_selectors();
         if strict {
             ldf.drop(columns)
         } else {
@@ -1558,8 +1549,8 @@ impl PyLazyFrame {
         Ok(schema_dict)
     }
 
-    fn unnest(&self, columns: Vec<PyExpr>) -> Self {
-        let columns = columns.to_exprs();
+    fn unnest(&self, columns: Vec<PySelector>) -> Self {
+        let columns = columns.to_selectors();
         self.ldf.clone().unnest(columns).into()
     }
 

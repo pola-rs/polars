@@ -843,34 +843,7 @@ class Expr:
         │ null │
         └──────┘
         """
-        exclude_cols: list[str] = []
-        exclude_dtypes: list[PolarsDataType] = []
-        for item in (
-            *(
-                columns
-                if isinstance(columns, Collection) and not isinstance(columns, str)
-                else [columns]
-            ),
-            *more_columns,
-        ):
-            if isinstance(item, str):
-                exclude_cols.append(item)
-            elif is_polars_dtype(item):
-                exclude_dtypes.append(item)
-            else:
-                msg = (
-                    "invalid input for `exclude`"
-                    f"\n\nExpected one or more `str` or `DataType`; found {item!r} instead."
-                )
-                raise TypeError(msg)
-
-        if exclude_cols and exclude_dtypes:
-            msg = "cannot exclude by both column name and dtype; use a selector instead"
-            raise TypeError(msg)
-        elif exclude_dtypes:
-            return self._from_pyexpr(self._pyexpr.exclude_dtype(exclude_dtypes))
-        else:
-            return self._from_pyexpr(self._pyexpr.exclude(exclude_cols))
+        return self.meta.as_selector().exclude(columns, *more_columns).as_expr()
 
     def pipe(
         self,
