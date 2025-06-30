@@ -91,6 +91,11 @@ pub fn datetime_range(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Expr> {
+    println!("start: {:?}", start);
+    println!("end: {:?}", end);
+    println!("interval: {:?}", interval);
+    println!("num_samples: {:?}", num_samples);
+
     let (input, arg_type) = match (start, end, interval, num_samples) {
         (Some(start), Some(end), Some(_), None) => {
             (vec![start, end], DateRangeArgs::StartEndInterval)
@@ -110,6 +115,8 @@ pub fn datetime_range(
             polars_bail!(InvalidOperation: "Invalid");
         },
     };
+    println!("input: {:?}", input);
+    println!("arg type: {:?}", arg_type);
 
     Ok(Expr::n_ary(
         RangeFunction::DatetimeRange {

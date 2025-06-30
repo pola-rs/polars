@@ -763,7 +763,81 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(feature = "range")]
+            #[cfg(all(feature = "temporal", feature = "range"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
+                        interval: _,
+                        closed: _,
+                        time_unit: _,
+                        time_zone: _,
+                        arg_type,
+                    }),
+                ref input,
+                options,
+            } => {
+                let function = function.clone();
+                let mut input = input.clone();
+                let (from_types, to_types) = match arg_type {
+                    DateRangeArgs::StartEndInterval => {
+                        let (_, type_start) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                        let (_, type_end) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                        let from_types = vec![type_start, type_end];
+                        let to_types = vec![DataType::Int64, DataType::Int64];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartEndSamples => {
+                        let (_, type_start) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                        let (_, type_end) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                        let (_, type_samples) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+                        let from_types = vec![type_start, type_end, type_samples];
+                        let to_types = vec![DataType::Int64, DataType::Int64, DataType::UInt64];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::StartIntervalSamples => {
+                        let (_, type_start) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                        let (_, type_samples) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                        let from_types = vec![type_start, type_samples];
+                        let to_types = vec![DataType::Int64, DataType::UInt64];
+                        (from_types, to_types)
+                    },
+                    DateRangeArgs::EndIntervalSamples => {
+                        let (_, type_end) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                        let (_, type_samples) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                        let from_types = vec![type_end, type_samples];
+                        let to_types = vec![DataType::Int64, DataType::UInt64];
+                        (from_types, to_types)
+                    },
+                };
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    cast_expr_ir(
+                        &mut input[i],
+                        &from_dtype,
+                        &to_dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(all(feature = "range"))]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges { dtype: _ }),
@@ -802,6 +876,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
+
             AExpr::Slice { offset, length, .. } => {
                 let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);
