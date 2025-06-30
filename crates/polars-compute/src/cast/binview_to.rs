@@ -200,7 +200,7 @@ where
 ///
 /// # Panics
 ///    Panics if `to` is not `ArrowDataType::FixedSizeList`.
-pub(super) fn try_binview_to_array_primitive<T>(
+pub(super) fn try_binview_to_fixed_size_list<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
     is_little_endian: bool,
@@ -251,7 +251,7 @@ where
 ///
 /// # Panics
 ///    Panics if `to` is not `ArrowDataType::FixedSizeList`, or `from` is not `BinaryViewArray`.
-pub fn binview_to_array_primitive_dyn<T>(
+pub fn binview_to_fixed_size_list_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     is_little_endian: bool,
@@ -262,7 +262,7 @@ where
 {
     let from = from.as_any().downcast_ref().unwrap();
 
-    Ok(Box::new(try_binview_to_array_primitive::<T>(
+    Ok(Box::new(try_binview_to_fixed_size_list::<T>(
         from,
         to,
         is_little_endian,
