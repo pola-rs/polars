@@ -155,7 +155,6 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     }
 
     #[cfg(feature = "binary_encoding")]
-    #[allow(clippy::wrong_self_convention)]
     fn reinterpret(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
         let ca = self.as_binary();
         let arrow_type = dtype.to_arrow(CompatLevel::newest());

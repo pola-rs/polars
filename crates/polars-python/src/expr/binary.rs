@@ -42,7 +42,6 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    #[allow(clippy::wrong_self_convention)]
     fn bin_reinterpret(&self, dtype: PyDataTypeExpr, kind: &str) -> PyResult<Self> {
         use pyo3::exceptions::PyValueError;
 
