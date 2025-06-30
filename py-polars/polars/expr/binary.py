@@ -337,4 +337,6 @@ class ExprBinaryNameSpace:
         """
         dtype = parse_into_datatype_expr(dtype)
 
-        return wrap_expr(self._pyexpr.from_buffer(dtype._pydatatype_expr, endianness))
+        return wrap_expr(
+            self._pyexpr.bin_reinterpret(dtype._pydatatype_expr, endianness)
+        )

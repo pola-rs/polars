@@ -17,7 +17,7 @@ pub enum IRBinaryFunction {
     Base64Encode,
     Size,
     #[cfg(feature = "binary_encoding")]
-    FromBuffer(DataType, bool),
+    Reinterpret(DataType, bool),
 }
 
 impl IRBinaryFunction {
@@ -32,7 +32,7 @@ impl IRBinaryFunction {
             HexEncode | Base64Encode => mapper.with_dtype(DataType::String),
             Size => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "binary_encoding")]
-            FromBuffer(dtype, _) => mapper.with_dtype(dtype.clone()),
+            Reinterpret(dtype, _) => mapper.with_dtype(dtype.clone()),
         }
     }
 
@@ -48,7 +48,7 @@ impl IRBinaryFunction {
             | B::HexEncode
             | B::Base64Decode(_)
             | B::Base64Encode
-            | B::FromBuffer(_, _) => FunctionOptions::elementwise(),
+            | B::Reinterpret(_, _) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -70,7 +70,7 @@ impl Display for IRBinaryFunction {
             Base64Encode => "base64_encode",
             Size => "size_bytes",
             #[cfg(feature = "binary_encoding")]
-            FromBuffer(_, _) => "from_buffer",
+            Reinterpret(_, _) => "reinterpret",
         };
         write!(f, "bin.{s}")
     }
@@ -99,7 +99,7 @@ impl From<IRBinaryFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Base64Encode => map!(base64_encode),
             Size => map!(size_bytes),
             #[cfg(feature = "binary_encoding")]
-            FromBuffer(dtype, is_little_endian) => map!(from_buffer, &dtype, is_little_endian),
+            Reinterpret(dtype, is_little_endian) => map!(reinterpret, &dtype, is_little_endian),
         }
     }
 }
@@ -163,13 +163,13 @@ pub(super) fn base64_encode(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn from_buffer(
+pub(super) fn reinterpret(
     s: &Column,
     dtype: &DataType,
     is_little_endian: bool,
 ) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    ca.from_buffer(dtype, is_little_endian)
+    ca.reinterpret(dtype, is_little_endian)
         .map(|val| val.into())
 }
 

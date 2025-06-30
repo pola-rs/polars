@@ -156,7 +156,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
 
     #[cfg(feature = "binary_encoding")]
     #[allow(clippy::wrong_self_convention)]
-    fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
+    fn reinterpret(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
         let ca = self.as_binary();
         let arrow_type = dtype.to_arrow(CompatLevel::newest());
 
@@ -179,7 +179,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 })
             },
             _ => Err(
-                polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
+                polars_err!(InvalidOperation:"unsupported data type in reinterpret. Only numerical types are allowed."),
             ),
         }
     }
