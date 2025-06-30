@@ -449,36 +449,38 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    let mut builder = NewCategoricalChunkedBuilder::<Categorical32Type>::new(PlSmallStr::EMPTY, dtype.clone());
+    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+        let mut builder = NewCategoricalChunkedBuilder::<$C>::new(PlSmallStr::EMPTY, dtype.clone());
 
-    let mut owned = String::new(); // Amortize allocations.
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_str(s)?,
-            AnyValue::StringOwned(s) => builder.append_str(s)?,
+        let mut owned = String::new(); // Amortize allocations.
+        for av in values {
+            match av {
+                AnyValue::String(s) => builder.append_str(s)?,
+                AnyValue::StringOwned(s) => builder.append_str(s)?,
 
-            &AnyValue::Enum(cat, &ref map) |
-            &AnyValue::EnumOwned(cat, ref map) |
-            &AnyValue::Categorical(cat, &ref map) |
-            &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map)?,
+                &AnyValue::Enum(cat, &ref map) |
+                &AnyValue::EnumOwned(cat, ref map) |
+                &AnyValue::Categorical(cat, &ref map) |
+                &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map)?,
 
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
-            AnyValue::Null => builder.append_null(),
+                AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
+                AnyValue::Null => builder.append_null(),
 
-            av => {
-                if strict {
-                    return Err(invalid_value_error(&DataType::String, av));
-                }
+                av => {
+                    if strict {
+                        return Err(invalid_value_error(&DataType::String, av));
+                    }
 
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_str(&owned)?;
-            },
+                    owned.clear();
+                    write!(owned, "{av}").unwrap();
+                    builder.append_str(&owned)?;
+                },
+            }
         }
-    }
 
-    let ca = builder.finish();
-    Ok(ca.into_series())
+        let ca = builder.finish();
+        Ok(ca.into_series())
+    })
 }
 
 #[cfg(feature = "dtype-decimal")]

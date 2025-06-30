@@ -87,6 +87,8 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
         let (DataType::NewEnum(_, mapping) | DataType::NewCategorical(_, mapping)) = &dtype else {
             panic!("from_cats_and_dtype called on non-categorical type")
         };
+        assert!(dtype.cat_physical().ok() == Some(T::physical()));
+
         unsafe {
             let mut validity = BitmapBuilder::new();
             for arr in cat_ids.downcast_iter_mut() {
@@ -125,10 +127,8 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
     /// # Safety
     /// It's not checked that the indices are in-bounds or that the dtype is correct.
     pub unsafe fn from_cats_and_dtype_unchecked(cat_ids: ChunkedArray<T::PolarsPhysical>, dtype: DataType) -> Self {
-        debug_assert!(matches!(
-            dtype,
-            DataType::NewEnum { .. } | DataType::NewCategorical { .. }
-        ));
+        debug_assert!(dtype.cat_physical().ok() == Some(T::physical()));
+
         Self {
             phys: cat_ids,
             dtype,
