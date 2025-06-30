@@ -642,9 +642,9 @@ def test_selector_expansion() -> None:
 
 
 def test_selector_repr() -> None:
-    assert_repr_equals(cs.all() - cs.first(), "(cs.all() - cs.first())")
-    assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
-    assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
+    assert_repr_equals(cs.all() - cs.first(), "[cs.all() - cs.first()]")
+    assert_repr_equals(~cs.starts_with("a", "b"), "[cs.all() - cs.starts_with('a', 'b')]")
+    assert_repr_equals(cs.float() | cs.by_name("x"), "[cs.float() | cs.by_name('x')]")
     assert_repr_equals(
         cs.integer() & cs.matches("z"),
         "(cs.integer() & cs.matches(pattern='z'))",

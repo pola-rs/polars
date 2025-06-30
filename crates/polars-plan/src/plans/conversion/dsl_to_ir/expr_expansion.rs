@@ -1251,8 +1251,15 @@ pub fn expand_expression(
 pub fn expand_selectors(s: Vec<Selector>, schema: &Schema) -> PolarsResult<Arc<[PlSmallStr]>> {
     let mut columns = PlIndexSet::new();
     for s in &s {
-        s.into_columns_amortized(schema, &mut columns)?;
+        columns.extend(s.into_columns(schema)?);
     }
+    // Expanded columns are in the same order as the schema.
+    columns.sort_unstable_by(|l, r| {
+        schema
+            .index_of(l)
+            .unwrap()
+            .cmp(&schema.index_of(r).unwrap())
+    });
     Ok(columns.into_iter().collect::<Arc<[PlSmallStr]>>())
 }
 

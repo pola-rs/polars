@@ -1,4 +1,5 @@
-use std::ops::{Add, BitAnd, BitXor, BitOr, Sub};
+use std::fmt::{self, Write};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Sub};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -23,45 +24,101 @@ pub enum Selector {
     Wildcard,
 }
 
-impl Selector {
-    pub fn into_columns(&self, schema: &Schema) -> PolarsResult<PlIndexSet<PlSmallStr>> {
-        let mut out = PlIndexSet::default();
-        self.into_columns_amortized(schema, &mut out)?;
-        Ok(out)
+fn merge_sorted_columns(
+    lhs: PlIndexSet<PlSmallStr>,
+    rhs: PlIndexSet<PlSmallStr>,
+    schema: &Schema,
+    xor: bool,
+) -> PlIndexSet<PlSmallStr> {
+    if lhs.is_empty() {
+        return rhs;
+    }
+    if rhs.is_empty() {
+        return lhs;
     }
 
-    pub(crate) fn into_columns_amortized(
-        &self,
-        schema: &Schema,
-        out: &mut PlIndexSet<PlSmallStr>,
-    ) -> PolarsResult<()> {
-        match self {
+    let mut out = PlIndexSet::with_capacity(lhs.len() + rhs.len());
+    let mut li = lhs.into_iter();
+    let mut ri = rhs.into_iter();
+
+    let mut lv = li.next().unwrap();
+    let mut rv = ri.next().unwrap();
+
+    let mut l = schema.index_of(&lv).unwrap();
+    let mut r = schema.index_of(&rv).unwrap();
+
+    loop {
+        while l == r {
+            if !xor {
+                out.insert(lv);
+            }
+
+            let Some(n) = li.next() else {
+                out.insert(rv);
+                out.extend(ri);
+                return out;
+            };
+            lv = n;
+            l = schema.index_of(&lv).unwrap();
+            let Some(n) = ri.next() else {
+                out.insert(lv);
+                out.extend(li);
+                return out;
+            };
+            rv = n;
+            r = schema.index_of(&rv).unwrap();
+        }
+
+        if l < r {
+            out.insert(lv);
+            let Some(n) = li.next() else {
+                out.insert(rv);
+                out.extend(ri);
+                return out;
+            };
+            lv = n;
+            l = schema.index_of(&lv).unwrap();
+        } else {
+            out.insert(rv);
+            let Some(n) = ri.next() else {
+                out.insert(lv);
+                out.extend(li);
+                return out;
+            };
+            rv = n;
+            r = schema.index_of(&rv).unwrap();
+        }
+    }
+}
+
+impl Selector {
+    pub fn into_columns(&self, schema: &Schema) -> PolarsResult<PlIndexSet<PlSmallStr>> {
+        let out = match self {
             Selector::Union(lhs, rhs) => {
-                lhs.into_columns_amortized(schema, out)?;
-                rhs.into_columns_amortized(schema, out)?;
-            },
-            Selector::Difference(lhs, rhs) => {
                 let lhs = lhs.into_columns(schema)?;
                 let rhs = rhs.into_columns(schema)?;
-
-                out.extend(lhs.into_iter().filter(|n| !rhs.contains(n)));
+                merge_sorted_columns(lhs, rhs, schema, false)
+            },
+            Selector::Difference(lhs, rhs) => {
+                let mut lhs = lhs.into_columns(schema)?;
+                let rhs = rhs.into_columns(schema)?;
+                lhs.retain(|n| !rhs.contains(n));
+                lhs
             },
             Selector::ExclusiveOr(lhs, rhs) => {
                 let lhs = lhs.into_columns(schema)?;
                 let rhs = rhs.into_columns(schema)?;
-
-                out.extend(lhs.iter().filter(|n| !rhs.contains(n.as_str())).cloned());
-                out.extend(rhs.into_iter().filter(|n| !lhs.contains(n)));
+                merge_sorted_columns(lhs, rhs, schema, true)
             },
             Selector::Intersect(lhs, rhs) => {
-                let lhs = lhs.into_columns(schema)?;
+                let mut lhs = lhs.into_columns(schema)?;
                 let rhs = rhs.into_columns(schema)?;
-
-                out.extend(lhs.into_iter().filter(|n| rhs.contains(n)));
+                lhs.retain(|n| rhs.contains(n));
+                lhs
             },
             Selector::Exclude(input, excludes) => {
-                let mut input = input.into_columns(schema)?;
-                dbg!(&input);
+                let mut out = input.into_columns(schema)?;
+                dbg!(&out);
                 dbg!(&excludes);
                 for exclude in excludes.iter() {
                     // @PERF: This is quadratic
@@ -70,36 +127,44 @@ impl Selector {
                         Excluded::Name(regex_str) if is_regex_projection(regex_str) => {
                             let re = polars_utils::regex_cache::compile_regex(regex_str)
                                 .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
-                            input.retain(|name| !re.is_match(name));
+                            out.retain(|name| !re.is_match(name));
                         },
-                        Excluded::Name(excluded_name) => input.retain(|name| name != excluded_name),
-                        Excluded::Dtype(excluded_dt) => input
-                            .retain(|name| !dtypes_match(schema.get(name).unwrap(), excluded_dt)),
+                        Excluded::Name(excluded_name) => out.retain(|name| name != excluded_name),
+                        Excluded::Dtype(excluded_dt) => {
+                            out.retain(|name| !dtypes_match(schema.get(name).unwrap(), excluded_dt))
+                        },
                     }
                 }
-                dbg!(&input);
-                out.extend(input);
+                dbg!(&out);
+                out
             },
 
             Selector::WithDataTypes(data_types) => {
-                let datatypes = PlHashSet::from_iter(data_types.iter());
-                out.extend(
+                // @PERF: This is quadratic
+                PlIndexSet::from_iter(
                     schema
                         .iter()
-                        .filter(|(_, dtype)| datatypes.contains(dtype))
+                        .filter(|(_, dtype)| data_types.iter().any(|dt| dtypes_match(dtype, dt)))
                         .map(|(name, _)| name.clone()),
-                );
+                )
             },
             Selector::ByName(names) => {
-                out.reserve(names.len());
+                let mut out = PlIndexSet::with_capacity(names.len());
                 for name in names.iter() {
                     polars_ensure!(schema.contains(name), col_not_found = name);
                     out.insert(name.clone());
                 }
+                out.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                out
             },
             Selector::AtIndex(indices) => {
-                out.reserve(indices.len());
-                let mut set = PlHashSet::with_capacity(indices.len());
+                let mut out = PlIndexSet::with_capacity(indices.len());
+                let mut set = PlIndexSet::with_capacity(indices.len());
                 for &idx in indices.iter() {
                     let Some(idx) = idx.negative_to_usize(schema.len()) else {
                         polars_bail!(InvalidOperation: "cannot get the {idx}-th column when schema has {} columns", schema.len());
@@ -110,19 +175,26 @@ impl Selector {
                     }
                     out.insert(name.clone());
                 }
+                out.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                out
             },
             Selector::Regex(regex_str) => {
                 let re = polars_utils::regex_cache::compile_regex(&regex_str).unwrap();
-                out.extend(
+                PlIndexSet::from_iter(
                     schema
                         .iter_names()
                         .filter(|name| re.is_match(name))
                         .cloned(),
-                );
+                )
             },
-            Selector::Wildcard => out.extend(schema.iter_names().cloned()),
-        }
-        Ok(())
+            Selector::Wildcard => PlIndexSet::from_iter(schema.iter_names().cloned()),
+        };
+        Ok(out)
     }
 
     pub fn col(name: impl Into<PlSmallStr>) -> Self {
@@ -228,5 +300,45 @@ impl From<PlSmallStr> for Selector {
 impl From<Selector> for Expr {
     fn from(value: Selector) -> Self {
         Expr::Selector(value)
+    }
+}
+
+impl fmt::Display for Selector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Selector::Union(left, right) => write!(f, "[{left} | {right}]"),
+            Selector::Difference(left, right) => write!(f, "[{left} - {right}]"),
+            Selector::ExclusiveOr(left, right) => write!(f, "[{left} ^ {right}]"),
+            Selector::Intersect(left, right) => write!(f, "[{left} & {right}]"),
+            Selector::Exclude(input, excludes) => {
+                write!(f, "{input}.exclude(")?;
+
+                if let Some(e) = excludes.first() {
+                    fmt::Display::fmt(e, f)?;
+                    for e in &excludes[1..] {
+                        write!(f, ", {e}")?;
+                    }
+                }
+
+                f.write_char(')')
+            },
+            Selector::WithDataTypes(dtypes) => write!(f, "col({:?})", dtypes),
+            Selector::ByName(names) => write!(f, "col({:?})", names),
+            Selector::AtIndex(items) if items.as_ref() == &[0] => f.write_str("first()"),
+            Selector::AtIndex(items) if items.as_ref() == &[-1] => f.write_str("last()"),
+            Selector::AtIndex(items) if items.len() == 1 => write!(f, "nth({})", items[0]),
+            Selector::AtIndex(items) => write!(f, "nth({:?})", items.as_ref()),
+            Selector::Regex(s) => write!(f, "regex(\"{s}\")"),
+            Selector::Wildcard => f.write_str("all()"),
+        }
+    }
+}
+
+impl fmt::Display for Excluded {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Excluded::Name(name) => write!(f, "\"{name}\""),
+            Excluded::Dtype(dtype) => fmt::Display::fmt(dtype, f),
+        }
     }
 }

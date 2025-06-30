@@ -66,7 +66,7 @@ class ExprNameNameSpace:
         │ 18  ┆ 4   │
         └─────┴─────┘
         """
-        return Expr._from_pyexpr(self._pyexpr.name_keep())
+        return pl.Expr._from_pyexpr(self._pyexpr.name_keep())
 
     def map(self, function: Callable[[str], str]) -> Expr:
         """
@@ -204,7 +204,7 @@ class ExprNameNameSpace:
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
         """
-        return self._from_pyexpr(self._pyexpr.name_suffix(suffix))
+        return pl.Expr._from_pyexpr(self._pyexpr.name_suffix(suffix))
 
     def to_lowercase(self) -> Expr:
         """
@@ -336,7 +336,7 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.prefix_fields("prefix_")).schema
         Schema({'x': Struct({'prefix_a': Int64, 'prefix_b': Int64})})
         """
-        return self._from_pyexpr(self._pyexpr.name_prefix_fields(prefix))
+        return pl.Expr._from_pyexpr(self._pyexpr.name_prefix_fields(prefix))
 
     def suffix_fields(self, suffix: str) -> Expr:
         """
@@ -362,4 +362,4 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.suffix_fields("_suffix")).schema
         Schema({'x': Struct({'a_suffix': Int64, 'b_suffix': Int64})})
         """
-        return self._from_pyexpr(self._pyexpr.name_suffix_fields(suffix))
+        return pl.Expr._from_pyexpr(self._pyexpr.name_suffix_fields(suffix))
