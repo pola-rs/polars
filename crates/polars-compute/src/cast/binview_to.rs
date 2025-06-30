@@ -206,7 +206,9 @@ where
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let ArrowDataType::FixedSizeList(_, array_size) = to else {
-        panic!("Bug, non-Array passed in.")
+        // Higher levels should have made this impossible, we're only supposed
+        // to get FixedSizeList:
+        unreachable!();
     };
     let element_size = std::mem::size_of::<T>();
     let array_size = *array_size;
