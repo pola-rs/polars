@@ -693,6 +693,24 @@ impl<'a> AnyValue<'a> {
                 let converted = value.checked_mul(factor)?;
                 AnyValue::Decimal(converted, *scale)
             },
+            
+            #[cfg(feature = "dtype-categorical")]
+            (&AnyValue::Categorical(_, lmap) | AnyValue::CategoricalOwned(_, lmap), DataType::NewCategorical(_, rmap)) => {
+                return if Arc::ptr_eq(lmap, rmap) {
+                    Some(self.clone())
+                } else {
+                    None
+                };
+            },
+
+            #[cfg(feature = "dtype-categorical")]
+            (&AnyValue::Enum(_, lmap) | AnyValue::EnumOwned(_, lmap), DataType::NewEnum(_, rmap)) => {
+                return if Arc::ptr_eq(lmap, rmap) {
+                    Some(self.clone())
+                } else {
+                    None
+                };
+            }
 
             // to self
             (av, dtype) if av.dtype() == *dtype => self.clone(),
