@@ -3443,6 +3443,7 @@ dependencies = [
  "bytemuck",
  "polars-arrow",
  "polars-compute",
+ "polars-dtype",
  "polars-error",
  "polars-utils",
  "proptest",

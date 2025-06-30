@@ -98,8 +98,16 @@ pub fn get_row_encoding_context(dtype: &DataType, ordered: bool) -> Option<RowEn
         | DataType::Date
         | DataType::Datetime(_, _)
         | DataType::Duration(_) => None,
+
         #[cfg(feature = "dtype-categorical")]
-        DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => None,
+        DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping) => {
+            use polars_row::NewRowEncodingCategoricalContext;
+
+            Some(RowEncodingContext::NewCategorical(NewRowEncodingCategoricalContext {
+                is_enum: matches!(dtype, DataType::NewEnum(_, _)),
+                mapping: mapping.clone()
+            }))
+        }
 
         DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 
