@@ -17,15 +17,21 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyLazyFrame
 
 if TYPE_CHECKING:
-    from io import IOBase
-
     from polars import DataFrame, LazyFrame
     from polars._typing import SchemaDefinition
     from polars.io.cloud import CredentialProviderFunction
 
 
 def read_ndjson(
-    source: str | Path | list[str] | list[Path] | IOBase | bytes,
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]],
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
