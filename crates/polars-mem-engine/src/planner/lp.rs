@@ -588,6 +588,7 @@ fn create_physical_plan_impl(
             slice,
             sort_options,
         } => {
+            debug_assert!(!by_column.is_empty());
             let input_schema = lp_arena.get(input).schema(lp_arena);
             let by_column = create_physical_expressions_from_irs(
                 &by_column,

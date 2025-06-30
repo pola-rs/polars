@@ -351,6 +351,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         sort_options.descending.remove(i);
                     }
                 }
+            }
+            if by_column.is_empty() {
+                return Ok(input);
             };
 
             let lp = IR::Sort {
