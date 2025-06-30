@@ -92,6 +92,9 @@ fn merge_sorted_columns(
 }
 
 impl Selector {
+    /// Turns the selector into an ordered set of selected columns from the schema.
+    ///
+    /// The order of the columns corresponds to the order in the schema.
     pub fn into_columns(&self, schema: &Schema) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         let out = match self {
             Selector::Union(lhs, rhs) => {
@@ -118,8 +121,6 @@ impl Selector {
             },
             Selector::Exclude(input, excludes) => {
                 let mut out = input.into_columns(schema)?;
-                dbg!(&out);
-                dbg!(&excludes);
                 for exclude in excludes.iter() {
                     // @PERF: This is quadratic
                     match exclude {
@@ -135,7 +136,6 @@ impl Selector {
                         },
                     }
                 }
-                dbg!(&out);
                 out
             },
 
