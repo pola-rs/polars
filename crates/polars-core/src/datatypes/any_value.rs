@@ -553,6 +553,67 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float32(v), DataType::Boolean) => AnyValue::Boolean(*v != f32::default()),
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
+            // Categorical casts.
+            #[cfg(feature = "dtype-categorical")]
+            (
+                &AnyValue::Categorical(cat, &ref lmap) | &AnyValue::CategoricalOwned(cat, ref lmap),
+                DataType::NewCategorical(_, rmap),
+            ) => {
+                if Arc::ptr_eq(lmap, rmap) {
+                    self.clone()
+                } else {
+                    let s = unsafe { lmap.cat_to_str_unchecked(cat) };
+                    let new_cat = rmap.insert_cat(s).unwrap();
+                    AnyValue::CategoricalOwned(new_cat, rmap.clone())
+                }
+            },
+
+            #[cfg(feature = "dtype-categorical")]
+            (
+                &AnyValue::Enum(cat, &ref lmap) | &AnyValue::EnumOwned(cat, ref lmap),
+                DataType::NewEnum(_, rmap),
+            ) => {
+                if Arc::ptr_eq(lmap, rmap) {
+                    self.clone()
+                } else {
+                    let s = unsafe { lmap.cat_to_str_unchecked(cat) };
+                    let new_cat = rmap.get_cat(s)?;
+                    AnyValue::EnumOwned(new_cat, rmap.clone())
+                }
+            },
+
+            #[cfg(feature = "dtype-categorical")]
+            (
+                &AnyValue::Categorical(cat, &ref map)
+                | &AnyValue::CategoricalOwned(cat, ref map)
+                | &AnyValue::Enum(cat, &ref map)
+                | &AnyValue::EnumOwned(cat, ref map),
+                DataType::String,
+            ) => {
+                let s = unsafe { map.cat_to_str_unchecked(cat) };
+                AnyValue::StringOwned(PlSmallStr::from(s))
+            },
+
+            #[cfg(feature = "dtype-categorical")]
+            (AnyValue::String(s), DataType::NewCategorical(_, map)) => {
+                AnyValue::CategoricalOwned(map.insert_cat(s).unwrap(), map.clone())
+            },
+
+            #[cfg(feature = "dtype-categorical")]
+            (AnyValue::StringOwned(s), DataType::NewCategorical(_, map)) => {
+                AnyValue::CategoricalOwned(map.insert_cat(s).unwrap(), map.clone())
+            },
+
+            #[cfg(feature = "dtype-categorical")]
+            (AnyValue::String(s), DataType::NewEnum(_, map)) => {
+                AnyValue::CategoricalOwned(map.get_cat(s)?, map.clone())
+            },
+
+            #[cfg(feature = "dtype-categorical")]
+            (AnyValue::StringOwned(s), DataType::NewEnum(_, map)) => {
+                AnyValue::CategoricalOwned(map.get_cat(s)?, map.clone())
+            },
+
             // to string
             (AnyValue::String(v), DataType::String) => AnyValue::String(v),
             (AnyValue::StringOwned(v), DataType::String) => AnyValue::StringOwned(v.clone()),
@@ -693,24 +754,6 @@ impl<'a> AnyValue<'a> {
                 let converted = value.checked_mul(factor)?;
                 AnyValue::Decimal(converted, *scale)
             },
-            
-            #[cfg(feature = "dtype-categorical")]
-            (&AnyValue::Categorical(_, lmap) | AnyValue::CategoricalOwned(_, lmap), DataType::NewCategorical(_, rmap)) => {
-                return if Arc::ptr_eq(lmap, rmap) {
-                    Some(self.clone())
-                } else {
-                    None
-                };
-            },
-
-            #[cfg(feature = "dtype-categorical")]
-            (&AnyValue::Enum(_, lmap) | AnyValue::EnumOwned(_, lmap), DataType::NewEnum(_, rmap)) => {
-                return if Arc::ptr_eq(lmap, rmap) {
-                    Some(self.clone())
-                } else {
-                    None
-                };
-            }
 
             // to self
             (av, dtype) if av.dtype() == *dtype => self.clone(),
@@ -1461,12 +1504,10 @@ impl PartialOrd for AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             (Time(l), Time(r)) => l.partial_cmp(r),
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(l_cat, l_map), Categorical(r_cat, r_map)) => {
-                unsafe {
-                    let l_str = l_map.cat_to_str_unchecked(*l_cat);
-                    let r_str = r_map.cat_to_str_unchecked(*r_cat);
-                    l_str.partial_cmp(r_str)
-                }
+            (Categorical(l_cat, l_map), Categorical(r_cat, r_map)) => unsafe {
+                let l_str = l_map.cat_to_str_unchecked(*l_cat);
+                let r_str = r_map.cat_to_str_unchecked(*r_cat);
+                l_str.partial_cmp(r_str)
             },
             #[cfg(feature = "dtype-categorical")]
             (Enum(l_cat, l_map), Enum(r_cat, r_map)) => {
