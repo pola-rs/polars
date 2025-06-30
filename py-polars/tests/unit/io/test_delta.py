@@ -3,16 +3,20 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.fs
 import pytest
-from deltalake import DeltaTable, write_deltalake
+from deltalake import DeltaTable, convert_to_deltalake, write_deltalake
 from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from typing import Literal
 
 
 @pytest.fixture
@@ -517,3 +521,33 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
 
     assert_frame_equal(pl.scan_delta(table_path).collect(), expect)
     assert_frame_equal(pl.read_delta(table_path), expect)
+
+
+@pytest.mark.write_disk
+def test_cast_on_read_spark_ts(tmp_path: Path) -> None:
+    def get_df(t: Literal["ns", "us"]) -> pl.DataFrame:
+        return pl.DataFrame({"a": [1, 2, 3], "ts_nano": datetime.now()}).with_columns(
+            pl.col("ts_nano").cast(pl.Datetime(t))
+        )
+
+    delta_path = Path(tmp_path, "sub")
+    delta_path.mkdir()
+
+    # Write as microseconds
+    get_df("us").write_parquet(f"{delta_path}/p.parquet")
+    convert_to_deltalake(str(delta_path))
+
+    # Overwrite with nanosecond to emulate Spark/Delta default write
+    get_df("ns").write_parquet(f"{delta_path}/p.parquet")
+
+    # Try to read and FAIL
+    with pytest.raises(pl.exceptions.SchemaError) as err:
+        pl.read_delta(str(delta_path))
+    expected = (
+        "dtypes differ for column ts_nano: "
+        "Timestamp(Nanosecond, None) != Timestamp(Microsecond, None)"
+    )
+    assert expected in str(err.value)
+
+    # Fix read with explicit cast
+    pl.read_delta(str(delta_path), cast_options=pl.ScanCastOptions(datetime_cast='nanosecond-downcast'))

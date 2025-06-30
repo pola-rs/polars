@@ -34,6 +34,7 @@ def read_delta(
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
+    cast_options: ScanCastOptions | None = None,
 ) -> DataFrame:
     """
     Reads into a DataFrame from a Delta lake table.
@@ -75,6 +76,13 @@ def read_delta(
         Flag to enable pyarrow dataset reads.
     pyarrow_options
         Keyword arguments while converting a Delta lake Table to pyarrow table.
+    cast_options
+        Configuration for column type-casting during scans. Useful for datasets
+        containing files that have differing schemas.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -172,6 +180,7 @@ def scan_delta(
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     rechunk: bool | None = None,
+    cast_options: ScanCastOptions | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -213,6 +222,13 @@ def scan_delta(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+    cast_options
+        Configuration for column type-casting during scans. Useful for datasets
+        containing files that have differing schemas.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
