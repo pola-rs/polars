@@ -544,10 +544,13 @@ def test_cast_on_read_spark_ts(tmp_path: Path) -> None:
     with pytest.raises(pl.exceptions.SchemaError) as err:
         pl.read_delta(str(delta_path))
     expected = (
-        "dtypes differ for column ts_nano: "
-        "Timestamp(Nanosecond, None) != Timestamp(Microsecond, None)"
+        "data type mismatch for column ts_nano: incoming: "
+        "Datetime(Nanoseconds, None) != target: Datetime(Microseconds, None)"
     )
     assert expected in str(err.value)
 
     # Fix read with explicit cast
-    pl.read_delta(str(delta_path), cast_options=pl.ScanCastOptions(datetime_cast='nanosecond-downcast'))
+    pl.read_delta(
+        str(delta_path),
+        cast_options=pl.ScanCastOptions(datetime_cast="nanosecond-downcast"),
+    )

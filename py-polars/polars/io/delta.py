@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, LazyFrame
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.scan_options import ScanCastOptions
 
 
 def read_delta(
@@ -163,6 +164,7 @@ def read_delta(
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
         rechunk=rechunk,
+        cast_options=cast_options,
     )
 
     if columns is not None:
@@ -425,6 +427,7 @@ def scan_delta(
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         rechunk=rechunk or False,
+        cast_options=cast_options,
     )
 
 
