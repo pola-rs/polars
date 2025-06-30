@@ -158,6 +158,10 @@ where
     T: FromBytes + NativeType,
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
+    // It would be nice to have a fast path that just use a memory copy.
+    // However, that is only possible if all the binaryviews are the correct
+    // length, and checking that requires iterating over all of them, so it's
+    // not obvious that would actually be much of a speed up.
     let iter = from.iter().map(|x| {
         x.and_then::<T, _>(|x| {
             if is_little_endian {
@@ -216,6 +220,10 @@ where
         array_size,
     );
 
+    // It would be nice to have a fast path that just use a memory copy.
+    // However, that is only possible if all the binaryviews are the correct
+    // length, and checking that requires iterating over all of them, so it's
+    // not obvious that would actually be much of a speed up.
     from.iter().try_for_each(|x| {
         if let Some(x) = x {
             if x.len() != element_size * array_size {
