@@ -27,6 +27,7 @@ use crate::nodes::io_sources::parquet::PredicateApplyMode;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
 
+#[expect(clippy::too_many_arguments)]
 async fn calculate_row_group_pred_pushdown_skip_mask(
     row_group_slice: Range<usize>,
     use_statistics: bool,
