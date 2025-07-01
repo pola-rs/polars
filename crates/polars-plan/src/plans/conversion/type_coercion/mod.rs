@@ -211,6 +211,25 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, schema, node_left, op, node_right),
+            AExpr::AnonymousFunction {
+                input,
+                function,
+                output_type,
+                options,
+                fmt_str,
+            } => {
+                let field = input
+                    .iter()
+                    .map(|e| e.field(schema, Context::Default, expr_arena))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                let out =
+                    output_type
+                        .materialize()?
+                        .get_field(schema, Context::Default, &fields)?;
+
+                if out.dtype().is_unknown() {}
+            },
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 ref function,
