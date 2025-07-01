@@ -1,8 +1,7 @@
 use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{
-    ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES, Field,
-    IntegerType, IntervalUnit, TimeUnit,
+    ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW
 };
 use arrow::types::{NativeType, days_ms, i256};
 use ethnum::I256;
@@ -419,7 +418,8 @@ pub fn page_iter_to_array(
             assert_eq!(value_type.as_ref(), &ArrowDataType::Utf8View);
 
             if field.metadata.is_some_and(|md| {
-                md.contains_key(DTYPE_ENUM_VALUES)
+                md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
+                    || md.contains_key(DTYPE_ENUM_VALUES_NEW)
                     || md.contains_key(DTYPE_CATEGORICAL_NEW)
                     || md.contains_key(DTYPE_CATEGORICAL_LEGACY)
             }) && matches!(

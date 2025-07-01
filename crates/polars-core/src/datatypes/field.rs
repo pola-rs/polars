@@ -1,6 +1,5 @@
-use arrow::datatypes::{DTYPE_ENUM_VALUES, Metadata};
+use arrow::datatypes::Metadata;
 use polars_utils::pl_str::PlSmallStr;
-use uuid::Uuid;
 
 use polars_dtype::categorical::CategoricalPhysical;
 

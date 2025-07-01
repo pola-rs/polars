@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES, Metadata};
+use arrow::datatypes::{Metadata, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -19,7 +19,9 @@ static PL_KEY: &str = "pl";
 
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {
-        Some(self.into_metadata_ref().get(DTYPE_ENUM_VALUES)?.as_str())
+        let md = self.into_metadata_ref();
+        let values = md.get(DTYPE_ENUM_VALUES_NEW).or_else(|| md.get(DTYPE_ENUM_VALUES_LEGACY));
+        Some(values?.as_str())
     }
 
     fn pl_categorical_metadata(&self) -> Option<&str> {
@@ -699,7 +701,7 @@ impl DataType {
                     encoded.push_str(cat);
                 }
                 Some(BTreeMap::from([(
-                    PlSmallStr::from_static(DTYPE_ENUM_VALUES),
+                    PlSmallStr::from_static(DTYPE_ENUM_VALUES_NEW),
                     PlSmallStr::from_string(encoded),
                 )]))
             },

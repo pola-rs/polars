@@ -1,5 +1,5 @@
 use arrow::array::StructArray;
-use arrow::datatypes::{DTYPE_CATEGORICAL_NEW, DTYPE_CATEGORICAL_LEGACY, DTYPE_ENUM_VALUES, IntegerType};
+use arrow::datatypes::{IntegerType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW};
 use polars_compute::cast::CastOptionsImpl;
 
 use self::categorical::CategoricalDecoder;
@@ -142,7 +142,7 @@ pub fn columns_to_iter_recursive(
                 init.push(InitNested::Primitive(field.is_nullable));
 
                 if field.metadata.as_ref().is_none_or(|md| {
-                    !md.contains_key(DTYPE_ENUM_VALUES) && !md.contains_key(DTYPE_CATEGORICAL_NEW)
+                    !md.contains_key(DTYPE_ENUM_VALUES_LEGACY) && !md.contains_key(DTYPE_ENUM_VALUES_NEW) && !md.contains_key(DTYPE_CATEGORICAL_NEW)
                         && !md.contains_key(DTYPE_CATEGORICAL_LEGACY)
                 }) {
                     let (nested, arr, ptm) = PageDecoder::new(

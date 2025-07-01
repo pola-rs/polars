@@ -6,7 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use super::{ArrowDataType, Metadata};
 
-pub static DTYPE_ENUM_VALUES: &str = "_PL_ENUM_VALUES";
+// These two have the same encoding, but because older versions of Polars
+// were unable to read non-u32-key arrow dictionaries while _PL_ENUM_VALUES
+// is set we switched to a new version.
+pub static DTYPE_ENUM_VALUES_LEGACY: &str = "_PL_ENUM_VALUES";
+pub static DTYPE_ENUM_VALUES_NEW: &str = "_PL_ENUM_VALUES2";
+
+// These have different encodings.
 pub static DTYPE_CATEGORICAL_LEGACY: &str = "_PL_CATEGORICAL";
 pub static DTYPE_CATEGORICAL_NEW: &str = "_PL_CATEGORICAL2";
 
@@ -72,7 +78,8 @@ impl Field {
 
     pub fn is_enum(&self) -> bool {
         if let Some(md) = &self.metadata {
-            md.get(DTYPE_ENUM_VALUES).is_some()
+            md.get(DTYPE_ENUM_VALUES_LEGACY).is_some() || 
+            md.get(DTYPE_ENUM_VALUES_NEW).is_some()
         } else {
             false
         }
