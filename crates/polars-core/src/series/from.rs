@@ -381,8 +381,8 @@ impl Series {
                 panic!("activate dtype-categorical to convert dictionary arrays")
             },
             #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(key_type, value_type, _) => {
-                use arrow::datatypes::IntegerType;
+            ArrowDataType::Dictionary(key_type, _, _) => {
+                use arrow::datatypes::IntegerType as I;
 
                 // Don't spuriously call this; triggers a read on mmapped data.
                 let arr = if chunks.len() > 1 {
@@ -391,83 +391,82 @@ impl Series {
                     chunks[0].clone()
                 };
 
-                // If the value type is a string, they are converted to Categoricals or Enums.
-                if matches!(
-                    value_type.as_ref(),
-                    ArrowDataType::Utf8
-                        | ArrowDataType::LargeUtf8
-                        | ArrowDataType::Utf8View
-                        | ArrowDataType::Null
-                ) {
-                    let dtype = DataType::from_arrow(dtype, md);
-                    macro_rules! unpack_keys_values {
-                        ($dt:ty, $pdt:ty) => {{
-                            // TODO @ cat-rework: avoid extra casts and more error checking?
+                let polars_dtype = DataType::from_arrow(dtype, md);
+                if matches!(polars_dtype, DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)) {
+                    macro_rules! unpack_categorical_chunked {
+                        ($dt:ty) => {{
                             let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
                             let keys = arr.keys();
                             let values = arr.values();
                             let values = cast(&**values, &ArrowDataType::Utf8View)?;
                             let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            let ca = NewCategoricalChunked::<$pdt>::from_str_iter(
-                                name,
-                                dtype,
-                                keys.iter().map(|k| values.get(*k? as usize)),
-                            )?;
-                            Ok(ca.into_series())
+                            with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), |$C| {
+                                let ca = NewCategoricalChunked::<$C>::from_str_iter(
+                                    name,
+                                    polars_dtype,
+                                    keys.iter().map(|k| {
+                                        let k: usize = (*k?).try_into().ok()?;
+                                        values.get(k)
+                                    }),
+                                )?;
+                                Ok(ca.into_series())
+                            })
                         }};
                     }
 
-                    use IntegerType as I;
-                    return match key_type {
-                        I::UInt8 => unpack_keys_values!(u8, Categorical8Type),
-                        I::UInt16 => unpack_keys_values!(u16, Categorical16Type),
-                        I::UInt32 => unpack_keys_values!(u32, Categorical32Type),
+                    match key_type {
+                        I::Int8 => unpack_categorical_chunked!(i8),
+                        I::UInt8 => unpack_categorical_chunked!(u8),
+                        I::Int16 => unpack_categorical_chunked!(i16),
+                        I::UInt16 => unpack_categorical_chunked!(u16),
+                        I::Int32 => unpack_categorical_chunked!(i32),
+                        I::UInt32 => unpack_categorical_chunked!(u32),
+                        I::Int64 => unpack_categorical_chunked!(i64),
+                        I::UInt64 => unpack_categorical_chunked!(u64),
                         _ => polars_bail!(
-                            ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
+                            ComputeError: "unsupported arrow key type: {key_type:?}"
+                        ),
+                    }
+                } else {
+                    macro_rules! unpack_keys_values {
+                        ($dt:ty) => {{
+                            let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
+                            let keys = arr.keys();
+                            let keys = polars_compute::cast::primitive_to_primitive::<
+                                $dt,
+                                <IdxType as PolarsNumericType>::Native,
+                            >(keys, &IDX_DTYPE.to_arrow(CompatLevel::newest()));
+                            (keys, arr.values())
+                        }};
+                    }
+
+                    let (keys, values) = match key_type {
+                        I::Int8 => unpack_keys_values!(i8),
+                        I::UInt8 => unpack_keys_values!(u8),
+                        I::Int16 => unpack_keys_values!(i16),
+                        I::UInt16 => unpack_keys_values!(u16),
+                        I::Int32 => unpack_keys_values!(i32),
+                        I::UInt32 => unpack_keys_values!(u32),
+                        I::Int64 => unpack_keys_values!(i64),
+                        I::UInt64 => unpack_keys_values!(u64),
+                        _ => polars_bail!(
+                            ComputeError: "unsupported arrow key type: {key_type:?}"
                         ),
                     };
+
+                    let values = Series::_try_from_arrow_unchecked_with_md(
+                        name,
+                        vec![values.clone()],
+                        values.dtype(),
+                        None,
+                    )?;
+
+                    values.take(&IdxCa::from_chunks_and_dtype(
+                        PlSmallStr::EMPTY,
+                        vec![keys.to_boxed()],
+                        IDX_DTYPE,
+                    ))
                 }
-
-                macro_rules! unpack_keys_values {
-                    ($dt:ty) => {{
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = polars_compute::cast::primitive_as_primitive::<
-                            $dt,
-                            <IdxType as PolarsNumericType>::Native,
-                        >(keys, &IDX_DTYPE.to_arrow(CompatLevel::newest()));
-                        (arr.values(), keys)
-                    }};
-                }
-
-                use IntegerType as I;
-                let (values, keys) = match key_type {
-                    I::Int8 => unpack_keys_values!(i8),
-                    I::UInt8 => unpack_keys_values!(u8),
-                    I::Int16 => unpack_keys_values!(i16),
-                    I::UInt16 => unpack_keys_values!(u16),
-                    I::Int32 => unpack_keys_values!(i32),
-                    I::UInt32 => unpack_keys_values!(u32),
-                    I::Int64 => unpack_keys_values!(i64),
-                    _ => polars_bail!(
-                        ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
-                    ),
-                };
-
-                // Convert the dictionary to a flat array
-                let values = Series::_try_from_arrow_unchecked_with_md(
-                    name,
-                    vec![values.clone()],
-                    values.dtype(),
-                    None,
-                )?;
-                let values = values.take_unchecked(&IdxCa::from_chunks_and_dtype(
-                    PlSmallStr::EMPTY,
-                    vec![keys.to_boxed()],
-                    IDX_DTYPE,
-                ));
-
-                Ok(values)
             },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(ext)

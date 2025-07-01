@@ -847,13 +847,20 @@ impl DataType {
             Object(_) => Ok(get_object_physical_type()),
             #[cfg(feature = "dtype-categorical")]
             NewCategorical(_, _) | NewEnum(_, _) => {
+                let arrow_phys = match self.cat_physical().unwrap() {
+                    CategoricalPhysical::U8 => IntegerType::UInt8,
+                    CategoricalPhysical::U16 => IntegerType::UInt16,
+                    CategoricalPhysical::U32 => IntegerType::UInt32,
+                };
+
                 let values = if compat_level.0 >= 1 {
                     ArrowDataType::Utf8View
                 } else {
                     ArrowDataType::LargeUtf8
                 };
+
                 Ok(ArrowDataType::Dictionary(
-                    IntegerType::UInt32,
+                    arrow_phys,
                     Box::new(values),
                     false,
                 ))
