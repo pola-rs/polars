@@ -6,6 +6,7 @@ use std::fmt::Write;
 use arrow::array::ValueSize;
 #[cfg(feature = "list_pad")]
 use arrow::{
+    Either,
     array::{
         Array as ArrowArray, ListArray,
         builder::{ShareStrategy, make_builder},
@@ -601,11 +602,17 @@ pub trait ListNameSpaceImpl: AsList {
             let inner_dtype = values_arr.dtype().clone();
             let raw_offsets = list_arr.offsets().as_slice();
 
+            let len_iter = if length_arr.len() == 1 {
+                Either::Left(std::iter::repeat_n(length_arr.values()[0], rows))
+            } else {
+                Either::Right(length_arr.values().iter().copied())
+            };
+
             let total_inner = list_arr
                 .offsets()
                 .offset_and_length_iter()
-                .zip(length_arr.values().iter())
-                .map(|((_, offset_length), length)| max(offset_length, max(*length, 0) as usize))
+                .zip(len_iter)
+                .map(|((_, offset_length), length)| max(offset_length, max(length, 0) as usize))
                 .sum();
 
             // list values count will be greater or equal after pad
