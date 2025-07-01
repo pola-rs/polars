@@ -561,7 +561,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 let inner_list_type = match type_list {
                     DataType::List(inner_dtype) => inner_dtype,
-                    _ => polars_bail!(InvalidOperation: "expected a list type, got: {}", type_list),
+                    _ => polars_bail!(op = "list.pad_start", type_list),
                 };
 
                 let mut input = input.clone();
