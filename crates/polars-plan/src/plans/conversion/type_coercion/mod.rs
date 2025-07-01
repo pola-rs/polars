@@ -730,6 +730,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
+                println!("{}", options.cast_options.is_some());
                 polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
 
                 let (_, type_start) =
@@ -763,7 +764,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(all(feature = "temporal", feature = "range"))]
+            #[cfg(feature = "range")]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
@@ -778,64 +779,87 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             } => {
                 let function = function.clone();
                 let mut input = input.clone();
+
+                macro_rules! extract_date {
+                    ($idx:literal, $arg:literal) => {{
+                        let (_, dtype) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[$idx].node(), schema));
+                        polars_ensure!(
+                            matches!(dtype, DataType::Datetime(_, _) | DataType::Date),
+                            ComputeError: "'{}' must be Date or Datetime, got {:?}", $arg, dtype
+                        );
+                        dtype
+                    }}
+                }
+                macro_rules! extract_samples {
+                    ($idx:literal) => {{
+                        let (_, dtype) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[$idx].node(), schema));
+                        polars_ensure!(
+                            dtype.is_integer(),
+                            ComputeError: "'num_samples' must be integer, got {:?}", dtype
+                        );
+                        dtype
+                    }}
+                }
                 let (from_types, to_types) = match arg_type {
                     DateRangeArgs::StartEndInterval => {
-                        let (_, type_start) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-                        let (_, type_end) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                        let type_start = extract_date!(0, "start");
+                        let type_end = extract_date!(1, "end");
+                        let super_type = unpack!(get_supertype(&type_start, &type_end));
                         let from_types = vec![type_start, type_end];
-                        let to_types = vec![DataType::Int64, DataType::Int64];
+                        let to_types = vec![super_type.clone(), super_type];
                         (from_types, to_types)
                     },
                     DateRangeArgs::StartEndSamples => {
-                        let (_, type_start) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-                        let (_, type_end) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
-                        let (_, type_samples) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+                        let type_start = extract_date!(0, "start");
+                        let type_end = extract_date!(1, "end");
+                        let type_samples = extract_samples!(2);
+                        let super_type = unpack!(get_supertype(&type_start, &type_end));
                         let from_types = vec![type_start, type_end, type_samples];
-                        let to_types = vec![DataType::Int64, DataType::Int64, DataType::UInt64];
+                        let to_types = vec![super_type.clone(), super_type, DataType::UInt64];
                         (from_types, to_types)
                     },
                     DateRangeArgs::StartIntervalSamples => {
-                        let (_, type_start) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-                        let (_, type_samples) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
-                        let from_types = vec![type_start, type_samples];
-                        let to_types = vec![DataType::Int64, DataType::UInt64];
+                        let type_start = extract_date!(0, "start");
+                        let type_samples = extract_samples!(1);
+                        let from_types = vec![type_start.clone(), type_samples];
+                        let to_types = vec![type_start, DataType::UInt64];
                         (from_types, to_types)
                     },
                     DateRangeArgs::EndIntervalSamples => {
-                        let (_, type_end) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-                        let (_, type_samples) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
-                        let from_types = vec![type_end, type_samples];
-                        let to_types = vec![DataType::Int64, DataType::UInt64];
+                        let type_end = extract_date!(0, "end");
+                        let type_samples = extract_samples!(1);
+                        let from_types = vec![type_end.clone(), type_samples];
+                        let to_types = vec![type_end, DataType::UInt64];
                         (from_types, to_types)
                     },
                 };
 
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
+                let mut modified = false;
                 for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
-                    cast_expr_ir(
-                        &mut input[i],
-                        &from_dtype,
-                        &to_dtype,
-                        expr_arena,
-                        CastOptions::Strict,
-                    )?;
+                    if from_dtype != to_dtype {
+                        modified = true;
+                        cast_expr_ir(
+                            &mut input[i],
+                            &from_dtype,
+                            &to_dtype,
+                            expr_arena,
+                            CastOptions::Strict,
+                        )?;
+                    }
                 }
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
+                if !modified {
+                    return Ok(None);
+                } else {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                }
             },
             #[cfg(all(feature = "range"))]
             AExpr::Function {

@@ -117,10 +117,6 @@ pub fn datetime_range(
     let closed = closed.0;
     let time_unit = time_unit.map(|x| x.0);
     let time_zone = time_zone.0;
-    println!("start:       {:?}", start);
-    println!("end:         {:?}", end);
-    println!("interval:    {:?}", interval);
-    println!("num_samples: {:?}", num_samples);
     let out = dsl::datetime_range(
         start,
         end,

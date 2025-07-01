@@ -169,9 +169,9 @@ impl IRRangeFunction {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-datetime")]
-            R::DatetimeRange { .. } => FunctionOptions::row_separable()
-                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-                .with_supertyping(Default::default()),
+            R::DatetimeRange { .. } => {
+                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "dtype-time")]
             R::TimeRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
