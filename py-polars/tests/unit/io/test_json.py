@@ -7,7 +7,7 @@ import zlib
 from collections import OrderedDict
 from datetime import datetime
 from decimal import Decimal as D
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import TYPE_CHECKING
 
 import zstandard
@@ -327,6 +327,19 @@ def test_ndjson_null_inference_13183() -> None:
         "start_time": [0.795, 1.6239999999999999, 2.184, None],
         "end_time": [1.495, 2.0540000000000003, 2.645, None],
     }
+
+
+def test_ndjson_expected_null_got_object_inference_22807() -> None:
+    buf = io.StringIO()
+    for _ in range(100):
+        buf.write('{"a":[]}\n')
+    buf.write('{"a":[{"b":[]}]}\n')
+
+    buf.seek(0)
+
+    assert pl.read_ndjson(buf, infer_schema_length=None).schema == (
+        {"a": pl.List(pl.Struct([pl.Field("b", pl.List(pl.Null))]))}
+    )
 
 
 @pytest.mark.write_disk
