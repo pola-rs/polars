@@ -255,8 +255,9 @@ def test_hive_partitioned_projection_skips_files(tmp_path: Path) -> None:
     test_df = (
         pl.scan_parquet(str(root) + "/**/**/*.parquet", hive_partitioning=True)
         # don't care about column order
-        .select("sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a"))
-        .collect()
+        .select(
+            "sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a")
+        ).collect()
     )
     assert_frame_equal(df, test_df)
 
@@ -1046,3 +1047,38 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+def test_hive_decode_reserved_ascii_23241(tmp_path: Path) -> None:
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    start, stop = 32, 127
+    excluded = {47}  # the '/' character is not allowed in an object_store Path
+    df = pl.DataFrame(
+        {
+            "a": [i for i in range(start, stop) if i not in excluded],
+            "strings": [chr(i) for i in range(start, stop) if i not in excluded],
+        }
+    )
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
+
+
+def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "strings": [
+                "Türkiye And Egpyt",
+                "résumé père forêt Noël",
+                "😊",
+                "北极熊", # polar bear :)
+            ],
+            "a": [10, 20, 30, 40],
+        }
+    )
+    partitioned_tbl_uri = (tmp_path / "partitioned_data").resolve()
+    df.write_delta(partitioned_tbl_uri, delta_write_options={"partition_by": "strings"})
+    out = pl.read_delta(str(partitioned_tbl_uri)).sort("a").select(pl.col("strings"))
+
+    assert_frame_equal(df.sort(by=pl.col("a")).select(pl.col("strings")), out)
