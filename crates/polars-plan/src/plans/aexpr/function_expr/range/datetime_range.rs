@@ -379,7 +379,7 @@ pub(super) fn datetime_range(
     arg_type: DateRangeArgs,
 ) -> PolarsResult<Column> {
     // let interval = interval.unwrap();
-    let _ = match arg_type {
+    match arg_type {
         DateRangeArgs::StartEndInterval => dt_range_start_end_interval(
             &s[0],
             &s[1],
@@ -407,103 +407,7 @@ pub(super) fn datetime_range(
             time_unit,
             time_zone.clone(),
         ),
-    };
-
-    let interval = interval.unwrap();
-
-    let (start, end) = (&s[0], &s[1]);
-    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
-    let dtype_in = start.dtype();
-
-    // Note: `start` and `end` have already been cast to their supertype,
-    // so only `start`'s dtype needs to be matched against.
-    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
-    let mut dtype = match (dtype_in, time_unit) {
-        (DataType::Date, time_unit) => {
-            if let Some(tu) = time_unit {
-                DataType::Datetime(tu, None)
-            } else if interval.nanoseconds() % 1_000 != 0 {
-                DataType::Datetime(TimeUnit::Nanoseconds, None)
-            } else {
-                DataType::Datetime(TimeUnit::Microseconds, None)
-            }
-        },
-        // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => dtype_in.clone(),
-        // overwrite time unit, keep timezone
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
-    };
-
-    // overwrite time zone, if specified
-    match (&dtype, &time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(tu, _), Some(tz)) => {
-            dtype = DataType::Datetime(*tu, Some(tz.clone()));
-        },
-        _ => {},
-    };
-
-    let (start, end) = if dtype_in == &DataType::Date {
-        (
-            start.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-            end.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-        )
-    } else {
-        (start.clone(), end.clone())
-    };
-
-    // If `start` and `end` are naive, but a time zone was specified,
-    // then first localize them
-    let (start, end) = match (start.dtype(), time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(_, None), Some(tz)) => (
-            polars_ops::prelude::replace_time_zone(
-                start.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype)?
-            .into_column(),
-            polars_ops::prelude::replace_time_zone(
-                end.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype)?
-            .into_column(),
-        ),
-        _ => (start.cast(&dtype)?, end.cast(&dtype)?),
-    };
-
-    let name = start.name();
-    let start = temporal_series_to_i64_scalar(&start)
-        .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?;
-    let end = temporal_series_to_i64_scalar(&end)
-        .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
-
-    let result = match dtype {
-        DataType::Datetime(tu, ref tz) => {
-            let tz = match tz {
-                #[cfg(feature = "timezones")]
-                Some(tz) => Some(parse_time_zone(tz)?),
-                _ => None,
-            };
-            datetime_range_impl_start_end_interval(
-                name.clone(),
-                start,
-                end,
-                interval,
-                closed,
-                tu,
-                tz.as_ref(),
-            )?
-        },
-        _ => unimplemented!(),
-    };
-    Ok(result.cast(&dtype).unwrap().into_column())
+    }
 }
 
 pub(super) fn datetime_ranges(
