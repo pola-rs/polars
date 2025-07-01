@@ -800,10 +800,10 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 #[cfg(feature = "list_pad")]
 pub(super) fn pad_start(s: &[Column]) -> PolarsResult<Column> {
     let s1 = s[0].as_materialized_series();
-    let length = &s[1];
+    let length = &s[1].u64()?;
     polars_ensure!(
         s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
         ShapeMismatch: "cannot pad_start with 'length' array of length {}", length.len()
     );
-    Ok(s1.list()?.lst_pad_start(&s[2], &s[1])?.into_column())
+    Ok(s1.list()?.lst_pad_start(&s[2], length)?.into_column())
 }

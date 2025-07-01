@@ -1476,18 +1476,6 @@ class ExprListNameSpace:
         │ [1, 2, 3]       │
         └─────────────────┘
 
-        >>> df = pl.DataFrame({"a": [[1, 2], [3]]})
-        >>> df.select(pl.col("a").list.pad_start(3, 1.5))
-        shape: (2, 1)
-        ┌─────────────────┐
-        │ a               │
-        │ ---             │
-        │ list[f64]       │
-        ╞═════════════════╡
-        │ [1.5, 1.0, 2.0] │
-        │ [1.5, 1.5, 3.0] │
-        └─────────────────┘
-
         >>> df = pl.DataFrame({"a": [["a"], [], ["b", "c", "d"]]})
         >>> df.select(pl.col("a").list.pad_start(pl.col("a").list.len().max(), "foo"))
         shape: (3, 1)

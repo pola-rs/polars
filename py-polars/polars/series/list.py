@@ -1117,14 +1117,6 @@ class ListNameSpace:
             [1, 2, 3]
         ]
 
-        >>> pl.Series([[1, 2], [3]]).list.pad_start(3, 1.5)
-        shape: (2,)
-        Series: '' [list[f64]]
-        [
-            [1.5, 1.0, 2.0]
-            [1.5, 1.5, 3.0]
-        ]
-
         >>> s = pl.Series([[1], [], [1, 2]])
         >>> s.list.pad_start(s.list.len().max(), 99)
         shape: (3,)

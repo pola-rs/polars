@@ -9,17 +9,13 @@ from polars.testing import assert_frame_equal
 
 
 def test_list_pad_start_with_expr_fill() -> None:
-    df = pl.DataFrame(
-        {"a": [[1], [], [1, 2, 3]], "int": [0, 999, 2], "float": [0.0, 999, 2]}
-    )
+    df = pl.DataFrame({"a": [[1], [], [1, 2, 3]], "int": [0, 999, 2]})
     result = df.select(
         filled_int=pl.col("a").list.pad_start(3, pl.col("int")),
-        filled_float=pl.col("a").list.pad_start(1, pl.col("float")),
     )
     expected = pl.DataFrame(
         {
             "filled_int": [[0, 0, 1], [999, 999, 999], [1, 2, 3]],
-            "filled_float": [[1.0], [999.0], [1.0, 2.0, 3.0]],
         }
     )
     assert_frame_equal(result, expected)
@@ -29,11 +25,6 @@ def test_list_pad_start_with_expr_fill() -> None:
     ("data", "fill_value", "expect"),
     [
         ([[1], [], [1, 2, 3]], 0, [[0, 0, 1], [0, 0, 0], [1, 2, 3]]),
-        (
-            [[1.0], [], [1.0, 2.0, 3.0]],
-            0.0,
-            [[0.0, 0.0, 1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 3.0]],
-        ),
         (
             [["a"], [], ["a", "b", "b"]],
             "foo",
