@@ -5,7 +5,6 @@ use polars_row::{
     RowEncodingContext, RowEncodingOptions, RowsEncoded,
     convert_columns,
 };
-use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::POOL;

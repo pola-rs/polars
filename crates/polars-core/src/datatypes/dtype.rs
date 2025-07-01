@@ -6,7 +6,6 @@ use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 pub use temporal::time_zone::TimeZone;
 
 use super::*;

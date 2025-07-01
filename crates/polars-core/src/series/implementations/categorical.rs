@@ -41,7 +41,7 @@ macro_rules! impl_cat_series {
             fn compute_len(&mut self) {
                 self.0.physical_mut().compute_len()
             }
-            fn _field(&self) -> Cow<Field> {
+            fn _field(&self) -> Cow<'_, Field> {
                 Cow::Owned(self.0.field())
             }
             fn _dtype(&self) -> &DataType {
@@ -122,7 +122,7 @@ macro_rules! impl_cat_series {
                 self.0.physical_mut().rename(name);
             }
 
-            fn chunk_lengths(&self) -> ChunkLenIter {
+            fn chunk_lengths(&self) -> ChunkLenIter<'_> {
                 self.0.physical().chunk_lengths()
             }
 
@@ -210,7 +210,7 @@ macro_rules! impl_cat_series {
             }
 
             #[inline]
-            unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+            unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
                 self.0.get_any_value_unchecked(index)
             }
 

@@ -137,21 +137,19 @@ mod test {
     fn test_cat_lexical_sort() -> PolarsResult<()> {
         let init = &["c", "b", "a", "d"];
 
-        for gc in [false, true] {
-            let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
-            let s = Series::new(PlSmallStr::EMPTY, init)
-                .cast(&DataType::from_categories(cats.clone()))?;
-            let ca = s.cat8()?;
+        let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
+        let s = Series::new(PlSmallStr::EMPTY, init)
+            .cast(&DataType::from_categories(cats.clone()))?;
+        let ca = s.cat8()?;
 
-            let out = ca.sort(false);
-            assert_order(&out, &["a", "b", "c", "d"]);
+        let out = ca.sort(false);
+        assert_order(&out, &["a", "b", "c", "d"]);
 
-            let out = ca.arg_sort(SortOptions {
-                descending: false,
-                ..Default::default()
-            });
-            assert_eq!(out.into_no_null_iter().collect::<Vec<_>>(), &[2, 1, 0, 3]);
-        }
+        let out = ca.arg_sort(SortOptions {
+            descending: false,
+            ..Default::default()
+        });
+        assert_eq!(out.into_no_null_iter().collect::<Vec<_>>(), &[2, 1, 0, 3]);
 
         Ok(())
     }
@@ -160,32 +158,30 @@ mod test {
     fn test_cat_lexical_sort_multiple() -> PolarsResult<()> {
         let init = &["c", "b", "a", "a"];
 
-        for gc in [false, true] {
-            let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
-            let series = Series::new(PlSmallStr::EMPTY, init)
-                .cast(&DataType::from_categories(cats.clone()))?;
+        let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
+        let series = Series::new(PlSmallStr::EMPTY, init)
+            .cast(&DataType::from_categories(cats.clone()))?;
 
-            let df = df![
-                "cat" => &series,
-                "vals" => [1, 1, 2, 2]
-            ]?;
+        let df = df![
+            "cat" => &series,
+            "vals" => [1, 1, 2, 2]
+        ]?;
 
-            let out = df.sort(
-                ["cat", "vals"],
-                SortMultipleOptions::default().with_order_descending_multi([false, false]),
-            )?;
-            let out = out.column("cat")?;
-            let cat = out.as_materialized_series().cat8()?;
-            assert_order(cat, &["a", "a", "b", "c"]);
+        let out = df.sort(
+            ["cat", "vals"],
+            SortMultipleOptions::default().with_order_descending_multi([false, false]),
+        )?;
+        let out = out.column("cat")?;
+        let cat = out.as_materialized_series().cat8()?;
+        assert_order(cat, &["a", "a", "b", "c"]);
 
-            let out = df.sort(
-                ["vals", "cat"],
-                SortMultipleOptions::default().with_order_descending_multi([false, false]),
-            )?;
-            let out = out.column("cat")?;
-            let cat = out.as_materialized_series().cat8()?;
-            assert_order(cat, &["b", "c", "a", "a"]);
-        }
+        let out = df.sort(
+            ["vals", "cat"],
+            SortMultipleOptions::default().with_order_descending_multi([false, false]),
+        )?;
+        let out = out.column("cat")?;
+        let cat = out.as_materialized_series().cat8()?;
+        assert_order(cat, &["b", "c", "a", "a"]);
 
         Ok(())
     }

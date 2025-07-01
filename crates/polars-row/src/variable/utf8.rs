@@ -10,7 +10,7 @@
 //! This allows the string row encoding to have a constant 1 byte overhead.
 use std::mem::MaybeUninit;
 
-use arrow::array::{MutableBinaryViewArray, MutablePrimitiveArray, PrimitiveArray, PrimitiveArrayBuilder, Utf8ViewArray};
+use arrow::array::{MutableBinaryViewArray, PrimitiveArray, Utf8ViewArray};
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use polars_dtype::categorical::{CatNative, CategoricalMapping};

@@ -1,9 +1,3 @@
-use arrow::bitmap::Bitmap;
-use arrow::legacy::utils::FromTrustedLenIterator;
-use polars_compute::comparisons::TotalOrdKernel;
-
-use crate::chunked_array::cast::CastOptions;
-use crate::prelude::nulls::replace_non_null;
 use crate::prelude::*;
 
 fn cat_equality_helper<T: PolarsCategoricalType, EqPhys>(

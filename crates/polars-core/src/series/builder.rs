@@ -36,7 +36,7 @@ impl SeriesBuilder {
         self.builder.reserve(additional);
     }
 
-    pub fn freeze(mut self, name: PlSmallStr) -> Series {
+    pub fn freeze(self, name: PlSmallStr) -> Series {
         unsafe {
             Series::from_chunks_and_dtype_unchecked(name, vec![self.builder.freeze()], &self.dtype)
         }

@@ -4,8 +4,6 @@ use std::borrow::Cow;
 use arrow::types::PrimitiveType;
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
-#[cfg(feature = "dtype-categorical")]
-use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
 
 use super::*;

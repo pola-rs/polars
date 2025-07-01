@@ -9,7 +9,6 @@ use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
 use polars_utils::min_max::MinMax;
-use polars_utils::sync::SyncPtr;
 pub use quantile::*;
 pub use var::*;
 
