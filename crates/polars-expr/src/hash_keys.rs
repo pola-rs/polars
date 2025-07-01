@@ -66,16 +66,16 @@ macro_rules! downcast_single_key_ca {
             DataType::Float64 => { let $ca = $self.f64().unwrap(); $($body)* },
 
             #[cfg(feature = "dtype-date")]
-            DataType::Date => { let $ca = $self.date().unwrap(); $($body)* },
+            DataType::Date => { let $ca = $self.date().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => { let $ca = $self.time().unwrap(); $($body)* },
+            DataType::Time => { let $ca = $self.time().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(..) => { let $ca = $self.datetime().unwrap(); $($body)* },
+            DataType::Datetime(..) => { let $ca = $self.datetime().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(..) => { let $ca = $self.duration().unwrap(); $($body)* },
+            DataType::Duration(..) => { let $ca = $self.duration().unwrap().physical(); $($body)* },
 
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(..) => { let $ca = $self.decimal().unwrap(); $($body)* },
+            DataType::Decimal(..) => { let $ca = $self.decimal().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-categorical")]
             DataType::NewEnum(fcats, _) => {
                 match fcats.physical() {

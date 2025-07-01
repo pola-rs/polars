@@ -15,7 +15,9 @@ impl DateChunked {
     pub fn as_date_iter(&self) -> impl TrustedLen<Item = Option<NaiveDate>> + '_ {
         // SAFETY: we know the iterators len
         unsafe {
-            self.downcast_iter()
+            self
+                .physical()
+                .downcast_iter()
                 .flat_map(|iter| {
                     iter.into_iter()
                         .map(|opt_v| opt_v.copied().map(date32_to_date))
@@ -39,7 +41,7 @@ impl DateChunked {
             format
         };
         let datefmt_f = |ndt: NaiveDate| ndt.format(format);
-        self.try_apply_into_string_amortized(|val, buf| {
+        self.physical().try_apply_into_string_amortized(|val, buf| {
             let ndt = date32_to_date(val);
             write!(buf, "{}", datefmt_f(ndt))
         })

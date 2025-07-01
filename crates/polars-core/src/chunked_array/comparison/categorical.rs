@@ -95,7 +95,7 @@ where
             cat_str_scalar_equality_helper(lhs, s, null_eq, &eq_phys_scalar)
         },
         (1, rhs_len) => {
-            let Some(cat) = lhs.get(0) else {
+            let Some(cat) = lhs.physical().get(0) else {
                 return match null_eq {
                     Some(true) => rhs.is_null().with_name(lhs.name().clone()),
                     Some(false) => rhs.is_not_null().with_name(lhs.name().clone()),
@@ -137,7 +137,7 @@ where
             cat_str_scalar_compare_helper(lhs, s, cmp)
         },
         (1, rhs_len) => {
-            let Some(cat) = lhs.get(0) else {
+            let Some(cat) = lhs.physical().get(0) else {
                 return BooleanChunked::full_null(lhs.name().clone(), rhs_len);
             };
 
@@ -178,7 +178,7 @@ where
         }
     };
 
-    eq_phys_scalar(lhs, T::Native::from_cat(cat))
+    eq_phys_scalar(lhs.physical(), T::Native::from_cat(cat))
 }
 
 fn cat_str_scalar_compare_helper<T: PolarsCategoricalType, Cmp>(

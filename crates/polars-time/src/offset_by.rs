@@ -44,7 +44,7 @@ fn apply_offsets_to_datetime(
                 TimeUnit::Microseconds => Duration::add_us,
                 TimeUnit::Nanoseconds => Duration::add_ns,
             };
-            broadcast_try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| match (
+            broadcast_try_binary_elementwise(datetime.physical(), offsets, |timestamp_opt, offset_opt| match (
                 timestamp_opt,
                 offset_opt,
             ) {

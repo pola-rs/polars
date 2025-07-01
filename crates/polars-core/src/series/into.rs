@@ -150,7 +150,7 @@ impl Series {
             )
             .unwrap(),
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => self.decimal().unwrap().chunks()[chunk_idx]
+            DataType::Decimal(_, _) => self.decimal().unwrap().physical().chunks()[chunk_idx]
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i128>>()
                 .unwrap()

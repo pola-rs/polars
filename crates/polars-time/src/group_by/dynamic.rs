@@ -310,7 +310,7 @@ impl Wrap<&DataFrame> {
             };
 
         let groups = if group_by.is_none() {
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
             let (groups, lower, upper) = group_by_windows(
                 w,
@@ -328,7 +328,7 @@ impl Wrap<&DataFrame> {
                 rolling: false,
             })
         } else {
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
 
             let groups = group_by.as_ref().unwrap();
@@ -383,7 +383,7 @@ impl Wrap<&DataFrame> {
         // upper column remain/are sorted
 
         let dt = unsafe { dt.clone().into_series().agg_first(&groups) };
-        let mut dt = dt.datetime().unwrap().as_ref().clone();
+        let mut dt = dt.datetime().unwrap().physical().clone();
 
         let lower =
             lower_bound.map(|lower| Int64Chunked::new_vec(PlSmallStr::from_static(LB_NAME), lower));
@@ -438,7 +438,7 @@ impl Wrap<&DataFrame> {
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
             let dt = dt.datetime().unwrap();
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
             PolarsResult::Ok(GroupsType::Slice {
                 groups: group_by_values(
@@ -453,7 +453,7 @@ impl Wrap<&DataFrame> {
             })
         } else {
             let dt = dt.datetime().unwrap();
-            let vals = dt.downcast_iter().next().unwrap();
+            let vals = dt.physical().downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
 
             let groups = group_by.unwrap();

@@ -842,7 +842,7 @@ impl Series {
             DataType::Time => self
                 .time()
                 .unwrap()
-                .as_ref()
+                .physical()
                 .clone()
                 .into_time()
                 .into_series(),
@@ -861,7 +861,7 @@ impl Series {
             DataType::Date => self
                 .date()
                 .unwrap()
-                .as_ref()
+                .physical()
                 .clone()
                 .into_date()
                 .into_series(),
@@ -887,7 +887,7 @@ impl Series {
             DataType::Datetime(_, _) => self
                 .datetime()
                 .unwrap()
-                .as_ref()
+                .physical()
                 .clone()
                 .into_datetime(timeunit, tz)
                 .into_series(),
@@ -912,7 +912,7 @@ impl Series {
             DataType::Duration(_) => self
                 .duration()
                 .unwrap()
-                .as_ref()
+                .physical()
                 .clone()
                 .into_duration(timeunit)
                 .into_series(),

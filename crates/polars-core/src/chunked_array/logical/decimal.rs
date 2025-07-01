@@ -76,6 +76,7 @@ impl LogicalType for DecimalChunked {
 
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
         let chunks = self
+            .physical()
             .chunks
             .iter()
             .map(|arr| {

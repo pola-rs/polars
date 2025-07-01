@@ -30,24 +30,6 @@ impl CategoricalPhysicalDtypeExt for CategoricalPhysical {
 }
 
 impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.phys.len()
-    }
-
-    #[inline]
-    pub fn null_count(&self) -> usize {
-        self.phys.null_count()
-    }
-
-    pub fn name(&self) -> &PlSmallStr {
-        self.phys.name()
-    }
-
     pub fn is_enum(&self) -> bool {
         matches!(self.dtype(), DataType::NewEnum(_, _))
     }

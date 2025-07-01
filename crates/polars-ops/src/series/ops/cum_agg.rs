@@ -230,7 +230,7 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
         Float64 => cum_sum_numeric(s.f64()?, reverse).into_series(),
         #[cfg(feature = "dtype-decimal")]
         Decimal(precision, scale) => {
-            let ca = s.decimal().unwrap().as_ref();
+            let ca = s.decimal().unwrap().physical();
             cum_sum_numeric(ca, reverse)
                 .into_decimal_unchecked(*precision, scale.unwrap())
                 .into_series()
@@ -252,7 +252,7 @@ pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
         DataType::Boolean => Ok(cum_min_bool(s.bool()?, reverse).into_series()),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {
-            let ca = s.decimal().unwrap().as_ref();
+            let ca = s.decimal().unwrap().physical();
             let out = cum_min_numeric(ca, reverse)
                 .into_decimal_unchecked(*precision, scale.unwrap())
                 .into_series();
@@ -280,7 +280,7 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
         DataType::Boolean => Ok(cum_max_bool(s.bool()?, reverse).into_series()),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {
-            let ca = s.decimal().unwrap().as_ref();
+            let ca = s.decimal().unwrap().physical();
             let out = cum_max_numeric(ca, reverse)
                 .into_decimal_unchecked(*precision, scale.unwrap())
                 .into_series();

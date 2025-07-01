@@ -60,9 +60,13 @@ macro_rules! impl_cat_series {
 
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
-                self.0
-                    .zip_with(mask, other.cat::<$pdt>()?)
-                    .map(|ca| ca.into_series())
+                polars_ensure!(self.dtype() == other.dtype(), SchemaMismatch: "expected '{}' found '{}'", self.dtype(), other.dtype());
+                let other = other.to_physical_repr().into_owned();
+                unsafe {
+                    Ok(self.try_apply_on_phys(|ca| {
+                        ca.zip_with(mask, other.as_ref().as_ref())
+                    })?.into_series())
+                }
             }
 
             fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
@@ -232,12 +236,12 @@ macro_rules! impl_cat_series {
 
             #[cfg(feature = "algorithm_group_by")]
             fn unique(&self) -> PolarsResult<Series> {
-                self.0.unique().map(|ca| ca.into_series())
+                unsafe { Ok(self.try_apply_on_phys(|cats| cats.unique())?.into_series()) }
             }
 
             #[cfg(feature = "algorithm_group_by")]
             fn n_unique(&self) -> PolarsResult<usize> {
-                self.0.n_unique()
+                self.0.physical().n_unique()
             }
 
             #[cfg(feature = "algorithm_group_by")]
