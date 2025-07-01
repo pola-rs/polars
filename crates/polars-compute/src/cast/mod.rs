@@ -27,7 +27,7 @@ use binview_to::{
     utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
 use dictionary_to::*;
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn};
 use polars_utils::IdxSize;
 pub use primitive_to::*;
 use temporal::utf8view_to_timestamp;
@@ -522,6 +522,16 @@ pub fn cast(
         (Utf8View, _) => {
             let arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
 
+            if let Timestamp(_, _) | Date32 = to_type {
+                polars_warn!(
+                    Deprecation,
+                    "Casting operations that require parsing ambiguous inputs is deprecated.
+                    Consider using `str.to_time`, `str.to_date`, or `str.to_datetime` and providing a format string.
+
+                    See https://github.com/pola-rs/polars/issues/23363 for more information."
+                );
+            }
+
             match to_type {
                 BinaryView => Ok(arr.to_binview().boxed()),
                 LargeUtf8 => Ok(binview_to::utf8view_to_utf8::<i64>(arr).boxed()),
@@ -537,6 +547,11 @@ pub fn cast(
                 Int128 => utf8view_to_primitive_dyn::<i128>(arr, to_type, options),
                 Float32 => utf8view_to_primitive_dyn::<f32>(arr, to_type, options),
                 Float64 => utf8view_to_primitive_dyn::<f64>(arr, to_type, options),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(precision, scale) => {
+                    Ok(binview_to_decimal(&arr.to_binview(), Some(*precision), *scale).to_boxed())
+                },
+                // @2.0: Remove string -> date/timestamp casting
                 Timestamp(time_unit, None) => {
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },
@@ -548,10 +563,6 @@ pub fn cast(
                 )
                 .map(|arr| arr.boxed()),
                 Date32 => utf8view_to_date32_dyn(array),
-                #[cfg(feature = "dtype-decimal")]
-                Decimal(precision, scale) => {
-                    Ok(binview_to_decimal(&arr.to_binview(), Some(*precision), *scale).to_boxed())
-                },
                 _ => polars_bail!(InvalidOperation:
                     "casting from {from_type:?} to {to_type:?} not supported",
                 ),

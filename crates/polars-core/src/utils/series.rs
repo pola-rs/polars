@@ -51,18 +51,6 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         return Ok(());
     }
 
-    if let (DataType::String, DataType::Date | DataType::Datetime(_, _)) =
-        (input.dtype(), output.dtype())
-    {
-        polars_warn!(
-            Deprecation,
-            "Casting operations that require parsing ambiguous inputs is deprecated.
-            Consider using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string.
-
-            See https://github.com/pola-rs/polars/issues/23363 for more information."
-        );
-    }
-
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
 
