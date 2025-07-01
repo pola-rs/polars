@@ -267,8 +267,8 @@ where
             self,
             rhs,
             |l, r| Some(l == r),
-            |l, c| l.equal(c),
-            |r, c| r.equal(c),
+            |l, c| l.equal_missing(c),
+            |r, c| r.equal_missing(c),
         )
     }
 
@@ -287,8 +287,8 @@ where
             self,
             rhs,
             |l, r| Some(l != r),
-            |l, c| l.not_equal(c),
-            |r, c| r.not_equal(c),
+            |l, c| l.not_equal_missing(c),
+            |r, c| r.not_equal_missing(c),
         )
     }
 }
@@ -334,7 +334,7 @@ where
             self,
             rhs,
             Some(true),
-            |l, c| l.equal(c),
+            |l, c| l.equal_missing(c),
         )
     }
 
@@ -352,7 +352,7 @@ where
             self,
             rhs,
             Some(false),
-            |l, c| l.not_equal(c),
+            |l, c| l.not_equal_missing(c),
         )
     }
 }
