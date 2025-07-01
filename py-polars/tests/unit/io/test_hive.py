@@ -255,9 +255,8 @@ def test_hive_partitioned_projection_skips_files(tmp_path: Path) -> None:
     test_df = (
         pl.scan_parquet(str(root) + "/**/**/*.parquet", hive_partitioning=True)
         # don't care about column order
-        .select(
-            "sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a")
-        ).collect()
+        .select("sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a"))
+        .collect()
     )
     assert_frame_equal(df, test_df)
 
@@ -1072,7 +1071,7 @@ def test_hive_decode_utf8_23241(tmp_path: Path) -> None:
                 "Türkiye And Egpyt",
                 "résumé père forêt Noël",
                 "😊",
-                "北极熊", # polar bear :)
+                "北极熊",  # polar bear :)
             ],
             "a": [10, 20, 30, 40],
         }
