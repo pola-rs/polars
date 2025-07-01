@@ -119,7 +119,7 @@ pub fn not_implemented(page: &DataPage) -> ParquetError {
 }
 
 pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
-pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity> {
+pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity<'_>> {
     let validity = split_buffer(page)?.def;
     let decoder = hybrid_rle::HybridRleDecoder::new(validity, 1, page.num_values());
     Ok(decoder)
@@ -691,7 +691,7 @@ impl<D: Decoder> PageDecoder<D> {
 pub(super) fn dict_indices_decoder(
     page: &DataPage,
     null_count: usize,
-) -> ParquetResult<hybrid_rle::HybridRleDecoder> {
+) -> ParquetResult<hybrid_rle::HybridRleDecoder<'_>> {
     let indices_buffer = split_buffer(page)?.values;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),

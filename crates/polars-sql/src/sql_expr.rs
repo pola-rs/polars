@@ -830,7 +830,7 @@ impl SQLExprVisitor<'_> {
         &self,
         value: &SQLValue,
         op: Option<&UnaryOperator>,
-    ) -> PolarsResult<AnyValue> {
+    ) -> PolarsResult<AnyValue<'_>> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
             SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),

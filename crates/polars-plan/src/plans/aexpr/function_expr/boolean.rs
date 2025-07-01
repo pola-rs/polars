@@ -75,9 +75,9 @@ impl IRBooleanFunction {
         use IRBooleanFunction as B;
         match self {
             B::Any { .. } | B::All { .. } => FunctionOptions::aggregation(),
-            B::IsNull | B::IsNotNull | B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => {
-                FunctionOptions::elementwise()
-            },
+            B::IsNull | B::IsNotNull => FunctionOptions::elementwise(),
+            B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
             #[cfg(feature = "is_first_distinct")]
             B::IsFirstDistinct => FunctionOptions::length_preserving(),
             #[cfg(feature = "is_last_distinct")]
@@ -87,19 +87,32 @@ impl IRBooleanFunction {
             #[cfg(feature = "is_unique")]
             B::IsDuplicated => FunctionOptions::length_preserving(),
             #[cfg(feature = "is_between")]
-            B::IsBetween { .. } => FunctionOptions::elementwise().with_supertyping(
-                (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-            ),
+            B::IsBetween { .. } => FunctionOptions::elementwise()
+                .with_supertyping(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                )
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
             #[cfg(feature = "is_in")]
-            B::IsIn { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            B::IsIn { nulls_equal } => FunctionOptions::elementwise()
+                .with_supertyping(Default::default())
+                .with_flags(|f| {
+                    if !*nulls_equal {
+                        f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT
+                    } else {
+                        f
+                    }
+                }),
             #[cfg(feature = "is_close")]
-            B::IsClose { .. } => FunctionOptions::elementwise().with_supertyping(
-                (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-            ),
+            B::IsClose { .. } => FunctionOptions::elementwise()
+                .with_supertyping(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                )
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
             B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_EMPTY_INPUTS
             }),
-            B::Not => FunctionOptions::elementwise(),
+            B::Not => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
         }
     }
 }

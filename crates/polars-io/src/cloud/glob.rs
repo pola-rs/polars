@@ -18,7 +18,7 @@ const DELIMITER: char = '/';
 /// # Returns
 /// 1. the prefix part (all path components until the first one with '*')
 /// 2. a regular expression representation of the rest.
-pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Option<String>)> {
+pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<'_, str>, Option<String>)> {
     let url = url.strip_prefix('/').unwrap_or(url);
     // (offset, len, replacement)
     let mut replacements: Vec<(usize, usize, &[u8])> = vec![];

@@ -172,13 +172,12 @@ pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,
     output_type: Option<DataTypeExpr>,
-    agg_list: bool,
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {
     let func =
         python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
-    pyexpr.inner.clone().map_python(func, agg_list).into()
+    pyexpr.inner.clone().map_python(func).into()
 }
 
 pub(crate) fn call_lambda_with_columns_slice(

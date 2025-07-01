@@ -329,7 +329,7 @@ pub(super) async fn expand_paths_hf(
     Ok((hive_idx_tracker.idx, out_paths))
 }
 
-fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode {
+fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode<'_> {
     percent_encoding::percent_encode(bytes, URL_ENCODE_CHAR_SET)
 }
 

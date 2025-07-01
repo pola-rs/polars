@@ -220,6 +220,7 @@ def test_df_describe_quantile_precision() -> None:
 
 
 # https://github.com/pola-rs/polars/issues/9830
+@pytest.mark.may_fail_cloud
 def test_df_describe_object() -> None:
     df = pl.Series(
         "object",

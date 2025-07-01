@@ -351,7 +351,7 @@ impl Array for UnionArray {
 }
 
 impl UnionArray {
-    fn try_get_all(dtype: &ArrowDataType) -> PolarsResult<UnionComponents> {
+    fn try_get_all(dtype: &ArrowDataType) -> PolarsResult<UnionComponents<'_>> {
         match dtype.to_logical_type() {
             ArrowDataType::Union(u) => Ok((&u.fields, u.ids.as_ref().map(|x| x.as_ref()), u.mode)),
             _ => polars_bail!(ComputeError:

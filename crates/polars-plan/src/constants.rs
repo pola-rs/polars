@@ -2,7 +2,6 @@ use std::sync::OnceLock;
 
 use polars_utils::pl_str::PlSmallStr;
 
-pub static MAP_LIST_NAME: &str = "map_list";
 pub static CSE_REPLACED: &str = "__POLARS_CSER_";
 pub static POLARS_TMP_PREFIX: &str = "_POLARS_";
 pub static POLARS_PLACEHOLDER: &str = "_POLARS_<>";

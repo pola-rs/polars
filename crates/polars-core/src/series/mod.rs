@@ -715,7 +715,7 @@ impl Series {
     /// * List(inner) -> List(physical of inner)
     /// * Array(inner) -> Array(physical of inner)
     /// * Struct -> Struct with physical repr of each struct column
-    pub fn to_physical_repr(&self) -> Cow<Series> {
+    pub fn to_physical_repr(&self) -> Cow<'_, Series> {
         use DataType::*;
         match self.dtype() {
             // NOTE: Don't use cast here, as it might rechunk (if all nulls)
@@ -926,7 +926,7 @@ impl Series {
     }
 
     // used for formatting
-    pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
+    pub fn str_value(&self, index: usize) -> PolarsResult<Cow<'_, str>> {
         Ok(self.0.get(index)?.str_value())
     }
     /// Get the head of the Series.

@@ -135,7 +135,7 @@ impl StructChunked {
     }
 
     /// Convert a struct to the underlying physical datatype.
-    pub fn to_physical_repr(&self) -> Cow<StructChunked> {
+    pub fn to_physical_repr(&self) -> Cow<'_, StructChunked> {
         let mut physicals = Vec::new();
 
         let field_series = self.fields_as_series();

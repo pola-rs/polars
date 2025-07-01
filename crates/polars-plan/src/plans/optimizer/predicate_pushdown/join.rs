@@ -56,6 +56,8 @@ pub(super) fn process_join(
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
 
+    let should_coalesce = options.args.should_coalesce();
+
     // AsOf has the equality join keys under `asof_options.left/right_by`. This code builds an
     // iterator to address these generically without creating a `Box<dyn Iterator>`.
     let get_lhs_column_keys_iter = || {
@@ -80,7 +82,18 @@ pub(super) fn process_join(
             _ => {
                 let expr = left_on.get(i).unwrap();
 
-                if let AExpr::Column(name) = expr_arena.get(expr.node()) {
+                // For non full-joins coalesce can still insert casts into the key exprs.
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if should_coalesce => *expr,
+
+                    _ => expr.node(),
+                };
+
+                if let AExpr::Column(name) = expr_arena.get(node) {
                     Some(name)
                 } else {
                     None
@@ -111,7 +124,18 @@ pub(super) fn process_join(
             _ => {
                 let expr = right_on.get(i).unwrap();
 
-                if let AExpr::Column(name) = expr_arena.get(expr.node()) {
+                // For non full-joins coalesce can still insert casts into the key exprs.
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if should_coalesce => *expr,
+
+                    _ => expr.node(),
+                };
+
+                if let AExpr::Column(name) = expr_arena.get(node) {
                     Some(name)
                 } else {
                     None
@@ -369,11 +393,23 @@ fn try_downgrade_join_type(
         return None;
     }
 
+    let should_coalesce = options.args.should_coalesce();
+
     /// Note: This may panic if `args.should_coalesce()` is false.
     macro_rules! lhs_input_column_keys_iter {
         () => {{
-            left_on.iter().map(|e| {
-                let AExpr::Column(name) = expr_arena.get(e.node()) else {
+            left_on.iter().map(|expr| {
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if should_coalesce => *expr,
+
+                    _ => expr.node(),
+                };
+
+                let AExpr::Column(name) = expr_arena.get(node) else {
                     // All keys should be columns when coalesce=True
                     unreachable!()
                 };

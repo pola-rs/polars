@@ -8,7 +8,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
@@ -123,7 +123,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
     fn name(&self) -> &PlSmallStr {
@@ -209,7 +209,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 
@@ -304,48 +304,39 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
     fn and_reduce(&self) -> PolarsResult<Scalar> {
         let dt = DataType::Boolean;
-        if self.0.null_count() > 0 {
-            return Ok(Scalar::new(dt, AnyValue::Null));
-        }
 
         Ok(Scalar::new(
             dt,
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_and(arr).unwrap())
+                .filter_map(polars_compute::bitwise::BitwiseKernel::reduce_and)
                 .reduce(|a, b| a & b)
                 .map_or(AnyValue::Null, Into::into),
         ))
     }
     fn or_reduce(&self) -> PolarsResult<Scalar> {
         let dt = DataType::Boolean;
-        if self.0.null_count() > 0 {
-            return Ok(Scalar::new(dt, AnyValue::Null));
-        }
 
         Ok(Scalar::new(
             dt,
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_or(arr).unwrap())
+                .filter_map(polars_compute::bitwise::BitwiseKernel::reduce_or)
                 .reduce(|a, b| a | b)
                 .map_or(AnyValue::Null, Into::into),
         ))
     }
     fn xor_reduce(&self) -> PolarsResult<Scalar> {
         let dt = DataType::Boolean;
-        if self.0.null_count() > 0 {
-            return Ok(Scalar::new(dt, AnyValue::Null));
-        }
 
         Ok(Scalar::new(
             dt,
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_xor(arr).unwrap())
+                .filter_map(polars_compute::bitwise::BitwiseKernel::reduce_xor)
                 .reduce(|a, b| a ^ b)
                 .map_or(AnyValue::Null, Into::into),
         ))

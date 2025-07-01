@@ -2,7 +2,6 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
 use super::*;
-use crate::constants::MAP_LIST_NAME;
 
 impl AExpr {
     pub(crate) fn is_leaf(&self) -> bool {
@@ -255,17 +254,6 @@ impl ExprPushdownGroup {
                             _ => strptime_options.strict,
                         }
                     },
-                    #[cfg(feature = "python")]
-                    // This is python `map_elements`. This is a hack because that function breaks
-                    // the Polars model. It should be elementwise. This must be fixed.
-                    AExpr::AnonymousFunction {
-                        options, fmt_str, ..
-                    } if options.flags.contains(FunctionFlags::APPLY_LIST)
-                        && fmt_str.as_ref().as_str() == MAP_LIST_NAME =>
-                    {
-                        return self;
-                    },
-
                     AExpr::Cast {
                         expr,
                         dtype: _,
@@ -429,45 +417,8 @@ pub(crate) fn predicate_non_null_column_outputs(
     expr_arena: &Arena<AExpr>,
     non_null_column_callback: &mut dyn FnMut(&PlSmallStr),
 ) {
-    // Also catch `col().is_not_null()`, `~col.is_null()`. This is done before because the loop below
-    // requires all expressions to strictly maintain NULLs.
-    {
-        use AExpr::*;
-
-        match expr_arena.get(predicate_node) {
-            Function {
-                input,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
-                options: _,
-            } if !input.is_empty() => {
-                if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
-                    non_null_column_callback(name)
-                }
-            },
-
-            Function {
-                input,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
-                options: _,
-            } if !input.is_empty() => match expr_arena.get(input.first().unwrap().node()) {
-                Function {
-                    input,
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
-                    options: _,
-                } if !input.is_empty() => {
-                    if let Column(name) = expr_arena.get(input.first().unwrap().node()) {
-                        non_null_column_callback(name)
-                    }
-                },
-
-                _ => {},
-            },
-
-            _ => {},
-        }
-    }
-
-    let stack = &mut unitvec![predicate_node];
+    let mut minterm_iter = MintermIter::new(predicate_node, expr_arena);
+    let stack: &mut UnitVec<Node> = &mut unitvec![];
 
     /// Only traverse the first input, e.g. `A.is_in(B)` we don't consider B.
     macro_rules! traverse_first_input {
@@ -481,15 +432,46 @@ pub(crate) fn predicate_non_null_column_outputs(
         }};
     }
 
-    // This loop we traverse a subset of the operations that are guaranteed to maintain NULLs.
-    //
-    // This must not catch any operations that materialize NULLs, as otherwise e.g.
-    // `e.fill_null(False) >= False` will include NULLs
-    while let Some(node) = stack.pop() {
+    loop {
         use AExpr::*;
+
+        let node = if let Some(node) = stack.pop() {
+            node
+        } else if let Some(minterm_node) = minterm_iter.next() {
+            // Some additional leaf exprs can be pruned.
+            match expr_arena.get(minterm_node) {
+                Function {
+                    input,
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+                    options: _,
+                } if !input.is_empty() => input.first().unwrap().node(),
+
+                Function {
+                    input,
+                    function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
+                    options: _,
+                } if !input.is_empty() => match expr_arena.get(input.first().unwrap().node()) {
+                    Function {
+                        input,
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
+                        options: _,
+                    } if !input.is_empty() => input.first().unwrap().node(),
+
+                    _ => minterm_node,
+                },
+
+                _ => minterm_node,
+            }
+        } else {
+            break;
+        };
 
         let ae = expr_arena.get(node);
 
+        // This match we traverse a subset of the operations that are guaranteed to maintain NULLs.
+        //
+        // This must not catch any operations that materialize NULLs, as otherwise e.g.
+        // `e.fill_null(False) >= False` will include NULLs
         let traverse_all_inputs = match ae {
             BinaryExpr {
                 left: _,
@@ -522,17 +504,23 @@ pub(crate) fn predicate_non_null_column_outputs(
                 !dtype.is_nested()
             },
 
-            #[cfg(feature = "is_in")]
             Function {
                 input,
-                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: false }),
-                options: _,
-            } => traverse_first_input!(input),
-            //
-            // TODO:
-            // * String functions, but not all will preserve NULLs (e.g. ConcatHorizontal { ignore_nulls: true })
-            //   These can be common - e.g. `filter(str.contains(..))`
-            //
+                function: _,
+                options,
+            } => {
+                if options
+                    .flags
+                    .contains(FunctionFlags::PRESERVES_NULL_FIRST_INPUT)
+                {
+                    traverse_first_input!(input)
+                } else {
+                    options
+                        .flags
+                        .contains(FunctionFlags::PRESERVES_NULL_ALL_INPUTS)
+                }
+            },
+
             Column(name) => {
                 non_null_column_callback(name);
                 false

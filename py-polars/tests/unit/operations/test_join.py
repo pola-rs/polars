@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -3450,3 +3450,135 @@ def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_downgrade_panic_23307() -> None:
+    lhs = pl.select(a=pl.lit(1, dtype=pl.Int8)).lazy()
+    rhs = pl.select(a=pl.lit(1, dtype=pl.Int16), x=pl.lit(1, dtype=pl.Int32)).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", coalesce=True).filter(pl.col("x") >= 1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.select(
+            a=pl.lit(1, dtype=pl.Int8),
+            x=pl.lit(1, dtype=pl.Int32),
+        ),
+    )
+
+    lhs = pl.select(a=pl.lit(999, dtype=pl.Int16)).lazy()
+
+    # Note: -25 matches to (999).overflowing_cast(Int8).
+    # This is specially chosen to test that we don't accidentally push the filter
+    # to the RHS.
+    rhs = pl.LazyFrame(
+        {"a": [1, -25], "x": [1, 2]}, schema={"a": pl.Int8, "x": pl.Int32}
+    )
+
+    q = lhs.join(
+        rhs,
+        on=pl.col("a").cast(pl.Int8, strict=False, wrap_numerical=True),
+        how="left",
+        coalesce=False,
+    ).filter(pl.col("a") >= 0)
+
+    expect = pl.DataFrame(
+        {"a": 999, "a_right": -25, "x": 2},
+        schema={"a": pl.Int16, "a_right": pl.Int8, "x": pl.Int32},
+    )
+
+    plan = q.explain()
+
+    assert not plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (pl.lit(None, dtype=pl.Int64), lambda col: col >= 1),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (col >= 1).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (~(col >= 1)).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~(col >= 1).is_null()),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
+        (1, lambda col: col.is_between(None, 1)),
+        (1, lambda col: col.is_between(1, None)),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_close(1)),
+        (1, lambda col: col.is_close(pl.lit(None, dtype=pl.Int64))),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_infinite()),
+        #
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_infinite()),
+    ],
+)
+def test_join_downgrade_null_preserving_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    assert (
+        pl.select(expr_first_input)
+        .select(expr_func(pl.first()))
+        .select(pl.first().is_null() | ~pl.first())
+        .to_series()
+        .item()
+    )
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("INNER JOIN")
+
+    out = q.collect()
+
+    assert out.height == 0
+    assert_frame_equal(out, q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: ~(x.is_in([1, None], nulls_equal=True)),
+        ),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in([1, None], nulls_equal=True) > True,
+        ),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in([1], nulls_equal=True),
+        ),
+    ],
+)
+def test_join_downgrade_forbid_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))

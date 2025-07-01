@@ -11,7 +11,7 @@ use super::*;
 use crate::PyDataFrame;
 
 /// Create iterators for all the Series in the DataFrame.
-fn get_iters(df: &DataFrame) -> Vec<SeriesIter> {
+fn get_iters(df: &DataFrame) -> Vec<SeriesIter<'_>> {
     df.get_columns()
         .iter()
         .map(|s| s.as_materialized_series().iter())
@@ -19,7 +19,7 @@ fn get_iters(df: &DataFrame) -> Vec<SeriesIter> {
 }
 
 /// Create iterators for all the Series in the DataFrame, skipping the first `n` rows.
-fn get_iters_skip(df: &DataFrame, n: usize) -> Vec<std::iter::Skip<SeriesIter>> {
+fn get_iters_skip(df: &DataFrame, n: usize) -> Vec<std::iter::Skip<SeriesIter<'_>>> {
     df.get_columns()
         .iter()
         .map(|s| s.as_materialized_series().iter().skip(n))

@@ -39,7 +39,7 @@ impl ListChunked {
     }
 
     /// Convert the datatype of the list into the physical datatype.
-    pub fn to_physical_repr(&self) -> Cow<ListChunked> {
+    pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
         let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
             return Cow::Borrowed(self);
         };
