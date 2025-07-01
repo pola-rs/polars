@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = df
         .clone()
         .lazy()
-        .select([all().exclude_cols(["^day_.*$"])])
+        .select([all().exclude_cols(["^day_.*$"]).into_expr()])
         .collect()?;
     println!("{result}");
     // --8<-- [end:all-exclude]

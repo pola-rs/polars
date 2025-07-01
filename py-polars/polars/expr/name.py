@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
-import polars._reexport as pl
+
+from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -66,7 +67,7 @@ class ExprNameNameSpace:
         │ 18  ┆ 4   │
         └─────┴─────┘
         """
-        return pl.Expr._from_pyexpr(self._pyexpr.name_keep())
+        return wrap_expr(self._pyexpr.name_keep())
 
     def map(self, function: Callable[[str], str]) -> Expr:
         """
@@ -117,7 +118,7 @@ class ExprNameNameSpace:
         │ 1         ┆ x         ┆ 3   ┆ z   │
         └───────────┴───────────┴─────┴─────┘
         """
-        return Expr._from_pyexpr(self._pyexpr.name_map(function))
+        return wrap_expr(self._pyexpr.name_map(function))
 
     def prefix(self, prefix: str) -> Expr:
         """
@@ -161,7 +162,7 @@ class ExprNameNameSpace:
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
         """
-        return Expr._from_pyexpr(self._pyexpr.name_prefix(prefix))
+        return wrap_expr(self._pyexpr.name_prefix(prefix))
 
     def suffix(self, suffix: str) -> Expr:
         """
@@ -204,7 +205,7 @@ class ExprNameNameSpace:
         │ 3   ┆ z   ┆ 1         ┆ x         │
         └─────┴─────┴───────────┴───────────┘
         """
-        return pl.Expr._from_pyexpr(self._pyexpr.name_suffix(suffix))
+        return wrap_expr(self._pyexpr.name_suffix(suffix))
 
     def to_lowercase(self) -> Expr:
         """
@@ -244,7 +245,7 @@ class ExprNameNameSpace:
         │ 3    ┆ z    ┆ 3    ┆ z    │
         └──────┴──────┴──────┴──────┘
         """
-        return Expr._from_pyexpr(self._pyexpr.name_to_lowercase())
+        return wrap_expr(self._pyexpr.name_to_lowercase())
 
     def to_uppercase(self) -> Expr:
         """
@@ -284,7 +285,7 @@ class ExprNameNameSpace:
         │ 3    ┆ z    ┆ 3    ┆ z    │
         └──────┴──────┴──────┴──────┘
         """
-        return Expr._from_pyexpr(self._pyexpr.name_to_uppercase())
+        return wrap_expr(self._pyexpr.name_to_uppercase())
 
     def map_fields(self, function: Callable[[str], str]) -> Expr:
         """
@@ -310,7 +311,7 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.map_fields(lambda x: x.upper())).schema
         Schema({'x': Struct({'A': Int64, 'B': Int64})})
         """
-        return Expr._from_pyexpr(self._pyexpr.name_map_fields(function))
+        return wrap_expr(self._pyexpr.name_map_fields(function))
 
     def prefix_fields(self, prefix: str) -> Expr:
         """
@@ -336,7 +337,7 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.prefix_fields("prefix_")).schema
         Schema({'x': Struct({'prefix_a': Int64, 'prefix_b': Int64})})
         """
-        return pl.Expr._from_pyexpr(self._pyexpr.name_prefix_fields(prefix))
+        return wrap_expr(self._pyexpr.name_prefix_fields(prefix))
 
     def suffix_fields(self, suffix: str) -> Expr:
         """
@@ -362,4 +363,4 @@ class ExprNameNameSpace:
         >>> df.select(pl.col("x").name.suffix_fields("_suffix")).schema
         Schema({'x': Struct({'a_suffix': Int64, 'b_suffix': Int64})})
         """
-        return pl.Expr._from_pyexpr(self._pyexpr.name_suffix_fields(suffix))
+        return wrap_expr(self._pyexpr.name_suffix_fields(suffix))

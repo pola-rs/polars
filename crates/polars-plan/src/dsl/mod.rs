@@ -72,7 +72,7 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
-pub use selector::Selector;
+pub use selector::{Selector, TimeUnitSet};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;

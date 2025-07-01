@@ -1,10 +1,98 @@
 use std::fmt::{self, Write};
-use std::ops::{Add, BitAnd, BitOr, BitXor, Sub};
+use std::ops::{BitAnd, BitOr, BitXor, Sub};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::*;
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for TimeUnitSet {
+    fn schema_name() -> String {
+        "TimeUnitSet".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "TimeUnitSet"))
+    }
+
+    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        use serde_json::{Map, Value};
+
+        let name_to_bits: Map<String, Value> = Self::all()
+            .iter_names()
+            .map(|(name, flag)| (name.to_owned(), flag.bits().into()))
+            .collect();
+
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            format: Some("bitflags".to_owned()),
+            extensions: schemars::Map::from_iter([
+                // Add a map of flag names and bit patterns to detect schema changes
+                ("bitflags".to_owned(), Value::Object(name_to_bits)),
+            ]),
+            ..Default::default()
+        })
+    }
+}
+
+bitflags::bitflags! {
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+    #[cfg_attr(
+        feature = "serde",
+        derive(serde::Serialize, serde::Deserialize)
+    )]
+    pub struct TimeUnitSet: u8 {
+        const NANO_SECONDS = 0x01;
+        const MICRO_SECONDS = 0x02;
+        const MILLI_SECONDS = 0x04;
+    }
+}
+
+impl From<TimeUnit> for TimeUnitSet {
+    fn from(value: TimeUnit) -> Self {
+        match value {
+            TimeUnit::Nanoseconds => TimeUnitSet::NANO_SECONDS,
+            TimeUnit::Microseconds => TimeUnitSet::MICRO_SECONDS,
+            TimeUnit::Milliseconds => TimeUnitSet::MILLI_SECONDS,
+        }
+    }
+}
+
+impl fmt::Display for TimeUnitSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_all() {
+            f.write_str("*")?;
+        } else {
+            if self.bits().count_ones() != 1 {
+                f.write_str("[")?;
+            }
+
+            if self.contains(TimeUnitSet::NANO_SECONDS) {
+                f.write_str("'ns'")?;
+                if self.intersects(TimeUnitSet::MICRO_SECONDS | TimeUnitSet::MILLI_SECONDS) {
+                    f.write_str(", ")?;
+                }
+            }
+            if self.contains(TimeUnitSet::MICRO_SECONDS) {
+                f.write_str("'ms'")?;
+                if self.contains(TimeUnitSet::MILLI_SECONDS) {
+                    f.write_str(", ")?;
+                }
+            }
+            if self.contains(TimeUnitSet::MILLI_SECONDS) {
+                f.write_str("'us'")?;
+            }
+
+            if self.bits().count_ones() != 1 {
+                f.write_str("]")?;
+            }
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, PartialEq, Hash, Debug, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -20,8 +108,22 @@ pub enum Selector {
     WithDataTypes(Arc<[DataType]>),
     ByName(Arc<[PlSmallStr]>),
     AtIndex(Arc<[i64]>),
-    Regex(PlSmallStr),
+    Matches(PlSmallStr),
     Wildcard,
+
+    Integer,
+    UnsignedInteger,
+    SignedInteger,
+    Float,
+    Categorical,
+    Decimal,
+    Numeric,
+    Temporal,
+    /// Selector for `DataType::Datetime` with optional matching on TimeUnit and TimeZone.
+    Datetime(TimeUnitSet, Option<Vec<Option<TimeZone>>>),
+    /// Selector for `DataType::Duration` with optional matching on TimeUnit.
+    Duration(TimeUnitSet),
+    Object,
 }
 
 fn merge_sorted_columns(
@@ -91,6 +193,15 @@ fn merge_sorted_columns(
     }
 }
 
+fn dtype_selector(schema: &Schema, f: impl Fn(&DataType) -> bool) -> PlIndexSet<PlSmallStr> {
+    PlIndexSet::from_iter(
+        schema
+            .iter()
+            .filter(|(_, dtype)| f(dtype))
+            .map(|(name, _)| name.clone()),
+    )
+}
+
 impl Selector {
     /// Turns the selector into an ordered set of selected columns from the schema.
     ///
@@ -132,7 +243,7 @@ impl Selector {
                         },
                         Excluded::Name(excluded_name) => out.retain(|name| name != excluded_name),
                         Excluded::Dtype(excluded_dt) => {
-                            out.retain(|name| !dtypes_match(schema.get(name).unwrap(), excluded_dt))
+                            out.retain(|name| schema.get(name).unwrap() != excluded_dt)
                         },
                     }
                 }
@@ -140,11 +251,11 @@ impl Selector {
             },
 
             Selector::WithDataTypes(data_types) => {
-                // @PERF: This is quadratic
+                let dtypes = PlHashSet::from_iter(data_types.iter().cloned());
                 PlIndexSet::from_iter(
                     schema
                         .iter()
-                        .filter(|(_, dtype)| data_types.iter().any(|dt| dtypes_match(dtype, dt)))
+                        .filter(|(_, dtype)| dtypes.contains(*dtype))
                         .map(|(name, _)| name.clone()),
                 )
             },
@@ -167,7 +278,7 @@ impl Selector {
                 let mut set = PlIndexSet::with_capacity(indices.len());
                 for &idx in indices.iter() {
                     let Some(idx) = idx.negative_to_usize(schema.len()) else {
-                        polars_bail!(InvalidOperation: "cannot get the {idx}-th column when schema has {} columns", schema.len());
+                        polars_bail!(ColumnNotFound: "cannot get the {idx}-th column when schema has {} columns", schema.len());
                     };
                     let (name, _) = schema.get_at_index(idx).unwrap();
                     if !set.insert(idx) {
@@ -183,7 +294,7 @@ impl Selector {
                 });
                 out
             },
-            Selector::Regex(regex_str) => {
+            Selector::Matches(regex_str) => {
                 let re = polars_utils::regex_cache::compile_regex(&regex_str).unwrap();
                 PlIndexSet::from_iter(
                     schema
@@ -193,6 +304,36 @@ impl Selector {
                 )
             },
             Selector::Wildcard => PlIndexSet::from_iter(schema.iter_names().cloned()),
+
+            Selector::Float => dtype_selector(schema, |dtype| dtype.is_float()),
+            Selector::Integer => dtype_selector(schema, |dtype| dtype.is_integer()),
+            Selector::SignedInteger => dtype_selector(schema, |dtype| dtype.is_signed_integer()),
+            Selector::UnsignedInteger => {
+                dtype_selector(schema, |dtype| dtype.is_unsigned_integer())
+            },
+            Selector::Categorical => dtype_selector(schema, |dtype| dtype.is_categorical()),
+            Selector::Decimal => dtype_selector(schema, |dtype| dtype.is_decimal()),
+            Selector::Numeric => dtype_selector(schema, |dtype| dtype.is_numeric()),
+            Selector::Temporal => dtype_selector(schema, |dtype| dtype.is_temporal()),
+            Selector::Datetime(selector_tu, selector_tz) => {
+                let selector_tz = selector_tz.as_ref().map(|tz| PlIndexSet::from_iter(tz));
+                dtype_selector(schema, |dtype| {
+                    let DataType::Datetime(tu, tz) = dtype else {
+                        return false;
+                    };
+
+                    selector_tu.contains(TimeUnitSet::from(*tu))
+                        && selector_tz.as_ref().is_none_or(|stz| stz.contains(tz))
+                })
+            },
+            Selector::Duration(selector_tu) => dtype_selector(schema, |dtype| {
+                let DataType::Duration(tu) = dtype else {
+                    return false;
+                };
+
+                selector_tu.contains(TimeUnitSet::from(*tu))
+            }),
+            Selector::Object => dtype_selector(schema, |dtype| dtype.is_object()),
         };
         Ok(out)
     }
@@ -225,22 +366,6 @@ impl Selector {
 
 pub fn is_regex_projection(name: &str) -> bool {
     name.starts_with('^') && name.ends_with('$')
-}
-
-fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
-    match (d1, d2) {
-        // note: allow Datetime "*" wildcard for timezones...
-        (DataType::Datetime(tu_l, tz_l), DataType::Datetime(tu_r, tz_r)) => {
-            tu_l == tu_r
-                && (tz_l == tz_r
-                    || match (tz_l, tz_r) {
-                        (Some(l), Some(r)) => TimeZone::eq_wildcard_aware(l, r),
-                        _ => false,
-                    })
-        },
-        // ...but otherwise require exact match
-        _ => d1 == d2,
-    }
 }
 
 impl BitOr for Selector {
@@ -322,14 +447,77 @@ impl fmt::Display for Selector {
 
                 f.write_char(')')
             },
-            Selector::WithDataTypes(dtypes) => write!(f, "col({:?})", dtypes),
-            Selector::ByName(names) => write!(f, "col({:?})", names),
-            Selector::AtIndex(items) if items.as_ref() == &[0] => f.write_str("first()"),
-            Selector::AtIndex(items) if items.as_ref() == &[-1] => f.write_str("last()"),
-            Selector::AtIndex(items) if items.len() == 1 => write!(f, "nth({})", items[0]),
-            Selector::AtIndex(items) => write!(f, "nth({:?})", items.as_ref()),
-            Selector::Regex(s) => write!(f, "regex(\"{s}\")"),
-            Selector::Wildcard => f.write_str("all()"),
+            Selector::WithDataTypes(dtypes) => {
+                use DataType as D;
+                match dtypes.as_ref() {
+                    [D::Boolean] => f.write_str("cs.boolean()"),
+                    [D::Binary] => f.write_str("cs.binary()"),
+                    [D::Time] => f.write_str("cs.time()"),
+                    [D::Date] => f.write_str("cs.date()"),
+                    [D::String] => f.write_str("cs.string()"),
+                    _ => write!(f, "cs.by_dtype({:?})", dtypes),
+                }
+            },
+            Selector::ByName(names) => {
+                f.write_str("cs.by_name(")?;
+
+                if let Some(e) = names.first() {
+                    write!(f, "'{e}'")?;
+                    for e in &names[1..] {
+                        write!(f, ", '{e}'")?;
+                    }
+                }
+
+                f.write_str(")")
+            },
+            Selector::AtIndex(items) if items.as_ref() == &[0] => f.write_str("cs.first()"),
+            Selector::AtIndex(items) if items.as_ref() == &[-1] => f.write_str("cs.last()"),
+            Selector::AtIndex(items) if items.len() == 1 => write!(f, "cs.nth({})", items[0]),
+            Selector::AtIndex(items) => write!(f, "cs.nth({:?})", items.as_ref()),
+            Selector::Matches(s) => write!(f, "cs.matches(\"{s}\")"),
+
+            Selector::Float => write!(f, "cs.float()"),
+            Selector::Integer => write!(f, "cs.integer()"),
+            Selector::SignedInteger => write!(f, "cs.signed_integer()"),
+            Selector::UnsignedInteger => write!(f, "cs.unsigned_integer()"),
+            Selector::Categorical => write!(f, "cs.categorical()"),
+            Selector::Numeric => write!(f, "cs.numeric()"),
+            Selector::Decimal => write!(f, "cs.decimal()"),
+            Selector::Temporal => write!(f, "cs.temporal()"),
+            Selector::Datetime(tu, tz) => {
+                write!(f, "cs.datetime(time_unit={tu}, time_zone=")?;
+                match tz {
+                    None => f.write_str("*")?,
+                    Some(tz) => {
+                        if tz.len() > 1 {
+                            f.write_str("[")?;
+                        }
+
+                        if let Some(e) = tz.first() {
+                            match e {
+                                None => f.write_str("None"),
+                                Some(e) => write!(f, "'{e}'"),
+                            }?;
+                            for e in &tz[1..] {
+                                match e {
+                                    None => f.write_str("None"),
+                                    Some(e) => write!(f, "'{e}'"),
+                                }?;
+                            }
+                        }
+
+                        if tz.len() > 1 {
+                            f.write_str("]")?;
+                        }
+                    },
+                }
+                f.write_str(")")
+            },
+            Selector::Duration(tu) => {
+                write!(f, "cs.duration(time_unit={tu})")
+            },
+            Selector::Object => write!(f, "cs.object()"),
+            Selector::Wildcard => f.write_str("cs.all()"),
         }
     }
 }

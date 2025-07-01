@@ -341,6 +341,9 @@ class Selector(Expr):
     def dtype_cols(cls, dtypes: list[PolarsDataType]) -> Selector:
         return cls._from_pyselector(PySelector.with_datatype(dtypes))
 
+    def __repr__(self) -> str:
+        return str(Expr._from_pyexpr(self._pyexpr))
+
     def __hash__(self) -> int:
         # note: this is a suitable hash for selectors (but NOT expressions in general),
         # as the repr is guaranteed to be unique across all selector/param permutations
@@ -412,10 +415,12 @@ class Selector(Expr):
     def __sub__(self, other: Selector) -> Selector: ...
 
     @overload
-    def __sub__(self, other: Any) -> Selector | Expr: ...
+    def __sub__(self, other: Any) -> Expr: ...
 
-    def __sub__(self, other: Any) -> Expr:
+    def __sub__(self, other: Any) -> Selector | Expr:
         if is_selector(other):
+            print(self)
+            print(other)
             return Selector._from_pyselector(
                 PySelector.difference(self._pyselector, other._pyselector)
             )
@@ -715,7 +720,7 @@ def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> Selector:
     # note that we need to supply a pattern compatible with the *rust* regex crate
     re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
     re_space = " " if ignore_spaces else ""
-    return Selector._from_pyselector(PySelector.regex(f"^[{re_alpha}{re_space}]+$"))
+    return Selector._from_pyselector(PySelector.matches(f"^[{re_alpha}{re_space}]+$"))
 
 
 def alphanumeric(
@@ -812,7 +817,7 @@ def alphanumeric(
     re_digit = "0-9" if ascii_only else r"\d"
     re_space = " " if ignore_spaces else ""
     return Selector._from_pyselector(
-        PySelector.regex(f"^[{re_alpha}{re_digit}{re_space}]+$")
+        PySelector.matches(f"^[{re_alpha}{re_digit}{re_space}]+$")
     )
 
 
@@ -849,7 +854,7 @@ def binary() -> Selector:
     >>> df.select(~cs.binary()).to_dict(as_series=False)
     {'b': ['world'], 'd': [':)']}
     """
-    return Selector._from_pyselector(PySelector.with_datatype([Binary]))
+    return by_dtype([Binary])
 
 
 def boolean() -> Selector:
@@ -907,7 +912,7 @@ def boolean() -> Selector:
     │ 4   │
     └─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype([Boolean]))
+    return by_dtype([Boolean])
 
 
 def by_dtype(
@@ -1184,15 +1189,10 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
             msg = f"invalid name: {nm!r}"
             raise TypeError(msg)
 
-    selector_params: dict[str, Any] = {"*names": all_names}
-    match_cols: list[str] | str = all_names
     if not require_all:
-        match_cols = [f"^({'|'.join(re_escape(nm) for nm in all_names)})$"]
-        selector_params["require_all"] = require_all
+        return matches(f"^({'|'.join(re_escape(nm) for nm in all_names)})$")
 
-    return Selector._from_pyselector(
-        PySelector.with_name(match_cols),
-    )
+    return Selector._from_pyselector(PySelector.with_name(all_names))
 
 
 def categorical() -> Selector:
@@ -1242,7 +1242,7 @@ def categorical() -> Selector:
     │ 456 ┆ 5.5 │
     └─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype([Categorical]))
+    return Selector._from_pyselector(PySelector.categorical())
 
 
 def contains(*substring: str) -> Selector:
@@ -1314,7 +1314,7 @@ def contains(*substring: str) -> Selector:
     escaped_substring = _re_string(substring)
     raw_params = f"^.*{escaped_substring}.*$"
 
-    return Selector._from_pyselector(PySelector.regex(raw_params))
+    return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
 def date() -> Selector:
@@ -1366,7 +1366,7 @@ def date() -> Selector:
     │ 2031-12-31 00:30:00 ┆ 23:59:59 │
     └─────────────────────┴──────────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype([Date]))
+    return by_dtype([Date])
 
 
 def datetime(
@@ -1516,9 +1516,10 @@ def datetime(
             [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
         )
 
-    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]
+    if "*" in time_zone:
+        time_zone = None
 
-    return Selector._from_pyselector(PySelector.with_datatype(datetime_dtypes))
+    return Selector._from_pyselector(PySelector.datetime(time_unit, time_zone))
 
 
 def decimal() -> Selector:
@@ -1571,7 +1572,7 @@ def decimal() -> Selector:
     └─────┘
     """
     # TODO: allow explicit selection by scale/precision?
-    return Selector._from_pyselector(PySelector.with_datatype([Decimal]))
+    return Selector._from_pyselector(PySelector.decimal())
 
 
 def digit(ascii_only: bool = False) -> Selector:  # noqa: FBT001
@@ -1662,7 +1663,7 @@ def digit(ascii_only: bool = False) -> Selector:  # noqa: FBT001
     └──────┘
     """
     re_digit = r"[0-9]" if ascii_only else r"\d"
-    return Selector._from_pyselector(PySelector.regex(rf"^{re_digit}+$"))
+    return Selector._from_pyselector(PySelector.matches(rf"^{re_digit}+$"))
 
 
 def duration(
@@ -1768,8 +1769,7 @@ def duration(
     else:
         time_unit = [time_unit] if isinstance(time_unit, str) else list(time_unit)
 
-    duration_dtypes = [Duration(tu) for tu in time_unit]
-    return Selector._from_pyselector(PySelector.with_datatype(duration_dtypes))
+    return Selector._from_pyselector(PySelector.duration(time_unit))
 
 
 def ends_with(*suffix: str) -> Selector:
@@ -1841,7 +1841,7 @@ def ends_with(*suffix: str) -> Selector:
     escaped_suffix = _re_string(suffix)
     raw_params = f"^.*{escaped_suffix}$"
 
-    return Selector._from_pyselector(PySelector.regex(raw_params))
+    return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
 def exclude(
@@ -2011,7 +2011,7 @@ def float() -> Selector:
     │ y   ┆ 456 │
     └─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(list(FLOAT_DTYPES)))
+    return Selector._from_pyselector(PySelector.float())
 
 
 def integer() -> Selector:
@@ -2064,7 +2064,7 @@ def integer() -> Selector:
     │ y   ┆ 5.5 │
     └─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(list(INTEGER_DTYPES)))
+    return Selector._from_pyselector(PySelector.integer())
 
 
 def signed_integer() -> Selector:
@@ -2129,9 +2129,7 @@ def signed_integer() -> Selector:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
     """
-    return Selector._from_pyselector(
-        PySelector.with_datatype(list(SIGNED_INTEGER_DTYPES))
-    )
+    return Selector._from_pyselector(PySelector.signed_integer())
 
 
 def unsigned_integer() -> Selector:
@@ -2198,9 +2196,7 @@ def unsigned_integer() -> Selector:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
     """
-    return Selector._from_pyselector(
-        PySelector.with_datatype(list(UNSIGNED_INTEGER_DTYPES))
-    )
+    return Selector._from_pyselector(PySelector.unsigned_integer())
 
 
 def last() -> Selector:
@@ -2319,7 +2315,7 @@ def matches(pattern: str) -> Selector:
         sfx = ".*$" if not pattern.endswith("$") else ""
         raw_params = f"{pfx}{pattern}{sfx}"
 
-        return Selector._from_pyselector(PySelector.regex(raw_params))
+        return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
 def numeric() -> Selector:
@@ -2373,7 +2369,7 @@ def numeric() -> Selector:
     │ y   │
     └─────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(list(NUMERIC_DTYPES)))
+    return Selector._from_pyselector(PySelector.numeric())
 
 
 def object() -> Selector:
@@ -2429,7 +2425,7 @@ def object() -> Selector:
         ],
     }
     """  # noqa: W505
-    return Selector._from_pyselector(PySelector.with_datatype([Object]))
+    return Selector._from_pyselector(PySelector.object())
 
 
 def starts_with(*prefix: str) -> Selector:
@@ -2501,7 +2497,7 @@ def starts_with(*prefix: str) -> Selector:
     escaped_prefix = _re_string(prefix)
     raw_params = f"^{escaped_prefix}.*$"
 
-    return Selector._from_pyselector(PySelector.regex(raw_params))
+    return Selector._from_pyselector(PySelector.matches(raw_params))
 
 
 def string(*, include_categorical: bool = False) -> Selector:
@@ -2561,7 +2557,7 @@ def string(*, include_categorical: bool = False) -> Selector:
     if include_categorical:
         string_dtypes.append(Categorical)
 
-    return Selector._from_pyselector(PySelector.with_datatype(string_dtypes))
+    return by_dtype(string_dtypes)
 
 
 def temporal() -> Selector:
@@ -2627,7 +2623,7 @@ def temporal() -> Selector:
     │ 2.3456 │
     └────────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype(list(TEMPORAL_DTYPES)))
+    return Selector._from_pyselector(PySelector.temporal())
 
 
 def time() -> Selector:
@@ -2679,4 +2675,4 @@ def time() -> Selector:
     │ 2031-12-31 00:30:00 ┆ 2024-08-09 │
     └─────────────────────┴────────────┘
     """
-    return Selector._from_pyselector(PySelector.with_datatype([Time]))
+    return by_dtype([Time])

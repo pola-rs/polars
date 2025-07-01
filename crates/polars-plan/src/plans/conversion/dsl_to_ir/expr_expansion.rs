@@ -809,11 +809,11 @@ fn expand_expression_by_combination(
     for (i, expr) in exprs.iter().enumerate() {
         let start_len = out.len();
         if matches!(
-            expand_expression(expr, schema, out, opt_flags)?,
+            expand_expression_rec(expr, schema, out, opt_flags)?,
             DidExpand::Expanded
         ) {
             results.reserve(exprs.len());
-            results.extend((0..i).map(|j| (DidExpand::NoExpansion, start_len - i + j - 1)));
+            results.extend((0..i).map(|j| (DidExpand::NoExpansion, start_len - i + j)));
             dbg!(&out.len());
             dbg!(&start_len);
             expansion_size = out.len() - start_len;
@@ -832,7 +832,7 @@ fn expand_expression_by_combination(
 
     for expr in &exprs[results.len()..] {
         let start_len = out.len();
-        let did_expand = expand_expression(expr, schema, out, opt_flags)?;
+        let did_expand = expand_expression_rec(expr, schema, out, opt_flags)?;
         let size = out.len() - start_len;
         polars_ensure!(matches!(did_expand, DidExpand::NoExpansion) || size == expansion_size, InvalidOperation: "cannot combine selectors that produce a different number of columns");
         results.push((did_expand, start_len));
@@ -846,7 +846,7 @@ fn expand_expression_by_combination(
         scratch.clear();
         for (did_expand, start_offset) in &results {
             match did_expand {
-                DidExpand::NoExpansion => scratch.push(std::mem::take(&mut out[*start_offset])),
+                DidExpand::NoExpansion => scratch.push(out[*start_offset].clone()),
                 DidExpand::Expanded => scratch.push(std::mem::take(&mut out[*start_offset + i])),
             }
         }
@@ -870,7 +870,7 @@ fn expand_single(
     f: impl Fn(Expr) -> Expr,
 ) -> PolarsResult<DidExpand> {
     let start_len = out.len();
-    let did_expand = expand_expression(subexpr, schema, out, opt_flags)?;
+    let did_expand = expand_expression_rec(subexpr, schema, out, opt_flags)?;
     for e in out[start_len..].iter_mut() {
         *e = f(std::mem::take(e));
     }
@@ -882,9 +882,27 @@ pub fn expand_expression(
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
+) -> PolarsResult<()> {
+    let start_len = out.len();
+
+    expand_expression_rec(expr, schema, out, opt_flags)?;
+
+    for e in &mut out[start_len..] {
+        let expr = std::mem::take(e);
+        let expr = struct_index_to_field(expr, schema)?;
+        let expr = rewrite_special_aliases(expr)?;
+        *e = expr;
+    }
+
+    Ok(())
+}
+
+fn expand_expression_rec(
+    expr: &Expr,
+    schema: &Schema,
+    out: &mut Vec<Expr>,
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<DidExpand> {
-    let expr = struct_index_to_field(expr.clone(), schema)?;
-    let expr = rewrite_special_aliases(expr)?;
     let did_expand = match &expr {
         Expr::Alias(subexpr, name) => {
             expand_single(subexpr.as_ref(), schema, out, opt_flags, |e| {
@@ -1244,7 +1262,6 @@ pub fn expand_expression(
         // SQL only
         Expr::SubPlan(_, _) => unreachable!(),
     };
-
     Ok(did_expand)
 }
 

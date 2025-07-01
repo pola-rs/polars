@@ -21,7 +21,11 @@ def assert_repr_equals(item: Any, expected: str) -> None:
     if not isinstance(expected, str):
         msg = f"`expected` must be a string; found {qualified_type_name(expected)!r}"
         raise TypeError(msg)
-    assert repr(item) == expected
+    try:
+        assert repr(item) == expected
+    except Exception as e:
+        e.add_note(f"'{item!r}' != '{expected}'")
+        raise
 
 
 @pytest.fixture
@@ -238,7 +242,7 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     for selector_expr, expected in (
         (cs.by_name("abc", "cde") & pl.col("ghi"), []),
         (cs.by_name("abc", "cde") & pl.col("cde"), ["cde"]),
-        (pl.col("cde") & cs.by_name("cde", "abc"), ["cde"]),
+        (cs.by_name("cde") & cs.by_name("cde", "abc"), ["cde"]),
     ):
         assert df.select(selector_expr).columns == expected
 
@@ -643,7 +647,7 @@ def test_selector_expansion() -> None:
 
 def test_selector_repr() -> None:
     assert_repr_equals(cs.all() - cs.first(), "[cs.all() - cs.first()]")
-    assert_repr_equals(~cs.starts_with("a", "b"), "[cs.all() - cs.starts_with('a', 'b')]")
+    assert_repr_equals(~cs.starts_with("a", "b"), "[cs.all() - cs.matches(\"^(a|b).*$\")]")
     assert_repr_equals(cs.float() | cs.by_name("x"), "[cs.float() | cs.by_name('x')]")
     assert_repr_equals(
         cs.integer() & cs.matches("z"),

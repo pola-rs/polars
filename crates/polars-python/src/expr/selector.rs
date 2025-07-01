@@ -1,4 +1,4 @@
-use polars::prelude::{DataType, Selector};
+use polars::prelude::{DataType, Selector, TimeUnit, TimeZone, TimeUnitSet};
 use polars_plan::dsl;
 
 use crate::prelude::Wrap;
@@ -14,6 +14,18 @@ impl From<Selector> for PySelector {
     fn from(inner: Selector) -> Self {
         Self { inner }
     }
+}
+
+fn parse_time_unit_set(time_units: Vec<Wrap<TimeUnit>>) -> TimeUnitSet {
+    let mut tu = TimeUnitSet::empty();
+    for v in time_units {
+        match v.0 {
+            TimeUnit::Nanoseconds => tu |= TimeUnitSet::NANO_SECONDS,
+            TimeUnit::Microseconds => tu |= TimeUnitSet::MICRO_SECONDS,
+            TimeUnit::Milliseconds => tu |= TimeUnitSet::MILLI_SECONDS,
+        }
+    }
+    tu
 }
 
 #[cfg(feature = "pymethods")]
@@ -84,10 +96,47 @@ impl PySelector {
     }
 
     #[staticmethod]
-    fn regex(regex: String) -> Self {
-        Self {
-            inner: Selector::Regex(regex.into()),
-        }
+    fn matches(pattern: String) -> Self {
+        Selector::Matches(pattern.into()).into()
+    }
+
+    #[staticmethod]
+    fn categorical() -> Self {
+        Selector::Categorical.into()
+    }
+
+    #[staticmethod]
+    fn decimal() -> Self {
+        Selector::Decimal.into()
+    }
+
+    #[staticmethod]
+    fn numeric() -> Self {
+        Selector::Numeric.into()
+    }
+
+    #[staticmethod]
+    fn temporal() -> Self {
+        Selector::Temporal.into()
+    }
+
+    #[staticmethod]
+    fn datetime(tu: Vec<Wrap<TimeUnit>>, tz: Option<Vec<Wrap<Option<TimeZone>>>>) -> Self {
+        let tu = parse_time_unit_set(tu);
+        dbg!(&tu);
+        let tz = tz.map(|v| v.into_iter().map(|v| v.0).collect());
+        Selector::Datetime(tu, tz).into()
+    }
+
+    #[staticmethod]
+    fn duration(tu: Vec<Wrap<TimeUnit>>) -> Self {
+        let tu = parse_time_unit_set(tu);
+        Selector::Duration(tu).into()
+    }
+
+    #[staticmethod]
+    fn object() -> Self {
+        Selector::Object.into()
     }
 
     #[staticmethod]

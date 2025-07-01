@@ -31,7 +31,7 @@ where
     let name = name.into();
     match name.as_str() {
         "*" => all().into_expr(),
-        n if is_regex_projection(n) => Expr::Selector(Selector::Regex(name)),
+        n if is_regex_projection(n) => Expr::Selector(Selector::Matches(name)),
         _ => Expr::Column(name),
     }
 }
