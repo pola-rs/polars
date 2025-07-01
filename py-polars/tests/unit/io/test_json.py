@@ -7,7 +7,7 @@ import zlib
 from collections import OrderedDict
 from datetime import datetime
 from decimal import Decimal as D
-from io import BytesIO, StringIO
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 import zstandard
