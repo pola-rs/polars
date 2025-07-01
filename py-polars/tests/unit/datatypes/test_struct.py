@@ -123,7 +123,7 @@ def test_struct_unnesting() -> None:
         assert_frame_equal(out_lazy, expected.lazy())
 
     out = (
-        df_base.lazy()
+        df_base
         .select(
             pl.all().alias("a_original"),
             pl.col("a")
@@ -132,7 +132,6 @@ def test_struct_unnesting() -> None:
             .alias("foo"),
         )
         .unnest("foo")
-        .collect()
     )
     assert_frame_equal(out, expected)
 
