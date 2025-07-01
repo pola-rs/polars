@@ -259,11 +259,6 @@ def datetime_range(
     if num_samples is not None:
         num_samples = parse_into_expression(num_samples)
 
-    print(f"start:       {start}")
-    print(f"end:         {end}")
-    print(f"interval:    {interval}")
-    print(f"num_samples: {num_samples}")
-
     result = wrap_expr(
         plr.datetime_range(
             start,

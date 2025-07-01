@@ -648,8 +648,6 @@ impl FieldsMapper<'_> {
 
         let tz = time_zone.cloned().or(data_tz);
 
-        let out_dtype = DataType::Datetime(tu, tz.clone());
-        println!("out_dtype: {:?}", out_dtype);
         Ok(DataType::Datetime(tu, tz))
     }
 }
