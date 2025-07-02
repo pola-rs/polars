@@ -556,6 +556,7 @@ def test_scan_delta_nanosecond_timestamp(
     assert q.collect_schema() == {"timestamp": pl.Datetime("us", time_zone="UTC")}
     assert_frame_equal(q.collect(), df)
 
+    # Ensure row-group skipping is functioning.
     q = pl.scan_delta(str(root)).filter(
         pl.col("timestamp")
         < pl.lit(datetime(2025, 1, 1), dtype=pl.Datetime("us", time_zone="UTC"))
