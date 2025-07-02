@@ -155,11 +155,6 @@ class PolarsColumn(Column):
         if dtype == String and not self._allow_copy:
             msg = "string buffers must be converted"
             raise CopyNotAllowedError(msg)
-        elif dtype == Categorical and not self._col.cat.is_local():
-            if not self._allow_copy:
-                msg = f"column {self._col.name!r} must be converted to a local categorical"
-                raise CopyNotAllowedError(msg)
-            self._col = self._col.cat.to_local()
 
         buffers = self._col._get_buffers()
 
