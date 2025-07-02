@@ -1793,5 +1793,5 @@ pub fn last() -> Selector {
 
 /// Nth column in a DataFrame.
 pub fn nth(n: i64) -> Selector {
-    Selector::AtIndex([n].into())
+    Selector::Nth{ indices: [n].into(), strict: true }
 }

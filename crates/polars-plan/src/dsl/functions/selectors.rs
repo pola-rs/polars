@@ -30,7 +30,7 @@ where
 {
     let name = name.into();
     match name.as_str() {
-        "*" => all().into_expr(),
+        "*" => all().as_expr(),
         n if is_regex_projection(n) => Expr::Selector(Selector::Matches(name)),
         _ => Expr::Column(name),
     }
@@ -48,22 +48,22 @@ where
     S: Into<PlSmallStr>,
 {
     let names = names.into_iter().map(|x| x.into()).collect();
-    Selector::ByName(names)
+    Selector::ByName { names, strict: true }
 }
 
 /// Select multiple columns by dtype.
 pub fn dtype_col(dtype: &DataType) -> Selector {
-    Selector::WithDataTypes([dtype.clone()].into())
+    Selector::ByDType([dtype.clone()].into())
 }
 
 /// Select multiple columns by dtype.
 pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Selector {
     let dtypes = dtype.as_ref();
-    Selector::WithDataTypes(dtypes.into())
+    Selector::ByDType(dtypes.into())
 }
 
 /// Select multiple columns by index.
 pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Selector {
     let indices = indices.as_ref().into();
-    Selector::AtIndex(indices)
+    Selector::Nth { indices, strict: true }
 }

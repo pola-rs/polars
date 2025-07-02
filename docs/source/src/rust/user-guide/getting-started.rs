@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([
             col("name"),
-            (cols(["weight", "height"]).into_expr() * lit(0.95))
+            (cols(["weight", "height"]).as_expr() * lit(0.95))
                 .round(2, RoundMode::default())
                 .name()
                 .suffix("-5%"),
@@ -136,12 +136,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("birthdate").dt().year() / lit(10) * lit(10)).alias("decade"),
             col("name").str().split(lit(" ")).list().first(),
         ])
-        .select([all().exclude_cols(["birthdate"]).into_expr()])
+        .select([all().exclude_cols(["birthdate"]).as_expr()])
         .group_by([col("decade")])
         .agg([
             col("name"),
             cols(["weight", "height"])
-                .into_expr()
+                .as_expr()
                 .mean()
                 .round(2, RoundMode::default())
                 .name()

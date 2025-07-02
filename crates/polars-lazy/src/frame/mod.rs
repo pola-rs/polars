@@ -423,24 +423,6 @@ impl LazyFrame {
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
     ///
-    /// If `strict` is `true`, then any given columns that are not in the schema will
-    /// give a [`PolarsError::ColumnNotFound`] error while materializing the [`LazyFrame`].
-    fn _drop<I, T>(self, columns: I, strict: bool) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<Selector>,
-    {
-        let to_drop = columns.into_iter().map(|c| c.into()).collect();
-
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop(to_drop, strict).build();
-        Self::from_logical_plan(lp, opt_state)
-    }
-
-    /// Removes columns from the DataFrame.
-    /// Note that it's better to only select the columns you need
-    /// and let the projection pushdown optimize away the unneeded columns.
-    ///
     /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
     /// error while materializing the [`LazyFrame`].
     pub fn drop<I, T>(self, columns: I) -> Self
@@ -448,20 +430,11 @@ impl LazyFrame {
         I: IntoIterator<Item = T>,
         T: Into<Selector>,
     {
-        self._drop(columns, true)
-    }
+        let to_drop = columns.into_iter().map(|c| c.into()).collect();
 
-    /// Removes columns from the DataFrame.
-    /// Note that it's better to only select the columns you need
-    /// and let the projection pushdown optimize away the unneeded columns.
-    ///
-    /// If a column name does not exist in the schema, it will quietly be ignored.
-    pub fn drop_no_validate<I, T>(self, columns: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<Selector>,
-    {
-        self._drop(columns, false)
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop(to_drop).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -1894,28 +1867,18 @@ impl LazyFrame {
     /// `None`, all columns are considered.
     pub fn unique_stable(
         self,
-        subset: Option<Vec<PlSmallStr>>,
+        subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         self.unique_stable_generic(subset, keep_strategy)
     }
 
-    pub fn unique_stable_generic<E, IE>(
+    pub fn unique_stable_generic(
         self,
-        subset: Option<E>,
+        subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame
-    where
-        E: AsRef<[IE]>,
-        IE: Into<Selector> + Clone,
     {
-        let subset = subset.map(|s| {
-            s.as_ref()
-                .iter()
-                .map(|e| e.clone().into())
-                .collect::<Vec<_>>()
-        });
-
         let opt_state = self.get_opt_state();
         let options = DistinctOptionsDSL {
             subset,
@@ -1935,23 +1898,17 @@ impl LazyFrame {
     /// all columns are considered.
     pub fn unique(
         self,
-        subset: Option<Vec<String>>,
+        subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         self.unique_generic(subset, keep_strategy)
     }
 
-    pub fn unique_generic<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(
+    pub fn unique_generic(
         self,
-        subset: Option<E>,
+        subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
-        let subset = subset.map(|s| {
-            s.as_ref()
-                .iter()
-                .map(|e| e.clone().into())
-                .collect::<Vec<_>>()
-        });
         let opt_state = self.get_opt_state();
         let options = DistinctOptionsDSL {
             subset,
@@ -1966,7 +1923,7 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for NaNs; if None, all
     /// floating point columns are considered.
-    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> LazyFrame {
+    pub fn drop_nans(self, subset: Option<Vec<Selector>>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop_nans(subset).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1976,7 +1933,7 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.
-    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
+    pub fn drop_nulls(self, subset: Option<Vec<Selector>>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop_nulls(subset).build();
         Self::from_logical_plan(lp, opt_state)
@@ -2249,7 +2206,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().exclude_cols(keys.iter().cloned()).into_expr().head(n)])
+        self.agg([all().exclude_cols(keys.iter().cloned()).as_expr().head(n)])
             .explode_impl([all().exclude_cols(keys.iter().cloned())], true)
     }
 
@@ -2261,7 +2218,7 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([all().exclude_cols(keys.iter().cloned()).into_expr().tail(n)])
+        self.agg([all().exclude_cols(keys.iter().cloned()).as_expr().tail(n)])
             .explode_impl([all().exclude_cols(keys.iter().cloned())], true)
     }
 

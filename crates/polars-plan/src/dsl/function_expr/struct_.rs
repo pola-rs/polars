@@ -6,13 +6,13 @@ use super::*;
 pub enum StructFunction {
     FieldByIndex(i64),
     FieldByName(PlSmallStr),
+    FieldSelector(Selector),
     RenameFields(Arc<[PlSmallStr]>),
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
     JsonEncode,
     WithFields,
-    MultipleFields(Arc<[PlSmallStr]>),
     #[cfg(feature = "python")]
     MapFieldNames(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
 }
@@ -29,7 +29,7 @@ impl Display for StructFunction {
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
             WithFields => write!(f, "with_fields"),
-            MultipleFields(_) => write!(f, "multiple_fields"),
+            FieldSelector(selector) => write!(f, ".struct.field({selector})"),
             #[cfg(feature = "python")]
             MapFieldNames(_) => write!(f, "map_field_names"),
         }

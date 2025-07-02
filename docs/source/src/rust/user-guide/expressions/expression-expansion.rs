@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_column(
-            (cols(["price", "day_high", "day_low", "year_high", "year_low"]).into_expr()
+            (cols(["price", "day_high", "day_low", "year_high", "year_low"]).as_expr()
                 / lit(eur_usd_rate))
             .round(2, RoundMode::default()),
         )
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_column(
-            (dtype_col(&DataType::Float64).into_expr() / lit(eur_usd_rate))
+            (dtype_col(&DataType::Float64).as_expr() / lit(eur_usd_rate))
                 .round(2, RoundMode::default()),
         )
         .collect()?;
@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_column(
-            (dtype_cols([DataType::Float32, DataType::Float64]).into_expr() / lit(eur_usd_rate))
+            (dtype_cols([DataType::Float32, DataType::Float64]).as_expr() / lit(eur_usd_rate))
                 .round(2, RoundMode::default()),
         )
         .collect()?;
@@ -73,13 +73,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = df
         .clone()
         .lazy()
-        .select([cols(["ticker", "^.*_high$", "^.*_low$"]).into_expr()])
+        .select([cols(["ticker", "^.*_high$", "^.*_low$"]).as_expr()])
         .collect()?;
     println!("{result}");
     // --8<-- [end:col-with-regex]
 
     // --8<-- [start:all]
-    let result = df.clone().lazy().select([all().into_expr()]).collect()?;
+    let result = df.clone().lazy().select([all().as_expr()]).collect()?;
     println!("{}", result.equals(&df));
     // --8<-- [end:all]
 
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = df
         .clone()
         .lazy()
-        .select([all().exclude_cols(["^day_.*$"]).into_expr()])
+        .select([all().exclude_cols(["^day_.*$"]).as_expr()])
         .collect()?;
     println!("{result}");
     // --8<-- [end:all-exclude]
@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("^year_.*$") / lit(eur_usd_rate))
                 .name()
                 .prefix("in_eur_"),
-            (cols(["day_high", "day_low"]).into_expr() / lit(gbp_usd_rate))
+            (cols(["day_high", "day_low"]).as_expr() / lit(gbp_usd_rate))
                 .name()
                 .suffix("_gbp"),
         ])
@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([all()
-            .into_expr()
+            .as_expr()
             .name()
             .map(|name| Ok(PlSmallStr::from_string(name.to_ascii_uppercase())))])
         .collect()?;

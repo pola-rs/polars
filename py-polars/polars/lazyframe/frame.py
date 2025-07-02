@@ -4,7 +4,7 @@ import contextlib
 import io
 import os
 import warnings
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -6072,8 +6072,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = parse_into_list_of_selectors(list(columns))
-        return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
+        selectors: list[ColumnNameOrSelector] = []
+        for c in columns:
+            if isinstance(c, Iterable) and not isinstance(c, str):
+                selectors += c
+            else:
+                selectors += [c]
+
+        drop_cols = parse_into_list_of_selectors(selectors, strict=strict)
+        return self._from_pyldf(self._ldf.drop(columns=drop_cols))
 
     def rename(
         self, mapping: Mapping[str, str] | Callable[[str], str], *, strict: bool = True
@@ -7099,8 +7106,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def explode(
         self,
-        columns: str | Expr | Sequence[str | Expr],
-        *more_columns: str | Expr,
+        columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
@@ -7138,8 +7145,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        columns = parse_into_list_of_expressions(columns, *more_columns)
-        return self._from_pyldf(self._ldf.explode(columns))
+        columns = parse_into_list_of_selectors(list(columns) + list(more_columns))
+        return self._from_pyldf(self._ldf.explode(column=columns))
 
     def unique(
         self,
@@ -7316,9 +7323,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴───────┘
         """
         selector_subset: list[PySelector] | None = None
+        selector_subset: list[PySelector] | None = None
         if subset is not None:
             selector_subset = parse_into_list_of_selectors(subset)
-        return self._from_pyldf(self._ldf.drop_nans(selector_subset))
+        return self._from_pyldf(self._ldf.drop_nans(subset=selector_subset))
 
     def drop_nulls(
         self,
@@ -7402,7 +7410,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         selector_subset: list[PySelector] | None = None
         if subset is not None:
             selector_subset = parse_into_list_of_selectors(subset)
-        return self._from_pyldf(self._ldf.drop_nulls(selector_subset))
+        return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
 
     def unpivot(
         self,

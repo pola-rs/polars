@@ -23,9 +23,29 @@ impl StructNameSpace {
     }
 
     fn field_by_names_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
+        let mut selector = Selector::Empty;
+        let _s = &mut selector;
+        let names = names
+            .iter()
+            .filter(|n| {
+                match n.as_str() {
+                    _ if is_regex_projection(n.as_str()) => *_s |= Selector::Matches((*n).clone()),
+                    "*" => *_s |= Selector::Wildcard,
+                    _ => return true,
+                }
+
+                false
+            })
+            .cloned()
+            .collect();
+        selector |= Selector::ByName {
+            names,
+            strict: true,
+        };
+
         self.0
-            .map_unary(FunctionExpr::StructExpr(StructFunction::MultipleFields(
-                names,
+            .map_unary(FunctionExpr::StructExpr(StructFunction::FieldSelector(
+                selector,
             )))
     }
 

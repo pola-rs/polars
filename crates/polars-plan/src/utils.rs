@@ -83,12 +83,7 @@ pub(crate) fn is_column_independent_aexpr(expr: Node, arena: &Arena<AExpr>) -> b
         #[cfg(feature = "dtype-struct")]
         AExpr::Function {
             input: _,
-            function:
-                IRFunctionExpr::StructExpr(
-                    IRStructFunction::FieldByIndex(_)
-                    | IRStructFunction::FieldByName(_)
-                    | IRStructFunction::MultipleFields(_),
-                ),
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(_)),
             options: _,
         } => true,
         _ => false,

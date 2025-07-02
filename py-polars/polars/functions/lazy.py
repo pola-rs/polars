@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
+import polars.selectors as cs
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -605,7 +606,7 @@ def first(*columns: str) -> Expr:
 
     """
     if not columns:
-        return wrap_expr(plr.first())
+        return cs.first().as_expr()
 
     return F.col(*columns).first()
 
@@ -670,12 +671,12 @@ def last(*columns: str) -> Expr:
 
     """
     if not columns:
-        return wrap_expr(plr.last())
+        return cs.last().as_expr()
 
     return F.col(*columns).last()
 
 
-def nth(*indices: int | Sequence[int]) -> Expr:
+def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:
     """
     Get the nth column(s) of the context.
 
@@ -716,10 +717,7 @@ def nth(*indices: int | Sequence[int]) -> Expr:
     │ baz ┆ 3   │
     └─────┴─────┘
     """
-    if len(indices) == 1 and isinstance(indices[0], Sequence):
-        indices = indices[0]  # type: ignore[assignment]
-
-    return pl.Selector.nth(indices).as_expr()
+    return pl.Selector.nth(indices, strict).as_expr()
 
 
 def head(column: str, n: int = 10) -> Expr:

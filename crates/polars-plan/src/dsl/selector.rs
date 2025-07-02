@@ -1,5 +1,5 @@
 use std::fmt::{self, Write};
-use std::ops::{BitAnd, BitOr, BitXor, Sub};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, Not, Sub, SubAssign};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -105,11 +105,18 @@ pub enum Selector {
     Exclude(Arc<Selector>, Arc<[Excluded]>),
 
     // Leaf nodes
-    WithDataTypes(Arc<[DataType]>),
-    ByName(Arc<[PlSmallStr]>),
-    AtIndex(Arc<[i64]>),
+    ByDType(Arc<[DataType]>),
+    ByName {
+        names: Arc<[PlSmallStr]>,
+        strict: bool,
+    },
+    Nth {
+        indices: Arc<[i64]>,
+        strict: bool,
+    },
     Matches(PlSmallStr),
     Wildcard,
+    Empty,
 
     Integer,
     UnsignedInteger,
@@ -193,11 +200,15 @@ fn merge_sorted_columns(
     }
 }
 
-fn dtype_selector(schema: &Schema, f: impl Fn(&DataType) -> bool) -> PlIndexSet<PlSmallStr> {
+fn dtype_selector(
+    schema: &Schema,
+    ignored_columns: &PlHashSet<PlSmallStr>,
+    f: impl Fn(&DataType) -> bool,
+) -> PlIndexSet<PlSmallStr> {
     PlIndexSet::from_iter(
         schema
             .iter()
-            .filter(|(_, dtype)| f(dtype))
+            .filter(|(name, dtype)| !ignored_columns.contains(*name) && f(dtype))
             .map(|(name, _)| name.clone()),
     )
 }
@@ -205,33 +216,39 @@ fn dtype_selector(schema: &Schema, f: impl Fn(&DataType) -> bool) -> PlIndexSet<
 impl Selector {
     /// Turns the selector into an ordered set of selected columns from the schema.
     ///
-    /// The order of the columns corresponds to the order in the schema.
-    pub fn into_columns(&self, schema: &Schema) -> PolarsResult<PlIndexSet<PlSmallStr>> {
+    /// - The order of the columns corresponds to the order in the schema.
+    /// - Column names in `ignored_columns` are only used if they are explicitly mentioned by a
+    /// `ByName` or `Nth`.
+    pub fn into_columns(
+        &self,
+        schema: &Schema,
+        ignored_columns: &PlHashSet<PlSmallStr>,
+    ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         let out = match self {
             Selector::Union(lhs, rhs) => {
-                let lhs = lhs.into_columns(schema)?;
-                let rhs = rhs.into_columns(schema)?;
+                let lhs = lhs.into_columns(schema, ignored_columns)?;
+                let rhs = rhs.into_columns(schema, ignored_columns)?;
                 merge_sorted_columns(lhs, rhs, schema, false)
             },
             Selector::Difference(lhs, rhs) => {
-                let mut lhs = lhs.into_columns(schema)?;
-                let rhs = rhs.into_columns(schema)?;
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
+                let rhs = rhs.into_columns(schema, ignored_columns)?;
                 lhs.retain(|n| !rhs.contains(n));
                 lhs
             },
             Selector::ExclusiveOr(lhs, rhs) => {
-                let lhs = lhs.into_columns(schema)?;
-                let rhs = rhs.into_columns(schema)?;
+                let lhs = lhs.into_columns(schema, ignored_columns)?;
+                let rhs = rhs.into_columns(schema, ignored_columns)?;
                 merge_sorted_columns(lhs, rhs, schema, true)
             },
             Selector::Intersect(lhs, rhs) => {
-                let mut lhs = lhs.into_columns(schema)?;
-                let rhs = rhs.into_columns(schema)?;
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
+                let rhs = rhs.into_columns(schema, ignored_columns)?;
                 lhs.retain(|n| rhs.contains(n));
                 lhs
             },
             Selector::Exclude(input, excludes) => {
-                let mut out = input.into_columns(schema)?;
+                let mut out = input.into_columns(schema, ignored_columns)?;
                 for exclude in excludes.iter() {
                     // @PERF: This is quadratic
                     match exclude {
@@ -250,19 +267,14 @@ impl Selector {
                 out
             },
 
-            Selector::WithDataTypes(data_types) => {
+            Selector::ByDType(data_types) => {
                 let dtypes = PlHashSet::from_iter(data_types.iter().cloned());
-                PlIndexSet::from_iter(
-                    schema
-                        .iter()
-                        .filter(|(_, dtype)| dtypes.contains(*dtype))
-                        .map(|(name, _)| name.clone()),
-                )
+                dtype_selector(schema, ignored_columns, |dtype| dtypes.contains(dtype))
             },
-            Selector::ByName(names) => {
+            Selector::ByName { names, strict } => {
                 let mut out = PlIndexSet::with_capacity(names.len());
                 for name in names.iter() {
-                    polars_ensure!(schema.contains(name), col_not_found = name);
+                    polars_ensure!(!strict || schema.contains(name), col_not_found = name);
                     out.insert(name.clone());
                 }
                 out.sort_unstable_by(|l, r| {
@@ -273,12 +285,13 @@ impl Selector {
                 });
                 out
             },
-            Selector::AtIndex(indices) => {
+            Selector::Nth { indices, strict } => {
                 let mut out = PlIndexSet::with_capacity(indices.len());
                 let mut set = PlIndexSet::with_capacity(indices.len());
                 for &idx in indices.iter() {
                     let Some(idx) = idx.negative_to_usize(schema.len()) else {
-                        polars_bail!(ColumnNotFound: "cannot get the {idx}-th column when schema has {} columns", schema.len());
+                        polars_ensure!(!strict, ColumnNotFound: "cannot get the {idx}-th column when schema has {} columns", schema.len());
+                        continue;
                     };
                     let (name, _) = schema.get_at_index(idx).unwrap();
                     if !set.insert(idx) {
@@ -299,25 +312,43 @@ impl Selector {
                 PlIndexSet::from_iter(
                     schema
                         .iter_names()
-                        .filter(|name| re.is_match(name))
+                        .filter(|name| !ignored_columns.contains(*name) && re.is_match(name))
                         .cloned(),
                 )
             },
-            Selector::Wildcard => PlIndexSet::from_iter(schema.iter_names().cloned()),
+            Selector::Wildcard => PlIndexSet::from_iter(
+                schema
+                    .iter_names()
+                    .filter(|name| !ignored_columns.contains(*name))
+                    .cloned(),
+            ),
+            Selector::Empty => Default::default(),
 
-            Selector::Float => dtype_selector(schema, |dtype| dtype.is_float()),
-            Selector::Integer => dtype_selector(schema, |dtype| dtype.is_integer()),
-            Selector::SignedInteger => dtype_selector(schema, |dtype| dtype.is_signed_integer()),
-            Selector::UnsignedInteger => {
-                dtype_selector(schema, |dtype| dtype.is_unsigned_integer())
+            Selector::Float => dtype_selector(schema, ignored_columns, |dtype| dtype.is_float()),
+            Selector::Integer => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_integer())
             },
-            Selector::Categorical => dtype_selector(schema, |dtype| dtype.is_categorical()),
-            Selector::Decimal => dtype_selector(schema, |dtype| dtype.is_decimal()),
-            Selector::Numeric => dtype_selector(schema, |dtype| dtype.is_numeric()),
-            Selector::Temporal => dtype_selector(schema, |dtype| dtype.is_temporal()),
+            Selector::SignedInteger => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_signed_integer())
+            },
+            Selector::UnsignedInteger => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_unsigned_integer())
+            },
+            Selector::Categorical => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_categorical())
+            },
+            Selector::Decimal => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_decimal())
+            },
+            Selector::Numeric => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_numeric())
+            },
+            Selector::Temporal => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_temporal())
+            },
             Selector::Datetime(selector_tu, selector_tz) => {
                 let selector_tz = selector_tz.as_ref().map(|tz| PlIndexSet::from_iter(tz));
-                dtype_selector(schema, |dtype| {
+                dtype_selector(schema, ignored_columns, |dtype| {
                     let DataType::Datetime(tu, tz) = dtype else {
                         return false;
                     };
@@ -326,20 +357,16 @@ impl Selector {
                         && selector_tz.as_ref().is_none_or(|stz| stz.contains(tz))
                 })
             },
-            Selector::Duration(selector_tu) => dtype_selector(schema, |dtype| {
+            Selector::Duration(selector_tu) => dtype_selector(schema, ignored_columns, |dtype| {
                 let DataType::Duration(tu) = dtype else {
                     return false;
                 };
 
                 selector_tu.contains(TimeUnitSet::from(*tu))
             }),
-            Selector::Object => dtype_selector(schema, |dtype| dtype.is_object()),
+            Selector::Object => dtype_selector(schema, ignored_columns, |dtype| dtype.is_object()),
         };
         Ok(out)
-    }
-
-    pub fn col(name: impl Into<PlSmallStr>) -> Self {
-        Self::ByName([name.into()].into())
     }
 
     /// Exclude a column from a wildcard/regex selection.
@@ -359,7 +386,7 @@ impl Selector {
         Self::Exclude(Arc::new(self), v)
     }
 
-    pub fn into_expr(self) -> Expr {
+    pub fn as_expr(self) -> Expr {
         self.into()
     }
 }
@@ -369,56 +396,73 @@ pub fn is_regex_projection(name: &str) -> bool {
 }
 
 impl BitOr for Selector {
-    type Output = Selector;
-
-    #[allow(clippy::suspicious_arithmetic_impl)]
+    type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
         Selector::Union(Arc::new(self), Arc::new(rhs))
     }
 }
 
-impl BitAnd for Selector {
-    type Output = Selector;
+impl BitOrAssign for Selector {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = Selector::Union(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
+    }
+}
 
-    #[allow(clippy::suspicious_arithmetic_impl)]
+impl BitAnd for Selector {
+    type Output = Self;
     fn bitand(self, rhs: Self) -> Self::Output {
         Selector::Intersect(Arc::new(self), Arc::new(rhs))
     }
 }
 
-impl BitXor for Selector {
-    type Output = Selector;
+impl BitAndAssign for Selector {
+    fn bitand_assign(&mut self, rhs: Self) {
+        *self = Selector::Intersect(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
+    }
+}
 
-    #[allow(clippy::suspicious_arithmetic_impl)]
+impl BitXor for Selector {
+    type Output = Self;
     fn bitxor(self, rhs: Self) -> Self::Output {
         Selector::ExclusiveOr(Arc::new(self), Arc::new(rhs))
     }
 }
 
-impl Sub for Selector {
-    type Output = Selector;
+impl BitXorAssign for Selector {
+    fn bitand_assign(&mut self, rhs: Self) {
+        *self = Selector::ExclusiveOr(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
+    }
+}
 
-    #[allow(clippy::suspicious_arithmetic_impl)]
+impl Sub for Selector {
+    type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Selector::Difference(Arc::new(self), Arc::new(rhs))
     }
 }
 
-impl From<&str> for Selector {
-    fn from(value: &str) -> Self {
-        Selector::ByName([PlSmallStr::from_str(value)].into())
+impl SubAssign for Selector {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = Selector::Difference(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
     }
 }
 
-impl From<String> for Selector {
-    fn from(value: String) -> Self {
-        Selector::ByName([PlSmallStr::from(value)].into())
-    }
-}
-
-impl From<PlSmallStr> for Selector {
-    fn from(value: PlSmallStr) -> Self {
-        Selector::ByName([value].into())
+impl Not for Selector {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        Self::Wildcard - self
     }
 }
 
@@ -447,7 +491,7 @@ impl fmt::Display for Selector {
 
                 f.write_char(')')
             },
-            Selector::WithDataTypes(dtypes) => {
+            Selector::ByDType(dtypes) => {
                 use DataType as D;
                 match dtypes.as_ref() {
                     [D::Boolean] => f.write_str("cs.boolean()"),
@@ -458,22 +502,27 @@ impl fmt::Display for Selector {
                     _ => write!(f, "cs.by_dtype({:?})", dtypes),
                 }
             },
-            Selector::ByName(names) => {
+            Selector::ByName { names, strict } => {
                 f.write_str("cs.by_name(")?;
 
-                if let Some(e) = names.first() {
-                    write!(f, "'{e}'")?;
-                    for e in &names[1..] {
-                        write!(f, ", '{e}'")?;
-                    }
+                for e in names.iter() {
+                    write!(f, "'{e}', ")?;
                 }
 
-                f.write_str(")")
+                write!(f, "strict={strict})")
             },
-            Selector::AtIndex(items) if items.as_ref() == &[0] => f.write_str("cs.first()"),
-            Selector::AtIndex(items) if items.as_ref() == &[-1] => f.write_str("cs.last()"),
-            Selector::AtIndex(items) if items.len() == 1 => write!(f, "cs.nth({})", items[0]),
-            Selector::AtIndex(items) => write!(f, "cs.nth({:?})", items.as_ref()),
+            Selector::Nth { indices, strict } if indices.as_ref() == &[0] => {
+                write!(f, "cs.first(strict={strict})")
+            },
+            Selector::Nth { indices, strict } if indices.as_ref() == &[-1] => {
+                write!(f, "cs.last(strict={strict})")
+            },
+            Selector::Nth { indices, strict } if indices.len() == 1 => {
+                write!(f, "cs.nth({}, strict={strict})", indices[0])
+            },
+            Selector::Nth { indices, strict } => {
+                write!(f, "cs.nth({:?}, strict={strict})", indices.as_ref())
+            },
             Selector::Matches(s) => write!(f, "cs.matches(\"{s}\")"),
 
             Selector::Float => write!(f, "cs.float()"),
@@ -518,6 +567,7 @@ impl fmt::Display for Selector {
             },
             Selector::Object => write!(f, "cs.object()"),
             Selector::Wildcard => f.write_str("cs.all()"),
+            Selector::Empty => f.write_str("cs.empty()"),
         }
     }
 }

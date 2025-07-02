@@ -286,7 +286,7 @@ pub(super) fn convert_functions(
         F::StructExpr(struct_function) => {
             use {IRStructFunction as IS, StructFunction as S};
             I::StructExpr(match struct_function {
-                S::FieldByIndex(v) => IS::FieldByIndex(v),
+                S::FieldByIndex(v) => unreachable!("struct.field_by_index should have been handled by expr expansion"),
                 S::FieldByName(pl_small_str) => IS::FieldByName(pl_small_str),
                 S::RenameFields(pl_small_strs) => IS::RenameFields(pl_small_strs),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
@@ -294,7 +294,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::WithFields => IS::WithFields,
-                S::MultipleFields(pl_small_strs) => IS::MultipleFields(pl_small_strs),
+                S::FieldSelector(_) => unreachable!("field selectors should have been handled by expr expansion"),
                 #[cfg(feature = "python")]
                 S::MapFieldNames(special_eq) => IS::MapFieldNames(special_eq),
             })

@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &out);
 
     // Is equivalent to
-    let out = df.clone().lazy().select([all().into_expr()]).collect()?;
+    let out = df.clone().lazy().select([all().as_expr()]).collect()?;
     println!("{}", &out);
     // --8<-- [end:all]
 
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([cols(["date", "logged_at"])
-            .into_expr()
+            .as_expr()
             .dt()
             .to_string("%Y-%h-%d")])
         .collect()?;

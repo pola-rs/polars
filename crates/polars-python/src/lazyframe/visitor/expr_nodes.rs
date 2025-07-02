@@ -272,14 +272,12 @@ impl PyTemporalFunction {
 #[pyclass(name = "StructFunction", eq)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
-    FieldByIndex,
     FieldByName,
     RenameFields,
     PrefixFields,
     SuffixFields,
     JsonEncode,
     WithFields,
-    MultipleFields,
     MapFieldNames,
 }
 
@@ -914,9 +912,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                 },
                 IRFunctionExpr::StructExpr(fun) => match fun {
-                    IRStructFunction::FieldByIndex(index) => {
-                        (PyStructFunction::FieldByIndex, index).into_py_any(py)
-                    },
                     IRStructFunction::FieldByName(name) => {
                         (PyStructFunction::FieldByName, name.as_str()).into_py_any(py)
                     },
@@ -933,9 +928,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
                     IRStructFunction::WithFields => {
                         return Err(PyNotImplementedError::new_err("with_fields"));
-                    },
-                    IRStructFunction::MultipleFields(_) => {
-                        return Err(PyNotImplementedError::new_err("multiple_fields"));
                     },
                     IRStructFunction::MapFieldNames(_) => {
                         return Err(PyNotImplementedError::new_err("map_field_names"));

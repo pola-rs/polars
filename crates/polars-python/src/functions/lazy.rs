@@ -171,7 +171,7 @@ pub fn collect_all_with_callback(
 
 #[pyfunction]
 pub fn cols(names: Vec<String>) -> PyExpr {
-    dsl::cols(names).into_expr().into()
+    dsl::cols(names).as_expr().into()
 }
 
 #[pyfunction]

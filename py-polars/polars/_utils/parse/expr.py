@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
+import polars.selectors as cs
 from polars import functions as F
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
@@ -106,9 +107,13 @@ def parse_into_list_of_expressions(
     return exprs
 
 
-def parse_into_selector(i: ColumnNameOrSelector) -> PySelector:
+def parse_into_selector(
+    i: ColumnNameOrSelector,
+    *,
+    strict: bool = True,
+) -> PySelector:
     if isinstance(i, str):
-        return pl.Selector.cols([i])._pyselector
+        return cs.by_name([i], strict=strict)._pyselector
     elif isinstance(i, pl.Selector):
         return i._pyselector
     else:
@@ -117,12 +122,14 @@ def parse_into_selector(i: ColumnNameOrSelector) -> PySelector:
 
 
 def parse_into_list_of_selectors(
-    inputs: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+    inputs: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
+    *,
+    strict: bool = True,
 ) -> list[PySelector]:
-    if isinstance(inputs, Collection):
-        return [parse_into_selector(x) for x in inputs]
+    if isinstance(inputs, Iterable) and not isinstance(inputs, str):
+        return [parse_into_selector(x, strict=strict) for x in inputs]
     else:
-        return [parse_into_selector(inputs)]
+        return [parse_into_selector(inputs, strict=strict)]
 
 
 def _parse_positional_inputs(

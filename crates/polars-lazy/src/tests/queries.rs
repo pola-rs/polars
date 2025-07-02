@@ -1580,7 +1580,7 @@ fn test_exclude_regex() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .select([all().exclude_cols(["^(fruits|cars)$"]).into_expr()])
+        .select([all().exclude_cols(["^(fruits|cars)$"]).as_expr()])
         .collect()?;
 
     assert_eq!(out.get_column_names(), &["A", "B"]);

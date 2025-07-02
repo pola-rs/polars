@@ -7,7 +7,7 @@ pub fn prepare_projection(
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, schema, opt_flags)?;
+    let exprs = rewrite_projections(exprs, &PlHashSet::new(), schema, opt_flags)?;
     let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
 }
@@ -30,21 +30,34 @@ pub fn prepare_projection(
 //     })
 // }
 
-fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
-    // the blocks are added by cargo fmt
+pub fn first_column_or_field_name(expr: &Expr) -> Option<&PlSmallStr> {
+    expr.into_iter().find_map(|e| match e {
+        Expr::Column(name)
+        | Expr::Function {
+            input: _,
+            function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
+        } => Some(name),
+        _ => None,
+    })
+}
+
+fn rewrite_special_aliases(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
     if has_expr(&expr, |e| {
         matches!(e, Expr::KeepName(_) | Expr::RenameAlias { .. })
     }) {
         match expr {
             Expr::KeepName(expr) => {
-                let roots = expr_to_leaf_column_names(&expr);
-                let name = roots
-                    .first()
-                    .expect("expected root column to keep expression name");
-                Ok(Expr::Alias(expr, name.clone()))
+                let Some(name) = first_column_or_field_name(&expr) else {
+                    polars_bail!(
+                        op = "name.keep_name",
+                        "expected at least one column or struct.field"
+                    );
+                };
+                let name = name.clone();
+                Ok(Expr::Alias(expr, name))
             },
             Expr::RenameAlias { expr, function } => {
-                let name = get_single_leaf(&expr)?;
+                let name = expr.to_field(schema, Context::Default)?.name;
                 let name = function.call(&name)?;
                 Ok(Expr::Alias(expr, name))
             },
@@ -283,158 +296,158 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
 //     Ok(())
 // }
 
-#[cfg(feature = "dtype-struct")]
-fn replace_struct_multiple_fields_with_field(
-    expr: Expr,
-    column_name: &PlSmallStr,
-) -> PolarsResult<Expr> {
-    let mut count = 0;
-    let out = expr.map_expr(|e| match e {
-        Expr::Function { function, input } => {
-            if matches!(
-                function,
-                FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
-            ) {
-                count += 1;
-                Expr::Function {
-                    input,
-                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(
-                        column_name.clone(),
-                    )),
-                }
-            } else {
-                Expr::Function { input, function }
-            }
-        },
-        e => e,
-    });
-    polars_ensure!(count == 1, InvalidOperation: "multiple expanding fields in a single struct not yet supported");
-    Ok(out)
-}
+// #[cfg(feature = "dtype-struct")]
+// fn replace_struct_multiple_fields_with_field(
+//     expr: Expr,
+//     column_name: &PlSmallStr,
+// ) -> PolarsResult<Expr> {
+//     let mut count = 0;
+//     let out = expr.map_expr(|e| match e {
+//         Expr::Function { function, input } => {
+//             if matches!(
+//                 function,
+//                 FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
+//             ) {
+//                 count += 1;
+//                 Expr::Function {
+//                     input,
+//                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(
+//                         column_name.clone(),
+//                     )),
+//                 }
+//             } else {
+//                 Expr::Function { input, function }
+//             }
+//         },
+//         e => e,
+//     });
+//     polars_ensure!(count == 1, InvalidOperation: "multiple expanding fields in a single struct not yet supported");
+//     Ok(out)
+// }
 
-#[cfg(feature = "dtype-struct")]
-fn expand_struct_fields(
-    struct_expr: &Expr,
-    full_expr: &Expr,
-    result: &mut Vec<Expr>,
-    schema: &Schema,
-    names: &[PlSmallStr],
-    exclude: &PlHashSet<PlSmallStr>,
-) -> PolarsResult<()> {
-    let Some(first_name) = names.first() else {
-        return Ok(());
-    };
-    if names.len() == 1 && first_name == "*" || is_regex_projection(first_name) {
-        let Expr::Function { input, .. } = struct_expr else {
-            unreachable!()
-        };
-        let field = input[0].to_field(schema, Context::Default)?;
-        let dtype = field.dtype();
-        let DataType::Struct(fields) = dtype else {
-            if !dtype.is_known() {
-                let mut msg = String::from(
-                    "expected 'struct' got an unknown data type
-
-This means there was an operation of which the output data type could not be determined statically.
-Try setting the output data type for that operation.",
-                );
-                for e in input[0].into_iter() {
-                    #[allow(clippy::single_match)]
-                    match e {
-                        #[cfg(feature = "list_to_struct")]
-                        Expr::Function { input: _, function } => {
-                            if matches!(
-                                function,
-                                FunctionExpr::ListExpr(ListFunction::ToStruct(..))
-                            ) {
-                                msg.push_str(
-                                    "
-
-Hint: set 'upper_bound' for 'list.to_struct'.",
-                                );
-                            }
-                        },
-                        _ => {},
-                    }
-                }
-
-                polars_bail!(InvalidOperation: msg)
-            } else {
-                polars_bail!(InvalidOperation: "expected 'struct' got {}", field.dtype())
-            }
-        };
-
-        // Wildcard.
-        let names = if first_name == "*" {
-            fields
-                .iter()
-                .flat_map(|field| {
-                    let name = field.name();
-
-                    if exclude.contains(name.as_str()) {
-                        None
-                    } else {
-                        Some(name.clone())
-                    }
-                })
-                .collect::<Vec<_>>()
-        }
-        // Regex
-        else {
-            #[cfg(feature = "regex")]
-            {
-                let re = polars_utils::regex_cache::compile_regex(first_name)
-                    .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
-
-                fields
-                    .iter()
-                    .flat_map(|field| {
-                        let name = field.name();
-                        if exclude.contains(name.as_str()) || !re.is_match(name.as_str()) {
-                            None
-                        } else {
-                            Some(name.clone())
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            }
-            #[cfg(not(feature = "regex"))]
-            {
-                panic!("activate 'regex' feature")
-            }
-        };
-
-        return expand_struct_fields(
-            struct_expr,
-            full_expr,
-            result,
-            schema,
-            names.as_slice(),
-            exclude,
-        );
-    }
-
-    for name in names {
-        polars_ensure!(name.as_str() != "*", InvalidOperation: "cannot combine wildcards and column names");
-
-        if !exclude.contains(name) {
-            let mut new_expr = replace_struct_multiple_fields_with_field(full_expr.clone(), name)?;
-            match new_expr {
-                Expr::KeepName(expr) => {
-                    new_expr = Expr::Alias(expr, name.clone());
-                },
-                Expr::RenameAlias { expr, function } => {
-                    let name = function.call(name)?;
-                    new_expr = Expr::Alias(expr, name);
-                },
-                _ => {},
-            }
-
-            result.push(new_expr)
-        }
-    }
-    Ok(())
-}
+// #[cfg(feature = "dtype-struct")]
+// fn expand_struct_fields(
+//     struct_expr: &Expr,
+//     full_expr: &Expr,
+//     result: &mut Vec<Expr>,
+//     schema: &Schema,
+//     names: &[PlSmallStr],
+//     exclude: &PlHashSet<PlSmallStr>,
+// ) -> PolarsResult<()> {
+//     let Some(first_name) = names.first() else {
+//         return Ok(());
+//     };
+//     if names.len() == 1 && first_name == "*" || is_regex_projection(first_name) {
+//         let Expr::Function { input, .. } = struct_expr else {
+//             unreachable!()
+//         };
+//         let field = input[0].to_field(schema, Context::Default)?;
+//         let dtype = field.dtype();
+//         let DataType::Struct(fields) = dtype else {
+//             if !dtype.is_known() {
+//                 let mut msg = String::from(
+//                     "expected 'struct' got an unknown data type
+//
+// This means there was an operation of which the output data type could not be determined statically.
+// Try setting the output data type for that operation.",
+//                 );
+//                 for e in input[0].into_iter() {
+//                     #[allow(clippy::single_match)]
+//                     match e {
+//                         #[cfg(feature = "list_to_struct")]
+//                         Expr::Function { input: _, function } => {
+//                             if matches!(
+//                                 function,
+//                                 FunctionExpr::ListExpr(ListFunction::ToStruct(..))
+//                             ) {
+//                                 msg.push_str(
+//                                     "
+//
+// Hint: set 'upper_bound' for 'list.to_struct'.",
+//                                 );
+//                             }
+//                         },
+//                         _ => {},
+//                     }
+//                 }
+//
+//                 polars_bail!(InvalidOperation: msg)
+//             } else {
+//                 polars_bail!(InvalidOperation: "expected 'struct' got {}", field.dtype())
+//             }
+//         };
+//
+//         // Wildcard.
+//         let names = if first_name == "*" {
+//             fields
+//                 .iter()
+//                 .flat_map(|field| {
+//                     let name = field.name();
+//
+//                     if exclude.contains(name.as_str()) {
+//                         None
+//                     } else {
+//                         Some(name.clone())
+//                     }
+//                 })
+//                 .collect::<Vec<_>>()
+//         }
+//         // Regex
+//         else {
+//             #[cfg(feature = "regex")]
+//             {
+//                 let re = polars_utils::regex_cache::compile_regex(first_name)
+//                     .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
+//
+//                 fields
+//                     .iter()
+//                     .flat_map(|field| {
+//                         let name = field.name();
+//                         if exclude.contains(name.as_str()) || !re.is_match(name.as_str()) {
+//                             None
+//                         } else {
+//                             Some(name.clone())
+//                         }
+//                     })
+//                     .collect::<Vec<_>>()
+//             }
+//             #[cfg(not(feature = "regex"))]
+//             {
+//                 panic!("activate 'regex' feature")
+//             }
+//         };
+//
+//         return expand_struct_fields(
+//             struct_expr,
+//             full_expr,
+//             result,
+//             schema,
+//             names.as_slice(),
+//             exclude,
+//         );
+//     }
+//
+//     for name in names {
+//         polars_ensure!(name.as_str() != "*", InvalidOperation: "cannot combine wildcards and column names");
+//
+//         if !exclude.contains(name) {
+//             let mut new_expr = replace_struct_multiple_fields_with_field(full_expr.clone(), name)?;
+//             match new_expr {
+//                 Expr::KeepName(expr) => {
+//                     new_expr = Expr::Alias(expr, name.clone());
+//                 },
+//                 Expr::RenameAlias { expr, function } => {
+//                     let name = function.call(name)?;
+//                     new_expr = Expr::Alias(expr, name);
+//                 },
+//                 _ => {},
+//             }
+//
+//             result.push(new_expr)
+//         }
+//     }
+//     Ok(())
+// }
 
 // /// replace `IndexColumn` with `col("foo")..col("bar")`
 // fn expand_indices(
@@ -704,7 +717,7 @@ impl ExpansionFlags {
 //             Expr::Wildcard => has_wildcard = true,
 //             Expr::Selector(_) => has_selector = true,
 //             #[cfg(feature = "dtype-struct")]
-//             Expr::Function {
+//             Expr::Function
 //                 function: FunctionExpr::StructExpr(StructFunction::FieldByIndex(_)),
 //                 ..
 //             } => {
@@ -756,12 +769,19 @@ impl ExpansionFlags {
 /// In other cases replace the wildcard with an expression with all columns
 pub fn rewrite_projections(
     exprs: Vec<Expr>,
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<Expr>> {
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
     for expr in &exprs {
-        expand_expression(expr, schema, &mut result, opt_flags)?;
+        expand_expression(
+            expr,
+            ignored_selector_columns,
+            schema,
+            &mut result,
+            opt_flags,
+        )?;
     }
     //
     // for mut expr in exprs {
@@ -798,6 +818,7 @@ pub enum DidExpand {
 
 fn expand_expression_by_combination(
     exprs: &[Expr],
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -809,13 +830,11 @@ fn expand_expression_by_combination(
     for (i, expr) in exprs.iter().enumerate() {
         let start_len = out.len();
         if matches!(
-            expand_expression_rec(expr, schema, out, opt_flags)?,
+            expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?,
             DidExpand::Expanded
         ) {
             results.reserve(exprs.len());
             results.extend((0..i).map(|j| (DidExpand::NoExpansion, start_len - i + j)));
-            dbg!(&out.len());
-            dbg!(&start_len);
             expansion_size = out.len() - start_len;
             results.push((DidExpand::Expanded, start_len));
             break;
@@ -832,13 +851,12 @@ fn expand_expression_by_combination(
 
     for expr in &exprs[results.len()..] {
         let start_len = out.len();
-        let did_expand = expand_expression_rec(expr, schema, out, opt_flags)?;
+        let did_expand =
+            expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
         let size = out.len() - start_len;
         polars_ensure!(matches!(did_expand, DidExpand::NoExpansion) || size == expansion_size, InvalidOperation: "cannot combine selectors that produce a different number of columns");
         results.push((did_expand, start_len));
     }
-
-    dbg!(&expansion_size);
 
     let mut scratch = Vec::with_capacity(exprs.len());
     let mut tmp_out = Vec::with_capacity(expansion_size);
@@ -853,44 +871,62 @@ fn expand_expression_by_combination(
         tmp_out.push(f(&scratch));
     }
 
-    dbg!(&tmp_out);
-
     out.truncate(results[0].1);
     out.extend(tmp_out);
 
-    dbg!(&out);
     Ok(DidExpand::Expanded)
 }
 
 fn expand_single(
     subexpr: &Expr,
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
     f: impl Fn(Expr) -> Expr,
 ) -> PolarsResult<DidExpand> {
+    try_expand_single(
+        subexpr,
+        ignored_selector_columns,
+        schema,
+        out,
+        opt_flags,
+        |e| Ok(f(e)),
+    )
+}
+
+fn try_expand_single(
+    subexpr: &Expr,
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    schema: &Schema,
+    out: &mut Vec<Expr>,
+    opt_flags: &mut OptFlags,
+    f: impl Fn(Expr) -> PolarsResult<Expr>,
+) -> PolarsResult<DidExpand> {
     let start_len = out.len();
-    let did_expand = expand_expression_rec(subexpr, schema, out, opt_flags)?;
+    let did_expand =
+        expand_expression_rec(subexpr, ignored_selector_columns, schema, out, opt_flags)?;
     for e in out[start_len..].iter_mut() {
-        *e = f(std::mem::take(e));
+        *e = f(std::mem::take(e))?;
     }
     Ok(did_expand)
 }
 
 pub fn expand_expression(
     expr: &Expr,
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<()> {
     let start_len = out.len();
 
-    expand_expression_rec(expr, schema, out, opt_flags)?;
+    expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
 
     for e in &mut out[start_len..] {
         let expr = std::mem::take(e);
         let expr = struct_index_to_field(expr, schema)?;
-        let expr = rewrite_special_aliases(expr)?;
+        let expr = rewrite_special_aliases(expr, schema)?;
         *e = expr;
     }
 
@@ -899,22 +935,26 @@ pub fn expand_expression(
 
 fn expand_expression_rec(
     expr: &Expr,
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<DidExpand> {
     let did_expand = match &expr {
-        Expr::Alias(subexpr, name) => {
-            expand_single(subexpr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Alias(Arc::new(e), name.clone())
-            })?
-        },
+        Expr::Alias(subexpr, name) => expand_single(
+            subexpr.as_ref(),
+            ignored_selector_columns,
+            schema,
+            out,
+            opt_flags,
+            |e| Expr::Alias(Arc::new(e), name.clone()),
+        )?,
         Expr::Column(_) => {
             out.push(expr.clone());
             DidExpand::NoExpansion
         },
         Expr::Selector(selector) => {
-            let columns = selector.into_columns(schema)?;
+            let mut columns = selector.into_columns(schema, ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));
             DidExpand::Expanded
         },
@@ -924,6 +964,7 @@ fn expand_expression_rec(
         },
         Expr::BinaryExpr { left, op, right } => expand_expression_by_combination(
             &[left.as_ref().clone(), right.as_ref().clone()],
+            ignored_selector_columns,
             schema,
             out,
             opt_flags,
@@ -937,24 +978,39 @@ fn expand_expression_rec(
             expr: subexpr,
             dtype,
             options,
-        } => expand_single(subexpr.as_ref(), schema, out, opt_flags, |e| Expr::Cast {
-            expr: Arc::new(e),
-            dtype: dtype.clone(),
-            options: *options,
-        })?,
+        } => expand_single(
+            subexpr.as_ref(),
+            ignored_selector_columns,
+            schema,
+            out,
+            opt_flags,
+            |e| Expr::Cast {
+                expr: Arc::new(e),
+                dtype: dtype.clone(),
+                options: *options,
+            },
+        )?,
         Expr::Sort {
             expr: subexpr,
             options,
-        } => expand_single(subexpr.as_ref(), schema, out, opt_flags, |e| Expr::Sort {
-            expr: Arc::new(e),
-            options: *options,
-        })?,
+        } => expand_single(
+            subexpr.as_ref(),
+            ignored_selector_columns,
+            schema,
+            out,
+            opt_flags,
+            |e| Expr::Sort {
+                expr: Arc::new(e),
+                options: *options,
+            },
+        )?,
         Expr::Gather {
             expr,
             idx,
             returns_scalar,
         } => expand_expression_by_combination(
             &[expr.as_ref().clone(), idx.as_ref().clone()],
+            ignored_selector_columns,
             schema,
             out,
             opt_flags,
@@ -972,11 +1028,18 @@ fn expand_expression_rec(
             let mut exprs = Vec::with_capacity(1 + by.len());
             exprs.push(expr.as_ref().clone());
             exprs.extend(by.iter().cloned());
-            expand_expression_by_combination(&exprs, schema, out, opt_flags, |e| Expr::SortBy {
-                expr: Arc::new(e[0].clone()),
-                by: e[1..].to_vec(),
-                sort_options: sort_options.clone(),
-            })?
+            expand_expression_by_combination(
+                &exprs,
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::SortBy {
+                    expr: Arc::new(e[0].clone()),
+                    by: e[1..].to_vec(),
+                    sort_options: sort_options.clone(),
+                },
+            )?
         },
         Expr::Agg(AggExpr::Quantile {
             expr,
@@ -984,6 +1047,7 @@ fn expand_expression_rec(
             method,
         }) => expand_expression_by_combination(
             &[expr.as_ref().clone(), quantile.as_ref().clone()],
+            ignored_selector_columns,
             schema,
             out,
             opt_flags,
@@ -999,68 +1063,130 @@ fn expand_expression_rec(
             AggExpr::Min {
                 input,
                 propagate_nans,
-            } => expand_single(input.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::Min {
-                    input: Arc::new(e),
-                    propagate_nans: *propagate_nans,
-                })
-            })?,
+            } => expand_single(
+                input.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| {
+                    Expr::Agg(AggExpr::Min {
+                        input: Arc::new(e),
+                        propagate_nans: *propagate_nans,
+                    })
+                },
+            )?,
             AggExpr::Max {
                 input,
                 propagate_nans,
-            } => expand_single(input.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::Max {
-                    input: Arc::new(e),
-                    propagate_nans: *propagate_nans,
-                })
-            })?,
-            AggExpr::Median(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::Median(Arc::new(e)))
-            })?,
-            AggExpr::NUnique(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::NUnique(Arc::new(e)))
-            })?,
-            AggExpr::First(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::First(Arc::new(e)))
-            })?,
-            AggExpr::Last(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::Last(Arc::new(e)))
-            })?,
-            AggExpr::Mean(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::Mean(Arc::new(e)))
-            })?,
-            AggExpr::Implode(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::Implode(Arc::new(e)))
-            })?,
-            AggExpr::Count(expr, include_nulls) => {
-                expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                    Expr::Agg(AggExpr::Count(Arc::new(e), *include_nulls))
-                })?
-            },
-            AggExpr::Sum(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::Agg(AggExpr::Sum(Arc::new(e)))
-            })?,
-            AggExpr::AggGroups(expr) => {
-                expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                    Expr::Agg(AggExpr::AggGroups(Arc::new(e)))
-                })?
-            },
-            AggExpr::Std(expr, ddof) => {
-                expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                    Expr::Agg(AggExpr::Std(Arc::new(e), *ddof))
-                })?
-            },
-            AggExpr::Var(expr, ddof) => {
-                expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                    Expr::Agg(AggExpr::Var(Arc::new(e), *ddof))
-                })?
-            },
+            } => expand_single(
+                input.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| {
+                    Expr::Agg(AggExpr::Max {
+                        input: Arc::new(e),
+                        propagate_nans: *propagate_nans,
+                    })
+                },
+            )?,
+            AggExpr::Median(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Median(Arc::new(e))),
+            )?,
+            AggExpr::NUnique(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::NUnique(Arc::new(e))),
+            )?,
+            AggExpr::First(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::First(Arc::new(e))),
+            )?,
+            AggExpr::Last(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Last(Arc::new(e))),
+            )?,
+            AggExpr::Mean(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Mean(Arc::new(e))),
+            )?,
+            AggExpr::Implode(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Implode(Arc::new(e))),
+            )?,
+            AggExpr::Count(expr, include_nulls) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Count(Arc::new(e), *include_nulls)),
+            )?,
+            AggExpr::Sum(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Sum(Arc::new(e))),
+            )?,
+            AggExpr::AggGroups(expr) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::AggGroups(Arc::new(e))),
+            )?,
+            AggExpr::Std(expr, ddof) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Std(Arc::new(e), *ddof)),
+            )?,
+            AggExpr::Var(expr, ddof) => expand_single(
+                expr.as_ref(),
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Agg(AggExpr::Var(Arc::new(e), *ddof)),
+            )?,
             AggExpr::Quantile {
                 expr,
                 quantile,
                 method,
             } => expand_expression_by_combination(
                 &[expr.as_ref().clone(), quantile.as_ref().clone()],
+                ignored_selector_columns,
                 schema,
                 out,
                 opt_flags,
@@ -1083,6 +1209,7 @@ fn expand_expression_rec(
                 truthy.as_ref().clone(),
                 falsy.as_ref().clone(),
             ],
+            ignored_selector_columns,
             schema,
             out,
             opt_flags,
@@ -1097,7 +1224,13 @@ fn expand_expression_rec(
             if function_expansion.expand_into_input {
                 let mut expanded_input = Vec::with_capacity(input.len());
                 for e in input {
-                    expand_expression(e, schema, &mut expanded_input, opt_flags)?;
+                    expand_expression_rec(
+                        e,
+                        ignored_selector_columns,
+                        schema,
+                        &mut expanded_input,
+                        opt_flags,
+                    )?;
                 }
                 if expanded_input.is_empty() && !function_expansion.allow_empty_input {
                     let expr = Expr::Function {
@@ -1125,22 +1258,81 @@ fn expand_expression_rec(
                     };
                     polars_bail!(InvalidOperation: "expected at least 1 input in {expr}")
                 }
-                expand_expression_by_combination(&input, schema, out, opt_flags, |e| {
-                    Expr::Function {
-                        input: e.to_vec(),
-                        function: function.clone(),
-                    }
-                })?
+
+                match function {
+                    FunctionExpr::StructExpr(StructFunction::FieldByIndex(index)) => {
+                        try_expand_single(
+                            &input[0],
+                            ignored_selector_columns,
+                            schema,
+                            out,
+                            opt_flags,
+                            |e| {
+                                let dtype = e.to_field(schema, Context::Default)?.dtype;
+                                let DataType::Struct(fields) = dtype else {
+                                    polars_bail!(op = "struct.field", &dtype);
+                                };
+                                let index = index.try_negative_to_usize(fields.len())?;
+                                Ok(e.struct_().field_by_name(fields[index].name()))
+                            },
+                        )?
+                    },
+                    FunctionExpr::StructExpr(StructFunction::FieldSelector(selector)) => {
+                        let mut tmp_out = Vec::new();
+                        let input = expand_single(
+                            &input[0],
+                            ignored_selector_columns,
+                            schema,
+                            &mut tmp_out,
+                            opt_flags,
+                            |e| e,
+                        );
+                        dbg!(&tmp_out);
+                        for e in tmp_out {
+                            let dtype = e.to_field(schema, Context::Default)?.dtype;
+
+                            let DataType::Struct(fields) = dtype else {
+                                polars_bail!(op = "struct.field", &dtype);
+                            };
+                            let schema = Schema::from_iter(fields);
+                            let fields = selector.into_columns(&schema, &Default::default())?;
+                            out.extend(
+                                fields
+                                    .into_iter()
+                                    .map(|f| e.clone().struct_().field_by_name(&f)),
+                            );
+                        }
+                        dbg!(&out);
+                        DidExpand::Expanded
+                    },
+                    _ => expand_expression_by_combination(
+                        &input,
+                        ignored_selector_columns,
+                        schema,
+                        out,
+                        opt_flags,
+                        |e| Expr::Function {
+                            input: e.to_vec(),
+                            function: function.clone(),
+                        },
+                    )?,
+                }
             }
         },
-        Expr::Explode { input, skip_empty } => {
-            expand_single(input.as_ref(), schema, out, opt_flags, |e| Expr::Explode {
+        Expr::Explode { input, skip_empty } => expand_single(
+            input.as_ref(),
+            ignored_selector_columns,
+            schema,
+            out,
+            opt_flags,
+            |e| Expr::Explode {
                 input: Arc::new(e),
                 skip_empty: *skip_empty,
-            })?
-        },
+            },
+        )?,
         Expr::Filter { input, by } => expand_expression_by_combination(
             &[input.as_ref().clone(), by.as_ref().clone()],
+            ignored_selector_columns,
             schema,
             out,
             opt_flags,
@@ -1162,14 +1354,21 @@ fn expand_expression_rec(
             if let Some((e, _)) = &order_by {
                 exprs.push(e.as_ref().clone());
             }
-            expand_expression_by_combination(&exprs, schema, out, opt_flags, |e| Expr::Window {
-                function: Arc::new(e[0].clone()),
-                partition_by: e[1..e.len() - usize::from(order_by.is_some())].to_vec(),
-                order_by: order_by
-                    .as_ref()
-                    .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
-                options: options.clone(),
-            })?
+            expand_expression_by_combination(
+                &exprs,
+                ignored_selector_columns,
+                schema,
+                out,
+                opt_flags,
+                |e| Expr::Window {
+                    function: Arc::new(e[0].clone()),
+                    partition_by: e[1..e.len() - usize::from(order_by.is_some())].to_vec(),
+                    order_by: order_by
+                        .as_ref()
+                        .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
+                    options: options.clone(),
+                },
+            )?
         },
         Expr::Slice {
             input,
@@ -1181,6 +1380,7 @@ fn expand_expression_rec(
                 offset.as_ref().clone(),
                 length.as_ref().clone(),
             ],
+            ignored_selector_columns,
             schema,
             out,
             opt_flags,
@@ -1190,9 +1390,14 @@ fn expand_expression_rec(
                 length: Arc::new(e[2].clone()),
             },
         )?,
-        Expr::KeepName(expr) => expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-            Expr::KeepName(Arc::new(e))
-        })?,
+        Expr::KeepName(expr) => expand_single(
+            expr.as_ref(),
+            ignored_selector_columns,
+            schema,
+            out,
+            opt_flags,
+            |e| Expr::KeepName(Arc::new(e)),
+        )?,
         Expr::Len => {
             out.push(Expr::Len);
             DidExpand::NoExpansion
@@ -1210,7 +1415,13 @@ fn expand_expression_rec(
             {
                 let mut expanded_input = Vec::with_capacity(input.len());
                 for e in input {
-                    expand_expression(e, schema, &mut expanded_input, opt_flags)?;
+                    expand_expression_rec(
+                        e,
+                        ignored_selector_columns,
+                        schema,
+                        &mut expanded_input,
+                        opt_flags,
+                    )?;
                 }
                 out.push(Expr::AnonymousFunction {
                     input: expanded_input,
@@ -1221,15 +1432,20 @@ fn expand_expression_rec(
                 });
                 DidExpand::NoExpansion
             } else {
-                expand_expression_by_combination(&input, schema, out, opt_flags, |e| {
-                    Expr::AnonymousFunction {
+                expand_expression_by_combination(
+                    &input,
+                    ignored_selector_columns,
+                    schema,
+                    out,
+                    opt_flags,
+                    |e| Expr::AnonymousFunction {
                         input: e.to_vec(),
                         function: function.clone(),
                         output_type: output_type.clone(),
                         options: options.clone(),
                         fmt_str: fmt_str.clone(),
-                    }
-                })?
+                    },
+                )?
             }
         },
         Expr::Eval {
@@ -1238,6 +1454,7 @@ fn expand_expression_rec(
             variant,
         } => expand_expression_by_combination(
             &[expr.as_ref().clone(), evaluation.as_ref().clone()],
+            ignored_selector_columns,
             schema,
             out,
             opt_flags,
@@ -1247,14 +1464,17 @@ fn expand_expression_rec(
                 variant: *variant,
             },
         )?,
-        Expr::RenameAlias { expr, function } => {
-            expand_single(expr.as_ref(), schema, out, opt_flags, |e| {
-                Expr::RenameAlias {
-                    expr: Arc::new(e),
-                    function: function.clone(),
-                }
-            })?
-        },
+        Expr::RenameAlias { expr, function } => expand_single(
+            expr.as_ref(),
+            ignored_selector_columns,
+            schema,
+            out,
+            opt_flags,
+            |e| Expr::RenameAlias {
+                expr: Arc::new(e),
+                function: function.clone(),
+            },
+        )?,
 
         // Removed by the step before.
         Expr::Field(_) => unreachable!(),
@@ -1268,7 +1488,7 @@ fn expand_expression_rec(
 pub fn expand_selectors(s: Vec<Selector>, schema: &Schema) -> PolarsResult<Arc<[PlSmallStr]>> {
     let mut columns = PlIndexSet::new();
     for s in &s {
-        columns.extend(s.into_columns(schema)?);
+        columns.extend(s.into_columns(schema, &Default::default())?);
     }
     // Expanded columns are in the same order as the schema.
     columns.sort_unstable_by(|l, r| {

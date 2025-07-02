@@ -1547,7 +1547,7 @@ impl SQLFunctionVisitor<'_> {
                             Ok(if col_names.len() == 1 {
                                 col(col_names.into_iter().next().unwrap())
                             } else {
-                                cols(col_names).into_expr()
+                                cols(col_names).as_expr()
                             })
                         } else {
                             Ok(col(pat.as_str()))

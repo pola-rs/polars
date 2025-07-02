@@ -415,7 +415,10 @@ impl Expr {
 
     pub fn into_selector(self) -> Option<Selector> {
         match self {
-            Expr::Column(name) => Some(Selector::ByName([name].into())),
+            Expr::Column(name) => Some(Selector::ByName {
+                names: [name].into(),
+                strict: true,
+            }),
             Expr::Selector(selector) => Some(selector),
             _ => None,
         }
@@ -423,7 +426,10 @@ impl Expr {
 
     pub fn try_into_selector(self) -> PolarsResult<Selector> {
         match self {
-            Expr::Column(name) => Ok(Selector::ByName([name].into())),
+            Expr::Column(name) => Ok(Selector::ByName {
+                names: [name].into(),
+                strict: true,
+            }),
             Expr::Selector(selector) => Ok(selector),
             expr => Err(polars_err!(InvalidOperation: "cannot turn `{expr}` into selector")),
         }

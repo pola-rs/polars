@@ -14,6 +14,7 @@ from typing import (
 )
 
 from polars import functions as F
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.parse.expr import _parse_inputs_as_iterable
 from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
@@ -21,21 +22,9 @@ from polars.datatypes import (
     Boolean,
     Categorical,
     Date,
-    Datetime,
-    Decimal,
-    Duration,
-    Object,
     String,
     Time,
     is_polars_dtype,
-)
-from polars.datatypes.group import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
 )
 from polars.expr import Expr
 
@@ -325,21 +314,6 @@ class Selector(Expr):
         slf._pyselector = pyselector
         slf._pyexpr = PyExpr.new_selector(pyselector)
         return slf
-
-    @classmethod
-    def nth(cls, n: int | Sequence[int]) -> Selector:
-        if isinstance(n, int):
-            return cls._from_pyselector(PySelector.nth(n))
-        else:
-            return cls._from_pyselector(PySelector.at_index(n))
-
-    @classmethod
-    def cols(cls, names: list[str]) -> Selector:
-        return cls._from_pyselector(PySelector.with_name(names))
-
-    @classmethod
-    def dtype_cols(cls, dtypes: list[PolarsDataType]) -> Selector:
-        return cls._from_pyselector(PySelector.with_datatype(dtypes))
 
     def __repr__(self) -> str:
         return str(Expr._from_pyexpr(self._pyexpr))
@@ -1100,7 +1074,8 @@ def by_index(*indices: int | range | Sequence[int | range]) -> Selector:
     return Selector._from_pyselector(PySelector.at_index(all_indices))
 
 
-def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector:
+@deprecate_renamed_parameter("require_all", "strict", version="1.32.0")
+def by_name(*names: str | Collection[str], strict: bool = True) -> Selector:
     """
     Select all columns matching the given names.
 
@@ -1189,10 +1164,7 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
             msg = f"invalid name: {nm!r}"
             raise TypeError(msg)
 
-    if not require_all:
-        return matches(f"^({'|'.join(re_escape(nm) for nm in all_names)})$")
-
-    return Selector._from_pyselector(PySelector.with_name(all_names))
+    return Selector._from_pyselector(PySelector.by_name(all_names, strict))
 
 
 def categorical() -> Selector:
@@ -1911,7 +1883,7 @@ def exclude(
     return ~_combine_as_selector(columns, *more_columns)
 
 
-def first() -> Selector:
+def first(*, strict: bool = True) -> Selector:
     """
     Select the first column in the current scope.
 
@@ -1958,7 +1930,7 @@ def first() -> Selector:
     │ 456 ┆ 5.5 ┆ 1   │
     └─────┴─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.first())
+    return Selector._from_pyselector(PySelector.first(strict))
 
 
 def float() -> Selector:
@@ -2199,7 +2171,7 @@ def unsigned_integer() -> Selector:
     return Selector._from_pyselector(PySelector.unsigned_integer())
 
 
-def last() -> Selector:
+def last(*, strict: bool = True) -> Selector:
     """
     Select the last column in the current scope.
 
@@ -2246,7 +2218,7 @@ def last() -> Selector:
     │ y   ┆ 456 ┆ 5.5 │
     └─────┴─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.last())
+    return Selector._from_pyselector(PySelector.last(strict))
 
 
 def matches(pattern: str) -> Selector:

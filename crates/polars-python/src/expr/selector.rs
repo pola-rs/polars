@@ -71,28 +71,23 @@ impl PySelector {
     }
 
     #[staticmethod]
-    fn with_name(names: Vec<String>) -> Self {
-        dsl::cols(names).into()
+    fn by_name(names: Vec<String>, strict: bool) -> Self {
+        Selector::ByName { names: names.into(), strict }.into()
     }
 
     #[staticmethod]
-    fn at_index(indices: Vec<i64>) -> Self {
-        dsl::index_cols(indices).into()
+    fn nth(indices: Vec<i64>, strict: bool) -> Self {
+        Selector::Nth { indices: names.into(), strict }.into()
     }
 
     #[staticmethod]
-    fn nth(n: i64) -> Self {
-        dsl::nth(n).into()
-    }
-
-    #[staticmethod]
-    fn first() -> Self {
-        dsl::first().into()
+    fn first(strict: bool) -> Self {
+        Selector::Nth { indices: [0].into(), strict }.into()
     }
 
     #[staticmethod]
     fn last() -> Self {
-        dsl::last().into()
+        Selector::Nth { indices: [-1].into(), strict }.into()
     }
 
     #[staticmethod]
@@ -103,6 +98,26 @@ impl PySelector {
     #[staticmethod]
     fn categorical() -> Self {
         Selector::Categorical.into()
+    }
+
+    #[staticmethod]
+    fn integer() -> Self {
+        Selector::Integer.into()
+    }
+    
+    #[staticmethod]
+    fn signed_integer() -> Self {
+        Selector::SignedInteger.into()
+    }
+
+    #[staticmethod]
+    fn unsigned_integer() -> Self {
+        Selector::UnsignedInteger.into()
+    }
+
+    #[staticmethod]
+    fn float() -> Self {
+        Selector::Float.into()
     }
 
     #[staticmethod]
