@@ -174,11 +174,11 @@ where
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
             DataType::NewCategorical(cats, _mapping) => {
-                polars_ensure!(self.dtype() == &cats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Categorical'");
+                let s = self.cast_with_options(&cats.physical().dtype(), options)?;
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-                    let ca = unsafe { &*(self as *const ChunkedArray<T> as *const PhysCa) };
+                    let ca: &PhysCa = s.as_ref().as_ref();
                     Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone())
                         .into_series())
                 })
@@ -188,11 +188,11 @@ where
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
             DataType::NewEnum(fcats, _mapping) => {
-                polars_ensure!(self.dtype() == &fcats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Enum'");
+                let s = self.cast_with_options(&fcats.physical().dtype(), options)?;
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-                    let ca = unsafe { &*(self as *const ChunkedArray<T> as *const PhysCa) };
+                    let ca: &PhysCa = s.as_ref().as_ref();
                     Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone()).into_series())
                 })
             },
