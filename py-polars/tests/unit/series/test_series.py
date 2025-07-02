@@ -639,18 +639,19 @@ def test_arrow_cat() -> None:
         pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
     )
     arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
-    arr2 = pa.array([]).dictionary_encode()
-    arr3 = pa.chunked_array([], arr1.type)
-    arr4 = pa.array([], arr1.type)
+    arr2 = pa.chunked_array([], arr1.type)
+    arr3 = pa.array([], arr1.type)
+    arr4 = pa.array([]).dictionary_encode()
 
     assert_series_equal(
         pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
         pl.Series("arr", arr1),
     )
-    for arr in (arr2, arr3, arr4):
+    for arr in (arr2, arr3):
         assert_series_equal(
             pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
         )
+    assert_series_equal(pl.Series("arr", [], dtype=pl.Null), pl.Series("arr", arr4))
 
 
 def test_pycapsule_interface() -> None:
