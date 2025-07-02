@@ -33,7 +33,7 @@ where
         self.0.compute_len()
     }
 
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
 
@@ -95,7 +95,7 @@ where
         ObjectChunked::rename(&mut self.0, name)
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         ObjectChunked::chunk_lengths(&self.0)
     }
 
@@ -181,10 +181,10 @@ where
         }
     }
 
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         ObjectChunked::get_any_value(&self.0, index)
     }
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         ObjectChunked::get_any_value_unchecked(&self.0, index)
     }
     fn null_count(&self) -> usize {

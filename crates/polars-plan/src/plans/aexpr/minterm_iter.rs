@@ -1,4 +1,6 @@
 use polars_utils::arena::{Arena, Node};
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use super::{AExpr, Operator};
 
@@ -21,7 +23,7 @@ use super::{AExpr, Operator};
 /// c | (a & c)
 /// ```
 pub struct MintermIter<'a> {
-    stack: Vec<Node>,
+    stack: UnitVec<Node>,
     expr_arena: &'a Arena<AExpr>,
 }
 
@@ -48,7 +50,7 @@ impl Iterator for MintermIter<'_> {
 impl<'a> MintermIter<'a> {
     pub fn new(root: Node, expr_arena: &'a Arena<AExpr>) -> Self {
         Self {
-            stack: vec![root],
+            stack: unitvec![root],
             expr_arena,
         }
     }

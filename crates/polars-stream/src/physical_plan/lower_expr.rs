@@ -68,16 +68,7 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
     // Some other functions are also marked as elementwise for filter pushdown
     // but aren't actually elementwise (e.g. arguments aren't same length).
     match expr {
-        AExpr::AnonymousFunction { options, .. } => {
-            options.flags.contains(FunctionFlags::APPLY_LIST)
-        },
-        AExpr::Function {
-            function, options, ..
-        } => {
-            if options.flags.contains(FunctionFlags::APPLY_LIST) {
-                return true;
-            }
-
+        AExpr::Function { function, .. } => {
             use IRFunctionExpr as F;
             match function {
                 #[cfg(feature = "is_in")]
@@ -709,6 +700,40 @@ fn lower_exprs_with_ctx(
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(left_col_expr);
+            },
+
+            #[cfg(feature = "bitwise")]
+            AExpr::Function {
+                input: ref mut inner_exprs,
+                function: IRFunctionExpr::Bitwise(inner_fn),
+                options,
+            } if matches!(
+                inner_fn,
+                IRBitwiseFunction::And | IRBitwiseFunction::Or | IRBitwiseFunction::Xor
+            ) =>
+            {
+                assert!(inner_exprs.len() == 1);
+
+                let (trans_input, trans_exprs) =
+                    lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                inner_exprs[0] = ExprIR::from_node(trans_exprs[0], ctx.expr_arena);
+
+                let out_name = unique_column_name();
+                let trans_fn_expr = ctx.expr_arena.add(AExpr::Function {
+                    input: vec![ExprIR::from_node(trans_exprs[0], ctx.expr_arena)],
+                    function: IRFunctionExpr::Bitwise(inner_fn),
+                    options,
+                });
+                let expr_ir = ExprIR::new(trans_fn_expr, OutputName::Alias(out_name.clone()));
+                let output_schema =
+                    schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
+                let kind = PhysNodeKind::Reduce {
+                    input: trans_input,
+                    exprs: vec![expr_ir],
+                };
+                let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(reduce_node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
             ref node @ AExpr::Function {

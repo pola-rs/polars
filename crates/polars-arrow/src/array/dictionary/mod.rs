@@ -248,7 +248,9 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// # Implementation
     /// This function will allocate a new [`Scalar`] per item and is usually not performant.
     /// Consider calling `keys_iter` and `values`, downcasting `values`, and iterating over that.
-    pub fn iter(&self) -> ZipValidity<Box<dyn Scalar>, DictionaryValuesIter<K>, BitmapIter> {
+    pub fn iter(
+        &self,
+    ) -> ZipValidity<Box<dyn Scalar>, DictionaryValuesIter<'_, K>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(DictionaryValuesIter::new(self), self.keys.validity())
     }
 
@@ -256,7 +258,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// # Implementation
     /// This function will allocate a new [`Scalar`] per item and is usually not performant.
     /// Consider calling `keys_iter` and `values`, downcasting `values`, and iterating over that.
-    pub fn values_iter(&self) -> DictionaryValuesIter<K> {
+    pub fn values_iter(&self) -> DictionaryValuesIter<'_, K> {
         DictionaryValuesIter::new(self)
     }
 
@@ -266,7 +268,9 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     ///
     /// Panics if the keys of this [`DictionaryArray`] has any nulls.
     /// If they do [`DictionaryArray::iter_typed`] should be used.
-    pub fn values_iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryValuesIterTyped<K, V>> {
+    pub fn values_iter_typed<V: DictValue>(
+        &self,
+    ) -> PolarsResult<DictionaryValuesIterTyped<'_, K, V>> {
         let keys = &self.keys;
         assert_eq!(keys.null_count(), 0);
         let values = self.values.as_ref();
@@ -275,7 +279,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     }
 
     /// Returns an iterator over the optional values of  [`Option<V::IterValue>`].
-    pub fn iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryIterTyped<K, V>> {
+    pub fn iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryIterTyped<'_, K, V>> {
         let keys = &self.keys;
         let values = self.values.as_ref();
         let values = V::downcast_values(values)?;

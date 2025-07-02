@@ -680,6 +680,7 @@ def test_hstack_dataframe(in_place: bool) -> None:
         assert_frame_equal(df_out, expected)
 
 
+@pytest.mark.may_fail_cloud
 def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
@@ -702,14 +703,6 @@ def test_shift() -> None:
         {"A": [None, "a", "b"], "B": [None, 1, 3]},
     )
     assert_frame_equal(a, b)
-
-
-def test_custom_group_by() -> None:
-    df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
-    out = df.group_by("b", maintain_order=True).agg(
-        [pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)]
-    )
-    assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
 
 
 def test_multiple_columns_drop() -> None:

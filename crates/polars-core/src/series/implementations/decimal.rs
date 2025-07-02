@@ -99,7 +99,7 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         self.0.compute_len()
     }
 
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Owned(self.0.field())
     }
 
@@ -203,7 +203,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.rename(name)
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
 
@@ -322,7 +322,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 

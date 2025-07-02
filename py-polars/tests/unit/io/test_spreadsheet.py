@@ -634,7 +634,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             ("iter_groups", pl.Float64),
         ]
     )
-    df = pl.read_excel(  # type: ignore[call-overload]
+    df = pl.read_excel(
         path_xlsx,
         sheet_name=["test4", "test4"],
         schema_overrides=overrides,

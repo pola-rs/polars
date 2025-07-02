@@ -16,7 +16,7 @@ const IS_VALID: u8 = 2;
 /// (i.e. a column -> row transposition of types known at run-time)
 pub type BoxSerializer<'a> = Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>;
 
-fn utf8_required<O: Offset>(array: &Utf8Array<O>) -> BoxSerializer {
+fn utf8_required<O: Offset>(array: &Utf8Array<O>) -> BoxSerializer<'_> {
     Box::new(BufStreamingIterator::new(
         array.values_iter(),
         |x, buf| {
@@ -27,7 +27,7 @@ fn utf8_required<O: Offset>(array: &Utf8Array<O>) -> BoxSerializer {
     ))
 }
 
-fn utf8_optional<O: Offset>(array: &Utf8Array<O>) -> BoxSerializer {
+fn utf8_optional<O: Offset>(array: &Utf8Array<O>) -> BoxSerializer<'_> {
     Box::new(BufStreamingIterator::new(
         array.iter(),
         |x, buf| {
@@ -43,7 +43,7 @@ fn utf8_optional<O: Offset>(array: &Utf8Array<O>) -> BoxSerializer {
     ))
 }
 
-fn binary_required<O: Offset>(array: &BinaryArray<O>) -> BoxSerializer {
+fn binary_required<O: Offset>(array: &BinaryArray<O>) -> BoxSerializer<'_> {
     Box::new(BufStreamingIterator::new(
         array.values_iter(),
         |x, buf| {
@@ -54,7 +54,7 @@ fn binary_required<O: Offset>(array: &BinaryArray<O>) -> BoxSerializer {
     ))
 }
 
-fn binary_optional<O: Offset>(array: &BinaryArray<O>) -> BoxSerializer {
+fn binary_optional<O: Offset>(array: &BinaryArray<O>) -> BoxSerializer<'_> {
     Box::new(BufStreamingIterator::new(
         array.iter(),
         |x, buf| {
@@ -70,7 +70,7 @@ fn binary_optional<O: Offset>(array: &BinaryArray<O>) -> BoxSerializer {
     ))
 }
 
-fn fixed_size_binary_required(array: &FixedSizeBinaryArray) -> BoxSerializer {
+fn fixed_size_binary_required(array: &FixedSizeBinaryArray) -> BoxSerializer<'_> {
     Box::new(BufStreamingIterator::new(
         array.values_iter(),
         |x, buf| {
@@ -80,7 +80,7 @@ fn fixed_size_binary_required(array: &FixedSizeBinaryArray) -> BoxSerializer {
     ))
 }
 
-fn fixed_size_binary_optional(array: &FixedSizeBinaryArray) -> BoxSerializer {
+fn fixed_size_binary_optional(array: &FixedSizeBinaryArray) -> BoxSerializer<'_> {
     Box::new(BufStreamingIterator::new(
         array.iter(),
         |x, buf| {

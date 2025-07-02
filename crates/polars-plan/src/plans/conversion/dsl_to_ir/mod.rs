@@ -351,6 +351,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         sort_options.descending.remove(i);
                     }
                 }
+            }
+            if by_column.is_empty() {
+                return Ok(input);
             };
 
             let lp = IR::Sort {
@@ -1054,11 +1057,9 @@ fn resolve_with_columns(
     let (exprs, _) = prepare_projection(exprs, &input_schema, opt_flags)?;
     let mut output_names = PlHashSet::with_capacity(exprs.len());
 
-    let mut arena = Arena::with_capacity(8);
-    for e in &exprs {
-        let field = e
-            .to_field_amortized(&input_schema, Context::Default, &mut arena)
-            .unwrap();
+    let eirs = to_expr_irs(exprs, expr_arena, &input_schema)?;
+    for eir in eirs.iter() {
+        let field = eir.field(&input_schema, Context::Default, expr_arena)?;
 
         if !output_names.insert(field.name().clone()) {
             let msg = format!(
@@ -1071,10 +1072,8 @@ fn resolve_with_columns(
             polars_bail!(ComputeError: msg)
         }
         output_schema.with_column(field.name, field.dtype.materialize_unknown(true)?);
-        arena.clear();
     }
 
-    let eirs = to_expr_irs(exprs, expr_arena, &input_schema)?;
     Ok((eirs, Arc::new(output_schema)))
 }
 

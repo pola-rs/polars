@@ -105,7 +105,7 @@ impl CsvReadOptions {
 }
 
 impl<R: MmapBytesReader> CsvReader<R> {
-    fn core_reader(&mut self) -> PolarsResult<CoreReader> {
+    fn core_reader(&mut self) -> PolarsResult<CoreReader<'_>> {
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
         let parse_options = self.options.get_parse_options();
@@ -134,7 +134,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
         )
     }
 
-    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader> {
+    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader<'_>> {
         let csv_reader = self.core_reader()?;
         csv_reader.batched()
     }

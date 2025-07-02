@@ -32,7 +32,6 @@ from polars.io.scan_options._options import ScanOptions
 with contextlib.suppress(ImportError):
     from polars.polars import PyLazyFrame
     from polars.polars import read_parquet_metadata as _read_parquet_metadata
-    from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -341,6 +340,10 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     """
     Get the schema of a Parquet file without reading data.
 
+    If you would like to read the schema of a cloud file with authentication
+    configuration, it is recommended use `scan_parquet` - e.g.
+    `scan_parquet(..., storage_options=...).collect_schema()`.
+
     Parameters
     ----------
     source
@@ -353,11 +356,12 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
-    """
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
 
-    return _read_parquet_schema(source)
+    See Also
+    --------
+    scan_parquet
+    """
+    return scan_parquet(source).collect_schema()
 
 
 def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, str]:

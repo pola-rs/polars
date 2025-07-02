@@ -185,7 +185,7 @@ impl FunctionIR {
         }
     }
 
-    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[PlSmallStr]> {
+    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<'_, [PlSmallStr]> {
         use FunctionIR::*;
         match self {
             Unnest { columns } => Cow::Borrowed(columns.as_ref()),

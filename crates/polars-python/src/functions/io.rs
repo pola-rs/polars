@@ -14,7 +14,7 @@ use crate::prelude::ArrowDataType;
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
-pub fn read_ipc_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<PyDict>> {
+pub fn read_ipc_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<'_, PyDict>> {
     use arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(r) => {
@@ -25,24 +25,6 @@ pub fn read_ipc_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<PyDict>
 
     let dict = PyDict::new(py);
     fields_to_pydict(&metadata.schema, &dict)?;
-    Ok(dict)
-}
-
-#[cfg(feature = "parquet")]
-#[pyfunction]
-pub fn read_parquet_schema(py: Python<'_>, py_f: PyObject) -> PyResult<Bound<PyDict>> {
-    use polars_parquet::read::{infer_schema, read_metadata};
-
-    let metadata = match get_either_file(py_f, false)? {
-        EitherRustPythonFile::Rust(r) => {
-            read_metadata(&mut BufReader::new(r)).map_err(PyPolarsErr::from)?
-        },
-        EitherRustPythonFile::Py(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,
-    };
-    let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
-
-    let dict = PyDict::new(py);
-    fields_to_pydict(&arrow_schema, &dict)?;
     Ok(dict)
 }
 

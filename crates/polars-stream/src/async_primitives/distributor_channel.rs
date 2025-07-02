@@ -59,7 +59,7 @@ pub fn distributor_channel<T>(
     let sender = Sender {
         inner,
         round_robin_idx: 0,
-        rng: SmallRng::from_rng(&mut rand::thread_rng()).unwrap(),
+        rng: SmallRng::from_rng(&mut rand::rng()),
     };
 
     (sender, receivers)
@@ -127,7 +127,7 @@ impl<T: Send> Sender<T> {
             let mut hungriest_idx = self.round_robin_idx;
             let mut shortest_len = self.upper_bound_len(self.round_robin_idx);
             for _ in 0..4 {
-                let idx = ((self.rng.r#gen::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
+                let idx = ((self.rng.random::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
                 let len = self.upper_bound_len(idx);
                 if len < shortest_len {
                     shortest_len = len;
@@ -145,7 +145,7 @@ impl<T: Send> Sender<T> {
             let park = self.inner.send_parker.park();
 
             // Try all receivers, starting at a random index.
-            let mut idx = ((self.rng.r#gen::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
+            let mut idx = ((self.rng.random::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
             let mut all_closed = true;
             for _ in 0..num_receivers {
                 match unsafe { self.try_send(idx, value) } {

@@ -219,7 +219,7 @@ def read_excel(
 def read_excel(
     source: FileSource,
     *,
-    sheet_id: None,
+    sheet_id: None = ...,
     sheet_name: list[str] | tuple[str],
     table_name: str | None = ...,
     engine: ExcelSpreadsheetEngine = ...,

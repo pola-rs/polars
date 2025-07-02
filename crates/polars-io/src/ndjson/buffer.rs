@@ -149,7 +149,7 @@ pub(crate) fn init_buffers(
     schema: &Schema,
     capacity: usize,
     ignore_errors: bool,
-) -> PolarsResult<PlIndexMap<BufferKey, Buffer>> {
+) -> PolarsResult<PlIndexMap<BufferKey<'_>, Buffer<'_>>> {
     schema
         .iter()
         .map(|(name, dtype)| {

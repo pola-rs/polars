@@ -32,7 +32,15 @@ bitflags! {
         /// `PARTIAL_FILTER` should also be enabled if this is enabled.
         const FULL_FILTER = 1 << 4;
 
+        /// Same as `PARTIAL_FILTER` but with support for column casting (i.e. `cast_columns_policy != ERROR_ON_MISMATCH`).
+        /// `PRE_CAST` indicates that this filtering is done before casting, meaning that the
+        /// output morsels will still be in the original type. This is usually the result of a
+        /// reader skipping blocks of data based on statistics.
+        ///
+        /// A reader indicating this capability should also indicate `PARTIAL_FILTER`.
+        const PARTIAL_FILTER_PRE_CAST = 1 << 5;
+
         /// Supports applying an external filter mask.
-        const EXTERNAL_FILTER_MASK = 1 << 5;
+        const EXTERNAL_FILTER_MASK = 1 << 6;
     }
 }

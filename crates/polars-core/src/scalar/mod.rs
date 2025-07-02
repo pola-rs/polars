@@ -86,7 +86,7 @@ impl Scalar {
         &self.value
     }
 
-    pub fn as_any_value(&self) -> AnyValue {
+    pub fn as_any_value(&self) -> AnyValue<'_> {
         self.value
             .strict_cast(&self.dtype)
             .unwrap_or_else(|| self.value.clone())

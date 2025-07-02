@@ -161,13 +161,13 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns an iterator over the values and validity, `Option<&T>`.
     #[inline]
-    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<T>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<'_, T>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values().iter(), self.validity())
     }
 
     /// Returns an iterator of the values, `&T`, ignoring the arrays' validity.
     #[inline]
-    pub fn values_iter(&self) -> std::slice::Iter<T> {
+    pub fn values_iter(&self) -> std::slice::Iter<'_, T> {
         self.values().iter()
     }
 

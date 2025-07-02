@@ -34,7 +34,7 @@ impl ArrayChunked {
     }
 
     /// Convert the datatype of the array into the physical datatype.
-    pub fn to_physical_repr(&self) -> Cow<ArrayChunked> {
+    pub fn to_physical_repr(&self) -> Cow<'_, ArrayChunked> {
         let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
             return Cow::Borrowed(self);
         };

@@ -171,7 +171,7 @@ impl RowsEncoded {
         RowsEncoded { values, offsets }
     }
 
-    pub fn iter(&self) -> RowsEncodedIter {
+    pub fn iter(&self) -> RowsEncodedIter<'_> {
         let iter = self.offsets[1..].iter();
         let offset = self.offsets[0];
         RowsEncodedIter {

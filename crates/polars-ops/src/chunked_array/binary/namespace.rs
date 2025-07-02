@@ -7,9 +7,9 @@ use arrow::array::Array;
 use arrow::datatypes::PhysicalType;
 use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
-use base64::Engine as _;
-#[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
+#[cfg(feature = "binary_encoding")]
+use base64::Engine as _;
 use memchr::memmem::find;
 use polars_compute::cast::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use polars_compute::size::binary_size_bytes;
@@ -159,8 +159,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     }
 
     #[cfg(feature = "binary_encoding")]
-    #[allow(clippy::wrong_self_convention)]
-    fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
+    fn reinterpret(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
         unsafe {
             Ok(Series::from_chunks_and_dtype_unchecked(
                 self.as_binary().name().clone(),
@@ -228,7 +227,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Ok(result)
             },
             _ => Err(
-                polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
+                polars_err!(InvalidOperation:"unsupported data type in reinterpret. Only numerical types are allowed."),
             ),
         }
     }

@@ -42,8 +42,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    #[allow(clippy::wrong_self_convention)]
-    fn from_buffer(&self, dtype: PyDataTypeExpr, kind: &str) -> PyResult<Self> {
+    fn bin_reinterpret(&self, dtype: PyDataTypeExpr, kind: &str) -> PyResult<Self> {
         use pyo3::exceptions::PyValueError;
 
         let is_little_endian = match kind.to_lowercase().as_str() {
@@ -59,7 +58,7 @@ impl PyExpr {
             .inner
             .clone()
             .binary()
-            .from_buffer(dtype.inner, is_little_endian)
+            .reinterpret(dtype.inner, is_little_endian)
             .into())
     }
 

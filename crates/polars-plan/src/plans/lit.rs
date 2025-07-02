@@ -296,7 +296,7 @@ impl LiteralValue {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 
-    pub fn to_any_value(&self) -> Option<AnyValue> {
+    pub fn to_any_value(&self) -> Option<AnyValue<'_>> {
         let av = match self {
             Self::Scalar(sc) => sc.value().clone(),
             Self::Range(range) => {
@@ -360,7 +360,8 @@ impl LiteralValue {
         match self {
             Self::Scalar(sc) => sc.is_null(),
             Self::Series(s) => s.len() == 1 && s.null_count() == 1,
-            _ => false,
+            Self::Dyn(_) => false,
+            Self::Range(_) => false,
         }
     }
 

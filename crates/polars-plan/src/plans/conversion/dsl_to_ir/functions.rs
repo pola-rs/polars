@@ -70,7 +70,7 @@ pub(super) fn convert_functions(
                 B::Base64Encode => IB::Base64Encode,
                 B::Size => IB::Size,
                 #[cfg(feature = "binary_encoding")]
-                B::FromBuffer(dtype_expr, v) => {
+                B::Reinterpret(dtype_expr, v) => {
                     let dtype = dtype_expr.into_datatype(schema)?;
                     let physical_dtype = dtype.to_physical();
                     polars_ensure!(
@@ -82,7 +82,7 @@ pub(super) fn convert_functions(
                         dtype,
                         physical_dtype
                     );
-                    IB::FromBuffer(dtype, v)
+                    IB::Reinterpret(dtype, v)
                 },
             })
         },
@@ -192,7 +192,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "regex")]
                 S::Find { literal, strict } => IS::Find { literal, strict },
                 #[cfg(feature = "string_to_integer")]
-                S::ToInteger(v) => IS::ToInteger(v),
+                S::ToInteger { dtype, strict } => IS::ToInteger { dtype, strict },
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
                 S::Lowercase => IS::Lowercase,
@@ -635,8 +635,8 @@ pub(super) fn convert_functions(
         F::FillNullWithStrategy(fill_null_strategy) => I::FillNullWithStrategy(fill_null_strategy),
         #[cfg(feature = "rolling_window")]
         F::RollingExpr(rolling_function) => {
-            use RollingFunction as R;
             use aexpr::IRRollingFunction as IR;
+            use RollingFunction as R;
 
             I::RollingExpr(match rolling_function {
                 R::Min(r) => IR::Min(r),
@@ -664,8 +664,8 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "rolling_window_by")]
         F::RollingExprBy(rolling_function_by) => {
-            use RollingFunctionBy as R;
             use aexpr::IRRollingFunctionBy as IR;
+            use RollingFunctionBy as R;
             I::RollingExprBy(match rolling_function_by {
                 R::MinBy(r) => IR::MinBy(r),
                 R::MaxBy(r) => IR::MaxBy(r),

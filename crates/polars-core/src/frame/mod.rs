@@ -1609,7 +1609,7 @@ impl DataFrame {
     ///     df.get(idx)
     /// }
     /// ```
-    pub fn get(&self, idx: usize) -> Option<Vec<AnyValue>> {
+    pub fn get(&self, idx: usize) -> Option<Vec<AnyValue<'_>>> {
         match self.columns.first() {
             Some(s) => {
                 if s.len() <= idx {
@@ -2839,7 +2839,7 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self, compat_level: CompatLevel, parallel: bool) -> RecordBatchIter {
+    pub fn iter_chunks(&self, compat_level: CompatLevel, parallel: bool) -> RecordBatchIter<'_> {
         debug_assert!(!self.should_rechunk(), "expected equal chunks");
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.

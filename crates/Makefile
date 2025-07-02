@@ -140,7 +140,7 @@ help:  ## Display this help screen
 
 .PHONY: check-wasm
 check-wasm:  ## Check wasm build without supported features
-	cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
+	RUSTFLAGS='--cfg getrandom_backend="wasm_js"' cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
 		--each-feature                        \
 		--exclude-features async              \
 		--exclude-features aws                \
