@@ -9538,8 +9538,8 @@ Consider using {self}.implode() instead"""
         │ i64 │
         ╞═════╡
         │ 2   │
-        │ 1   │
         │ 3   │
+        │ 1   │
         └─────┘
         """
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
@@ -9582,7 +9582,7 @@ Consider using {self}.implode() instead"""
         │ i64 │
         ╞═════╡
         │ 3   │
-        │ 1   │
+        │ 3   │
         │ 1   │
         └─────┘
         """

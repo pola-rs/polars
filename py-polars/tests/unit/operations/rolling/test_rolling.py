@@ -353,24 +353,24 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     }
 
     # shuffled data triggers other kernels
-    df = df.select([pl.all().shuffle(0)])
+    df = df.select([pl.all().shuffle(seed=0)])
     expected = {
-        "col1": [None, None, 0, 0, 1, 2, 2],
-        "col2": [None, None, 0, 2, 1, 1, 1],
-        "col1_nulls": [None, None, None, None, None, 2, 2],
-        "col2_nulls": [None, None, None, None, None, 1, 1],
+        "col1": [None, None, 0, 0, 4, 1, 1],
+        "col2": [None, None, 1, 1, 0, 0, 0],
+        "col1_nulls": [None, None, None, None, 4, None, None],
+        "col2_nulls": [None, None, None, None, 0, None, None],
     }
     result = df.select([pl.all().rolling_min(3)])
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
     }
-
     result = df.select([pl.all().rolling_max(3)])
+
     expected = {
-        "col1": [None, None, 6, 4, 5, 5, 5],
-        "col2": [None, None, 6, 6, 5, 4, 4],
-        "col1_nulls": [None, None, None, None, None, 5, 5],
-        "col2_nulls": [None, None, None, None, None, 4, 4],
+        "col1": [None, None, 5, 5, 6, 6, 6],
+        "col2": [None, None, 6, 6, 2, 5, 5],
+        "col1_nulls": [None, None, None, None, 6, None, None],
+        "col2_nulls": [None, None, None, None, 2, None, None],
     }
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
@@ -517,18 +517,18 @@ def test_rolling_group_by_extrema(dtype: PolarsDataType) -> None:
     expected = {
         "col1_list": pl.Series(
             [
-                [3],
-                [3, 4],
-                [3, 4, 5],
-                [4, 5, 6],
-                [5, 6, 2],
-                [6, 2, 1],
-                [2, 1, 0],
+                [4],
+                [4, 2],
+                [4, 2, 5],
+                [2, 5, 1],
+                [5, 1, 6],
+                [1, 6, 0],
+                [6, 0, 3],
             ],
             dtype=pl.List(dtype),
         ).to_list(),
-        "col1_min": pl.Series([3, 3, 3, 4, 2, 1, 0], dtype=dtype).to_list(),
-        "col1_max": pl.Series([3, 4, 5, 6, 6, 6, 2], dtype=dtype).to_list(),
+        "col1_min": pl.Series([4, 2, 2, 1, 1, 0, 0], dtype=dtype).to_list(),
+        "col1_max": pl.Series([4, 4, 5, 5, 6, 6, 6], dtype=dtype).to_list(),
     }
     assert result.to_dict(as_series=False) == expected
 
