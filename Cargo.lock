@@ -3087,7 +3087,7 @@ name = "polars-dtype"
 version = "0.49.1"
 dependencies = [
  "boxcar",
- "hashbrown 0.15.3",
+ "hashbrown 0.15.4",
  "polars-arrow",
  "polars-error",
  "polars-utils",
