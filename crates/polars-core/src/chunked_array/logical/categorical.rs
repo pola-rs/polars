@@ -242,7 +242,7 @@ impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
             DataType::NewEnum(fcats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
                 let ret = with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                    Self::from_str_iter(
+                    NewCategoricalChunked::<$C>::from_str_iter(
                         self.name().clone(),
                         dtype.clone(),
                         self.iter_str()
@@ -259,7 +259,7 @@ impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
             DataType::NewCategorical(cats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
                 Ok(with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    Self::from_str_iter(
+                    NewCategoricalChunked::<$C>::from_str_iter(
                         self.name().clone(),
                         dtype.clone(),
                         self.iter_str()
