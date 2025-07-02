@@ -19,9 +19,7 @@ impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
         F: Fn(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
     {
         let cats = apply(self.0.physical());
-        unsafe {
-            CategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone())
-        }
+        unsafe { CategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone()) }
     }
 
     unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<CategoricalChunked<T>>

@@ -9,10 +9,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             let cats = self.physical().sort_with(options);
             // SAFETY: we only reordered the indexes so we are still in bounds.
             return unsafe {
-                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(
-                    cats,
-                    self.dtype().clone(),
-                )
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
             };
         }
 

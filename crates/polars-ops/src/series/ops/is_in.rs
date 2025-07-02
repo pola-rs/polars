@@ -416,10 +416,7 @@ where
     T::Native: ToTotalOrd<TotalOrdItem = T::Native>,
 {
     let to_categories = match (ca_in.dtype(), other.dtype().inner_dtype().unwrap()) {
-        (
-            DataType::Enum(_, mapping) | DataType::Categorical(_, mapping),
-            DataType::String,
-        ) => {
+        (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping), DataType::String) => {
             (&|s: Series| {
                 let ca = s.str()?;
                 let ca: ChunkedArray<T::PolarsPhysical> = ca

@@ -263,8 +263,7 @@ where
         .collect_ca_trusted(lhs.name().clone()))
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareEq<&CategoricalChunked<T>>
-    for CategoricalChunked<T>
+impl<T: PolarsCategoricalType> ChunkCompareEq<&CategoricalChunked<T>> for CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>:
         for<'a> ChunkCompareEq<&'a ChunkedArray<T::PolarsPhysical>, Item = BooleanChunked>,
@@ -288,8 +287,7 @@ where
     }
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareIneq<&CategoricalChunked<T>>
-    for CategoricalChunked<T>
+impl<T: PolarsCategoricalType> ChunkCompareIneq<&CategoricalChunked<T>> for CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>:
         for<'a> ChunkCompareIneq<&'a ChunkedArray<T::PolarsPhysical>, Item = BooleanChunked>,

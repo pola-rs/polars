@@ -491,9 +491,7 @@ where
         };
         let av = match self.dtype() {
             DataType::Enum(_, mapping) => AnyValue::EnumOwned(min, mapping.clone()),
-            DataType::Categorical(_, mapping) => {
-                AnyValue::CategoricalOwned(min, mapping.clone())
-            },
+            DataType::Categorical(_, mapping) => AnyValue::CategoricalOwned(min, mapping.clone()),
             _ => unreachable!(),
         };
         Scalar::new(self.dtype().clone(), av)
@@ -505,9 +503,7 @@ where
         };
         let av = match self.dtype() {
             DataType::Enum(_, mapping) => AnyValue::EnumOwned(max, mapping.clone()),
-            DataType::Categorical(_, mapping) => {
-                AnyValue::CategoricalOwned(max, mapping.clone())
-            },
+            DataType::Categorical(_, mapping) => AnyValue::CategoricalOwned(max, mapping.clone()),
             _ => unreachable!(),
         };
         Scalar::new(self.dtype().clone(), av)

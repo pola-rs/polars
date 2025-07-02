@@ -123,8 +123,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_mapping(&self) -> &Arc<CategoricalMapping> {
-        let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = self.dtype()
-        else {
+        let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = self.dtype() else {
             unreachable!()
         };
         mapping

@@ -157,9 +157,7 @@ impl PartialEq for DataType {
         {
             match (self, other) {
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(cats_l, _), Categorical(cats_r, _)) => {
-                    Arc::ptr_eq(cats_l, cats_r)
-                },
+                (Categorical(cats_l, _), Categorical(cats_r, _)) => Arc::ptr_eq(cats_l, cats_r),
                 #[cfg(feature = "dtype-categorical")]
                 (Enum(fcats_l, _), Enum(fcats_r, _)) => Arc::ptr_eq(fcats_l, fcats_r),
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
@@ -606,10 +604,7 @@ impl DataType {
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
-        let is_cat = matches!(
-            self,
-            DataType::Categorical(_, _) | DataType::Enum(_, _)
-        ); // TODO @ cat-rework: is this right? Why not sortable?
+        let is_cat = matches!(self, DataType::Categorical(_, _) | DataType::Enum(_, _)); // TODO @ cat-rework: is this right? Why not sortable?
         #[cfg(not(feature = "dtype-categorical"))]
         let is_cat = false;
 
