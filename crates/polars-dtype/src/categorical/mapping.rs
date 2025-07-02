@@ -38,7 +38,7 @@ impl CategoricalMapping {
     pub fn hasher(&self) -> &PlSeedableRandomStateQuality {
         &self.hasher
     }
-    
+
     pub fn set_max_categories(&mut self, max_categories: usize) {
         assert!(max_categories >= self.num_cats_upper_bound());
         self.max_categories = max_categories
@@ -126,7 +126,7 @@ impl CategoricalMapping {
     pub fn is_empty(&mut self) -> bool {
         self.len() == 0
     }
-    
+
     pub fn to_arrow(&self, as_views: bool) -> Box<dyn Array> {
         let n = self.num_cats_upper_bound();
         if as_views {

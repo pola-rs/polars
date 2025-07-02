@@ -8,7 +8,6 @@ import polars as pl
 from polars.exceptions import (
     InvalidOperationError,
     SchemaError,
-    StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 

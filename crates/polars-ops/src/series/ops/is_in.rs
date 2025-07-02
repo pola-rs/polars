@@ -4,7 +4,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
-use polars_core::{with_match_physical_numeric_polars_type, with_match_categorical_physical_type};
+use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use self::row_encode::_get_rows_encoded_ca_unordered;
@@ -413,45 +413,43 @@ fn is_in_cat_and_enum<T: PolarsCategoricalType>(
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
 where
-    T::Native: ToTotalOrd<TotalOrdItem = T::Native>
+    T::Native: ToTotalOrd<TotalOrdItem = T::Native>,
 {
     let to_categories = match (ca_in.dtype(), other.dtype().inner_dtype().unwrap()) {
-        (DataType::NewEnum(_, mapping) | DataType::NewCategorical(_, mapping), DataType::String) => {
+        (
+            DataType::NewEnum(_, mapping) | DataType::NewCategorical(_, mapping),
+            DataType::String,
+        ) => {
             (&|s: Series| {
                 let ca = s.str()?;
-                let ca: ChunkedArray<T::PolarsPhysical> = ca.iter().flat_map(|opt_s| {
-                    if let Some(s) = opt_s {
-                        Some(mapping.get_cat(s).map(T::Native::from_cat))
-                    } else {
-                        Some(None)
-                    }
-                }).collect_ca(PlSmallStr::EMPTY);
+                let ca: ChunkedArray<T::PolarsPhysical> = ca
+                    .iter()
+                    .flat_map(|opt_s| {
+                        if let Some(s) = opt_s {
+                            Some(mapping.get_cat(s).map(T::Native::from_cat))
+                        } else {
+                            Some(None)
+                        }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
                 Ok(ca.into_series())
             }) as _
         },
         (DataType::NewCategorical(lcats, _), DataType::NewCategorical(rcats, _)) => {
             ensure_same_categories(lcats, rcats)?;
-            (&|s: Series| {
-                Ok(s.cat::<T>()?.physical().clone().into_series())
-            }) as _
+            (&|s: Series| Ok(s.cat::<T>()?.physical().clone().into_series())) as _
         },
         (DataType::NewEnum(lfcats, _), DataType::NewEnum(rfcats, _)) => {
             ensure_same_frozen_categories(lfcats, rfcats)?;
-            (&|s: Series| {
-                Ok(s.cat::<T>()?.physical().clone().into_series())
-            }) as _
+            (&|s: Series| Ok(s.cat::<T>()?.physical().clone().into_series())) as _
         },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     };
 
     let other = match other.dtype() {
-        DataType::List(_) => {
-            other.list()?.apply_to_inner(to_categories)?.into_series()
-        },
+        DataType::List(_) => other.list()?.apply_to_inner(to_categories)?.into_series(),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(_, _) => {
-            other.array()?.apply_to_inner(to_categories)?.into_series()
-        },
+        DataType::Array(_, _) => other.array()?.apply_to_inner(to_categories)?.into_series(),
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     };
 

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{Metadata, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW};
+use arrow::datatypes::{
+    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Metadata,
+};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -19,12 +21,18 @@ static PL_KEY: &str = "pl";
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {
         let md = self.into_metadata_ref();
-        let values = md.get(DTYPE_ENUM_VALUES_NEW).or_else(|| md.get(DTYPE_ENUM_VALUES_LEGACY));
+        let values = md
+            .get(DTYPE_ENUM_VALUES_NEW)
+            .or_else(|| md.get(DTYPE_ENUM_VALUES_LEGACY));
         Some(values?.as_str())
     }
 
     fn pl_categorical_metadata(&self) -> Option<&str> {
-        Some(self.into_metadata_ref().get(DTYPE_CATEGORICAL_NEW)?.as_str())
+        Some(
+            self.into_metadata_ref()
+                .get(DTYPE_CATEGORICAL_NEW)?
+                .as_str(),
+        )
     }
 
     fn maintain_type(&self) -> bool {
@@ -149,7 +157,9 @@ impl PartialEq for DataType {
         {
             match (self, other) {
                 #[cfg(feature = "dtype-categorical")]
-                (NewCategorical(cats_l, _), NewCategorical(cats_r, _)) => Arc::ptr_eq(cats_l, cats_r),
+                (NewCategorical(cats_l, _), NewCategorical(cats_r, _)) => {
+                    Arc::ptr_eq(cats_l, cats_r)
+                },
                 #[cfg(feature = "dtype-categorical")]
                 (NewEnum(fcats_l, _), NewEnum(fcats_r, _)) => Arc::ptr_eq(fcats_l, fcats_r),
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
@@ -596,7 +606,10 @@ impl DataType {
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
-        let is_cat = matches!(self, DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)); // TODO @ cat-rework: is this right? Why not sortable?
+        let is_cat = matches!(
+            self,
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)
+        ); // TODO @ cat-rework: is this right? Why not sortable?
         #[cfg(not(feature = "dtype-categorical"))]
         let is_cat = false;
 
@@ -692,7 +705,10 @@ impl DataType {
             #[cfg(feature = "dtype-categorical")]
             DataType::NewEnum(fcats, _map) => {
                 let cats = fcats.categories();
-                let strings_size: usize = cats.values_iter().map(|s| (s.len() + 1).ilog10() as usize + 1 + s.len()).sum();
+                let strings_size: usize = cats
+                    .values_iter()
+                    .map(|s| (s.len() + 1).ilog10() as usize + 1 + s.len())
+                    .sum();
                 let mut encoded = String::with_capacity(strings_size);
                 for cat in cats.values_iter() {
                     encoded.push_str(itoa::Buffer::new().format(cat.len()));
@@ -936,12 +952,12 @@ impl DataType {
             (DataType::NewCategorical(l, _), DataType::NewCategorical(r, _)) => {
                 ensure_same_categories(l, r)?;
                 Ok(false)
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             (DataType::NewEnum(l, _), DataType::NewEnum(r, _)) => {
                 ensure_same_frozen_categories(l, r)?;
                 Ok(false)
-            }
+            },
 
             (l, r) if l == r => Ok(false),
             (l, r) => {
@@ -964,25 +980,28 @@ impl DataType {
         }
         level
     }
-    
+
     /// If this dtype is a Categorical or Enum, returns the physical backing type.
     pub fn cat_physical(&self) -> PolarsResult<CategoricalPhysical> {
         match self {
             DataType::NewCategorical(cats, _) => Ok(cats.physical()),
             DataType::NewEnum(fcats, _) => Ok(fcats.physical()),
-            _ => polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
+            _ => {
+                polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
+            },
         }
     }
 
     /// If this dtype is a Categorical or Enum, returns the underlying mapping.
     pub fn cat_mapping(&self) -> PolarsResult<&Arc<CategoricalMapping>> {
         match self {
-            DataType::NewCategorical(_, mapping) |
-            DataType::NewEnum(_, mapping) => Ok(mapping),
-            _ => polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
+            DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping) => Ok(mapping),
+            _ => {
+                polars_bail!(SchemaMismatch: "invalid dtype: expected an Enum or Categorical type, received '{:?}'", self)
+            },
         }
     }
-    
+
     pub fn from_categories(cats: Arc<Categories>) -> Self {
         let mapping = cats.mapping();
         Self::NewCategorical(cats, mapping)
@@ -1072,12 +1091,12 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         (NewCategorical(cats_l, map), NewCategorical(cats_r, _)) => {
             ensure_same_categories(cats_l, cats_r)?;
             NewCategorical(cats_l.clone(), map.clone())
-        }
+        },
         #[cfg(feature = "dtype-categorical")]
         (NewEnum(fcats_l, map), NewEnum(fcats_r, _)) => {
             ensure_same_frozen_categories(fcats_l, fcats_r)?;
             NewEnum(fcats_l.clone(), map.clone())
-        }
+        },
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
             List(Box::new(merged))

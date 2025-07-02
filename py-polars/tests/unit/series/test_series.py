@@ -632,6 +632,7 @@ def test_arrow() -> None:
     )
     assert s.dtype == pl.List
 
+
 def test_arrow_cat() -> None:
     # categorical dtype tests (including various forms of empty pyarrow array)
     arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))

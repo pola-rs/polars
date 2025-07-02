@@ -113,7 +113,11 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let iter = self.0.physical().into_iter().map(|opt_v| opt_v.map(date32_to_date));
+        let iter = self
+            .0
+            .physical()
+            .into_iter()
+            .map(|opt_v| opt_v.map(date32_to_date));
         PyList::new(py, iter)
     }
 }

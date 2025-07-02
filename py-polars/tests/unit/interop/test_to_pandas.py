@@ -52,7 +52,9 @@ def test_to_pandas() -> None:
         np.dtype("datetime64[us]"),
     ]
     assert pd_out_dtypes_expected == pd_out.dtypes.to_list()[:-2]
-    assert all(isinstance(dt, pd.CategoricalDtype) for dt in pd_out.dtypes.to_list()[-2:])
+    assert all(
+        isinstance(dt, pd.CategoricalDtype) for dt in pd_out.dtypes.to_list()[-2:]
+    )
 
     pd_out_dtypes_expected[3] = np.dtype("O")
     pd_out = df.to_pandas(date_as_object=True)

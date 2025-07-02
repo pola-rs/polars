@@ -2,7 +2,6 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars import StringCache
 from polars.testing import assert_frame_equal
 
 
@@ -112,4 +111,3 @@ def test_unpivot_categorical() -> None:
         "variable": ["1", "1", "2", "2"],
         "value": ["a", "b", "b", "c"],
     }
-

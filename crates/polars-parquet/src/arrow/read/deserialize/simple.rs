@@ -1,7 +1,8 @@
 use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{
-    ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW
+    ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
+    DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
 use arrow::types::{NativeType, days_ms, i256};
 use ethnum::I256;

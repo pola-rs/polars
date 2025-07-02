@@ -122,20 +122,21 @@ where
     pub fn is_not_null(&self) -> BooleanChunked {
         self.phys.is_not_null()
     }
-    
+
     #[inline(always)]
     pub fn split_at(&self, offset: i64) -> (Self, Self) {
         let (left, right) = self.phys.split_at(offset);
         unsafe {
-            (Self::new_logical(left, self.dtype.clone()), Self::new_logical(right, self.dtype.clone()))
+            (
+                Self::new_logical(left, self.dtype.clone()),
+                Self::new_logical(right, self.dtype.clone()),
+            )
         }
     }
 
     #[inline(always)]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        unsafe {
-            Self::new_logical(self.phys.slice(offset, length), self.dtype.clone())
-        }
+        unsafe { Self::new_logical(self.phys.slice(offset, length), self.dtype.clone()) }
     }
 
     #[inline(always)]

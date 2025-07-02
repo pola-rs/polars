@@ -82,9 +82,11 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => Box::new(SK::<Int128Type>::new(dt, ng)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(ref fcats, _) => with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                Box::new(SK::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(dt.clone(), ng))
-            }),
+            DataType::NewEnum(ref fcats, _) => {
+                with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                    Box::new(SK::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(dt.clone(), ng))
+                })
+            },
 
             DataType::String | DataType::Binary => {
                 Box::new(binview::BinviewHashHotGrouper::new(ng))

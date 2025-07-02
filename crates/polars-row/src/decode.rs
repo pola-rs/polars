@@ -201,7 +201,7 @@ unsafe fn decode_cat<T: NativeType + FixedLengthEncoding + CatNative>(
     ctx: &NewRowEncodingCategoricalContext,
 ) -> PrimitiveArray<T>
 where
-    T::Encoded: FromSlice
+    T::Encoded: FromSlice,
 {
     if ctx.is_enum || !opt.is_ordered() {
         numeric::decode_primitive::<T>(rows, opt)
@@ -217,7 +217,7 @@ unsafe fn decode(
     dtype: &ArrowDataType,
 ) -> ArrayRef {
     use ArrowDataType as D;
-    
+
     if let Some(RowEncodingContext::NewCategorical(ctx)) = dict {
         return match dtype {
             D::UInt8 => decode_cat::<u8>(rows, opt, ctx).to_boxed(),
@@ -226,7 +226,7 @@ unsafe fn decode(
             _ => unreachable!(),
         };
     }
-    
+
     match dtype {
         D::Null => NullArray::new(D::Null, rows.len()).to_boxed(),
         D::Boolean => boolean::decode_bool(rows, opt).to_boxed(),

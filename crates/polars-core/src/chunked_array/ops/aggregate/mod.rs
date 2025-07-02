@@ -439,7 +439,7 @@ impl ChunkAggSeries for StringChunked {
 #[cfg(feature = "dtype-categorical")]
 impl<T: PolarsCategoricalType> NewCategoricalChunked<T>
 where
-    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>
+    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
 {
     fn min_categorical(&self) -> Option<CatSize> {
         if self.is_empty() || self.null_count() == self.len() {
@@ -447,7 +447,8 @@ where
         }
         if self.uses_lexical_ordering() {
             let mapping = self.get_mapping();
-            let s = self.physical()
+            let s = self
+                .physical()
                 .iter()
                 .flat_map(|opt_cat| {
                     Some(unsafe { mapping.cat_to_str_unchecked(opt_cat?.as_cat()) })
@@ -465,7 +466,8 @@ where
         }
         if self.uses_lexical_ordering() {
             let mapping = self.get_mapping();
-            let s = self.physical()
+            let s = self
+                .physical()
                 .iter()
                 .flat_map(|opt_cat| {
                     Some(unsafe { mapping.cat_to_str_unchecked(opt_cat?.as_cat()) })
@@ -481,7 +483,7 @@ where
 #[cfg(feature = "dtype-categorical")]
 impl<T: PolarsCategoricalType> ChunkAggSeries for NewCategoricalChunked<T>
 where
-    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>
+    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
 {
     fn min_reduce(&self) -> Scalar {
         let Some(min) = self.min_categorical() else {
@@ -489,7 +491,9 @@ where
         };
         let av = match self.dtype() {
             DataType::NewEnum(_, mapping) => AnyValue::EnumOwned(min, mapping.clone()),
-            DataType::NewCategorical(_, mapping) => AnyValue::CategoricalOwned(min, mapping.clone()),
+            DataType::NewCategorical(_, mapping) => {
+                AnyValue::CategoricalOwned(min, mapping.clone())
+            },
             _ => unreachable!(),
         };
         Scalar::new(self.dtype().clone(), av)
@@ -501,7 +505,9 @@ where
         };
         let av = match self.dtype() {
             DataType::NewEnum(_, mapping) => AnyValue::EnumOwned(max, mapping.clone()),
-            DataType::NewCategorical(_, mapping) => AnyValue::CategoricalOwned(max, mapping.clone()),
+            DataType::NewCategorical(_, mapping) => {
+                AnyValue::CategoricalOwned(max, mapping.clone())
+            },
             _ => unreachable!(),
         };
         Scalar::new(self.dtype().clone(), av)

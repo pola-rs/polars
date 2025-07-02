@@ -15,7 +15,9 @@ use crate::fixed::{boolean, decimal, numeric};
 use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
-use crate::{with_match_arrow_primitive_type, ArrayRef, NewRowEncodingCategoricalContext, RowEncodingContext};
+use crate::{
+    ArrayRef, NewRowEncodingCategoricalContext, RowEncodingContext, with_match_arrow_primitive_type,
+};
 
 pub fn convert_columns(
     num_rows: usize,
@@ -537,9 +539,7 @@ unsafe fn encode_cat_array<T: NativeType + FixedLengthEncoding + CatNative>(
         binary::encode_iter(
             buffer,
             keys.iter()
-                .map(|k| k.map(|&cat| {
-                    ctx.mapping.cat_to_str_unchecked(cat.as_cat()).as_bytes()
-                })),
+                .map(|k| k.map(|&cat| ctx.mapping.cat_to_str_unchecked(cat.as_cat()).as_bytes())),
             opt,
             offsets,
         );
@@ -554,7 +554,7 @@ unsafe fn encode_flat_array(
     offsets: &mut [usize],
 ) {
     use ArrowDataType as D;
-    
+
     if let Some(RowEncodingContext::NewCategorical(ctx)) = dict {
         match array.dtype() {
             D::UInt8 => {
@@ -562,13 +562,19 @@ unsafe fn encode_flat_array(
                 encode_cat_array(buffer, keys, opt, ctx, offsets);
             },
             D::UInt16 => {
-                let keys = array.as_any().downcast_ref::<PrimitiveArray<u16>>().unwrap();
+                let keys = array
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<u16>>()
+                    .unwrap();
                 encode_cat_array(buffer, keys, opt, ctx, offsets);
-            }
+            },
             D::UInt32 => {
-                let keys = array.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
+                let keys = array
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<u32>>()
+                    .unwrap();
                 encode_cat_array(buffer, keys, opt, ctx, offsets);
-            }
+            },
             _ => unreachable!(),
         };
         return;
@@ -860,7 +866,11 @@ unsafe fn encode_validity(
     }
 }
 
-pub fn fixed_size(dtype: &ArrowDataType, opt: RowEncodingOptions, dict: Option<&RowEncodingContext>) -> Option<usize> {
+pub fn fixed_size(
+    dtype: &ArrowDataType,
+    opt: RowEncodingOptions,
+    dict: Option<&RowEncodingContext>,
+) -> Option<usize> {
     use ArrowDataType as D;
     use numeric::FixedLengthEncoding;
 

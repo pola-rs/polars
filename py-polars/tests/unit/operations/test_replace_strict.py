@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import contextlib
 from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import CategoricalRemappingWarning, InvalidOperationError
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 

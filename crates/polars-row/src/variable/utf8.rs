@@ -135,7 +135,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
 pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-    mapping: &CategoricalMapping
+    mapping: &CategoricalMapping,
 ) -> PrimitiveArray<T> {
     let null_sentinel = opt.null_sentinel();
     let descending = opt.contains(RowEncodingOptions::DESCENDING);

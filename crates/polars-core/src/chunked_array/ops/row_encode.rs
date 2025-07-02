@@ -1,10 +1,7 @@
 use std::borrow::Cow;
 
 use arrow::compute::utils::combine_validities_and_many;
-use polars_row::{
-    RowEncodingContext, RowEncodingOptions, RowsEncoded,
-    convert_columns,
-};
+use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
 use rayon::prelude::*;
 
 use crate::POOL;
@@ -102,11 +99,13 @@ pub fn get_row_encoding_context(dtype: &DataType, ordered: bool) -> Option<RowEn
         DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping) => {
             use polars_row::NewRowEncodingCategoricalContext;
 
-            Some(RowEncodingContext::NewCategorical(NewRowEncodingCategoricalContext {
-                is_enum: matches!(dtype, DataType::NewEnum(_, _)),
-                mapping: mapping.clone()
-            }))
-        }
+            Some(RowEncodingContext::NewCategorical(
+                NewRowEncodingCategoricalContext {
+                    is_enum: matches!(dtype, DataType::NewEnum(_, _)),
+                    mapping: mapping.clone(),
+                },
+            ))
+        },
 
         DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 

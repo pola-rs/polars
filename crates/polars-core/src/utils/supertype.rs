@@ -608,6 +608,6 @@ pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
     for d in iter {
         st = try_get_supertype(d.as_ref(), &st)?;
     }
-    
+
     Ok(st)
 }

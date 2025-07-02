@@ -19,8 +19,7 @@ impl DatetimeChunked {
         };
         // we know the iterators len
         unsafe {
-            self
-                .physical()
+            self.physical()
                 .downcast_iter()
                 .flat_map(move |iter| iter.into_iter().map(move |opt_v| opt_v.copied().map(func)))
                 .trust_my_length(self.len())

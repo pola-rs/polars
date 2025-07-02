@@ -319,11 +319,11 @@ impl ChunkCompareEq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().equal(rhs)
-                }))
-            },
+                }),
+            ),
             _ => Ok(BooleanChunked::full(self.name().clone(), false, self.len())),
         }
     }
@@ -333,11 +333,11 @@ impl ChunkCompareEq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().equal_missing(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().equal_missing(rhs)
-                }))
-            },
+                }),
+            ),
             _ => Ok(replace_non_null(
                 self.name().clone(),
                 self.0.chunks(),
@@ -351,11 +351,11 @@ impl ChunkCompareEq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().not_equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().not_equal(rhs)
-                }))
-            },
+                }),
+            ),
             _ => Ok(BooleanChunked::full(self.name().clone(), true, self.len())),
         }
     }
@@ -365,11 +365,11 @@ impl ChunkCompareEq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().not_equal_missing(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().not_equal_missing(rhs)
-                }))
-            },
+                }),
+            ),
             _ => Ok(replace_non_null(self.name().clone(), self.0.chunks(), true)),
         }
     }
@@ -383,11 +383,11 @@ impl ChunkCompareIneq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().gt(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().gt(rhs)
-                }))
-            },
+                }),
+            ),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),
@@ -399,11 +399,11 @@ impl ChunkCompareIneq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().gt_eq(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().gt_eq(rhs)
-                }))
-            },
+                }),
+            ),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),
@@ -415,11 +415,11 @@ impl ChunkCompareIneq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().lt(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().lt(rhs)
-                }))
-            },
+                }),
+            ),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),
@@ -431,11 +431,11 @@ impl ChunkCompareIneq<&str> for Series {
         match self.dtype() {
             DataType::String => Ok(self.str().unwrap().lt_eq(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
-                Ok(with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
+            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => Ok(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     self.cat::<$C>().unwrap().lt_eq(rhs)
-                }))
-            },
+                }),
+            ),
             _ => polars_bail!(
                 ComputeError: "cannot compare str value to series of type {}", self.dtype(),
             ),

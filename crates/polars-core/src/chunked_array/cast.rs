@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use super::flags::StatisticsFlags;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
-use crate::utils::handle_casting_failures;
 use crate::prelude::*;
+use crate::utils::handle_casting_failures;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
@@ -262,7 +262,6 @@ where
                 })
             },
 
-            
             _ => self.cast_impl(dtype, CastOptions::Overflowing),
         }
     }
@@ -284,11 +283,11 @@ impl ChunkCast for StringChunked {
                     NewCategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
                         .into_series()
                 });
-                
+
                 if options.is_strict() && self.null_count() != ret.null_count() {
                     handle_casting_failures(&self.clone().into_series(), &ret)?;
                 }
-                
+
                 Ok(ret)
             },
             #[cfg(feature = "dtype-struct")]
@@ -736,9 +735,7 @@ mod test {
                 CastOptions::Strict,
             )
             .unwrap();
-        let out = out
-            .cast(&DataType::from_categories(cats))
-            .unwrap();
+        let out = out.cast(&DataType::from_categories(cats)).unwrap();
         assert!(matches!(out.dtype(), &DataType::NewCategorical(_, _)))
     }
 }

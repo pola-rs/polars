@@ -33,14 +33,17 @@ pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
-#[cfg(feature = "dtype-categorical")]
-pub use polars_dtype::categorical::{CatNative, CatSize, CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories, ensure_same_categories, ensure_same_frozen_categories};
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
+#[cfg(feature = "dtype-categorical")]
+pub use polars_dtype::categorical::{
+    CatNative, CatSize, CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories,
+    ensure_same_categories, ensure_same_frozen_categories,
+};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
@@ -117,8 +120,8 @@ pub trait PolarsFloatType: PolarsNumericType {}
 
 pub unsafe trait PolarsCategoricalType: PolarsDataType {
     type Native: NumericNative + CatNative + DictionaryKey + PartialEq + Eq + Hash;
-    type PolarsPhysical: PolarsIntegerType<Native=Self::Native>;
-    
+    type PolarsPhysical: PolarsIntegerType<Native = Self::Native>;
+
     fn physical() -> CategoricalPhysical;
 }
 

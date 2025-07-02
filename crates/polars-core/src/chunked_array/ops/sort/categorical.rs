@@ -11,7 +11,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
             return unsafe {
                 NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(
                     cats,
-                    self.dtype().clone()
+                    self.dtype().clone(),
                 )
             };
         }
@@ -57,10 +57,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
 
         // SAFETY: we only reordered the indexes so we are still in bounds.
         unsafe {
-            NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(
-                cats,
-                self.dtype().clone()
-            )
+            NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
         }
     }
 
@@ -137,9 +134,13 @@ mod test {
     fn test_cat_lexical_sort() -> PolarsResult<()> {
         let init = &["c", "b", "a", "d"];
 
-        let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
-        let s = Series::new(PlSmallStr::EMPTY, init)
-            .cast(&DataType::from_categories(cats.clone()))?;
+        let cats = Categories::new(
+            PlSmallStr::EMPTY,
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U8,
+        );
+        let s =
+            Series::new(PlSmallStr::EMPTY, init).cast(&DataType::from_categories(cats.clone()))?;
         let ca = s.cat8()?;
 
         let out = ca.sort(false);
@@ -158,9 +159,13 @@ mod test {
     fn test_cat_lexical_sort_multiple() -> PolarsResult<()> {
         let init = &["c", "b", "a", "a"];
 
-        let cats = Categories::new(PlSmallStr::EMPTY, PlSmallStr::EMPTY, CategoricalPhysical::U8);
-        let series = Series::new(PlSmallStr::EMPTY, init)
-            .cast(&DataType::from_categories(cats.clone()))?;
+        let cats = Categories::new(
+            PlSmallStr::EMPTY,
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U8,
+        );
+        let series =
+            Series::new(PlSmallStr::EMPTY, init).cast(&DataType::from_categories(cats.clone()))?;
 
         let df = df![
             "cat" => &series,

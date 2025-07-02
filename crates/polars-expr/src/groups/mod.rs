@@ -87,9 +87,11 @@ pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
                 Box::new(single_key::SingleKeyHashGrouper::<Int128Type>::new())
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(fcats, _) => with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                Box::new(single_key::SingleKeyHashGrouper::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
-            }),
+            DataType::NewEnum(fcats, _) => {
+                with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                    Box::new(single_key::SingleKeyHashGrouper::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
+                })
+            },
 
             DataType::String | DataType::Binary => Box::new(binview::BinviewHashGrouper::new()),
 

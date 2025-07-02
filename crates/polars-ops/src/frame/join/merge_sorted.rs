@@ -1,7 +1,6 @@
 use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
 use polars_core::prelude::*;
-use polars_core::with_match_categorical_physical_type;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
 
 pub fn _merge_sorted_dfs(
     left: &DataFrame,

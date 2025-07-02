@@ -510,9 +510,7 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (phys, D::NewCategorical(cats, _))
-                if &cats.physical().dtype() == phys =>
-            {
+            (phys, D::NewCategorical(cats, _)) if &cats.physical().dtype() == phys => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
@@ -524,9 +522,7 @@ impl Series {
                 })
             },
             #[cfg(feature = "dtype-categorical")]
-            (phys, D::NewEnum(fcats, _))
-                if &fcats.physical().dtype() == phys =>
-            {
+            (phys, D::NewEnum(fcats, _)) if &fcats.physical().dtype() == phys => {
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();

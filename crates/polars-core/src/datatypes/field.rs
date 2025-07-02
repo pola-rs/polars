@@ -1,7 +1,6 @@
 use arrow::datatypes::Metadata;
-use polars_utils::pl_str::PlSmallStr;
-
 use polars_dtype::categorical::CategoricalPhysical;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
@@ -212,11 +211,15 @@ impl DataType {
                     let namespace_len = namespace_len.parse::<usize>().unwrap();
                     let namespace;
                     (namespace, cat_md) = cat_md.split_at(namespace_len);
-                    
+
                     let (physical, _rest) = cat_md.split_once(';').unwrap();
 
                     let physical = CategoricalPhysical::from_str(physical).unwrap();
-                    let cats = Categories::new(PlSmallStr::from_str(name), PlSmallStr::from_str(namespace), physical);
+                    let cats = Categories::new(
+                        PlSmallStr::from_str(name),
+                        PlSmallStr::from_str(namespace),
+                        physical,
+                    );
                     DataType::from_categories(cats)
                 } else if matches!(
                     value_type.as_ref(),
@@ -227,7 +230,7 @@ impl DataType {
                     Self::from_arrow(value_type, None)
                 }
             },
-            
+
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())

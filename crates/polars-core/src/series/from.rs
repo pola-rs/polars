@@ -392,7 +392,10 @@ impl Series {
                 };
 
                 let polars_dtype = DataType::from_arrow(dtype, md);
-                if matches!(polars_dtype, DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)) {
+                if matches!(
+                    polars_dtype,
+                    DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)
+                ) {
                     macro_rules! unpack_categorical_chunked {
                         ($dt:ty) => {{
                             let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
@@ -400,17 +403,20 @@ impl Series {
                             let values = arr.values();
                             let values = cast(&**values, &ArrowDataType::Utf8View)?;
                             let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), |$C| {
-                                let ca = NewCategoricalChunked::<$C>::from_str_iter(
-                                    name,
-                                    polars_dtype,
-                                    keys.iter().map(|k| {
-                                        let k: usize = (*k?).try_into().ok()?;
-                                        values.get(k)
-                                    }),
-                                )?;
-                                Ok(ca.into_series())
-                            })
+                            with_match_categorical_physical_type!(
+                                polars_dtype.cat_physical().unwrap(),
+                                |$C| {
+                                    let ca = NewCategoricalChunked::<$C>::from_str_iter(
+                                        name,
+                                        polars_dtype,
+                                        keys.iter().map(|k| {
+                                            let k: usize = (*k?).try_into().ok()?;
+                                            values.get(k)
+                                        }),
+                                    )?;
+                                    Ok(ca.into_series())
+                                }
+                            )
                         }};
                     }
 

@@ -60,8 +60,7 @@ impl TimeChunked {
     pub fn as_time_iter(&self) -> impl TrustedLen<Item = Option<NaiveTime>> + '_ {
         // we know the iterators len
         unsafe {
-            self
-                .physical()
+            self.physical()
                 .downcast_iter()
                 .flat_map(|iter| {
                     iter.into_iter()

@@ -2,7 +2,9 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-use crate::chunked_array::builder::{AnonymousOwnedListBuilder, NewCategoricalChunkedBuilder, get_list_builder};
+use crate::chunked_array::builder::{
+    AnonymousOwnedListBuilder, NewCategoricalChunkedBuilder, get_list_builder,
+};
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
@@ -124,7 +126,9 @@ impl Series {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)) => any_values_to_categorical(values, dt, strict)?,
+            dt @ (DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)) => {
+                any_values_to_categorical(values, dt, strict)?
+            },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
@@ -481,7 +485,7 @@ fn any_values_to_categorical(
                     builder.append_str(&owned)
                 },
             };
-            
+
             if let Err(e) = ret {
                 if strict {
                     return Err(e);
@@ -612,7 +616,8 @@ fn any_values_to_list(
         DataType::Object(_) => polars_bail!(nyi = "Nested object types"),
 
         _ => {
-            let mut builder = get_list_builder(inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
+            let mut builder =
+                get_list_builder(inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
             for av in avs {
                 match av {
                     AnyValue::List(b) => match b.cast(inner_type) {

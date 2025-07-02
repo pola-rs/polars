@@ -4,11 +4,10 @@
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
 
+use polars_dtype::categorical::CategoricalPhysical;
 #[cfg(feature = "dtype-categorical")]
 use serde::de::SeqAccess;
 use serde::{Deserialize, Serialize};
-
-use polars_dtype::categorical::CategoricalPhysical;
 
 use super::*;
 
@@ -182,7 +181,11 @@ impl From<&DataType> for SerializableDataType {
             },
             #[cfg(feature = "dtype-categorical")]
             NewEnum(fcats, _) => Self::Enum {
-                strings: StringChunked::with_chunk(PlSmallStr::from_static("categories"), fcats.categories().clone()).into_series(),
+                strings: StringChunked::with_chunk(
+                    PlSmallStr::from_static("categories"),
+                    fcats.categories().clone(),
+                )
+                .into_series(),
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
@@ -222,8 +225,16 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical { name, namespace, physical } => {
-                let cats = Categories::new(PlSmallStr::from(name), PlSmallStr::from(namespace), physical);
+            Categorical {
+                name,
+                namespace,
+                physical,
+            } => {
+                let cats = Categories::new(
+                    PlSmallStr::from(name),
+                    PlSmallStr::from(namespace),
+                    physical,
+                );
                 let mapping = cats.mapping();
                 Self::NewCategorical(cats, mapping)
             },

@@ -39,8 +39,8 @@ fn modify_supertype(
         // if the we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
         (dt @ NewCategorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
-        | (String | Unknown(UnknownKind::Str), dt @ NewCategorical(_, _), AExpr::Literal(_), _) |
-        (dt @ NewEnum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), dt @ NewCategorical(_, _), AExpr::Literal(_), _)
+        | (dt @ NewEnum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
         | (String | Unknown(UnknownKind::Str), dt @ NewEnum(_, _), AExpr::Literal(_), _) => {
             st = dt.clone()
         },

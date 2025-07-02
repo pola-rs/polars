@@ -18,17 +18,11 @@ impl SeriesBuilder {
         #[cfg(feature = "object")]
         if matches!(dtype, DataType::Object(_)) {
             let builder = get_object_builder(PlSmallStr::EMPTY, 0).as_array_builder();
-            return Self {
-                dtype,
-                builder,
-            };
+            return Self { dtype, builder };
         }
 
         let builder = make_builder(&dtype.to_physical().to_arrow(CompatLevel::newest()));
-        Self {
-            dtype,
-            builder,
-        }
+        Self { dtype, builder }
     }
 
     #[inline(always)]

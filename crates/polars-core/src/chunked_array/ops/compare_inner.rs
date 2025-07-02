@@ -223,7 +223,7 @@ impl<'a, T: PolarsCategoricalType> IntoTotalOrdInner<'a> for &'a NewCategoricalC
         if self.uses_lexical_ordering() {
             Box::new(LexicalCategorical::<T> {
                 mapping: self.get_mapping(),
-                cats: &self.phys
+                cats: &self.phys,
             })
         } else {
             self.phys.into_total_ord_inner()

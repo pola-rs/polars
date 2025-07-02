@@ -357,7 +357,11 @@ fn test_join_categorical() {
     .unwrap();
 
     df_b.try_apply("bar", |s| {
-        s.cast(&DataType::from_categories(Categories::new(PlSmallStr::from_static("test"), PlSmallStr::EMPTY, CategoricalPhysical::U32)))
+        s.cast(&DataType::from_categories(Categories::new(
+            PlSmallStr::from_static("test"),
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U32,
+        )))
     })
     .unwrap();
     let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None);

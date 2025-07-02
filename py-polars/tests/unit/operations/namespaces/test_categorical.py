@@ -60,7 +60,7 @@ def test_categorical_lexical_ordering_after_concat() -> None:
 
     assert df.sort("key2").to_dict(as_series=False) == {
         "key2": ["bar", "baz", "foo", "fox", "fox"]
-}
+    }
 
 
 @pytest.mark.usefixtures("test_global_and_local")
@@ -76,9 +76,7 @@ def test_sort_categoricals_6014_lexical() -> None:
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_get_categories() -> None:
-    s = pl.Series(
-        "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
-    )
+    s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
     assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
 
 
@@ -95,7 +93,7 @@ def test_cat_uses_lexical_ordering() -> None:
     s = s.cast(pl.Categorical("lexical"))
     assert s.cat.uses_lexical_ordering()
 
-    s = s.cast(pl.Categorical("physical")) # Deprecated.
+    s = s.cast(pl.Categorical("physical"))  # Deprecated.
     assert s.cat.uses_lexical_ordering()
 
 

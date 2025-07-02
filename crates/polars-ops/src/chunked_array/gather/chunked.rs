@@ -10,7 +10,7 @@ use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::Container;
-use polars_core::{with_match_physical_numeric_polars_type, with_match_categorical_physical_type};
+use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
 
 use crate::frame::IntoDf;
 

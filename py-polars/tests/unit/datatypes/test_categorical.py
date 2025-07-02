@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-import contextlib
 import io
 import operator
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import Callable
 
 import pytest
 
 import polars as pl
 from polars import StringCache
 from polars.exceptions import (
-    CategoricalRemappingWarning,
     ComputeError,
-    StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import with_string_cache_if_auto_streaming
-
-if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
 
 
 @StringCache()
@@ -499,11 +493,11 @@ def test_categorical_asof_join_by_arg() -> None:
             pl.Series("x", [1, 2, 3, 4] * 2, dtype=pl.Int32),
         ]
     )
-    df1s = df1.with_columns(cat = pl.col.cat.cast(pl.String))
-    df2s = df2.with_columns(cat = pl.col.cat.cast(pl.String))
+    df1s = df1.with_columns(cat=pl.col.cat.cast(pl.String))
+    df2s = df2.with_columns(cat=pl.col.cat.cast(pl.String))
     out1 = df1.join_asof(df2, on=pl.col("time").set_sorted(), by="cat")
     out2 = df1s.join_asof(df2s, on=pl.col("time").set_sorted(), by="cat")
-    assert_frame_equal(out1, out2.with_columns(cat = pl.col.cat.cast(pl.Categorical)))
+    assert_frame_equal(out1, out2.with_columns(cat=pl.col.cat.cast(pl.Categorical)))
 
 
 @pytest.mark.usefixtures("test_global_and_local")
@@ -658,14 +652,24 @@ def test_categorical_zip_append() -> None:
     s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
     s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
     s3 = s1.append(s2)
-    assert_series_equal(s3, pl.Series(["cat1", "cat2", "cat1", "cat2", "cat2", "cat3"], dtype=pl.Categorical))
+    assert_series_equal(
+        s3,
+        pl.Series(
+            ["cat1", "cat2", "cat1", "cat2", "cat2", "cat3"], dtype=pl.Categorical
+        ),
+    )
 
 
 def test_categorical_zip_extend() -> None:
     s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
     s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
     s3 = s1.extend(s2)
-    assert_series_equal(s3, pl.Series(["cat1", "cat2", "cat1", "cat2", "cat2", "cat3"], dtype=pl.Categorical))
+    assert_series_equal(
+        s3,
+        pl.Series(
+            ["cat1", "cat2", "cat1", "cat2", "cat2", "cat3"], dtype=pl.Categorical
+        ),
+    )
 
 
 def test_categorical_zip() -> None:
@@ -680,7 +684,9 @@ def test_categorical_vstack() -> None:
     df1 = pl.DataFrame({"a": pl.Series(["a", "b", "c"], dtype=pl.Categorical)})
     df2 = pl.DataFrame({"a": pl.Series(["d", "e", "f"], dtype=pl.Categorical)})
     df3 = df1.vstack(df2)
-    expected = pl.DataFrame({"a": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical)})
+    expected = pl.DataFrame(
+        {"a": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical)}
+    )
     assert_frame_equal(df3, expected)
     assert set(df3.get_column("a").cat.get_categories().to_list()) >= {
         "a",
@@ -721,9 +727,7 @@ def test_sort_categorical_retain_none() -> None:
 
     df_sorted = df.with_columns(pl.col("e").sort())
     assert (
-        df_sorted.get_column("e").null_count()
-        == df.get_column("e").null_count()
-        == 2
+        df_sorted.get_column("e").null_count() == df.get_column("e").null_count() == 2
     )
     assert df_sorted.get_column("e").to_list() == [
         None,
@@ -809,8 +813,7 @@ def test_nested_categorical_concat(
     a = pl.DataFrame({"x": [va]}, schema={"x": dt})
     b = pl.DataFrame({"x": [vb]}, schema={"x": dt})
     assert_frame_equal(
-        pl.concat([a, b]),
-        pl.DataFrame({"x": [va, vb]}, schema={"x": dt})
+        pl.concat([a, b]), pl.DataFrame({"x": [va, vb]}, schema={"x": dt})
     )
 
 

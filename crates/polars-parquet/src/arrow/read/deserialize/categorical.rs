@@ -14,7 +14,9 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::dictionary_encoded::IndexMapping;
 
-impl<'a, T: DictionaryKey + IndexMapping<Output=T::AlignedBytes>> StateTranslation<'a, CategoricalDecoder<T>> for HybridRleDecoder<'a> {
+impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
+    StateTranslation<'a, CategoricalDecoder<T>> for HybridRleDecoder<'a>
+{
     type PlainDecoder = HybridRleDecoder<'a>;
 
     fn new(
@@ -58,7 +60,9 @@ impl<T> CategoricalDecoder<T> {
     }
 }
 
-impl<T: DictionaryKey + IndexMapping<Output=T::AlignedBytes>> utils::Decoder for CategoricalDecoder<T> {
+impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
+    for CategoricalDecoder<T>
+{
     type Translation<'a> = HybridRleDecoder<'a>;
     type Dict = <BinViewDecoder as utils::Decoder>::Dict;
     type DecodedState = (Vec<T>, BitmapBuilder);

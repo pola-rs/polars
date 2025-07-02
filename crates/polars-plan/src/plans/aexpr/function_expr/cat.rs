@@ -102,7 +102,8 @@ fn get_categories(s: &Column) -> PolarsResult<Column> {
 // For global, this is the global indexes.
 fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     let mapping = col.dtype().cat_mapping().unwrap();
-    let cats = unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
+    let cats =
+        unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
     let phys = col.to_physical_repr().as_materialized_series().clone();
     (cats, phys)
 }
@@ -121,7 +122,6 @@ where
     let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
     Ok(out.into_column())
 }
-
 
 #[cfg(feature = "strings")]
 fn len_bytes(c: &Column) -> PolarsResult<Column> {

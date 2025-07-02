@@ -253,7 +253,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.physical_mut().extend(other.as_ref().as_ref().as_ref())?;
+        self.0
+            .physical_mut()
+            .extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -268,14 +270,16 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(self
-            .0.physical()
+            .0
+            .physical()
             .take(indices)?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.0.physical()
+        self.0
+            .physical()
             .take_unchecked(indices)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
@@ -283,14 +287,16 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
         Ok(self
-            .0.physical()
+            .0
+            .physical()
             .take(indices)?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.0.physical()
+        self.0
+            .physical()
             .take_unchecked(indices)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
@@ -307,7 +313,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
-        self.0.physical()
+        self.0
+            .physical()
             .new_from_index(index, length)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
@@ -324,7 +331,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         Ok(self
-            .0.physical()
+            .0
+            .physical()
             .sort_with(options)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
@@ -421,25 +429,35 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn mean(&self) -> Option<f64> {
-        self.0.physical().mean().map(|v| v / self.scale_factor() as f64)
+        self.0
+            .physical()
+            .mean()
+            .map(|v| v / self.scale_factor() as f64)
     }
 
     fn median(&self) -> Option<f64> {
-        self.0.physical().median().map(|v| v / self.scale_factor() as f64)
+        self.0
+            .physical()
+            .median()
+            .map(|v| v / self.scale_factor() as f64)
     }
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_scale(self.0.physical().median_reduce()))
     }
 
     fn std(&self, ddof: u8) -> Option<f64> {
-        self.0.physical().std(ddof).map(|v| v / self.scale_factor() as f64)
+        self.0
+            .physical()
+            .std(ddof)
+            .map(|v| v / self.scale_factor() as f64)
     }
     fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
         Ok(self.apply_scale(self.0.physical().std_reduce(ddof)))
     }
 
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
-        self.0.physical()
+        self.0
+            .physical()
             .quantile_reduce(quantile, method)
             .map(|v| self.apply_scale(v))
     }

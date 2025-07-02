@@ -179,7 +179,7 @@ impl Series {
     pub fn try_cat32(&self) -> Option<&NewCategorical32Chunked> {
         self.try_cat::<Categorical32Type>()
     }
-    
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]
     #[cfg(feature = "dtype-struct")]
     pub fn try_struct(&self) -> Option<&StructChunked> {
@@ -353,7 +353,8 @@ impl Series {
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`].
     #[cfg(feature = "dtype-categorical")]
     pub fn cat<T: PolarsCategoricalType>(&self) -> PolarsResult<&NewCategoricalChunked<T>> {
-        self.try_cat::<T>().ok_or_else(|| unpack_chunked_err!(self => "Enum | Categorical"))
+        self.try_cat::<T>()
+            .ok_or_else(|| unpack_chunked_err!(self => "Enum | Categorical"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt8.

@@ -395,8 +395,7 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Filter { input, predicate } => {
-            let streamable =
-                is_elementwise_rec(predicate.node(), expr_arena);
+            let streamable = is_elementwise_rec(predicate.node(), expr_arena);
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true);

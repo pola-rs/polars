@@ -731,7 +731,9 @@ def test_assert_series_equal_check_dtype_deprecated() -> None:
         assert_series_not_equal(s1, s3, check_dtype=False)  # type: ignore[call-arg]
 
 
-def test_assert_series_equal_nested_categorical_as_str_independently_constructed() -> None:
+def test_assert_series_equal_nested_categorical_as_str_independently_constructed() -> (
+    None
+):
     # https://github.com/pola-rs/polars/issues/16196
     s1 = pl.Series(["c0"], dtype=pl.Categorical)
     s2 = pl.Series(["c1"], dtype=pl.Categorical)

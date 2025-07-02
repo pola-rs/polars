@@ -6,34 +6,52 @@ pub trait CatNative {
 }
 
 impl CatNative for u8 {
-    fn as_cat(&self) -> CatSize { *self as CatSize }
+    fn as_cat(&self) -> CatSize {
+        *self as CatSize
+    }
     fn from_cat(cat: CatSize) -> Self {
         #[cfg(debug_assertions)]
-        { cat.try_into().unwrap() }
+        {
+            cat.try_into().unwrap()
+        }
 
         #[cfg(not(debug_assertions))]
-        { cat as Self }
+        {
+            cat as Self
+        }
     }
 }
 
 impl CatNative for u16 {
-    fn as_cat(&self) -> CatSize { *self as CatSize }
+    fn as_cat(&self) -> CatSize {
+        *self as CatSize
+    }
     fn from_cat(cat: CatSize) -> Self {
         #[cfg(debug_assertions)]
-        { cat.try_into().unwrap() }
+        {
+            cat.try_into().unwrap()
+        }
 
         #[cfg(not(debug_assertions))]
-        { cat as Self }
+        {
+            cat as Self
+        }
     }
 }
 
 impl CatNative for u32 {
-    fn as_cat(&self) -> CatSize { *self as CatSize }
+    fn as_cat(&self) -> CatSize {
+        *self as CatSize
+    }
     fn from_cat(cat: CatSize) -> Self {
         #[cfg(debug_assertions)]
-        { cat.try_into().unwrap() }
+        {
+            cat.try_into().unwrap()
+        }
 
         #[cfg(not(debug_assertions))]
-        { cat as Self }
+        {
+            cat as Self
+        }
     }
 }

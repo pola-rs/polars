@@ -87,7 +87,8 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
-        self.0.physical()
+        self.0
+            .physical()
             .agg_list(groups)
             .cast(&DataType::List(Box::new(self.dtype().clone())))
             .unwrap()
@@ -225,12 +226,17 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.physical_mut().extend(other.as_ref().as_ref().as_ref())?;
+        self.0
+            .physical_mut()
+            .extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        self.0.physical().filter(filter).map(|ca| ca.into_date().into_series())
+        self.0
+            .physical()
+            .filter(filter)
+            .map(|ca| ca.into_date().into_series())
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -238,7 +244,11 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.0.physical().take_unchecked(indices).into_date().into_series()
+        self.0
+            .physical()
+            .take_unchecked(indices)
+            .into_date()
+            .into_series()
     }
 
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
@@ -246,7 +256,11 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.0.physical().take_unchecked(indices).into_date().into_series()
+        self.0
+            .physical()
+            .take_unchecked(indices)
+            .into_date()
+            .into_series()
     }
 
     fn len(&self) -> usize {
@@ -254,7 +268,12 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.physical().rechunk().into_owned().into_date().into_series()
+        self.0
+            .physical()
+            .rechunk()
+            .into_owned()
+            .into_date()
+            .into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -291,7 +310,12 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        Ok(self.0.physical().sort_with(options).into_date().into_series())
+        Ok(self
+            .0
+            .physical()
+            .sort_with(options)
+            .into_date()
+            .into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
@@ -308,7 +332,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
-        self.0.physical().unique().map(|ca| ca.into_date().into_series())
+        self.0
+            .physical()
+            .unique()
+            .map(|ca| ca.into_date().into_series())
     }
 
     #[cfg(feature = "algorithm_group_by")]

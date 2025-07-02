@@ -47,15 +47,15 @@ impl PolarsRound for DatetimeChunked {
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
                     let out = match self.time_unit() {
-                        TimeUnit::Milliseconds => {
-                            self.physical().try_apply_nonnull_values_generic(|t| w.round_ms(t, tz))
-                        },
-                        TimeUnit::Microseconds => {
-                            self.physical().try_apply_nonnull_values_generic(|t| w.round_us(t, tz))
-                        },
-                        TimeUnit::Nanoseconds => {
-                            self.physical().try_apply_nonnull_values_generic(|t| w.round_ns(t, tz))
-                        },
+                        TimeUnit::Milliseconds => self
+                            .physical()
+                            .try_apply_nonnull_values_generic(|t| w.round_ms(t, tz)),
+                        TimeUnit::Microseconds => self
+                            .physical()
+                            .try_apply_nonnull_values_generic(|t| w.round_us(t, tz)),
+                        TimeUnit::Nanoseconds => self
+                            .physical()
+                            .try_apply_nonnull_values_generic(|t| w.round_ns(t, tz)),
                     };
                     return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
@@ -81,22 +81,23 @@ impl PolarsRound for DatetimeChunked {
             TimeUnit::Milliseconds => Window::round_ms,
         };
 
-        let out = broadcast_try_binary_elementwise(self.physical(), every, |opt_timestamp, opt_every| match (
-            opt_timestamp,
-            opt_every,
-        ) {
-            (Some(timestamp), Some(every)) => {
-                let every = *duration_cache.get_or_insert_with(every, Duration::parse);
+        let out = broadcast_try_binary_elementwise(
+            self.physical(),
+            every,
+            |opt_timestamp, opt_every| match (opt_timestamp, opt_every) {
+                (Some(timestamp), Some(every)) => {
+                    let every = *duration_cache.get_or_insert_with(every, Duration::parse);
 
-                if every.negative {
-                    polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
-                }
+                    if every.negative {
+                        polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
+                    }
 
-                let w = Window::new(every, every, offset);
-                func(&w, timestamp, tz).map(Some)
+                    let w = Window::new(every, every, offset);
+                    func(&w, timestamp, tz).map(Some)
+                },
+                _ => Ok(None),
             },
-            _ => Ok(None),
-        });
+        );
         Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }

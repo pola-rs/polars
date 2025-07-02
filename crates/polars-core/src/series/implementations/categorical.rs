@@ -30,7 +30,10 @@ impl<T: PolarsCategoricalType> SeriesWrap<NewCategoricalChunked<T>> {
     {
         let cats = apply(self.0.physical())?;
         unsafe {
-            Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone()))
+            Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(
+                cats,
+                self.0.dtype().clone(),
+            ))
         }
     }
 }

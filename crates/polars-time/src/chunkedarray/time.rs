@@ -33,20 +33,23 @@ impl TimeMethods for TimeChunked {
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> Int8Chunked {
-        self.physical().apply_kernel_cast::<Int8Type>(&time_to_minute)
+        self.physical()
+            .apply_kernel_cast::<Int8Type>(&time_to_minute)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Int8Chunked {
-        self.physical().apply_kernel_cast::<Int8Type>(&time_to_second)
+        self.physical()
+            .apply_kernel_cast::<Int8Type>(&time_to_second)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked {
-        self.physical().apply_kernel_cast::<Int32Type>(&time_to_nanosecond)
+        self.physical()
+            .apply_kernel_cast::<Int32Type>(&time_to_nanosecond)
     }
 
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> TimeChunked {

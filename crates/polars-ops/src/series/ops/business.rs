@@ -82,15 +82,19 @@ pub fn business_day_count(
                 start_dates.len(),
                 end_dates.len()
             );
-            binary_elementwise_values(start_dates.physical(), end_dates.physical(), |start_date, end_date| {
-                business_day_count_impl(
-                    start_date,
-                    end_date,
-                    &week_mask,
-                    n_business_days_in_week_mask,
-                    &holidays,
-                )
-            })
+            binary_elementwise_values(
+                start_dates.physical(),
+                end_dates.physical(),
+                |start_date, end_date| {
+                    business_day_count_impl(
+                        start_date,
+                        end_date,
+                        &week_mask,
+                        n_business_days_in_week_mask,
+                        &holidays,
+                    )
+                },
+            )
         },
     };
     Ok(out.into_series())
@@ -217,18 +221,20 @@ pub fn add_business_days(
     let out: Int32Chunked = match (start_dates.len(), n.len()) {
         (_, 1) => {
             if let Some(n) = n.get(0) {
-                start_dates.physical().try_apply_nonnull_values_generic(|start_date| {
-                    let (start_date, day_of_week) =
-                        roll_start_date(start_date, roll, &week_mask, &holidays)?;
-                    Ok::<i32, PolarsError>(add_business_days_impl(
-                        start_date,
-                        day_of_week,
-                        n,
-                        &week_mask,
-                        n_business_days_in_week_mask,
-                        &holidays,
-                    ))
-                })?
+                start_dates
+                    .physical()
+                    .try_apply_nonnull_values_generic(|start_date| {
+                        let (start_date, day_of_week) =
+                            roll_start_date(start_date, roll, &week_mask, &holidays)?;
+                        Ok::<i32, PolarsError>(add_business_days_impl(
+                            start_date,
+                            day_of_week,
+                            n,
+                            &week_mask,
+                            n_business_days_in_week_mask,
+                            &holidays,
+                        ))
+                    })?
             } else {
                 Int32Chunked::full_null(start_dates.name().clone(), start_dates.len())
             }
@@ -368,11 +374,17 @@ pub fn is_business_day(
     // Sort now so we can use `binary_search` in the hot for-loop.
     let holidays = normalise_holidays(holidays, &week_mask);
     let dates = dates.date()?;
-    let out: BooleanChunked = dates.physical().apply_nonnull_values_generic(DataType::Boolean, |date| {
-        let day_of_week = get_day_of_week(date);
-        // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
-        unsafe { (*week_mask.get_unchecked(day_of_week)) && holidays.binary_search(&date).is_err() }
-    });
+    let out: BooleanChunked =
+        dates
+            .physical()
+            .apply_nonnull_values_generic(DataType::Boolean, |date| {
+                let day_of_week = get_day_of_week(date);
+                // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
+                unsafe {
+                    (*week_mask.get_unchecked(day_of_week))
+                        && holidays.binary_search(&date).is_err()
+                }
+            });
     Ok(out.into_series())
 }
 

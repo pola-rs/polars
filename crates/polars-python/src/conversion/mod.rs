@@ -286,7 +286,12 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 class.call1((Wrap(CategoricalOrdering::Lexical),))
             },
             DataType::NewEnum(_, mapping) => {
-                let categories = unsafe { StringChunked::from_chunks(PlSmallStr::from_static("category"), vec![mapping.to_arrow(true)]) };
+                let categories = unsafe {
+                    StringChunked::from_chunks(
+                        PlSmallStr::from_static("category"),
+                        vec![mapping.to_arrow(true)],
+                    )
+                };
                 let class = pl.getattr(intern!(py, "Enum"))?;
                 let series = to_series(py, categories.into_series().into())?;
                 class.call1((series,))
@@ -397,16 +402,16 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Boolean" => DataType::Boolean,
             "String" => DataType::String,
             "Binary" => DataType::Binary,
-            "Categorical" => {
-                DataType::from_categories(Categories::global())
-            },
+            "Categorical" => DataType::from_categories(Categories::global()),
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
                 assert!(!categories.has_nulls());
-                DataType::from_frozen_categories(FrozenCategories::new(categories.values_iter()).unwrap())
+                DataType::from_frozen_categories(
+                    FrozenCategories::new(categories.values_iter()).unwrap(),
+                )
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
@@ -788,9 +793,12 @@ impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "lexical" => CategoricalOrdering::Lexical,
             "physical" => {
-                polars_warn!(Deprecation, "physical ordering is deprecated, will use lexical ordering instead");
+                polars_warn!(
+                    Deprecation,
+                    "physical ordering is deprecated, will use lexical ordering instead"
+                );
                 CategoricalOrdering::Lexical
-            }
+            },
             v => {
                 return Err(PyValueError::new_err(format!(
                     "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",

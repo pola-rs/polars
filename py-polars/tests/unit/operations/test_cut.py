@@ -88,9 +88,7 @@ def test_cut_bin_name_in_agg_context() -> None:
         qcut=pl.col("a").qcut([1], include_breaks=True).over(1),
         qcut_uniform=pl.col("a").qcut(1, include_breaks=True).over(1),
     )
-    schema = pl.Struct(
-        {"breakpoint": pl.Float64, "category": pl.Categorical()}
-    )
+    schema = pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical()})
     assert df.schema == {"cut": schema, "qcut": schema, "qcut_uniform": schema}
 
 

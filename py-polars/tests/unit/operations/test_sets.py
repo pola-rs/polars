@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import CategoricalRemappingWarning
 from polars.testing import assert_series_equal
 
 

@@ -58,7 +58,4 @@ pub use crate::series::arithmetic::{LhsNumOps, NumOpsDispatch};
 pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
-pub use crate::{datatypes, df};
-
-
-pub use crate::with_match_categorical_physical_type;
+pub use crate::{datatypes, df, with_match_categorical_physical_type};

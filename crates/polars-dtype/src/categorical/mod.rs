@@ -1,23 +1,21 @@
 use std::fmt;
-use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::hash::{BuildHasher, Hasher};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use arrow::array::builder::StaticArrayBuilder;
 use arrow::array::{Utf8ViewArray, Utf8ViewArrayBuilder};
 use arrow::datatypes::ArrowDataType;
-use hashbrown::hash_table::Entry;
 use hashbrown::HashTable;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use hashbrown::hash_table::Entry;
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::aliases::*;
 use polars_utils::pl_str::PlSmallStr;
 
-
-mod mapping;
 mod catsize;
+mod mapping;
 
-pub use mapping::CategoricalMapping;
 pub use catsize::{CatNative, CatSize};
-
+pub use mapping::CategoricalMapping;
 
 /// The physical datatype backing a categorical / enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,7 +37,7 @@ impl CategoricalPhysical {
             Self::U32 => u32::MAX as usize,
         }
     }
-    
+
     pub fn smallest_physical(num_cats: usize) -> PolarsResult<Self> {
         if num_cats < u8::MAX as usize {
             Ok(Self::U8)
@@ -74,7 +72,7 @@ impl CategoricalPhysical {
 struct CategoricalId {
     name: PlSmallStr,
     namespace: PlSmallStr,
-    physical: CategoricalPhysical
+    physical: CategoricalPhysical,
 }
 
 impl CategoricalId {
@@ -82,11 +80,10 @@ impl CategoricalId {
         Self {
             name: PlSmallStr::from_static("__POLARS_GLOBAL_CATEGORIES"),
             namespace: PlSmallStr::from_static(""),
-            physical: CategoricalPhysical::U32
+            physical: CategoricalPhysical::U32,
         }
     }
 }
-
 
 // Used to maintain a 1:1 mapping between Categories' ID and the Categories objects themselves.
 // This is important for serialization.
@@ -114,8 +111,7 @@ static GLOBAL_CATEGORIES: LazyLock<Arc<Categories>> = LazyLock::new(|| {
     categories
 });
 
-
-/// A (named) object which is used to indicate which categorical data types have the same mapping. 
+/// A (named) object which is used to indicate which categorical data types have the same mapping.
 pub struct Categories {
     id: CategoricalId,
     mapping: Mutex<Weak<CategoricalMapping>>,
@@ -127,9 +123,13 @@ impl Categories {
     pub fn new(
         name: PlSmallStr,
         namespace: PlSmallStr,
-        physical: CategoricalPhysical
+        physical: CategoricalPhysical,
     ) -> Arc<Self> {
-        let id = CategoricalId { name, namespace, physical };
+        let id = CategoricalId {
+            name,
+            namespace,
+            physical,
+        };
         let mut registry = CATEGORIES_REGISTRY.lock().unwrap();
         if let Some(cats_ref) = registry.get(&id) {
             if let Some(cats) = cats_ref.upgrade() {
@@ -154,17 +154,17 @@ impl Categories {
     pub fn name(&self) -> &PlSmallStr {
         &self.id.name
     }
-    
+
     /// The namespace of this Categories object.
     pub fn namespace(&self) -> &PlSmallStr {
         &self.id.namespace
     }
-    
+
     /// The physical dtype of the category ids.
     pub fn physical(&self) -> CategoricalPhysical {
         self.id.physical
     }
-    
+
     /// The mapping for this Categories object. If no mapping currently exists
     /// it creates a new empty mapping.
     pub fn mapping(&self) -> Arc<CategoricalMapping> {
@@ -215,9 +215,7 @@ impl FrozenCategories {
     /// Creates a new FrozenCategories object (or returns a reference to an existing one
     /// in case these are already known). Returns an error if the categories are not unique.
     /// It is guaranteed that the nth string ends up with category n (0-indexed).
-    pub fn new<'a, I: IntoIterator<Item = &'a str>>(
-        strings: I,
-    ) -> PolarsResult<Arc<Self>> {
+    pub fn new<'a, I: IntoIterator<Item = &'a str>>(strings: I) -> PolarsResult<Arc<Self>> {
         let strings = strings.into_iter();
         let hasher = *FROZEN_CATEGORIES_HASHER;
         let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
@@ -235,7 +233,7 @@ impl FrozenCategories {
         let combined_hash = combined_hasher.finish();
         let categories = builder.freeze();
         mapping.set_max_categories(categories.len()); // Don't allow any further inserts.
-        
+
         let physical = CategoricalPhysical::smallest_physical(categories.len())?;
         let mut registry = FROZEN_CATEGORIES_REGISTRY.lock().unwrap();
         let mut last_compared = None; // We have to store the strong reference to avoid a race condition.
@@ -267,7 +265,7 @@ impl FrozenCategories {
             },
         }
     }
-    
+
     /// The categories contained in this FrozenCategories object.
     pub fn categories(&self) -> &Utf8ViewArray {
         &self.categories
@@ -283,7 +281,6 @@ impl FrozenCategories {
         &self.mapping
     }
 }
-
 
 impl fmt::Debug for FrozenCategories {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -305,7 +302,6 @@ impl Drop for FrozenCategories {
     }
 }
 
-
 pub fn ensure_same_categories(left: &Arc<Categories>, right: &Arc<Categories>) -> PolarsResult<()> {
     if Arc::ptr_eq(left, right) {
         return Ok(());
@@ -326,11 +322,14 @@ Operations mixing different Categories are often not supported, you may have to 
     }
 }
 
-pub fn ensure_same_frozen_categories(left: &Arc<FrozenCategories>, right: &Arc<FrozenCategories>) -> PolarsResult<()> {
+pub fn ensure_same_frozen_categories(
+    left: &Arc<FrozenCategories>,
+    right: &Arc<FrozenCategories>,
+) -> PolarsResult<()> {
     if Arc::ptr_eq(left, right) {
         return Ok(());
     }
-    
+
     polars_bail!(SchemaMismatch: r#"Enum mismatch.
 
 Operations mixing different Enums are often not supported, you may have to cast."#)

@@ -15,7 +15,6 @@ import pytest
 import polars as pl
 from polars import StringCache
 from polars.exceptions import (
-    ComputeError,
     InvalidOperationError,
     SchemaError,
 )

@@ -267,12 +267,7 @@ pub struct CategoricalField<T: PolarsCategoricalType> {
 
 #[cfg(feature = "dtype-categorical")]
 impl<T: PolarsCategoricalType> CategoricalField<T> {
-    fn new(
-        name: PlSmallStr,
-        capacity: usize,
-        quote_char: Option<u8>,
-        dtype: DataType,
-    ) -> Self {
+    fn new(name: PlSmallStr, capacity: usize, quote_char: Option<u8>, dtype: DataType) -> Self {
         let mut builder = NewCategoricalChunkedBuilder::new(name, dtype);
         builder.reserve(capacity);
 
@@ -555,9 +550,30 @@ pub fn init_buffers(
                 #[cfg(feature = "dtype-categorical")]
                 DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
                     match dtype.cat_physical().unwrap() {
-                        CategoricalPhysical::U8 => Buffer::Categorical8(CategoricalField::<Categorical8Type>::new(name, capacity, quote_char, dtype.clone())),
-                        CategoricalPhysical::U16 => Buffer::Categorical16(CategoricalField::<Categorical16Type>::new(name, capacity, quote_char, dtype.clone())),
-                        CategoricalPhysical::U32 => Buffer::Categorical32(CategoricalField::<Categorical32Type>::new(name, capacity, quote_char, dtype.clone())),
+                        CategoricalPhysical::U8 => {
+                            Buffer::Categorical8(CategoricalField::<Categorical8Type>::new(
+                                name,
+                                capacity,
+                                quote_char,
+                                dtype.clone(),
+                            ))
+                        },
+                        CategoricalPhysical::U16 => {
+                            Buffer::Categorical16(CategoricalField::<Categorical16Type>::new(
+                                name,
+                                capacity,
+                                quote_char,
+                                dtype.clone(),
+                            ))
+                        },
+                        CategoricalPhysical::U32 => {
+                            Buffer::Categorical32(CategoricalField::<Categorical32Type>::new(
+                                name,
+                                capacity,
+                                quote_char,
+                                dtype.clone(),
+                            ))
+                        },
                     }
                 },
                 dt => polars_bail!(
@@ -900,11 +916,17 @@ impl Buffer {
                 None,
             ),
             #[cfg(feature = "dtype-categorical")]
-            Categorical8(buf) => buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None),
+            Categorical8(buf) => {
+                buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None)
+            },
             #[cfg(feature = "dtype-categorical")]
-            Categorical16(buf) => buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None),
+            Categorical16(buf) => {
+                buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None)
+            },
             #[cfg(feature = "dtype-categorical")]
-            Categorical32(buf) => buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None),
+            Categorical32(buf) => {
+                buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None)
+            },
         }
     }
 }

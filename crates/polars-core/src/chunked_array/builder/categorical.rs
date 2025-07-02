@@ -25,17 +25,21 @@ impl<T: PolarsCategoricalType> NewCategoricalChunkedBuilder<T> {
             validity: BitmapBuilder::new(),
         }
     }
-    
+
     pub fn dtype(&self) -> &DataType {
         &self.dtype
     }
-    
+
     pub fn reserve(&mut self, len: usize) {
         self.cats.reserve(len);
         self.validity.reserve(len);
     }
-    
-    pub fn append_cat(&mut self, cat: CatSize, mapping: &Arc<CategoricalMapping>) -> PolarsResult<()> {
+
+    pub fn append_cat(
+        &mut self,
+        cat: CatSize,
+        mapping: &Arc<CategoricalMapping>,
+    ) -> PolarsResult<()> {
         if Arc::ptr_eq(&self.mapping, mapping) {
             self.cats.push(T::Native::from_cat(cat));
             self.validity.push(true);

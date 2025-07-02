@@ -62,7 +62,9 @@ impl<'a> AnonymousListBuilder<'a> {
         match (s.dtype(), &self.inner_dtype) {
             (DataType::Null, _) => {},
             (dt, None) => self.inner_dtype = Some(dt.clone()),
-            (dt, Some(set_dt)) => polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}"),
+            (dt, Some(set_dt)) => {
+                polars_bail!(ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
+            },
         }
         if s.is_empty() {
             self.append_empty();
@@ -82,7 +84,8 @@ impl<'a> AnonymousListBuilder<'a> {
                 &slf.inner_dtype.unwrap_or(DataType::Null),
             )
         } else {
-            let inner_dtype_physical = self.inner_dtype
+            let inner_dtype_physical = self
+                .inner_dtype
                 .as_ref()
                 .map(|dt| dt.to_physical().to_arrow(CompatLevel::newest()));
             let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
@@ -121,7 +124,9 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         match (s.dtype(), &self.inner_dtype) {
             (DataType::Null, _) => {},
             (dt, None) => self.inner_dtype = Some(dt.clone()),
-            (dt, Some(set_dt)) => polars_ensure!(dt == set_dt, ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}"),
+            (dt, Some(set_dt)) => {
+                polars_ensure!(dt == set_dt, ComputeError: "dtypes don't match, got {dt}, expected: {set_dt}")
+            },
         }
         if s.is_empty() {
             self.append_empty();

@@ -25,13 +25,15 @@ pub trait DateMethods: AsDate {
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
+        ca.physical()
+            .apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
     }
 
     /// This year number might not match the calendar year number.
     fn iso_year(&self) -> Int32Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int32Type>(&date_to_iso_year)
+        ca.physical()
+            .apply_kernel_cast::<Int32Type>(&date_to_iso_year)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
@@ -54,7 +56,8 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_iso_week)
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&date_to_iso_week)
     }
 
     /// Extract day from underlying NaiveDate representation.
@@ -71,7 +74,8 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> Int16Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int16Type>(&date_to_ordinal)
+        ca.physical()
+            .apply_kernel_cast::<Int16Type>(&date_to_ordinal)
     }
 
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;

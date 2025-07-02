@@ -78,8 +78,7 @@ impl Field {
 
     pub fn is_enum(&self) -> bool {
         if let Some(md) = &self.metadata {
-            md.get(DTYPE_ENUM_VALUES_LEGACY).is_some() || 
-            md.get(DTYPE_ENUM_VALUES_NEW).is_some()
+            md.get(DTYPE_ENUM_VALUES_LEGACY).is_some() || md.get(DTYPE_ENUM_VALUES_NEW).is_some()
         } else {
             false
         }

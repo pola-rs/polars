@@ -83,20 +83,14 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         },
 
         #[cfg(feature = "dtype-categorical")]
-        (DataType::NewCategorical(_, _), DataType::String) => {
-            IsInTypeCoercionResult::OtherCast {
-                dtype: match &type_other {
-                    DataType::List(_) => {
-                        DataType::List(Box::new(type_left.clone()))
-                    },
-                    #[cfg(feature = "dtype-array")]
-                    DataType::Array(_, width) => {
-                        DataType::Array(Box::new(type_left.clone()), *width)
-                    },
-                    _ => unreachable!(),
-                },
-                strict: false,
-            }
+        (DataType::NewCategorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+            dtype: match &type_other {
+                DataType::List(_) => DataType::List(Box::new(type_left.clone())),
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(_, width) => DataType::Array(Box::new(type_left.clone()), *width),
+                _ => unreachable!(),
+            },
+            strict: false,
         },
 
         #[cfg(feature = "dtype-decimal")]

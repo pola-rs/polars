@@ -148,11 +148,14 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
 #[cfg(feature = "dtype-struct")]
 impl<'a> AnyValue<'a> {
     pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue<'_>> {
-        let AnyValue::Struct(idx, arr, flds) = self else { unreachable!() };
+        let AnyValue::Struct(idx, arr, flds) = self else {
+            unreachable!()
+        };
         unsafe {
-            arr.values().iter().zip(*flds).map(move |(arr, fld)| {
-                arr_to_any_value(&**arr, *idx, fld.dtype())
-            })
+            arr.values()
+                .iter()
+                .zip(*flds)
+                .map(move |(arr, fld)| arr_to_any_value(&**arr, *idx, fld.dtype()))
         }
     }
 
