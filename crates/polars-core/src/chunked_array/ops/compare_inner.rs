@@ -218,7 +218,7 @@ impl<'a, T: PolarsCategoricalType> GetInner for LexicalCategorical<'a, T> {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'a, T: PolarsCategoricalType> IntoTotalOrdInner<'a> for &'a NewCategoricalChunked<T> {
+impl<'a, T: PolarsCategoricalType> IntoTotalOrdInner<'a> for &'a CategoricalChunked<T> {
     fn into_total_ord_inner(self) -> Box<dyn TotalOrdInner + 'a> {
         if self.uses_lexical_ordering() {
             Box::new(LexicalCategorical::<T> {

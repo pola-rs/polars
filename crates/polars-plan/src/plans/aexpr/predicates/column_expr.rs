@@ -55,7 +55,7 @@ pub fn aexpr_to_column_predicates(
         use DataType as D;
         match dtype {
             #[cfg(feature = "dtype-categorical")]
-            D::NewEnum(_, _) | D::NewCategorical(_, _) => {
+            D::Enum(_, _) | D::Categorical(_, _) => {
                 is_sumwise_complete = false;
                 continue;
             },

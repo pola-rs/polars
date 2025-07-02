@@ -886,7 +886,7 @@ pub(super) fn serializer_for<'a>(
             array,
         ),
         #[cfg(feature = "dtype-categorical")]
-        DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping) => {
+        DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) => {
             polars_core::with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
                 string_serializer(
                     |iter| {

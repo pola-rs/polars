@@ -5,8 +5,8 @@ fn str_to_cat_enum(map: &CategoricalMapping, s: &str) -> PolarsResult<CatSize> {
 }
 
 fn cat_equality_helper<T: PolarsCategoricalType, EqPhys>(
-    lhs: &NewCategoricalChunked<T>,
-    rhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
+    rhs: &CategoricalChunked<T>,
     eq_phys: EqPhys,
 ) -> PolarsResult<BooleanChunked>
 where
@@ -18,8 +18,8 @@ where
 }
 
 fn cat_compare_helper<T: PolarsCategoricalType, Cmp, CmpPhys>(
-    lhs: &NewCategoricalChunked<T>,
-    rhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
+    rhs: &CategoricalChunked<T>,
     cmp: Cmp,
     cmp_phys: CmpPhys,
 ) -> PolarsResult<BooleanChunked>
@@ -74,7 +74,7 @@ where
 }
 
 fn cat_str_equality_helper<T: PolarsCategoricalType, Eq, EqPhysScalar, EqStrScalar>(
-    lhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
     rhs: &StringChunked,
     eq: Eq,
     eq_phys_scalar: EqPhysScalar,
@@ -123,7 +123,7 @@ where
 }
 
 fn cat_str_compare_helper<T: PolarsCategoricalType, Cmp, CmpStrScalar>(
-    lhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
     rhs: &StringChunked,
     cmp: Cmp,
     cmp_str_scalar: CmpStrScalar,
@@ -164,7 +164,7 @@ where
 }
 
 fn cat_str_phys_compare_helper<T: PolarsCategoricalType, Cmp>(
-    lhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
     rhs: &StringChunked,
     cmp: Cmp,
 ) -> PolarsResult<BooleanChunked>
@@ -214,7 +214,7 @@ where
 }
 
 fn cat_str_scalar_equality_helper<T: PolarsCategoricalType, EqPhysScalar>(
-    lhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
     rhs: &str,
     null_eq: Option<bool>,
     eq_phys_scalar: EqPhysScalar,
@@ -235,7 +235,7 @@ where
 }
 
 fn cat_str_scalar_compare_helper<T: PolarsCategoricalType, Cmp>(
-    lhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
     rhs: &str,
     cmp: Cmp,
 ) -> BooleanChunked
@@ -248,7 +248,7 @@ where
 }
 
 fn cat_str_scalar_phys_compare_helper<T: PolarsCategoricalType, Cmp>(
-    lhs: &NewCategoricalChunked<T>,
+    lhs: &CategoricalChunked<T>,
     rhs: &str,
     cmp: Cmp,
 ) -> PolarsResult<BooleanChunked>
@@ -263,8 +263,8 @@ where
         .collect_ca_trusted(lhs.name().clone()))
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareEq<&NewCategoricalChunked<T>>
-    for NewCategoricalChunked<T>
+impl<T: PolarsCategoricalType> ChunkCompareEq<&CategoricalChunked<T>>
+    for CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>:
         for<'a> ChunkCompareEq<&'a ChunkedArray<T::PolarsPhysical>, Item = BooleanChunked>,
@@ -288,32 +288,32 @@ where
     }
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareIneq<&NewCategoricalChunked<T>>
-    for NewCategoricalChunked<T>
+impl<T: PolarsCategoricalType> ChunkCompareIneq<&CategoricalChunked<T>>
+    for CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>:
         for<'a> ChunkCompareIneq<&'a ChunkedArray<T::PolarsPhysical>, Item = BooleanChunked>,
 {
     type Item = PolarsResult<BooleanChunked>;
 
-    fn gt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+    fn gt(&self, rhs: &CategoricalChunked<T>) -> Self::Item {
         cat_compare_helper(self, rhs, |l, r| l > r, |l, r| l.gt(r))
     }
 
-    fn gt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+    fn gt_eq(&self, rhs: &CategoricalChunked<T>) -> Self::Item {
         cat_compare_helper(self, rhs, |l, r| l >= r, |l, r| l.gt_eq(r))
     }
 
-    fn lt(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+    fn lt(&self, rhs: &CategoricalChunked<T>) -> Self::Item {
         cat_compare_helper(self, rhs, |l, r| l < r, |l, r| l.lt(r))
     }
 
-    fn lt_eq(&self, rhs: &NewCategoricalChunked<T>) -> Self::Item {
+    fn lt_eq(&self, rhs: &CategoricalChunked<T>) -> Self::Item {
         cat_compare_helper(self, rhs, |l, r| l <= r, |l, r| l.lt_eq(r))
     }
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareEq<&StringChunked> for NewCategoricalChunked<T>
+impl<T: PolarsCategoricalType> ChunkCompareEq<&StringChunked> for CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>: for<'a> ChunkCompareEq<T::Native, Item = BooleanChunked>,
 {
@@ -360,7 +360,7 @@ where
     }
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareIneq<&StringChunked> for NewCategoricalChunked<T> {
+impl<T: PolarsCategoricalType> ChunkCompareIneq<&StringChunked> for CategoricalChunked<T> {
     type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &StringChunked) -> Self::Item {
@@ -416,7 +416,7 @@ impl<T: PolarsCategoricalType> ChunkCompareIneq<&StringChunked> for NewCategoric
     }
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareEq<&str> for NewCategoricalChunked<T>
+impl<T: PolarsCategoricalType> ChunkCompareEq<&str> for CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>: for<'a> ChunkCompareEq<T::Native, Item = BooleanChunked>,
 {
@@ -439,7 +439,7 @@ where
     }
 }
 
-impl<T: PolarsCategoricalType> ChunkCompareIneq<&str> for NewCategoricalChunked<T> {
+impl<T: PolarsCategoricalType> ChunkCompareIneq<&str> for CategoricalChunked<T> {
     type Item = BooleanChunked;
 
     fn gt(&self, rhs: &str) -> Self::Item {

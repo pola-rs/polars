@@ -152,7 +152,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         #[cfg(feature = "dtype-decimal")]
         DT::Decimal(..) => unreachable!(),
         #[cfg(feature = "dtype-categorical")]
-        DT::NewCategorical(..) | DT::NewEnum(..) => unreachable!(),
+        DT::Categorical(..) | DT::Enum(..) => unreachable!(),
         DT::Date | DT::Datetime(..) | DT::Duration(..) | DT::Time => unreachable!(),
 
         DT::Object(_) | DT::Unknown(_) => polars_bail!(op = "index_of", series.dtype()),

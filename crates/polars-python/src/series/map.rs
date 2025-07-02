@@ -70,8 +70,8 @@ impl PySeries {
                 DataType::Datetime(_, _)
                     | DataType::Date
                     | DataType::Duration(_)
-                    | DataType::NewCategorical(_, _)
-                    | DataType::NewEnum(_, _)
+                    | DataType::Categorical(_, _)
+                    | DataType::Enum(_, _)
                     | DataType::Binary
                     | DataType::Array(_, _)
                     | DataType::Time

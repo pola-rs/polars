@@ -46,7 +46,7 @@ impl ArgAgg for Series {
         let phys_s = self.to_physical_repr();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            NewCategorical(cats, _) => {
+            Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     let ca = self.cat::<$C>().unwrap();
                     if ca.null_count() == ca.len() {
@@ -60,7 +60,7 @@ impl ArgAgg for Series {
                 })
             },
             #[cfg(feature = "dtype-categorical")]
-            NewEnum(_, _) => phys_s.arg_min(),
+            Enum(_, _) => phys_s.arg_min(),
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_min(),
             String => {
                 let ca = self.str().unwrap();
@@ -85,7 +85,7 @@ impl ArgAgg for Series {
         let phys_s = self.to_physical_repr();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            NewCategorical(cats, _) => {
+            Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     let ca = self.cat::<$C>().unwrap();
                     if ca.null_count() == ca.len() {
@@ -99,7 +99,7 @@ impl ArgAgg for Series {
                 })
             },
             #[cfg(feature = "dtype-categorical")]
-            NewEnum(_, _) => phys_s.arg_max(),
+            Enum(_, _) => phys_s.arg_max(),
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_max(),
             String => {
                 let ca = self.str().unwrap();

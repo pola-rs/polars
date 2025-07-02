@@ -38,10 +38,10 @@ fn modify_supertype(
     match (type_left, type_right, left, right) {
         // if the we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
-        (dt @ NewCategorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
-        | (String | Unknown(UnknownKind::Str), dt @ NewCategorical(_, _), AExpr::Literal(_), _)
-        | (dt @ NewEnum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
-        | (String | Unknown(UnknownKind::Str), dt @ NewEnum(_, _), AExpr::Literal(_), _) => {
+        (dt @ Categorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), dt @ Categorical(_, _), AExpr::Literal(_), _)
+        | (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), dt @ Enum(_, _), AExpr::Literal(_), _) => {
             st = dt.clone()
         },
 
@@ -430,7 +430,7 @@ impl OptimizationRule for TypeCoercionRule {
                     for (e, dtype) in input.iter_mut().zip(dtypes) {
                         match super_type {
                             #[cfg(feature = "dtype-categorical")]
-                            DataType::NewCategorical(_, _) if dtype.is_string() => {
+                            DataType::Categorical(_, _) if dtype.is_string() => {
                                 // pass
                             },
                             _ => cast_expr_ir(
@@ -892,11 +892,11 @@ fn try_inline_literal_cast(
                 #[cfg(feature = "dtype-duration")]
                 (AnyValue::Duration(_, _), _) => return Ok(None),
                 #[cfg(feature = "dtype-categorical")]
-                (AnyValue::Categorical(_, _), _) | (_, DataType::NewCategorical(_, _)) => {
+                (AnyValue::Categorical(_, _), _) | (_, DataType::Categorical(_, _)) => {
                     return Ok(None);
                 },
                 #[cfg(feature = "dtype-categorical")]
-                (AnyValue::Enum(_, _), _) | (_, DataType::NewEnum(_, _)) => return Ok(None),
+                (AnyValue::Enum(_, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
                 #[cfg(feature = "dtype-struct")]
                 (_, DataType::Struct(_)) => return Ok(None),
                 (av, _) => {

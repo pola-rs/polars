@@ -281,11 +281,11 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
-            DataType::NewCategorical(_, _) => {
+            DataType::Categorical(_, _) => {
                 let class = pl.getattr(intern!(py, "Categorical"))?;
                 class.call1((Wrap(CategoricalOrdering::Lexical),))
             },
-            DataType::NewEnum(_, mapping) => {
+            DataType::Enum(_, mapping) => {
                 let categories = unsafe {
                     StringChunked::from_chunks(
                         PlSmallStr::from_static("category"),

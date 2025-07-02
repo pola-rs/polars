@@ -2,7 +2,7 @@ use arrow::bitmap::BitmapBuilder;
 
 use crate::prelude::*;
 
-pub struct NewCategoricalChunkedBuilder<T: PolarsCategoricalType> {
+pub struct CategoricalChunkedBuilder<T: PolarsCategoricalType> {
     name: PlSmallStr,
     dtype: DataType,
     mapping: Arc<CategoricalMapping>,
@@ -11,15 +11,15 @@ pub struct NewCategoricalChunkedBuilder<T: PolarsCategoricalType> {
     validity: BitmapBuilder,
 }
 
-impl<T: PolarsCategoricalType> NewCategoricalChunkedBuilder<T> {
+impl<T: PolarsCategoricalType> CategoricalChunkedBuilder<T> {
     pub fn new(name: PlSmallStr, dtype: DataType) -> Self {
-        let (DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping)) = &dtype else {
+        let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = &dtype else {
             panic!("non-Categorical/Enum dtype in CategoricalChunkedbuilder")
         };
         Self {
             name,
             mapping: mapping.clone(),
-            is_enum: matches!(dtype, DataType::NewEnum(_, _)),
+            is_enum: matches!(dtype, DataType::Enum(_, _)),
             dtype,
             cats: Vec::new(),
             validity: BitmapBuilder::new(),
@@ -69,14 +69,14 @@ impl<T: PolarsCategoricalType> NewCategoricalChunkedBuilder<T> {
         self.validity.push(false);
     }
 
-    pub fn finish(self) -> NewCategoricalChunked<T> {
+    pub fn finish(self) -> CategoricalChunked<T> {
         unsafe {
             let phys = ChunkedArray::from_vec_validity(
                 self.name,
                 self.cats,
                 self.validity.into_opt_validity(),
             );
-            NewCategoricalChunked::from_cats_and_dtype_unchecked(phys, self.dtype)
+            CategoricalChunked::from_cats_and_dtype_unchecked(phys, self.dtype)
         }
     }
 }

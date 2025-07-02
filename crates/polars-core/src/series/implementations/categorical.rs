@@ -2,35 +2,35 @@ use super::*;
 use crate::chunked_array::comparison::*;
 use crate::prelude::*;
 
-unsafe impl<T: PolarsCategoricalType> IntoSeries for NewCategoricalChunked<T> {
+unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
     fn into_series(self) -> Series {
         // We do this hack to go from generic T to concrete T to avoid adding bounds on IntoSeries.
         with_match_categorical_physical_type!(T::physical(), |$C| {
             unsafe {
-                Series(Arc::new(SeriesWrap(core::mem::transmute::<Self, NewCategoricalChunked<$C>>(self))))
+                Series(Arc::new(SeriesWrap(core::mem::transmute::<Self, CategoricalChunked<$C>>(self))))
             }
         })
     }
 }
 
-impl<T: PolarsCategoricalType> SeriesWrap<NewCategoricalChunked<T>> {
-    unsafe fn apply_on_phys<F>(&self, apply: F) -> NewCategoricalChunked<T>
+impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
+    unsafe fn apply_on_phys<F>(&self, apply: F) -> CategoricalChunked<T>
     where
         F: Fn(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
     {
         let cats = apply(self.0.physical());
         unsafe {
-            NewCategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone())
+            CategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone())
         }
     }
 
-    unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<NewCategoricalChunked<T>>
+    unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<CategoricalChunked<T>>
     where
         F: Fn(&ChunkedArray<T::PolarsPhysical>) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
     {
         let cats = apply(self.0.physical())?;
         unsafe {
-            Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(
+            Ok(CategoricalChunked::from_cats_and_dtype_unchecked(
                 cats,
                 self.0.dtype().clone(),
             ))
@@ -317,6 +317,6 @@ macro_rules! impl_cat_series {
     }
 }
 
-impl_cat_series!(NewCategorical8Chunked, Categorical8Type);
-impl_cat_series!(NewCategorical16Chunked, Categorical16Type);
-impl_cat_series!(NewCategorical32Chunked, Categorical32Type);
+impl_cat_series!(Categorical8Chunked, Categorical8Type);
+impl_cat_series!(Categorical16Chunked, Categorical16Type);
+impl_cat_series!(Categorical32Chunked, Categorical32Type);

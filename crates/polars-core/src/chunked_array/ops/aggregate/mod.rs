@@ -437,7 +437,7 @@ impl ChunkAggSeries for StringChunked {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<T: PolarsCategoricalType> NewCategoricalChunked<T>
+impl<T: PolarsCategoricalType> CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
 {
@@ -481,7 +481,7 @@ where
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<T: PolarsCategoricalType> ChunkAggSeries for NewCategoricalChunked<T>
+impl<T: PolarsCategoricalType> ChunkAggSeries for CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
 {
@@ -490,8 +490,8 @@ where
             return Scalar::new(self.dtype().clone(), AnyValue::Null);
         };
         let av = match self.dtype() {
-            DataType::NewEnum(_, mapping) => AnyValue::EnumOwned(min, mapping.clone()),
-            DataType::NewCategorical(_, mapping) => {
+            DataType::Enum(_, mapping) => AnyValue::EnumOwned(min, mapping.clone()),
+            DataType::Categorical(_, mapping) => {
                 AnyValue::CategoricalOwned(min, mapping.clone())
             },
             _ => unreachable!(),
@@ -504,8 +504,8 @@ where
             return Scalar::new(self.dtype().clone(), AnyValue::Null);
         };
         let av = match self.dtype() {
-            DataType::NewEnum(_, mapping) => AnyValue::EnumOwned(max, mapping.clone()),
-            DataType::NewCategorical(_, mapping) => {
+            DataType::Enum(_, mapping) => AnyValue::EnumOwned(max, mapping.clone()),
+            DataType::Categorical(_, mapping) => {
                 AnyValue::CategoricalOwned(max, mapping.clone())
             },
             _ => unreachable!(),

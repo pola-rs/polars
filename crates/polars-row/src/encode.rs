@@ -555,7 +555,7 @@ unsafe fn encode_flat_array(
 ) {
     use ArrowDataType as D;
 
-    if let Some(RowEncodingContext::NewCategorical(ctx)) = dict {
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
         match array.dtype() {
             D::UInt8 => {
                 let keys = array.as_any().downcast_ref::<PrimitiveArray<u8>>().unwrap();
@@ -874,7 +874,7 @@ pub fn fixed_size(
     use ArrowDataType as D;
     use numeric::FixedLengthEncoding;
 
-    if let Some(RowEncodingContext::NewCategorical(ctx)) = dict {
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
         // If ordered categorical (non-enum) we encode strings, otherwise physical.
         if !ctx.is_enum && opt.is_ordered() {
             return None;

@@ -173,13 +173,13 @@ where
             // LEGACY
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(cats, _mapping) => {
+            DataType::Categorical(cats, _mapping) => {
                 let s = self.cast_with_options(&cats.physical().dtype(), options)?;
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca: &PhysCa = s.as_ref().as_ref();
-                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone())
+                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone())
                         .into_series())
                 })
             },
@@ -187,13 +187,13 @@ where
             // LEGACY
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(fcats, _mapping) => {
+            DataType::Enum(fcats, _mapping) => {
                 let s = self.cast_with_options(&fcats.physical().dtype(), options)?;
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca: &PhysCa = s.as_ref().as_ref();
-                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone()).into_series())
+                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone()).into_series())
                 })
             },
 
@@ -238,13 +238,13 @@ where
             // LEGACY
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(cats, _mapping) => {
+            DataType::Categorical(cats, _mapping) => {
                 polars_ensure!(self.dtype() == &cats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Categorical'");
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = unsafe { &*(self as *const ChunkedArray<T> as *const PhysCa) };
-                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(ca.clone(), dtype.clone())
+                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(ca.clone(), dtype.clone())
                         .into_series())
                 })
             },
@@ -252,13 +252,13 @@ where
             // LEGACY
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(fcats, _mapping) => {
+            DataType::Enum(fcats, _mapping) => {
                 polars_ensure!(self.dtype() == &fcats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Enum'");
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = unsafe { &*(self as *const ChunkedArray<T> as *const PhysCa) };
-                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(ca.clone(), dtype.clone()).into_series())
+                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(ca.clone(), dtype.clone()).into_series())
                 })
             },
 
@@ -271,16 +271,16 @@ impl ChunkCast for StringChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(cats, _mapping) => {
+            DataType::Categorical(cats, _mapping) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    Ok(NewCategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
+                    Ok(CategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
                         .into_series())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(fcats, _mapping) => {
+            DataType::Enum(fcats, _mapping) => {
                 let ret = with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                    NewCategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
+                    CategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
                         .into_series()
                 });
 
@@ -424,7 +424,7 @@ impl ChunkCast for BooleanChunked {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                 polars_bail!(InvalidOperation: "cannot cast Boolean to Categorical");
             },
             _ => cast_impl(self.name().clone(), &self.chunks, dtype, options),
@@ -452,8 +452,8 @@ impl ChunkCast for ListChunked {
                     (old, new) if old == new => Ok(ca.into_owned().into_series()),
                     // TODO @ cat-rework: can we implement this now?
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, NewCategorical(_, _) | NewEnum(_, _))
-                        if !matches!(dt, NewCategorical(_, _) | NewEnum(_, _) | String | Null) =>
+                    (dt, Categorical(_, _) | Enum(_, _))
+                        if !matches!(dt, Categorical(_, _) | Enum(_, _) | String | Null) =>
                     {
                         polars_bail!(InvalidOperation: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     },
@@ -479,7 +479,7 @@ impl ChunkCast for ListChunked {
                 // TODO @ cat-rework: can we implement this now?
                 // TODO!: properly implement this recursively.
                 #[cfg(feature = "dtype-categorical")]
-                polars_ensure!(!matches!(&**child_type, NewCategorical(_, _)), InvalidOperation: "array of categorical is not yet supported");
+                polars_ensure!(!matches!(&**child_type, Categorical(_, _)), InvalidOperation: "array of categorical is not yet supported");
 
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(ca.chunks(), &physical_type, options)?;
@@ -553,7 +553,7 @@ impl ChunkCast for ArrayChunked {
                     (old, new) if old == new => Ok(ca.into_owned().into_series()),
                     // TODO @ cat-rework: can we implement this now?
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, NewCategorical(_, _) | NewEnum(_, _)) if !matches!(dt, String) => {
+                    (dt, Categorical(_, _) | Enum(_, _)) if !matches!(dt, String) => {
                         polars_bail!(InvalidOperation: "cannot cast Array inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {
@@ -736,6 +736,6 @@ mod test {
             )
             .unwrap();
         let out = out.cast(&DataType::from_categories(cats)).unwrap();
-        assert!(matches!(out.dtype(), &DataType::NewCategorical(_, _)))
+        assert!(matches!(out.dtype(), &DataType::Categorical(_, _)))
     }
 }

@@ -555,7 +555,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-categorical")]
             (
                 &AnyValue::Categorical(cat, &ref lmap) | &AnyValue::CategoricalOwned(cat, ref lmap),
-                DataType::NewCategorical(_, rmap),
+                DataType::Categorical(_, rmap),
             ) => {
                 if Arc::ptr_eq(lmap, rmap) {
                     self.clone()
@@ -569,7 +569,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-categorical")]
             (
                 &AnyValue::Enum(cat, &ref lmap) | &AnyValue::EnumOwned(cat, ref lmap),
-                DataType::NewEnum(_, rmap),
+                DataType::Enum(_, rmap),
             ) => {
                 if Arc::ptr_eq(lmap, rmap) {
                     self.clone()
@@ -593,22 +593,22 @@ impl<'a> AnyValue<'a> {
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (AnyValue::String(s), DataType::NewCategorical(_, map)) => {
+            (AnyValue::String(s), DataType::Categorical(_, map)) => {
                 AnyValue::CategoricalOwned(map.insert_cat(s).unwrap(), map.clone())
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (AnyValue::StringOwned(s), DataType::NewCategorical(_, map)) => {
+            (AnyValue::StringOwned(s), DataType::Categorical(_, map)) => {
                 AnyValue::CategoricalOwned(map.insert_cat(s).unwrap(), map.clone())
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (AnyValue::String(s), DataType::NewEnum(_, map)) => {
+            (AnyValue::String(s), DataType::Enum(_, map)) => {
                 AnyValue::CategoricalOwned(map.get_cat(s)?, map.clone())
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (AnyValue::StringOwned(s), DataType::NewEnum(_, map)) => {
+            (AnyValue::StringOwned(s), DataType::Enum(_, map)) => {
                 AnyValue::CategoricalOwned(map.get_cat(s)?, map.clone())
             },
 

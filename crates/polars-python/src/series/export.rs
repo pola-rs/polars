@@ -31,7 +31,7 @@ impl PySeries {
                 DataType::Int128 => PyList::new(py, series.i128().map_err(PyPolarsErr::from)?)?,
                 DataType::Float32 => PyList::new(py, series.f32().map_err(PyPolarsErr::from)?)?,
                 DataType::Float64 => PyList::new(py, series.f64().map_err(PyPolarsErr::from)?)?,
-                DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
+                DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                     with_match_categorical_physical_type!(series.dtype().cat_physical().unwrap(), |$C| {
                         PyList::new(py, series.cat::<$C>().unwrap().iter_str())?
                     })

@@ -10,10 +10,10 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::handle_casting_failures;
 
-pub type NewCategoricalChunked<T> = Logical<T, <T as PolarsCategoricalType>::PolarsPhysical>;
-pub type NewCategorical8Chunked = NewCategoricalChunked<Categorical8Type>;
-pub type NewCategorical16Chunked = NewCategoricalChunked<Categorical16Type>;
-pub type NewCategorical32Chunked = NewCategoricalChunked<Categorical32Type>;
+pub type CategoricalChunked<T> = Logical<T, <T as PolarsCategoricalType>::PolarsPhysical>;
+pub type Categorical8Chunked = CategoricalChunked<Categorical8Type>;
+pub type Categorical16Chunked = CategoricalChunked<Categorical16Type>;
+pub type Categorical32Chunked = CategoricalChunked<Categorical32Type>;
 
 pub trait CategoricalPhysicalDtypeExt {
     fn dtype(&self) -> DataType;
@@ -29,9 +29,9 @@ impl CategoricalPhysicalDtypeExt for CategoricalPhysical {
     }
 }
 
-impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
+impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     pub fn is_enum(&self) -> bool {
-        matches!(self.dtype(), DataType::NewEnum(_, _))
+        matches!(self.dtype(), DataType::Enum(_, _))
     }
 
     pub(crate) fn get_flags(&self) -> StatisticsFlags {
@@ -66,7 +66,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
         mut cat_ids: ChunkedArray<T::PolarsPhysical>,
         dtype: DataType,
     ) -> Self {
-        let (DataType::NewEnum(_, mapping) | DataType::NewCategorical(_, mapping)) = &dtype else {
+        let (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping)) = &dtype else {
             panic!("from_cats_and_dtype called on non-categorical type")
         };
         assert!(dtype.cat_physical().ok() == Some(T::physical()));
@@ -123,7 +123,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
 
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_mapping(&self) -> &Arc<CategoricalMapping> {
-        let (DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping)) = self.dtype()
+        let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = self.dtype()
         else {
             unreachable!()
         };
@@ -153,7 +153,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
         let mut validity = BitmapBuilder::with_capacity(hint);
 
         match &dtype {
-            DataType::NewCategorical(cats, mapping) => {
+            DataType::Categorical(cats, mapping) => {
                 assert!(cats.physical() == T::physical());
                 for opt_s in strings {
                     cat_ids.push(if let Some(s) = opt_s {
@@ -164,7 +164,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
                     validity.push(opt_s.is_some());
                 }
             },
-            DataType::NewEnum(fcats, mapping) => {
+            DataType::Enum(fcats, mapping) => {
                 assert!(fcats.physical() == T::physical());
                 for opt_s in strings {
                     cat_ids.push(if let Some(cat) = opt_s.and_then(|s| mapping.get_cat(s)) {
@@ -198,7 +198,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
     }
 }
 
-impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
+impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
     fn dtype(&self) -> &DataType {
         &self.dtype
     }
@@ -211,8 +211,8 @@ impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         match self.phys.get_unchecked(i) {
             Some(i) => match &self.dtype {
-                DataType::NewEnum(_, mapping) => AnyValue::Enum(i.as_cat(), mapping),
-                DataType::NewCategorical(_, mapping) => AnyValue::Categorical(i.as_cat(), mapping),
+                DataType::Enum(_, mapping) => AnyValue::Enum(i.as_cat(), mapping),
+                DataType::Categorical(_, mapping) => AnyValue::Categorical(i.as_cat(), mapping),
                 _ => unreachable!(),
             },
             None => AnyValue::Null,
@@ -247,10 +247,10 @@ impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
                 Ok(ca.into_series())
             },
 
-            DataType::NewEnum(fcats, _mapping) => {
+            DataType::Enum(fcats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
                 let ret = with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                    NewCategoricalChunked::<$C>::from_str_iter(
+                    CategoricalChunked::<$C>::from_str_iter(
                         self.name().clone(),
                         dtype.clone(),
                         self.iter_str()
@@ -264,11 +264,11 @@ impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
                 Ok(ret)
             },
 
-            DataType::NewCategorical(cats, _mapping) => {
+            DataType::Categorical(cats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
                 Ok(
                     with_match_categorical_physical_type!(cats.physical(), |$C| {
-                        NewCategoricalChunked::<$C>::from_str_iter(
+                        CategoricalChunked::<$C>::from_str_iter(
                             self.name().clone(),
                             dtype.clone(),
                             self.iter_str()

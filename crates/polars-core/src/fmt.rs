@@ -163,7 +163,7 @@ macro_rules! format_array {
         let truncate = match $a.dtype() {
             DataType::String => true,
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => true,
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => true,
             _ => false,
         };
         let truncate_len = if truncate { get_str_len_limit() } else { 0 };
@@ -402,14 +402,14 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(cats, _) => {
+            DataType::Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     format_array!(f, self.cat::<$C>().unwrap(), "cat", self.name(), "Series")
                 })
             },
 
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(fcats, _) => {
+            DataType::Enum(fcats, _) => {
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     format_array!(f, self.cat::<$C>().unwrap(), "enum", self.name(), "Series")
                 })

@@ -208,7 +208,7 @@ fn can_run_partitioned(
 
         let (unique_estimate, sampled_method) = match (keys.len(), keys[0].dtype()) {
             #[cfg(feature = "dtype-categorical")]
-            (1, DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping)) => {
+            (1, DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) => {
                 (mapping.num_cats_upper_bound(), "known")
             },
             _ => {

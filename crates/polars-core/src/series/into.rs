@@ -114,13 +114,13 @@ impl Series {
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)) => {
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
                     let ca = self.cat::<$C>().unwrap();
                     let arr = ca.physical().chunks()[chunk_idx].clone();
                     unsafe {
                         let new_phys = ChunkedArray::from_chunks(PlSmallStr::EMPTY, vec![arr]);
-                        let new = NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(new_phys, dt.clone());
+                        let new = CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(new_phys, dt.clone());
                         new.to_arrow(compat_level).boxed()
                     }
                 })

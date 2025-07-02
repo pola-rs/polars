@@ -1,6 +1,6 @@
 use arrow::array::MutableBinaryViewArray;
 #[cfg(feature = "dtype-categorical")]
-use polars_core::chunked_array::builder::NewCategoricalChunkedBuilder;
+use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -262,13 +262,13 @@ impl ParsedBuffer for Utf8Field {
 pub struct CategoricalField<T: PolarsCategoricalType> {
     escape_scratch: Vec<u8>,
     quote_char: u8,
-    builder: NewCategoricalChunkedBuilder<T>,
+    builder: CategoricalChunkedBuilder<T>,
 }
 
 #[cfg(feature = "dtype-categorical")]
 impl<T: PolarsCategoricalType> CategoricalField<T> {
     fn new(name: PlSmallStr, capacity: usize, quote_char: Option<u8>, dtype: DataType) -> Self {
-        let mut builder = NewCategoricalChunkedBuilder::new(name, dtype);
+        let mut builder = CategoricalChunkedBuilder::new(name, dtype);
         builder.reserve(capacity);
 
         Self {
@@ -548,7 +548,7 @@ pub fn init_buffers(
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
-                DataType::NewCategorical(_, _) | DataType::NewEnum(_, _) => {
+                DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                     match dtype.cat_physical().unwrap() {
                         CategoricalPhysical::U8 => {
                             Buffer::Categorical8(CategoricalField::<Categorical8Type>::new(

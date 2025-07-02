@@ -408,7 +408,7 @@ fn is_in_boolean(
 
 #[cfg(feature = "dtype-categorical")]
 fn is_in_cat_and_enum<T: PolarsCategoricalType>(
-    ca_in: &NewCategoricalChunked<T>,
+    ca_in: &CategoricalChunked<T>,
     other: &Series,
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
@@ -417,7 +417,7 @@ where
 {
     let to_categories = match (ca_in.dtype(), other.dtype().inner_dtype().unwrap()) {
         (
-            DataType::NewEnum(_, mapping) | DataType::NewCategorical(_, mapping),
+            DataType::Enum(_, mapping) | DataType::Categorical(_, mapping),
             DataType::String,
         ) => {
             (&|s: Series| {
@@ -435,11 +435,11 @@ where
                 Ok(ca.into_series())
             }) as _
         },
-        (DataType::NewCategorical(lcats, _), DataType::NewCategorical(rcats, _)) => {
+        (DataType::Categorical(lcats, _), DataType::Categorical(rcats, _)) => {
             ensure_same_categories(lcats, rcats)?;
             (&|s: Series| Ok(s.cat::<T>()?.physical().clone().into_series())) as _
         },
-        (DataType::NewEnum(lfcats, _), DataType::NewEnum(rfcats, _)) => {
+        (DataType::Enum(lfcats, _), DataType::Enum(rfcats, _)) => {
             ensure_same_frozen_categories(lfcats, rfcats)?;
             (&|s: Series| Ok(s.cat::<T>()?.physical().clone().into_series())) as _
         },
@@ -631,7 +631,7 @@ pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Bool
 
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        dt @ DataType::NewCategorical(_, _) | dt @ DataType::NewEnum(_, _) => {
+        dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
             with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
                 is_in_cat_and_enum(s.cat::<$C>().unwrap(), other, nulls_equal)
             })

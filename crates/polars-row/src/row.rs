@@ -19,7 +19,7 @@ const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 pub enum RowEncodingContext {
     Struct(Vec<Option<RowEncodingContext>>),
     /// Categorical / Enum
-    NewCategorical(NewRowEncodingCategoricalContext),
+    Categorical(NewRowEncodingCategoricalContext),
     /// Decimal with given precision
     Decimal(usize),
 }

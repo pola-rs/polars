@@ -353,7 +353,7 @@ pub(super) fn to_aexpr_impl(
                         match e {
                             #[cfg(feature = "dtype-categorical")]
                             AExpr::Cast {
-                                dtype: DataType::NewCategorical(_, _) | DataType::NewEnum(_, _),
+                                dtype: DataType::Categorical(_, _) | DataType::Enum(_, _),
                                 ..
                             } => {
                                 // TODO @ cat-rework: why not?

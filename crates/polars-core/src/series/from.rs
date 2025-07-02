@@ -98,10 +98,10 @@ impl Series {
             String => StringChunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ (NewCategorical(_, _) | NewEnum(_, _)) => {
+            dt @ (Categorical(_, _) | Enum(_, _)) => {
                 with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
                     let phys = ChunkedArray::from_chunks(name, chunks);
-                    NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(phys, dt.clone()).into_series()
+                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(phys, dt.clone()).into_series()
                 })
             },
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
@@ -394,7 +394,7 @@ impl Series {
                 let polars_dtype = DataType::from_arrow(dtype, md);
                 if matches!(
                     polars_dtype,
-                    DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)
+                    DataType::Categorical(_, _) | DataType::Enum(_, _)
                 ) {
                     macro_rules! unpack_categorical_chunked {
                         ($dt:ty) => {{
@@ -406,7 +406,7 @@ impl Series {
                             with_match_categorical_physical_type!(
                                 polars_dtype.cat_physical().unwrap(),
                                 |$C| {
-                                    let ca = NewCategoricalChunked::<$C>::from_str_iter(
+                                    let ca = CategoricalChunked::<$C>::from_str_iter(
                                         name,
                                         polars_dtype,
                                         keys.iter().map(|k| {

@@ -654,7 +654,7 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
 
     match (dtypes[0].as_ref(), &st) {
         #[cfg(feature = "dtype-categorical")]
-        (cat @ DataType::NewCategorical(_, _), DataType::String) => st = cat.clone(),
+        (cat @ DataType::Categorical(_, _), DataType::String) => st = cat.clone(),
         _ => {
             if let DataType::Unknown(kind) = st {
                 match kind {

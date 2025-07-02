@@ -2,14 +2,14 @@ use num_traits::Zero;
 
 use super::*;
 
-impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
+impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     #[must_use]
-    pub fn sort_with(&self, options: SortOptions) -> NewCategoricalChunked<T> {
+    pub fn sort_with(&self, options: SortOptions) -> CategoricalChunked<T> {
         if !self.uses_lexical_ordering() {
             let cats = self.physical().sort_with(options);
             // SAFETY: we only reordered the indexes so we are still in bounds.
             return unsafe {
-                NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(
                     cats,
                     self.dtype().clone(),
                 )
@@ -57,13 +57,13 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
 
         // SAFETY: we only reordered the indexes so we are still in bounds.
         unsafe {
-            NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
+            CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
         }
     }
 
     /// Returned a sorted `ChunkedArray`.
     #[must_use]
-    pub fn sort(&self, descending: bool) -> NewCategoricalChunked<T> {
+    pub fn sort(&self, descending: bool) -> CategoricalChunked<T> {
         self.sort_with(SortOptions {
             nulls_last: false,
             descending,
@@ -124,7 +124,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
 mod test {
     use crate::prelude::*;
 
-    fn assert_order(ca: &NewCategorical8Chunked, cmp: &[&str]) {
+    fn assert_order(ca: &Categorical8Chunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::String).unwrap();
         let ca = s.str().unwrap();
         assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), cmp);

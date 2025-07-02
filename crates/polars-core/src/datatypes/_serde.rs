@@ -174,13 +174,13 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            NewCategorical(cats, _) => Self::Categorical {
+            Categorical(cats, _) => Self::Categorical {
                 name: cats.name().to_string(),
                 namespace: cats.namespace().to_string(),
                 physical: cats.physical(),
             },
             #[cfg(feature = "dtype-categorical")]
-            NewEnum(fcats, _) => Self::Enum {
+            Enum(fcats, _) => Self::Enum {
                 strings: StringChunked::with_chunk(
                     PlSmallStr::from_static("categories"),
                     fcats.categories().clone(),
@@ -236,14 +236,14 @@ impl From<SerializableDataType> for DataType {
                     physical,
                 );
                 let mapping = cats.mapping();
-                Self::NewCategorical(cats, mapping)
+                Self::Categorical(cats, mapping)
             },
             #[cfg(feature = "dtype-categorical")]
             Enum { strings } => {
                 let ca = strings.str().unwrap();
                 let fcats = FrozenCategories::new(ca.iter().flatten()).unwrap();
                 let mapping = fcats.mapping().clone();
-                Self::NewEnum(fcats, mapping)
+                Self::Enum(fcats, mapping)
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),

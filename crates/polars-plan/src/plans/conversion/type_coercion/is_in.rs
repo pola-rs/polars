@@ -67,23 +67,23 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             strict: false,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::NewEnum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+        (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
             dtype: cast_type,
             strict: true,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::NewEnum(_, _)) => IsInTypeCoercionResult::SelfCast {
+        (DataType::String, DataType::Enum(_, _)) => IsInTypeCoercionResult::SelfCast {
             dtype: type_other_inner.clone(),
             strict: true,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::NewCategorical(_, _)) => IsInTypeCoercionResult::SelfCast {
+        (DataType::String, DataType::Categorical(_, _)) => IsInTypeCoercionResult::SelfCast {
             dtype: type_other_inner.clone(),
             strict: false,
         },
 
         #[cfg(feature = "dtype-categorical")]
-        (DataType::NewCategorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+        (DataType::Categorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
             dtype: match &type_other {
                 DataType::List(_) => DataType::List(Box::new(type_left.clone())),
                 #[cfg(feature = "dtype-array")]

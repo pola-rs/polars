@@ -510,11 +510,11 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (phys, D::NewCategorical(cats, _)) if &cats.physical().dtype() == phys => {
+            (phys, D::Categorical(cats, _)) if &cats.physical().dtype() == phys => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
-                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
+                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
                         ca.clone(),
                         dtype.clone(),
                     )
@@ -522,11 +522,11 @@ impl Series {
                 })
             },
             #[cfg(feature = "dtype-categorical")]
-            (phys, D::NewEnum(fcats, _)) if &fcats.physical().dtype() == phys => {
+            (phys, D::Enum(fcats, _)) if &fcats.physical().dtype() == phys => {
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
-                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
+                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
                         ca.clone(),
                         dtype.clone(),
                     )
@@ -718,7 +718,7 @@ impl Series {
             #[cfg(feature = "dtype-time")]
             Time => Cow::Owned(self.time().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
-            dt @ (NewCategorical(_, _) | NewEnum(_, _)) => {
+            dt @ (Categorical(_, _) | Enum(_, _)) => {
                 with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
                     let ca = self.cat::<$C>().unwrap();
                     Cow::Owned(ca.physical().clone().into_series())

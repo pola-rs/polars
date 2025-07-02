@@ -5,7 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 
 #[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::builder::NewCategoricalChunkedBuilder;
+use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
@@ -127,7 +127,7 @@ impl Series {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::NewCategorical(_, _) | DataType::NewEnum(_, _)) => {
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 any_values_to_categorical(values, dt, strict)?
             },
             #[cfg(feature = "dtype-decimal")]
@@ -454,7 +454,7 @@ fn any_values_to_categorical(
     strict: bool,
 ) -> PolarsResult<Series> {
     with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
-        let mut builder = NewCategoricalChunkedBuilder::<$C>::new(PlSmallStr::EMPTY, dtype.clone());
+        let mut builder = CategoricalChunkedBuilder::<$C>::new(PlSmallStr::EMPTY, dtype.clone());
 
         let mut owned = String::new(); // Amortize allocations.
         for av in values {

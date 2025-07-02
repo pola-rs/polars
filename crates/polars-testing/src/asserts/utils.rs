@@ -98,7 +98,7 @@ impl SeriesEqualOptions {
 /// Change a (possibly nested) Categorical data type to a String data type.
 pub fn categorical_dtype_to_string_dtype(dtype: &DataType) -> DataType {
     match dtype {
-        DataType::NewCategorical(..) => DataType::String,
+        DataType::Categorical(..) => DataType::String,
         DataType::List(inner) => {
             let inner_cast = categorical_dtype_to_string_dtype(inner);
             DataType::List(Box::new(inner_cast))

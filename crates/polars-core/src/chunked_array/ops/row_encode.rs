@@ -96,12 +96,12 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         | DataType::Duration(_) => None,
 
         #[cfg(feature = "dtype-categorical")]
-        DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping) => {
+        DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) => {
             use polars_row::NewRowEncodingCategoricalContext;
 
-            Some(RowEncodingContext::NewCategorical(
+            Some(RowEncodingContext::Categorical(
                 NewRowEncodingCategoricalContext {
-                    is_enum: matches!(dtype, DataType::NewEnum(_, _)),
+                    is_enum: matches!(dtype, DataType::Enum(_, _)),
                     mapping: mapping.clone(),
                 },
             ))

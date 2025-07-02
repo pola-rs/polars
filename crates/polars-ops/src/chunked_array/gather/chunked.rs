@@ -219,10 +219,10 @@ impl TakeChunked for Series {
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            NewCategorical(_, _) | NewEnum(_, _) => {
+            Categorical(_, _) | Enum(_, _) => {
                 with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     let ca = self.cat::<$C>().unwrap();
-                    NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
+                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
                         ca.physical().take_chunked_unchecked(by, sorted, avoid_sharing),
                         self.dtype().clone()
                     )
@@ -319,10 +319,10 @@ impl TakeChunked for Series {
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            NewCategorical(_, _) | NewEnum(_, _) => {
+            Categorical(_, _) | Enum(_, _) => {
                 with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
                     let ca = self.cat::<$C>().unwrap();
-                    NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
+                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
                         ca.physical().take_opt_chunked_unchecked(by, avoid_sharing),
                         self.dtype().clone()
                     )

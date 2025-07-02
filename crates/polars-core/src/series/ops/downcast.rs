@@ -160,23 +160,23 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-categorical")]
-    pub fn try_cat<T: PolarsCategoricalType>(&self) -> Option<&NewCategoricalChunked<T>> {
-        try_unpack_chunked!(self, dt @ DataType::NewEnum(_, _) | dt @ DataType::NewCategorical(_, _) if dt.cat_physical().unwrap() == T::physical() => NewCategoricalChunked<T>)
+    pub fn try_cat<T: PolarsCategoricalType>(&self) -> Option<&CategoricalChunked<T>> {
+        try_unpack_chunked!(self, dt @ DataType::Enum(_, _) | dt @ DataType::Categorical(_, _) if dt.cat_physical().unwrap() == T::physical() => CategoricalChunked<T>)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt8.
     #[cfg(feature = "dtype-categorical")]
-    pub fn try_cat8(&self) -> Option<&NewCategorical8Chunked> {
+    pub fn try_cat8(&self) -> Option<&Categorical8Chunked> {
         self.try_cat::<Categorical8Type>()
     }
 
     #[cfg(feature = "dtype-categorical")]
-    pub fn try_cat16(&self) -> Option<&NewCategorical16Chunked> {
+    pub fn try_cat16(&self) -> Option<&Categorical16Chunked> {
         self.try_cat::<Categorical16Type>()
     }
 
     #[cfg(feature = "dtype-categorical")]
-    pub fn try_cat32(&self) -> Option<&NewCategorical32Chunked> {
+    pub fn try_cat32(&self) -> Option<&Categorical32Chunked> {
         self.try_cat::<Categorical32Type>()
     }
 
@@ -352,28 +352,28 @@ impl Series {
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`].
     #[cfg(feature = "dtype-categorical")]
-    pub fn cat<T: PolarsCategoricalType>(&self) -> PolarsResult<&NewCategoricalChunked<T>> {
+    pub fn cat<T: PolarsCategoricalType>(&self) -> PolarsResult<&CategoricalChunked<T>> {
         self.try_cat::<T>()
             .ok_or_else(|| unpack_chunked_err!(self => "Enum | Categorical"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt8.
     #[cfg(feature = "dtype-categorical")]
-    pub fn cat8(&self) -> PolarsResult<&NewCategoricalChunked<Categorical8Type>> {
+    pub fn cat8(&self) -> PolarsResult<&CategoricalChunked<Categorical8Type>> {
         self.try_cat8()
             .ok_or_else(|| unpack_chunked_err!(self => "Enum8 | Categorical8"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt16.
     #[cfg(feature = "dtype-categorical")]
-    pub fn cat16(&self) -> PolarsResult<&NewCategoricalChunked<Categorical16Type>> {
+    pub fn cat16(&self) -> PolarsResult<&CategoricalChunked<Categorical16Type>> {
         self.try_cat16()
             .ok_or_else(|| unpack_chunked_err!(self => "Enum16 | Categorical16"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Categorical`] or [`DataType::Enum`] with a physical type of UInt32.
     #[cfg(feature = "dtype-categorical")]
-    pub fn cat32(&self) -> PolarsResult<&NewCategoricalChunked<Categorical32Type>> {
+    pub fn cat32(&self) -> PolarsResult<&CategoricalChunked<Categorical32Type>> {
         self.try_cat32()
             .ok_or_else(|| unpack_chunked_err!(self => "Enum32 | Categorical32"))
     }

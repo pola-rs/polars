@@ -29,7 +29,7 @@ pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => HashKeysVariant::Single,
         #[cfg(feature = "dtype-categorical")]
-        DataType::NewEnum(_, _) => HashKeysVariant::Single,
+        DataType::Enum(_, _) => HashKeysVariant::Single,
 
         DataType::String | DataType::Binary => HashKeysVariant::Binview,
 
@@ -76,7 +76,7 @@ macro_rules! downcast_single_key_ca {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(..) => { let $ca = $self.decimal().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(fcats, _) => {
+            DataType::Enum(fcats, _) => {
                 match fcats.physical() {
                     CategoricalPhysical::U8 => { let $ca = $self.cat8().unwrap().physical(); $($body)* },
                     CategoricalPhysical::U16 => { let $ca = $self.cat16().unwrap().physical(); $($body)* },

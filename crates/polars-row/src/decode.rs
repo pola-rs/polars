@@ -218,7 +218,7 @@ unsafe fn decode(
 ) -> ArrayRef {
     use ArrowDataType as D;
 
-    if let Some(RowEncodingContext::NewCategorical(ctx)) = dict {
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
         return match dtype {
             D::UInt8 => decode_cat::<u8>(rows, opt, ctx).to_boxed(),
             D::UInt16 => decode_cat::<u16>(rows, opt, ctx).to_boxed(),

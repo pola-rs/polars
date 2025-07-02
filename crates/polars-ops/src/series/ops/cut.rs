@@ -1,5 +1,5 @@
 use polars_compute::rolling::QuantileMethod;
-use polars_core::chunked_array::builder::NewCategoricalChunkedBuilder;
+use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
 use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 
@@ -27,7 +27,7 @@ fn map_cats(
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
         // return a struct series instead which can be turned into a dataframe later.
         let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-        let mut bld = NewCategoricalChunkedBuilder::<Categorical32Type>::new(
+        let mut bld = CategoricalChunkedBuilder::<Categorical32Type>::new(
             out_name.clone(),
             DataType::from_categories(Categories::global()),
         );
@@ -54,7 +54,7 @@ fn map_cats(
         let outvals = [brk_vals.finish().into_series(), bld.finish().into_series()];
         Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
     } else {
-        Ok(NewCategoricalChunked::<Categorical32Type>::from_str_iter(
+        Ok(CategoricalChunked::<Categorical32Type>::from_str_iter(
             out_name,
             DataType::from_categories(Categories::global()),
             s_iter.map(|opt| {
