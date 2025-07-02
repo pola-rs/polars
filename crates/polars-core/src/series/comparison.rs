@@ -132,13 +132,13 @@ macro_rules! impl_ineq_compare {
             },
             (NewCategorical(_, _) | NewEnum(_, _), String) => {
                 return with_match_categorical_physical_type!(lhs.dtype().cat_physical().unwrap(), |$C| {
-                    Ok(lhs.cat::<$C>().unwrap().$method(rhs.str().unwrap()))
+                    lhs.cat::<$C>().unwrap().$method(rhs.str().unwrap())
                 })
             },
             (String, NewCategorical(_, _) | NewEnum(_, _)) => {
                 return with_match_categorical_physical_type!(rhs.dtype().cat_physical().unwrap(), |$C| {
                     // We use the reverse method as string <-> enum comparisons are only implemented one-way.
-                    Ok(rhs.cat::<$C>().unwrap().$rev_method(lhs.str().unwrap()))
+                    rhs.cat::<$C>().unwrap().$rev_method(lhs.str().unwrap())
                 })
             },
             _ => (),

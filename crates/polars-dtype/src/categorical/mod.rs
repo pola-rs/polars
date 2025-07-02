@@ -312,15 +312,15 @@ pub fn ensure_same_categories(left: &Arc<Categories>, right: &Arc<Categories>) -
     }
 
     if left.name() != right.name() {
-        polars_bail!(ComputeError: "Categories name mismatch, left: '{}', right: '{}'.
+        polars_bail!(SchemaMismatch: "Categories name mismatch, left: '{}', right: '{}'.
 
 Operations mixing different Categories are often not supported, you may have to cast.", left.name(), right.name())
     } else if left.namespace() != right.namespace() {
-        polars_bail!(ComputeError: "Categories have same name ('{}'), but have a mismatch in namespace, left: {}, right: {}.
+        polars_bail!(SchemaMismatch: "Categories have same name ('{}'), but have a mismatch in namespace, left: {}, right: {}.
 
 Operations mixing different Categories are often not supported, you may have to cast.", left.name(), left.namespace(), right.namespace())
     } else {
-        polars_bail!(ComputeError: "Categories have same name and namespace ('{}', {}), but have a mismatch in dtype, left: {}, right: {}.
+        polars_bail!(SchemaMismatch: "Categories have same name and namespace ('{}', {}), but have a mismatch in dtype, left: {}, right: {}.
 
 Operations mixing different Categories are often not supported, you may have to cast.", left.name(), left.namespace(), left.physical().as_str(), right.physical().as_str())
     }
@@ -331,7 +331,7 @@ pub fn ensure_same_frozen_categories(left: &Arc<FrozenCategories>, right: &Arc<F
         return Ok(());
     }
     
-    polars_bail!(ComputeError: r#"Enum mismatch.
+    polars_bail!(SchemaMismatch: r#"Enum mismatch.
 
 Operations mixing different Enums are often not supported, you may have to cast."#)
 }

@@ -1,5 +1,12 @@
 use crate::prelude::*;
 
+fn str_to_cat_enum(
+    map: &CategoricalMapping,
+    s: &str
+) -> PolarsResult<CatSize> {
+    map.get_cat(s).ok_or_else(|| polars_err!(InvalidOperation: "conversion from `str` to `enum` failed for value \"{s}\""))
+}
+
 fn cat_equality_helper<T: PolarsCategoricalType, EqPhys>(
     lhs: &NewCategoricalChunked<T>,
     rhs: &NewCategoricalChunked<T>,
@@ -160,6 +167,58 @@ where
     }
 }
 
+fn cat_str_phys_compare_helper<T: PolarsCategoricalType, Cmp>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &StringChunked,
+    cmp: Cmp,
+) -> PolarsResult<BooleanChunked>
+where
+    Cmp: Fn(T::Native, T::Native) -> bool,
+{
+    let mapping = lhs.get_mapping();
+    match (lhs.len(), rhs.len()) {
+        (lhs_len, 1) => {
+            let Some(s) = rhs.get(0) else {
+                return Ok(BooleanChunked::full_null(lhs.name().clone(), lhs_len));
+            };
+            cat_str_scalar_phys_compare_helper(lhs, s, cmp)
+        },
+        (1, rhs_len) => {
+            let Some(cat) = lhs.physical().get(0) else {
+                return Ok(BooleanChunked::full_null(lhs.name().clone(), rhs_len));
+            };
+            
+            rhs
+                .iter()
+                .map(|opt_r| {
+                    if let Some(r) = opt_r {
+                        let r = T::Native::from_cat(str_to_cat_enum(mapping, r)?);
+                        Ok(Some(cmp(cat, r)))
+                    } else {
+                        Ok(None)
+                    }
+                })
+                .try_collect_ca_trusted(lhs.name().clone())
+        },
+        (lhs_len, rhs_len) => {
+            assert!(lhs_len == rhs_len);
+            lhs
+                .physical()
+                .iter()
+                .zip(rhs.iter())
+                .map(|(l, r)| match (l, r) {
+                    (None, _) => Ok(None),
+                    (_, None) => Ok(None),
+                    (Some(l), Some(r)) => {
+                        let r = T::Native::from_cat(str_to_cat_enum(mapping, r)?);
+                        Ok(Some(cmp(l, r)))
+                    }
+                })
+                .try_collect_ca_trusted(lhs.name().clone())
+        }
+    }
+}
+
 fn cat_str_scalar_equality_helper<T: PolarsCategoricalType, EqPhysScalar>(
     lhs: &NewCategoricalChunked<T>,
     rhs: &str,
@@ -192,6 +251,21 @@ where
     lhs.iter_str()
         .map(|opt_l| opt_l.map(|l| cmp(l, rhs)))
         .collect_ca_trusted(lhs.name().clone())
+}
+
+fn cat_str_scalar_phys_compare_helper<T: PolarsCategoricalType, Cmp>(
+    lhs: &NewCategoricalChunked<T>,
+    rhs: &str,
+    cmp: Cmp,
+) -> PolarsResult<BooleanChunked>
+where
+    Cmp: Fn(T::Native, T::Native) -> bool,
+{
+    let r = T::Native::from_cat(str_to_cat_enum(lhs.get_mapping(), rhs)?);
+    Ok(lhs.physical()
+        .iter()
+        .map(|opt_l| opt_l.map(|l| cmp(l, r)))
+        .collect_ca_trusted(lhs.name().clone()))
 }
 
 
@@ -294,22 +368,38 @@ where
 }
 
 impl<T: PolarsCategoricalType> ChunkCompareIneq<&StringChunked> for NewCategoricalChunked<T> {
-    type Item = BooleanChunked;
+    type Item = PolarsResult<BooleanChunked>;
 
     fn gt(&self, rhs: &StringChunked) -> Self::Item {
-        cat_str_compare_helper(self, rhs, |l, r| l > r, |c, r| r.lt(c))
+        if self.is_enum() {
+            cat_str_phys_compare_helper(self, rhs, |l, r| l > r)
+        } else {
+            Ok(cat_str_compare_helper(self, rhs, |l, r| l > r, |c, r| r.lt(c)))
+        }
     }
 
     fn gt_eq(&self, rhs: &StringChunked) -> Self::Item {
-        cat_str_compare_helper(self, rhs, |l, r| l >= r, |c, r| r.lt_eq(c))
+        if self.is_enum() {
+            cat_str_phys_compare_helper(self, rhs, |l, r| l >= r)
+        } else {
+            Ok(cat_str_compare_helper(self, rhs, |l, r| l >= r, |c, r| r.lt_eq(c)))
+        }
     }
 
     fn lt(&self, rhs: &StringChunked) -> Self::Item {
-        cat_str_compare_helper(self, rhs, |l, r| l < r, |c, r| r.gt(c))
+        if self.is_enum() {
+            cat_str_phys_compare_helper(self, rhs, |l, r| l < r)
+        } else {
+            Ok(cat_str_compare_helper(self, rhs, |l, r| l < r, |c, r| r.gt(c)))
+        }
     }
 
     fn lt_eq(&self, rhs: &StringChunked) -> Self::Item {
-        cat_str_compare_helper(self, rhs, |l, r| l <= r, |c, r| r.gt_eq(c))
+        if self.is_enum() {
+            cat_str_phys_compare_helper(self, rhs, |l, r| l <= r)
+        } else {
+            Ok(cat_str_compare_helper(self, rhs, |l, r| l <= r, |c, r| r.gt_eq(c)))
+        }
     }
 }
 
