@@ -71,6 +71,7 @@ impl PlSmallStr {
     }
 
     #[inline(always)]
+    #[allow(clippy::inherent_to_string_shadow_display)] // This is faster.
     pub fn to_string(&self) -> String {
         self.0.as_str().to_owned()
     }

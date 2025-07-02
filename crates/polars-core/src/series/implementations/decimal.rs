@@ -17,13 +17,13 @@ impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {
 
 impl SeriesWrap<DecimalChunked> {
     fn apply_physical_to_s<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
-        f(&self.0.physical())
+        f(self.0.physical())
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
     fn apply_physical<T, F: Fn(&Int128Chunked) -> T>(&self, f: F) -> T {
-        f(&self.0.physical())
+        f(self.0.physical())
     }
 
     fn scale_factor(&self) -> u128 {
@@ -45,7 +45,7 @@ impl SeriesWrap<DecimalChunked> {
     }
 
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
-        let agg_s = f(&self.0.physical());
+        let agg_s = f(self.0.physical());
         match agg_s.dtype() {
             DataType::Int128 => {
                 let ca = agg_s.i128().unwrap();

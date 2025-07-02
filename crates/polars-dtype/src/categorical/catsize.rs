@@ -9,6 +9,7 @@ impl CatNative for u8 {
     fn as_cat(&self) -> CatSize {
         *self as CatSize
     }
+
     fn from_cat(cat: CatSize) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -26,6 +27,7 @@ impl CatNative for u16 {
     fn as_cat(&self) -> CatSize {
         *self as CatSize
     }
+
     fn from_cat(cat: CatSize) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -41,17 +43,10 @@ impl CatNative for u16 {
 
 impl CatNative for u32 {
     fn as_cat(&self) -> CatSize {
-        *self as CatSize
+        *self
     }
-    fn from_cat(cat: CatSize) -> Self {
-        #[cfg(debug_assertions)]
-        {
-            cat.try_into().unwrap()
-        }
 
-        #[cfg(not(debug_assertions))]
-        {
-            cat as Self
-        }
+    fn from_cat(cat: CatSize) -> Self {
+        cat
     }
 }

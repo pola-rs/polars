@@ -37,10 +37,8 @@ fn map_cats(
         );
         s_iter
             .map(|opt| {
-                opt.filter(|x| !x.is_nan()).map(|x| {
-                    let pt = sorted_breaks.partition_point(|v| op(&x, v));
-                    pt
-                })
+                opt.filter(|x| !x.is_nan())
+                    .map(|x| sorted_breaks.partition_point(|v| op(&x, v)))
             })
             .for_each(|idx| match idx {
                 None => {

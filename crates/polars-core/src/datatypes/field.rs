@@ -214,7 +214,7 @@ impl DataType {
 
                     let (physical, _rest) = cat_md.split_once(';').unwrap();
 
-                    let physical = CategoricalPhysical::from_str(physical).unwrap();
+                    let physical: CategoricalPhysical = physical.parse().ok().unwrap();
                     let cats = Categories::new(
                         PlSmallStr::from_str(name),
                         PlSmallStr::from_str(namespace),

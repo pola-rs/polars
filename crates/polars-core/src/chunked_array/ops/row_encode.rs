@@ -72,7 +72,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
 ///
 /// This should be given the logical type in order to communicate Polars datatype information down
 /// into the row encoding / decoding.
-pub fn get_row_encoding_context(dtype: &DataType, ordered: bool) -> Option<RowEncodingContext> {
+pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> {
     match dtype {
         DataType::Boolean
         | DataType::UInt8
@@ -118,14 +118,14 @@ pub fn get_row_encoding_context(dtype: &DataType, ordered: bool) -> Option<RowEn
         },
 
         #[cfg(feature = "dtype-array")]
-        DataType::Array(dtype, _) => get_row_encoding_context(dtype, ordered),
-        DataType::List(dtype) => get_row_encoding_context(dtype, ordered),
+        DataType::Array(dtype, _) => get_row_encoding_context(dtype),
+        DataType::List(dtype) => get_row_encoding_context(dtype),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fs) => {
             let mut ctxts = Vec::new();
 
             for (i, f) in fs.iter().enumerate() {
-                if let Some(ctxt) = get_row_encoding_context(f.dtype(), ordered) {
+                if let Some(ctxt) = get_row_encoding_context(f.dtype()) {
                     ctxts.reserve(fs.len());
                     ctxts.extend(std::iter::repeat_n(None, i));
                     ctxts.push(Some(ctxt));
@@ -140,7 +140,7 @@ pub fn get_row_encoding_context(dtype: &DataType, ordered: bool) -> Option<RowEn
             ctxts.extend(
                 fs[ctxts.len()..]
                     .iter()
-                    .map(|f| get_row_encoding_context(f.dtype(), ordered)),
+                    .map(|f| get_row_encoding_context(f.dtype())),
             );
 
             Some(RowEncodingContext::Struct(ctxts))
@@ -175,7 +175,7 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_unsorted();
-        let ctxt = get_row_encoding_context(by.dtype(), false);
+        let ctxt = get_row_encoding_context(by.dtype());
 
         cols.push(arr);
         opts.push(opt);
@@ -210,7 +210,7 @@ pub fn _get_rows_encoded(
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
-        let ctxt = get_row_encoding_context(by.dtype(), true);
+        let ctxt = get_row_encoding_context(by.dtype());
 
         cols.push(arr);
         opts.push(opt);

@@ -118,6 +118,8 @@ where
 pub trait PolarsIntegerType: PolarsNumericType {}
 pub trait PolarsFloatType: PolarsNumericType {}
 
+/// # Safety
+/// The physical() return type must be correct for Native.
 pub unsafe trait PolarsCategoricalType: PolarsDataType {
     type Native: NumericNative + CatNative + DictionaryKey + PartialEq + Eq + Hash;
     type PolarsPhysical: PolarsIntegerType<Native = Self::Native>;

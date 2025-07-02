@@ -1,5 +1,6 @@
 use std::fmt;
 use std::hash::{BuildHasher, Hasher};
+use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use arrow::array::builder::StaticArrayBuilder;
@@ -57,13 +58,17 @@ impl CategoricalPhysical {
             Self::U32 => "u32",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for CategoricalPhysical {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "u8" => Some(Self::U8),
-            "u16" => Some(Self::U16),
-            "u32" => Some(Self::U32),
-            _ => None,
+            "u8" => Ok(Self::U8),
+            "u16" => Ok(Self::U16),
+            "u32" => Ok(Self::U32),
+            _ => Err(()),
         }
     }
 }
