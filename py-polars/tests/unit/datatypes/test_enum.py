@@ -536,25 +536,6 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
         series.cast(enum_dtype)
 
 
-def test_enum_creating_col_expr() -> None:
-    df = pl.DataFrame(
-        {
-            "col1": ["a", "b", "c"],
-            "col2": ["d", "e", "f"],
-            "col3": ["g", "h", "i"],
-        },
-        schema={
-            "col1": pl.Enum(["a", "b", "c"]),
-            "col2": pl.Categorical(),
-            "col3": pl.Enum(["g", "h", "i"]),
-        },
-    )
-
-    out = df.select(pl.col(pl.Enum))
-    expected = df.select("col1", "col3")
-    assert_frame_equal(out, expected)
-
-
 def test_enum_cse_eq() -> None:
     df = pl.DataFrame({"a": [1]})
 

@@ -68,7 +68,8 @@ def test_merge_sorted_categorical() -> None:
     assert_series_equal(result, expected)
 
     right = pl.Series("a", ["b", "a"], pl.Categorical()).sort().to_frame()
-    assert_series_equal(left.merge_sorted(right, "a"), pl.Series(["a", "a", "b", "b"]))
+    expected = pl.Series("a", ["a", "a", "b", "b"], pl.Categorical())
+    assert_frame_equal(left.merge_sorted(right, "a"), expected.to_frame())
 
 
 @pytest.mark.may_fail_auto_streaming

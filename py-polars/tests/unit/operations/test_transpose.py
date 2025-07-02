@@ -142,41 +142,23 @@ def test_transpose_arguments() -> None:
 
 @pytest.mark.may_fail_auto_streaming
 def test_transpose_categorical_data() -> None:
-    with pl.StringCache():
-        df = pl.DataFrame(
-            [
-                pl.Series(["a", "b", "c"], dtype=pl.Categorical),
-                pl.Series(["c", "g", "c"], dtype=pl.Categorical),
-                pl.Series(["d", "b", "c"], dtype=pl.Categorical),
-            ]
-        )
-        df_transposed = df.transpose(
-            include_header=False, column_names=["col1", "col2", "col3"]
-        )
-        assert_series_equal(
-            df_transposed.get_column("col1"),
-            pl.Series("col1", ["a", "c", "d"], dtype=pl.Categorical),
-        )
-
-    # Without string Cache only works if they have the same categories in the same order
     df = pl.DataFrame(
         [
-            pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
-            pl.Series(["a", "b", "b", "c"], dtype=pl.Categorical),
-            pl.Series(["a", "a", "b", "c"], dtype=pl.Categorical),
+            pl.Series(["a", "b", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["c", "g", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["d", "b", "c", "d"], dtype=pl.Categorical),
         ]
     )
-    df_transposed = df.transpose(
-        include_header=False, column_names=["col1", "col2", "col3", "col4"]
+    df_transposed = df.transpose(include_header=False)
+    expected = pl.DataFrame(
+        [
+            pl.Series(["a", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["b", "g", "b"], dtype=pl.Categorical),
+            pl.Series(["c", "c", "c"], dtype=pl.Categorical),
+            pl.Series(["d", "d", "d"], dtype=pl.Categorical),
+        ]
     )
-
-    with pytest.raises(StringCacheMismatchError):
-        pl.DataFrame(
-            [
-                pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
-                pl.Series(["c", "b", "b", "c"], dtype=pl.Categorical),
-            ]
-        ).transpose()
+    assert_frame_equal(df_transposed, expected)
 
 
 @pytest.mark.may_fail_auto_streaming
