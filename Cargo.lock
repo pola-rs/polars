@@ -3321,7 +3321,7 @@ dependencies = [
  "polars-parquet-format",
  "polars-utils",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.1",
  "schemars",
  "serde",
  "simdutf8",
