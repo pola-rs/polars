@@ -164,12 +164,16 @@ macro_rules! impl_cat_series {
                 self.0.append(other.cat::<$pdt>().unwrap())
             }
 
-            fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+            fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), append);
-                let arc_any = other.0.as_arc_any();
-                let downcast = arc_any.downcast::<SeriesWrap<$ca>>().unwrap();
-                let other_ca = Arc::try_unwrap(downcast).ok().unwrap();
-                self.0.append_owned(other_ca.0)
+                self.0.physical_mut().append_owned(std::mem::take(
+                    other
+                        ._get_inner_mut()
+                        .as_any_mut()
+                        .downcast_mut::<$ca>()
+                        .unwrap()
+                        .physical_mut(),
+                ))
             }
 
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
