@@ -120,6 +120,7 @@ pub trait PolarsFloatType: PolarsNumericType {}
 
 /// # Safety
 /// The physical() return type must be correct for Native.
+#[cfg(feature = "dtype-categorical")]
 pub unsafe trait PolarsCategoricalType: PolarsDataType {
     type Native: NumericNative + CatNative + DictionaryKey + PartialEq + Eq + Hash;
     type PolarsPhysical: PolarsIntegerType<Native = Self::Native>;
@@ -192,6 +193,7 @@ macro_rules! impl_polars_categorical_datatype {
             FalseT
         );
 
+        #[cfg(feature = "dtype-categorical")]
         unsafe impl PolarsCategoricalType for $pdt {
             type Native = $native;
             type PolarsPhysical = $phys;

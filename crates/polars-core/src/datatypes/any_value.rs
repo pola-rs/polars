@@ -795,6 +795,7 @@ impl<'a> AnyValue<'a> {
             Self::Categorical(cat, map) | Self::Enum(cat, map) => {
                 Cow::Borrowed(unsafe { map.cat_to_str_unchecked(*cat) })
             },
+            #[cfg(feature = "dtype-categorical")]
             Self::CategoricalOwned(cat, map) | Self::EnumOwned(cat, map) => {
                 Cow::Owned(unsafe { map.cat_to_str_unchecked(*cat) }.to_owned())
             },

@@ -982,6 +982,7 @@ impl DataType {
     }
 
     /// If this dtype is a Categorical or Enum, returns the physical backing type.
+    #[cfg(feature = "dtype-categorical")]
     pub fn cat_physical(&self) -> PolarsResult<CategoricalPhysical> {
         match self {
             DataType::NewCategorical(cats, _) => Ok(cats.physical()),
@@ -993,6 +994,7 @@ impl DataType {
     }
 
     /// If this dtype is a Categorical or Enum, returns the underlying mapping.
+    #[cfg(feature = "dtype-categorical")]
     pub fn cat_mapping(&self) -> PolarsResult<&Arc<CategoricalMapping>> {
         match self {
             DataType::NewCategorical(_, mapping) | DataType::NewEnum(_, mapping) => Ok(mapping),
@@ -1002,11 +1004,13 @@ impl DataType {
         }
     }
 
+    #[cfg(feature = "dtype-categorical")]
     pub fn from_categories(cats: Arc<Categories>) -> Self {
         let mapping = cats.mapping();
         Self::NewCategorical(cats, mapping)
     }
 
+    #[cfg(feature = "dtype-categorical")]
     pub fn from_frozen_categories(fcats: Arc<FrozenCategories>) -> Self {
         let mapping = fcats.mapping().clone();
         Self::NewEnum(fcats, mapping)

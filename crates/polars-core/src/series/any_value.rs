@@ -2,9 +2,10 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-use crate::chunked_array::builder::{
-    AnonymousOwnedListBuilder, NewCategoricalChunkedBuilder, get_list_builder,
-};
+use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
+
+#[cfg(feature = "dtype-categorical")]
+use crate::chunked_array::builder::NewCategoricalChunkedBuilder;
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
