@@ -565,3 +565,93 @@ def test_scan_delta_nanosecond_timestamp(
 
     assert_frame_equal(q.collect(), df.clear())
     assert "reading 0 / 1 row groups" in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "c1": [
+                {"timestamp": datetime(2025, 1, 1)},
+                {"timestamp": datetime(2025, 1, 2)},
+            ]
+        },
+        schema={"c1": pl.Struct({"timestamp": pl.Datetime("us", time_zone="UTC")})},
+    )
+
+    df_nano_ts = pl.DataFrame(
+        {
+            "c1": [
+                {"timestamp": datetime(2025, 1, 1)},
+                {"timestamp": datetime(2025, 1, 2)},
+            ]
+        },
+        schema={"c1": pl.Struct({"timestamp": pl.Datetime("ns", time_zone=None)})},
+    )
+
+    root = tmp_path / "delta"
+
+    df.write_delta(root)
+
+    # Manually overwrite the file with one that has nanosecond timestamps.
+    parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
+    assert len(parquet_files) == 1
+    parquet_file_path = parquet_files[0]
+
+    df_nano_ts.write_parquet(parquet_file_path)
+
+    # Baseline: The timestamp in the file is in nanoseconds.
+    q = pl.scan_parquet(parquet_file_path)
+    assert q.collect_schema() == {
+        "c1": pl.Struct({"timestamp": pl.Datetime("ns", time_zone=None)})
+    }
+    assert_frame_equal(q.collect(), df_nano_ts)
+
+    q = pl.scan_delta(str(root))
+
+    assert q.collect_schema() == {
+        "c1": pl.Struct({"timestamp": pl.Datetime("us", time_zone="UTC")})
+    }
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_schema_evolution_nested_struct_field_19915(tmp_path: Path) -> None:
+    (
+        pl.DataFrame(
+            {"a": ["test"], "properties": [{"property_key": {"item": 1}}]}
+        ).write_delta(tmp_path)
+    )
+
+    (
+        pl.DataFrame(
+            {
+                "a": ["test1"],
+                "properties": [{"property_key": {"item": 50, "item2": 10}}],
+            }
+        ).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={"schema_mode": "merge"},
+        )
+    )
+
+    q = pl.scan_delta(str(tmp_path))
+
+    expect = pl.DataFrame(
+        {
+            "a": ["test", "test1"],
+            "properties": [
+                {"property_key": {"item": 1, "item2": None}},
+                {"property_key": {"item": 50, "item2": 10}},
+            ],
+        },
+        schema={
+            "a": pl.String,
+            "properties": pl.Struct(
+                {"property_key": pl.Struct({"item": pl.Int64, "item2": pl.Int64})}
+            ),
+        },
+    )
+
+    assert_frame_equal(q.sort("a").collect(), expect)
