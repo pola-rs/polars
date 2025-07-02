@@ -1334,7 +1334,7 @@ def test_from_generator_or_iterable() -> None:
     assert df.schema == {"col": pl.List(pl.String)}
     assert df[-2:]["col"].to_list() == [None, ["a", "b", "c"]]
 
-    # ref: issue #23404 (infer_schema_length=None should ignore chunk_size and scan all data)
+    # ref: issue #23404 (infer_schema_length=None should always scan all data)
     d = iterable_to_pydf(
         data=chain(repeat({"col": 1}, length_minus_1 := 100), repeat({"col": 1.1}, 1)),
         infer_schema_length=None,
