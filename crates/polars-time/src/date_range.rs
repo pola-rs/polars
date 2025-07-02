@@ -254,17 +254,21 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
     let num_samples = num_samples as i64;
-    let duration = match time_unit {
-        TimeUnit::Nanoseconds => interval.duration_ns(),
-        TimeUnit::Microseconds => interval.duration_us(),
-        TimeUnit::Milliseconds => interval.duration_ms(),
-    };
     let time_zone_opt: Option<TimeZone> = match time_zone {
         #[cfg(feature = "timezones")]
         Some(tz) => Some(TimeZone::from_chrono(tz)),
         _ => None,
     };
     if interval.is_constant_duration(time_zone_opt.as_ref()) {
+        let mut duration = match time_unit {
+            TimeUnit::Nanoseconds => interval.duration_ns(),
+            TimeUnit::Microseconds => interval.duration_us(),
+            TimeUnit::Milliseconds => interval.duration_ms(),
+        };
+        if interval.negative {
+            duration = -duration;
+        }
+
         // Fast path!
         let step: i64 = duration
             .try_into()
@@ -275,9 +279,20 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
             interval,
             time_unit,
         );
-        return Ok((start..(start + step * num_samples))
-            .step_by(step as usize)
-            .collect::<Vec<i64>>());
+        let out = if step < 0 {
+            // Negative interval, we move backwards.
+            let step = -step;
+            (start - (step * num_samples) + 1..=start)
+                .rev()
+                .step_by(step as usize)
+                .collect::<Vec<i64>>()
+        } else {
+            // Positive interval, we move forwards.
+            (start..start + step * num_samples)
+                .step_by(step as usize)
+                .collect::<Vec<i64>>()
+        };
+        return Ok(out);
     }
 
     let offset_fn = match time_unit {

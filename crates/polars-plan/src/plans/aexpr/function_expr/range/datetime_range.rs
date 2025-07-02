@@ -291,85 +291,6 @@ fn dt_range_start_interval_samples(
     Ok(result.cast(&dtype_out).unwrap().into_column())
 }
 
-fn dt_range_end_interval_samples(
-    end: &Column,
-    interval: Duration,
-    num_samples: &Column,
-    closed: ClosedWindow,
-    time_unit: Option<TimeUnit>,
-    time_zone: Option<TimeZone>,
-) -> PolarsResult<Column> {
-    let dtype_in = end.dtype();
-    let is_date = dtype_in == &DataType::Date;
-    let end = if is_date {
-        end.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?
-    } else {
-        end.clone()
-    };
-    ensure_items_contain_exactly_one_value(&[&end], &["end"])?;
-
-    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
-    let mut dtype_out = match (dtype_in, time_unit) {
-        (DataType::Date, time_unit) => {
-            if let Some(tu) = time_unit {
-                DataType::Datetime(tu, None)
-            } else {
-                DataType::Datetime(TimeUnit::Microseconds, None)
-            }
-        },
-        // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => dtype_in.clone(),
-        // overwrite time unit, keep timezone
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
-    };
-
-    // Overwrite time zone, if specified
-    #[cfg(feature = "timezones")]
-    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, &time_zone) {
-        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
-    };
-
-    // If `start` is naive, but a time zone was specified, then first localize.
-    let end = match (dtype_in, time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(_, None), Some(tz)) => polars_ops::prelude::replace_time_zone(
-            end.datetime().unwrap(),
-            Some(&tz),
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(&dtype_out)?
-        .into_column(),
-        _ => end.cast(&dtype_out)?,
-    };
-
-    let name = end.name();
-    let end = temporal_series_to_i64_scalar(&end)
-        .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
-    let num_samples = num_samples.get(0).unwrap().extract::<u64>().unwrap();
-    let result = match dtype_out {
-        DataType::Datetime(tu, ref tz) => {
-            let tz = match tz {
-                #[cfg(feature = "timezones")]
-                Some(tz) => Some(parse_time_zone(tz)?),
-                _ => None,
-            };
-            datetime_range_impl_start_interval_samples(
-                name.clone(),
-                end,
-                interval,
-                num_samples,
-                closed,
-                tu,
-                tz.as_ref(),
-            )?
-        },
-        _ => unimplemented!(),
-    };
-    Ok(result.cast(&dtype_out).unwrap().into_column())
-}
-
 pub(super) fn datetime_range(
     s: &[Column],
     interval: Option<Duration>,
@@ -399,14 +320,15 @@ pub(super) fn datetime_range(
             time_unit,
             time_zone.clone(),
         ),
-        DateRangeArgs::EndIntervalSamples => dt_range_end_interval_samples(
+        DateRangeArgs::EndIntervalSamples => dt_range_start_interval_samples(
             &s[0],
             interval.unwrap(),
             &s[1],
             closed,
             time_unit,
             time_zone.clone(),
-        ),
+        )
+        .map(|c| c.reverse()),
     }
 }
 
