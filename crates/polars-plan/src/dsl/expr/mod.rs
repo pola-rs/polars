@@ -203,7 +203,8 @@ pub enum LazySerde<T: Clone> {
         // Name and payload are used by the NamedRegistry
         // To load the function `T` at runtime.
         name: String,
-        payload: Option<Bytes>,
+        payload_function: Option<Bytes>,
+        payload_dtype_function: Option<Bytes>,
         // Sometimes we need the function `T` before sending
         // to a different machine, so optionally set it as well.
         value: Option<T>,
@@ -221,21 +222,26 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
             (
                 L::Named {
                     name: l,
-                    payload: pl,
+                    payload_function: pl,
+                    payload_dtype_function: pdl,
                     value: _,
                 },
                 L::Named {
                     name: r,
-                    payload: pr,
+                    payload_function: pr,
+                    payload_dtype_function: pdr,
                     value: _,
                 },
             ) => {
                 #[cfg(debug_assertions)]
                 {
                     if l == r {
-                        assert_eq!(pl, pr, "name should point to unique payload")
+                        assert_eq!(pl, pr, "name should point to unique payload");
+                        assert_eq!(pdl, pdr, "name should point to unique payload");
                     }
                 }
+                _ = pdl;
+                _ = pdr;
                 _ = pl;
                 _ = pr;
                 l == r

@@ -1,3 +1,4 @@
+use num_traits::ToBytes;
 use polars_utils::pl_serialize::deserialize_map_bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -24,19 +25,35 @@ const NAMED_SERDE_MAGIC_BYTE_END: u8 = b'!';
 fn serialize_named<S: Serializer>(
     serializer: S,
     name: &str,
-    payload: Option<&[u8]>,
+    payload_function: Option<&[u8]>,
+    payload_get_dtype: Option<&[u8]>,
 ) -> Result<S::Ok, S::Error> {
     let mut buf = vec![];
     buf.extend_from_slice(NAMED_SERDE_MAGIC_BYTE_MARK);
     buf.extend_from_slice(name.as_bytes());
     buf.push(NAMED_SERDE_MAGIC_BYTE_END);
-    if let Some(payload) = payload {
-        buf.extend_from_slice(payload);
-    }
+
+    let payload = if let Some(pl) = payload_function {
+        pl
+    } else {
+        &[]
+    };
+    let len = payload.len() as u32;
+    buf.extend(len.to_le_bytes());
+    buf.extend_from_slice(payload);
+
+    if let Some(pl) = payload_get_dtype {
+        // don't len-encode, just set the remainder
+        buf.extend_from_slice(pl);
+    } else {
+    };
+
     serializer.serialize_bytes(&buf)
 }
 
-fn deserialize_named_registry(buf: &[u8]) -> PolarsResult<(Arc<dyn ExprRegistry>, &str, &[u8])> {
+fn deserialize_named_registry(
+    buf: &[u8],
+) -> PolarsResult<(Arc<dyn ExprRegistry>, &str, &[u8], &[u8])> {
     let bytes = &buf[NAMED_SERDE_MAGIC_BYTE_MARK.len()..];
     let Some(pos) = bytes.iter().position(|b| *b == NAMED_SERDE_MAGIC_BYTE_END) else {
         polars_bail!(ComputeError: "named-serde expected magic byte end")
@@ -46,10 +63,14 @@ fn deserialize_named_registry(buf: &[u8]) -> PolarsResult<(Arc<dyn ExprRegistry>
         polars_bail!(ComputeError: "named-serde name should be valid utf8")
     };
     let payload = &bytes[pos + 1..];
+    let len = u32::from_le_bytes((&payload[..4]).try_into().unwrap());
+    let payload_function = &payload[4..4 + len as usize];
+
+    let payload_dtype = &payload[4 + len as usize..];
 
     let registry = named_serde::NAMED_SERDE_REGISTRY_EXPR.read().unwrap();
     match &*registry {
-        Some(reg) => Ok((reg.clone(), name, payload)),
+        Some(reg) => Ok((reg.clone(), name, payload_function, payload_dtype)),
         None => polars_bail!(ComputeError: "named serde registry not set"),
     }
 }
@@ -62,9 +83,15 @@ impl<T: Serialize + Clone> Serialize for LazySerde<T> {
         match self {
             Self::Named {
                 name,
-                payload,
+                payload_function,
+                payload_dtype_function,
                 value: _,
-            } => serialize_named(serializer, name, payload.as_deref()),
+            } => serialize_named(
+                serializer,
+                name,
+                payload_function.as_deref(),
+                payload_dtype_function.as_deref(),
+            ),
             Self::Deserialized(t) => t.serialize(serializer),
             Self::Bytes(b) => b.serialize(serializer),
         }
@@ -103,9 +130,9 @@ pub(super) fn deserialize_column_udf(buf: &[u8]) -> PolarsResult<Arc<dyn Columns
     };
 
     if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
-        let (reg, name, payload) = deserialize_named_registry(buf)?;
+        let (reg, name, payload_function, _payload_dtype) = deserialize_named_registry(buf)?;
 
-        if let Some(func) = reg.get_function(name, payload) {
+        if let Some(func) = reg.get_function(name, payload_function) {
             Ok(func)
         } else {
             let msg = "name not found in named serde registry";
@@ -158,9 +185,15 @@ impl Serialize for GetOutput {
             LazySerde::Bytes(b) => serializer.serialize_bytes(b),
             LazySerde::Named {
                 name,
-                payload,
+                payload_function,
+                payload_dtype_function,
                 value: _,
-            } => serialize_named(serializer, name, payload.as_deref()),
+            } => serialize_named(
+                serializer,
+                name,
+                payload_function.as_deref(),
+                payload_dtype_function,
+            ),
             LazySerde::Deserialized(s) => {
                 s.as_ref()
                     .try_serialize(&mut buf)
@@ -186,9 +219,10 @@ impl<'a> Deserialize<'a> for GetOutput {
                         .map_err(|e| D::Error::custom(format!("{e}")))?;
                     Ok(LazySerde::Deserialized(SpecialEq::new(get_output)))
                 } else if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
-                    let (reg, name, _payload) = deserialize_named_registry(&buf)
-                        .map_err(|e| D::Error::custom(format!("{e}")))?;
-                    if let Some(func) = reg.get_output(name) {
+                    let (reg, name, _payload_function, payload_dtype) =
+                        deserialize_named_registry(&buf)
+                            .map_err(|e| D::Error::custom(format!("{e}")))?;
+                    if let Some(func) = reg.get_output(name, payload_dtype) {
                         Ok(LazySerde::Deserialized(SpecialEq::new(func)))
                     } else {
                         let msg = "name not found in named serde registry";
