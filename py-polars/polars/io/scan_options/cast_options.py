@@ -93,13 +93,13 @@ class ScanCastOptions:
     def _default() -> ScanCastOptions:
         return ScanCastOptions(_internal_call=True)
 
-    @staticmethod
-    def _default_iceberg() -> ScanCastOptions:
+    @classmethod
+    def _default_iceberg(cls) -> ScanCastOptions:
         """
         Default options suitable for Iceberg / Deltalake.
 
         This in general has all casting options enabled. Note: do not return this
-        set of options to the user, as it is a shared global object.
+        config object to the user - it's a cached global object.
         """
         global _DEFAULT_CAST_OPTIONS_ICEBERG
 
