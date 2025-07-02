@@ -517,3 +517,37 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
 
     assert_frame_equal(pl.scan_delta(table_path).collect(), expect)
     assert_frame_equal(pl.read_delta(table_path), expect)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_nanosecond_timestamp(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {"timestamp": [datetime(2025, 1, 1), datetime(2025, 1, 2)]},
+        schema={"timestamp": pl.Datetime("us", time_zone="UTC")},
+    )
+
+    df_nano_ts = pl.DataFrame(
+        {"timestamp": [datetime(2025, 1, 1), datetime(2025, 1, 2)]},
+        schema={"timestamp": pl.Datetime("ns", time_zone=None)},
+    )
+
+    root = tmp_path / "delta"
+
+    df.write_delta(root)
+
+    # Manually overwrite the file with one that has nanosecond timestamps.
+    parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
+    assert len(parquet_files) == 1
+    parquet_file_path = parquet_files[0]
+
+    df_nano_ts.write_parquet(parquet_file_path)
+
+    # Baseline: The timestamp in the file is in nanoseconds.
+    q = pl.scan_parquet(parquet_file_path)
+    assert q.collect_schema() == {"timestamp": pl.Datetime("ns", time_zone=None)}
+    assert_frame_equal(q.collect(), df_nano_ts)
+
+    q = pl.scan_delta(str(root))
+
+    assert q.collect_schema() == {"timestamp": pl.Datetime("us", time_zone="UTC")}
+    assert_frame_equal(q.collect(), df)
