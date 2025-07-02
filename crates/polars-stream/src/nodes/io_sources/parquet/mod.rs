@@ -223,29 +223,37 @@ impl FileReader for ParquetFileReader {
             )
         }
 
+        let predicate_apply_mode = if cast_columns_policy != CastColumnsPolicy::ERROR_ON_MISMATCH {
+            PredicateApplyMode::StatisticsOnly
+        } else {
+            PredicateApplyMode::Full
+        };
+
         // If are handling predicates we apply missing / cast columns policy here as those need to
         // happen before filtering. Otherwise we leave it to post.
-        if let Some(predicate) = predicate.as_mut() {
-            if cast_columns_policy != CastColumnsPolicy::ERROR_ON_MISMATCH {
-                unimplemented!("column casting w/ predicate in parquet")
-            }
-
-            // Note: This currently could return a Some(_) for the case where
-            // there are struct fields ordered differently, but that should not
-            // affect predicates.
-            CastColumns::try_init_from_policy_from_iter(
-                &cast_columns_policy,
-                &projected_schema,
-                &mut self
-                    ._file_schema()
+        let live_filter_columns_cast = if let Some(predicate) = predicate.as_mut() {
+            let live_schema: SchemaRef = Arc::new(
+                self._file_schema()
                     .iter()
                     .filter(|(name, _)| predicate.live_columns.contains(*name))
-                    .map(|(name, dtype)| (name.as_ref(), dtype)),
+                    .map(|(name, dtype)| (name.clone(), dtype.clone()))
+                    .collect(),
+            );
+
+            let cast_columns = CastColumns::try_init_from_policy(
+                &cast_columns_policy,
+                &projected_schema,
+                &live_schema,
             )?;
-        }
+
+            cast_columns.map(|x| (x, live_schema))
+        } else {
+            None
+        };
 
         let (output_recv, handle) = ParquetReadImpl {
             predicate,
+            predicate_apply_mode,
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
             byte_source: byte_source.clone(),
@@ -264,6 +272,7 @@ impl FileReader for ParquetFileReader {
             projected_arrow_schema,
             memory_prefetch_func,
             row_index,
+            live_filter_columns_cast,
         }
         .run();
 
@@ -328,6 +337,7 @@ type AsyncTaskData = (
 
 struct ParquetReadImpl {
     predicate: Option<ScanIOPredicate>,
+    predicate_apply_mode: PredicateApplyMode,
     options: ParquetOptions,
     byte_source: Arc<DynByteSource>,
     normalized_pre_slice: Option<(usize, usize)>,
@@ -339,6 +349,7 @@ struct ParquetReadImpl {
     projected_arrow_schema: Arc<ArrowSchema>,
     memory_prefetch_func: fn(&[u8]) -> (),
     row_index: Option<RowIndex>,
+    live_filter_columns_cast: Option<(CastColumns, SchemaRef)>,
 }
 
 #[derive(Debug)]
@@ -359,4 +370,12 @@ impl ParquetReadImpl {
 
         self.init_morsel_distributor()
     }
+}
+
+enum PredicateApplyMode {
+    /// Only row-group skipping via statistics. Used when type casting is needed.
+    StatisticsOnly,
+    /// Row-group skipping as well as full row filtering of the row groups that
+    /// are read in.
+    Full,
 }
