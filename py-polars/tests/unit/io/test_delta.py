@@ -520,7 +520,11 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_scan_delta_nanosecond_timestamp(tmp_path: Path) -> None:
+def test_scan_delta_nanosecond_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     df = pl.DataFrame(
         {"timestamp": [datetime(2025, 1, 1), datetime(2025, 1, 2)]},
         schema={"timestamp": pl.Datetime("us", time_zone="UTC")},
@@ -551,3 +555,13 @@ def test_scan_delta_nanosecond_timestamp(tmp_path: Path) -> None:
 
     assert q.collect_schema() == {"timestamp": pl.Datetime("us", time_zone="UTC")}
     assert_frame_equal(q.collect(), df)
+
+    q = pl.scan_delta(str(root)).filter(
+        pl.col("timestamp")
+        < pl.lit(datetime(2025, 1, 1), dtype=pl.Datetime("us", time_zone="UTC"))
+    )
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    assert_frame_equal(q.collect(), df.clear())
+    assert "reading 0 / 1 row groups" in capfd.readouterr().err
