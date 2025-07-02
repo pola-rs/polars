@@ -17,7 +17,6 @@ from polars import StringCache
 from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
-    OutOfBoundsError,
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -256,9 +255,7 @@ def test_casting_to_an_enum_from_integer() -> None:
 def test_casting_to_an_enum_oob_from_integer() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, 1, 0, 5], dtype=pl.UInt32)
-    with pytest.raises(
-        OutOfBoundsError, match=("index 5 is bigger than the number of categories 3")
-    ):
+    with pytest.raises(InvalidOperationError, match=("values: \\[5\\]")):
         s.cast(dtype)
 
 
@@ -321,7 +318,7 @@ def test_append_to_an_enum() -> None:
 def test_append_to_an_enum_with_new_category() -> None:
     with pytest.raises(
         SchemaError,
-        match=("type Enum.*is incompatible with expected type Enum.*"),
+        match=("Enum mismatch"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"])).append(
             pl.Series(["d", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
@@ -337,10 +334,7 @@ def test_extend_to_an_enum() -> None:
 
 
 def test_series_init_uninstantiated_enum() -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="cannot cast / initialize Enum without categories present",
-    ):
+    with pytest.raises(InvalidOperationError):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
 
@@ -447,9 +441,7 @@ def test_compare_enum_str_single_raise(
 
     with pytest.raises(
         InvalidOperationError,
-        match=re.escape(
-            "conversion from `str` to `enum` failed in column '' for 1 out of 1 values: [\"NOTEXIST\"]"
-        ),
+        match=re.escape("conversion from `str` to `enum` failed"),
     ):
         op(s, s2)  # type: ignore[arg-type]
 
@@ -463,7 +455,7 @@ def test_compare_enum_str_raise() -> None:
         for op in [operator.le, operator.gt, operator.ge, operator.lt]:
             with pytest.raises(
                 InvalidOperationError,
-                match="conversion from `str` to `enum` failed in column",
+                match="conversion from `str` to `enum` failed",
             ):
                 op(s, s_compare)
 
@@ -480,10 +472,7 @@ def test_different_enum_comparison_order() -> None:
         ]
     )
     for op in [operator.gt, operator.ge, operator.lt, operator.le]:
-        with pytest.raises(
-            ComputeError,
-            match="can only compare categoricals of the same type",
-        ):
+        with pytest.raises(SchemaError):
             df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))
 
 
@@ -535,14 +524,14 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
     enum_dtype = pl.Enum(["a", "b", "c", "d"])
     series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
     with pytest.raises(
-        InvalidOperationError, match="conversion from `i8` to `u32` failed in column"
+        InvalidOperationError, match="conversion from `i8` to `enum` failed in column"
     ):
         series.cast(enum_dtype)
 
     series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
     with pytest.raises(
         InvalidOperationError,
-        match="conversion from `u64` to `u32` failed in column",
+        match="conversion from `u64` to `enum` failed in column",
     ):
         series.cast(enum_dtype)
 

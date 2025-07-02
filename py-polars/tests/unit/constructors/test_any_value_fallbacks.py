@@ -383,7 +383,7 @@ def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
     values = ["a", "b", "c", None]
 
     with pytest.raises(
-        TypeError, match="cannot append 'c' to enum without that variant"
+        TypeError, match="attempted to insert 'c'"
     ):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
