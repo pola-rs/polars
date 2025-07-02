@@ -163,14 +163,14 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         unsafe {
             Ok(Series::from_chunks_and_dtype_unchecked(
                 self.as_binary().name().clone(),
-                self._from_buffer_inner(dtype, is_little_endian)?,
+                self._reinterpret_inner(dtype, is_little_endian)?,
                 dtype,
             ))
         }
     }
 
     #[cfg(feature = "binary_encoding")]
-    fn _from_buffer_inner(
+    fn _reinterpret_inner(
         &self,
         dtype: &DataType,
         is_little_endian: bool,
