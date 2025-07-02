@@ -48,7 +48,7 @@ proptest = { workspace = true, optional = true }
 # ensure that the proptest feature is enabled when we are testing
 polars-parquet = { path = ".", features = ["proptest"] }
 
-rand = {workspace = true}
+rand = { workspace = true }
 
 [features]
 compression = [
