@@ -453,17 +453,23 @@ fn any_values_to_categorical(
 
         let mut owned = String::new(); // Amortize allocations.
         for av in values {
-            match av {
-                AnyValue::String(s) => builder.append_str(s)?,
-                AnyValue::StringOwned(s) => builder.append_str(s)?,
+            let ret = match av {
+                AnyValue::String(s) => builder.append_str(s),
+                AnyValue::StringOwned(s) => builder.append_str(s),
 
                 &AnyValue::Enum(cat, &ref map) |
                 &AnyValue::EnumOwned(cat, ref map) |
                 &AnyValue::Categorical(cat, &ref map) |
-                &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map)?,
+                &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map),
 
-                AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
-                AnyValue::Null => builder.append_null(),
+                AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => {
+                    builder.append_null();
+                    Ok(())
+                },
+                AnyValue::Null => {
+                    builder.append_null();
+                    Ok(())
+                }
 
                 av => {
                     if strict {
@@ -472,8 +478,16 @@ fn any_values_to_categorical(
 
                     owned.clear();
                     write!(owned, "{av}").unwrap();
-                    builder.append_str(&owned)?;
+                    builder.append_str(&owned)
                 },
+            };
+            
+            if let Err(e) = ret {
+                if strict {
+                    return Err(e);
+                } else {
+                    builder.append_null();
+                }
             }
         }
 
