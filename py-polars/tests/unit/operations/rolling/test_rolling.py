@@ -353,24 +353,24 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     }
 
     # shuffled data triggers other kernels
-    df = df.select([pl.all().shuffle(0)])
+    df = df.select([pl.all().shuffle(seed=0)])
     expected = {
         "col1": [None, None, 0, 0, 4, 1, 1],
         "col2": [None, None, 1, 1, 0, 0, 0],
-        "col1_nulls": [None, None, None, None, 4, 4, 2],
-        "col2_nulls": [None, None, None, 1, 0, 0, 0],
+        "col1_nulls": [None, None, None, None, 4, None, None],
+        "col2_nulls": [None, None, None, None, 0, None, None],
     }
     result = df.select([pl.all().rolling_min(3)])
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
     }
-
     result = df.select([pl.all().rolling_max(3)])
+
     expected = {
         "col1": [None, None, 5, 5, 6, 6, 6],
         "col2": [None, None, 6, 6, 2, 5, 5],
-        "col1_nulls": [None, None, None, 5, 6, 6, 6],
-        "col2_nulls": [None, None, None, None, 2, 2, 4],
+        "col1_nulls": [None, None, None, None, 6, None, None],
+        "col2_nulls": [None, None, None, None, 2, None, None],
     }
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
