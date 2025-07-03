@@ -962,6 +962,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # subclassed pandas object, with/without data & overrides
+    # Python 3.13 mypy will complain about unused type: ignore
     if sys.version_info >= (3, 13):
 
         class XSeries(pd.Series):
