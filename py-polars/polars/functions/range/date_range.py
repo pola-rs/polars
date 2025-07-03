@@ -122,10 +122,7 @@ def date_range(
 
     >>> from datetime import date
     >>> pl.date_range(
-    ...     start=date(2022, 1, 1),
-    ...     end=date(2022, 3, 1),
-    ...     interval="1mo",
-    ...     eager=True
+    ...     start=date(2022, 1, 1), end=date(2022, 3, 1), interval="1mo", eager=True
     ... ).alias("date")
     shape: (3,)
     Series: 'date' [date]
