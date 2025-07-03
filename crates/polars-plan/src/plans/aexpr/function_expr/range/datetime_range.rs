@@ -15,6 +15,63 @@ use crate::plans::aexpr::function_expr::FieldsMapper;
 
 const CAPACITY_FACTOR: usize = 5;
 
+fn get_dtype_out(
+    column: &Column,
+    dtype_in: &DataType,
+    time_unit: Option<TimeUnit>,
+    time_zone: &Option<TimeZone>,
+    interval_has_ns: bool,
+) -> PolarsResult<DataType> {
+    // Note: `start` and `end` have already been cast to their supertype,
+    // so only `start`'s dtype needs to be matched against.
+    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
+    let mut dtype_out = match (dtype_in, time_unit) {
+        (DataType::Date, time_unit) => {
+            if let Some(tu) = time_unit {
+                DataType::Datetime(tu, None)
+            } else if interval_has_ns {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            } else {
+                DataType::Datetime(TimeUnit::Microseconds, None)
+            }
+        },
+        // overwrite nothing, keep as-is
+        (DataType::Datetime(_, _), None) => column.dtype().clone(),
+        // overwrite time unit, keep timezone
+        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
+        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
+    };
+
+    // Overwrite time zone, if specified
+    #[cfg(feature = "timezones")]
+    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, &time_zone) {
+        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
+    };
+    Ok(dtype_out)
+}
+
+fn map_to_out_dtype(
+    c: &Column,
+    dtype_in: &DataType,
+    dtype_out: &DataType,
+    time_zone: &Option<TimeZone>,
+) -> PolarsResult<Column> {
+    match (dtype_in, time_zone) {
+        // If `start` and `end` are naive, but a time zone was specified,
+        // then first localize them
+        #[cfg(feature = "timezones")]
+        (DataType::Datetime(_, None), Some(tz)) => Ok(polars_ops::prelude::replace_time_zone(
+            c.datetime().unwrap(),
+            Some(tz),
+            &StringChunked::from_iter(std::iter::once("raise")),
+            NonExistent::Raise,
+        )?
+        .cast(&dtype_out)?
+        .into_column()),
+        _ => c.cast(&dtype_out),
+    }
+}
+
 fn dt_range_start_end_interval(
     start: &Column,
     end: &Column,
@@ -35,56 +92,16 @@ fn dt_range_start_end_interval(
     };
     ensure_items_contain_exactly_one_value(&[&start, &end], &["start", "end"])?;
 
-    // Note: `start` and `end` have already been cast to their supertype,
-    // so only `start`'s dtype needs to be matched against.
-    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
-    let mut dtype_out = match (dtype_in, time_unit) {
-        (DataType::Date, time_unit) => {
-            if let Some(tu) = time_unit {
-                DataType::Datetime(tu, None)
-            } else if interval.nanoseconds() % 1_000 != 0 {
-                DataType::Datetime(TimeUnit::Nanoseconds, None)
-            } else {
-                DataType::Datetime(TimeUnit::Microseconds, None)
-            }
-        },
-        // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => start.dtype().clone(),
-        // overwrite time unit, keep timezone
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
-    };
+    let dtype_out = get_dtype_out(
+        &start,
+        dtype_in,
+        time_unit,
+        &time_zone,
+        interval.nanoseconds() % 1_000 != 0,
+    )?;
 
-    // Overwrite time zone, if specified
-    #[cfg(feature = "timezones")]
-    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, &time_zone) {
-        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
-    };
-
-    // If `start` and `end` are naive, but a time zone was specified,
-    // then first localize them
-    let (start, end) = match (dtype_in, time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(_, None), Some(tz)) => (
-            polars_ops::prelude::replace_time_zone(
-                start.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype_out)?
-            .into_column(),
-            polars_ops::prelude::replace_time_zone(
-                end.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype_out)?
-            .into_column(),
-        ),
-        _ => (start.cast(&dtype_out)?, end.cast(&dtype_out)?),
-    };
+    let start = map_to_out_dtype(&start, dtype_in, &dtype_out, &time_zone)?;
+    let end = map_to_out_dtype(&end, dtype_in, &dtype_out, &time_zone)?;
 
     let name = start.name();
     let start = temporal_series_to_i64_scalar(&start)
@@ -135,54 +152,9 @@ fn dt_range_start_end_samples(
     ensure_items_contain_exactly_one_value(&[&start, &end], &["start", "end"])?;
     let num_samples = num_samples.get(0).unwrap().extract::<u64>().unwrap();
 
-    // Note: `start` and `end` have already been cast to their supertype,
-    // so only `start`'s dtype needs to be matched against.
-    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
-    let mut dtype_out = match (dtype_in, time_unit) {
-        (DataType::Date, time_unit) => {
-            if let Some(tu) = time_unit {
-                DataType::Datetime(tu, None)
-            } else {
-                DataType::Datetime(TimeUnit::Microseconds, None)
-            }
-        },
-        // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => start.dtype().clone(),
-        // overwrite time unit, keep timezone
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
-    };
-
-    // Overwrite time zone, if specified
-    #[cfg(feature = "timezones")]
-    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, &time_zone) {
-        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
-    };
-
-    // If `start` and `end` are naive, but a time zone was specified,
-    // then first localize them
-    let (start, end) = match (dtype_in, time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(_, None), Some(tz)) => (
-            polars_ops::prelude::replace_time_zone(
-                start.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype_out)?
-            .into_column(),
-            polars_ops::prelude::replace_time_zone(
-                end.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype_out)?
-            .into_column(),
-        ),
-        _ => (start.cast(&dtype_out)?, end.cast(&dtype_out)?),
-    };
+    let dtype_out = get_dtype_out(&start, dtype_in, time_unit, &time_zone, false)?;
+    let start = map_to_out_dtype(&start, dtype_in, &dtype_out, &time_zone)?;
+    let end = map_to_out_dtype(&end, dtype_in, &dtype_out, &time_zone)?;
 
     let name = start.name();
     let start = temporal_series_to_i64_scalar(&start)
@@ -229,41 +201,15 @@ fn dt_range_start_interval_samples(
     };
     ensure_items_contain_exactly_one_value(&[&start], &["start"])?;
 
-    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
-    let mut dtype_out = match (dtype_in, time_unit) {
-        (DataType::Date, time_unit) => {
-            if let Some(tu) = time_unit {
-                DataType::Datetime(tu, None)
-            } else {
-                DataType::Datetime(TimeUnit::Microseconds, None)
-            }
-        },
-        // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => dtype_in.clone(),
-        // overwrite time unit, keep timezone
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        (dt, _) => polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt),
-    };
+    let dtype_out = get_dtype_out(
+        &start,
+        dtype_in,
+        time_unit,
+        &time_zone,
+        interval.nanoseconds() % 1_000 != 0,
+    )?;
 
-    // Overwrite time zone, if specified
-    #[cfg(feature = "timezones")]
-    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, &time_zone) {
-        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
-    };
-
-    // If `start` is naive, but a time zone was specified, then first localize.
-    let start = match (dtype_in, time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(_, None), Some(tz)) => polars_ops::prelude::replace_time_zone(
-            start.datetime().unwrap(),
-            Some(&tz),
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(&dtype_out)?
-        .into_column(),
-        _ => start.cast(&dtype_out)?,
-    };
+    let start = map_to_out_dtype(&start, dtype_in, &dtype_out, &time_zone)?;
 
     let name = start.name();
     let start = temporal_series_to_i64_scalar(&start)
@@ -299,7 +245,6 @@ pub(super) fn datetime_range(
     time_zone: Option<TimeZone>,
     arg_type: DateRangeArgs,
 ) -> PolarsResult<Column> {
-    // let interval = interval.unwrap();
     match arg_type {
         DateRangeArgs::StartEndInterval => dt_range_start_end_interval(
             &s[0],
@@ -320,9 +265,10 @@ pub(super) fn datetime_range(
             time_unit,
             time_zone.clone(),
         ),
+        // We negate the interval, start at the end, and then reverse.
         DateRangeArgs::EndIntervalSamples => dt_range_start_interval_samples(
             &s[0],
-            interval.unwrap(),
+            -interval.unwrap(),
             &s[1],
             closed,
             time_unit,
@@ -339,84 +285,30 @@ pub(super) fn datetime_ranges(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Column> {
+    let dtype_in = s[0].dtype();
     let mut start = s[0].clone();
     let mut end = s[1].clone();
 
-    // Note: `start` and `end` have already been cast to their supertype,
-    // so only `start`'s dtype needs to be matched against.
-    #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block
-    let mut dtype = match (start.dtype(), time_unit) {
-        (DataType::Date, time_unit) => {
-            if let Some(tu) = time_unit {
-                DataType::Datetime(tu, None)
-            } else if interval.nanoseconds() % 1_000 != 0 {
-                DataType::Datetime(TimeUnit::Nanoseconds, None)
-            } else {
-                DataType::Datetime(TimeUnit::Microseconds, None)
-            }
-        },
-        // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => start.dtype().clone(),
-        // overwrite time unit, keep timezone
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz.clone()),
-        _ => unreachable!(),
-    };
+    let dtype_out = get_dtype_out(
+        &start,
+        dtype_in,
+        time_unit,
+        &time_zone,
+        interval.nanoseconds() % 1_000 != 0,
+    )?;
 
-    // overwrite time zone, if specified
-    match (&dtype, &time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(tu, _), Some(tz)) => {
-            dtype = DataType::Datetime(*tu, Some(tz.clone()));
-        },
-        _ => {},
-    };
-
-    if start.dtype() == &DataType::Date {
+    if dtype_in == &DataType::Date {
         start = start.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?;
         end = end.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?;
     }
 
-    // If `start` and `end` are naive, but a time zone was specified,
-    // then first localize them
-    let (start, end) = match (start.dtype(), time_zone) {
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(_, None), Some(tz)) => (
-            polars_ops::prelude::replace_time_zone(
-                start.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype)?
-            .into_column()
-            .to_physical_repr()
-            .cast(&DataType::Int64)?,
-            polars_ops::prelude::replace_time_zone(
-                end.datetime().unwrap(),
-                Some(&tz),
-                &StringChunked::from_iter(std::iter::once("raise")),
-                NonExistent::Raise,
-            )?
-            .cast(&dtype)?
-            .into_column()
-            .to_physical_repr()
-            .cast(&DataType::Int64)?,
-        ),
-        _ => (
-            start
-                .cast(&dtype)?
-                .to_physical_repr()
-                .cast(&DataType::Int64)?,
-            end.cast(&dtype)?
-                .to_physical_repr()
-                .cast(&DataType::Int64)?,
-        ),
-    };
+    let start = map_to_out_dtype(&start, dtype_in, &dtype_out, &time_zone)?;
+    let end = map_to_out_dtype(&end, dtype_in, &dtype_out, &time_zone)?;
 
     let start = start.i64().unwrap();
     let end = end.i64().unwrap();
 
-    let out = match dtype {
+    let out = match dtype_out {
         DataType::Datetime(tu, ref tz) => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 start.name().clone(),
@@ -449,7 +341,7 @@ pub(super) fn datetime_ranges(
         _ => unimplemented!(),
     };
 
-    let to_type = DataType::List(Box::new(dtype));
+    let to_type = DataType::List(Box::new(dtype_out));
     out.cast(&to_type)
 }
 
