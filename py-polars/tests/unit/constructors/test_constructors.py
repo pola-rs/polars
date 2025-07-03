@@ -962,7 +962,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # subclassed pandas object, with/without data & overrides
-    class XSeries(pd.Series):  # type: ignore[type-arg]
+    class XSeries(pd.Series):
         @property
         def _constructor(self) -> type:
             return XSeries
