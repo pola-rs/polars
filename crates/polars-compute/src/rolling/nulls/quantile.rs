@@ -56,7 +56,7 @@ impl<
         // Nulls are guaranteed to be at the front
         length -= null_count;
         let mut idx = match self.method {
-            QuantileMethod::Nearest => ((length as f64) * self.prob) as usize,
+            QuantileMethod::Nearest => (((length as f64) - 1.0) * self.prob).round() as usize,
             QuantileMethod::Lower | QuantileMethod::Midpoint | QuantileMethod::Linear => {
                 ((length as f64 - 1.0) * self.prob).floor() as usize
             },
