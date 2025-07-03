@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars._typing import CategoricalOrdering, PolarsDataType, TimeUnit
+    from polars._typing import PolarsDataType, TimeUnit
     from polars.datatypes import DataTypeClass
 
 

@@ -69,7 +69,7 @@ class PolarsColumn(Column):
         dtype = self._col.dtype
         if dtype == Categorical:
             categories = self._col.cat.get_categories()
-            is_ordered = False  # type: ignore[attr-defined]
+            is_ordered = False
         elif dtype == Enum:
             categories = dtype.categories  # type: ignore[attr-defined]
             is_ordered = True
