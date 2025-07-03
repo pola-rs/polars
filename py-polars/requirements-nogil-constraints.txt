@@ -1,6 +1,5 @@
-cffi @ git+https://github.com/quansight-labs/cffi
+cffi @ git+https://github.com/python-cffi/cffi.git@pull/178/head
 Cython>=3.1
 zstandard @ git+https://github.com/indygreg/python-zstandard.git@pull/243/head
-pydantic>=2.11
 cryptography @ git+https://github.com/pyca/cryptography.git@pull/12555/head
 arro3-core @ git+https://github.com/kylebarron/arro3.git#subdirectory=arro3-core
