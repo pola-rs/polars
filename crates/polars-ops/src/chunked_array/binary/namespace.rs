@@ -199,14 +199,9 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 // In theory the IR dispatch should've made sure we have the
                 // correct types, but we can't prove it so check again. In
                 // particular, no nesting beyond the top-level Array:
-                polars_ensure!(
-                    dtype.inner_dtype().map(|dt| dt.is_nested()) == Some(false),
-                    InvalidOperation: "{:?}", dtype
-                );
-                let PhysicalType::Primitive(primitive_type) = dtype
-                    .leaf_dtype()
-                    .to_arrow(CompatLevel::newest())
-                    .to_physical_type()
+                let Some(PhysicalType::Primitive(primitive_type)) = dtype
+                    .inner_dtype()
+                    .map(|dt| dt.to_arrow(CompatLevel::newest()).to_physical_type())
                 else {
                     // We should only have primitive dtypes as inner type at this point.
                     polars_bail!(InvalidOperation: "{:?}", dtype);
@@ -227,7 +222,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Ok(result)
             },
             _ => Err(
-                polars_err!(InvalidOperation:"unsupported data type in reinterpret. Only numerical types are allowed."),
+                polars_err!(InvalidOperation:"unsupported data type in reinterpret. Only types that map to numerical types, or Arrays of those, are allowed."),
             ),
         }
     }
