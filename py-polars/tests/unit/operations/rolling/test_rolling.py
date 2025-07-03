@@ -1535,15 +1535,16 @@ def test_rolling_quantile_with_nulls_22781(method: QuantileMethod) -> None:
 def test_rolling_quantile_nearest_23392() -> None:
     base = range(11)
     s = pl.Series(base)
+
     shuffle_base = list(base)
     random.shuffle(shuffle_base)
     s_shuffled = pl.Series(shuffle_base)
-    for q in np.arange(0, 1.0, 0.02):
-        q = float(q)
+
+    for q in np.arange(0, 1.0, 0.02, dtype=float):
         out = s.rolling_quantile(q, interpolation="nearest", window_size=11)
 
         # explicit:
-        expected = pl.Series([None] * 10 + [float(round(q * 10))])
+        expected = pl.Series([None] * 10 + [float(round(q * 10.0))])
         assert_series_equal(out, expected)
 
         # equivalence:
