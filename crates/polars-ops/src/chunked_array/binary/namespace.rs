@@ -7,9 +7,9 @@ use arrow::array::Array;
 use arrow::datatypes::PhysicalType;
 use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
-use base64::engine::general_purpose;
-#[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
+#[cfg(feature = "binary_encoding")]
+use base64::engine::general_purpose;
 use memchr::memmem::find;
 use polars_compute::cast::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use polars_compute::size::binary_size_bytes;

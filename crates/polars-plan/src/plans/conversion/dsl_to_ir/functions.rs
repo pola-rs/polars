@@ -635,8 +635,8 @@ pub(super) fn convert_functions(
         F::FillNullWithStrategy(fill_null_strategy) => I::FillNullWithStrategy(fill_null_strategy),
         #[cfg(feature = "rolling_window")]
         F::RollingExpr(rolling_function) => {
-            use aexpr::IRRollingFunction as IR;
             use RollingFunction as R;
+            use aexpr::IRRollingFunction as IR;
 
             I::RollingExpr(match rolling_function {
                 R::Min(r) => IR::Min(r),
@@ -664,8 +664,8 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "rolling_window_by")]
         F::RollingExprBy(rolling_function_by) => {
-            use aexpr::IRRollingFunctionBy as IR;
             use RollingFunctionBy as R;
+            use aexpr::IRRollingFunctionBy as IR;
             I::RollingExprBy(match rolling_function_by {
                 R::MinBy(r) => IR::MinBy(r),
                 R::MaxBy(r) => IR::MaxBy(r),
