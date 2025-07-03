@@ -478,7 +478,7 @@ class PartitionParted(PartitioningScheme):
 
         lowered_by = _lower_by(by)
         super().__init__(
-            PyPartitioning.new_by_key(
+            PyPartitioning.new_parted(
                 base_path=base_path,
                 file_path_cb=_cast_keyed_file_path_cb(file_path),
                 by=lowered_by,
