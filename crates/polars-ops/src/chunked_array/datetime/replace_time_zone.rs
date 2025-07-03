@@ -32,7 +32,8 @@ pub fn replace_time_zone(
             .phys
             .clone()
             .into_datetime(datetime.time_unit(), time_zone.cloned());
-        out.set_sorted_flag(datetime.is_sorted_flag());
+        out.physical_mut()
+            .set_sorted_flag(datetime.physical().is_sorted_flag());
         return Ok(out);
     }
     let timestamp_to_datetime: fn(i64) -> NaiveDateTime = match datetime.time_unit() {
@@ -78,7 +79,8 @@ pub fn replace_time_zone(
         // - `from_tz` is guaranteed to not observe daylight savings time;
         // - user is just passing 'raise' to 'ambiguous'.
         // Both conditions above need to be satisfied.
-        out.set_sorted_flag(datetime.is_sorted_flag());
+        out.physical_mut()
+            .set_sorted_flag(datetime.physical().is_sorted_flag());
     }
     Ok(out)
 }
@@ -140,8 +142,10 @@ pub fn impl_replace_time_zone(
             });
             ChunkedArray::try_from_chunk_iter(datetime.phys.name().clone(), iter)
         },
-        _ => try_binary_elementwise(datetime, ambiguous, |timestamp_opt, ambiguous_opt| {
-            match (timestamp_opt, ambiguous_opt) {
+        _ => try_binary_elementwise(
+            datetime.physical(),
+            ambiguous,
+            |timestamp_opt, ambiguous_opt| match (timestamp_opt, ambiguous_opt) {
                 (Some(timestamp), Some(ambiguous)) => {
                     let ndt = timestamp_to_datetime(timestamp);
                     Ok(convert_to_naive_local(
@@ -154,7 +158,7 @@ pub fn impl_replace_time_zone(
                     .map(datetime_to_timestamp))
                 },
                 _ => Ok(None),
-            }
-        }),
+            },
+        ),
     }
 }

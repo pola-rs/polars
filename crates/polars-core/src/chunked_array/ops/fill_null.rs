@@ -89,7 +89,7 @@ impl Series {
                 let precision = ca.precision();
                 let scale = ca.scale();
                 let fill_value = 10i128.pow(scale as u32);
-                let phys = ca.as_ref().fill_null_with_values(fill_value)?;
+                let phys = ca.physical().fill_null_with_values(fill_value)?;
                 Ok(phys.into_decimal_unchecked(precision, scale).into_series())
             },
             _ => {

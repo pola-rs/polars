@@ -80,11 +80,11 @@ def test_arrow_list_chunked_array() -> None:
 
 # Test that polars convert Arrays of logical types correctly to arrow
 def test_arrow_array_logical() -> None:
-    # cast to large string and uint32 indices because polars converts to those
+    # cast to large string and uint8 indices because polars converts to those
     pa_data1 = (
         pa.array(["a", "b", "c", "d"])
         .dictionary_encode()
-        .cast(pa.dictionary(pa.uint32(), pa.large_string()))
+        .cast(pa.dictionary(pa.uint8(), pa.large_string()))
     )
     pa_array_logical1 = pa.FixedSizeListArray.from_arrays(pa_data1, 2)
 
@@ -425,7 +425,7 @@ def test_dataframe_from_repr() -> None:
         assert frame.schema == {
             "a": pl.Int64,
             "b": pl.Float64,
-            "c": pl.Categorical(ordering="physical"),
+            "c": pl.Categorical(ordering="lexical"),
             "d": pl.Boolean,
             "e": pl.String,
             "f": pl.Date,
@@ -920,19 +920,11 @@ def test_arrow_roundtrip_lex_cat_20288() -> None:
 
 def test_from_arrow_string_cache_20271() -> None:
     with pl.StringCache():
-        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
         df = pl.from_arrow(
             pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
         )
         assert isinstance(df, pl.DataFrame)
-
-        assert_series_equal(
-            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
-        )
         assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
-        assert_series_equal(
-            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
-        )
 
 
 def test_to_arrow_empty_chunks_20627() -> None:

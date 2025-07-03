@@ -48,20 +48,21 @@ impl PolarsTruncate for DatetimeChunked {
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
                     return Ok(self
+                        .physical()
                         .apply_values(|t| fast_truncate(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
                     let out = match self.time_unit() {
-                        TimeUnit::Milliseconds => {
-                            self.try_apply_nonnull_values_generic(|t| w.truncate_ms(t, tz))
-                        },
-                        TimeUnit::Microseconds => {
-                            self.try_apply_nonnull_values_generic(|t| w.truncate_us(t, tz))
-                        },
-                        TimeUnit::Nanoseconds => {
-                            self.try_apply_nonnull_values_generic(|t| w.truncate_ns(t, tz))
-                        },
+                        TimeUnit::Milliseconds => self
+                            .physical()
+                            .try_apply_nonnull_values_generic(|t| w.truncate_ms(t, tz)),
+                        TimeUnit::Microseconds => self
+                            .physical()
+                            .try_apply_nonnull_values_generic(|t| w.truncate_us(t, tz)),
+                        TimeUnit::Nanoseconds => self
+                            .physical()
+                            .try_apply_nonnull_values_generic(|t| w.truncate_ns(t, tz)),
                     };
                     return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
@@ -80,22 +81,23 @@ impl PolarsTruncate for DatetimeChunked {
             TimeUnit::Milliseconds => Window::truncate_ms,
         };
 
-        let out = broadcast_try_binary_elementwise(self, every, |opt_timestamp, opt_every| match (
-            opt_timestamp,
-            opt_every,
-        ) {
-            (Some(timestamp), Some(every)) => {
-                let every = *duration_cache.get_or_insert_with(every, Duration::parse);
+        let out = broadcast_try_binary_elementwise(
+            self.physical(),
+            every,
+            |opt_timestamp, opt_every| match (opt_timestamp, opt_every) {
+                (Some(timestamp), Some(every)) => {
+                    let every = *duration_cache.get_or_insert_with(every, Duration::parse);
 
-                if every.negative {
-                    polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
-                }
+                    if every.negative {
+                        polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
+                    }
 
-                let w = Window::new(every, every, offset);
-                func(&w, timestamp, tz).map(Some)
+                    let w = Window::new(every, every, offset);
+                    func(&w, timestamp, tz).map(Some)
+                },
+                _ => Ok(None),
             },
-            _ => Ok(None),
-        });
+        );
         Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
@@ -118,7 +120,7 @@ impl PolarsTruncate for DateChunked {
                         polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
                     }
                     let w = Window::new(every, every, offset);
-                    self.try_apply_nonnull_values_generic(|t| {
+                    self.physical().try_apply_nonnull_values_generic(|t| {
                         Ok((w.truncate_ms(MILLISECONDS_IN_DAY * t as i64, None)?
                             / MILLISECONDS_IN_DAY) as i32)
                     })
@@ -126,7 +128,7 @@ impl PolarsTruncate for DateChunked {
                     Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
                 }
             },
-            _ => broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {
+            _ => broadcast_try_binary_elementwise(self.physical(), every, |opt_t, opt_every| {
                 // A sqrt(n) cache is not too small, not too large.
                 let mut duration_cache =
                     LruCache::with_capacity((every.len() as f64).sqrt() as usize);

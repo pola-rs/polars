@@ -149,37 +149,6 @@ pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
 }
 
-/// Recursive variant of `is_elementwise` that also forbids casting to categoricals. This function
-/// is used to determine if an expression evaluation can be vertically parallelized.
-pub fn is_elementwise_rec_no_cat_cast<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
-    let mut stack = unitvec![];
-
-    loop {
-        if !is_elementwise(&mut stack, ae, expr_arena) {
-            return false;
-        }
-
-        #[cfg(feature = "dtype-categorical")]
-        {
-            if let AExpr::Cast {
-                dtype: DataType::Categorical(..),
-                ..
-            } = ae
-            {
-                return false;
-            }
-        }
-
-        let Some(node) = stack.pop() else {
-            break;
-        };
-
-        ae = expr_arena.get(node);
-    }
-
-    true
-}
-
 #[derive(Debug, Clone)]
 pub enum ExprPushdownGroup {
     /// Can be pushed. (elementwise, infallible)

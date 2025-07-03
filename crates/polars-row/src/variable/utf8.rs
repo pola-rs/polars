@@ -10,8 +10,10 @@
 //! This allows the string row encoding to have a constant 1 byte overhead.
 use std::mem::MaybeUninit;
 
-use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
+use arrow::array::{MutableBinaryViewArray, PrimitiveArray, Utf8ViewArray};
 use arrow::bitmap::BitmapBuilder;
+use arrow::types::NativeType;
+use polars_dtype::categorical::{CatNative, CategoricalMapping};
 
 use crate::row::RowEncodingOptions;
 
@@ -126,4 +128,70 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
 
     let out: Utf8ViewArray = array.into();
     out.with_validity(validity.into_opt_validity())
+}
+
+/// The same as decode_str but inserts it into the given mapping, translating
+/// it to physical type T.
+pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
+    rows: &mut [&[u8]],
+    opt: RowEncodingOptions,
+    mapping: &CategoricalMapping,
+) -> PrimitiveArray<T> {
+    let null_sentinel = opt.null_sentinel();
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+
+    let num_rows = rows.len();
+    let mut out = Vec::<T>::with_capacity(rows.len());
+
+    let mut scratch = Vec::new();
+    for row in rows.iter_mut() {
+        let sentinel = *unsafe { row.get_unchecked(0) };
+        if sentinel == null_sentinel {
+            *row = unsafe { row.get_unchecked(1..) };
+            break;
+        }
+
+        scratch.clear();
+        if descending {
+            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
+        } else {
+            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
+        }
+
+        *row = row.get_unchecked(1 + scratch.len()..);
+        let s = unsafe { std::str::from_utf8_unchecked(&scratch) };
+        out.push(T::from_cat(mapping.insert_cat(s).unwrap()));
+    }
+
+    if out.len() == num_rows {
+        return PrimitiveArray::from_vec(out);
+    }
+
+    let mut validity = BitmapBuilder::with_capacity(num_rows);
+    validity.extend_constant(out.len(), true);
+    validity.push(false);
+    out.push(T::zeroed());
+
+    for row in rows[out.len()..].iter_mut() {
+        let sentinel = *unsafe { row.get_unchecked(0) };
+        validity.push(sentinel != null_sentinel);
+        if sentinel == null_sentinel {
+            *row = unsafe { row.get_unchecked(1..) };
+            out.push(T::zeroed());
+            continue;
+        }
+
+        scratch.clear();
+        if descending {
+            scratch.extend(row.iter().take_while(|&b| *b != 0xFE).map(|&v| !v - 2));
+        } else {
+            scratch.extend(row.iter().take_while(|&b| *b != 0x01).map(|&v| v - 2));
+        }
+
+        *row = row.get_unchecked(1 + scratch.len()..);
+        let s = unsafe { std::str::from_utf8_unchecked(&scratch) };
+        out.push(T::from_cat(mapping.insert_cat(s).unwrap()));
+    }
+
+    PrimitiveArray::from_vec(out).with_validity(validity.into_opt_validity())
 }

@@ -142,27 +142,6 @@ impl DataFrame {
             NoData: "unable to transpose an empty DataFrame"
         );
         let dtype = df.get_supertype().unwrap()?;
-        match dtype {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                let mut valid = true;
-                let mut rev_map: Option<&Arc<RevMapping>> = None;
-                for s in self.columns.iter() {
-                    if let DataType::Categorical(Some(col_rev_map), _)
-                    | DataType::Enum(Some(col_rev_map), _) = &s.dtype()
-                    {
-                        match rev_map {
-                            Some(rev_map) => valid = valid && rev_map.same_src(col_rev_map),
-                            None => {
-                                rev_map = Some(col_rev_map);
-                            },
-                        }
-                    }
-                }
-                polars_ensure!(valid, string_cache_mismatch);
-            },
-            _ => {},
-        }
         df.transpose_from_dtype(&dtype, keep_names_as.map(PlSmallStr::from_str), &names_out)
     }
 }

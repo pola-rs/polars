@@ -1,6 +1,4 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-#[cfg(feature = "dtype-categorical")]
-use polars_core::{SINGLE_LOCK, disable_string_cache};
 
 use super::*;
 
@@ -313,18 +311,14 @@ fn test_join_multiple_columns() {
 #[cfg_attr(miri, ignore)]
 #[cfg(feature = "dtype-categorical")]
 fn test_join_categorical() {
-    let _guard = SINGLE_LOCK.lock();
-    disable_string_cache();
-    let _sc = StringCacheHolder::hold();
-
     let (mut df_a, mut df_b) = get_dfs();
 
     df_a.try_apply("b", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })
     .unwrap();
     df_b.try_apply("bar", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })
     .unwrap();
 
@@ -351,23 +345,23 @@ fn test_join_categorical() {
         let out = out.column("b").unwrap();
         assert_eq!(
             out.dtype(),
-            &DataType::Categorical(None, Default::default())
+            &DataType::from_categories(Categories::global())
         );
     }
 
-    // Test error when joining on different string cache
+    // Test error when joining on different categories.
     let (mut df_a, mut df_b) = get_dfs();
     df_a.try_apply("b", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::global()))
     })
     .unwrap();
 
-    // Create a new string cache
-    drop(_sc);
-    let _sc = StringCacheHolder::hold();
-
     df_b.try_apply("bar", |s| {
-        s.cast(&DataType::Categorical(None, Default::default()))
+        s.cast(&DataType::from_categories(Categories::new(
+            PlSmallStr::from_static("test"),
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U32,
+        )))
     })
     .unwrap();
     let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None);

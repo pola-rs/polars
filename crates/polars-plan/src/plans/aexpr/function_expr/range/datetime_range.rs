@@ -210,7 +210,7 @@ pub(super) fn datetime_ranges(
                     tu,
                     tz.as_ref(),
                 )?;
-                builder.append_slice(rng.cont_slice().unwrap());
+                builder.append_slice(rng.physical().cont_slice().unwrap());
                 Ok(())
             };
 

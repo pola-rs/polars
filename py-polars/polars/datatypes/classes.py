@@ -648,7 +648,7 @@ class Categorical(DataType):
 
     def __init__(
         self,
-        ordering: CategoricalOrdering | None = "physical",
+        ordering: CategoricalOrdering | None = "lexical",
     ) -> None:
         self.ordering = ordering
 

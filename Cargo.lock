@@ -3050,6 +3050,7 @@ dependencies = [
  "num-traits",
  "polars-arrow",
  "polars-compute",
+ "polars-dtype",
  "polars-error",
  "polars-row",
  "polars-schema",
@@ -3079,6 +3080,19 @@ dependencies = [
  "rand 0.9.1",
  "reqwest",
  "tokio",
+]
+
+[[package]]
+name = "polars-dtype"
+version = "0.49.1"
+dependencies = [
+ "boxcar",
+ "hashbrown 0.15.4",
+ "polars-arrow",
+ "polars-error",
+ "polars-utils",
+ "schemars",
+ "serde",
 ]
 
 [[package]]
@@ -3429,6 +3443,7 @@ dependencies = [
  "bytemuck",
  "polars-arrow",
  "polars-compute",
+ "polars-dtype",
  "polars-error",
  "polars-utils",
  "proptest",
@@ -4327,6 +4342,7 @@ dependencies = [
  "schemars_derive",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
