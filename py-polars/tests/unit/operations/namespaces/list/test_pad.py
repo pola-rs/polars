@@ -54,15 +54,21 @@ def test_list_pad_start_no_slice() -> None:
 
 
 def test_list_pad_start_with_expr_length() -> None:
-    df = pl.DataFrame({"a": [[1], [], [1, 2, 3]], "length": [2, 2, 4]})
-    result = df.select(
-        length_expr=pl.col("a").list.pad_start(pl.col("a").list.len().max(), 999),
-        length_col=pl.col("a").list.pad_start(pl.col("length"), 999),
+    df = pl.DataFrame(
+        {"a": [[1], [], [1, 2, 3]], "length": [2, 2, 4], "fill": [0, 1, 2]}
+    )
+    result = (
+        df.lazy()
+        .select(
+            length_expr=pl.col("a").list.pad_start(pl.col("a").list.len().max(), 999),
+            length_col=pl.col("a").list.pad_start(pl.col("length"), pl.col("fill")),
+        )
+        .collect()
     )
     expected = pl.DataFrame(
         {
             "length_expr": [[999, 999, 1], [999, 999, 999], [1, 2, 3]],
-            "length_col": [[999, 1], [999, 999], [999, 1, 2, 3]],
+            "length_col": [[0, 1], [1, 1], [2, 1, 2, 3]],
         }
     )
     assert_frame_equal(result, expected)

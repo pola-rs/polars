@@ -23,6 +23,8 @@ use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
+#[cfg(feature = "list_pad")]
+use polars_core::utils::align_chunks_ternary_ca_series;
 use polars_core::utils::try_get_supertype;
 
 use super::*;
@@ -612,12 +614,12 @@ pub trait ListNameSpaceImpl: AsList {
                 .offsets()
                 .offset_and_length_iter()
                 .zip(len_iter)
-                .map(|((_, offset_length), length)| max(offset_length, max(length, 0) as usize))
+                .map(|((_, offset_length), length)| max(offset_length, length as usize))
                 .sum();
 
             // list values count will be greater or equal after pad
             // take fast path if equal (no work to be done)
-            if total_inner == *list_arr.offsets().last() as usize {
+            if total_inner == list_arr.get_values_size() {
                 return list_arr.to_owned();
             }
 
@@ -653,7 +655,7 @@ pub trait ListNameSpaceImpl: AsList {
                 let pad_count = target_length.saturating_sub(row_len);
 
                 if pad_count > 0 {
-                    let fill_value_start = if fill_value_is_scalar { 0 } else { start };
+                    let fill_value_start = if fill_value_is_scalar { 0 } else { idx_row };
                     builder.subslice_extend_each_repeated(
                         fill_value.as_ref(),
                         fill_value_start,
