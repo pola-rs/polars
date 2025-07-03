@@ -84,7 +84,6 @@ impl PolarsTableFunctions {
 
         use polars_lazy::frame::LazyFileListReader;
         let path = self.get_file_path_from_arg(&args[0])?;
-        let path = PlPath::from_string(path);
         let lf = LazyCsvReader::new(path.clone())
             .with_try_parse_dates(true)
             .with_missing_is_null(true)
@@ -97,7 +96,6 @@ impl PolarsTableFunctions {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_parquet` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
-        let path = PlPath::from_string(path);
         let lf = LazyFrame::scan_parquet(path.clone(), Default::default())?;
         Ok((path, lf))
     }
@@ -107,7 +105,6 @@ impl PolarsTableFunctions {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
-        let path = PlPath::from_string(path);
         let lf = LazyFrame::scan_ipc(path.clone(), Default::default())?;
         Ok((path, lf))
     }
@@ -119,18 +116,17 @@ impl PolarsTableFunctions {
         use polars_lazy::prelude::LazyJsonLineReader;
 
         let path = self.get_file_path_from_arg(&args[0])?;
-        let path = PlPath::from_string(path);
         let lf = LazyJsonLineReader::new(path.clone()).finish()?;
         Ok((path, lf))
     }
 
     #[allow(dead_code)]
-    fn get_file_path_from_arg(&self, arg: &FunctionArg) -> PolarsResult<String> {
+    fn get_file_path_from_arg(&self, arg: &FunctionArg) -> PolarsResult<PlPath> {
         use sqlparser::ast::{Expr as SQLExpr, Value as SQLValue};
         match arg {
             FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(
                 SQLValue::SingleQuotedString(s),
-            ))) => Ok(s.to_string()),
+            ))) => Ok(PlPath::from_str(&s)),
             _ => polars_bail!(
                 SQLSyntax:
                 "expected a valid file path as a single-quoted string; found: {}", arg,
