@@ -103,7 +103,8 @@ fn compute_payload_selector(
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
                         // coalescing.
-                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{c}");
+                        let key_idx = this_key_schema.index_of(c).unwrap();
+                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
                         Some(name)
                     } else {
                         None
@@ -138,11 +139,9 @@ fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
             .iter()
             .filter_map(|c| {
                 if params.left_key_schema.contains(c.name()) {
+                    let key_idx = params.left_key_schema.index_of(c.name()).unwrap();
                     let other = df
-                        .column(&format_pl_smallstr!(
-                            "__POLARS_COALESCE_KEYCOL_{}",
-                            c.name()
-                        ))
+                        .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}"))
                         .unwrap();
                     return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
                 }
