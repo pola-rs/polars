@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -25,6 +24,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable
 
     from polars._typing import PolarsDataType
