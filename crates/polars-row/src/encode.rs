@@ -2,8 +2,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
-    PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
+    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, StructArray, UInt16Array, UInt32Array, UInt8Array, Utf8Array, Utf8ViewArray
 };
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
@@ -323,6 +322,55 @@ fn get_encoder(
             state,
         };
     }
+    
+    // Non-fixed-size categorical path.
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
+        match dtype {
+            D::UInt8 => {
+                assert!(opt.is_ordered() && !ctx.is_enum);
+                let dc_array = array.as_any().downcast_ref::<UInt8Array>().unwrap();
+                return striter_num_column_bytes(
+                    array,
+                    dc_array.values_iter().map(|cat| {
+                        ctx.mapping.cat_to_str(cat.as_cat()).map(|s| s.len()).unwrap_or(0)
+                    }),
+                    dc_array.validity(),
+                    opt,
+                    row_widths,
+                );
+            },
+            D::UInt16 => {
+                assert!(opt.is_ordered() && !ctx.is_enum);
+                let dc_array = array.as_any().downcast_ref::<UInt16Array>().unwrap();
+                return striter_num_column_bytes(
+                    array,
+                    dc_array.values_iter().map(|cat| {
+                        ctx.mapping.cat_to_str(cat.as_cat()).map(|s| s.len()).unwrap_or(0)
+                    }),
+                    dc_array.validity(),
+                    opt,
+                    row_widths,
+                );
+            },
+            D::UInt32 => {
+                assert!(opt.is_ordered() && !ctx.is_enum);
+                let dc_array = array.as_any().downcast_ref::<UInt32Array>().unwrap();
+                return striter_num_column_bytes(
+                    array,
+                    dc_array.values_iter().map(|cat| {
+                        ctx.mapping.cat_to_str(cat.as_cat()).map(|s| s.len()).unwrap_or(0)
+                    }),
+                    dc_array.validity(),
+                    opt,
+                    row_widths,
+                );
+            },
+            _ => {
+                // Fall through to below, should be nested type containing categorical.
+                debug_assert!(dtype.is_nested())
+            }
+        }
+    }
 
     match dtype {
         D::FixedSizeList(_, width) => {
@@ -536,10 +584,10 @@ unsafe fn encode_cat_array<T: NativeType + FixedLengthEncoding + CatNative>(
     if ctx.is_enum || !opt.is_ordered() {
         numeric::encode(buffer, keys, opt, offsets);
     } else {
-        binary::encode_iter(
+        utf8::encode_str(
             buffer,
             keys.iter()
-                .map(|k| k.map(|&cat| ctx.mapping.cat_to_str_unchecked(cat.as_cat()).as_bytes())),
+                .map(|k| k.map(|&cat| ctx.mapping.cat_to_str_unchecked(cat.as_cat()))),
             opt,
             offsets,
         );
