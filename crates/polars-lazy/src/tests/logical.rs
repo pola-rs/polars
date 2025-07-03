@@ -25,7 +25,7 @@ fn test_duration() -> PolarsResult<()> {
             (col("date") - col("date").first()).alias("date"),
             (col("datetime") - col("datetime").first()).alias("datetime"),
         ])
-        .explode([col("date"), col("datetime")])
+        .explode([Selector::col("date"), Selector::col("datetime")])
         .collect()?;
 
     for c in ["date", "datetime"] {

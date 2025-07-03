@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -13,8 +14,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import IntoExpr, PolarsDataType
-    from polars.polars import PyExpr
+    from polars._typing import ColumnNameOrSelector, IntoExpr, PolarsDataType
+    from polars.polars import PyExpr, PySelector
 
 
 def parse_into_expression(
@@ -103,6 +104,25 @@ def parse_into_list_of_expressions(
         exprs.extend(named_exprs)
 
     return exprs
+
+
+def parse_into_selector(i: ColumnNameOrSelector) -> PySelector:
+    if isinstance(i, str):
+        return pl.Selector.cols([i])._pyselector
+    elif isinstance(i, pl.Selector):
+        return i._pyselector
+    else:
+        msg = f"cannot turn {qualified_type_name(i)!r} into selector"
+        raise TypeError(msg)
+
+
+def parse_into_list_of_selectors(
+    inputs: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+) -> list[PySelector]:
+    if isinstance(inputs, Collection):
+        return [parse_into_selector(x) for x in inputs]
+    else:
+        return [parse_into_selector(inputs)]
 
 
 def _parse_positional_inputs(

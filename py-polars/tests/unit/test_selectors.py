@@ -21,7 +21,11 @@ def assert_repr_equals(item: Any, expected: str) -> None:
     if not isinstance(expected, str):
         msg = f"`expected` must be a string; found {qualified_type_name(expected)!r}"
         raise TypeError(msg)
-    assert repr(item) == expected
+    try:
+        assert repr(item) == expected
+    except Exception as e:
+        e.add_note(f"'{item!r}' != '{expected}'")
+        raise
 
 
 @pytest.fixture
@@ -238,7 +242,7 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     for selector_expr, expected in (
         (cs.by_name("abc", "cde") & pl.col("ghi"), []),
         (cs.by_name("abc", "cde") & pl.col("cde"), ["cde"]),
-        (pl.col("cde") & cs.by_name("cde", "abc"), ["cde"]),
+        (cs.by_name("cde") & cs.by_name("cde", "abc"), ["cde"]),
     ):
         assert df.select(selector_expr).columns == expected
 
@@ -617,34 +621,34 @@ def test_selector_temporal_13665() -> None:
 def test_selector_expansion() -> None:
     df = pl.DataFrame({name: [] for name in "abcde"})
 
-    s1 = pl.all().meta._as_selector()
-    s2 = pl.col(["a", "b"])
-    s = s1.meta._selector_sub(s2)
+    s1 = pl.all().meta.as_selector()
+    s2 = pl.col(["a", "b"]).meta.as_selector()
+    s = s1 - s2
     assert df.select(s).columns == ["c", "d", "e"]
 
-    s1 = pl.col("^a|b$").meta._as_selector()
-    s = s1.meta._selector_add(pl.col(["d", "e"]))
+    s1 = pl.col("^a|b$").meta.as_selector()
+    s = s1 | pl.col(["d", "e"]).meta.as_selector()
     assert df.select(s).columns == ["a", "b", "d", "e"]
 
-    s = s.meta._selector_sub(pl.col("d"))
+    s = s - pl.col("d").meta.as_selector()
     assert df.select(s).columns == ["a", "b", "e"]
 
     # add a duplicate, this tests if they are pruned
-    s = s.meta._selector_add(pl.col("a"))
+    s = s | pl.col("a").meta.as_selector()
     assert df.select(s).columns == ["a", "b", "e"]
 
     s1 = pl.col(["a", "b", "c"])
     s2 = pl.col(["b", "c", "d"])
 
-    s = s1.meta._as_selector()
-    s = s.meta._selector_and(s2)
+    s = s1.meta.as_selector()
+    s = s & s2.meta.as_selector()
     assert df.select(s).columns == ["b", "c"]
 
 
 def test_selector_repr() -> None:
-    assert_repr_equals(cs.all() - cs.first(), "(cs.all() - cs.first())")
-    assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
-    assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
+    assert_repr_equals(cs.all() - cs.first(), "[cs.all() - cs.first()]")
+    assert_repr_equals(~cs.starts_with("a", "b"), "[cs.all() - cs.matches(\"^(a|b).*$\")]")
+    assert_repr_equals(cs.float() | cs.by_name("x"), "[cs.float() | cs.by_name('x')]")
     assert_repr_equals(
         cs.integer() & cs.matches("z"),
         "(cs.integer() & cs.matches(pattern='z'))",
@@ -879,7 +883,7 @@ def test_selector_list_of_lists_18499() -> None:
         }
     )
 
-    with pytest.raises(InvalidOperationError, match="invalid selector expression"):
+    with pytest.raises(TypeError, match="cannot turn 'list' into selector"):
         lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
 
 

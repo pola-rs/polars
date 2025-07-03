@@ -262,7 +262,7 @@ impl IR {
                 let options = DistinctOptionsDSL {
                     subset: options.subset.map(|s| {
                         s.iter()
-                            .map(|name| Expr::Column(name.clone()).into())
+                            .map(|name| Selector::ByName([name.clone()].into()))
                             .collect()
                     }),
                     maintain_order: options.maintain_order,

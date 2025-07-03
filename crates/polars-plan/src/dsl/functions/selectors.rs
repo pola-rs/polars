@@ -30,39 +30,40 @@ where
 {
     let name = name.into();
     match name.as_str() {
-        "*" => Expr::Wildcard,
+        "*" => all().into_expr(),
+        n if is_regex_projection(n) => Expr::Selector(Selector::Matches(name)),
         _ => Expr::Column(name),
     }
 }
 
 /// Selects all columns. Shorthand for `col("*")`.
-pub fn all() -> Expr {
-    Expr::Wildcard
+pub fn all() -> Selector {
+    Selector::Wildcard
 }
 
 /// Select multiple columns by name.
-pub fn cols<I, S>(names: I) -> Expr
+pub fn cols<I, S>(names: I) -> Selector
 where
     I: IntoIterator<Item = S>,
     S: Into<PlSmallStr>,
 {
     let names = names.into_iter().map(|x| x.into()).collect();
-    Expr::Columns(names)
+    Selector::ByName(names)
 }
 
 /// Select multiple columns by dtype.
-pub fn dtype_col(dtype: &DataType) -> Expr {
-    Expr::DtypeColumn(vec![dtype.clone()])
+pub fn dtype_col(dtype: &DataType) -> Selector {
+    Selector::WithDataTypes([dtype.clone()].into())
 }
 
 /// Select multiple columns by dtype.
-pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
-    let dtypes = dtype.as_ref().to_vec();
-    Expr::DtypeColumn(dtypes)
+pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Selector {
+    let dtypes = dtype.as_ref();
+    Selector::WithDataTypes(dtypes.into())
 }
 
 /// Select multiple columns by index.
-pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Expr {
-    let indices = indices.as_ref().to_vec();
-    Expr::IndexColumn(Arc::from(indices))
+pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Selector {
+    let indices = indices.as_ref().into();
+    Selector::AtIndex(indices)
 }

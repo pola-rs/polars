@@ -19,6 +19,7 @@ mod meta;
 mod name;
 #[cfg(feature = "pymethods")]
 mod rolling;
+pub mod selector;
 #[cfg(feature = "pymethods")]
 mod serde;
 #[cfg(feature = "pymethods")]
@@ -29,7 +30,11 @@ mod r#struct;
 use std::mem::ManuallyDrop;
 
 use polars::lazy::dsl::Expr;
+use polars::prelude::Selector;
+use polars_error::PolarsResult;
 use pyo3::pyclass;
+
+use self::selector::PySelector;
 
 #[pyclass]
 #[repr(transparent)]
@@ -41,6 +46,16 @@ pub struct PyExpr {
 impl From<Expr> for PyExpr {
     fn from(expr: Expr) -> Self {
         PyExpr { inner: expr }
+    }
+}
+
+pub(crate) trait ToSelectors {
+    fn to_selectors(self) -> Vec<Selector>;
+}
+
+impl ToSelectors for Vec<PySelector> {
+    fn to_selectors(self) -> Vec<Selector> {
+        self.into_iter().map(|v| v.inner).collect::<Vec<_>>()
     }
 }
 

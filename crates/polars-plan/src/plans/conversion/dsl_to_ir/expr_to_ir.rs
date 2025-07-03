@@ -393,15 +393,10 @@ pub(super) fn to_aexpr_impl(
         e @ Expr::Field(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },
-        e @ Expr::IndexColumn(_)
-        | e @ Expr::Wildcard
-        | e @ Expr::Nth(_)
-        | e @ Expr::SubPlan { .. }
+
+        e @ Expr::SubPlan { .. }
         | e @ Expr::KeepName(_)
-        | e @ Expr::Exclude(_, _)
         | e @ Expr::RenameAlias { .. }
-        | e @ Expr::Columns { .. }
-        | e @ Expr::DtypeColumn { .. }
         | e @ Expr::Selector(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },
