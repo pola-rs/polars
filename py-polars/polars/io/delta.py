@@ -4,7 +4,6 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from polars.convert import from_arrow
 from polars.datatypes import Null, Time
