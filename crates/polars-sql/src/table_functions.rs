@@ -126,7 +126,7 @@ impl PolarsTableFunctions {
         match arg {
             FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(
                 SQLValue::SingleQuotedString(s),
-            ))) => Ok(PlPath::from_str(&s)),
+            ))) => Ok(PlPath::from_str(s)),
             _ => polars_bail!(
                 SQLSyntax:
                 "expected a valid file path as a single-quoted string; found: {}", arg,
