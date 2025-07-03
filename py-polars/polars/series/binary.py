@@ -220,8 +220,10 @@ class BinaryNameSpace:
         self, *, dtype: PolarsDataType, endianness: Endianness = "little"
     ) -> Series:
         r"""
-        Interpret a buffer as a numerical polars type, a type that is stored as
-        a numerical type, or an ``Array`` of these types.
+        Interpret bytes as another type.
+
+        Support types are numerical polars types, types that are stored as a
+        numerical type, or an ``Array`` of these types.
 
         Parameters
         ----------

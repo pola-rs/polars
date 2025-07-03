@@ -301,7 +301,10 @@ class ExprBinaryNameSpace:
         self, *, dtype: PolarsDataType | DataTypeExpr, endianness: Endianness = "little"
     ) -> Expr:
         r"""
-        Interpret a buffer as a numerical Polars type.
+        Interpret bytes as another type.
+
+        Support types are numerical polars types, types that are stored as a
+        numerical type, or an ``Array`` of these types.
 
         Parameters
         ----------
