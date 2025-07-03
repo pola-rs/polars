@@ -2,7 +2,8 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, StructArray, UInt16Array, UInt32Array, UInt8Array, Utf8Array, Utf8ViewArray
+    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
+    PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array, Utf8Array, Utf8ViewArray,
 };
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
@@ -322,7 +323,7 @@ fn get_encoder(
             state,
         };
     }
-    
+
     // Non-fixed-size categorical path.
     if let Some(RowEncodingContext::Categorical(ctx)) = dict {
         match dtype {
@@ -332,7 +333,10 @@ fn get_encoder(
                 return striter_num_column_bytes(
                     array,
                     dc_array.values_iter().map(|cat| {
-                        ctx.mapping.cat_to_str(cat.as_cat()).map(|s| s.len()).unwrap_or(0)
+                        ctx.mapping
+                            .cat_to_str(cat.as_cat())
+                            .map(|s| s.len())
+                            .unwrap_or(0)
                     }),
                     dc_array.validity(),
                     opt,
@@ -345,7 +349,10 @@ fn get_encoder(
                 return striter_num_column_bytes(
                     array,
                     dc_array.values_iter().map(|cat| {
-                        ctx.mapping.cat_to_str(cat.as_cat()).map(|s| s.len()).unwrap_or(0)
+                        ctx.mapping
+                            .cat_to_str(cat.as_cat())
+                            .map(|s| s.len())
+                            .unwrap_or(0)
                     }),
                     dc_array.validity(),
                     opt,
@@ -358,7 +365,10 @@ fn get_encoder(
                 return striter_num_column_bytes(
                     array,
                     dc_array.values_iter().map(|cat| {
-                        ctx.mapping.cat_to_str(cat.as_cat()).map(|s| s.len()).unwrap_or(0)
+                        ctx.mapping
+                            .cat_to_str(cat.as_cat())
+                            .map(|s| s.len())
+                            .unwrap_or(0)
                     }),
                     dc_array.validity(),
                     opt,
@@ -368,7 +378,7 @@ fn get_encoder(
             _ => {
                 // Fall through to below, should be nested type containing categorical.
                 debug_assert!(dtype.is_nested())
-            }
+            },
         }
     }
 
