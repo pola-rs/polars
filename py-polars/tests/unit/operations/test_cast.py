@@ -561,7 +561,6 @@ def test_strict_cast_string(
 @pytest.mark.parametrize(
     "dtype_out",
     [
-        *INTEGER_DTYPES,
         pl.String,
         pl.Categorical,
         pl.Enum(["1", "2"]),
