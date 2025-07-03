@@ -324,7 +324,7 @@ def test_reinterpret_to_n_dimensional_array() -> None:
     for endianness in ["big", "little"]:
         with pytest.raises(
             InvalidOperationError,
-            match="cast to a linear Array, and then use reshape",
+            match="reinterpret to a linear Array, and then use reshape",
         ):
             series.bin.reinterpret(
                 dtype=pl.Array(pl.UInt32(), (2, 2)),

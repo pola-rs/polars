@@ -78,7 +78,7 @@ pub(super) fn convert_functions(
                             physical_dtype.is_array() && physical_dtype.inner_dtype().map(|dt|dt.is_primitive_numeric()) == Some(true)
                         ),
                         InvalidOperation:
-                        "cannot reinterpret binary to dtype {:?} (with physical dtype {:?}). Only dtypes physically represented by primitive numerics, or Arrays of these, are supported. Hint: To cast to a nested Array, first cast to a linear Array, and then use reshape",
+                        "cannot reinterpret binary to dtype {:?} (with physical dtype {:?}). Only dtypes physically represented by primitive numerics, or Arrays of these, are supported. Hint: To reinterpret to a nested Array, first reinterpret to a linear Array, and then use reshape",
                         dtype,
                         physical_dtype
                     );
