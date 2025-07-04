@@ -28,6 +28,10 @@ pub trait MetaDataExt: IntoMetadata {
     }
 
     fn pl_categorical_metadata(&self) -> Option<&str> {
+        // We ignore DTYPE_CATEGORICAL_LEGACY here, as we already map all
+        // string-typed arrow dictionaries to the global Categories, and the
+        // legacy metadata format only specifies the now-removed physical
+        // ordering parameter.
         Some(
             self.into_metadata_ref()
                 .get(DTYPE_CATEGORICAL_NEW)?
@@ -533,8 +537,6 @@ impl DataType {
         use DataType::*;
         match self {
             Binary | String => true,
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => true, // TODO @ cat-rework: is this right?
             List(inner) => inner.contains_views(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_views(),
