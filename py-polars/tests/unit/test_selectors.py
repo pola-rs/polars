@@ -230,13 +230,15 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
 
-    selected_cols = df.select(
-        cs.by_name("???", "fgg", "!!!", require_all=False)
-    ).columns
+    with pytest.raises(DeprecationWarning):
+        selected_cols = df.select(
+            cs.by_name("???", "fgg", "!!!", require_all=False)
+        ).columns
     assert selected_cols == ["fgg"]
 
     for missing_column in ("missing", "???"):
-        assert df.select(cs.by_name(missing_column, require_all=False)).columns == []
+        with pytest.raises(DeprecationWarning):
+            assert df.select(cs.by_name(missing_column, require_all=False)).columns == []
 
     # check "by_name & col"
     for selector_expr, expected in (
@@ -657,10 +659,11 @@ def test_selector_repr() -> None:
         cs.by_name("baz", "moose", "foo", "bear"),
         "cs.by_name('baz', 'moose', 'foo', 'bear')",
     )
-    assert_repr_equals(
-        cs.by_name("baz", "moose", "foo", "bear", require_all=False),
-        "cs.by_name('baz', 'moose', 'foo', 'bear', require_all=False)",
-    )
+    with pytest.raises(DeprecationWarning):
+        assert_repr_equals(
+            cs.by_name("baz", "moose", "foo", "bear", require_all=False),
+            "cs.by_name('baz', 'moose', 'foo', 'bear', require_all=False)",
+        )
     assert_repr_equals(
         cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),
         "(cs.temporal() | (cs.by_dtype(dtypes=[String]) & cs.string(include_categorical=False)))",

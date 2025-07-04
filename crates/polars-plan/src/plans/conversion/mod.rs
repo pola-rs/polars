@@ -15,7 +15,7 @@ use recursive::recursive;
 pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
-pub use dsl_to_ir::{expand_selectors, is_regex_projection, prepare_projection};
+pub use dsl_to_ir::{is_regex_projection, prepare_projection};
 pub(crate) use stack_opt::ConversionOptimizer;
 
 use crate::constants::get_len_name;

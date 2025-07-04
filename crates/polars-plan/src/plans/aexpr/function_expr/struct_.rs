@@ -1,4 +1,3 @@
-use polars_core::utils::slice_offsets;
 use polars_utils::format_pl_smallstr;
 
 use super::*;

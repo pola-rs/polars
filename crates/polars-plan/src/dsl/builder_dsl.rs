@@ -120,8 +120,8 @@ impl DslBuilder {
         DslPlan::Cache { input }.into()
     }
 
-    pub fn drop(self, to_drop: Selector) -> Self {
-        self.project(!to_drop, ProjectionOptions::default())
+    pub fn drop(self, columns: Selector) -> Self {
+        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
@@ -144,7 +144,7 @@ impl DslBuilder {
     }
 
     pub fn drop_nans(self, subset: Option<Selector>) -> Self {
-        let is_nan = subset.unwrap_or(Selector::Float).as_expr();
+        let is_nan = subset.unwrap_or(Selector::Float).as_expr().is_nan();
         self.remove(any_horizontal([is_nan]).unwrap())
     }
 

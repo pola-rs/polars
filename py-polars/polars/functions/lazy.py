@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
@@ -32,7 +31,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Collection, Iterable
+    from collections.abc import Awaitable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -717,7 +716,7 @@ def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:
     │ baz ┆ 3   │
     └─────┴─────┘
     """
-    return pl.Selector.nth(indices, strict).as_expr()
+    return cs.by_index(*indices, strict=strict).as_expr()
 
 
 def head(column: str, n: int = 10) -> Expr:

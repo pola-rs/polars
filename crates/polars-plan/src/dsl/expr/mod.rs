@@ -149,9 +149,8 @@ pub enum Expr {
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
-    /// Take the nth column in the `DataFrame`
     #[cfg(feature = "dtype-struct")]
-    Field(Arc<[PlSmallStr]>),
+    Field(Arc<Expr>, Selector),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,

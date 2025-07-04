@@ -1,5 +1,7 @@
 use std::fmt::{self, Write};
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, Not, Sub, SubAssign};
+use std::ops::{
+    BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Sub, SubAssign,
+};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -104,16 +106,20 @@ pub enum Selector {
     Intersect(Arc<Selector>, Arc<Selector>),
     Exclude(Arc<Selector>, Arc<[Excluded]>),
 
+
     // Leaf nodes
-    ByDType(Arc<[DataType]>),
+    
+    // These 2 return their inputs in given order not in schema order.
     ByName {
         names: Arc<[PlSmallStr]>,
         strict: bool,
     },
-    Nth {
+    ByIndex {
         indices: Arc<[i64]>,
         strict: bool,
     },
+
+    ByDType(Arc<[DataType]>),
     Matches(PlSmallStr),
     Wildcard,
     Empty,
@@ -131,73 +137,6 @@ pub enum Selector {
     /// Selector for `DataType::Duration` with optional matching on TimeUnit.
     Duration(TimeUnitSet),
     Object,
-}
-
-fn merge_sorted_columns(
-    lhs: PlIndexSet<PlSmallStr>,
-    rhs: PlIndexSet<PlSmallStr>,
-    schema: &Schema,
-    xor: bool,
-) -> PlIndexSet<PlSmallStr> {
-    if lhs.is_empty() {
-        return rhs;
-    }
-    if rhs.is_empty() {
-        return lhs;
-    }
-
-    let mut out = PlIndexSet::with_capacity(lhs.len() + rhs.len());
-    let mut li = lhs.into_iter();
-    let mut ri = rhs.into_iter();
-
-    let mut lv = li.next().unwrap();
-    let mut rv = ri.next().unwrap();
-
-    let mut l = schema.index_of(&lv).unwrap();
-    let mut r = schema.index_of(&rv).unwrap();
-
-    loop {
-        while l == r {
-            if !xor {
-                out.insert(lv);
-            }
-
-            let Some(n) = li.next() else {
-                out.insert(rv);
-                out.extend(ri);
-                return out;
-            };
-            lv = n;
-            l = schema.index_of(&lv).unwrap();
-            let Some(n) = ri.next() else {
-                out.insert(lv);
-                out.extend(li);
-                return out;
-            };
-            rv = n;
-            r = schema.index_of(&rv).unwrap();
-        }
-
-        if l < r {
-            out.insert(lv);
-            let Some(n) = li.next() else {
-                out.insert(rv);
-                out.extend(ri);
-                return out;
-            };
-            lv = n;
-            l = schema.index_of(&lv).unwrap();
-        } else {
-            out.insert(rv);
-            let Some(n) = ri.next() else {
-                out.insert(lv);
-                out.extend(li);
-                return out;
-            };
-            rv = n;
-            r = schema.index_of(&rv).unwrap();
-        }
-    }
 }
 
 fn dtype_selector(
@@ -226,25 +165,52 @@ impl Selector {
     ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         let out = match self {
             Selector::Union(lhs, rhs) => {
-                let lhs = lhs.into_columns(schema, ignored_columns)?;
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
                 let rhs = rhs.into_columns(schema, ignored_columns)?;
-                merge_sorted_columns(lhs, rhs, schema, false)
+                lhs.extend(rhs);
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                lhs
             },
             Selector::Difference(lhs, rhs) => {
                 let mut lhs = lhs.into_columns(schema, ignored_columns)?;
                 let rhs = rhs.into_columns(schema, ignored_columns)?;
                 lhs.retain(|n| !rhs.contains(n));
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
                 lhs
             },
             Selector::ExclusiveOr(lhs, rhs) => {
-                let lhs = lhs.into_columns(schema, ignored_columns)?;
-                let rhs = rhs.into_columns(schema, ignored_columns)?;
-                merge_sorted_columns(lhs, rhs, schema, true)
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
+                let mut rhs = rhs.into_columns(schema, ignored_columns)?;
+                rhs.retain(|n| !lhs.contains(n));
+                lhs.extend(rhs);
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                lhs
             },
             Selector::Intersect(lhs, rhs) => {
                 let mut lhs = lhs.into_columns(schema, ignored_columns)?;
                 let rhs = rhs.into_columns(schema, ignored_columns)?;
                 lhs.retain(|n| rhs.contains(n));
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
                 lhs
             },
             Selector::Exclude(input, excludes) => {
@@ -264,6 +230,12 @@ impl Selector {
                         },
                     }
                 }
+                out.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
                 out
             },
 
@@ -277,15 +249,9 @@ impl Selector {
                     polars_ensure!(!strict || schema.contains(name), col_not_found = name);
                     out.insert(name.clone());
                 }
-                out.sort_unstable_by(|l, r| {
-                    schema
-                        .index_of(l)
-                        .unwrap()
-                        .cmp(&schema.index_of(r).unwrap())
-                });
                 out
             },
-            Selector::Nth { indices, strict } => {
+            Selector::ByIndex { indices, strict } => {
                 let mut out = PlIndexSet::with_capacity(indices.len());
                 let mut set = PlIndexSet::with_capacity(indices.len());
                 for &idx in indices.iter() {
@@ -295,16 +261,10 @@ impl Selector {
                     };
                     let (name, _) = schema.get_at_index(idx).unwrap();
                     if !set.insert(idx) {
-                        polars_bail!(InvalidOperation: "duplicate column name {name}");
+                        polars_bail!(Duplicate: "duplicate column name {name}");
                     }
                     out.insert(name.clone());
                 }
-                out.sort_unstable_by(|l, r| {
-                    schema
-                        .index_of(l)
-                        .unwrap()
-                        .cmp(&schema.index_of(r).unwrap())
-                });
                 out
             },
             Selector::Matches(regex_str) => {
@@ -435,7 +395,7 @@ impl BitXor for Selector {
 }
 
 impl BitXorAssign for Selector {
-    fn bitand_assign(&mut self, rhs: Self) {
+    fn bitxor_assign(&mut self, rhs: Self) {
         *self = Selector::ExclusiveOr(
             Arc::new(std::mem::replace(self, Self::Empty)),
             Arc::new(rhs),
@@ -491,6 +451,7 @@ impl fmt::Display for Selector {
 
                 f.write_char(')')
             },
+
             Selector::ByDType(dtypes) => {
                 use DataType as D;
                 match dtypes.as_ref() {
@@ -511,17 +472,17 @@ impl fmt::Display for Selector {
 
                 write!(f, "strict={strict})")
             },
-            Selector::Nth { indices, strict } if indices.as_ref() == &[0] => {
+            Selector::ByIndex { indices, strict } if indices.as_ref() == &[0] => {
                 write!(f, "cs.first(strict={strict})")
             },
-            Selector::Nth { indices, strict } if indices.as_ref() == &[-1] => {
+            Selector::ByIndex { indices, strict } if indices.as_ref() == &[-1] => {
                 write!(f, "cs.last(strict={strict})")
             },
-            Selector::Nth { indices, strict } if indices.len() == 1 => {
+            Selector::ByIndex { indices, strict } if indices.len() == 1 => {
                 write!(f, "cs.nth({}, strict={strict})", indices[0])
             },
-            Selector::Nth { indices, strict } => {
-                write!(f, "cs.nth({:?}, strict={strict})", indices.as_ref())
+            Selector::ByIndex { indices, strict } => {
+                write!(f, "cs.by_index({:?}, strict={strict})", indices.as_ref())
             },
             Selector::Matches(s) => write!(f, "cs.matches(\"{s}\")"),
 

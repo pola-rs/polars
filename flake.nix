@@ -313,6 +313,15 @@
 									# # Used for Altair SVG / PNG conversions
 									"vl-convert-python"
 								];
+
+                rustPkg = rustToolchain.withComponents [
+                  "cargo"
+                  "clippy"
+                  "rust-src"
+                  "rustc"
+                  "rustfmt"
+                  "rust-analyzer"
+                ];
               in
               {
                 packages =
@@ -322,14 +331,7 @@
                     pythonPlatform.venvShellHook
                     pythonPlatform.build
 
-                    (rustToolchain.withComponents [
-                      "cargo"
-                      "clippy"
-                      "rust-src"
-                      "rustc"
-                      "rustfmt"
-                      "rust-analyzer"
-                    ])
+                    rustPkg
 
                     cmake
                     gnumake
@@ -438,6 +440,7 @@
                     export PYTHON_LIBS=$($VENV/bin/python -c "import site; print(site.getsitepackages()[0])")
 
                     export PYTHONPATH="$PYTHONPATH:$PYTHON_LIBS"
+										export RUST_SRC_PATH="${rustToolchain.rust-src}/lib/rustlib/src/rust/library"
                   '';
 
               }

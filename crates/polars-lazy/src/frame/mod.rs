@@ -425,15 +425,10 @@ impl LazyFrame {
     ///
     /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
     /// error while materializing the [`LazyFrame`].
-    pub fn drop<I, T>(self, columns: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<Selector>,
+    pub fn drop(self, columns: Selector) -> Self
     {
-        let to_drop = columns.into_iter().map(|c| c.into()).collect();
-
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop(to_drop).build();
+        let lp = self.get_plan_builder().drop(columns).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1833,21 +1828,12 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(self, columns: E) -> LazyFrame {
+    pub fn explode(self, columns: Selector) -> LazyFrame {
         self.explode_impl(columns, false)
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    fn explode_impl<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(
-        self,
-        columns: E,
-        allow_empty: bool,
-    ) -> LazyFrame {
-        let columns = columns
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<_>>();
+    fn explode_impl(self, columns: Selector, allow_empty: bool) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
@@ -1877,8 +1863,7 @@ impl LazyFrame {
         self,
         subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
-    ) -> LazyFrame
-    {
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let options = DistinctOptionsDSL {
             subset,
@@ -1896,11 +1881,7 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for uniqueness; if None,
     /// all columns are considered.
-    pub fn unique(
-        self,
-        subset: Option<Selector>,
-        keep_strategy: UniqueKeepStrategy,
-    ) -> LazyFrame {
+    pub fn unique(self, subset: Option<Selector>, keep_strategy: UniqueKeepStrategy) -> LazyFrame {
         self.unique_generic(subset, keep_strategy)
     }
 
@@ -1923,7 +1904,7 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for NaNs; if None, all
     /// floating point columns are considered.
-    pub fn drop_nans(self, subset: Option<Vec<Selector>>) -> LazyFrame {
+    pub fn drop_nans(self, subset: Option<Selector>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop_nans(subset).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1933,7 +1914,7 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.
-    pub fn drop_nulls(self, subset: Option<Vec<Selector>>) -> LazyFrame {
+    pub fn drop_nulls(self, subset: Option<Selector>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop_nulls(subset).build();
         Self::from_logical_plan(lp, opt_state)
@@ -2104,16 +2085,7 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest<E, IE>(self, cols: E) -> Self
-    where
-        E: AsRef<[IE]>,
-        IE: Into<Selector> + Clone,
-    {
-        let cols = cols
-            .as_ref()
-            .iter()
-            .map(|ie| ie.clone().into())
-            .collect::<Vec<_>>();
+    pub fn unnest(self, cols: Selector) -> Self {
         self.map_private(DslFunction::Unnest(cols))
     }
 
@@ -2207,7 +2179,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([all().exclude_cols(keys.iter().cloned()).as_expr().head(n)])
-            .explode_impl([all().exclude_cols(keys.iter().cloned())], true)
+            .explode_impl(all().exclude_cols(keys.iter().cloned()), true)
     }
 
     /// Return last n rows of each group
@@ -2219,7 +2191,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([all().exclude_cols(keys.iter().cloned()).as_expr().tail(n)])
-            .explode_impl([all().exclude_cols(keys.iter().cloned())], true)
+            .explode_impl(all().exclude_cols(keys.iter().cloned()), true)
     }
 
     /// Apply a function over the groups as a new DataFrame.

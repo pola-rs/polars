@@ -321,7 +321,15 @@ class Selector(Expr):
     def __hash__(self) -> int:
         # note: this is a suitable hash for selectors (but NOT expressions in general),
         # as the repr is guaranteed to be unique across all selector/param permutations
-        return hash(Expr._from_pyexpr(self._pyexpr))
+        return self._pyselector.hash()
+
+    @classmethod
+    def _by_dtype(cls, dtypes: list[PolarsDataType]) -> Selector:
+        return cls._from_pyselector(PySelector.by_dtype(dtypes))
+
+    @classmethod
+    def _by_name(cls, names: list[str], *, strict: bool) -> Selector:
+        return cls._from_pyselector(PySelector.by_name(names, strict))
 
     def __invert__(self) -> Self:
         """Invert the selector."""
@@ -538,6 +546,17 @@ def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
                 strings.append(st)
         rx = "|".join((re_escape(x) if escape else x) for x in strings)
     return f"({rx})"
+
+
+def empty() -> Selector:
+    """
+    Select no columns.
+
+    See Also
+    --------
+    all : Select all columns in the current scope.
+    """
+    return Selector._from_pyselector(PySelector.empty())
 
 
 def all() -> Selector:
@@ -975,7 +994,9 @@ def by_dtype(
     return F.col(all_dtypes).meta.as_selector()
 
 
-def by_index(*indices: int | range | Sequence[int | range]) -> Selector:
+def by_index(
+    *indices: int | range | Sequence[int | range], strict: bool = True
+) -> Selector:
     """
     Select all columns matching the given indices (or range objects).
 
@@ -1071,7 +1092,7 @@ def by_index(*indices: int | range | Sequence[int | range]) -> Selector:
             msg = f"invalid index value: {idx!r}"
             raise TypeError(msg)
 
-    return Selector._from_pyselector(PySelector.at_index(all_indices))
+    return Selector._from_pyselector(PySelector.by_index(all_indices, strict))
 
 
 @deprecate_renamed_parameter("require_all", "strict", version="1.32.0")
@@ -1164,7 +1185,7 @@ def by_name(*names: str | Collection[str], strict: bool = True) -> Selector:
             msg = f"invalid name: {nm!r}"
             raise TypeError(msg)
 
-    return Selector._from_pyselector(PySelector.by_name(all_names, strict))
+    return Selector._by_name(all_names, strict=strict)
 
 
 def categorical() -> Selector:

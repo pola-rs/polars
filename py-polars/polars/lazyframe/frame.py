@@ -21,6 +21,7 @@ from typing import (
 )
 
 import polars._reexport as pl
+import polars.selectors as cs
 from polars import functions as F
 from polars._typing import (
     ParquetMetadata,
@@ -39,7 +40,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
-from polars._utils.parse.expr import parse_into_list_of_selectors
+from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -108,7 +109,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Iterable, Sequence
+    from collections.abc import Awaitable, Sequence
     from io import IOBase
     from typing import IO, Literal
 
@@ -6079,8 +6080,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 selectors += [c]
 
-        drop_cols = parse_into_list_of_selectors(selectors, strict=strict)
-        return self._from_pyldf(self._ldf.drop(columns=drop_cols))
+        drop_cols = parse_list_into_selector(selectors, strict=strict)
+        return self._from_pyldf(self._ldf.drop(columns=drop_cols._pyselector))
 
     def rename(
         self, mapping: Mapping[str, str] | Callable[[str], str], *, strict: bool = True
@@ -7145,8 +7146,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        columns = parse_into_list_of_selectors(list(columns) + list(more_columns))
-        return self._from_pyldf(self._ldf.explode(column=columns))
+        subset = parse_list_into_selector(columns) | +parse_list_into_selector(
+            more_columns
+        )
+        return self._from_pyldf(self._ldf.explode(subset=subset._pyselector))
 
     def unique(
         self,
@@ -7233,9 +7236,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
         """
-        selector_subset: list[PySelector] | None = None
+        selector_subset: PySelector | None = None
         if subset is not None:
-            selector_subset = parse_into_list_of_selectors(subset)
+            selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.unique(maintain_order, selector_subset, keep))
 
     def drop_nans(
@@ -7322,10 +7325,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ NaN ┆ 5.25 ┆ 10.5  │
         └─────┴──────┴───────┘
         """
-        selector_subset: list[PySelector] | None = None
-        selector_subset: list[PySelector] | None = None
+        selector_subset: PySelector | None = None
         if subset is not None:
-            selector_subset = parse_into_list_of_selectors(subset)
+            selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.drop_nans(subset=selector_subset))
 
     def drop_nulls(
@@ -7407,9 +7409,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ 1   ┆ 1    │
         └──────┴─────┴──────┘
         """
-        selector_subset: list[PySelector] | None = None
+        selector_subset: PySelector | None = None
         if subset is not None:
-            selector_subset = parse_into_list_of_selectors(subset)
+            selector_subset = parse_list_into_selector(subset)._pyselector
         return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
 
     def unpivot(
@@ -7483,15 +7485,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 version="1.5.0",
             )
 
-        selector_on: list[PySelector] | None = (
-            [] if on is None else parse_into_list_of_selectors(on)
+        selector_on: pl.Selector = (
+            cs.empty() if on is None else parse_list_into_selector(on)
         )
-        selector_index: list[PySelector] | None = (
-            [] if on is None else parse_into_list_of_selectors(index)
+        selector_index: pl.Selector = (
+            cs.empty() if on is None else parse_list_into_selector(index)
         )
 
         return self._from_pyldf(
-            self._ldf.unpivot(selector_on, selector_index, value_name, variable_name)
+            self._ldf.unpivot(
+                selector_on._pyselector,
+                selector_index._pyselector,
+                value_name,
+                variable_name,
+            )
         )
 
     def map_batches(
@@ -7673,8 +7680,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
         """
-        columns = parse_into_list_of_expressions(columns, *more_columns)
-        return self._from_pyldf(self._ldf.unnest(columns))
+        subset = parse_list_into_selector(columns) | parse_list_into_selector(
+            more_columns
+        )
+        return self._from_pyldf(self._ldf.unnest(subset._pyselector))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """

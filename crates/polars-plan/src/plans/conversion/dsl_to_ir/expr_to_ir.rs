@@ -389,14 +389,36 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::Len => (AExpr::Len, get_len_name()),
+        Expr::KeepName(expr) => {
+            let (expr, _) = to_aexpr_impl(owned(expr), arena, schema)?;
+            let name = arena.iter(e).find_map(|e| match e {
+                AExpr::Column(name)
+                | AExpr::Function {
+                    input: _,
+                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
+                    options: _,
+                } => Some(name.clone()),
+                _ => None,
+            });
+            let Some(name) = name else {
+                polars_bail!(
+                    InvalidOperation:
+                    "`name.keep_name` expected at least one column or struct.field"
+                );
+            };
+            return Ok((expr, name));
+        },
+        Expr::RenameAlias { expr, function } => {
+            let (expr, name) = to_aexpr_impl(owned(expr), arena, schema)?;
+            let name = function.call(&name)?;
+            return Ok((expr, name));
+        },
         #[cfg(feature = "dtype-struct")]
         e @ Expr::Field(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },
 
         e @ Expr::SubPlan { .. }
-        | e @ Expr::KeepName(_)
-        | e @ Expr::RenameAlias { .. }
         | e @ Expr::Selector(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },

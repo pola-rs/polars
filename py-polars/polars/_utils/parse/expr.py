@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
-import polars.selectors as cs
 from polars import functions as F
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
@@ -16,7 +15,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from polars import Expr
     from polars._typing import ColumnNameOrSelector, IntoExpr, PolarsDataType
-    from polars.polars import PyExpr, PySelector
+    from polars.polars import PyExpr
 
 
 def parse_into_expression(
@@ -111,25 +110,42 @@ def parse_into_selector(
     i: ColumnNameOrSelector,
     *,
     strict: bool = True,
-) -> PySelector:
+) -> pl.Selector:
     if isinstance(i, str):
-        return cs.by_name([i], strict=strict)._pyselector
+        import polars.selectors as cs
+        return cs.by_name([i], strict=strict)
     elif isinstance(i, pl.Selector):
-        return i._pyselector
+        return i
+    elif isinstance(i, pl.Expr):
+        return i.meta.as_selector()
     else:
         msg = f"cannot turn {qualified_type_name(i)!r} into selector"
         raise TypeError(msg)
 
 
-def parse_into_list_of_selectors(
-    inputs: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
+def parse_list_into_selector(
+    inputs: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
     *,
     strict: bool = True,
-) -> list[PySelector]:
-    if isinstance(inputs, Iterable) and not isinstance(inputs, str):
-        return [parse_into_selector(x, strict=strict) for x in inputs]
+) -> pl.Selector:
+    if isinstance(inputs, Collection) and not isinstance(inputs, str):
+        import polars.selectors as cs
+
+        columns = list(filter(lambda i: isinstance(i, str), inputs))
+        selector = cs.by_name(columns, strict=strict)
+
+        if len(columns) == len(inputs):
+            return selector
+
+        # A bit cleaner
+        if len(columns) == 0:
+            selector = cs.empty()
+
+        for i in inputs:
+            selector |= parse_into_selector(i, strict=strict)
+        return selector
     else:
-        return [parse_into_selector(inputs, strict=strict)]
+        return parse_into_selector(inputs, strict=strict)
 
 
 def _parse_positional_inputs(

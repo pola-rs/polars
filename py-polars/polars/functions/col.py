@@ -52,11 +52,11 @@ def _create_col(
         if isinstance(name, str):
             names_str = [name]
             names_str.extend(more_names)  # type: ignore[arg-type]
-            return pl.Selector.cols(names_str).as_expr()
+            return pl.Selector._by_name(names_str, strict=True).as_expr()
         elif is_polars_dtype(name):
             dtypes = [name]
             dtypes.extend(more_names)  # type: ignore[arg-type]
-            return pl.Selector.dtype_cols(dtypes).as_expr()
+            return pl.Selector._by_dtype(dtypes).as_expr()
         else:
             msg = (
                 "invalid input for `col`"
@@ -68,28 +68,28 @@ def _create_col(
         return wrap_expr(plr.col(name))
     elif is_polars_dtype(name):
         dtypes = _polars_dtype_match(name)
-        return pl.Selector.dtype_cols(dtypes).as_expr()
+        return pl.Selector._by_dtype(dtypes).as_expr()
     elif isinstance(name, type):
         dtypes = _python_dtype_match(name)
-        return pl.Selector.dtype_cols(dtypes).as_expr()
+        return pl.Selector._by_dtype(dtypes).as_expr()
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
-            return pl.Selector.cols(names).as_expr()
+            return pl.Selector._by_name(names, strict=True).as_expr()
 
         item = names[0]
         if isinstance(item, str):
-            return pl.Selector.cols(names).as_expr()
+            return pl.Selector._by_name(names, strict=True).as_expr()
         elif is_polars_dtype(item):
             dtypes = []
             for nm in names:
                 dtypes.extend(_polars_dtype_match(nm))  # type: ignore[arg-type]
-            return pl.Selector.dtype_cols(dtypes).as_expr()
+            return pl.Selector._by_dtype(dtypes).as_expr()
         elif isinstance(item, type):
             dtypes = []
             for nm in names:
                 dtypes.extend(_python_dtype_match(nm))  # type: ignore[arg-type]
-            return pl.Selector.dtype_cols(dtypes).as_expr()
+            return pl.Selector._by_dtype(dtypes).as_expr()
         else:
             msg = (
                 "invalid input for `col`"

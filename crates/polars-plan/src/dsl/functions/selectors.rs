@@ -36,7 +36,12 @@ where
     }
 }
 
-/// Selects all columns. Shorthand for `col("*")`.
+/// Selects no columns.
+pub fn empty() -> Selector {
+    Selector::Empty
+}
+
+/// Selects all columns.
 pub fn all() -> Selector {
     Selector::Wildcard
 }
@@ -65,5 +70,5 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Selector {
 /// Select multiple columns by index.
 pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Selector {
     let indices = indices.as_ref().into();
-    Selector::Nth { indices, strict: true }
+    Selector::ByIndex { indices, strict: true }
 }

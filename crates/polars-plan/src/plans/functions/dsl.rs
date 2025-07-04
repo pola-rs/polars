@@ -113,7 +113,8 @@ impl DslFunction {
                 schema: Default::default(),
             },
             DslFunction::Unnest(selector) => {
-                let columns = selectors.into_columns(input_schema, &Default::default())?;
+                let columns = selector.into_columns(input_schema, &Default::default())?;
+                let columns = columns.into_iter().collect();
                 FunctionIR::Unnest { columns }
             },
             #[cfg(feature = "python")]

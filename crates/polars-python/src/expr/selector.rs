@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use polars::prelude::{DataType, Selector, TimeUnit, TimeZone, TimeUnitSet};
 use polars_plan::dsl;
 
@@ -65,29 +67,30 @@ impl PySelector {
     }
 
     #[staticmethod]
-    fn with_datatype(dtypes: Vec<Wrap<DataType>>) -> Self {
+    fn by_dtype(dtypes: Vec<Wrap<DataType>>) -> Self {
         let dtypes = dtypes.into_iter().map(|x| x.0).collect::<Vec<_>>();
         dsl::dtype_cols(dtypes).into()
     }
 
     #[staticmethod]
     fn by_name(names: Vec<String>, strict: bool) -> Self {
-        Selector::ByName { names: names.into(), strict }.into()
+        let names = names.into_iter().map(Into::into).collect();
+        Selector::ByName { names, strict }.into()
     }
 
     #[staticmethod]
-    fn nth(indices: Vec<i64>, strict: bool) -> Self {
-        Selector::Nth { indices: names.into(), strict }.into()
+    fn by_index(indices: Vec<i64>, strict: bool) -> Self {
+        Selector::ByIndex { indices: indices.into(), strict }.into()
     }
 
     #[staticmethod]
     fn first(strict: bool) -> Self {
-        Selector::Nth { indices: [0].into(), strict }.into()
+        Selector::ByIndex { indices: [0].into(), strict }.into()
     }
 
     #[staticmethod]
-    fn last() -> Self {
-        Selector::Nth { indices: [-1].into(), strict }.into()
+    fn last(strict: bool) -> Self {
+        Selector::ByIndex { indices: [-1].into(), strict }.into()
     }
 
     #[staticmethod]
@@ -138,7 +141,6 @@ impl PySelector {
     #[staticmethod]
     fn datetime(tu: Vec<Wrap<TimeUnit>>, tz: Option<Vec<Wrap<Option<TimeZone>>>>) -> Self {
         let tu = parse_time_unit_set(tu);
-        dbg!(&tu);
         let tz = tz.map(|v| v.into_iter().map(|v| v.0).collect());
         Selector::Datetime(tu, tz).into()
     }
@@ -155,7 +157,18 @@ impl PySelector {
     }
 
     #[staticmethod]
+    fn empty() -> Self {
+        dsl::empty().into()
+    }
+
+    #[staticmethod]
     fn all() -> Self {
         dsl::all().into()
+    }
+
+    fn hash(&self) -> u64 {
+        let mut hasher = std::hash::DefaultHasher::default();
+        self.inner.hash(&mut hasher);
+        hasher.finish()
     }
 }

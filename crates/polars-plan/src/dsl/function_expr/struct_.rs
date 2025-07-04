@@ -4,9 +4,7 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum StructFunction {
-    FieldByIndex(i64),
     FieldByName(PlSmallStr),
-    FieldSelector(Selector),
     RenameFields(Arc<[PlSmallStr]>),
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
@@ -21,7 +19,6 @@ impl Display for StructFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use StructFunction::*;
         match self {
-            FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
@@ -29,7 +26,6 @@ impl Display for StructFunction {
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
             WithFields => write!(f, "with_fields"),
-            FieldSelector(selector) => write!(f, ".struct.field({selector})"),
             #[cfg(feature = "python")]
             MapFieldNames(_) => write!(f, "map_field_names"),
         }

@@ -922,7 +922,13 @@ impl SQLContext {
 
                 // DISTINCT ON has to apply the ORDER BY before the operation.
                 lf = self.process_order_by(lf, &query.order_by, None)?;
-                return Ok(lf.unique_stable(Some(cols.clone()), UniqueKeepStrategy::First));
+                return Ok(lf.unique_stable(
+                    Some(Selector::ByName {
+                        names: cols.into(),
+                        strict: true,
+                    }),
+                    UniqueKeepStrategy::First,
+                ));
             },
             None => lf,
         };

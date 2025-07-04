@@ -18,7 +18,7 @@ mod functions;
 mod join;
 mod scans;
 mod utils;
-pub use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
+pub use expr_expansion::{is_regex_projection, prepare_projection};
 pub use expr_to_ir::to_expr_ir;
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
 use utils::DslConversionContext;
@@ -588,7 +588,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let subset = options
                 .subset
                 .map(|s| {
-                    Ok(s.into_columns(schema, &Default::default())?
+                    PolarsResult::Ok(s.into_columns(input_schema.as_ref(), &Default::default())?
                         .into_iter()
                         .collect())
                 })
