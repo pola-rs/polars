@@ -19,13 +19,13 @@ const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 pub enum RowEncodingContext {
     Struct(Vec<Option<RowEncodingContext>>),
     /// Categorical / Enum
-    Categorical(NewRowEncodingCategoricalContext),
+    Categorical(RowEncodingCategoricalContext),
     /// Decimal with given precision
     Decimal(usize),
 }
 
 #[derive(Debug, Clone)]
-pub struct NewRowEncodingCategoricalContext {
+pub struct RowEncodingCategoricalContext {
     pub is_enum: bool,
     pub mapping: Arc<CategoricalMapping>,
 }

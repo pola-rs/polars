@@ -16,7 +16,7 @@ use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
 use crate::{
-    ArrayRef, NewRowEncodingCategoricalContext, RowEncodingContext, with_match_arrow_primitive_type,
+    ArrayRef, RowEncodingCategoricalContext, RowEncodingContext, with_match_arrow_primitive_type,
 };
 
 pub fn convert_columns(
@@ -588,7 +588,7 @@ unsafe fn encode_cat_array<T: NativeType + FixedLengthEncoding + CatNative>(
     buffer: &mut [MaybeUninit<u8>],
     keys: &PrimitiveArray<T>,
     opt: RowEncodingOptions,
-    ctx: &NewRowEncodingCategoricalContext,
+    ctx: &RowEncodingCategoricalContext,
     offsets: &mut [usize],
 ) {
     if ctx.is_enum || !opt.is_ordered() {
