@@ -514,7 +514,7 @@ def read_ods(
 def read_ods(
     source: FileSource,
     *,
-    sheet_id: None,
+    sheet_id: None = ...,
     sheet_name: list[str] | tuple[str],
     has_header: bool = ...,
     columns: Sequence[int] | Sequence[str] | None = ...,
