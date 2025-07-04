@@ -23,7 +23,6 @@ use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(feature = "list_pad")]
 use polars_core::utils::try_get_supertype;
 
 use super::*;
