@@ -204,6 +204,50 @@ class TestWriteDatabase:
         if hasattr(conn, "close"):
             conn.close()
 
+    def test_write_database_truncate(
+        self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
+    ) -> None:
+        """Test that 'truncate' mode clears table before inserting new data."""
+        df1 = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
+        df2 = pl.DataFrame({"id": [4, 5], "val": [40, 50]})
+
+        tmp_path.mkdir(exist_ok=True)
+        test_db_uri = f"sqlite:///{tmp_path}/test_truncate_{int(uri_connection)}.db"
+
+        table_name = "test_truncate"
+        conn = self._get_connection(test_db_uri, engine, uri_connection)
+
+        # Insert initial data
+        assert (
+            df1.write_database(
+                table_name=table_name,
+                connection=conn,
+                engine=engine,
+            )
+            == 3
+        )
+        # Truncate and insert new data
+        assert (
+            df2.write_database(
+                table_name=table_name,
+                connection=conn,
+                if_table_exists="truncate",
+                engine=engine,
+            )
+            == 2
+        )
+        result = pl.read_database(
+            query=f"SELECT * FROM {table_name}",
+            connection=create_engine(test_db_uri),
+        )
+        assert_frame_equal(result, df2)
+
+        if engine == "adbc" and not uri_connection:
+            assert conn._closed is False
+
+        if hasattr(conn, "close"):
+            conn.close()
+
     def test_write_database_errors(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
     ) -> None:
