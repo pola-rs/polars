@@ -155,7 +155,7 @@ where
             }
         }
         self.last_end = end;
-        self.sum.and_then(NumCast::from)
+        self.sum.and_then(NumCast::from).or(Some(T::zeroed()))
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
