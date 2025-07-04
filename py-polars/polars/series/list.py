@@ -168,7 +168,7 @@ class ListNameSpace:
         shape: (2,)
         Series: 'values' [list[i64]]
         [
-            [2, 1]
+            [2, 3]
             [5]
         ]
         """

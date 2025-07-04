@@ -12,6 +12,7 @@ from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
+from polars.io.scan_options.cast_options import ScanCastOptions
 from polars.schema import Schema
 
 if TYPE_CHECKING:
@@ -404,7 +405,9 @@ def scan_delta(
         file_uris,
         schema=main_schema,
         hive_schema=hive_schema if len(partition_columns) > 0 else None,
+        cast_options=ScanCastOptions._default_iceberg(),
         missing_columns="insert",
+        extra_columns="ignore",
         hive_partitioning=len(partition_columns) > 0,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]

@@ -255,6 +255,7 @@ impl IRStringFunction {
             S::Reverse => FunctionOptions::elementwise(),
             #[cfg(feature = "temporal")]
             S::Strptime(_, options) if options.format.is_some() => FunctionOptions::elementwise(),
+            #[cfg(feature = "temporal")]
             S::Strptime(_, _) => FunctionOptions::elementwise_with_infer(),
             S::Split(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "nightly")]

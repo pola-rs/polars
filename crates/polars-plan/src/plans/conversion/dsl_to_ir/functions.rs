@@ -70,7 +70,9 @@ pub(super) fn convert_functions(
                 B::Base64Encode => IB::Base64Encode,
                 B::Size => IB::Size,
                 #[cfg(feature = "binary_encoding")]
-                B::FromBuffer(data_type, v) => IB::FromBuffer(data_type.into_datatype(schema)?, v),
+                B::Reinterpret(data_type, v) => {
+                    IB::Reinterpret(data_type.into_datatype(schema)?, v)
+                },
             })
         },
         #[cfg(feature = "dtype-categorical")]

@@ -962,7 +962,8 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # subclassed pandas object, with/without data & overrides
-    class XSeries(pd.Series):  # type: ignore[type-arg]
+    # type error fixed in pandas-stubs 2.3.0.250703, which doesn't support Python3.9
+    class XSeries(pd.Series):  # type: ignore[type-arg, unused-ignore]
         @property
         def _constructor(self) -> type:
             return XSeries

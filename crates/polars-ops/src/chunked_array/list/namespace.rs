@@ -24,7 +24,6 @@ use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "list_pad")]
-use polars_core::utils::align_chunks_ternary_ca_series;
 use polars_core::utils::try_get_supertype;
 
 use super::*;
@@ -655,7 +654,7 @@ pub trait ListNameSpaceImpl: AsList {
                 let pad_count = target_length.saturating_sub(row_len);
 
                 if pad_count > 0 {
-                    let fill_value_start = if fill_value_is_scalar { 0 } else { idx_row };
+                    let fill_value_start = if fill_value_is_scalar { 0 } else { row };
                     builder.subslice_extend_each_repeated(
                         fill_value.as_ref(),
                         fill_value_start,

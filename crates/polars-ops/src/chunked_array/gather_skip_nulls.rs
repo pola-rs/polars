@@ -154,7 +154,7 @@ where
 mod test {
     use std::ops::Range;
 
-    use rand::distributions::uniform::SampleUniform;
+    use rand::distr::uniform::SampleUniform;
     use rand::prelude::*;
 
     use super::*;
@@ -164,13 +164,13 @@ mod test {
         val: Range<T>,
         len_range: Range<usize>,
     ) -> Vec<T> {
-        let n = rng.gen_range(len_range);
-        (0..n).map(|_| rng.gen_range(val.clone())).collect()
+        let n = rng.random_range(len_range);
+        (0..n).map(|_| rng.random_range(val.clone())).collect()
     }
 
     fn random_filter<T: Clone, R: Rng>(rng: &mut R, v: &[T], pr: Range<f64>) -> Vec<Option<T>> {
-        let p = rng.gen_range(pr);
-        let rand_filter = |x| Some(x).filter(|_| rng.r#gen::<f64>() < p);
+        let p = rng.random_range(pr);
+        let rand_filter = |x| Some(x).filter(|_| rng.random::<f64>() < p);
         v.iter().cloned().map(rand_filter).collect()
     }
 
@@ -203,12 +203,12 @@ mod test {
         let mut rng = SmallRng::seed_from_u64(0xdeadbeef);
 
         for _test in 0..20 {
-            let num_elem_chunks = rng.gen_range(1..10);
+            let num_elem_chunks = rng.random_range(1..10);
             let elem_chunks: Vec<_> = (0..num_elem_chunks).map(|_| random_vec(&mut rng, 0..u32::MAX, 0..100)).collect();
             let null_elem_chunks: Vec<_> = elem_chunks.iter().map(|c| random_filter(&mut rng, c, 0.7..1.0)).collect();
             let num_nonnull_elems: usize = null_elem_chunks.iter().map(|c| c.iter().filter(|x| x.is_some()).count()).sum();
 
-            let num_idx_chunks = rng.gen_range(1..10);
+            let num_idx_chunks = rng.random_range(1..10);
             let idx_chunks: Vec<_> = (0..num_idx_chunks).map(|_| random_vec(&mut rng, 0..num_nonnull_elems as IdxSize, 0..200)).collect();
             let null_idx_chunks: Vec<_> = idx_chunks.iter().map(|c| random_filter(&mut rng, c, 0.7..1.0)).collect();
 

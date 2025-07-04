@@ -323,7 +323,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Base64Encode => B::Base64Encode,
                 IB::Size => B::Size,
                 #[cfg(feature = "binary_encoding")]
-                IB::FromBuffer(data_type, v) => B::FromBuffer(data_type.into(), v),
+                IB::Reinterpret(data_type, v) => B::Reinterpret(data_type.into(), v),
             })
         },
         #[cfg(feature = "dtype-categorical")]
