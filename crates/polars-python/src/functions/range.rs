@@ -71,7 +71,6 @@ pub fn date_range(
     let start = start.map(|x| x.inner);
     let end = end.map(|x| x.inner);
     let num_samples = num_samples.map(|x| x.inner);
-
     let interval = match interval {
         None => None,
         Some(x) => Some(Duration::try_parse(x).map_err(PyPolarsErr::from)?),

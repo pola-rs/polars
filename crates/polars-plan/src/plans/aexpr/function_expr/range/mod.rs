@@ -1,6 +1,4 @@
-#[cfg(feature = "dtype-date")]
-mod date_range;
-#[cfg(feature = "dtype-datetime")]
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 mod datetime_range;
 mod int_range;
 mod linear_space;
@@ -40,12 +38,6 @@ pub enum IRRangeFunction {
         array_width: Option<usize>,
     },
     #[cfg(feature = "dtype-date")]
-    DateRange {
-        interval: Option<Duration>,
-        closed: ClosedWindow,
-        arg_type: DateRangeArgs,
-    },
-    #[cfg(feature = "dtype-date")]
     DateRanges {
         interval: Duration,
         closed: ClosedWindow,
@@ -57,6 +49,7 @@ pub enum IRRangeFunction {
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
         arg_type: DateRangeArgs,
+        date_range: bool,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRanges {
@@ -120,10 +113,8 @@ impl IRRangeFunction {
                 mapper.with_dtype(dt)
             },
             #[cfg(feature = "dtype-date")]
-            DateRange { .. } => mapper.with_dtype(DataType::Date),
-            #[cfg(feature = "dtype-date")]
             DateRanges { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::Date))),
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
             DatetimeRange {
                 interval: _,
                 closed: _,
@@ -164,11 +155,7 @@ impl IRRangeFunction {
             R::LinearSpace { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            #[cfg(feature = "dtype-date")]
-            R::DateRange { .. } => {
-                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
             R::DatetimeRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
@@ -206,11 +193,9 @@ impl Display for IRRangeFunction {
             IntRanges { .. } => "int_ranges",
             LinearSpace { .. } => "linear_space",
             LinearSpaces { .. } => "linear_spaces",
-            #[cfg(feature = "dtype-date")]
-            DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
             DateRanges { .. } => "date_ranges",
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
             DatetimeRange { .. } => "datetime_range",
             #[cfg(feature = "dtype-datetime")]
             DatetimeRanges { .. } => "datetime_ranges",
@@ -243,16 +228,8 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 map_as_slice!(linear_space::linear_spaces, closed, array_width)
             },
             #[cfg(feature = "dtype-date")]
-            DateRange {
-                interval,
-                closed,
-                arg_type,
-            } => {
-                map_as_slice!(date_range::date_range, interval, closed, arg_type)
-            },
-            #[cfg(feature = "dtype-date")]
             DateRanges { interval, closed } => {
-                map_as_slice!(date_range::date_ranges, interval, closed)
+                map_as_slice!(datetime_range::date_ranges, interval, closed)
             },
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange {
@@ -261,6 +238,7 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 time_unit,
                 time_zone,
                 arg_type,
+                date_range,
             } => {
                 map_as_slice!(
                     datetime_range::datetime_range,
@@ -268,7 +246,7 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     closed,
                     time_unit,
                     time_zone.clone(),
-                    arg_type
+                    arg_type,
                 )
             },
             #[cfg(feature = "dtype-datetime")]

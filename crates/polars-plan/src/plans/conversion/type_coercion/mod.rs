@@ -764,7 +764,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(feature = "range")]
+            #[cfg(all(feature = "range", feature = "temporal"))]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
@@ -773,6 +773,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         time_unit: _,
                         time_zone: _,
                         arg_type,
+                        date_range,
                     }),
                 ref input,
                 options,
@@ -861,7 +862,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     })
                 }
             },
-            #[cfg(all(feature = "range"))]
+            #[cfg(feature = "range")]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges { dtype: _ }),

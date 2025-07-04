@@ -641,3 +641,70 @@ def test_datetime_range_with_nanoseconds_overflow_15735() -> None:
     s = pl.datetime_range(date(2000, 1, 1), date(2300, 1, 1), "24h", eager=True)
     assert s.dtype == pl.Datetime("us")
     assert s.shape == (109574,)
+
+
+def test_datetime_range_start_end_interval() -> None:
+    start = date(2025, 1, 1)
+    end = date(2025, 1, 5)
+    values = [
+        datetime(2025, 1, 1),
+        datetime(2025, 1, 1, 12),
+        datetime(2025, 1, 2),
+        datetime(2025, 1, 2, 12),
+        datetime(2025, 1, 3),
+        datetime(2025, 1, 3, 12),
+        datetime(2025, 1, 4),
+        datetime(2025, 1, 4, 12),
+        datetime(2025, 1, 5),
+        datetime(2025, 1, 5),
+    ]
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="left"
+        ).to_list()
+        == values[:-1]
+    )
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="right"
+        ).to_list()
+        == values[1:]
+    )
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="both"
+        ).to_list()
+        == values
+    )
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="none"
+        ).to_list()
+        == values[1:-1]
+    )
+
+    values = values[-1::-1]
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="left"
+        ).to_list()
+        == values[:-1]
+    )
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="right"
+        ).to_list()
+        == values[1:]
+    )
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="both"
+        ).to_list()
+        == values
+    )
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="none"
+        ).to_list()
+        == values[1:-1]
+    )

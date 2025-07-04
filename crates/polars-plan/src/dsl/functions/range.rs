@@ -37,7 +37,7 @@ pub fn int_ranges(start: Expr, end: Expr, step: Expr, dtype: impl Into<DataTypeE
 pub fn date_range(
     start: Option<Expr>,
     end: Option<Expr>,
-    mut interval: Option<Duration>,
+    interval: Option<Duration>,
     num_samples: Option<Expr>,
     closed: ClosedWindow,
 ) -> PolarsResult<Expr> {
@@ -54,19 +54,21 @@ pub fn date_range(
             DateRangeArgs::StartIntervalSamples,
         ),
         (None, Some(end), Some(_), Some(num_samples)) => {
-            interval = interval.map(|x| -x);
             (vec![end, num_samples], DateRangeArgs::StartEndSamples)
         },
         _ => {
-            polars_bail!(InvalidOperation: "Invalid");
+            polars_bail!(InvalidOperation: "Invalid arguments supplied to 'date_range'");
         },
     };
 
     Ok(Expr::n_ary(
-        RangeFunction::DateRange {
+        RangeFunction::DatetimeRange {
             interval,
             closed,
+            time_unit: None,
+            time_zone: None,
             arg_type,
+            date_range: true,
         },
         input,
     ))
@@ -119,6 +121,7 @@ pub fn datetime_range(
             time_unit,
             time_zone,
             arg_type,
+            date_range: false,
         },
         input,
     ))

@@ -599,32 +599,24 @@ pub(super) fn convert_functions(
                 array_width,
             },
             #[cfg(feature = "dtype-date")]
-            RangeFunction::DateRange {
-                interval,
-                closed,
-                arg_type,
-            } => IRRangeFunction::DateRange {
-                interval,
-                closed,
-                arg_type,
-            },
-            #[cfg(feature = "dtype-date")]
             RangeFunction::DateRanges { interval, closed } => {
                 IRRangeFunction::DateRanges { interval, closed }
             },
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
             RangeFunction::DatetimeRange {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
                 arg_type,
+                date_range,
             } => IRRangeFunction::DatetimeRange {
                 interval,
                 closed,
                 time_unit,
                 time_zone,
                 arg_type,
+                date_range,
             },
             #[cfg(feature = "dtype-datetime")]
             RangeFunction::DatetimeRanges {

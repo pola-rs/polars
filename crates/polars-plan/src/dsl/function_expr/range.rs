@@ -37,23 +37,18 @@ pub enum RangeFunction {
         array_width: Option<usize>,
     },
     #[cfg(feature = "dtype-date")]
-    DateRange {
-        interval: Option<Duration>,
-        closed: ClosedWindow,
-        arg_type: DateRangeArgs,
-    },
-    #[cfg(feature = "dtype-date")]
     DateRanges {
         interval: Duration,
         closed: ClosedWindow,
     },
-    #[cfg(feature = "dtype-datetime")]
+    #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
     DatetimeRange {
         interval: Option<Duration>,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
         arg_type: DateRangeArgs,
+        date_range: bool,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRanges {
@@ -88,11 +83,9 @@ impl fmt::Display for RangeFunction {
             IntRanges { .. } => "int_ranges",
             LinearSpace { .. } => "linear_space",
             LinearSpaces { .. } => "linear_spaces",
-            #[cfg(feature = "dtype-date")]
-            DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
             DateRanges { .. } => "date_ranges",
-            #[cfg(feature = "dtype-datetime")]
+            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
             DatetimeRange { .. } => "datetime_range",
             #[cfg(feature = "dtype-datetime")]
             DatetimeRanges { .. } => "datetime_ranges",

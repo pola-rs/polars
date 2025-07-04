@@ -260,19 +260,16 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
         _ => None,
     };
     if interval.is_constant_duration(time_zone_opt.as_ref()) {
-        let mut duration = match time_unit {
+        let mut step = match time_unit {
             TimeUnit::Nanoseconds => interval.duration_ns(),
             TimeUnit::Microseconds => interval.duration_us(),
             TimeUnit::Milliseconds => interval.duration_ms(),
         };
         if interval.negative {
-            duration = -duration;
+            step = -step;
         }
 
         // Fast path!
-        let step: i64 = duration
-            .try_into()
-            .map_err(|_err| polars_err!(ComputeError: "Could not convert {:?} to i64", duration))?;
         polars_ensure!(
             step != 0,
             InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
@@ -301,7 +298,7 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
     // Start with one interval offset if we're not left-closed.
-    let start_idx: i64 = 0 + (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
+    let start_idx: i64 = (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
     let ts = (start_idx..start_idx + num_samples)
         .map(|i| offset_fn(&(interval * i), start, time_zone))
         .collect::<PolarsResult<Vec<i64>>>()?;

@@ -45,8 +45,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
     num_samples: int | None = None,
     *,
@@ -209,20 +209,18 @@ def date_range(
     │ two ┆ [2024-01-01, 2024-01-02, 2024-01-03] │
     └─────┴──────────────────────────────────────┘
     """
-    interval = parse_interval_argument(interval)
+    if interval is None and (num_samples is None or start is None or end is None):
+        interval = "1d"
+    if interval is not None:
+        interval = parse_interval_argument(interval)
+    if start is not None:
+        start = parse_into_expression(start)
+    if end is not None:
+        end = parse_into_expression(end)
+    if num_samples is not None:
+        num_samples = parse_into_expression(num_samples)
 
-    start_pyexpr = parse_into_expression(start)
-    end_pyexpr = parse_into_expression(end)
-    num_samples = parse_into_expression(num_samples)
-    result = wrap_expr(
-        plr.date_range(
-            start_pyexpr,
-            end_pyexpr,
-            interval,
-            num_samples,
-            closed,
-        )
-    )
+    result = wrap_expr(plr.date_range(start, end, interval, num_samples, closed))
 
     if eager:
         return F.select(result).to_series()

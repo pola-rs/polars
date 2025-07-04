@@ -743,30 +743,22 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     array_width,
                 },
                 #[cfg(feature = "dtype-date")]
-                IR::DateRange {
-                    interval,
-                    closed,
-                    arg_type,
-                } => R::DateRange {
-                    interval,
-                    closed,
-                    arg_type,
-                },
-                #[cfg(feature = "dtype-date")]
                 IR::DateRanges { interval, closed } => R::DateRanges { interval, closed },
-                #[cfg(feature = "dtype-datetime")]
+                #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
                 IR::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
                     arg_type,
+                    date_range,
                 } => R::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
                     arg_type,
+                    date_range,
                 },
                 #[cfg(feature = "dtype-datetime")]
                 IR::DatetimeRanges {

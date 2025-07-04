@@ -66,9 +66,9 @@ fn map_to_out_dtype(
             &StringChunked::from_iter(std::iter::once("raise")),
             NonExistent::Raise,
         )?
-        .cast(&dtype_out)?
+        .cast(dtype_out)?
         .into_column()),
-        _ => c.cast(&dtype_out),
+        _ => c.cast(dtype_out),
     }
 }
 
@@ -81,15 +81,6 @@ fn dt_range_start_end_interval(
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Column> {
     let dtype_in = start.dtype();
-    let is_date = dtype_in == &DataType::Date;
-    let (start, end) = if is_date {
-        (
-            start.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-            end.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-        )
-    } else {
-        (start.clone(), end.clone())
-    };
     ensure_items_contain_exactly_one_value(&[&start, &end], &["start", "end"])?;
 
     let dtype_out = get_dtype_out(
@@ -140,15 +131,6 @@ fn dt_range_start_end_samples(
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Column> {
     let dtype_in = start.dtype();
-    let is_date = dtype_in == &DataType::Date;
-    let (start, end) = if is_date {
-        (
-            start.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-            end.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-        )
-    } else {
-        (start.clone(), end.clone())
-    };
     ensure_items_contain_exactly_one_value(&[&start, &end], &["start", "end"])?;
     let num_samples = num_samples.get(0).unwrap().extract::<u64>().unwrap();
 
@@ -193,12 +175,6 @@ fn dt_range_start_interval_samples(
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Column> {
     let dtype_in = start.dtype();
-    let is_date = dtype_in == &DataType::Date;
-    let start = if is_date {
-        start.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?
-    } else {
-        start.clone()
-    };
     ensure_items_contain_exactly_one_value(&[&start], &["start"])?;
 
     let dtype_out = get_dtype_out(
