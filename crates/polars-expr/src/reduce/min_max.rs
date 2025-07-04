@@ -16,7 +16,7 @@ use super::*;
 pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match dtype {
+    match &dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
@@ -29,13 +29,17 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float64Type>>::new())),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMinReducer)),
-        _ if dtype.is_integer() || dtype.is_temporal() => {
+        _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VMGR::new(dtype, NumReducer::<Min<$T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Min<Int128Type>>::new())),
+        #[cfg(feature = "dtype-categorical")]
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
+            Box::new(VMGR::new(dtype.clone(), CatMinReducer::<$C>(map.clone(), PhantomData)))
+        }),
         _ => unimplemented!(),
     }
 }
@@ -43,7 +47,7 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
 pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;
     use VecMaskGroupedReduction as VMGR;
-    match dtype {
+    match &dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         #[cfg(feature = "propagate_nans")]
         Float32 if propagate_nans => {
@@ -56,13 +60,17 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float64Type>>::new())),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMaxReducer)),
-        _ if dtype.is_integer() || dtype.is_temporal() => {
+        _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VMGR::new(dtype, NumReducer::<Max<$T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Max<Int128Type>>::new())),
+        #[cfg(feature = "dtype-categorical")]
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
+            Box::new(VMGR::new(dtype.clone(), CatMaxReducer::<$C>(map.clone(), PhantomData)))
+        }),
         _ => unimplemented!(),
     }
 }
@@ -514,5 +522,139 @@ impl GroupedReduction for BoolMaxGroupedReduction {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+struct CatMinReducer<T>(Arc<CategoricalMapping>, PhantomData<T>);
+
+#[cfg(feature = "dtype-categorical")]
+impl<T> Clone for CatMinReducer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
+    type Dtype = T::PolarsPhysical;
+    type Value = T::Native;
+
+    fn init(&self) -> Self::Value {
+        T::Native::max_value() // Ensures it's invalid, preferring the other value.
+    }
+
+    #[inline(always)]
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else {
+            return;
+        };
+        let Some(a_s) = self.0.cat_to_str(a.as_cat()) else {
+            *a = *b;
+            return;
+        };
+
+        if b_s < a_s {
+            *a = *b;
+        }
+    }
+
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<Self::Value>, _seq_id: u64) {
+        if let Some(b) = b {
+            self.combine(a, &b);
+        }
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
+        for cat in ca.iter().flatten() {
+            self.combine(v, &cat);
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = ChunkedArray::from(cat_ids);
+        unsafe {
+            Ok(
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone())
+                    .into_series(),
+            )
+        }
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+struct CatMaxReducer<T>(Arc<CategoricalMapping>, PhantomData<T>);
+
+#[cfg(feature = "dtype-categorical")]
+impl<T> Clone for CatMaxReducer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
+    type Dtype = T::PolarsPhysical;
+    type Value = T::Native;
+
+    fn init(&self) -> Self::Value {
+        T::Native::max_value() // Ensures it's invalid, preferring the other value.
+    }
+
+    #[inline(always)]
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else {
+            return;
+        };
+        let Some(a_s) = self.0.cat_to_str(a.as_cat()) else {
+            *a = *b;
+            return;
+        };
+
+        if b_s > a_s {
+            *a = *b;
+        }
+    }
+
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<Self::Value>, _seq_id: u64) {
+        if let Some(b) = b {
+            self.combine(a, &b);
+        }
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
+        for cat in ca.iter().flatten() {
+            self.combine(v, &cat);
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = ChunkedArray::from(cat_ids);
+        unsafe {
+            Ok(
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone())
+                    .into_series(),
+            )
+        }
     }
 }
