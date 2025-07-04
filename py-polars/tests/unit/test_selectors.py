@@ -156,13 +156,15 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
     assert dfx.select(cs.by_dtype(PyDecimal)).schema == pl.Schema(
         {"idx": pl.Decimal(24)},
     )
-    assert dfx.select(cs.by_dtype(pl.Datetime(time_zone="*"))).schema == pl.Schema(
+    assert dfx.select(cs.datetime(time_zone="*")).schema == pl.Schema(
         {"dt2": pl.Datetime(time_zone="Asia/Tokyo")}
     )
     assert dfx.select(cs.by_dtype(pl.Datetime("ms", None))).schema == pl.Schema(
         {"dt1": pl.Datetime("ms")},
     )
     for dt in (datetime, pl.Datetime):
+        print(cs.by_dtype(dt))
+        print(dfx.select(cs.by_dtype(dt)).schema)
         assert dfx.select(cs.by_dtype(dt)).schema == pl.Schema(
             {"dt1": pl.Datetime("ms"), "dt2": pl.Datetime(time_zone="Asia/Tokyo")},
         )

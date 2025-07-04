@@ -16,6 +16,16 @@ pub fn is_regex_projection(name: &str) -> bool {
     name.starts_with('^') && name.ends_with('$')
 }
 
+pub fn toggle_cse_for_structs(opt_flags: &mut OptFlags) {
+    if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::NEW_STREAMING) {
+        use polars_core::config::verbose;
+        if verbose() {
+            eprintln!("CSE turned on because of struct expansion")
+        }
+        *opt_flags |= OptFlags::COMM_SUBEXPR_ELIM;
+    }
+}
+
 struct FunctionExpansionFlags {
     expand_into_input: bool,
     allow_empty_input: bool,
@@ -535,6 +545,15 @@ fn expand_expression_rec(
                     polars_bail!(InvalidOperation: "expected at least 1 input in {expr}")
                 }
 
+                if matches!(
+                    function,
+                    FunctionExpr::StructExpr(
+                        StructFunction::FieldByName(_) | StructFunction::SelectFields(_)
+                    )
+                ) {
+                    toggle_cse_for_structs(opt_flags);
+                }
+
                 match function {
                     FunctionExpr::StructExpr(StructFunction::SelectFields(selector)) => {
                         let mut tmp_out = Vec::new();
@@ -743,7 +762,7 @@ fn expand_expression_rec(
         },
 
         Expr::Field(names) => {
-            opt_flags.remove(OptFlags::COMM_SUBEXPR_ELIM);
+            toggle_cse_for_structs(opt_flags);
             out.extend(names.iter().cloned().map(|n| Expr::Field([n].into())));
         },
 

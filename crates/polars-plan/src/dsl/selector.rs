@@ -106,9 +106,8 @@ pub enum Selector {
     Intersect(Arc<Selector>, Arc<Selector>),
     Exclude(Arc<Selector>, Arc<[Excluded]>),
 
-
     // Leaf nodes
-    
+
     // These 2 return their inputs in given order not in schema order.
     ByName {
         names: Arc<[PlSmallStr]>,
@@ -314,7 +313,10 @@ impl Selector {
                     };
 
                     selector_tu.contains(TimeUnitSet::from(*tu))
-                        && selector_tz.as_ref().is_none_or(|stz| stz.contains(tz))
+                        && match selector_tz.as_ref() {
+                            None => tz.is_some(),
+                            Some(stz) => stz.contains(tz),
+                        }
                 })
             },
             Selector::Duration(selector_tu) => dtype_selector(schema, ignored_columns, |dtype| {
