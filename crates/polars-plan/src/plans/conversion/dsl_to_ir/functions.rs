@@ -627,8 +627,6 @@ pub(super) fn convert_functions(
             use RollingFunction as R;
             use aexpr::IRRollingFunction as IR;
 
-            polars_ensure!(options.window_size > 0, ComputeError: "window_size must be an integer > 0");
-
             I::RollingExpr {
                 function: match function {
                     R::Min => IR::Min,
@@ -661,9 +659,6 @@ pub(super) fn convert_functions(
         } => {
             use RollingFunctionBy as R;
             use aexpr::IRRollingFunctionBy as IR;
-
-            polars_ensure!(!options.window_size.is_zero() || matches!(options.closed_window,
-                ClosedWindow::Both), ComputeError: "window_size must be non-zero unless closed is 'both'");
 
             I::RollingExprBy {
                 function_by: match function_by {
