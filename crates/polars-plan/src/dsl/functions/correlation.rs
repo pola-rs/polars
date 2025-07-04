@@ -49,12 +49,6 @@ fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool
             },
             options: rolling_options,
         },
-        // kdn WAS:
-        // function: FunctionExpr::RollingExpr(RollingFunction::CorrCov {
-        //     rolling_options,
-        //     corr_cov_options: options,
-        //     is_corr,
-        // }),
     }
 }
 

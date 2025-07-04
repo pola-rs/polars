@@ -4,7 +4,6 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RollingFunction {
-    //kdn: MARK
     Min,
     Max,
     Mean,

@@ -804,88 +804,51 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::FillNull => F::FillNull,
         IF::FillNullWithStrategy(strategy) => F::FillNullWithStrategy(strategy),
         #[cfg(feature = "rolling_window")]
-        IF::RollingExpr(f) => {
-            use FunctionExpr::RollingExpr as FRE;
-            use {IRRollingFunction as IR, RollingFunction as RF};
-            match f {
-                IR::Min(options) => FRE {
-                    function: RF::Min,
-                    options,
-                },
-                IR::Max(options) => FRE {
-                    function: RF::Max,
-                    options,
-                },
-                IR::Mean(options) => FRE {
-                    function: RF::Mean,
-                    options,
-                },
-                IR::Sum(options) => FRE {
-                    function: RF::Sum,
-                    options,
-                },
-                IR::Quantile(options) => FRE {
-                    function: RF::Quantile,
-                    options,
-                },
-                IR::Var(options) => FRE {
-                    function: RF::Var,
-                    options,
-                },
-                IR::Std(options) => FRE {
-                    function: RF::Std,
-                    options,
-                },
-                #[cfg(feature = "moment")]
-                IR::Skew(options) => FRE {
-                    function: RF::Skew,
-                    options,
-                },
-                #[cfg(feature = "moment")]
-                IR::Kurtosis(options) => FRE {
-                    function: RF::Kurtosis,
-                    options,
-                },
-                #[cfg(feature = "cov")]
-                IR::CorrCov {
-                    rolling_options: options,
-                    corr_cov_options,
-                    is_corr,
-                } => FRE {
-                    function: RF::CorrCov {
+        IF::RollingExpr { function, options } => {
+            use {IRRollingFunction as IR, RollingFunction as R};
+            FunctionExpr::RollingExpr {
+                function: match function {
+                    IR::Min => R::Min,
+                    IR::Max => R::Max,
+                    IR::Mean => R::Mean,
+                    IR::Sum => R::Sum,
+                    IR::Quantile => R::Quantile,
+                    IR::Var => R::Var,
+                    IR::Std => R::Std,
+                    #[cfg(feature = "moment")]
+                    IR::Skew => R::Skew,
+                    #[cfg(feature = "moment")]
+                    IR::Kurtosis => R::Kurtosis,
+                    #[cfg(feature = "cov")]
+                    IR::CorrCov {
+                        corr_cov_options,
+                        is_corr,
+                    } => R::CorrCov {
                         corr_cov_options,
                         is_corr,
                     },
-                    options,
                 },
+                options,
             }
         },
         #[cfg(feature = "rolling_window_by")]
-        IF::RollingExprBy(f) => {
+        IF::RollingExprBy {
+            function_by,
+            options,
+        } => {
             use {IRRollingFunctionBy as IR, RollingFunctionBy as R};
-            F::RollingExprBy(match f {
-                IR::MinBy(rolling_options_dynamic_window) => {
-                    R::MinBy(rolling_options_dynamic_window)
+            FunctionExpr::RollingExprBy {
+                function_by: match function_by {
+                    IR::MinBy => R::MinBy,
+                    IR::MaxBy => R::MaxBy,
+                    IR::MeanBy => R::MeanBy,
+                    IR::SumBy => R::SumBy,
+                    IR::QuantileBy => R::QuantileBy,
+                    IR::VarBy => R::VarBy,
+                    IR::StdBy => R::StdBy,
                 },
-                IR::MaxBy(rolling_options_dynamic_window) => {
-                    R::MaxBy(rolling_options_dynamic_window)
-                },
-                IR::MeanBy(rolling_options_dynamic_window) => {
-                    R::MeanBy(rolling_options_dynamic_window)
-                },
-                IR::SumBy(rolling_options_dynamic_window) => {
-                    R::SumBy(rolling_options_dynamic_window)
-                },
-                IR::QuantileBy(rolling_options_dynamic_window) => {
-                    R::QuantileBy(rolling_options_dynamic_window)
-                },
-                IR::VarBy(rolling_options_dynamic_window) => {
-                    R::VarBy(rolling_options_dynamic_window)
-                },
-                IR::StdBy(rolling_options_dynamic_window) => {
-                    R::StdBy(rolling_options_dynamic_window)
-                },
-            })
+                options,
+            }
         },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,

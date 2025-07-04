@@ -1143,10 +1143,13 @@ impl Expr {
         self,
         by: Expr,
         options: RollingOptionsDynamicWindow,
-        rolling_function_by: fn(RollingOptionsDynamicWindow) -> RollingFunctionBy,
+        rolling_function_by: RollingFunctionBy,
     ) -> Expr {
         self.map_binary(
-            FunctionExpr::RollingExprBy(rolling_function_by(options)),
+            FunctionExpr::RollingExprBy {
+                function_by: rolling_function_by,
+                options,
+            },
             by,
         )
     }
@@ -1166,9 +1169,9 @@ impl Expr {
         options: RollingOptionsFixedWindow,
         rolling_function: RollingFunction,
     ) -> Expr {
-        self.map_unary(FunctionExpr::RollingExpr{
+        self.map_unary(FunctionExpr::RollingExpr {
             function: rolling_function,
-            options: options
+            options,
         })
     }
 
