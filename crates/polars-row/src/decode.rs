@@ -7,7 +7,7 @@ use arrow::types::NativeType;
 use polars_dtype::categorical::CatNative;
 
 use self::encode::fixed_size;
-use self::row::{NewRowEncodingCategoricalContext, RowEncodingOptions};
+use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
 use crate::fixed::numeric::{FixedLengthEncoding, FromSlice};
@@ -198,7 +198,7 @@ fn rows_for_fixed_size_list<'a>(
 unsafe fn decode_cat<T: NativeType + FixedLengthEncoding + CatNative>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-    ctx: &NewRowEncodingCategoricalContext,
+    ctx: &RowEncodingCategoricalContext,
 ) -> PrimitiveArray<T>
 where
     T::Encoded: FromSlice,

@@ -285,5 +285,5 @@ pub use encode::{
     convert_columns_no_order,
 };
 pub use row::{
-    NewRowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions, RowsEncoded,
+    RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions, RowsEncoded,
 };
