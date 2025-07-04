@@ -53,10 +53,10 @@ def test_list_eval_cast_categorical() -> None:
     df = pl.DataFrame({"test": [["a", None], ["c"], [], ["a", "b", "c"]]})
     expected = pl.DataFrame(
         {"test": [["a", None], ["c"], [], ["a", "b", "c"]]},
-        schema={"test": pl.Categorical},
+        schema={"test": pl.List(pl.Categorical)},
     )
     result = df.select(pl.col("test").list.eval(pl.element().cast(pl.Categorical)))
-    assert_series_equal(result, expected)
+    assert_frame_equal(result, expected)
 
 
 def test_list_eval_type_coercion() -> None:
