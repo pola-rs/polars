@@ -93,29 +93,19 @@ impl From<IRCategoricalFunction> for IRFunctionExpr {
 }
 
 fn get_categories(s: &Column) -> PolarsResult<Column> {
-    // categorical check
-    let ca = s.categorical()?;
-    let rev_map = ca.get_rev_map();
-    let arr = rev_map.get_categories().clone().boxed();
-    Series::try_from((ca.name().clone(), arr)).map(Column::from)
+    let mapping = s.dtype().cat_mapping()?;
+    let ca = unsafe { StringChunked::from_chunks(s.name().clone(), vec![mapping.to_arrow(true)]) };
+    Ok(Column::from(ca.into_series()))
 }
 
 // Determine mapping between categories and underlying physical. For local, this is just 0..n.
 // For global, this is the global indexes.
-fn _get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
-    let (categories, phys) = match &**ca.get_rev_map() {
-        RevMapping::Local(c, _) => (c, ca.physical().cast(&IDX_DTYPE).unwrap()),
-        RevMapping::Global(physical_map, c, _) => {
-            // Map physical to its local representation for use with take() later.
-            let phys = ca
-                .physical()
-                .apply(|opt_v| opt_v.map(|v| *physical_map.get(&v).unwrap()));
-            let out = phys.cast(&IDX_DTYPE).unwrap();
-            (c, out)
-        },
-    };
-    let categories = StringChunked::with_chunk(ca.name().clone(), categories.clone());
-    (categories, phys)
+fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
+    let mapping = col.dtype().cat_mapping().unwrap();
+    let cats =
+        unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
+    let phys = col.to_physical_repr().as_materialized_series().clone();
+    (cats, phys)
 }
 
 /// Fast path: apply a string function to the categories of a categorical column and broadcast the
@@ -123,27 +113,11 @@ fn _get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
 // fn apply_to_cats<F, T>(ca: &CategoricalChunked, mut op: F) -> PolarsResult<Column>
 fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
-    F: FnMut(&StringChunked) -> ChunkedArray<T>,
+    F: FnMut(StringChunked) -> ChunkedArray<T>,
     T: PolarsPhysicalType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
 {
-    let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
-    let result = op(&categories);
-    // SAFETY: physical idx array is valid.
-    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
-    Ok(out.into_column())
-}
-
-/// Fast path: apply a binary function to the categories of a categorical column and broadcast the
-/// result back to the array.
-fn apply_to_cats_binary<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
-where
-    F: FnMut(&BinaryChunked) -> ChunkedArray<T>,
-    T: PolarsPhysicalType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
-{
-    let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
-    let result = op(&categories.as_binary());
+    let (categories, phys) = _get_cat_phys_map(c);
+    let result = op(categories);
     // SAFETY: physical idx array is valid.
     let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
     Ok(out.into_column())
@@ -161,19 +135,18 @@ fn len_chars(c: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "strings")]
 fn starts_with(c: &Column, prefix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.starts_with(prefix.as_bytes()))
+    apply_to_cats(c, |s| s.as_binary().starts_with(prefix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
 fn ends_with(c: &Column, suffix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.ends_with(suffix.as_bytes()))
+    apply_to_cats(c, |s| s.as_binary().ends_with(suffix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
 fn slice(c: &Column, offset: i64, length: Option<usize>) -> PolarsResult<Column> {
     let length = length.unwrap_or(usize::MAX) as u64;
-    let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
+    let (categories, phys) = _get_cat_phys_map(c);
 
     let result = unsafe {
         categories.apply_views(|view, val| {

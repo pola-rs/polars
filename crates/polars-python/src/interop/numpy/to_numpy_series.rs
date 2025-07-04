@@ -247,9 +247,11 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyOb
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Categorical(_, _) | Enum(_, _) => {
-            let ca = s.categorical().unwrap();
-            let values = ca.iter_str().map(|s| s.into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
+                let ca = s.cat::<$C>().unwrap();
+                let values = ca.iter_str().map(|s| s.into_py_any(py).unwrap());
+                PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+            })
         },
         Decimal(_, _) => {
             let ca = s.decimal().unwrap();

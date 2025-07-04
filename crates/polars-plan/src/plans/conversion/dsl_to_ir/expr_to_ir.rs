@@ -356,6 +356,7 @@ pub(super) fn to_aexpr_impl(
                                 dtype: DataType::Categorical(_, _) | DataType::Enum(_, _),
                                 ..
                             } => {
+                                // TODO @ cat-rework: why not?
                                 polars_bail!(
                                     ComputeError: "casting to categorical not allowed in `list.eval`"
                                 )

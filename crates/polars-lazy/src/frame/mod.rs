@@ -25,8 +25,6 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
-#[cfg(all(feature = "new_streaming", feature = "dtype-categorical"))]
-use polars_core::StringCacheHolder;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -737,15 +735,11 @@ impl LazyFrame {
 
         match engine {
             Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {
-                #[cfg(feature = "dtype-categorical")]
-                let string_cache_hold = StringCacheHolder::hold();
                 let result = polars_stream::run_query(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                 );
-                #[cfg(feature = "dtype-categorical")]
-                drop(string_cache_hold);
                 result.map(|v| v.unwrap_single())
             }),
             _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
@@ -822,15 +816,11 @@ impl LazyFrame {
 
         if engine == Engine::Streaming {
             feature_gated!("new_streaming", {
-                #[cfg(feature = "dtype-categorical")]
-                let string_cache_hold = StringCacheHolder::hold();
                 let result = polars_stream::run_query(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                 );
-                #[cfg(feature = "dtype-categorical")]
-                drop(string_cache_hold);
                 return result.map(|v| v.unwrap_multiple());
             });
         }
@@ -1141,8 +1131,6 @@ impl LazyFrame {
                 Err(e) => return Some(Err(e)),
             };
 
-            #[cfg(feature = "dtype-categorical")]
-            let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(
                     alp_plan.lp_top,

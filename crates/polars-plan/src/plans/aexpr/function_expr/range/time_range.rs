@@ -55,7 +55,7 @@ pub(super) fn time_ranges(
 
     let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
         let rng = time_range_impl(PlSmallStr::EMPTY, start, end, interval, closed)?;
-        builder.append_slice(rng.cont_slice().unwrap());
+        builder.append_slice(rng.physical().cont_slice().unwrap());
         Ok(())
     };
 

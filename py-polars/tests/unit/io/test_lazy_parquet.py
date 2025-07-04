@@ -296,7 +296,7 @@ def test_categorical(tmp_path: Path) -> None:
             .sort("name")
         )
         expected = pl.DataFrame(
-            {"name": ["Bob", "Alice"], "amount": [400, 200]},
+            {"name": ["Alice", "Bob"], "amount": [200, 400]},
             schema_overrides={"name": pl.Categorical},
         )
         assert_frame_equal(result, expected)

@@ -2556,9 +2556,7 @@ def test_csv_enum_raise() -> None:
     ENUM_DTYPE = pl.Enum(["foo", "bar"])
     with (
         io.StringIO("col\nfoo\nbaz\n") as csv,
-        pytest.raises(
-            pl.exceptions.ComputeError, match="category baz doesn't exist in Enum dtype"
-        ),
+        pytest.raises(pl.exceptions.ComputeError, match="could not parse `baz`"),
     ):
         pl.read_csv(
             csv,

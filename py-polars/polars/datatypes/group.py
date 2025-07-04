@@ -106,7 +106,6 @@ NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
 CATEGORICAL_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     [
         Categorical,
-        Categorical("physical"),
         Categorical("lexical"),
     ]
 )

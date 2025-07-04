@@ -84,7 +84,7 @@ impl<
                 };
             },
             Nearest => {
-                let idx = ((length as f64) * self.prob) as usize;
+                let idx = (((length as f64) - 1.0) * self.prob).round() as usize;
                 std::cmp::min(idx, length - 1)
             },
             Lower => ((length as f64 - 1.0) * self.prob).floor() as usize,
