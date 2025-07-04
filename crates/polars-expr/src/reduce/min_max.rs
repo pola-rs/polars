@@ -525,7 +525,6 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     }
 }
 
-
 #[cfg(feature = "dtype-categorical")]
 struct CatMinReducer<T>(Arc<CategoricalMapping>, PhantomData<T>);
 
@@ -551,10 +550,12 @@ impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else { return };
+        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else {
+            return;
+        };
         let Some(a_s) = self.0.cat_to_str(a.as_cat()) else {
             *a = *b;
-            return
+            return;
         };
 
         if b_s < a_s {
@@ -585,11 +586,13 @@ impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
         let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
         let cat_ids = ChunkedArray::from(cat_ids);
         unsafe {
-            Ok(CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone()).into_series())
+            Ok(
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone())
+                    .into_series(),
+            )
         }
     }
 }
-
 
 #[cfg(feature = "dtype-categorical")]
 struct CatMaxReducer<T>(Arc<CategoricalMapping>, PhantomData<T>);
@@ -616,10 +619,12 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else { return };
+        let Some(b_s) = self.0.cat_to_str(b.as_cat()) else {
+            return;
+        };
         let Some(a_s) = self.0.cat_to_str(a.as_cat()) else {
             *a = *b;
-            return
+            return;
         };
 
         if b_s > a_s {
@@ -650,7 +655,10 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
         let cat_ids = PrimitiveArray::from_vec(v).with_validity(m);
         let cat_ids = ChunkedArray::from(cat_ids);
         unsafe {
-            Ok(CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone()).into_series())
+            Ok(
+                CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cat_ids, dtype.clone())
+                    .into_series(),
+            )
         }
     }
 }
