@@ -1164,9 +1164,12 @@ impl Expr {
     fn finish_rolling(
         self,
         options: RollingOptionsFixedWindow,
-        rolling_function: fn(RollingOptionsFixedWindow) -> RollingFunction,
+        rolling_function: RollingFunction,
     ) -> Expr {
-        self.map_unary(FunctionExpr::RollingExpr(rolling_function(options)))
+        self.map_unary(FunctionExpr::RollingExpr{
+            function: rolling_function,
+            options: options
+        })
     }
 
     /// Apply a rolling minimum based on another column.

@@ -10,7 +10,7 @@ use crate::plans::aexpr::function_expr::pow::pow;
 
 #[derive(Clone, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum IRRollingFunction {
+pub enum IRRollingFunction { //kdn MARK
     Min(RollingOptionsFixedWindow),
     Max(RollingOptionsFixedWindow),
     Mean(RollingOptionsFixedWindow),

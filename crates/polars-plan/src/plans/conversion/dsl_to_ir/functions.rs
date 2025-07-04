@@ -623,29 +623,34 @@ pub(super) fn convert_functions(
         F::FillNull => I::FillNull,
         F::FillNullWithStrategy(fill_null_strategy) => I::FillNullWithStrategy(fill_null_strategy),
         #[cfg(feature = "rolling_window")]
-        F::RollingExpr(rolling_function) => {
+        F::RollingExpr {
+            function,
+            options: r,
+        } => {
+            //kdn: MARK
             use RollingFunction as R;
             use aexpr::IRRollingFunction as IR;
 
-            I::RollingExpr(match rolling_function {
-                R::Min(r) => IR::Min(r),
-                R::Max(r) => IR::Max(r),
-                R::Mean(r) => IR::Mean(r),
-                R::Sum(r) => IR::Sum(r),
-                R::Quantile(r) => IR::Quantile(r),
-                R::Var(r) => IR::Var(r),
-                R::Std(r) => IR::Std(r),
+            polars_ensure!(r.window_size > 0, ComputeError: "window_size must be an integer > 0");
+
+            I::RollingExpr(match function {
+                R::Min => IR::Min(r),
+                R::Max => IR::Max(r),
+                R::Mean => IR::Mean(r),
+                R::Sum => IR::Sum(r),
+                R::Quantile => IR::Quantile(r),
+                R::Var => IR::Var(r),
+                R::Std => IR::Std(r),
                 #[cfg(feature = "moment")]
-                R::Skew(r) => IR::Skew(r),
+                R::Skew => IR::Skew(r),
                 #[cfg(feature = "moment")]
-                R::Kurtosis(r) => IR::Kurtosis(r),
+                R::Kurtosis => IR::Kurtosis(r),
                 #[cfg(feature = "cov")]
                 R::CorrCov {
-                    rolling_options,
                     corr_cov_options,
                     is_corr,
                 } => IR::CorrCov {
-                    rolling_options,
+                    rolling_options: r,
                     corr_cov_options,
                     is_corr,
                 },

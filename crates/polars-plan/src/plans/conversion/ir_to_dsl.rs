@@ -805,34 +805,60 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::FillNullWithStrategy(strategy) => F::FillNullWithStrategy(strategy),
         #[cfg(feature = "rolling_window")]
         IF::RollingExpr(f) => {
-            use {IRRollingFunction as IR, RollingFunction as R};
-            F::RollingExpr(match f {
-                IR::Min(rolling_options_fixed_window) => R::Min(rolling_options_fixed_window),
-                IR::Max(rolling_options_fixed_window) => R::Max(rolling_options_fixed_window),
-                IR::Mean(rolling_options_fixed_window) => R::Mean(rolling_options_fixed_window),
-                IR::Sum(rolling_options_fixed_window) => R::Sum(rolling_options_fixed_window),
-                IR::Quantile(rolling_options_fixed_window) => {
-                    R::Quantile(rolling_options_fixed_window)
+            use FunctionExpr::RollingExpr as FRE;
+            use {IRRollingFunction as IR, RollingFunction as RF};
+            match f {
+                IR::Min(options) => FRE {
+                    function: RF::Min,
+                    options,
                 },
-                IR::Var(rolling_options_fixed_window) => R::Var(rolling_options_fixed_window),
-                IR::Std(rolling_options_fixed_window) => R::Std(rolling_options_fixed_window),
+                IR::Max(options) => FRE {
+                    function: RF::Max,
+                    options,
+                },
+                IR::Mean(options) => FRE {
+                    function: RF::Mean,
+                    options,
+                },
+                IR::Sum(options) => FRE {
+                    function: RF::Sum,
+                    options,
+                },
+                IR::Quantile(options) => FRE {
+                    function: RF::Quantile,
+                    options,
+                },
+                IR::Var(options) => FRE {
+                    function: RF::Var,
+                    options,
+                },
+                IR::Std(options) => FRE {
+                    function: RF::Std,
+                    options,
+                },
                 #[cfg(feature = "moment")]
-                IR::Skew(rolling_options_fixed_window) => R::Skew(rolling_options_fixed_window),
+                IR::Skew(options) => FRE {
+                    function: RF::Skew,
+                    options,
+                },
                 #[cfg(feature = "moment")]
-                IR::Kurtosis(rolling_options_fixed_window) => {
-                    R::Kurtosis(rolling_options_fixed_window)
+                IR::Kurtosis(options) => FRE {
+                    function: RF::Kurtosis,
+                    options,
                 },
                 #[cfg(feature = "cov")]
                 IR::CorrCov {
-                    rolling_options,
+                    rolling_options: options,
                     corr_cov_options,
                     is_corr,
-                } => R::CorrCov {
-                    rolling_options,
-                    corr_cov_options,
-                    is_corr,
+                } => FRE {
+                    function: RF::CorrCov {
+                        corr_cov_options,
+                        is_corr,
+                    },
+                    options,
                 },
-            })
+            }
         },
         #[cfg(feature = "rolling_window_by")]
         IF::RollingExprBy(f) => {
