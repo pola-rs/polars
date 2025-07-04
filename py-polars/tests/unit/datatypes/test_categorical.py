@@ -8,9 +8,6 @@ import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import (
-    ComputeError,
-)
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import with_string_cache_if_auto_streaming
 
