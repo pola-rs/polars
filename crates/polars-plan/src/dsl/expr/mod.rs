@@ -150,7 +150,7 @@ pub enum Expr {
     KeepName(Arc<Expr>),
     Len,
     #[cfg(feature = "dtype-struct")]
-    Field(Arc<Expr>, Selector),
+    Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,

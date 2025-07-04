@@ -944,15 +944,10 @@ fn expand_filter(
     let schema = lp_arena.get(input).schema(lp_arena);
     let predicate = if has_expr(&predicate, |e| match e {
         Expr::Column(name) => is_regex_projection(name),
-        // Expr::Wildcard
         Expr::Selector(_) | Expr::RenameAlias { .. } => true,
-        // | Expr::Columns(_)
-        // | Expr::DtypeColumn(_)
-        // | Expr::IndexColumn(_)
-        // | Expr::Nth(_) => true,
         #[cfg(feature = "dtype-struct")]
-        Expr::Function {
-            function: FunctionExpr::StructExpr(StructFunction::FieldByIndex(_)),
+        Expr::Field(_) | Expr::Function {
+            function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
             ..
         } => true,
         _ => false,

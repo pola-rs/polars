@@ -11,6 +11,7 @@ pub enum StructFunction {
     #[cfg(feature = "json")]
     JsonEncode,
     WithFields,
+    SelectFields(Selector),
     #[cfg(feature = "python")]
     MapFieldNames(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
 }
@@ -25,7 +26,8 @@ impl Display for StructFunction {
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
-            WithFields => write!(f, "with_fields"),
+            WithFields => write!(f, "struct.with_fields"),
+            SelectFields(_) => write!(f, "struct.field"),
             #[cfg(feature = "python")]
             MapFieldNames(_) => write!(f, "map_field_names"),
         }

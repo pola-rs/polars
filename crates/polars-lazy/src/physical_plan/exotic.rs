@@ -9,7 +9,16 @@ pub(crate) fn contains_column_refs(expr: &Expr) -> bool {
         match e {
             Expr::Column(c) if !c.eq(&PlSmallStr::EMPTY) => return true,
             Expr::Selector(_) => return true,
+            #[cfg(feature = "dtype-struct")]
             Expr::Field(_) => return true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function:
+                    FunctionExpr::StructExpr(
+                        StructFunction::FieldByName(_) | StructFunction::SelectFields(_),
+                    ),
+                ..
+            } => return true,
             _ => {},
         }
     }

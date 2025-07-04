@@ -7,9 +7,9 @@ pub struct StructNameSpace(pub(crate) Expr);
 impl StructNameSpace {
     pub fn field_by_index(self, index: i64) -> Expr {
         self.0
-            .map_unary(FunctionExpr::StructExpr(StructFunction::FieldByIndex(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::SelectFields(nth(
                 index,
-            )))
+            ))))
     }
 
     /// Retrieve one or multiple of the fields of this [`StructChunked`] as a new Series.
@@ -44,7 +44,7 @@ impl StructNameSpace {
         };
 
         self.0
-            .map_unary(FunctionExpr::StructExpr(StructFunction::FieldSelector(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::SelectFields(
                 selector,
             )))
     }
@@ -83,25 +83,8 @@ impl StructNameSpace {
             .map_unary(FunctionExpr::StructExpr(StructFunction::JsonEncode))
     }
 
-    pub fn with_fields(self, fields: Vec<Expr>) -> PolarsResult<Expr> {
-        fn materialize_field(this: &Expr, field: Expr) -> PolarsResult<Expr> {
-            field.try_map_expr(|e| match e {
-                Expr::Field(names) => {
-                    let this = this.clone().struct_();
-                    Ok(if names.len() == 1 {
-                        this.field_by_name(names[0].as_ref())
-                    } else {
-                        this.field_by_names_impl(names)
-                    })
-                },
-                _ => Ok(e),
-            })
-        }
-
-        let s = self.0.clone();
-        self.0.try_map_n_ary(
-            FunctionExpr::StructExpr(StructFunction::WithFields),
-            fields.into_iter().map(|e| materialize_field(&s, e)),
-        )
+    pub fn with_fields(self, fields: Vec<Expr>) -> Expr {
+        self.0
+            .map_n_ary(FunctionExpr::StructExpr(StructFunction::WithFields), fields)
     }
 }
