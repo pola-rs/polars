@@ -9,6 +9,7 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import _scan_pyarrow_dataset_impl
+from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -178,6 +179,7 @@ class IcebergDataset:
 
             return scan_parquet(
                 sources,
+                cast_options=ScanCastOptions._default_iceberg(),
                 missing_columns="insert",
                 extra_columns="ignore",
                 _deletion_files=("iceberg-position-delete", deletion_files),
