@@ -1213,9 +1213,6 @@ def numpy_to_pydf(
         n_columns = len(record_names)
         for nm in record_names:
             shape = data[nm].shape
-            if len(data[nm].shape) > 2:
-                msg = f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
-                raise ValueError(msg)
         if not schema:
             schema = record_names
     else:
