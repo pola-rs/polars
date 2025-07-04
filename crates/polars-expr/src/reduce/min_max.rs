@@ -570,10 +570,8 @@ impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
-        for opt_cat in ca.iter() {
-            if let Some(cat) = opt_cat {
-                self.combine(v, &cat);
-            }
+        for cat in ca.iter().flatten() {
+            self.combine(v, &cat);
         }
     }
 
@@ -639,10 +637,8 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T::PolarsPhysical>, _seq_id: u64) {
-        for opt_cat in ca.iter() {
-            if let Some(cat) = opt_cat {
-                self.combine(v, &cat);
-            }
+        for cat in ca.iter().flatten() {
+            self.combine(v, &cat);
         }
     }
 
