@@ -26,7 +26,7 @@ atoi_simd = "0.16"
 atomic-waker = "1"
 avro-schema = { version = "0.3" }
 base64 = "0.22.0"
-bincode = { version = "2.0", features = ["serde", "std"]}
+bincode = { version = "2.0", features = ["serde", "std"] }
 bitflags = "2"
 boxcar = "0.2.12"
 bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
