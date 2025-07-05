@@ -9,7 +9,7 @@ pub(super) struct SortedBuf<'a, T: NativeType> {
     last_start: usize,
     last_end: usize,
     // values within the window that we keep sorted
-    pub buf: OrderedSkipList<T>,
+    buf: OrderedSkipList<T>,
 }
 
 impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
@@ -79,6 +79,12 @@ impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
 
     pub(super) fn len(&self) -> usize {
         self.buf.len()
+    }
+    pub(super) fn index_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> skiplist::ordered_skiplist::Iter<'_, T> {
+        self.buf.index_range(range)
     }
 }
 
@@ -188,5 +194,12 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
 
     pub(super) fn get(&self, idx: usize) -> Option<T> {
         self.buf[idx]
+    }
+
+    pub(super) fn index_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> skiplist::ordered_skiplist::Iter<'_, Option<T>> {
+        self.buf.index_range(range)
     }
 }
