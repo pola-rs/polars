@@ -158,6 +158,10 @@ where
     T: FromBytes + NativeType,
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
+    // It would be nice to have a fast path that just use a memory copy.
+    // However, that is only possible if all the binaryviews are the correct
+    // length, and checking that requires iterating over all of them, so it's
+    // not obvious that would actually be much of a speed up.
     let iter = from.iter().map(|x| {
         x.and_then::<T, _>(|x| {
             if is_little_endian {
@@ -190,4 +194,77 @@ where
         to,
         is_little_endian,
     )))
+}
+
+/// Casts a [`BinaryArray`] to a [`FixedSizeListArray`], making any un-castable value a Null.
+///
+/// # Panics
+///    Panics if `to` is not `ArrowDataType::FixedSizeList`.
+pub(super) fn try_binview_to_fixed_size_list<T>(
+    from: &BinaryViewArray,
+    to: &ArrowDataType,
+    is_little_endian: bool,
+) -> PolarsResult<FixedSizeListArray>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let ArrowDataType::FixedSizeList(_, array_size) = to else {
+        // Higher-level code should have ensured we only get FixedSizeList:
+        unreachable!();
+    };
+    let element_size = std::mem::size_of::<T>();
+    let array_size = *array_size;
+    let mut result = MutableFixedSizeListArray::new(
+        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_size),
+        array_size,
+    );
+
+    // It would be nice to have a fast path that just use a memory copy.
+    // However, that is only possible if all the binaryviews are the correct
+    // length, and checking that requires iterating over all of them, so it's
+    // not obvious that would actually be much of a speed up.
+    from.iter().try_for_each(|x| {
+        if let Some(x) = x {
+            if x.len() != element_size * array_size {
+                result.push_null();
+                return Ok(());
+            }
+
+            result.try_push(Some(x.chunks_exact(element_size).map(|val| {
+                if is_little_endian {
+                    Some(<T as FromBytes>::from_le_bytes(val.try_into().ok()?))
+                } else {
+                    Some(<T as FromBytes>::from_be_bytes(val.try_into().ok()?))
+                }
+            })))
+        } else {
+            result.push_null();
+            Ok(())
+        }
+    })?;
+
+    Ok(result.into())
+}
+
+/// Casts a `dyn` [`Array`] to a [`FixedSizeListArray`], making any un-castable value a Null.
+///
+/// # Panics
+///    Panics if `to` is not `ArrowDataType::FixedSizeList`, or `from` is not `BinaryViewArray`.
+pub fn binview_to_fixed_size_list_dyn<T>(
+    from: &dyn Array,
+    to: &ArrowDataType,
+    is_little_endian: bool,
+) -> PolarsResult<Box<dyn Array>>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let from = from.as_any().downcast_ref().unwrap();
+
+    Ok(Box::new(try_binview_to_fixed_size_list::<T>(
+        from,
+        to,
+        is_little_endian,
+    )?))
 }
