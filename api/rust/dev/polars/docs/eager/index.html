@@ -1,0 +1,573 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Polars Eager cookbook"><title>polars::docs::eager - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-4e99c027.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../polars/index.html">polars</a><span class="version">0.49.1</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module eager</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#polars-eager-cookbook" title="Polars Eager cookbook">Polars Eager cookbook</a><ul><li><a href="#tree-of-contents" title="Tree Of Contents">Tree Of Contents</a></li><li><a href="#creation-of-data-structures" title="Creation of data structures">Creation of data structures</a></li><li><a href="#arithmetic" title="Arithmetic">Arithmetic</a></li><li><a href="#comparisons" title="Comparisons">Comparisons</a></li><li><a href="#apply-functions-closures" title="Apply functions/ closures">Apply functions/ closures</a></li><li><a href="#filter" title="Filter">Filter</a></li><li><a href="#sort" title="Sort">Sort</a></li><li><a href="#joins" title="Joins">Joins</a></li><li><a href="#groupby" title="Groupby">Groupby</a></li><li><a href="#unpivot" title="Unpivot">Unpivot</a></li><li><a href="#explode" title="Explode">Explode</a></li><li><a href="#io" title="IO">IO</a></li></ul></li><li><a href="#various" title="Various">Various</a><ul><li><a href="#replace-nan-with-missing" title="Replace NaN with Missing.">Replace NaN with Missing.</a></li><li><a href="#extracting-data" title="Extracting data">Extracting data</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In polars::<wbr>docs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">polars</a>::<wbr><a href="../index.html">docs</a></div><h1>Module <span>eager</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/polars/docs/eager.rs.html#1-730">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="polars-eager-cookbook"><a class="doc-anchor" href="#polars-eager-cookbook">§</a>Polars Eager cookbook</h2>
+<p>This page should serve as a cookbook to quickly get you started with most fundamental operations
+executed on a <a href="../../prelude/struct.ChunkedArray.html" title="struct polars::prelude::ChunkedArray"><code>ChunkedArray</code></a>, <a href="../../prelude/struct.Series.html" title="struct polars::prelude::Series"><code>Series</code></a> or <a href="../../prelude/struct.DataFrame.html" title="struct polars::prelude::DataFrame"><code>DataFrame</code></a>.</p>
+<h3 id="tree-of-contents"><a class="doc-anchor" href="#tree-of-contents">§</a>Tree Of Contents</h3>
+<ul>
+<li><a href="#creation-of-data-structures">Creation of data structures</a>
+<ul>
+<li><a href="#chunkedarray">ChunkedArray</a></li>
+<li><a href="#series">Series</a></li>
+<li><a href="#dataframe">DataFrame</a></li>
+</ul>
+</li>
+<li><a href="#arithmetic">Arithmetic</a></li>
+<li><a href="#comparisons">Comparisons</a></li>
+<li><a href="#apply-functions-closures">Apply functions/ closures</a>
+<ul>
+<li><a href="#dataframe-1">Series / ChunkedArrays</a></li>
+<li><a href="#dataframe-1">DataFrame</a></li>
+</ul>
+</li>
+<li><a href="#filter">Filter</a></li>
+<li><a href="#sort">Sort</a></li>
+<li><a href="#joins">Joins</a></li>
+<li><a href="#group_by">GroupBy</a></li>
+<li><a href="#pivot">pivot</a></li>
+<li><a href="#unpivot">Unpivot</a></li>
+<li><a href="#explode">Explode</a></li>
+<li><a href="#io">IO</a>
+<ul>
+<li><a href="#read-csv">Read CSV</a></li>
+<li><a href="#write-csv">Write CSV</a></li>
+<li><a href="#read-ipc">Read IPC</a></li>
+<li><a href="#write-ipc">Write IPC</a></li>
+<li><a href="#read-parquet">Read Parquet</a></li>
+<li><a href="#write-parquet">Write Parquet</a></li>
+</ul>
+</li>
+<li><a href="#various">Various</a>
+<ul>
+<li><a href="#replace-nan-with-missing">Replace NaN with Missing</a></li>
+<li><a href="#extracting-data">Extracting data</a></li>
+</ul>
+</li>
+</ul>
+<h3 id="creation-of-data-structures"><a class="doc-anchor" href="#creation-of-data-structures">§</a>Creation of data structures</h3><h4 id="chunkedarray"><a class="doc-anchor" href="#chunkedarray">§</a>ChunkedArray</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+<span class="comment">// use iterators
+</span><span class="kw">let </span>ca: UInt32Chunked = (<span class="number">0</span>..<span class="number">10</span>).map(<span class="prelude-val">Some</span>).collect();
+
+<span class="comment">// from slices
+</span><span class="kw">let </span>ca = UInt32Chunked::new(<span class="string">"foo"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+
+<span class="comment">// use builders
+</span><span class="kw">let </span><span class="kw-2">mut </span>builder = PrimitiveChunkedBuilder::&lt;UInt32Type&gt;::new(<span class="string">"foo"</span>.into(), <span class="number">10</span>);
+<span class="kw">for </span>value <span class="kw">in </span><span class="number">0</span>..<span class="number">10 </span>{
+    builder.append_value(value);
+}
+<span class="kw">let </span>ca = builder.finish();</code></pre></div>
+<h4 id="series"><a class="doc-anchor" href="#series">§</a>Series</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+<span class="comment">// use iterators
+</span><span class="kw">let </span>s: Series = (<span class="number">0</span>..<span class="number">10</span>).map(<span class="prelude-val">Some</span>).collect();
+
+<span class="comment">// from slices
+</span><span class="kw">let </span>s = Series::new(<span class="string">"foo"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+
+<span class="comment">// from a chunked-array
+</span><span class="kw">let </span>ca = UInt32Chunked::new(<span class="string">"foo"</span>.into(), <span class="kw-2">&amp;</span>[<span class="prelude-val">Some</span>(<span class="number">1</span>), <span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="number">3</span>)]);
+<span class="kw">let </span>s = ca.into_series();
+
+<span class="comment">// into a Column
+</span><span class="kw">let </span>s = s.into_column();</code></pre></div>
+<h4 id="dataframe"><a class="doc-anchor" href="#dataframe">§</a>DataFrame</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="comment">// use macro
+</span><span class="kw">let </span>df = <span class="macro">df!</span> [
+    <span class="string">"names" </span>=&gt; [<span class="string">"a"</span>, <span class="string">"b"</span>, <span class="string">"c"</span>],
+    <span class="string">"values" </span>=&gt; [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>],
+    <span class="string">"values_nulls" </span>=&gt; [<span class="prelude-val">Some</span>(<span class="number">1</span>), <span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="number">3</span>)]
+]<span class="question-mark">?</span>;
+
+<span class="comment">// from a Vec&lt;Column&gt;
+</span><span class="kw">let </span>c1 = Column::new(<span class="string">"names"</span>.into(), <span class="kw-2">&amp;</span>[<span class="string">"a"</span>, <span class="string">"b"</span>, <span class="string">"c"</span>]);
+<span class="kw">let </span>c2 = Column::new(<span class="string">"values"</span>.into(), <span class="kw-2">&amp;</span>[<span class="prelude-val">Some</span>(<span class="number">1</span>), <span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="number">3</span>)]);
+<span class="kw">let </span>df = DataFrame::new(<span class="macro">vec!</span>[c1, c2])<span class="question-mark">?</span>;</code></pre></div>
+<h3 id="arithmetic"><a class="doc-anchor" href="#arithmetic">§</a>Arithmetic</h3>
+<p>Arithmetic can be done on both <a href="../../prelude/struct.Series.html" title="struct polars::prelude::Series"><code>Series</code></a> and <a href="../../prelude/struct.ChunkedArray.html" title="struct polars::prelude::ChunkedArray"><code>ChunkedArray</code></a>. The most notable difference is that
+a <a href="../../prelude/struct.Series.html" title="struct polars::prelude::Series"><code>Series</code></a> coerces the data to match the underlying data types.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">let </span>s_int = Series::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+<span class="kw">let </span>s_flt = Series::new(<span class="string">"b"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1.0</span>, <span class="number">2.0</span>, <span class="number">3.0</span>]);
+
+<span class="kw">let </span>added = <span class="kw-2">&amp;</span>s_int + <span class="kw-2">&amp;</span>s_flt;
+<span class="kw">let </span>subtracted = <span class="kw-2">&amp;</span>s_int - <span class="kw-2">&amp;</span>s_flt;
+<span class="kw">let </span>multiplied = <span class="kw-2">&amp;</span>s_int * <span class="kw-2">&amp;</span>s_flt;
+<span class="kw">let </span>divided = <span class="kw-2">&amp;</span>s_int / <span class="kw-2">&amp;</span>s_flt;
+<span class="kw">let </span>moduloed = <span class="kw-2">&amp;</span>s_int % <span class="kw-2">&amp;</span>s_flt;
+
+
+<span class="comment">// on chunked-arrays we first need to cast to same types
+</span><span class="kw">let </span>ca_int = s_int.i32()<span class="question-mark">?</span>;
+<span class="kw">let </span>ca_flt = s_flt.f32()<span class="question-mark">?</span>;
+
+ca_int.cast(<span class="kw-2">&amp;</span>DataType::Float32)<span class="question-mark">?</span>.f32()<span class="question-mark">? </span>* ca_flt;
+ca_flt.cast(<span class="kw-2">&amp;</span>DataType::Int32)<span class="question-mark">?</span>.i32()<span class="question-mark">? </span>* ca_int;
+
+<span class="comment">// we can also do arithmetic with numeric values
+</span><span class="kw">let </span>multiplied = ca_int * <span class="number">2.0</span>;
+<span class="kw">let </span>multiplied = s_flt * <span class="number">2.0</span>;
+
+<span class="comment">// or broadcast Series to match the operands type
+</span><span class="kw">let </span>added = <span class="kw-2">&amp;</span>s_int * <span class="kw-2">&amp;</span>Series::new(<span class="string">"broadcast_me"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">10</span>]);
+</code></pre></div>
+<p>Because Rust’s Orphan Rule doesn’t allow us to implement left side operations, we need to call
+such operations directly.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>series = Series::new(<span class="string">"foo"</span>.into(), [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+
+<span class="comment">// 1 / s
+</span><span class="kw">let </span>divide_one_by_s = <span class="number">1</span>.div(<span class="kw-2">&amp;</span>series);
+
+<span class="comment">// 1 - s
+</span><span class="kw">let </span>subtract_one_by_s = <span class="number">1</span>.sub(<span class="kw-2">&amp;</span>series);</code></pre></div>
+<p>For <a href="../../prelude/struct.ChunkedArray.html" title="struct polars::prelude::ChunkedArray"><code>ChunkedArray</code></a> left hand side operations can be done with the <a href="../../prelude/trait.ChunkApply.html#tymethod.apply_values" title="method polars::prelude::ChunkApply::apply_values"><code>apply_values</code></a> method.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>ca = UInt32Chunked::new(<span class="string">"foo"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+
+<span class="comment">// 1 / ca
+</span><span class="kw">let </span>divide_one_by_ca = ca.apply_values(|rhs| <span class="number">1 </span>/ rhs);</code></pre></div>
+<h3 id="comparisons"><a class="doc-anchor" href="#comparisons">§</a>Comparisons</h3>
+<p><a href="../../prelude/struct.Series.html" title="struct polars::prelude::Series"><code>Series</code></a> and <a href="../../prelude/struct.ChunkedArray.html" title="struct polars::prelude::ChunkedArray"><code>ChunkedArray</code></a> can be used in comparison operations to create <em>boolean</em> masks/predicates.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+<span class="kw">let </span>s = Series::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+<span class="kw">let </span>ca = UInt32Chunked::new(<span class="string">"b"</span>.into(), <span class="kw-2">&amp;</span>[<span class="prelude-val">Some</span>(<span class="number">3</span>), <span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="number">1</span>)]);
+
+<span class="comment">// compare Series with numeric values
+// ==
+</span>s.equal(<span class="number">2</span>);
+<span class="comment">// !=
+</span>s.not_equal(<span class="number">2</span>);
+<span class="comment">// &gt;
+</span>s.gt(<span class="number">2</span>);
+<span class="comment">// &gt;=
+</span>s.gt_eq(<span class="number">2</span>);
+<span class="comment">// &lt;
+</span>s.lt(<span class="number">2</span>);
+<span class="comment">// &lt;=
+</span>s.lt_eq(<span class="number">2</span>);
+
+
+<span class="comment">// compare Series with Series
+// ==
+</span>s.equal(<span class="kw-2">&amp;</span>s);
+<span class="comment">// !=
+</span>s.not_equal(<span class="kw-2">&amp;</span>s);
+<span class="comment">// &gt;
+</span>s.gt(<span class="kw-2">&amp;</span>s);
+<span class="comment">// &gt;=
+</span>s.gt_eq(<span class="kw-2">&amp;</span>s);
+<span class="comment">// &lt;
+</span>s.lt(<span class="kw-2">&amp;</span>s);
+<span class="comment">// &lt;=
+</span>s.lt_eq(<span class="kw-2">&amp;</span>s);
+
+
+<span class="comment">// compare chunked-array with numeric values
+// ==
+</span>ca.equal(<span class="number">2</span>);
+<span class="comment">// !=
+</span>ca.not_equal(<span class="number">2</span>);
+<span class="comment">// &gt;
+</span>ca.gt(<span class="number">2</span>);
+<span class="comment">// &gt;=
+</span>ca.gt_eq(<span class="number">2</span>);
+<span class="comment">// &lt;
+</span>ca.lt(<span class="number">2</span>);
+<span class="comment">// &lt;=
+</span>ca.lt_eq(<span class="number">2</span>);
+
+<span class="comment">// compare chunked-array with chunked-array
+// ==
+</span>ca.equal(<span class="kw-2">&amp;</span>ca);
+<span class="comment">// !=
+</span>ca.not_equal(<span class="kw-2">&amp;</span>ca);
+<span class="comment">// &gt;
+</span>ca.gt(<span class="kw-2">&amp;</span>ca);
+<span class="comment">// &gt;=
+</span>ca.gt_eq(<span class="kw-2">&amp;</span>ca);
+<span class="comment">// &lt;
+</span>ca.lt(<span class="kw-2">&amp;</span>ca);
+<span class="comment">// &lt;=
+</span>ca.lt_eq(<span class="kw-2">&amp;</span>ca);
+
+<span class="comment">// use iterators
+</span><span class="kw">let </span>a: BooleanChunked = ca.iter()
+    .map(|opt_value| {
+         <span class="kw">match </span>opt_value {
+         <span class="prelude-val">Some</span>(value) =&gt; value &lt; <span class="number">10</span>,
+         <span class="prelude-val">None </span>=&gt; <span class="bool-val">false
+</span>}}).collect();
+</code></pre></div>
+<h3 id="apply-functions-closures"><a class="doc-anchor" href="#apply-functions-closures">§</a>Apply functions/ closures</h3>
+<p>See all possible <a href="../../prelude/trait.ChunkApply.html" title="trait polars::prelude::ChunkApply">apply methods here</a>.</p>
+<h4 id="series--chunkedarrays"><a class="doc-anchor" href="#series--chunkedarrays">§</a>Series / ChunkedArrays</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::prelude::arity::unary_elementwise_values;
+
+<span class="comment">// apply a closure over all values
+</span><span class="kw">let </span>s = Series::new(<span class="string">"foo"</span>.into(), <span class="kw-2">&amp;</span>[<span class="prelude-val">Some</span>(<span class="number">1</span>), <span class="prelude-val">Some</span>(<span class="number">2</span>), <span class="prelude-val">None</span>]);
+s.i32()<span class="question-mark">?</span>.apply_values(|value| value * <span class="number">20</span>);
+
+<span class="comment">// count string lengths
+</span><span class="kw">let </span>s = Series::new(<span class="string">"foo"</span>.into(), <span class="kw-2">&amp;</span>[<span class="string">"foo"</span>, <span class="string">"bar"</span>, <span class="string">"foobar"</span>]);
+unary_elementwise_values::&lt;StringType, UInt64Type, <span class="kw">_</span>&gt;(s.str()<span class="question-mark">?</span>, |str_val| str_val.len() <span class="kw">as </span>u64);
+</code></pre></div>
+<h4 id="multiple-columns"><a class="doc-anchor" href="#multiple-columns">§</a>Multiple columns</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">fn </span>my_black_box_function(a: f32, b: f32) -&gt; f32 {
+    <span class="comment">// do something
+    </span>a
+}
+
+<span class="kw">fn </span>apply_multiples(col_a: <span class="kw-2">&amp;</span>Series, col_b: <span class="kw-2">&amp;</span>Series) -&gt; Float32Chunked {
+    <span class="kw">match </span>(col_a.dtype(), col_b.dtype()) {
+        (DataType::Float32, DataType::Float32) =&gt; {
+            <span class="comment">// downcast to `ChunkedArray`
+            </span><span class="kw">let </span>a = col_a.f32().unwrap();
+            <span class="kw">let </span>b = col_b.f32().unwrap();
+
+            a.into_iter()
+                .zip(b.into_iter())
+                .map(|(opt_a, opt_b)| <span class="kw">match </span>(opt_a, opt_b) {
+                    (<span class="prelude-val">Some</span>(a), <span class="prelude-val">Some</span>(b)) =&gt; <span class="prelude-val">Some</span>(my_black_box_function(a, b)),
+                    <span class="comment">// if either value is `None` we propagate that null
+                    </span><span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+                })
+                .collect()
+        }
+        <span class="kw">_ </span>=&gt; <span class="macro">panic!</span>(<span class="string">"unexpected dtypes"</span>),
+    }
+}</code></pre></div>
+<h4 id="dataframe-1"><a class="doc-anchor" href="#dataframe-1">§</a>DataFrame</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="kw">let </span><span class="kw-2">mut </span>df = <span class="macro">df!</span>[
+    <span class="string">"letters" </span>=&gt; [<span class="string">"a"</span>, <span class="string">"b"</span>, <span class="string">"c"</span>, <span class="string">"d"</span>],
+    <span class="string">"numbers" </span>=&gt; [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>]
+]<span class="question-mark">?</span>;
+
+
+<span class="comment">// coerce numbers to floats
+</span>df.try_apply(<span class="string">"number"</span>, |s: <span class="kw-2">&amp;</span>Series| s.cast(<span class="kw-2">&amp;</span>DataType::Float64))<span class="question-mark">?</span>;
+
+<span class="comment">// transform letters to uppercase letters
+</span>df.try_apply(<span class="string">"letters"</span>, |s: <span class="kw-2">&amp;</span>Series| {
+    <span class="prelude-val">Ok</span>(s.str()<span class="question-mark">?</span>.to_uppercase())
+});
+</code></pre></div>
+<h3 id="filter"><a class="doc-anchor" href="#filter">§</a>Filter</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+<span class="comment">// create a mask to filter out null values
+</span><span class="kw">let </span>mask = df.column(<span class="string">"sepal_width"</span>)<span class="question-mark">?</span>.is_not_null();
+
+<span class="comment">// select column
+</span><span class="kw">let </span>s = df.column(<span class="string">"sepal_length"</span>)<span class="question-mark">?</span>;
+
+<span class="comment">// apply filter on a Series
+</span><span class="kw">let </span>filtered_series = s.filter(<span class="kw-2">&amp;</span>mask);
+
+<span class="comment">// apply the filter on a DataFrame
+</span><span class="kw">let </span>filtered_df = df.filter(<span class="kw-2">&amp;</span>mask)<span class="question-mark">?</span>;
+</code></pre></div>
+<h3 id="sort"><a class="doc-anchor" href="#sort">§</a>Sort</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="kw">let </span>df = <span class="macro">df!</span>[
+    <span class="string">"a" </span>=&gt; [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>],
+    <span class="string">"b" </span>=&gt; [<span class="string">"a"</span>, <span class="string">"a"</span>, <span class="string">"b"</span>]
+]<span class="question-mark">?</span>;
+<span class="comment">// sort this DataFrame by multiple columns
+
+// ordering of the columns
+</span><span class="kw">let </span>descending = <span class="macro">vec!</span>[<span class="bool-val">true</span>, <span class="bool-val">false</span>];
+<span class="comment">// columns to sort by
+</span><span class="kw">let </span>by = [PlSmallStr::from_static(<span class="string">"b"</span>), PlSmallStr::from_static(<span class="string">"a"</span>)];
+<span class="comment">// do the sort operation
+</span><span class="kw">let </span>sorted = df.sort(
+    by,
+    SortMultipleOptions::default()
+        .with_order_descending_multi(descending)
+        .with_maintain_order(<span class="bool-val">true</span>)
+)<span class="question-mark">?</span>;
+
+<span class="comment">// sorted:
+
+// ╭─────┬─────╮
+// │ a   ┆ b   │
+// │ --- ┆ --- │
+// │ i64 ┆ str │
+// ╞═════╪═════╡
+// │ 1   ┆ "a" │
+// │ 2   ┆ "a" │
+// │ 3   ┆ "b" │
+// ╰─────┴─────╯
+</span></code></pre></div>
+<h3 id="joins"><a class="doc-anchor" href="#joins">§</a>Joins</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="comment">// Create first df.
+</span><span class="kw">let </span>temp = <span class="macro">df!</span>(<span class="string">"days" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>],
+               <span class="string">"temp" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">22.1</span>, <span class="number">19.9</span>, <span class="number">7.</span>, <span class="number">2.</span>, <span class="number">3.</span>],
+               <span class="string">"other" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>]
+)<span class="question-mark">?</span>;
+
+<span class="comment">// Create second df.
+</span><span class="kw">let </span>rain = <span class="macro">df!</span>(<span class="string">"days" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>],
+               <span class="string">"rain" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">0.1</span>, <span class="number">0.2</span>],
+               <span class="string">"other" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>]
+)<span class="question-mark">?</span>;
+
+<span class="comment">// join on a single column
+</span>temp.left_join(<span class="kw-2">&amp;</span>rain, [<span class="string">"days"</span>], [<span class="string">"days"</span>]);
+temp.inner_join(<span class="kw-2">&amp;</span>rain, [<span class="string">"days"</span>], [<span class="string">"days"</span>]);
+temp.full_join(<span class="kw-2">&amp;</span>rain, [<span class="string">"days"</span>], [<span class="string">"days"</span>]);
+
+<span class="comment">// join on multiple columns
+</span>temp.join(<span class="kw-2">&amp;</span>rain, <span class="macro">vec!</span>[<span class="string">"days"</span>, <span class="string">"other"</span>], <span class="macro">vec!</span>[<span class="string">"days"</span>, <span class="string">"other"</span>], JoinArgs::new(JoinType::Left), <span class="prelude-val">None</span>);
+</code></pre></div>
+<h3 id="groupby"><a class="doc-anchor" href="#groupby">§</a>Groupby</h3>
+<p>Note that Polars lazy is a lot more powerful in and more performant in group_by operations.
+In lazy a myriad of aggregations can be combined from expressions.</p>
+<p>See more in:</p>
+<ul>
+<li><a href="../../prelude/struct.GroupBy.html" title="struct polars::prelude::GroupBy">Groupby</a></li>
+</ul>
+<h4 id="groupby-1"><a class="doc-anchor" href="#groupby-1">§</a>GroupBy</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+ <span class="comment">// group_by "groups" | sum "foo"
+ </span><span class="kw">let </span>out = df.group_by([<span class="string">"groups"</span>])<span class="question-mark">?
+    </span>.select([<span class="string">"foo"</span>])
+    .sum();
+
+</code></pre></div>
+<h4 id="pivot"><a class="doc-anchor" href="#pivot">§</a>Pivot</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+ <span class="kw">let </span>df = <span class="macro">df!</span>(<span class="string">"foo" </span>=&gt; [<span class="string">"A"</span>, <span class="string">"A"</span>, <span class="string">"B"</span>, <span class="string">"B"</span>, <span class="string">"C"</span>],
+     <span class="string">"N" </span>=&gt; [<span class="number">1</span>, <span class="number">2</span>, <span class="number">2</span>, <span class="number">4</span>, <span class="number">2</span>],
+     <span class="string">"bar" </span>=&gt; [<span class="string">"k"</span>, <span class="string">"l"</span>, <span class="string">"m"</span>, <span class="string">"n"</span>, <span class="string">"0"</span>]
+     )<span class="question-mark">?</span>;
+
+<span class="comment">// group_by "foo" | pivot "bar" column | aggregate "N"
+ </span><span class="kw">let </span>pivoted = pivot::pivot(
+    <span class="kw-2">&amp;</span>df,
+    [PlSmallStr::from_static(<span class="string">"foo"</span>)],
+    <span class="prelude-val">Some</span>([PlSmallStr::from_static(<span class="string">"bar"</span>)]),
+    <span class="prelude-val">Some</span>([PlSmallStr::from_static(<span class="string">"N"</span>)]),
+    <span class="bool-val">false</span>, <span class="prelude-val">Some</span>(first()),
+    <span class="prelude-val">None
+</span>);
+
+<span class="comment">// pivoted:
+// +-----+------+------+------+------+------+
+// | foo | o    | n    | m    | l    | k    |
+// | --- | ---  | ---  | ---  | ---  | ---  |
+// | str | i32  | i32  | i32  | i32  | i32  |
+// +=====+======+======+======+======+======+
+// | "A" | null | null | null | 2    | 1    |
+// +-----+------+------+------+------+------+
+// | "B" | null | 4    | 2    | null | null |
+// +-----+------+------+------+------+------+
+// | "C" | 2    | null | null | null | null |
+// +-----+------+------+------+------+------+!
+</span></code></pre></div>
+<h3 id="unpivot"><a class="doc-anchor" href="#unpivot">§</a>Unpivot</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="kw">let </span>df = <span class="macro">df!</span>[<span class="string">"A" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="string">"a"</span>, <span class="string">"b"</span>, <span class="string">"a"</span>],
+             <span class="string">"B" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">3</span>, <span class="number">5</span>],
+             <span class="string">"C" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">10</span>, <span class="number">11</span>, <span class="number">12</span>],
+             <span class="string">"D" </span>=&gt; <span class="kw-2">&amp;</span>[<span class="number">2</span>, <span class="number">4</span>, <span class="number">6</span>]
+    ]<span class="question-mark">?</span>;
+
+<span class="kw">let </span>unpivoted = df.unpivot(
+    [PlSmallStr::from_static(<span class="string">"A"</span>), PlSmallStr::from_static(<span class="string">"B"</span>)],
+    [PlSmallStr::from_static(<span class="string">"C"</span>), PlSmallStr::from_static(<span class="string">"D"</span>)],
+).unwrap();
+<span class="comment">// unpivoted:
+
+// +-----+-----+----------+-------+
+// | A   | B   | variable | value |
+// | --- | --- | ---      | ---   |
+// | str | i32 | str      | i32   |
+// +=====+=====+==========+=======+
+// | "a" | 1   | "C"      | 10    |
+// +-----+-----+----------+-------+
+// | "b" | 3   | "C"      | 11    |
+// +-----+-----+----------+-------+
+// | "a" | 5   | "C"      | 12    |
+// +-----+-----+----------+-------+
+// | "a" | 1   | "D"      | 2     |
+// +-----+-----+----------+-------+
+// | "b" | 3   | "D"      | 4     |
+// +-----+-----+----------+-------+
+// | "a" | 5   | "D"      | 6     |
+// +-----+-----+----------+-------+
+</span></code></pre></div>
+<h3 id="explode"><a class="doc-anchor" href="#explode">§</a>Explode</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="kw">let </span>s0 = Series::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1i64</span>, <span class="number">2</span>, <span class="number">3</span>]);
+<span class="kw">let </span>s1 = Series::new(<span class="string">"b"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1i64</span>, <span class="number">1</span>, <span class="number">1</span>]);
+<span class="kw">let </span>s2 = Series::new(<span class="string">"c"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">2i64</span>, <span class="number">2</span>, <span class="number">2</span>]);
+<span class="comment">// construct a new ListChunked for a slice of Series.
+</span><span class="kw">let </span>list = Column::new(<span class="string">"foo"</span>.into(), <span class="kw-2">&amp;</span>[s0, s1, s2]);
+
+<span class="comment">// construct a few more Series.
+</span><span class="kw">let </span>s0 = Column::new(<span class="string">"B"</span>.into(), [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+<span class="kw">let </span>s1 = Column::new(<span class="string">"C"</span>.into(), [<span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>]);
+<span class="kw">let </span>df = DataFrame::new(<span class="macro">vec!</span>[list, s0, s1])<span class="question-mark">?</span>;
+
+<span class="kw">let </span>exploded = df.explode([PlSmallStr::from(<span class="string">"foo"</span>)])<span class="question-mark">?</span>;
+<span class="comment">// exploded:
+
+// +-----+-----+-----+
+// | foo | B   | C   |
+// | --- | --- | --- |
+// | i64 | i32 | i32 |
+// +=====+=====+=====+
+// | 1   | 1   | 1   |
+// +-----+-----+-----+
+// | 2   | 1   | 1   |
+// +-----+-----+-----+
+// | 3   | 1   | 1   |
+// +-----+-----+-----+
+// | 1   | 2   | 1   |
+// +-----+-----+-----+
+// | 1   | 2   | 1   |
+// +-----+-----+-----+
+// | 1   | 2   | 1   |
+// +-----+-----+-----+
+// | 2   | 3   | 1   |
+// +-----+-----+-----+
+// | 2   | 3   | 1   |
+// +-----+-----+-----+
+// | 2   | 3   | 1   |
+// +-----+-----+-----+
+</span></code></pre></div>
+<h3 id="io"><a class="doc-anchor" href="#io">§</a>IO</h3><h4 id="read-csv"><a class="doc-anchor" href="#read-csv">§</a>Read CSV</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+
+<span class="comment">// read from path
+</span><span class="kw">let </span><span class="kw-2">mut </span>file = std::fs::File::open(<span class="string">"iris.csv"</span>)<span class="question-mark">?</span>;
+<span class="kw">let </span>df = CsvReader::new(file).finish()<span class="question-mark">?</span>;</code></pre></div>
+<h4 id="write-csv"><a class="doc-anchor" href="#write-csv">§</a>Write CSV</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>std::fs::File;
+
+<span class="comment">// create a file
+</span><span class="kw">let </span><span class="kw-2">mut </span>file = File::create(<span class="string">"example.csv"</span>).expect(<span class="string">"could not create file"</span>);
+
+<span class="comment">// write DataFrame to file
+</span>CsvWriter::new(<span class="kw-2">&amp;mut </span>file)
+    .include_header(<span class="bool-val">true</span>)
+    .with_separator(<span class="string">b','</span>)
+    .finish(df);</code></pre></div>
+<h4 id="read-ipc"><a class="doc-anchor" href="#read-ipc">§</a>Read IPC</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>std::fs::File;
+
+<span class="comment">// open file
+</span><span class="kw">let </span>file = File::open(<span class="string">"file.ipc"</span>).expect(<span class="string">"file not found"</span>);
+
+<span class="comment">// read to DataFrame
+</span><span class="kw">let </span>df = IpcReader::new(file)
+   .finish()<span class="question-mark">?</span>;</code></pre></div>
+<h4 id="write-ipc"><a class="doc-anchor" href="#write-ipc">§</a>Write IPC</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>std::fs::File;
+
+<span class="comment">// create a file
+</span><span class="kw">let </span><span class="kw-2">mut </span>file = File::create(<span class="string">"file.ipc"</span>).expect(<span class="string">"could not create file"</span>);
+
+<span class="comment">// write DataFrame to file
+</span>IpcWriter::new(<span class="kw-2">&amp;mut </span>file)
+    .finish(df)</code></pre></div>
+<h4 id="read-parquet"><a class="doc-anchor" href="#read-parquet">§</a>Read Parquet</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>std::fs::File;
+
+<span class="comment">// open file
+</span><span class="kw">let </span>file = File::open(<span class="string">"some_file.parquet"</span>).unwrap();
+
+<span class="comment">// read to DataFrame
+</span><span class="kw">let </span>df = ParquetReader::new(file).finish()<span class="question-mark">?</span>;</code></pre></div>
+<h4 id="write-parquet"><a class="doc-anchor" href="#write-parquet">§</a>Write Parquet</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>std::fs::File;
+
+<span class="comment">// create a file
+</span><span class="kw">let </span>file = File::create(<span class="string">"example.parquet"</span>).expect(<span class="string">"could not create file"</span>);
+
+ParquetWriter::new(file)
+    .finish(df)</code></pre></div>
+<h2 id="various"><a class="doc-anchor" href="#various">§</a>Various</h2><h3 id="replace-nan-with-missing"><a class="doc-anchor" href="#replace-nan-with-missing">§</a>Replace NaN with Missing.</h3>
+<p>The floating point <a href="https://en.wikipedia.org/wiki/NaN">Not a Number: NaN</a> is conceptually different
+than missing data in Polars. In the snippet below we show how we can replace <a href="https://doc.rust-lang.org/std/primitive.f64.html#associatedconstant.NAN"><code>NaN</code></a> values with
+missing values, by setting them to <a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None" title="variant core::option::Option::None"><code>None</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="doccomment">/// Replaces NaN with missing values.
+</span><span class="kw">fn </span>fill_nan_with_nulls() -&gt; PolarsResult&lt;DataFrame&gt; {
+    <span class="kw">let </span>nan = f64::NAN;
+
+    <span class="kw">let </span><span class="kw-2">mut </span>df = <span class="macro">df!</span> {
+       <span class="string">"a" </span>=&gt; [nan, <span class="number">1.0</span>, <span class="number">2.0</span>],
+       <span class="string">"b" </span>=&gt; [nan, <span class="number">1.0</span>, <span class="number">2.0</span>]
+    }
+    .unwrap();
+
+    <span class="kw">for </span>idx <span class="kw">in </span><span class="number">0</span>..df.width() {
+        df.try_apply_at_idx(idx, |series| {
+            <span class="kw">let </span>mask = series.is_nan()<span class="question-mark">?</span>;
+            <span class="kw">let </span>ca = series.f64()<span class="question-mark">?</span>;
+            ca.set(<span class="kw-2">&amp;</span>mask, <span class="prelude-val">None</span>)
+        })<span class="question-mark">?</span>;
+    }
+    <span class="prelude-val">Ok</span>(df)
+}</code></pre></div>
+<h3 id="extracting-data"><a class="doc-anchor" href="#extracting-data">§</a>Extracting data</h3>
+<p>To iterate over the values of a <a href="../../prelude/struct.Series.html" title="struct polars::prelude::Series"><code>Series</code></a>, or to convert the <a href="../../prelude/struct.Series.html" title="struct polars::prelude::Series"><code>Series</code></a> into another structure
+such as a <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec"><code>Vec&lt;T&gt;</code></a>, we must first downcast to a data type aware <a href="../../prelude/struct.ChunkedArray.html" title="struct polars::prelude::ChunkedArray"><code>ChunkedArray&lt;T&gt;</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars::df;
+
+<span class="kw">fn </span>extract_data() -&gt; PolarsResult&lt;()&gt; {
+    <span class="kw">let </span>df = <span class="macro">df!</span> [
+       <span class="string">"a" </span>=&gt; [<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="number">1.0f32</span>), <span class="prelude-val">Some</span>(<span class="number">2.0</span>)],
+       <span class="string">"str" </span>=&gt; [<span class="string">"foo"</span>, <span class="string">"bar"</span>, <span class="string">"ham"</span>]
+    ]<span class="question-mark">?</span>;
+
+    <span class="comment">// first extract ChunkedArray to get the inner type.
+    </span><span class="kw">let </span>ca = df.column(<span class="string">"a"</span>)<span class="question-mark">?</span>.f32()<span class="question-mark">?</span>;
+
+    <span class="comment">// Then convert to vec
+    </span><span class="kw">let </span>to_vec: Vec&lt;<span class="prelude-ty">Option</span>&lt;f32&gt;&gt; = Vec::from(ca);
+
+    <span class="comment">// We can also do this with iterators
+    </span><span class="kw">let </span>ca = df.column(<span class="string">"str"</span>)<span class="question-mark">?</span>.str()<span class="question-mark">?</span>;
+    <span class="kw">let </span>to_vec: Vec&lt;<span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;&gt; = ca.into_iter().collect();
+    <span class="kw">let </span>to_vec_no_options: Vec&lt;<span class="kw-2">&amp;</span>str&gt; = ca.into_no_null_iter().collect();
+
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div>
+</div></details></section></div></main></body></html>

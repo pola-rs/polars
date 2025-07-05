@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-utils/src/itertools/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars_utils" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-4e99c027.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_utils/itertools/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>std::cmp::Ordering;
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><span class="kw">crate</span>::IdxSize;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">pub mod </span>enumerate_idx;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="doccomment">/// Utility extension trait of iterator methods.
+<a href=#8 id=8 data-nosnippet>8</a></span><span class="kw">pub trait </span>Itertools: Iterator {
+<a href=#9 id=9 data-nosnippet>9</a>    <span class="doccomment">/// Equivalent to `.collect::&lt;Vec&lt;_&gt;&gt;()`.
+<a href=#10 id=10 data-nosnippet>10</a>    </span><span class="kw">fn </span>collect_vec(<span class="self">self</span>) -&gt; Vec&lt;<span class="self">Self</span>::Item&gt;
+<a href=#11 id=11 data-nosnippet>11</a>    <span class="kw">where
+<a href=#12 id=12 data-nosnippet>12</a>        </span><span class="self">Self</span>: Sized,
+<a href=#13 id=13 data-nosnippet>13</a>    {
+<a href=#14 id=14 data-nosnippet>14</a>        <span class="self">self</span>.collect()
+<a href=#15 id=15 data-nosnippet>15</a>    }
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a>    <span class="doccomment">/// Equivalent to `.collect::&lt;Result&lt;_, _&gt;&gt;()`.
+<a href=#18 id=18 data-nosnippet>18</a>    </span><span class="kw">fn </span>try_collect&lt;T, U, E&gt;(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;U, E&gt;
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="kw">where
+<a href=#20 id=20 data-nosnippet>20</a>        </span><span class="self">Self</span>: Sized + Iterator&lt;Item = <span class="prelude-ty">Result</span>&lt;T, E&gt;&gt;,
+<a href=#21 id=21 data-nosnippet>21</a>        <span class="prelude-ty">Result</span>&lt;U, E&gt;: FromIterator&lt;<span class="prelude-ty">Result</span>&lt;T, E&gt;&gt;,
+<a href=#22 id=22 data-nosnippet>22</a>    {
+<a href=#23 id=23 data-nosnippet>23</a>        <span class="self">self</span>.collect()
+<a href=#24 id=24 data-nosnippet>24</a>    }
+<a href=#25 id=25 data-nosnippet>25</a>
+<a href=#26 id=26 data-nosnippet>26</a>    <span class="doccomment">/// Equivalent to `.collect::&lt;Result&lt;Vec&lt;_&gt;, _&gt;&gt;()`.
+<a href=#27 id=27 data-nosnippet>27</a>    </span><span class="kw">fn </span>try_collect_vec&lt;T, U, E&gt;(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;U&gt;, E&gt;
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="kw">where
+<a href=#29 id=29 data-nosnippet>29</a>        </span><span class="self">Self</span>: Sized + Iterator&lt;Item = <span class="prelude-ty">Result</span>&lt;T, E&gt;&gt;,
+<a href=#30 id=30 data-nosnippet>30</a>        <span class="prelude-ty">Result</span>&lt;Vec&lt;U&gt;, E&gt;: FromIterator&lt;<span class="prelude-ty">Result</span>&lt;T, E&gt;&gt;,
+<a href=#31 id=31 data-nosnippet>31</a>    {
+<a href=#32 id=32 data-nosnippet>32</a>        <span class="self">self</span>.collect()
+<a href=#33 id=33 data-nosnippet>33</a>    }
+<a href=#34 id=34 data-nosnippet>34</a>
+<a href=#35 id=35 data-nosnippet>35</a>    <span class="kw">fn </span>enumerate_idx(<span class="self">self</span>) -&gt; enumerate_idx::EnumerateIdx&lt;<span class="self">Self</span>, IdxSize&gt;
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="kw">where
+<a href=#37 id=37 data-nosnippet>37</a>        </span><span class="self">Self</span>: Sized,
+<a href=#38 id=38 data-nosnippet>38</a>    {
+<a href=#39 id=39 data-nosnippet>39</a>        enumerate_idx::EnumerateIdx::new(<span class="self">self</span>)
+<a href=#40 id=40 data-nosnippet>40</a>    }
+<a href=#41 id=41 data-nosnippet>41</a>
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">fn </span>enumerate_u32(<span class="self">self</span>) -&gt; enumerate_idx::EnumerateIdx&lt;<span class="self">Self</span>, u32&gt;
+<a href=#43 id=43 data-nosnippet>43</a>    <span class="kw">where
+<a href=#44 id=44 data-nosnippet>44</a>        </span><span class="self">Self</span>: Sized,
+<a href=#45 id=45 data-nosnippet>45</a>    {
+<a href=#46 id=46 data-nosnippet>46</a>        enumerate_idx::EnumerateIdx::new(<span class="self">self</span>)
+<a href=#47 id=47 data-nosnippet>47</a>    }
+<a href=#48 id=48 data-nosnippet>48</a>
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="kw">fn </span>all_equal(<span class="kw-2">mut </span><span class="self">self</span>) -&gt; bool
+<a href=#50 id=50 data-nosnippet>50</a>    <span class="kw">where
+<a href=#51 id=51 data-nosnippet>51</a>        </span><span class="self">Self</span>: Sized,
+<a href=#52 id=52 data-nosnippet>52</a>        <span class="self">Self</span>::Item: PartialEq,
+<a href=#53 id=53 data-nosnippet>53</a>    {
+<a href=#54 id=54 data-nosnippet>54</a>        <span class="kw">match </span><span class="self">self</span>.next() {
+<a href=#55 id=55 data-nosnippet>55</a>            <span class="prelude-val">None </span>=&gt; <span class="bool-val">true</span>,
+<a href=#56 id=56 data-nosnippet>56</a>            <span class="prelude-val">Some</span>(a) =&gt; <span class="self">self</span>.all(|x| a == x),
+<a href=#57 id=57 data-nosnippet>57</a>        }
+<a href=#58 id=58 data-nosnippet>58</a>    }
+<a href=#59 id=59 data-nosnippet>59</a>
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="comment">// Stable copy of the unstable eq_by from the stdlib.
+<a href=#61 id=61 data-nosnippet>61</a>    </span><span class="kw">fn </span>eq_by_&lt;I, F&gt;(<span class="kw-2">mut </span><span class="self">self</span>, other: I, <span class="kw-2">mut </span>eq: F) -&gt; bool
+<a href=#62 id=62 data-nosnippet>62</a>    <span class="kw">where
+<a href=#63 id=63 data-nosnippet>63</a>        </span><span class="self">Self</span>: Sized,
+<a href=#64 id=64 data-nosnippet>64</a>        I: IntoIterator,
+<a href=#65 id=65 data-nosnippet>65</a>        F: FnMut(<span class="self">Self</span>::Item, I::Item) -&gt; bool,
+<a href=#66 id=66 data-nosnippet>66</a>    {
+<a href=#67 id=67 data-nosnippet>67</a>        <span class="kw">let </span><span class="kw-2">mut </span>other = other.into_iter();
+<a href=#68 id=68 data-nosnippet>68</a>        <span class="kw">loop </span>{
+<a href=#69 id=69 data-nosnippet>69</a>            <span class="kw">match </span>(<span class="self">self</span>.next(), other.next()) {
+<a href=#70 id=70 data-nosnippet>70</a>                (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <span class="kw">return </span><span class="bool-val">true</span>,
+<a href=#71 id=71 data-nosnippet>71</a>                (<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+<a href=#72 id=72 data-nosnippet>72</a>                (<span class="prelude-val">Some</span>(<span class="kw">_</span>), <span class="prelude-val">None</span>) =&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+<a href=#73 id=73 data-nosnippet>73</a>                (<span class="prelude-val">Some</span>(l), <span class="prelude-val">Some</span>(r)) =&gt; {
+<a href=#74 id=74 data-nosnippet>74</a>                    <span class="kw">if </span>eq(l, r) {
+<a href=#75 id=75 data-nosnippet>75</a>                        <span class="kw">continue</span>;
+<a href=#76 id=76 data-nosnippet>76</a>                    } <span class="kw">else </span>{
+<a href=#77 id=77 data-nosnippet>77</a>                        <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#78 id=78 data-nosnippet>78</a>                    }
+<a href=#79 id=79 data-nosnippet>79</a>                },
+<a href=#80 id=80 data-nosnippet>80</a>            }
+<a href=#81 id=81 data-nosnippet>81</a>        }
+<a href=#82 id=82 data-nosnippet>82</a>    }
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a>    <span class="comment">// Stable copy of the unstable partial_cmp_by from the stdlib.
+<a href=#85 id=85 data-nosnippet>85</a>    </span><span class="kw">fn </span>partial_cmp_by_&lt;I, F&gt;(<span class="kw-2">mut </span><span class="self">self</span>, other: I, <span class="kw-2">mut </span>partial_cmp: F) -&gt; <span class="prelude-ty">Option</span>&lt;Ordering&gt;
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="kw">where
+<a href=#87 id=87 data-nosnippet>87</a>        </span><span class="self">Self</span>: Sized,
+<a href=#88 id=88 data-nosnippet>88</a>        I: IntoIterator,
+<a href=#89 id=89 data-nosnippet>89</a>        F: FnMut(<span class="self">Self</span>::Item, I::Item) -&gt; <span class="prelude-ty">Option</span>&lt;Ordering&gt;,
+<a href=#90 id=90 data-nosnippet>90</a>    {
+<a href=#91 id=91 data-nosnippet>91</a>        <span class="kw">let </span><span class="kw-2">mut </span>other = other.into_iter();
+<a href=#92 id=92 data-nosnippet>92</a>        <span class="kw">loop </span>{
+<a href=#93 id=93 data-nosnippet>93</a>            <span class="kw">match </span>(<span class="self">self</span>.next(), other.next()) {
+<a href=#94 id=94 data-nosnippet>94</a>                (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <span class="kw">return </span><span class="prelude-val">Some</span>(Ordering::Equal),
+<a href=#95 id=95 data-nosnippet>95</a>                (<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; <span class="kw">return </span><span class="prelude-val">Some</span>(Ordering::Less),
+<a href=#96 id=96 data-nosnippet>96</a>                (<span class="prelude-val">Some</span>(<span class="kw">_</span>), <span class="prelude-val">None</span>) =&gt; <span class="kw">return </span><span class="prelude-val">Some</span>(Ordering::Greater),
+<a href=#97 id=97 data-nosnippet>97</a>                (<span class="prelude-val">Some</span>(l), <span class="prelude-val">Some</span>(r)) =&gt; <span class="kw">match </span>partial_cmp(l, r) {
+<a href=#98 id=98 data-nosnippet>98</a>                    <span class="prelude-val">Some</span>(Ordering::Equal) =&gt; <span class="kw">continue</span>,
+<a href=#99 id=99 data-nosnippet>99</a>                    ord =&gt; <span class="kw">return </span>ord,
+<a href=#100 id=100 data-nosnippet>100</a>                },
+<a href=#101 id=101 data-nosnippet>101</a>            }
+<a href=#102 id=102 data-nosnippet>102</a>        }
+<a href=#103 id=103 data-nosnippet>103</a>    }
+<a href=#104 id=104 data-nosnippet>104</a>}
+<a href=#105 id=105 data-nosnippet>105</a>
+<a href=#106 id=106 data-nosnippet>106</a><span class="kw">impl</span>&lt;T: Iterator + <span class="question-mark">?</span>Sized&gt; Itertools <span class="kw">for </span>T {}</code></pre></div></section></main></body></html>

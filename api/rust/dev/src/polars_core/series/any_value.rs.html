@@ -1,0 +1,870 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-core/src/series/any_value.rs`."><title>any_value.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-4e99c027.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_core/series/</div>any_value.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>std::fmt::Write;
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>arrow::bitmap::MutableBitmap;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#6 id=6 data-nosnippet>6</a></span><span class="kw">use </span><span class="kw">crate</span>::chunked_array::builder::CategoricalChunkedBuilder;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><span class="kw">crate</span>::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><span class="kw">crate</span>::prelude::<span class="kw-2">*</span>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><span class="kw">crate</span>::utils::any_values_to_supertype;
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, T: AsRef&lt;[AnyValue&lt;<span class="lifetime">'a</span>&gt;]&gt;&gt; NamedFrom&lt;T, [AnyValue&lt;<span class="lifetime">'a</span>&gt;]&gt; <span class="kw">for </span>Series {
+<a href=#12 id=12 data-nosnippet>12</a>    <span class="doccomment">/// Construct a new [`Series`] from a collection of [`AnyValue`].
+<a href=#13 id=13 data-nosnippet>13</a>    ///
+<a href=#14 id=14 data-nosnippet>14</a>    /// # Panics
+<a href=#15 id=15 data-nosnippet>15</a>    ///
+<a href=#16 id=16 data-nosnippet>16</a>    /// Panics if the values do not all share the same data type (with the exception
+<a href=#17 id=17 data-nosnippet>17</a>    /// of [`DataType::Null`], which is always allowed).
+<a href=#18 id=18 data-nosnippet>18</a>    ///
+<a href=#19 id=19 data-nosnippet>19</a>    /// [`AnyValue`]: crate::datatypes::AnyValue
+<a href=#20 id=20 data-nosnippet>20</a>    </span><span class="kw">fn </span>new(name: PlSmallStr, values: T) -&gt; <span class="self">Self </span>{
+<a href=#21 id=21 data-nosnippet>21</a>        <span class="kw">let </span>values = values.as_ref();
+<a href=#22 id=22 data-nosnippet>22</a>        Series::from_any_values(name, values, <span class="bool-val">true</span>).expect(<span class="string">"data types of values should match"</span>)
+<a href=#23 id=23 data-nosnippet>23</a>    }
+<a href=#24 id=24 data-nosnippet>24</a>}
+<a href=#25 id=25 data-nosnippet>25</a>
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">impl </span>Series {
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="doccomment">/// Construct a new [`Series`] from a slice of AnyValues.
+<a href=#28 id=28 data-nosnippet>28</a>    ///
+<a href=#29 id=29 data-nosnippet>29</a>    /// The data type of the resulting Series is determined by the `values`
+<a href=#30 id=30 data-nosnippet>30</a>    /// and the `strict` parameter:
+<a href=#31 id=31 data-nosnippet>31</a>    /// - If `strict` is `true`, the data type is equal to the data type of the
+<a href=#32 id=32 data-nosnippet>32</a>    ///   first non-null value. If any other non-null values do not match this
+<a href=#33 id=33 data-nosnippet>33</a>    ///   data type, an error is raised.
+<a href=#34 id=34 data-nosnippet>34</a>    /// - If `strict` is `false`, the data type is the supertype of the `values`.
+<a href=#35 id=35 data-nosnippet>35</a>    ///   An error is returned if no supertype can be determined.
+<a href=#36 id=36 data-nosnippet>36</a>    ///   **WARNING**: A full pass over the values is required to determine the supertype.
+<a href=#37 id=37 data-nosnippet>37</a>    /// - If no values were passed, the resulting data type is `Null`.
+<a href=#38 id=38 data-nosnippet>38</a>    </span><span class="kw">pub fn </span>from_any_values(
+<a href=#39 id=39 data-nosnippet>39</a>        name: PlSmallStr,
+<a href=#40 id=40 data-nosnippet>40</a>        values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#41 id=41 data-nosnippet>41</a>        strict: bool,
+<a href=#42 id=42 data-nosnippet>42</a>    ) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#43 id=43 data-nosnippet>43</a>        <span class="kw">fn </span>get_first_non_null_dtype(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; DataType {
+<a href=#44 id=44 data-nosnippet>44</a>            <span class="kw">let </span><span class="kw-2">mut </span>all_flat_null = <span class="bool-val">true</span>;
+<a href=#45 id=45 data-nosnippet>45</a>            <span class="kw">let </span>first_non_null = values.iter().find(|av| {
+<a href=#46 id=46 data-nosnippet>46</a>                <span class="kw">if </span>!av.is_null() {
+<a href=#47 id=47 data-nosnippet>47</a>                    all_flat_null = <span class="bool-val">false
+<a href=#48 id=48 data-nosnippet>48</a>                </span>};
+<a href=#49 id=49 data-nosnippet>49</a>                !av.is_nested_null()
+<a href=#50 id=50 data-nosnippet>50</a>            });
+<a href=#51 id=51 data-nosnippet>51</a>            <span class="kw">match </span>first_non_null {
+<a href=#52 id=52 data-nosnippet>52</a>                <span class="prelude-val">Some</span>(av) =&gt; av.dtype(),
+<a href=#53 id=53 data-nosnippet>53</a>                <span class="prelude-val">None </span>=&gt; {
+<a href=#54 id=54 data-nosnippet>54</a>                    <span class="kw">if </span>all_flat_null {
+<a href=#55 id=55 data-nosnippet>55</a>                        DataType::Null
+<a href=#56 id=56 data-nosnippet>56</a>                    } <span class="kw">else </span>{
+<a href=#57 id=57 data-nosnippet>57</a>                        <span class="comment">// Second pass to check for the nested null value that
+<a href=#58 id=58 data-nosnippet>58</a>                        // toggled `all_flat_null` to false, e.g. a List(Null).
+<a href=#59 id=59 data-nosnippet>59</a>                        </span><span class="kw">let </span>first_nested_null = values.iter().find(|av| !av.is_null()).unwrap();
+<a href=#60 id=60 data-nosnippet>60</a>                        first_nested_null.dtype()
+<a href=#61 id=61 data-nosnippet>61</a>                    }
+<a href=#62 id=62 data-nosnippet>62</a>                },
+<a href=#63 id=63 data-nosnippet>63</a>            }
+<a href=#64 id=64 data-nosnippet>64</a>        }
+<a href=#65 id=65 data-nosnippet>65</a>        <span class="kw">let </span>dtype = <span class="kw">if </span>strict {
+<a href=#66 id=66 data-nosnippet>66</a>            get_first_non_null_dtype(values)
+<a href=#67 id=67 data-nosnippet>67</a>        } <span class="kw">else </span>{
+<a href=#68 id=68 data-nosnippet>68</a>            <span class="comment">// Currently does not work correctly for Decimal because equality is not implemented.
+<a href=#69 id=69 data-nosnippet>69</a>            </span>any_values_to_supertype(values)<span class="question-mark">?
+<a href=#70 id=70 data-nosnippet>70</a>        </span>};
+<a href=#71 id=71 data-nosnippet>71</a>
+<a href=#72 id=72 data-nosnippet>72</a>        <span class="comment">// TODO: Remove this when Decimal data type equality is implemented.
+<a href=#73 id=73 data-nosnippet>73</a>        </span><span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#74 id=74 data-nosnippet>74</a>        </span><span class="kw">if </span>dtype.is_decimal() {
+<a href=#75 id=75 data-nosnippet>75</a>            <span class="kw">let </span>dtype = DataType::Decimal(<span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
+<a href=#76 id=76 data-nosnippet>76</a>            <span class="kw">return </span><span class="self">Self</span>::from_any_values_and_dtype(name, values, <span class="kw-2">&amp;</span>dtype, strict);
+<a href=#77 id=77 data-nosnippet>77</a>        }
+<a href=#78 id=78 data-nosnippet>78</a>
+<a href=#79 id=79 data-nosnippet>79</a>        <span class="self">Self</span>::from_any_values_and_dtype(name, values, <span class="kw-2">&amp;</span>dtype, strict)
+<a href=#80 id=80 data-nosnippet>80</a>    }
+<a href=#81 id=81 data-nosnippet>81</a>
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="doccomment">/// Construct a new [`Series`] with the given `dtype` from a slice of AnyValues.
+<a href=#83 id=83 data-nosnippet>83</a>    ///
+<a href=#84 id=84 data-nosnippet>84</a>    /// If `strict` is `true`, an error is returned if the values do not match the given
+<a href=#85 id=85 data-nosnippet>85</a>    /// data type. If `strict` is `false`, values that do not match the given data type
+<a href=#86 id=86 data-nosnippet>86</a>    /// are cast. If casting is not possible, the values are set to null instead.
+<a href=#87 id=87 data-nosnippet>87</a>    </span><span class="kw">pub fn </span>from_any_values_and_dtype(
+<a href=#88 id=88 data-nosnippet>88</a>        name: PlSmallStr,
+<a href=#89 id=89 data-nosnippet>89</a>        values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#90 id=90 data-nosnippet>90</a>        dtype: <span class="kw-2">&amp;</span>DataType,
+<a href=#91 id=91 data-nosnippet>91</a>        strict: bool,
+<a href=#92 id=92 data-nosnippet>92</a>    ) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#93 id=93 data-nosnippet>93</a>        <span class="kw">if </span>values.is_empty() {
+<a href=#94 id=94 data-nosnippet>94</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="self">Self</span>::new_empty(name, dtype));
+<a href=#95 id=95 data-nosnippet>95</a>        }
+<a href=#96 id=96 data-nosnippet>96</a>
+<a href=#97 id=97 data-nosnippet>97</a>        <span class="kw">let </span><span class="kw-2">mut </span>s = <span class="kw">match </span>dtype {
+<a href=#98 id=98 data-nosnippet>98</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-i8"</span>)]
+<a href=#99 id=99 data-nosnippet>99</a>            </span>DataType::Int8 =&gt; any_values_to_integer::&lt;Int8Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#100 id=100 data-nosnippet>100</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-i16"</span>)]
+<a href=#101 id=101 data-nosnippet>101</a>            </span>DataType::Int16 =&gt; any_values_to_integer::&lt;Int16Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#102 id=102 data-nosnippet>102</a>            DataType::Int32 =&gt; any_values_to_integer::&lt;Int32Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#103 id=103 data-nosnippet>103</a>            DataType::Int64 =&gt; any_values_to_integer::&lt;Int64Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#104 id=104 data-nosnippet>104</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-i128"</span>)]
+<a href=#105 id=105 data-nosnippet>105</a>            </span>DataType::Int128 =&gt; any_values_to_integer::&lt;Int128Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#106 id=106 data-nosnippet>106</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-u8"</span>)]
+<a href=#107 id=107 data-nosnippet>107</a>            </span>DataType::UInt8 =&gt; any_values_to_integer::&lt;UInt8Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#108 id=108 data-nosnippet>108</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-u16"</span>)]
+<a href=#109 id=109 data-nosnippet>109</a>            </span>DataType::UInt16 =&gt; any_values_to_integer::&lt;UInt16Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#110 id=110 data-nosnippet>110</a>            DataType::UInt32 =&gt; any_values_to_integer::&lt;UInt32Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#111 id=111 data-nosnippet>111</a>            DataType::UInt64 =&gt; any_values_to_integer::&lt;UInt64Type&gt;(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#112 id=112 data-nosnippet>112</a>            DataType::Float32 =&gt; any_values_to_f32(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#113 id=113 data-nosnippet>113</a>            DataType::Float64 =&gt; any_values_to_f64(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#114 id=114 data-nosnippet>114</a>            DataType::Boolean =&gt; any_values_to_bool(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#115 id=115 data-nosnippet>115</a>            DataType::String =&gt; any_values_to_string(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#116 id=116 data-nosnippet>116</a>            DataType::Binary =&gt; any_values_to_binary(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#117 id=117 data-nosnippet>117</a>            DataType::BinaryOffset =&gt; any_values_to_binary_offset(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#118 id=118 data-nosnippet>118</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-date"</span>)]
+<a href=#119 id=119 data-nosnippet>119</a>            </span>DataType::Date =&gt; any_values_to_date(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#120 id=120 data-nosnippet>120</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-time"</span>)]
+<a href=#121 id=121 data-nosnippet>121</a>            </span>DataType::Time =&gt; any_values_to_time(values, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#122 id=122 data-nosnippet>122</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-datetime"</span>)]
+<a href=#123 id=123 data-nosnippet>123</a>            </span>DataType::Datetime(tu, tz) =&gt; {
+<a href=#124 id=124 data-nosnippet>124</a>                any_values_to_datetime(values, <span class="kw-2">*</span>tu, (<span class="kw-2">*</span>tz).clone(), strict)<span class="question-mark">?</span>.into_series()
+<a href=#125 id=125 data-nosnippet>125</a>            },
+<a href=#126 id=126 data-nosnippet>126</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-duration"</span>)]
+<a href=#127 id=127 data-nosnippet>127</a>            </span>DataType::Duration(tu) =&gt; any_values_to_duration(values, <span class="kw-2">*</span>tu, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#128 id=128 data-nosnippet>128</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#129 id=129 data-nosnippet>129</a>            </span>dt @ (DataType::Categorical(<span class="kw">_</span>, <span class="kw">_</span>) | DataType::Enum(<span class="kw">_</span>, <span class="kw">_</span>)) =&gt; {
+<a href=#130 id=130 data-nosnippet>130</a>                any_values_to_categorical(values, dt, strict)<span class="question-mark">?
+<a href=#131 id=131 data-nosnippet>131</a>            </span>},
+<a href=#132 id=132 data-nosnippet>132</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#133 id=133 data-nosnippet>133</a>            </span>DataType::Decimal(precision, scale) =&gt; {
+<a href=#134 id=134 data-nosnippet>134</a>                any_values_to_decimal(values, <span class="kw-2">*</span>precision, <span class="kw-2">*</span>scale, strict)<span class="question-mark">?</span>.into_series()
+<a href=#135 id=135 data-nosnippet>135</a>            },
+<a href=#136 id=136 data-nosnippet>136</a>            DataType::List(inner) =&gt; any_values_to_list(values, inner, strict)<span class="question-mark">?</span>.into_series(),
+<a href=#137 id=137 data-nosnippet>137</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-array"</span>)]
+<a href=#138 id=138 data-nosnippet>138</a>            </span>DataType::Array(inner, size) =&gt; any_values_to_array(values, inner, strict, <span class="kw-2">*</span>size)<span class="question-mark">?
+<a href=#139 id=139 data-nosnippet>139</a>                </span>.into_series()
+<a href=#140 id=140 data-nosnippet>140</a>                .cast(<span class="kw-2">&amp;</span>DataType::Array(inner.clone(), <span class="kw-2">*</span>size))<span class="question-mark">?</span>,
+<a href=#141 id=141 data-nosnippet>141</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#142 id=142 data-nosnippet>142</a>            </span>DataType::Struct(fields) =&gt; any_values_to_struct(values, fields, strict)<span class="question-mark">?</span>,
+<a href=#143 id=143 data-nosnippet>143</a>            <span class="attr">#[cfg(feature = <span class="string">"object"</span>)]
+<a href=#144 id=144 data-nosnippet>144</a>            </span>DataType::Object(<span class="kw">_</span>) =&gt; any_values_to_object(values)<span class="question-mark">?</span>,
+<a href=#145 id=145 data-nosnippet>145</a>            DataType::Null =&gt; Series::new_null(PlSmallStr::EMPTY, values.len()),
+<a href=#146 id=146 data-nosnippet>146</a>            dt =&gt; {
+<a href=#147 id=147 data-nosnippet>147</a>                <span class="macro">polars_bail!</span>(
+<a href=#148 id=148 data-nosnippet>148</a>                    InvalidOperation:
+<a href=#149 id=149 data-nosnippet>149</a>                    <span class="string">"constructing a Series with data type {dt:?} from AnyValues is not supported"
+<a href=#150 id=150 data-nosnippet>150</a>                </span>)
+<a href=#151 id=151 data-nosnippet>151</a>            },
+<a href=#152 id=152 data-nosnippet>152</a>        };
+<a href=#153 id=153 data-nosnippet>153</a>        s.rename(name);
+<a href=#154 id=154 data-nosnippet>154</a>        <span class="prelude-val">Ok</span>(s)
+<a href=#155 id=155 data-nosnippet>155</a>    }
+<a href=#156 id=156 data-nosnippet>156</a>}
+<a href=#157 id=157 data-nosnippet>157</a>
+<a href=#158 id=158 data-nosnippet>158</a><span class="kw">fn </span>any_values_to_primitive_nonstrict&lt;T: PolarsNumericType&gt;(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; ChunkedArray&lt;T&gt; {
+<a href=#159 id=159 data-nosnippet>159</a>    values
+<a href=#160 id=160 data-nosnippet>160</a>        .iter()
+<a href=#161 id=161 data-nosnippet>161</a>        .map(|av| av.extract::&lt;T::Native&gt;())
+<a href=#162 id=162 data-nosnippet>162</a>        .collect_trusted()
+<a href=#163 id=163 data-nosnippet>163</a>}
+<a href=#164 id=164 data-nosnippet>164</a>
+<a href=#165 id=165 data-nosnippet>165</a><span class="kw">fn </span>any_values_to_integer&lt;T: PolarsIntegerType&gt;(
+<a href=#166 id=166 data-nosnippet>166</a>    values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#167 id=167 data-nosnippet>167</a>    strict: bool,
+<a href=#168 id=168 data-nosnippet>168</a>) -&gt; PolarsResult&lt;ChunkedArray&lt;T&gt;&gt; {
+<a href=#169 id=169 data-nosnippet>169</a>    <span class="kw">fn </span>any_values_to_integer_strict&lt;T: PolarsIntegerType&gt;(
+<a href=#170 id=170 data-nosnippet>170</a>        values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#171 id=171 data-nosnippet>171</a>    ) -&gt; PolarsResult&lt;ChunkedArray&lt;T&gt;&gt; {
+<a href=#172 id=172 data-nosnippet>172</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder = PrimitiveChunkedBuilder::&lt;T&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#173 id=173 data-nosnippet>173</a>        <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#174 id=174 data-nosnippet>174</a>            <span class="kw">match </span><span class="kw-2">&amp;</span>av {
+<a href=#175 id=175 data-nosnippet>175</a>                av <span class="kw">if </span>av.is_integer() =&gt; {
+<a href=#176 id=176 data-nosnippet>176</a>                    <span class="kw">let </span>opt_val = av.extract::&lt;T::Native&gt;();
+<a href=#177 id=177 data-nosnippet>177</a>                    <span class="kw">let </span>val = <span class="kw">match </span>opt_val {
+<a href=#178 id=178 data-nosnippet>178</a>                        <span class="prelude-val">Some</span>(v) =&gt; v,
+<a href=#179 id=179 data-nosnippet>179</a>                        <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>T::get_static_dtype(), av)),
+<a href=#180 id=180 data-nosnippet>180</a>                    };
+<a href=#181 id=181 data-nosnippet>181</a>                    builder.append_value(val)
+<a href=#182 id=182 data-nosnippet>182</a>                },
+<a href=#183 id=183 data-nosnippet>183</a>                AnyValue::Null =&gt; builder.append_null(),
+<a href=#184 id=184 data-nosnippet>184</a>                av =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>T::get_static_dtype(), av)),
+<a href=#185 id=185 data-nosnippet>185</a>            }
+<a href=#186 id=186 data-nosnippet>186</a>        }
+<a href=#187 id=187 data-nosnippet>187</a>        <span class="prelude-val">Ok</span>(builder.finish())
+<a href=#188 id=188 data-nosnippet>188</a>    }
+<a href=#189 id=189 data-nosnippet>189</a>
+<a href=#190 id=190 data-nosnippet>190</a>    <span class="kw">if </span>strict {
+<a href=#191 id=191 data-nosnippet>191</a>        any_values_to_integer_strict::&lt;T&gt;(values)
+<a href=#192 id=192 data-nosnippet>192</a>    } <span class="kw">else </span>{
+<a href=#193 id=193 data-nosnippet>193</a>        <span class="prelude-val">Ok</span>(any_values_to_primitive_nonstrict::&lt;T&gt;(values))
+<a href=#194 id=194 data-nosnippet>194</a>    }
+<a href=#195 id=195 data-nosnippet>195</a>}
+<a href=#196 id=196 data-nosnippet>196</a>
+<a href=#197 id=197 data-nosnippet>197</a><span class="kw">fn </span>any_values_to_f32(values: <span class="kw-2">&amp;</span>[AnyValue], strict: bool) -&gt; PolarsResult&lt;Float32Chunked&gt; {
+<a href=#198 id=198 data-nosnippet>198</a>    <span class="kw">fn </span>any_values_to_f32_strict(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; PolarsResult&lt;Float32Chunked&gt; {
+<a href=#199 id=199 data-nosnippet>199</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder =
+<a href=#200 id=200 data-nosnippet>200</a>            PrimitiveChunkedBuilder::&lt;Float32Type&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#201 id=201 data-nosnippet>201</a>        <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#202 id=202 data-nosnippet>202</a>            <span class="kw">match </span>av {
+<a href=#203 id=203 data-nosnippet>203</a>                AnyValue::Float32(i) =&gt; builder.append_value(<span class="kw-2">*</span>i),
+<a href=#204 id=204 data-nosnippet>204</a>                AnyValue::Null =&gt; builder.append_null(),
+<a href=#205 id=205 data-nosnippet>205</a>                av =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::Float32, av)),
+<a href=#206 id=206 data-nosnippet>206</a>            }
+<a href=#207 id=207 data-nosnippet>207</a>        }
+<a href=#208 id=208 data-nosnippet>208</a>        <span class="prelude-val">Ok</span>(builder.finish())
+<a href=#209 id=209 data-nosnippet>209</a>    }
+<a href=#210 id=210 data-nosnippet>210</a>    <span class="kw">if </span>strict {
+<a href=#211 id=211 data-nosnippet>211</a>        any_values_to_f32_strict(values)
+<a href=#212 id=212 data-nosnippet>212</a>    } <span class="kw">else </span>{
+<a href=#213 id=213 data-nosnippet>213</a>        <span class="prelude-val">Ok</span>(any_values_to_primitive_nonstrict::&lt;Float32Type&gt;(values))
+<a href=#214 id=214 data-nosnippet>214</a>    }
+<a href=#215 id=215 data-nosnippet>215</a>}
+<a href=#216 id=216 data-nosnippet>216</a><span class="kw">fn </span>any_values_to_f64(values: <span class="kw-2">&amp;</span>[AnyValue], strict: bool) -&gt; PolarsResult&lt;Float64Chunked&gt; {
+<a href=#217 id=217 data-nosnippet>217</a>    <span class="kw">fn </span>any_values_to_f64_strict(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; PolarsResult&lt;Float64Chunked&gt; {
+<a href=#218 id=218 data-nosnippet>218</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder =
+<a href=#219 id=219 data-nosnippet>219</a>            PrimitiveChunkedBuilder::&lt;Float64Type&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#220 id=220 data-nosnippet>220</a>        <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#221 id=221 data-nosnippet>221</a>            <span class="kw">match </span>av {
+<a href=#222 id=222 data-nosnippet>222</a>                AnyValue::Float64(i) =&gt; builder.append_value(<span class="kw-2">*</span>i),
+<a href=#223 id=223 data-nosnippet>223</a>                AnyValue::Float32(i) =&gt; builder.append_value(<span class="kw-2">*</span>i <span class="kw">as </span>f64),
+<a href=#224 id=224 data-nosnippet>224</a>                AnyValue::Null =&gt; builder.append_null(),
+<a href=#225 id=225 data-nosnippet>225</a>                av =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::Float64, av)),
+<a href=#226 id=226 data-nosnippet>226</a>            }
+<a href=#227 id=227 data-nosnippet>227</a>        }
+<a href=#228 id=228 data-nosnippet>228</a>        <span class="prelude-val">Ok</span>(builder.finish())
+<a href=#229 id=229 data-nosnippet>229</a>    }
+<a href=#230 id=230 data-nosnippet>230</a>    <span class="kw">if </span>strict {
+<a href=#231 id=231 data-nosnippet>231</a>        any_values_to_f64_strict(values)
+<a href=#232 id=232 data-nosnippet>232</a>    } <span class="kw">else </span>{
+<a href=#233 id=233 data-nosnippet>233</a>        <span class="prelude-val">Ok</span>(any_values_to_primitive_nonstrict::&lt;Float64Type&gt;(values))
+<a href=#234 id=234 data-nosnippet>234</a>    }
+<a href=#235 id=235 data-nosnippet>235</a>}
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a><span class="kw">fn </span>any_values_to_bool(values: <span class="kw-2">&amp;</span>[AnyValue], strict: bool) -&gt; PolarsResult&lt;BooleanChunked&gt; {
+<a href=#238 id=238 data-nosnippet>238</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = BooleanChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
+<a href=#239 id=239 data-nosnippet>239</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw">match </span>av {
+<a href=#241 id=241 data-nosnippet>241</a>            AnyValue::Boolean(b) =&gt; builder.append_value(<span class="kw-2">*</span>b),
+<a href=#242 id=242 data-nosnippet>242</a>            AnyValue::Null =&gt; builder.append_null(),
+<a href=#243 id=243 data-nosnippet>243</a>            av =&gt; {
+<a href=#244 id=244 data-nosnippet>244</a>                <span class="kw">if </span>strict {
+<a href=#245 id=245 data-nosnippet>245</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::Boolean, av));
+<a href=#246 id=246 data-nosnippet>246</a>                }
+<a href=#247 id=247 data-nosnippet>247</a>                <span class="kw">match </span>av.cast(<span class="kw-2">&amp;</span>DataType::Boolean) {
+<a href=#248 id=248 data-nosnippet>248</a>                    AnyValue::Boolean(b) =&gt; builder.append_value(b),
+<a href=#249 id=249 data-nosnippet>249</a>                    <span class="kw">_ </span>=&gt; builder.append_null(),
+<a href=#250 id=250 data-nosnippet>250</a>                }
+<a href=#251 id=251 data-nosnippet>251</a>            },
+<a href=#252 id=252 data-nosnippet>252</a>        }
+<a href=#253 id=253 data-nosnippet>253</a>    }
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="prelude-val">Ok</span>(builder.finish())
+<a href=#255 id=255 data-nosnippet>255</a>}
+<a href=#256 id=256 data-nosnippet>256</a>
+<a href=#257 id=257 data-nosnippet>257</a><span class="kw">fn </span>any_values_to_string(values: <span class="kw-2">&amp;</span>[AnyValue], strict: bool) -&gt; PolarsResult&lt;StringChunked&gt; {
+<a href=#258 id=258 data-nosnippet>258</a>    <span class="kw">fn </span>any_values_to_string_strict(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; PolarsResult&lt;StringChunked&gt; {
+<a href=#259 id=259 data-nosnippet>259</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
+<a href=#260 id=260 data-nosnippet>260</a>        <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#261 id=261 data-nosnippet>261</a>            <span class="kw">match </span>av {
+<a href=#262 id=262 data-nosnippet>262</a>                AnyValue::String(s) =&gt; builder.append_value(s),
+<a href=#263 id=263 data-nosnippet>263</a>                AnyValue::StringOwned(s) =&gt; builder.append_value(s),
+<a href=#264 id=264 data-nosnippet>264</a>                AnyValue::Null =&gt; builder.append_null(),
+<a href=#265 id=265 data-nosnippet>265</a>                av =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::String, av)),
+<a href=#266 id=266 data-nosnippet>266</a>            }
+<a href=#267 id=267 data-nosnippet>267</a>        }
+<a href=#268 id=268 data-nosnippet>268</a>        <span class="prelude-val">Ok</span>(builder.finish())
+<a href=#269 id=269 data-nosnippet>269</a>    }
+<a href=#270 id=270 data-nosnippet>270</a>    <span class="kw">fn </span>any_values_to_string_nonstrict(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; StringChunked {
+<a href=#271 id=271 data-nosnippet>271</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
+<a href=#272 id=272 data-nosnippet>272</a>        <span class="kw">let </span><span class="kw-2">mut </span>owned = String::new(); <span class="comment">// Amortize allocations.
+<a href=#273 id=273 data-nosnippet>273</a>        </span><span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#274 id=274 data-nosnippet>274</a>            <span class="kw">match </span>av {
+<a href=#275 id=275 data-nosnippet>275</a>                AnyValue::String(s) =&gt; builder.append_value(s),
+<a href=#276 id=276 data-nosnippet>276</a>                AnyValue::StringOwned(s) =&gt; builder.append_value(s),
+<a href=#277 id=277 data-nosnippet>277</a>                AnyValue::Null =&gt; builder.append_null(),
+<a href=#278 id=278 data-nosnippet>278</a>                AnyValue::Binary(<span class="kw">_</span>) | AnyValue::BinaryOwned(<span class="kw">_</span>) =&gt; builder.append_null(),
+<a href=#279 id=279 data-nosnippet>279</a>                av =&gt; {
+<a href=#280 id=280 data-nosnippet>280</a>                    owned.clear();
+<a href=#281 id=281 data-nosnippet>281</a>                    <span class="macro">write!</span>(owned, <span class="string">"{av}"</span>).unwrap();
+<a href=#282 id=282 data-nosnippet>282</a>                    builder.append_value(<span class="kw-2">&amp;</span>owned);
+<a href=#283 id=283 data-nosnippet>283</a>                },
+<a href=#284 id=284 data-nosnippet>284</a>            }
+<a href=#285 id=285 data-nosnippet>285</a>        }
+<a href=#286 id=286 data-nosnippet>286</a>        builder.finish()
+<a href=#287 id=287 data-nosnippet>287</a>    }
+<a href=#288 id=288 data-nosnippet>288</a>    <span class="kw">if </span>strict {
+<a href=#289 id=289 data-nosnippet>289</a>        any_values_to_string_strict(values)
+<a href=#290 id=290 data-nosnippet>290</a>    } <span class="kw">else </span>{
+<a href=#291 id=291 data-nosnippet>291</a>        <span class="prelude-val">Ok</span>(any_values_to_string_nonstrict(values))
+<a href=#292 id=292 data-nosnippet>292</a>    }
+<a href=#293 id=293 data-nosnippet>293</a>}
+<a href=#294 id=294 data-nosnippet>294</a>
+<a href=#295 id=295 data-nosnippet>295</a><span class="kw">fn </span>any_values_to_binary(values: <span class="kw-2">&amp;</span>[AnyValue], strict: bool) -&gt; PolarsResult&lt;BinaryChunked&gt; {
+<a href=#296 id=296 data-nosnippet>296</a>    <span class="kw">fn </span>any_values_to_binary_strict(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; PolarsResult&lt;BinaryChunked&gt; {
+<a href=#297 id=297 data-nosnippet>297</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder = BinaryChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
+<a href=#298 id=298 data-nosnippet>298</a>        <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#299 id=299 data-nosnippet>299</a>            <span class="kw">match </span>av {
+<a href=#300 id=300 data-nosnippet>300</a>                AnyValue::Binary(s) =&gt; builder.append_value(<span class="kw-2">*</span>s),
+<a href=#301 id=301 data-nosnippet>301</a>                AnyValue::BinaryOwned(s) =&gt; builder.append_value(<span class="kw-2">&amp;**</span>s),
+<a href=#302 id=302 data-nosnippet>302</a>                AnyValue::Null =&gt; builder.append_null(),
+<a href=#303 id=303 data-nosnippet>303</a>                av =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::Binary, av)),
+<a href=#304 id=304 data-nosnippet>304</a>            }
+<a href=#305 id=305 data-nosnippet>305</a>        }
+<a href=#306 id=306 data-nosnippet>306</a>        <span class="prelude-val">Ok</span>(builder.finish())
+<a href=#307 id=307 data-nosnippet>307</a>    }
+<a href=#308 id=308 data-nosnippet>308</a>    <span class="kw">fn </span>any_values_to_binary_nonstrict(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; BinaryChunked {
+<a href=#309 id=309 data-nosnippet>309</a>        values
+<a href=#310 id=310 data-nosnippet>310</a>            .iter()
+<a href=#311 id=311 data-nosnippet>311</a>            .map(|av| <span class="kw">match </span>av {
+<a href=#312 id=312 data-nosnippet>312</a>                AnyValue::Binary(b) =&gt; <span class="prelude-val">Some</span>(<span class="kw-2">*</span>b),
+<a href=#313 id=313 data-nosnippet>313</a>                AnyValue::BinaryOwned(b) =&gt; <span class="prelude-val">Some</span>(<span class="kw-2">&amp;**</span>b),
+<a href=#314 id=314 data-nosnippet>314</a>                AnyValue::String(s) =&gt; <span class="prelude-val">Some</span>(s.as_bytes()),
+<a href=#315 id=315 data-nosnippet>315</a>                AnyValue::StringOwned(s) =&gt; <span class="prelude-val">Some</span>(s.as_str().as_bytes()),
+<a href=#316 id=316 data-nosnippet>316</a>                <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#317 id=317 data-nosnippet>317</a>            })
+<a href=#318 id=318 data-nosnippet>318</a>            .collect_trusted()
+<a href=#319 id=319 data-nosnippet>319</a>    }
+<a href=#320 id=320 data-nosnippet>320</a>    <span class="kw">if </span>strict {
+<a href=#321 id=321 data-nosnippet>321</a>        any_values_to_binary_strict(values)
+<a href=#322 id=322 data-nosnippet>322</a>    } <span class="kw">else </span>{
+<a href=#323 id=323 data-nosnippet>323</a>        <span class="prelude-val">Ok</span>(any_values_to_binary_nonstrict(values))
+<a href=#324 id=324 data-nosnippet>324</a>    }
+<a href=#325 id=325 data-nosnippet>325</a>}
+<a href=#326 id=326 data-nosnippet>326</a>
+<a href=#327 id=327 data-nosnippet>327</a><span class="kw">fn </span>any_values_to_binary_offset(
+<a href=#328 id=328 data-nosnippet>328</a>    values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#329 id=329 data-nosnippet>329</a>    strict: bool,
+<a href=#330 id=330 data-nosnippet>330</a>) -&gt; PolarsResult&lt;BinaryOffsetChunked&gt; {
+<a href=#331 id=331 data-nosnippet>331</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = MutableBinaryArray::&lt;i64&gt;::new();
+<a href=#332 id=332 data-nosnippet>332</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#333 id=333 data-nosnippet>333</a>        <span class="kw">match </span>av {
+<a href=#334 id=334 data-nosnippet>334</a>            AnyValue::Binary(s) =&gt; builder.push(<span class="prelude-val">Some</span>(<span class="kw-2">*</span>s)),
+<a href=#335 id=335 data-nosnippet>335</a>            AnyValue::BinaryOwned(s) =&gt; builder.push(<span class="prelude-val">Some</span>(<span class="kw-2">&amp;**</span>s)),
+<a href=#336 id=336 data-nosnippet>336</a>            AnyValue::Null =&gt; builder.push_null(),
+<a href=#337 id=337 data-nosnippet>337</a>            av =&gt; {
+<a href=#338 id=338 data-nosnippet>338</a>                <span class="kw">if </span>strict {
+<a href=#339 id=339 data-nosnippet>339</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::Binary, av));
+<a href=#340 id=340 data-nosnippet>340</a>                } <span class="kw">else </span>{
+<a href=#341 id=341 data-nosnippet>341</a>                    builder.push_null();
+<a href=#342 id=342 data-nosnippet>342</a>                };
+<a href=#343 id=343 data-nosnippet>343</a>            },
+<a href=#344 id=344 data-nosnippet>344</a>        }
+<a href=#345 id=345 data-nosnippet>345</a>    }
+<a href=#346 id=346 data-nosnippet>346</a>    <span class="prelude-val">Ok</span>(BinaryOffsetChunked::with_chunk(
+<a href=#347 id=347 data-nosnippet>347</a>        Default::default(),
+<a href=#348 id=348 data-nosnippet>348</a>        builder.into(),
+<a href=#349 id=349 data-nosnippet>349</a>    ))
+<a href=#350 id=350 data-nosnippet>350</a>}
+<a href=#351 id=351 data-nosnippet>351</a>
+<a href=#352 id=352 data-nosnippet>352</a><span class="attr">#[cfg(feature = <span class="string">"dtype-date"</span>)]
+<a href=#353 id=353 data-nosnippet>353</a></span><span class="kw">fn </span>any_values_to_date(values: <span class="kw-2">&amp;</span>[AnyValue], strict: bool) -&gt; PolarsResult&lt;DateChunked&gt; {
+<a href=#354 id=354 data-nosnippet>354</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = PrimitiveChunkedBuilder::&lt;Int32Type&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#355 id=355 data-nosnippet>355</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#356 id=356 data-nosnippet>356</a>        <span class="kw">match </span>av {
+<a href=#357 id=357 data-nosnippet>357</a>            AnyValue::Date(i) =&gt; builder.append_value(<span class="kw-2">*</span>i),
+<a href=#358 id=358 data-nosnippet>358</a>            AnyValue::Null =&gt; builder.append_null(),
+<a href=#359 id=359 data-nosnippet>359</a>            av =&gt; {
+<a href=#360 id=360 data-nosnippet>360</a>                <span class="kw">if </span>strict {
+<a href=#361 id=361 data-nosnippet>361</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::Date, av));
+<a href=#362 id=362 data-nosnippet>362</a>                }
+<a href=#363 id=363 data-nosnippet>363</a>                <span class="kw">match </span>av.cast(<span class="kw-2">&amp;</span>DataType::Date) {
+<a href=#364 id=364 data-nosnippet>364</a>                    AnyValue::Date(i) =&gt; builder.append_value(i),
+<a href=#365 id=365 data-nosnippet>365</a>                    <span class="kw">_ </span>=&gt; builder.append_null(),
+<a href=#366 id=366 data-nosnippet>366</a>                }
+<a href=#367 id=367 data-nosnippet>367</a>            },
+<a href=#368 id=368 data-nosnippet>368</a>        }
+<a href=#369 id=369 data-nosnippet>369</a>    }
+<a href=#370 id=370 data-nosnippet>370</a>    <span class="prelude-val">Ok</span>(builder.finish().into_date())
+<a href=#371 id=371 data-nosnippet>371</a>}
+<a href=#372 id=372 data-nosnippet>372</a>
+<a href=#373 id=373 data-nosnippet>373</a><span class="attr">#[cfg(feature = <span class="string">"dtype-time"</span>)]
+<a href=#374 id=374 data-nosnippet>374</a></span><span class="kw">fn </span>any_values_to_time(values: <span class="kw-2">&amp;</span>[AnyValue], strict: bool) -&gt; PolarsResult&lt;TimeChunked&gt; {
+<a href=#375 id=375 data-nosnippet>375</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = PrimitiveChunkedBuilder::&lt;Int64Type&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#376 id=376 data-nosnippet>376</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#377 id=377 data-nosnippet>377</a>        <span class="kw">match </span>av {
+<a href=#378 id=378 data-nosnippet>378</a>            AnyValue::Time(i) =&gt; builder.append_value(<span class="kw-2">*</span>i),
+<a href=#379 id=379 data-nosnippet>379</a>            AnyValue::Null =&gt; builder.append_null(),
+<a href=#380 id=380 data-nosnippet>380</a>            av =&gt; {
+<a href=#381 id=381 data-nosnippet>381</a>                <span class="kw">if </span>strict {
+<a href=#382 id=382 data-nosnippet>382</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::Time, av));
+<a href=#383 id=383 data-nosnippet>383</a>                }
+<a href=#384 id=384 data-nosnippet>384</a>                <span class="kw">match </span>av.cast(<span class="kw-2">&amp;</span>DataType::Time) {
+<a href=#385 id=385 data-nosnippet>385</a>                    AnyValue::Time(i) =&gt; builder.append_value(i),
+<a href=#386 id=386 data-nosnippet>386</a>                    <span class="kw">_ </span>=&gt; builder.append_null(),
+<a href=#387 id=387 data-nosnippet>387</a>                }
+<a href=#388 id=388 data-nosnippet>388</a>            },
+<a href=#389 id=389 data-nosnippet>389</a>        }
+<a href=#390 id=390 data-nosnippet>390</a>    }
+<a href=#391 id=391 data-nosnippet>391</a>    <span class="prelude-val">Ok</span>(builder.finish().into_time())
+<a href=#392 id=392 data-nosnippet>392</a>}
+<a href=#393 id=393 data-nosnippet>393</a>
+<a href=#394 id=394 data-nosnippet>394</a><span class="attr">#[cfg(feature = <span class="string">"dtype-datetime"</span>)]
+<a href=#395 id=395 data-nosnippet>395</a></span><span class="kw">fn </span>any_values_to_datetime(
+<a href=#396 id=396 data-nosnippet>396</a>    values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#397 id=397 data-nosnippet>397</a>    time_unit: TimeUnit,
+<a href=#398 id=398 data-nosnippet>398</a>    time_zone: <span class="prelude-ty">Option</span>&lt;TimeZone&gt;,
+<a href=#399 id=399 data-nosnippet>399</a>    strict: bool,
+<a href=#400 id=400 data-nosnippet>400</a>) -&gt; PolarsResult&lt;DatetimeChunked&gt; {
+<a href=#401 id=401 data-nosnippet>401</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = PrimitiveChunkedBuilder::&lt;Int64Type&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#402 id=402 data-nosnippet>402</a>    <span class="kw">let </span>target_dtype = DataType::Datetime(time_unit, time_zone.clone());
+<a href=#403 id=403 data-nosnippet>403</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#404 id=404 data-nosnippet>404</a>        <span class="kw">match </span>av {
+<a href=#405 id=405 data-nosnippet>405</a>            AnyValue::Datetime(i, tu, <span class="kw">_</span>) <span class="kw">if </span><span class="kw-2">*</span>tu == time_unit =&gt; builder.append_value(<span class="kw-2">*</span>i),
+<a href=#406 id=406 data-nosnippet>406</a>            AnyValue::DatetimeOwned(i, tu, <span class="kw">_</span>) <span class="kw">if </span><span class="kw-2">*</span>tu == time_unit =&gt; builder.append_value(<span class="kw-2">*</span>i),
+<a href=#407 id=407 data-nosnippet>407</a>            AnyValue::Null =&gt; builder.append_null(),
+<a href=#408 id=408 data-nosnippet>408</a>            av =&gt; {
+<a href=#409 id=409 data-nosnippet>409</a>                <span class="kw">if </span>strict {
+<a href=#410 id=410 data-nosnippet>410</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>target_dtype, av));
+<a href=#411 id=411 data-nosnippet>411</a>                }
+<a href=#412 id=412 data-nosnippet>412</a>                <span class="kw">match </span>av.cast(<span class="kw-2">&amp;</span>target_dtype) {
+<a href=#413 id=413 data-nosnippet>413</a>                    AnyValue::Datetime(i, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; builder.append_value(i),
+<a href=#414 id=414 data-nosnippet>414</a>                    AnyValue::DatetimeOwned(i, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; builder.append_value(i),
+<a href=#415 id=415 data-nosnippet>415</a>                    <span class="kw">_ </span>=&gt; builder.append_null(),
+<a href=#416 id=416 data-nosnippet>416</a>                }
+<a href=#417 id=417 data-nosnippet>417</a>            },
+<a href=#418 id=418 data-nosnippet>418</a>        }
+<a href=#419 id=419 data-nosnippet>419</a>    }
+<a href=#420 id=420 data-nosnippet>420</a>    <span class="prelude-val">Ok</span>(builder.finish().into_datetime(time_unit, time_zone))
+<a href=#421 id=421 data-nosnippet>421</a>}
+<a href=#422 id=422 data-nosnippet>422</a>
+<a href=#423 id=423 data-nosnippet>423</a><span class="attr">#[cfg(feature = <span class="string">"dtype-duration"</span>)]
+<a href=#424 id=424 data-nosnippet>424</a></span><span class="kw">fn </span>any_values_to_duration(
+<a href=#425 id=425 data-nosnippet>425</a>    values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#426 id=426 data-nosnippet>426</a>    time_unit: TimeUnit,
+<a href=#427 id=427 data-nosnippet>427</a>    strict: bool,
+<a href=#428 id=428 data-nosnippet>428</a>) -&gt; PolarsResult&lt;DurationChunked&gt; {
+<a href=#429 id=429 data-nosnippet>429</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = PrimitiveChunkedBuilder::&lt;Int64Type&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#430 id=430 data-nosnippet>430</a>    <span class="kw">let </span>target_dtype = DataType::Duration(time_unit);
+<a href=#431 id=431 data-nosnippet>431</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#432 id=432 data-nosnippet>432</a>        <span class="kw">match </span>av {
+<a href=#433 id=433 data-nosnippet>433</a>            AnyValue::Duration(i, tu) <span class="kw">if </span><span class="kw-2">*</span>tu == time_unit =&gt; builder.append_value(<span class="kw-2">*</span>i),
+<a href=#434 id=434 data-nosnippet>434</a>            AnyValue::Null =&gt; builder.append_null(),
+<a href=#435 id=435 data-nosnippet>435</a>            av =&gt; {
+<a href=#436 id=436 data-nosnippet>436</a>                <span class="kw">if </span>strict {
+<a href=#437 id=437 data-nosnippet>437</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>target_dtype, av));
+<a href=#438 id=438 data-nosnippet>438</a>                }
+<a href=#439 id=439 data-nosnippet>439</a>                <span class="kw">match </span>av.cast(<span class="kw-2">&amp;</span>target_dtype) {
+<a href=#440 id=440 data-nosnippet>440</a>                    AnyValue::Duration(i, <span class="kw">_</span>) =&gt; builder.append_value(i),
+<a href=#441 id=441 data-nosnippet>441</a>                    <span class="kw">_ </span>=&gt; builder.append_null(),
+<a href=#442 id=442 data-nosnippet>442</a>                }
+<a href=#443 id=443 data-nosnippet>443</a>            },
+<a href=#444 id=444 data-nosnippet>444</a>        }
+<a href=#445 id=445 data-nosnippet>445</a>    }
+<a href=#446 id=446 data-nosnippet>446</a>    <span class="prelude-val">Ok</span>(builder.finish().into_duration(time_unit))
+<a href=#447 id=447 data-nosnippet>447</a>}
+<a href=#448 id=448 data-nosnippet>448</a>
+<a href=#449 id=449 data-nosnippet>449</a><span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#450 id=450 data-nosnippet>450</a></span><span class="kw">fn </span>any_values_to_categorical(
+<a href=#451 id=451 data-nosnippet>451</a>    values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#452 id=452 data-nosnippet>452</a>    dtype: <span class="kw-2">&amp;</span>DataType,
+<a href=#453 id=453 data-nosnippet>453</a>    strict: bool,
+<a href=#454 id=454 data-nosnippet>454</a>) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#455 id=455 data-nosnippet>455</a>    <span class="macro">with_match_categorical_physical_type!</span>(dtype.cat_physical().unwrap(), |<span class="macro-nonterminal">$C</span>| {
+<a href=#456 id=456 data-nosnippet>456</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder = CategoricalChunkedBuilder::&lt;<span class="macro-nonterminal">$C</span>&gt;::new(PlSmallStr::EMPTY, dtype.clone());
+<a href=#457 id=457 data-nosnippet>457</a>
+<a href=#458 id=458 data-nosnippet>458</a>        <span class="kw">let </span><span class="kw-2">mut </span>owned = String::new(); <span class="comment">// Amortize allocations.
+<a href=#459 id=459 data-nosnippet>459</a>        </span><span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#460 id=460 data-nosnippet>460</a>            <span class="kw">let </span>ret = <span class="kw">match </span>av {
+<a href=#461 id=461 data-nosnippet>461</a>                AnyValue::String(s) =&gt; builder.append_str(s),
+<a href=#462 id=462 data-nosnippet>462</a>                AnyValue::StringOwned(s) =&gt; builder.append_str(s),
+<a href=#463 id=463 data-nosnippet>463</a>
+<a href=#464 id=464 data-nosnippet>464</a>                <span class="kw-2">&amp;</span>AnyValue::Enum(cat, <span class="kw-2">&amp;ref </span>map) |
+<a href=#465 id=465 data-nosnippet>465</a>                <span class="kw-2">&amp;</span>AnyValue::EnumOwned(cat, <span class="kw-2">ref </span>map) |
+<a href=#466 id=466 data-nosnippet>466</a>                <span class="kw-2">&amp;</span>AnyValue::Categorical(cat, <span class="kw-2">&amp;ref </span>map) |
+<a href=#467 id=467 data-nosnippet>467</a>                <span class="kw-2">&amp;</span>AnyValue::CategoricalOwned(cat, <span class="kw-2">ref </span>map) =&gt; builder.append_cat(cat, map),
+<a href=#468 id=468 data-nosnippet>468</a>
+<a href=#469 id=469 data-nosnippet>469</a>                AnyValue::Binary(<span class="kw">_</span>) | AnyValue::BinaryOwned(<span class="kw">_</span>) <span class="kw">if </span>!strict =&gt; {
+<a href=#470 id=470 data-nosnippet>470</a>                    builder.append_null();
+<a href=#471 id=471 data-nosnippet>471</a>                    <span class="prelude-val">Ok</span>(())
+<a href=#472 id=472 data-nosnippet>472</a>                },
+<a href=#473 id=473 data-nosnippet>473</a>                AnyValue::Null =&gt; {
+<a href=#474 id=474 data-nosnippet>474</a>                    builder.append_null();
+<a href=#475 id=475 data-nosnippet>475</a>                    <span class="prelude-val">Ok</span>(())
+<a href=#476 id=476 data-nosnippet>476</a>                }
+<a href=#477 id=477 data-nosnippet>477</a>
+<a href=#478 id=478 data-nosnippet>478</a>                av =&gt; {
+<a href=#479 id=479 data-nosnippet>479</a>                    <span class="kw">if </span>strict {
+<a href=#480 id=480 data-nosnippet>480</a>                        <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>DataType::String, av));
+<a href=#481 id=481 data-nosnippet>481</a>                    }
+<a href=#482 id=482 data-nosnippet>482</a>
+<a href=#483 id=483 data-nosnippet>483</a>                    owned.clear();
+<a href=#484 id=484 data-nosnippet>484</a>                    <span class="macro">write!</span>(owned, <span class="string">"{av}"</span>).unwrap();
+<a href=#485 id=485 data-nosnippet>485</a>                    builder.append_str(<span class="kw-2">&amp;</span>owned)
+<a href=#486 id=486 data-nosnippet>486</a>                },
+<a href=#487 id=487 data-nosnippet>487</a>            };
+<a href=#488 id=488 data-nosnippet>488</a>
+<a href=#489 id=489 data-nosnippet>489</a>            <span class="kw">if let </span><span class="prelude-val">Err</span>(e) = ret {
+<a href=#490 id=490 data-nosnippet>490</a>                <span class="kw">if </span>strict {
+<a href=#491 id=491 data-nosnippet>491</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(e);
+<a href=#492 id=492 data-nosnippet>492</a>                } <span class="kw">else </span>{
+<a href=#493 id=493 data-nosnippet>493</a>                    builder.append_null();
+<a href=#494 id=494 data-nosnippet>494</a>                }
+<a href=#495 id=495 data-nosnippet>495</a>            }
+<a href=#496 id=496 data-nosnippet>496</a>        }
+<a href=#497 id=497 data-nosnippet>497</a>
+<a href=#498 id=498 data-nosnippet>498</a>        <span class="kw">let </span>ca = builder.finish();
+<a href=#499 id=499 data-nosnippet>499</a>        <span class="prelude-val">Ok</span>(ca.into_series())
+<a href=#500 id=500 data-nosnippet>500</a>    })
+<a href=#501 id=501 data-nosnippet>501</a>}
+<a href=#502 id=502 data-nosnippet>502</a>
+<a href=#503 id=503 data-nosnippet>503</a><span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#504 id=504 data-nosnippet>504</a></span><span class="kw">fn </span>any_values_to_decimal(
+<a href=#505 id=505 data-nosnippet>505</a>    values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#506 id=506 data-nosnippet>506</a>    precision: <span class="prelude-ty">Option</span>&lt;usize&gt;,
+<a href=#507 id=507 data-nosnippet>507</a>    scale: <span class="prelude-ty">Option</span>&lt;usize&gt;, <span class="comment">// If None, we're inferring the scale.
+<a href=#508 id=508 data-nosnippet>508</a>    </span>strict: bool,
+<a href=#509 id=509 data-nosnippet>509</a>) -&gt; PolarsResult&lt;DecimalChunked&gt; {
+<a href=#510 id=510 data-nosnippet>510</a>    <span class="doccomment">/// Get the maximum scale among AnyValues
+<a href=#511 id=511 data-nosnippet>511</a>    </span><span class="kw">fn </span>infer_scale(
+<a href=#512 id=512 data-nosnippet>512</a>        values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#513 id=513 data-nosnippet>513</a>        precision: <span class="prelude-ty">Option</span>&lt;usize&gt;,
+<a href=#514 id=514 data-nosnippet>514</a>        strict: bool,
+<a href=#515 id=515 data-nosnippet>515</a>    ) -&gt; PolarsResult&lt;usize&gt; {
+<a href=#516 id=516 data-nosnippet>516</a>        <span class="kw">let </span><span class="kw-2">mut </span>max_scale = <span class="number">0</span>;
+<a href=#517 id=517 data-nosnippet>517</a>        <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#518 id=518 data-nosnippet>518</a>            <span class="kw">let </span>av_scale = <span class="kw">match </span>av {
+<a href=#519 id=519 data-nosnippet>519</a>                AnyValue::Decimal(<span class="kw">_</span>, scale) =&gt; <span class="kw-2">*</span>scale,
+<a href=#520 id=520 data-nosnippet>520</a>                AnyValue::Null =&gt; <span class="kw">continue</span>,
+<a href=#521 id=521 data-nosnippet>521</a>                av =&gt; {
+<a href=#522 id=522 data-nosnippet>522</a>                    <span class="kw">if </span>strict {
+<a href=#523 id=523 data-nosnippet>523</a>                        <span class="kw">let </span>target_dtype = DataType::Decimal(precision, <span class="prelude-val">None</span>);
+<a href=#524 id=524 data-nosnippet>524</a>                        <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>target_dtype, av));
+<a href=#525 id=525 data-nosnippet>525</a>                    }
+<a href=#526 id=526 data-nosnippet>526</a>                    <span class="kw">continue</span>;
+<a href=#527 id=527 data-nosnippet>527</a>                },
+<a href=#528 id=528 data-nosnippet>528</a>            };
+<a href=#529 id=529 data-nosnippet>529</a>            max_scale = max_scale.max(av_scale);
+<a href=#530 id=530 data-nosnippet>530</a>        }
+<a href=#531 id=531 data-nosnippet>531</a>        <span class="prelude-val">Ok</span>(max_scale)
+<a href=#532 id=532 data-nosnippet>532</a>    }
+<a href=#533 id=533 data-nosnippet>533</a>    <span class="kw">let </span>scale = <span class="kw">match </span>scale {
+<a href=#534 id=534 data-nosnippet>534</a>        <span class="prelude-val">Some</span>(s) =&gt; s,
+<a href=#535 id=535 data-nosnippet>535</a>        <span class="prelude-val">None </span>=&gt; infer_scale(values, precision, strict)<span class="question-mark">?</span>,
+<a href=#536 id=536 data-nosnippet>536</a>    };
+<a href=#537 id=537 data-nosnippet>537</a>    <span class="kw">let </span>target_dtype = DataType::Decimal(precision, <span class="prelude-val">Some</span>(scale));
+<a href=#538 id=538 data-nosnippet>538</a>
+<a href=#539 id=539 data-nosnippet>539</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = PrimitiveChunkedBuilder::&lt;Int128Type&gt;::new(PlSmallStr::EMPTY, values.len());
+<a href=#540 id=540 data-nosnippet>540</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#541 id=541 data-nosnippet>541</a>        <span class="kw">match </span>av {
+<a href=#542 id=542 data-nosnippet>542</a>            <span class="comment">// Allow equal or less scale. We do want to support different scales even in 'strict' mode.
+<a href=#543 id=543 data-nosnippet>543</a>            </span>AnyValue::Decimal(v, s) <span class="kw">if </span><span class="kw-2">*</span>s &lt;= scale =&gt; {
+<a href=#544 id=544 data-nosnippet>544</a>                <span class="kw">if </span><span class="kw-2">*</span>s == scale {
+<a href=#545 id=545 data-nosnippet>545</a>                    builder.append_value(<span class="kw-2">*</span>v)
+<a href=#546 id=546 data-nosnippet>546</a>                } <span class="kw">else </span>{
+<a href=#547 id=547 data-nosnippet>547</a>                    <span class="kw">match </span>av.strict_cast(<span class="kw-2">&amp;</span>target_dtype) {
+<a href=#548 id=548 data-nosnippet>548</a>                        <span class="prelude-val">Some</span>(AnyValue::Decimal(i, <span class="kw">_</span>)) =&gt; builder.append_value(i),
+<a href=#549 id=549 data-nosnippet>549</a>                        <span class="kw">_ </span>=&gt; builder.append_null(),
+<a href=#550 id=550 data-nosnippet>550</a>                    }
+<a href=#551 id=551 data-nosnippet>551</a>                }
+<a href=#552 id=552 data-nosnippet>552</a>            },
+<a href=#553 id=553 data-nosnippet>553</a>            AnyValue::Null =&gt; builder.append_null(),
+<a href=#554 id=554 data-nosnippet>554</a>            av =&gt; {
+<a href=#555 id=555 data-nosnippet>555</a>                <span class="kw">if </span>strict {
+<a href=#556 id=556 data-nosnippet>556</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(invalid_value_error(<span class="kw-2">&amp;</span>target_dtype, av));
+<a href=#557 id=557 data-nosnippet>557</a>                }
+<a href=#558 id=558 data-nosnippet>558</a>                <span class="comment">// TODO: Precision check, else set to null
+<a href=#559 id=559 data-nosnippet>559</a>                </span><span class="kw">match </span>av.strict_cast(<span class="kw-2">&amp;</span>target_dtype) {
+<a href=#560 id=560 data-nosnippet>560</a>                    <span class="prelude-val">Some</span>(AnyValue::Decimal(i, <span class="kw">_</span>)) =&gt; builder.append_value(i),
+<a href=#561 id=561 data-nosnippet>561</a>                    <span class="kw">_ </span>=&gt; builder.append_null(),
+<a href=#562 id=562 data-nosnippet>562</a>                }
+<a href=#563 id=563 data-nosnippet>563</a>            },
+<a href=#564 id=564 data-nosnippet>564</a>        };
+<a href=#565 id=565 data-nosnippet>565</a>    }
+<a href=#566 id=566 data-nosnippet>566</a>
+<a href=#567 id=567 data-nosnippet>567</a>    <span class="comment">// Build the array and do a precision check if needed.
+<a href=#568 id=568 data-nosnippet>568</a>    </span>builder.finish().into_decimal(precision, scale)
+<a href=#569 id=569 data-nosnippet>569</a>}
+<a href=#570 id=570 data-nosnippet>570</a>
+<a href=#571 id=571 data-nosnippet>571</a><span class="kw">fn </span>any_values_to_list(
+<a href=#572 id=572 data-nosnippet>572</a>    avs: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#573 id=573 data-nosnippet>573</a>    inner_type: <span class="kw-2">&amp;</span>DataType,
+<a href=#574 id=574 data-nosnippet>574</a>    strict: bool,
+<a href=#575 id=575 data-nosnippet>575</a>) -&gt; PolarsResult&lt;ListChunked&gt; {
+<a href=#576 id=576 data-nosnippet>576</a>    <span class="comment">// GB:
+<a href=#577 id=577 data-nosnippet>577</a>    // Lord forgive for the sins I have committed in this function. The amount of strange
+<a href=#578 id=578 data-nosnippet>578</a>    // exceptions that need to happen for this to work are insane and I feel like I am going crazy.
+<a href=#579 id=579 data-nosnippet>579</a>    //
+<a href=#580 id=580 data-nosnippet>580</a>    // This function is essentially a copy of the `&lt;ListChunked as FromIterator&gt;` where it does not
+<a href=#581 id=581 data-nosnippet>581</a>    // sample the datatype from the first element and instead we give it explicitly. This allows
+<a href=#582 id=582 data-nosnippet>582</a>    // this function to properly assign a datatype if `avs` starts with a `null` value. Previously,
+<a href=#583 id=583 data-nosnippet>583</a>    // this was solved by assigning the `dtype` again afterwards, but why? We should not link the
+<a href=#584 id=584 data-nosnippet>584</a>    // implementation of these functions. We still need to assign the dtype of the ListArray and
+<a href=#585 id=585 data-nosnippet>585</a>    // such, anyways.
+<a href=#586 id=586 data-nosnippet>586</a>    //
+<a href=#587 id=587 data-nosnippet>587</a>    // Then, `collect_ca_with_dtype` does not possess the necessary exceptions shown in this
+<a href=#588 id=588 data-nosnippet>588</a>    // function to use that. I have tried adding the exceptions there and it broke other things. I
+<a href=#589 id=589 data-nosnippet>589</a>    // really do feel like this is the simplest solution.
+<a href=#590 id=590 data-nosnippet>590</a>
+<a href=#591 id=591 data-nosnippet>591</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>valid = <span class="bool-val">true</span>;
+<a href=#592 id=592 data-nosnippet>592</a>    <span class="kw">let </span>capacity = avs.len();
+<a href=#593 id=593 data-nosnippet>593</a>
+<a href=#594 id=594 data-nosnippet>594</a>    <span class="kw">let </span>ca = <span class="kw">match </span>inner_type {
+<a href=#595 id=595 data-nosnippet>595</a>        <span class="comment">// AnyValues with empty lists in python can create
+<a href=#596 id=596 data-nosnippet>596</a>        // Series of an unknown dtype.
+<a href=#597 id=597 data-nosnippet>597</a>        // We use the anonymousbuilder without a dtype
+<a href=#598 id=598 data-nosnippet>598</a>        // the empty arrays is then not added (we add an extra offset instead)
+<a href=#599 id=599 data-nosnippet>599</a>        // the next non-empty series then must have the correct dtype.
+<a href=#600 id=600 data-nosnippet>600</a>        </span>DataType::Null =&gt; {
+<a href=#601 id=601 data-nosnippet>601</a>            <span class="kw">let </span><span class="kw-2">mut </span>builder = AnonymousOwnedListBuilder::new(PlSmallStr::EMPTY, capacity, <span class="prelude-val">None</span>);
+<a href=#602 id=602 data-nosnippet>602</a>            <span class="kw">for </span>av <span class="kw">in </span>avs {
+<a href=#603 id=603 data-nosnippet>603</a>                <span class="kw">match </span>av {
+<a href=#604 id=604 data-nosnippet>604</a>                    AnyValue::List(b) =&gt; builder.append_series(b)<span class="question-mark">?</span>,
+<a href=#605 id=605 data-nosnippet>605</a>                    AnyValue::Null =&gt; builder.append_null(),
+<a href=#606 id=606 data-nosnippet>606</a>                    <span class="kw">_ </span>=&gt; {
+<a href=#607 id=607 data-nosnippet>607</a>                        valid = <span class="bool-val">false</span>;
+<a href=#608 id=608 data-nosnippet>608</a>                        builder.append_null();
+<a href=#609 id=609 data-nosnippet>609</a>                    },
+<a href=#610 id=610 data-nosnippet>610</a>                }
+<a href=#611 id=611 data-nosnippet>611</a>            }
+<a href=#612 id=612 data-nosnippet>612</a>            builder.finish()
+<a href=#613 id=613 data-nosnippet>613</a>        },
+<a href=#614 id=614 data-nosnippet>614</a>
+<a href=#615 id=615 data-nosnippet>615</a>        <span class="attr">#[cfg(feature = <span class="string">"object"</span>)]
+<a href=#616 id=616 data-nosnippet>616</a>        </span>DataType::Object(<span class="kw">_</span>) =&gt; <span class="macro">polars_bail!</span>(nyi = <span class="string">"Nested object types"</span>),
+<a href=#617 id=617 data-nosnippet>617</a>
+<a href=#618 id=618 data-nosnippet>618</a>        <span class="kw">_ </span>=&gt; {
+<a href=#619 id=619 data-nosnippet>619</a>            <span class="kw">let </span><span class="kw-2">mut </span>builder =
+<a href=#620 id=620 data-nosnippet>620</a>                get_list_builder(inner_type, capacity * <span class="number">5</span>, capacity, PlSmallStr::EMPTY);
+<a href=#621 id=621 data-nosnippet>621</a>            <span class="kw">for </span>av <span class="kw">in </span>avs {
+<a href=#622 id=622 data-nosnippet>622</a>                <span class="kw">match </span>av {
+<a href=#623 id=623 data-nosnippet>623</a>                    AnyValue::List(b) =&gt; <span class="kw">match </span>b.cast(inner_type) {
+<a href=#624 id=624 data-nosnippet>624</a>                        <span class="prelude-val">Ok</span>(casted) =&gt; {
+<a href=#625 id=625 data-nosnippet>625</a>                            <span class="kw">if </span>casted.null_count() != b.null_count() {
+<a href=#626 id=626 data-nosnippet>626</a>                                valid = !strict;
+<a href=#627 id=627 data-nosnippet>627</a>                            }
+<a href=#628 id=628 data-nosnippet>628</a>                            builder.append_series(<span class="kw-2">&amp;</span>casted)<span class="question-mark">?</span>;
+<a href=#629 id=629 data-nosnippet>629</a>                        },
+<a href=#630 id=630 data-nosnippet>630</a>                        <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {
+<a href=#631 id=631 data-nosnippet>631</a>                            valid = <span class="bool-val">false</span>;
+<a href=#632 id=632 data-nosnippet>632</a>                            <span class="kw">for _ in </span><span class="number">0</span>..b.len() {
+<a href=#633 id=633 data-nosnippet>633</a>                                builder.append_null();
+<a href=#634 id=634 data-nosnippet>634</a>                            }
+<a href=#635 id=635 data-nosnippet>635</a>                        },
+<a href=#636 id=636 data-nosnippet>636</a>                    },
+<a href=#637 id=637 data-nosnippet>637</a>                    AnyValue::Null =&gt; builder.append_null(),
+<a href=#638 id=638 data-nosnippet>638</a>                    <span class="kw">_ </span>=&gt; {
+<a href=#639 id=639 data-nosnippet>639</a>                        valid = <span class="bool-val">false</span>;
+<a href=#640 id=640 data-nosnippet>640</a>                        builder.append_null()
+<a href=#641 id=641 data-nosnippet>641</a>                    },
+<a href=#642 id=642 data-nosnippet>642</a>                }
+<a href=#643 id=643 data-nosnippet>643</a>            }
+<a href=#644 id=644 data-nosnippet>644</a>
+<a href=#645 id=645 data-nosnippet>645</a>            builder.finish()
+<a href=#646 id=646 data-nosnippet>646</a>        },
+<a href=#647 id=647 data-nosnippet>647</a>    };
+<a href=#648 id=648 data-nosnippet>648</a>
+<a href=#649 id=649 data-nosnippet>649</a>    <span class="kw">if </span>strict &amp;&amp; !valid {
+<a href=#650 id=650 data-nosnippet>650</a>        <span class="macro">polars_bail!</span>(SchemaMismatch: <span class="string">"unexpected value while building Series of type {:?}"</span>, DataType::List(Box::new(inner_type.clone())));
+<a href=#651 id=651 data-nosnippet>651</a>    }
+<a href=#652 id=652 data-nosnippet>652</a>
+<a href=#653 id=653 data-nosnippet>653</a>    <span class="prelude-val">Ok</span>(ca)
+<a href=#654 id=654 data-nosnippet>654</a>}
+<a href=#655 id=655 data-nosnippet>655</a>
+<a href=#656 id=656 data-nosnippet>656</a><span class="attr">#[cfg(feature = <span class="string">"dtype-array"</span>)]
+<a href=#657 id=657 data-nosnippet>657</a></span><span class="kw">fn </span>any_values_to_array(
+<a href=#658 id=658 data-nosnippet>658</a>    avs: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#659 id=659 data-nosnippet>659</a>    inner_type: <span class="kw-2">&amp;</span>DataType,
+<a href=#660 id=660 data-nosnippet>660</a>    strict: bool,
+<a href=#661 id=661 data-nosnippet>661</a>    width: usize,
+<a href=#662 id=662 data-nosnippet>662</a>) -&gt; PolarsResult&lt;ArrayChunked&gt; {
+<a href=#663 id=663 data-nosnippet>663</a>    <span class="kw">fn </span>to_arr(s: <span class="kw-2">&amp;</span>Series) -&gt; <span class="prelude-ty">Option</span>&lt;ArrayRef&gt; {
+<a href=#664 id=664 data-nosnippet>664</a>        <span class="kw">if </span>s.chunks().len() &gt; <span class="number">1 </span>{
+<a href=#665 id=665 data-nosnippet>665</a>            <span class="kw">let </span>s = s.rechunk();
+<a href=#666 id=666 data-nosnippet>666</a>            <span class="prelude-val">Some</span>(s.chunks()[<span class="number">0</span>].clone())
+<a href=#667 id=667 data-nosnippet>667</a>        } <span class="kw">else </span>{
+<a href=#668 id=668 data-nosnippet>668</a>            <span class="prelude-val">Some</span>(s.chunks()[<span class="number">0</span>].clone())
+<a href=#669 id=669 data-nosnippet>669</a>        }
+<a href=#670 id=670 data-nosnippet>670</a>    }
+<a href=#671 id=671 data-nosnippet>671</a>
+<a href=#672 id=672 data-nosnippet>672</a>    <span class="kw">let </span>target_dtype = DataType::Array(Box::new(inner_type.clone()), width);
+<a href=#673 id=673 data-nosnippet>673</a>
+<a href=#674 id=674 data-nosnippet>674</a>    <span class="comment">// This is handled downstream. The builder will choose the first non null type.
+<a href=#675 id=675 data-nosnippet>675</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>valid = <span class="bool-val">true</span>;
+<a href=#676 id=676 data-nosnippet>676</a>    <span class="attr">#[allow(unused_mut)]
+<a href=#677 id=677 data-nosnippet>677</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>out: ArrayChunked = <span class="kw">if </span>inner_type == <span class="kw-2">&amp;</span>DataType::Null {
+<a href=#678 id=678 data-nosnippet>678</a>        avs.iter()
+<a href=#679 id=679 data-nosnippet>679</a>            .map(|av| <span class="kw">match </span>av {
+<a href=#680 id=680 data-nosnippet>680</a>                AnyValue::List(b) | AnyValue::Array(b, <span class="kw">_</span>) =&gt; to_arr(b),
+<a href=#681 id=681 data-nosnippet>681</a>                AnyValue::Null =&gt; <span class="prelude-val">None</span>,
+<a href=#682 id=682 data-nosnippet>682</a>                <span class="kw">_ </span>=&gt; {
+<a href=#683 id=683 data-nosnippet>683</a>                    valid = <span class="bool-val">false</span>;
+<a href=#684 id=684 data-nosnippet>684</a>                    <span class="prelude-val">None
+<a href=#685 id=685 data-nosnippet>685</a>                </span>},
+<a href=#686 id=686 data-nosnippet>686</a>            })
+<a href=#687 id=687 data-nosnippet>687</a>            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+<a href=#688 id=688 data-nosnippet>688</a>    }
+<a href=#689 id=689 data-nosnippet>689</a>    <span class="comment">// Make sure that wrongly inferred AnyValues don't deviate from the datatype.
+<a href=#690 id=690 data-nosnippet>690</a>    </span><span class="kw">else </span>{
+<a href=#691 id=691 data-nosnippet>691</a>        avs.iter()
+<a href=#692 id=692 data-nosnippet>692</a>            .map(|av| <span class="kw">match </span>av {
+<a href=#693 id=693 data-nosnippet>693</a>                AnyValue::List(b) | AnyValue::Array(b, <span class="kw">_</span>) =&gt; {
+<a href=#694 id=694 data-nosnippet>694</a>                    <span class="kw">if </span>b.dtype() == inner_type {
+<a href=#695 id=695 data-nosnippet>695</a>                        to_arr(b)
+<a href=#696 id=696 data-nosnippet>696</a>                    } <span class="kw">else </span>{
+<a href=#697 id=697 data-nosnippet>697</a>                        <span class="kw">let </span>s = <span class="kw">match </span>b.cast(inner_type) {
+<a href=#698 id=698 data-nosnippet>698</a>                            <span class="prelude-val">Ok</span>(out) =&gt; out,
+<a href=#699 id=699 data-nosnippet>699</a>                            <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; Series::full_null(b.name().clone(), b.len(), inner_type),
+<a href=#700 id=700 data-nosnippet>700</a>                        };
+<a href=#701 id=701 data-nosnippet>701</a>                        to_arr(<span class="kw-2">&amp;</span>s)
+<a href=#702 id=702 data-nosnippet>702</a>                    }
+<a href=#703 id=703 data-nosnippet>703</a>                },
+<a href=#704 id=704 data-nosnippet>704</a>                AnyValue::Null =&gt; <span class="prelude-val">None</span>,
+<a href=#705 id=705 data-nosnippet>705</a>                <span class="kw">_ </span>=&gt; {
+<a href=#706 id=706 data-nosnippet>706</a>                    valid = <span class="bool-val">false</span>;
+<a href=#707 id=707 data-nosnippet>707</a>                    <span class="prelude-val">None
+<a href=#708 id=708 data-nosnippet>708</a>                </span>},
+<a href=#709 id=709 data-nosnippet>709</a>            })
+<a href=#710 id=710 data-nosnippet>710</a>            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+<a href=#711 id=711 data-nosnippet>711</a>    };
+<a href=#712 id=712 data-nosnippet>712</a>
+<a href=#713 id=713 data-nosnippet>713</a>    <span class="kw">if </span>strict &amp;&amp; !valid {
+<a href=#714 id=714 data-nosnippet>714</a>        <span class="macro">polars_bail!</span>(SchemaMismatch: <span class="string">"unexpected value while building Series of type {:?}"</span>, target_dtype);
+<a href=#715 id=715 data-nosnippet>715</a>    }
+<a href=#716 id=716 data-nosnippet>716</a>    <span class="macro">polars_ensure!</span>(
+<a href=#717 id=717 data-nosnippet>717</a>        out.width() == width,
+<a href=#718 id=718 data-nosnippet>718</a>        SchemaMismatch: <span class="string">"got mixed size array widths where width {} was expected"</span>, width
+<a href=#719 id=719 data-nosnippet>719</a>    );
+<a href=#720 id=720 data-nosnippet>720</a>
+<a href=#721 id=721 data-nosnippet>721</a>    <span class="comment">// Ensure the logical type is correct for nested types.
+<a href=#722 id=722 data-nosnippet>722</a>    </span><span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#723 id=723 data-nosnippet>723</a>    </span><span class="kw">if </span>!<span class="macro">matches!</span>(inner_type, DataType::Null) &amp;&amp; out.inner_dtype().is_nested() {
+<a href=#724 id=724 data-nosnippet>724</a>        <span class="kw">unsafe </span>{
+<a href=#725 id=725 data-nosnippet>725</a>            out.set_dtype(target_dtype.clone());
+<a href=#726 id=726 data-nosnippet>726</a>        };
+<a href=#727 id=727 data-nosnippet>727</a>    }
+<a href=#728 id=728 data-nosnippet>728</a>
+<a href=#729 id=729 data-nosnippet>729</a>    <span class="prelude-val">Ok</span>(out)
+<a href=#730 id=730 data-nosnippet>730</a>}
+<a href=#731 id=731 data-nosnippet>731</a>
+<a href=#732 id=732 data-nosnippet>732</a><span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#733 id=733 data-nosnippet>733</a></span><span class="kw">fn </span>_any_values_to_struct&lt;<span class="lifetime">'a</span>&gt;(
+<a href=#734 id=734 data-nosnippet>734</a>    av_fields: <span class="kw-2">&amp;</span>[Field],
+<a href=#735 id=735 data-nosnippet>735</a>    av_values: <span class="kw-2">&amp;</span>[AnyValue&lt;<span class="lifetime">'a</span>&gt;],
+<a href=#736 id=736 data-nosnippet>736</a>    field_index: usize,
+<a href=#737 id=737 data-nosnippet>737</a>    field: <span class="kw-2">&amp;</span>Field,
+<a href=#738 id=738 data-nosnippet>738</a>    fields: <span class="kw-2">&amp;</span>[Field],
+<a href=#739 id=739 data-nosnippet>739</a>    field_avs: <span class="kw-2">&amp;mut </span>Vec&lt;AnyValue&lt;<span class="lifetime">'a</span>&gt;&gt;,
+<a href=#740 id=740 data-nosnippet>740</a>) {
+<a href=#741 id=741 data-nosnippet>741</a>    <span class="comment">// TODO: Optimize.
+<a href=#742 id=742 data-nosnippet>742</a>
+<a href=#743 id=743 data-nosnippet>743</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>append_by_search = || {
+<a href=#744 id=744 data-nosnippet>744</a>        <span class="comment">// Search for the name.
+<a href=#745 id=745 data-nosnippet>745</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(i) = av_fields
+<a href=#746 id=746 data-nosnippet>746</a>            .iter()
+<a href=#747 id=747 data-nosnippet>747</a>            .position(|av_fld| av_fld.name == field.name)
+<a href=#748 id=748 data-nosnippet>748</a>        {
+<a href=#749 id=749 data-nosnippet>749</a>            field_avs.push(av_values[i].clone());
+<a href=#750 id=750 data-nosnippet>750</a>            <span class="kw">return</span>;
+<a href=#751 id=751 data-nosnippet>751</a>        }
+<a href=#752 id=752 data-nosnippet>752</a>        field_avs.push(AnyValue::Null)
+<a href=#753 id=753 data-nosnippet>753</a>    };
+<a href=#754 id=754 data-nosnippet>754</a>
+<a href=#755 id=755 data-nosnippet>755</a>    <span class="comment">// All fields are available in this single value.
+<a href=#756 id=756 data-nosnippet>756</a>    // We can use the index to get value.
+<a href=#757 id=757 data-nosnippet>757</a>    </span><span class="kw">if </span>fields.len() == av_fields.len() {
+<a href=#758 id=758 data-nosnippet>758</a>        <span class="kw">if </span>fields.iter().zip(av_fields.iter()).any(|(l, r)| l != r) {
+<a href=#759 id=759 data-nosnippet>759</a>            append_by_search()
+<a href=#760 id=760 data-nosnippet>760</a>        } <span class="kw">else </span>{
+<a href=#761 id=761 data-nosnippet>761</a>            <span class="kw">let </span>av_val = av_values
+<a href=#762 id=762 data-nosnippet>762</a>                .get(field_index)
+<a href=#763 id=763 data-nosnippet>763</a>                .cloned()
+<a href=#764 id=764 data-nosnippet>764</a>                .unwrap_or(AnyValue::Null);
+<a href=#765 id=765 data-nosnippet>765</a>            field_avs.push(av_val)
+<a href=#766 id=766 data-nosnippet>766</a>        }
+<a href=#767 id=767 data-nosnippet>767</a>    }
+<a href=#768 id=768 data-nosnippet>768</a>    <span class="comment">// Not all fields are available, we search the proper field.
+<a href=#769 id=769 data-nosnippet>769</a>    </span><span class="kw">else </span>{
+<a href=#770 id=770 data-nosnippet>770</a>        <span class="comment">// Search for the name.
+<a href=#771 id=771 data-nosnippet>771</a>        </span>append_by_search()
+<a href=#772 id=772 data-nosnippet>772</a>    }
+<a href=#773 id=773 data-nosnippet>773</a>}
+<a href=#774 id=774 data-nosnippet>774</a>
+<a href=#775 id=775 data-nosnippet>775</a><span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#776 id=776 data-nosnippet>776</a></span><span class="kw">fn </span>any_values_to_struct(
+<a href=#777 id=777 data-nosnippet>777</a>    values: <span class="kw-2">&amp;</span>[AnyValue],
+<a href=#778 id=778 data-nosnippet>778</a>    fields: <span class="kw-2">&amp;</span>[Field],
+<a href=#779 id=779 data-nosnippet>779</a>    strict: bool,
+<a href=#780 id=780 data-nosnippet>780</a>) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#781 id=781 data-nosnippet>781</a>    <span class="comment">// Fast path for structs with no fields.
+<a href=#782 id=782 data-nosnippet>782</a>    </span><span class="kw">if </span>fields.is_empty() {
+<a href=#783 id=783 data-nosnippet>783</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(
+<a href=#784 id=784 data-nosnippet>784</a>            StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())<span class="question-mark">?</span>.into_series(),
+<a href=#785 id=785 data-nosnippet>785</a>        );
+<a href=#786 id=786 data-nosnippet>786</a>    }
+<a href=#787 id=787 data-nosnippet>787</a>
+<a href=#788 id=788 data-nosnippet>788</a>    <span class="comment">// The physical series fields of the struct.
+<a href=#789 id=789 data-nosnippet>789</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>series_fields = Vec::with_capacity(fields.len());
+<a href=#790 id=790 data-nosnippet>790</a>    <span class="kw">let </span><span class="kw-2">mut </span>has_outer_validity = <span class="bool-val">false</span>;
+<a href=#791 id=791 data-nosnippet>791</a>    <span class="kw">let </span><span class="kw-2">mut </span>field_avs = Vec::with_capacity(values.len());
+<a href=#792 id=792 data-nosnippet>792</a>    <span class="kw">for </span>(i, field) <span class="kw">in </span>fields.iter().enumerate() {
+<a href=#793 id=793 data-nosnippet>793</a>        field_avs.clear();
+<a href=#794 id=794 data-nosnippet>794</a>
+<a href=#795 id=795 data-nosnippet>795</a>        <span class="kw">for </span>av <span class="kw">in </span>values.iter() {
+<a href=#796 id=796 data-nosnippet>796</a>            <span class="kw">match </span>av {
+<a href=#797 id=797 data-nosnippet>797</a>                AnyValue::StructOwned(payload) =&gt; {
+<a href=#798 id=798 data-nosnippet>798</a>                    <span class="kw">let </span>av_fields = <span class="kw-2">&amp;</span>payload.<span class="number">1</span>;
+<a href=#799 id=799 data-nosnippet>799</a>                    <span class="kw">let </span>av_values = <span class="kw-2">&amp;</span>payload.<span class="number">0</span>;
+<a href=#800 id=800 data-nosnippet>800</a>                    _any_values_to_struct(av_fields, av_values, i, field, fields, <span class="kw-2">&amp;mut </span>field_avs);
+<a href=#801 id=801 data-nosnippet>801</a>                },
+<a href=#802 id=802 data-nosnippet>802</a>                AnyValue::Struct(<span class="kw">_</span>, <span class="kw">_</span>, av_fields) =&gt; {
+<a href=#803 id=803 data-nosnippet>803</a>                    <span class="kw">let </span>av_values: Vec&lt;<span class="kw">_</span>&gt; = av._iter_struct_av().collect();
+<a href=#804 id=804 data-nosnippet>804</a>                    _any_values_to_struct(av_fields, <span class="kw-2">&amp;</span>av_values, i, field, fields, <span class="kw-2">&amp;mut </span>field_avs);
+<a href=#805 id=805 data-nosnippet>805</a>                },
+<a href=#806 id=806 data-nosnippet>806</a>                <span class="kw">_ </span>=&gt; {
+<a href=#807 id=807 data-nosnippet>807</a>                    has_outer_validity = <span class="bool-val">true</span>;
+<a href=#808 id=808 data-nosnippet>808</a>                    field_avs.push(AnyValue::Null)
+<a href=#809 id=809 data-nosnippet>809</a>                },
+<a href=#810 id=810 data-nosnippet>810</a>            }
+<a href=#811 id=811 data-nosnippet>811</a>        }
+<a href=#812 id=812 data-nosnippet>812</a>        <span class="comment">// If the inferred dtype is null, we let auto inference work.
+<a href=#813 id=813 data-nosnippet>813</a>        </span><span class="kw">let </span>s = <span class="kw">if </span><span class="macro">matches!</span>(field.dtype, DataType::Null) {
+<a href=#814 id=814 data-nosnippet>814</a>            Series::from_any_values(field.name().clone(), <span class="kw-2">&amp;</span>field_avs, strict)<span class="question-mark">?
+<a href=#815 id=815 data-nosnippet>815</a>        </span>} <span class="kw">else </span>{
+<a href=#816 id=816 data-nosnippet>816</a>            Series::from_any_values_and_dtype(
+<a href=#817 id=817 data-nosnippet>817</a>                field.name().clone(),
+<a href=#818 id=818 data-nosnippet>818</a>                <span class="kw-2">&amp;</span>field_avs,
+<a href=#819 id=819 data-nosnippet>819</a>                <span class="kw-2">&amp;</span>field.dtype,
+<a href=#820 id=820 data-nosnippet>820</a>                strict,
+<a href=#821 id=821 data-nosnippet>821</a>            )<span class="question-mark">?
+<a href=#822 id=822 data-nosnippet>822</a>        </span>};
+<a href=#823 id=823 data-nosnippet>823</a>        series_fields.push(s)
+<a href=#824 id=824 data-nosnippet>824</a>    }
+<a href=#825 id=825 data-nosnippet>825</a>
+<a href=#826 id=826 data-nosnippet>826</a>    <span class="kw">let </span><span class="kw-2">mut </span>out =
+<a href=#827 id=827 data-nosnippet>827</a>        StructChunked::from_series(PlSmallStr::EMPTY, values.len(), series_fields.iter())<span class="question-mark">?</span>;
+<a href=#828 id=828 data-nosnippet>828</a>    <span class="kw">if </span>has_outer_validity {
+<a href=#829 id=829 data-nosnippet>829</a>        <span class="kw">let </span><span class="kw-2">mut </span>validity = MutableBitmap::new();
+<a href=#830 id=830 data-nosnippet>830</a>        validity.extend_constant(values.len(), <span class="bool-val">true</span>);
+<a href=#831 id=831 data-nosnippet>831</a>        <span class="kw">for </span>(i, v) <span class="kw">in </span>values.iter().enumerate() {
+<a href=#832 id=832 data-nosnippet>832</a>            <span class="kw">if </span><span class="macro">matches!</span>(v, AnyValue::Null) {
+<a href=#833 id=833 data-nosnippet>833</a>                <span class="kw">unsafe </span>{ validity.set_unchecked(i, <span class="bool-val">false</span>) }
+<a href=#834 id=834 data-nosnippet>834</a>            }
+<a href=#835 id=835 data-nosnippet>835</a>        }
+<a href=#836 id=836 data-nosnippet>836</a>        out.set_outer_validity(<span class="prelude-val">Some</span>(validity.freeze()))
+<a href=#837 id=837 data-nosnippet>837</a>    }
+<a href=#838 id=838 data-nosnippet>838</a>    <span class="prelude-val">Ok</span>(out.into_series())
+<a href=#839 id=839 data-nosnippet>839</a>}
+<a href=#840 id=840 data-nosnippet>840</a>
+<a href=#841 id=841 data-nosnippet>841</a><span class="attr">#[cfg(feature = <span class="string">"object"</span>)]
+<a href=#842 id=842 data-nosnippet>842</a></span><span class="kw">fn </span>any_values_to_object(values: <span class="kw-2">&amp;</span>[AnyValue]) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#843 id=843 data-nosnippet>843</a>    <span class="kw">use </span><span class="kw">crate</span>::chunked_array::object::registry;
+<a href=#844 id=844 data-nosnippet>844</a>    <span class="kw">let </span>converter = registry::get_object_converter();
+<a href=#845 id=845 data-nosnippet>845</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
+<a href=#846 id=846 data-nosnippet>846</a>    <span class="kw">for </span>av <span class="kw">in </span>values {
+<a href=#847 id=847 data-nosnippet>847</a>        <span class="kw">match </span>av {
+<a href=#848 id=848 data-nosnippet>848</a>            AnyValue::Object(val) =&gt; builder.append_value(val.as_any()),
+<a href=#849 id=849 data-nosnippet>849</a>            AnyValue::Null =&gt; builder.append_null(),
+<a href=#850 id=850 data-nosnippet>850</a>            <span class="kw">_ </span>=&gt; {
+<a href=#851 id=851 data-nosnippet>851</a>                <span class="comment">// This is needed because in Python users can send mixed types.
+<a href=#852 id=852 data-nosnippet>852</a>                // This only works if you set a global converter.
+<a href=#853 id=853 data-nosnippet>853</a>                </span><span class="kw">let </span>any = converter(av.as_borrowed());
+<a href=#854 id=854 data-nosnippet>854</a>                builder.append_value(<span class="kw-2">&amp;*</span>any)
+<a href=#855 id=855 data-nosnippet>855</a>            },
+<a href=#856 id=856 data-nosnippet>856</a>        }
+<a href=#857 id=857 data-nosnippet>857</a>    }
+<a href=#858 id=858 data-nosnippet>858</a>
+<a href=#859 id=859 data-nosnippet>859</a>    <span class="prelude-val">Ok</span>(builder.to_series())
+<a href=#860 id=860 data-nosnippet>860</a>}
+<a href=#861 id=861 data-nosnippet>861</a>
+<a href=#862 id=862 data-nosnippet>862</a><span class="kw">fn </span>invalid_value_error(dtype: <span class="kw-2">&amp;</span>DataType, value: <span class="kw-2">&amp;</span>AnyValue) -&gt; PolarsError {
+<a href=#863 id=863 data-nosnippet>863</a>    <span class="macro">polars_err!</span>(
+<a href=#864 id=864 data-nosnippet>864</a>        SchemaMismatch:
+<a href=#865 id=865 data-nosnippet>865</a>        <span class="string">"unexpected value while building Series of type {:?}; found value of type {:?}: {}"</span>,
+<a href=#866 id=866 data-nosnippet>866</a>        dtype,
+<a href=#867 id=867 data-nosnippet>867</a>        value.dtype(),
+<a href=#868 id=868 data-nosnippet>868</a>        value
+<a href=#869 id=869 data-nosnippet>869</a>    )
+<a href=#870 id=870 data-nosnippet>870</a>}</code></pre></div></section></main></body></html>

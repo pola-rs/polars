@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["polars_core",[["impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/deref/trait.DerefMut.html\" title=\"trait core::ops::deref::DerefMut\">DerefMut</a> for <a class=\"struct\" href=\"polars_core/utils/struct.NoNull.html\" title=\"struct polars_core::utils::NoNull\">NoNull</a>&lt;T&gt;"]]],["polars_io",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/deref/trait.DerefMut.html\" title=\"trait core::ops::deref::DerefMut\">DerefMut</a> for <a class=\"enum\" href=\"polars_io/utils/file/enum.AsyncWriteable.html\" title=\"enum polars_io::utils::file::AsyncWriteable\">AsyncWriteable</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/deref/trait.DerefMut.html\" title=\"trait core::ops::deref::DerefMut\">DerefMut</a> for <a class=\"enum\" href=\"polars_io/utils/file/enum.Writeable.html\" title=\"enum polars_io::utils::file::Writeable\">Writeable</a>"]]],["polars_utils",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/deref/trait.DerefMut.html\" title=\"trait core::ops::deref::DerefMut\">DerefMut</a> for <a class=\"struct\" href=\"polars_utils/pl_str/struct.PlSmallStr.html\" title=\"struct polars_utils::pl_str::PlSmallStr\">PlSmallStr</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/deref/trait.DerefMut.html\" title=\"trait core::ops::deref::DerefMut\">DerefMut</a> for <a class=\"struct\" href=\"polars_utils/python_function/struct.PythonObject.html\" title=\"struct polars_utils::python_function::PythonObject\">PythonObject</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[322,625,649]}
