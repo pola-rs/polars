@@ -1075,24 +1075,36 @@ impl ReaderOperationPushdown<'_> {
             _ => None,
         };
 
-        let predicate = if !unsupported_external_filter_mask
-            && extra_ops_post.predicate.is_some()
-            // TODO: Support cast columns in parquet
-            && extra_ops_post.cast_columns_policy == CastColumnsPolicy::ERROR_ON_MISMATCH
-            && reader_capabilities.contains(ReaderCapabilities::PARTIAL_FILTER)
-            && extra_ops_post.row_index.is_none()
-            && extra_ops_post.pre_slice.is_none()
-        {
-            if reader_capabilities.contains(ReaderCapabilities::FULL_FILTER) {
-                // If the reader can fully handle the predicate itself, let it do it itself.
-                extra_ops_post.predicate.take()
-            } else {
-                // Otherwise, we want to pass it and filter again afterwards.
-                extra_ops_post.predicate.clone()
+        let mut predicate: Option<ScanIOPredicate> = None;
+
+        #[expect(clippy::never_loop)]
+        loop {
+            if unsupported_external_filter_mask
+                || extra_ops_post.predicate.is_none()
+                || extra_ops_post.row_index.is_some()
+                || extra_ops_post.pre_slice.is_some()
+            {
+                break;
             }
-        } else {
-            None
-        };
+
+            if extra_ops_post.cast_columns_policy == CastColumnsPolicy::ERROR_ON_MISMATCH {
+                if !reader_capabilities.contains(ReaderCapabilities::PARTIAL_FILTER) {
+                    break;
+                }
+
+                predicate = if reader_capabilities.contains(ReaderCapabilities::FULL_FILTER) {
+                    // If the reader can fully handle the predicate itself, let it do it itself.
+                    extra_ops_post.predicate.take()
+                } else {
+                    // Otherwise, we want to pass it and filter again afterwards.
+                    extra_ops_post.predicate.clone()
+                };
+            } else if reader_capabilities.contains(ReaderCapabilities::PARTIAL_FILTER_PRE_CAST) {
+                predicate = extra_ops_post.predicate.clone();
+            }
+
+            break;
+        }
 
         (row_index, pre_slice, predicate, external_filter_mask)
     }

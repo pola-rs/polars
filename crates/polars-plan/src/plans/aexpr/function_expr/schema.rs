@@ -164,7 +164,7 @@ impl IRFunctionExpr {
                     if *include_category {
                         fields.push(Field::new(
                             PlSmallStr::from_static("category"),
-                            DataType::Categorical(None, Default::default()),
+                            DataType::from_categories(Categories::global()),
                         ));
                     }
                     fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
@@ -240,7 +240,7 @@ impl IRFunctionExpr {
             Cut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
+            } => mapper.with_dtype(DataType::from_categories(Categories::global())),
             #[cfg(feature = "cutqcut")]
             Cut {
                 include_breaks: true,
@@ -250,7 +250,7 @@ impl IRFunctionExpr {
                     Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
                     Field::new(
                         PlSmallStr::from_static("category"),
-                        DataType::Categorical(None, Default::default()),
+                        DataType::from_categories(Categories::global()),
                     ),
                 ]);
                 mapper.with_dtype(struct_dt)
@@ -299,7 +299,7 @@ impl IRFunctionExpr {
             QCut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
+            } => mapper.with_dtype(DataType::from_categories(Categories::global())),
             #[cfg(feature = "cutqcut")]
             QCut {
                 include_breaks: true,
@@ -309,7 +309,7 @@ impl IRFunctionExpr {
                     Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
                     Field::new(
                         PlSmallStr::from_static("category"),
-                        DataType::Categorical(None, Default::default()),
+                        DataType::from_categories(Categories::global()),
                     ),
                 ]);
                 mapper.with_dtype(struct_dt)
@@ -654,7 +654,7 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
 
     match (dtypes[0].as_ref(), &st) {
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, ord), DataType::String) => st = DataType::Categorical(None, *ord),
+        (cat @ DataType::Categorical(_, _), DataType::String) => st = cat.clone(),
         _ => {
             if let DataType::Unknown(kind) = st {
                 match kind {

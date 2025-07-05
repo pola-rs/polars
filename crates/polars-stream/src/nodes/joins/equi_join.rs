@@ -74,6 +74,7 @@ fn compute_payload_selector(
     this: &Schema,
     other: &Schema,
     this_key_schema: &Schema,
+    other_key_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
@@ -82,31 +83,51 @@ fn compute_payload_selector(
     let mut coalesce_idx = 0;
     this.iter_names()
         .map(|c| {
-            let selector = if should_coalesce && this_key_schema.contains(c) {
-                if is_left != (args.how == JoinType::Right) {
+            #[expect(clippy::never_loop)]
+            loop {
+                let selector = if args.how == JoinType::Right {
+                    if is_left {
+                        if should_coalesce && this_key_schema.contains(c) {
+                            // Coalesced to RHS output key.
+                            None
+                        } else {
+                            Some(c.clone())
+                        }
+                    } else if !other.contains(c) || (should_coalesce && other_key_schema.contains(c)) {
+                        Some(c.clone())
+                    } else {
+                        break;
+                    }
+                } else if should_coalesce && this_key_schema.contains(c) {
+                    if is_left {
+                        Some(c.clone())
+                    } else if args.how == JoinType::Full {
+                        // We must keep the right-hand side keycols around for
+                        // coalescing.
+                        let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{coalesce_idx}");
+                        coalesce_idx += 1;
+                        Some(name)
+                    } else {
+                        None
+                    }
+                } else if !other.contains(c) || is_left {
                     Some(c.clone())
-                } else if args.how == JoinType::Full {
-                    // We must keep the right-hand side keycols around for
-                    // coalescing.
-                    let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{coalesce_idx}");
-                    coalesce_idx += 1;
-                    Some(name)
                 } else {
-                    None
-                }
-            } else if !other.contains(c) || is_left {
-                Some(c.clone())
-            } else {
-                let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
-                if other.contains(&suffixed) {
-                    polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
-                    You may want to try:\n\
-                    - renaming the column prior to joining\n\
-                    - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
-                }
-                Some(suffixed)
-            };
-            Ok(selector)
+                    break;
+                };
+
+                return Ok(selector);
+            }
+
+            let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
+            if other.contains(&suffixed) {
+                polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
+                You may want to try:\n\
+                - renaming the column prior to joining\n\
+                - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
+            }
+
+            Ok(Some(suffixed))
         })
         .collect()
 }
@@ -1181,6 +1202,7 @@ impl EquiJoinNode {
             &left_input_schema,
             &right_input_schema,
             &left_key_schema,
+            &right_key_schema,
             true,
             &args,
         )?;
@@ -1188,6 +1210,7 @@ impl EquiJoinNode {
             &right_input_schema,
             &left_input_schema,
             &right_key_schema,
+            &left_key_schema,
             false,
             &args,
         )?;

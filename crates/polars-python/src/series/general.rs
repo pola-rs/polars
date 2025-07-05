@@ -46,17 +46,15 @@ impl PySeries {
     }
 
     pub fn cat_uses_lexical_ordering(&self) -> PyResult<bool> {
-        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(ca.uses_lexical_ordering())
+        Ok(true)
     }
 
     pub fn cat_is_local(&self) -> PyResult<bool> {
-        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
-        Ok(ca.get_rev_map().is_local())
+        Ok(false)
     }
 
-    pub fn cat_to_local(&self, py: Python) -> PyResult<Self> {
-        py.enter_polars_series(|| Ok(self.series.categorical()?.to_local()))
+    pub fn cat_to_local(&self, _py: Python) -> PyResult<Self> {
+        Ok(self.clone())
     }
 
     fn estimated_size(&self) -> usize {
@@ -299,19 +297,20 @@ impl PySeries {
         py.enter_polars_series(|| self.series.zip_with(mask, &other.series))
     }
 
-    #[pyo3(signature = (separator, drop_first=false, categories=None))]
+    #[pyo3(signature = (separator, drop_first=false, categories=None, drop_nulls=false))]
     fn to_dummies(
         &self,
         py: Python<'_>,
         separator: Option<&str>,
         drop_first: bool,
         categories: Option<Vec<String>>,
+        drop_nulls: bool,
     ) -> PyResult<PyDataFrame> {
         let categories =
             categories.map(|cats| cats.into_iter().map(PlSmallStr::from).collect::<Vec<_>>());
         py.enter_polars_df(|| {
             self.series
-                .to_dummies(separator, drop_first, categories.as_ref())
+                .to_dummies(separator, drop_first, categories.as_ref(), drop_nulls)
         })
     }
 
@@ -490,9 +489,7 @@ impl PySeries {
 
             let dicts = dtypes
                 .iter()
-                .map(|(_, dt)| dt)
-                .zip(opts.iter())
-                .map(|(dtype, opts)| get_row_encoding_context(&dtype.0, opts.is_ordered()))
+                .map(|(_, dtype)| get_row_encoding_context(&dtype.0))
                 .collect::<Vec<_>>();
 
             // Get the BinaryOffset array.
@@ -601,9 +598,30 @@ impl_get!(get_i16, i16, i16);
 impl_get!(get_i32, i32, i32);
 impl_get!(get_i64, i64, i64);
 impl_get!(get_str, str, &str);
-impl_get!(get_date, date, i32);
-impl_get!(get_datetime, datetime, i64);
-impl_get!(get_duration, duration, i64);
+
+macro_rules! impl_get_phys {
+    ($name:ident, $series_variant:ident, $type:ty) => {
+        #[pymethods]
+        impl PySeries {
+            fn $name(&self, index: i64) -> Option<$type> {
+                if let Ok(ca) = self.series.$series_variant() {
+                    let index = if index < 0 {
+                        (ca.len() as i64 + index) as usize
+                    } else {
+                        index as usize
+                    };
+                    ca.physical().get(index)
+                } else {
+                    None
+                }
+            }
+        }
+    };
+}
+
+impl_get_phys!(get_date, date, i32);
+impl_get_phys!(get_datetime, datetime, i64);
+impl_get_phys!(get_duration, duration, i64);
 
 #[cfg(test)]
 mod test {

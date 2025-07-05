@@ -438,7 +438,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Returns an iterator over the lengths of the chunks of the array.
-    pub fn chunk_lengths(&self) -> ChunkLenIter {
+    pub fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 
@@ -1011,17 +1011,17 @@ pub(crate) mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
-        use crate::{SINGLE_LOCK, disable_string_cache};
-        let _lock = SINGLE_LOCK.lock();
-        disable_string_cache();
         let ca = StringChunked::new(
             PlSmallStr::EMPTY,
             &[Some("foo"), None, Some("bar"), Some("ham")],
         );
-        let ca = ca
-            .cast(&DataType::Categorical(None, Default::default()))
-            .unwrap();
-        let ca = ca.categorical().unwrap();
+        let cats = Categories::new(
+            PlSmallStr::EMPTY,
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U32,
+        );
+        let ca = ca.cast(&DataType::from_categories(cats.clone())).unwrap();
+        let ca = ca.cat32().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }

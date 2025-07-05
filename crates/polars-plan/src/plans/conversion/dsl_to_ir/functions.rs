@@ -51,6 +51,7 @@ pub(super) fn convert_functions(
                 A::Shift => IA::Shift,
                 A::Explode { skip_empty } => IA::Explode { skip_empty },
                 A::Concat => IA::Concat,
+                A::Slice(offset, length) => IA::Slice(offset, length),
             })
         },
         F::BinaryExpr(binary_function) => {
@@ -69,7 +70,9 @@ pub(super) fn convert_functions(
                 B::Base64Encode => IB::Base64Encode,
                 B::Size => IB::Size,
                 #[cfg(feature = "binary_encoding")]
-                B::FromBuffer(data_type, v) => IB::FromBuffer(data_type.into_datatype(schema)?, v),
+                B::Reinterpret(data_type, v) => {
+                    IB::Reinterpret(data_type.into_datatype(schema)?, v)
+                },
             })
         },
         #[cfg(feature = "dtype-categorical")]
@@ -178,7 +181,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "regex")]
                 S::Find { literal, strict } => IS::Find { literal, strict },
                 #[cfg(feature = "string_to_integer")]
-                S::ToInteger(v) => IS::ToInteger(v),
+                S::ToInteger { dtype, strict } => IS::ToInteger { dtype, strict },
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
                 S::Lowercase => IS::Lowercase,
@@ -406,6 +409,16 @@ pub(super) fn convert_functions(
                 B::IsBetween { closed } => IB::IsBetween { closed },
                 #[cfg(feature = "is_in")]
                 B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
+                #[cfg(feature = "is_close")]
+                B::IsClose {
+                    abs_tol,
+                    rel_tol,
+                    nans_equal,
+                } => IB::IsClose {
+                    abs_tol,
+                    rel_tol,
+                    nans_equal,
+                },
                 B::AllHorizontal => {
                     let Some(fst) = e.first() else {
                         return Ok((

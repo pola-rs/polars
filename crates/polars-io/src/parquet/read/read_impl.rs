@@ -427,22 +427,6 @@ pub fn read_parquet<R: MmapBytesReader>(
         .unwrap_or_else(|| read::read_metadata(&mut reader).map(Arc::new))?;
     let n_row_groups = file_metadata.row_groups.len();
 
-    // if there are multiple row groups and categorical data
-    // we need a string cache
-    // we keep it alive until the end of the function
-    let _sc = if n_row_groups > 1 {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            Some(polars_core::StringCacheHolder::hold())
-        }
-        #[cfg(not(feature = "dtype-categorical"))]
-        {
-            Some(0u8)
-        }
-    } else {
-        None
-    };
-
     let materialized_projection = projection
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));

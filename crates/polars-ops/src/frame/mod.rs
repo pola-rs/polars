@@ -41,7 +41,7 @@ pub trait DataFrameOps: IntoDf {
     ///       "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
     ///   }.unwrap();
     ///
-    ///   let dummies = df.to_dummies(None, false, None).unwrap();
+    ///   let dummies = df.to_dummies(None, false, None, false).unwrap();
     ///   println!("{}", dummies);
     /// # }
     /// ```
@@ -75,8 +75,9 @@ pub trait DataFrameOps: IntoDf {
         separator: Option<&str>,
         drop_first: bool,
         categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
+        drop_nulls: bool,
     ) -> PolarsResult<DataFrame> {
-        self._to_dummies(None, separator, drop_first, categories)
+        self._to_dummies(None, separator, drop_first, categories, drop_nulls)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -86,8 +87,9 @@ pub trait DataFrameOps: IntoDf {
         separator: Option<&str>,
         drop_first: bool,
         categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
+        drop_nulls: bool,
     ) -> PolarsResult<DataFrame> {
-        self._to_dummies(Some(columns), separator, drop_first, categories)
+        self._to_dummies(Some(columns), separator, drop_first, categories, drop_nulls)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -97,6 +99,7 @@ pub trait DataFrameOps: IntoDf {
         separator: Option<&str>,
         drop_first: bool,
         categories: Option<PlHashMap<PlSmallStr, Vec<PlSmallStr>>>,
+        drop_nulls: bool,
     ) -> PolarsResult<DataFrame> {
         use crate::series::ToDummies;
 
@@ -118,11 +121,11 @@ pub trait DataFrameOps: IntoDf {
                         (true, Some(cats)) => {
                             let cats = cats.get(s.name().as_str());
                             s.as_materialized_series()
-                                .to_dummies(separator, drop_first, cats)
+                                .to_dummies(separator, drop_first, cats, drop_nulls)
                         },
                         (true, None) => s
                             .as_materialized_series()
-                            .to_dummies(separator, drop_first, None),
+                            .to_dummies(separator, drop_first, None, drop_nulls),
                         (false, _) => Ok(s.clone().into_frame()),
                     },
                 )

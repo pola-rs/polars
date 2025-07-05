@@ -9,7 +9,6 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -26,8 +25,6 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
-#[cfg(all(feature = "new_streaming", feature = "dtype-categorical"))]
-use polars_core::StringCacheHolder;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -39,6 +36,7 @@ use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::frame::cached_arenas::CachedArena;
@@ -737,15 +735,11 @@ impl LazyFrame {
 
         match engine {
             Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {
-                #[cfg(feature = "dtype-categorical")]
-                let string_cache_hold = StringCacheHolder::hold();
                 let result = polars_stream::run_query(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                 );
-                #[cfg(feature = "dtype-categorical")]
-                drop(string_cache_hold);
                 result.map(|v| v.unwrap_single())
             }),
             _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
@@ -822,15 +816,11 @@ impl LazyFrame {
 
         if engine == Engine::Streaming {
             feature_gated!("new_streaming", {
-                #[cfg(feature = "dtype-categorical")]
-                let string_cache_hold = StringCacheHolder::hold();
                 let result = polars_stream::run_query(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                 );
-                #[cfg(feature = "dtype-categorical")]
-                drop(string_cache_hold);
                 return result.map(|v| v.unwrap_multiple());
             });
         }
@@ -1019,7 +1009,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_parquet_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: ParquetWriteOptions,
@@ -1047,7 +1037,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_ipc_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: IpcWriterOptions,
@@ -1075,7 +1065,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_csv_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: CsvWriterOptions,
@@ -1103,7 +1093,7 @@ impl LazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn sink_json_partitioned(
         self,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: JsonWriterOptions,
@@ -1141,8 +1131,6 @@ impl LazyFrame {
                 Err(e) => return Some(Err(e)),
             };
 
-            #[cfg(feature = "dtype-categorical")]
-            let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(
                     alp_plan.lp_top,
@@ -2110,13 +2098,12 @@ impl LazyFrame {
 
         match &self.logical_plan {
             v @ DslPlan::Scan { scan_type, .. }
-                if !matches!(&**scan_type, FileScan::Anonymous { .. }) =>
+                if !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
             {
                 let DslPlan::Scan {
                     sources,
                     mut unified_scan_args,
                     scan_type,
-                    file_info,
                     cached_ir: _,
                 } = v.clone()
                 else {
@@ -2132,7 +2119,6 @@ impl LazyFrame {
                     sources,
                     unified_scan_args,
                     scan_type,
-                    file_info,
                     cached_ir: Default::default(),
                 }
                 .into()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -2146,3 +2146,1439 @@ def test_join_coalesce_22498() -> None:
     df_b = pl.DataFrame({"x": [1], "y": [2]})
     df_j = df_a.lazy().join(df_b.lazy(), how="full", on="y", coalesce=True)
     assert_frame_equal(df_j.collect(), pl.DataFrame({"y": [2], "x": [1]}))
+
+
+def _extract_plan_joins_and_filters(plan: str) -> list[str]:
+    return [
+        x
+        for x in (x.strip() for x in plan.splitlines())
+        if x.startswith("LEFT PLAN")  # noqa: PIE810
+        or x.startswith("RIGHT PLAN")
+        or x.startswith("FILTER")
+    ]
+
+
+def test_join_filter_pushdown_inner_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    # Filter on key output column is pushed to both sides.
+    q = lhs.join(rhs, on=["a", "b"], how="inner", maintain_order="left_right").filter(
+        pl.col("b") <= 2
+    )
+
+    expect = pl.DataFrame(
+        {"a": [1, 2], "b": [1, 2], "c": ["a", "b"], "c_right": ["A", "B"]}
+    )
+
+    plan = q.explain()
+
+    assert _extract_plan_joins_and_filters(plan) == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Side-specific filters are all pushed for inner join.
+    q = (
+        lhs.join(rhs, on=["a", "b"], how="inner", maintain_order="left_right")
+        .filter(pl.col("b") <= 2)
+        .filter(pl.col("c") == "a", pl.col("c_right") == "A")
+    )
+
+    expect = pl.DataFrame({"a": [1], "b": [1], "c": ["a"], "c_right": ["A"]})
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b")]'
+    assert 'col("c")) == ("a")' in extract[1]
+    assert 'col("b")) <= (2)' in extract[1]
+
+    assert extract[2] == 'RIGHT PLAN ON: [col("a"), col("b")]'
+    assert 'col("b")) <= (2)' in extract[3]
+    assert 'col("c")) == ("A")' in extract[3]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filter applied to the non-coalesced `_right` column of an inner-join is
+    # also pushed to the left
+    # input table.
+    q = lhs.join(
+        rhs, on=["a", "b"], how="inner", coalesce=False, maintain_order="left_right"
+    ).filter(pl.col("a_right") <= 2)
+
+    expect = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+            "c": ["a", "b"],
+            "a_right": [1, 2],
+            "b_right": [1, 2],
+            "c_right": ["A", "B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("a")) <= (2)]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("a")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Different names in left_on and right_on
+    q = lhs.join(
+        rhs, left_on="a", right_on="b", how="inner", maintain_order="left_right"
+    ).filter(pl.col("a") <= 2)
+
+    expect = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+            "c": ["a", "b"],
+            "a_right": [1, 2],
+            "c_right": ["A", "B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) <= (2)]',
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Different names in left_on and right_on, coalesce=False
+    q = lhs.join(
+        rhs,
+        left_on="a",
+        right_on="b",
+        how="inner",
+        coalesce=False,
+        maintain_order="left_right",
+    ).filter(pl.col("a") <= 2)
+
+    expect = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+            "c": ["a", "b"],
+            "a_right": [1, 2],
+            "b_right": [1, 2],
+            "c_right": ["A", "B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) <= (2)]',
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # left_on=col(A), right_on=lit(1). Filters referencing col(A) can only push
+    # to the left side.
+    q = lhs.join(
+        rhs,
+        left_on=["a", pl.lit(1)],
+        right_on=[pl.lit(1), "b"],
+        how="inner",
+        coalesce=False,
+        maintain_order="left_right",
+    ).filter(
+        pl.col("a") == 1,
+        pl.col("b") >= 1,
+        pl.col("a_right") <= 1,
+        pl.col("b_right") >= 0,
+    )
+
+    expect = pl.DataFrame(
+        {
+            "a": [1],
+            "b": [1],
+            "c": ["a"],
+            "a_right": [1],
+            "b_right": [1],
+            "c_right": ["A"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert (
+        extract[0]
+        == 'LEFT PLAN ON: [col("a").cast(Int64), col("_POLARS_0").cast(Int64)]'
+    )
+    assert '(col("a")) == (1)' in extract[1]
+    assert '(col("b")) >= (1)' in extract[1]
+    assert (
+        extract[2]
+        == 'RIGHT PLAN ON: [col("_POLARS_1").cast(Int64), col("b").cast(Int64)]'
+    )
+    assert '(col("b")) >= (0)' in extract[3]
+    assert 'col("a")) <= (1)' in extract[3]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filters don't pass if they refer to columns from both tables
+    # TODO: In the optimizer we can add additional equalities into the join
+    # condition itself for some cases.
+    q = lhs.join(rhs, on=["a"], how="inner", maintain_order="left_right").filter(
+        pl.col("b") == pl.col("b_right")
+    )
+
+    expect = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [1, 2, 3],
+            "c": ["a", "b", "c"],
+            "b_right": [1, 2, 3],
+            "c_right": ["A", "B", "C"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'FILTER [(col("b")) == (col("b_right"))]',
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("a")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_left_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    # Filter on key output column is pushed to both sides.
+    q = lhs.join(rhs, on=["a", "b"], how="left", maintain_order="left_right").filter(
+        pl.col("b") <= 2
+    )
+
+    expect = pl.DataFrame(
+        {"a": [1, 2], "b": [1, 2], "c": ["a", "b"], "c_right": ["A", "B"]}
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filter on key output column is pushed to both sides.
+    # This tests joins on differing left/right names.
+    q = lhs.join(
+        rhs, left_on="a", right_on="b", how="left", maintain_order="left_right"
+    ).filter(pl.col("a") <= 2)
+
+    expect = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+            "c": ["a", "b"],
+            "a_right": [1, 2],
+            "c_right": ["A", "B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) <= (2)]',
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filters referring to columns that exist only in the left table can be pushed.
+    q = lhs.join(rhs, on=["a", "b"], how="left", maintain_order="left_right").filter(
+        pl.col("c") == "b"
+    )
+
+    expect = pl.DataFrame({"a": [2], "b": [2], "c": ["b"], "c_right": ["B"]})
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("c")) == ("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filters referring to columns that exist only in the right table cannot be
+    # pushed for left-join
+    q = lhs.join(rhs, on=["a", "b"], how="left", maintain_order="left_right").filter(
+        # Note: `eq_missing` to block join downgrade.
+        pl.col("c_right").eq_missing("B")
+    )
+
+    expect = pl.DataFrame({"a": [2], "b": [2], "c": ["b"], "c_right": ["B"]})
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'FILTER [(col("c_right")) ==v ("B")]',
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filters referring to a non-coalesced key column originating from the right
+    # table cannot be pushed.
+    #
+    # Note, technically it's possible to push these filters if we can guarantee that
+    # they do not remove NULLs (or otherwise if we also apply the filter on the
+    # result table). But this is not something we do at the moment.
+    q = lhs.join(
+        rhs, on=["a", "b"], how="left", coalesce=False, maintain_order="left_right"
+    ).filter(pl.col("b_right").eq_missing(2))
+
+    expect = pl.DataFrame(
+        {
+            "a": [2],
+            "b": [2],
+            "c": ["b"],
+            "a_right": [2],
+            "b_right": [2],
+            "c_right": ["B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'FILTER [(col("b_right")) ==v (2)]',
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_right_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    # Filter on key output column is pushed to both sides.
+    q = lhs.join(rhs, on=["a", "b"], how="right", maintain_order="left_right").filter(
+        pl.col("b") <= 2
+    )
+
+    expect = pl.DataFrame(
+        {"c": ["a", "b"], "a": [1, 2], "b": [1, 2], "c_right": ["A", "B"]}
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filter on key output column is pushed to both sides.
+    # This tests joins on differing left/right names.
+    # col(A) is coalesced into col(B) (from right), but col(B) is named as
+    # col(B_right) in the output because the LHS table also has a col(B).
+    q = lhs.join(
+        rhs, left_on="a", right_on="b", how="right", maintain_order="left_right"
+    ).filter(pl.col("b_right") <= 2)
+
+    expect = pl.DataFrame(
+        {
+            "b": [1, 2],
+            "c": ["a", "b"],
+            "a": [1, 2],
+            "b_right": [1, 2],
+            "c_right": ["A", "B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) <= (2)]',
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("b")) <= (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filters referring to columns that exist only in the right table can be pushed.
+    q = lhs.join(rhs, on=["a", "b"], how="right", maintain_order="left_right").filter(
+        pl.col("c_right") == "B"
+    )
+
+    expect = pl.DataFrame({"c": ["b"], "a": [2], "b": [2], "c_right": ["B"]})
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("c")) == ("B")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filters referring to columns that exist only in the left table cannot be
+    # pushed for right-join
+    q = lhs.join(rhs, on=["a", "b"], how="right", maintain_order="left_right").filter(
+        # Note: eq_missing to block join downgrade
+        pl.col("c").eq_missing("b")
+    )
+
+    expect = pl.DataFrame({"c": ["b"], "a": [2], "b": [2], "c_right": ["B"]})
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'FILTER [(col("c")) ==v ("b")]',
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Filters referring to a non-coalesced key column originating from the left
+    # table cannot be pushed for right-join.
+    q = lhs.join(
+        rhs, on=["a", "b"], how="right", coalesce=False, maintain_order="left_right"
+    ).filter(pl.col("b").eq_missing(2))
+
+    expect = pl.DataFrame(
+        {
+            "a": [2],
+            "b": [2],
+            "c": ["b"],
+            "a_right": [2],
+            "b_right": [2],
+            "c_right": ["B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+    assert extract == [
+        'FILTER [(col("b")) ==v (2)]',
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_full_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    # Full join can only push filters that refer to coalesced key columns.
+    q = lhs.join(
+        rhs,
+        left_on="a",
+        right_on="b",
+        how="full",
+        coalesce=True,
+        maintain_order="left_right",
+    ).filter(pl.col("a") == 2)
+
+    expect = pl.DataFrame(
+        {
+            "a": [2],
+            "b": [2],
+            "c": ["b"],
+            "a_right": [2],
+            "c_right": ["B"],
+        }
+    )
+
+    plan = q.explain()
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) == (2)]',
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("b")) == (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Non-coalescing full-join cannot push any filters
+    # Note: We add fill_null to bypass non-NULL filter mask detection.
+    q = lhs.join(
+        rhs,
+        left_on="a",
+        right_on="b",
+        how="full",
+        coalesce=False,
+        maintain_order="left_right",
+    ).filter(
+        pl.col("a").fill_null(0) >= 2,
+        pl.col("a").fill_null(0) <= 2,
+    )
+
+    expect = pl.DataFrame(
+        {
+            "a": [2],
+            "b": [2],
+            "c": ["b"],
+            "a_right": [2],
+            "b_right": [2],
+            "c_right": ["B"],
+        }
+    )
+
+    plan = q.explain()
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[0].startswith("FILTER ")
+    assert extract[1:] == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("b")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_semi_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    q = lhs.join(
+        rhs,
+        left_on=["a", "b"],
+        right_on=["b", pl.lit(2)],
+        how="semi",
+        maintain_order="left_right",
+    ).filter(pl.col("a") == 2, pl.col("b") == 2, pl.col("c") == "b")
+
+    expect = pl.DataFrame(
+        {
+            "a": [2],
+            "b": [2],
+            "c": ["b"],
+        }
+    )
+
+    plan = q.explain()
+    extract = _extract_plan_joins_and_filters(plan)
+
+    # * filter on col(a) is pushed to both sides (renamed to col(b) in the right side)
+    # * filter on col(b) is pushed only to left, as the right join key is a literal
+    # * filter on col(c) is pushed only to left, as the column does not exist in
+    #   the right.
+
+    assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b").cast(Int64)]'
+    assert 'col("a")) == (2)' in extract[1]
+    assert 'col("b")) == (2)' in extract[1]
+    assert 'col("c")) == ("b")' in extract[1]
+
+    assert extract[2:] == [
+        'RIGHT PLAN ON: [col("b"), col("_POLARS_0").cast(Int64)]',
+        'FILTER [(col("b")) == (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_anti_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    q = lhs.join(
+        rhs,
+        left_on=["a", "b"],
+        right_on=["b", pl.lit(1)],
+        how="anti",
+        maintain_order="left_right",
+    ).filter(pl.col("a") == 2, pl.col("b") == 2, pl.col("c") == "b")
+
+    expect = pl.DataFrame(
+        {
+            "a": [2],
+            "b": [2],
+            "c": ["b"],
+        }
+    )
+
+    plan = q.explain()
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b").cast(Int64)]'
+    assert 'col("a")) == (2)' in extract[1]
+    assert 'col("b")) == (2)' in extract[1]
+    assert 'col("c")) == ("b")' in extract[1]
+
+    assert extract[2:] == [
+        'RIGHT PLAN ON: [col("b"), col("_POLARS_0").cast(Int64)]',
+        'FILTER [(col("b")) == (2)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_cross_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [0, 0, 0, 0, 0], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    # Nested loop join for `!=`
+    q = (
+        lhs.with_row_index()
+        .join(rhs, how="cross")
+        .filter(
+            pl.col("a") <= 4, pl.col("c_right") <= "B", pl.col("a") != pl.col("a_right")
+        )
+        .sort("index")
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("index", [0, 0, 1, 1, 2, 2, 3, 3], dtype=pl.get_index_type()),
+            pl.Series("a", [1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.Int64),
+            pl.Series("b", [1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.Int64),
+            pl.Series("c", ["a", "a", "b", "b", "c", "c", "d", "d"], dtype=pl.String),
+            pl.Series("a_right", [0, 0, 0, 0, 0, 0, 0, 0], dtype=pl.Int64),
+            pl.Series("b_right", [1, 2, 1, 2, 1, 2, 1, 2], dtype=pl.Int64),
+            pl.Series(
+                "c_right", ["A", "B", "A", "B", "A", "B", "A", "B"], dtype=pl.String
+            ),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert 'NESTED LOOP JOIN ON [(col("a")) != (col("a_right"))]' in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        "LEFT PLAN:",
+        'FILTER [(col("a")) <= (4)]',
+        "RIGHT PLAN:",
+        'FILTER [(col("c")) <= ("B")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Conversion to inner-join for `==`
+    q = lhs.join(rhs, how="cross", maintain_order="left_right").filter(
+        pl.col("a") <= 4,
+        pl.col("c_right") <= "B",
+        pl.col("a") == (pl.col("a_right") + 1),
+    )
+
+    expect = pl.DataFrame(
+        {
+            "a": [1, 1],
+            "b": [1, 1],
+            "c": ["a", "a"],
+            "a_right": [0, 0],
+            "b_right": [1, 2],
+            "c_right": ["A", "B"],
+        }
+    )
+
+    plan = q.explain()
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) <= (4)]',
+        'RIGHT PLAN ON: [[(col("a")) + (1)]]',
+        'FILTER [(col("c")) <= ("B")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_iejoin() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    q = (
+        lhs.with_row_index()
+        .join_where(
+            rhs,
+            pl.col("a") >= 1,
+            pl.col("a") == pl.col("a_right"),
+            pl.col("c_right") <= "B",
+        )
+        .sort("index")
+    )
+
+    expect = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+            "c": ["a", "b"],
+            "a_right": [1, 2],
+            "b_right": [1, 2],
+            "c_right": ["A", "B"],
+        }
+    ).with_row_index()
+
+    plan = q.explain()
+
+    assert "INNER JOIN" in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) >= (1)]',
+        'RIGHT PLAN ON: [col("a")]',
+        'FILTER [(col("c")) <= ("B")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    q = (
+        lhs.with_row_index()
+        .join_where(
+            rhs,
+            pl.col("a") >= 1,
+            pl.col("a") >= pl.col("a_right"),
+            pl.col("c_right") <= "B",
+        )
+        .sort("index")
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("index", [0, 1, 1, 2, 2, 3, 3, 4, 4], dtype=pl.get_index_type()),
+            pl.Series("a", [1, 2, 2, 3, 3, 4, 4, 5, 5], dtype=pl.Int64),
+            pl.Series("b", [1, 2, 2, 3, 3, 4, 4, None, None], dtype=pl.Int64),
+            pl.Series(
+                "c", ["a", "b", "b", "c", "c", "d", "d", "e", "e"], dtype=pl.String
+            ),
+            pl.Series("a_right", [1, 2, 1, 2, 1, 2, 1, 2, 1], dtype=pl.Int64),
+            pl.Series("b_right", [1, 2, 1, 2, 1, 2, 1, 2, 1], dtype=pl.Int64),
+            pl.Series(
+                "c_right",
+                ["A", "B", "A", "B", "A", "B", "A", "B", "A"],
+                dtype=pl.String,
+            ),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "IEJOIN" in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) >= (1)]',
+        'RIGHT PLAN ON: [col("a")]',
+        'FILTER [(col("c")) <= ("B")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_asof_join() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    q = lhs.join_asof(
+        rhs,
+        left_on=pl.col("a").set_sorted(),
+        right_on=pl.col("b").set_sorted(),
+        tolerance=0,
+    ).filter(
+        pl.col("a") >= 2,
+        pl.col("b") >= 3,
+        pl.col("c") >= "A",
+        pl.col("c_right") >= "B",
+    )
+
+    expect = pl.DataFrame(
+        {
+            "a": [3],
+            "b": [3],
+            "c": ["c"],
+            "a_right": [3],
+            "b_right": [3],
+            "c_right": ["C"],
+        }
+    )
+
+    plan = q.explain()
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[:2] == [
+        'FILTER [(col("c_right")) >= ("B")]',
+        'LEFT PLAN ON: [col("a").set_sorted()]',
+    ]
+
+    assert 'col("b")) >= (3)' in extract[2]
+    assert 'col("c")) >= ("A")' in extract[2]
+    assert 'col("a")) >= (2)' in extract[2]
+
+    assert extract[3:] == ['RIGHT PLAN ON: [col("b").set_sorted()]']
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # With "by" columns
+    q = lhs.join_asof(
+        rhs,
+        left_on="a",
+        right_on="b",
+        tolerance=99,
+        by_left="b",
+        by_right="a",
+    ).filter(
+        pl.col("a") >= 2,
+        pl.col("b") >= 3,
+        pl.col("c") >= "A",
+        pl.col("c_right") >= "B",
+    )
+
+    expect = pl.DataFrame(
+        {
+            "a": [3],
+            "b": [3],
+            "c": ["c"],
+            "b_right": [3],
+            "c_right": ["C"],
+        }
+    )
+
+    plan = q.explain()
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[:2] == [
+        'FILTER [(col("c_right")) >= ("B")]',
+        'LEFT PLAN ON: [col("a")]',
+    ]
+    assert 'col("a")) >= (2)' in extract[2]
+    assert 'col("b")) >= (3)' in extract[2]
+
+    assert extract[3:] == [
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("a")) >= (3)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_full_join_downgrade() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 4, None],
+            "b": [1, 2, 3, None, 5],
+            "c": ["A", "B", "C", "D", "E"],
+        }
+    )
+
+    # Downgrades to left-join
+    q = lhs.join(rhs, on=["a", "b"], how="full", maintain_order="left_right").filter(
+        pl.col("b") >= 3
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [3, 4], dtype=pl.Int64),
+            pl.Series("b", [3, 4], dtype=pl.Int64),
+            pl.Series("c", ["c", "d"], dtype=pl.String),
+            pl.Series("a_right", [3, None], dtype=pl.Int64),
+            pl.Series("b_right", [3, None], dtype=pl.Int64),
+            pl.Series("c_right", ["C", None], dtype=pl.String),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "FULL JOIN" not in plan
+    assert plan.startswith("LEFT JOIN")
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) >= (3)]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) >= (3)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Downgrades to right-join
+    q = lhs.join(
+        rhs, left_on="a", right_on="b", how="full", maintain_order="left_right"
+    ).filter(pl.col("b_right") >= 3)
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [3, 5], dtype=pl.Int64),
+            pl.Series("b", [3, None], dtype=pl.Int64),
+            pl.Series("c", ["c", "e"], dtype=pl.String),
+            pl.Series("a_right", [3, None], dtype=pl.Int64),
+            pl.Series("b_right", [3, 5], dtype=pl.Int64),
+            pl.Series("c_right", ["C", "E"], dtype=pl.String),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "FULL JOIN" not in plan
+    assert "RIGHT JOIN" in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) >= (3)]',
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("b")) >= (3)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Downgrades to right-join
+    q = lhs.join(
+        rhs,
+        left_on="a",
+        right_on="b",
+        how="full",
+        coalesce=True,
+        maintain_order="left_right",
+    ).filter(
+        (pl.col("a") >= 1) | pl.col("a").is_null(),  # col(a) from LHS
+        pl.col("a_right") >= 3,  # col(a) from RHS
+        (pl.col("b") >= 2) | pl.col("b").is_null(),  # col(b) from LHS
+        pl.col("c_right") >= "C",  # col(c) from RHS
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [3, None], dtype=pl.Int64),
+            pl.Series("b", [3, None], dtype=pl.Int64),
+            pl.Series("c", ["c", None], dtype=pl.String),
+            pl.Series("a_right", [3, 4], dtype=pl.Int64),
+            pl.Series("c_right", ["C", "D"], dtype=pl.String),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "FULL JOIN" not in plan
+    assert "RIGHT JOIN" in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert [
+        'FILTER [([(col("b")) >= (2)]) | (col("b").is_null())]',
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [([(col("a")) >= (1)]) | (col("a").is_null())]',
+        'RIGHT PLAN ON: [col("b")]',
+    ]
+
+    assert 'col("a")) >= (3)' in extract[4]
+    assert '(col("b")) >= (1)]) | (col("b").alias("a").is_null())' in extract[4]
+    assert 'col("c")) >= ("C")' in extract[4]
+
+    assert len(extract) == 5
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Downgrades to inner-join
+    q = lhs.join(rhs, on=["a", "b"], how="full", maintain_order="left_right").filter(
+        pl.col("b").is_not_null(), pl.col("b_right").is_not_null()
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [1, 2, 3], dtype=pl.Int64),
+            pl.Series("b", [1, 2, 3], dtype=pl.Int64),
+            pl.Series("c", ["a", "b", "c"], dtype=pl.String),
+            pl.Series("a_right", [1, 2, 3], dtype=pl.Int64),
+            pl.Series("b_right", [1, 2, 3], dtype=pl.Int64),
+            pl.Series("c_right", ["A", "B", "C"], dtype=pl.String),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "FULL JOIN" not in plan
+    assert plan.startswith("INNER JOIN")
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b")]'
+    assert 'col("b").is_not_null()' in extract[1]
+    assert 'col("b").alias("b_right").is_not_null()' in extract[1]
+
+    assert extract[2] == 'RIGHT PLAN ON: [col("a"), col("b")]'
+    assert 'col("b").is_not_null()' in extract[3]
+    assert 'col("b").alias("b_right").is_not_null()' in extract[3]
+
+    assert len(extract) == 4
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+    # Does not downgrade because col(b) is a coalesced key-column, but the filter
+    # is still pushed to both sides.
+    q = lhs.join(
+        rhs, on=["a", "b"], how="full", coalesce=True, maintain_order="left_right"
+    ).filter(pl.col("b") >= 3)
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [3, 4, None], dtype=pl.Int64),
+            pl.Series("b", [3, 4, 5], dtype=pl.Int64),
+            pl.Series("c", ["c", "d", None], dtype=pl.String),
+            pl.Series("c_right", ["C", None, "E"], dtype=pl.String),
+        ]
+    )
+
+    plan = q.explain()
+    assert plan.startswith("FULL JOIN")
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) >= (3)]',
+        'RIGHT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("b")) >= (3)]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_right_join_downgrade() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    # Downgrades to inner-join
+    q = lhs.join(
+        rhs,
+        left_on="a",
+        right_on="b",
+        how="right",
+        coalesce=True,
+        maintain_order="left_right",
+    ).filter(
+        pl.col("a") <= 7,  # col(a) from RHS (LHS col(a) is coalesced into col(b_right))
+        pl.col("b_right") <= 10,  # Key-column filter
+        pl.col("c") <= "b",  # col(c) from LHS
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("b", [1, 2], dtype=pl.Int64),
+            pl.Series("c", ["a", "b"], dtype=pl.String),
+            pl.Series("a", [1, 2], dtype=pl.Int64),
+            pl.Series("b_right", [1, 2], dtype=pl.Int64),
+            pl.Series("c_right", ["A", "B"], dtype=pl.String),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "RIGHT JOIN" not in plan
+    assert "INNER JOIN" in plan
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[0] == 'LEFT PLAN ON: [col("a")]'
+    assert 'col("a")) <= (10)' in extract[1]
+    assert 'col("c")) <= ("b")' in extract[1]
+
+    assert extract[2] == 'RIGHT PLAN ON: [col("b")]'
+    assert 'col("a")) <= (7)' in extract[3]
+    assert 'col("b")) <= (10)' in extract[3]
+
+    assert len(extract) == 4
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_join_downgrade_equality_above_and() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+    )
+
+    q = lhs.join(
+        rhs,
+        left_on="a",
+        right_on="b",
+        how="full",
+        coalesce=False,
+        maintain_order="left_right",
+    ).filter(((pl.col("b") >= 3) & False) >= False)
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [1, 2, 3, 4, 5, None], dtype=pl.Int64),
+            pl.Series("b", [1, 2, 3, 4, None, None], dtype=pl.Int64),
+            pl.Series("c", ["a", "b", "c", "d", "e", None], dtype=pl.String),
+            pl.Series("a_right", [1, 2, 3, None, 5, 4], dtype=pl.Int64),
+            pl.Series("b_right", [1, 2, 3, None, 5, None], dtype=pl.Int64),
+            pl.Series("c_right", ["A", "B", "C", None, "E", "D"], dtype=pl.String),
+        ]
+    )
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_left_join_downgrade() -> None:
+    lhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
+    )
+    rhs = pl.LazyFrame(
+        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", None, "D", "E"]}
+    )
+
+    # Downgrades to inner-join
+    q = lhs.join(
+        rhs,
+        left_on="a",
+        right_on="b",
+        how="left",
+        coalesce=True,
+        maintain_order="left_right",
+    ).filter(pl.col("c_right") <= "B")
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("a", [1, 2], dtype=pl.Int64),
+            pl.Series("b", [1, 2], dtype=pl.Int64),
+            pl.Series("c", ["a", "b"], dtype=pl.String),
+            pl.Series("a_right", [1, 2], dtype=pl.Int64),
+            pl.Series("c_right", ["A", "B"], dtype=pl.String),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert "LEFT JOIN" not in plan
+    assert plan.startswith("INNER JOIN")
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("b")]',
+        'FILTER [(col("c")) <= ("B")]',
+    ]
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
+    lhs = pl.LazyFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    )
+
+    rhs = pl.LazyFrame(
+        {
+            "apple": ["x", "y", "z"],
+            "ham": ["a", "b", "d"],
+            "bar": ["a", "b", "c"],
+            "foo2": [1, 2, 3],
+        }
+    )
+
+    q = lhs.join(rhs, how="left", on="ham", maintain_order="left_right").filter(
+        pl.col("ham") == "a", pl.col("apple") == "x", pl.col("foo") <= 2
+    )
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("foo", [1], dtype=pl.Int64),
+            pl.Series("bar", [6.0], dtype=pl.Float64),
+            pl.Series("ham", ["a"], dtype=pl.String),
+            pl.Series("apple", ["x"], dtype=pl.String),
+            pl.Series("bar_right", ["a"], dtype=pl.String),
+            pl.Series("foo2", [1], dtype=pl.Int64),
+        ]
+    )
+
+    plan = q.explain()
+    assert "FULL JOIN" not in plan
+    assert plan.startswith("INNER JOIN")
+
+    extract = _extract_plan_joins_and_filters(plan)
+
+    assert extract[0] == 'LEFT PLAN ON: [col("ham")]'
+    assert '(col("foo")) <= (2)' in extract[1]
+    assert 'col("ham")) == ("a")' in extract[1]
+
+    assert extract[2] == 'RIGHT PLAN ON: [col("ham")]'
+    assert 'col("ham")) == ("a")' in extract[3]
+    assert 'col("apple")) == ("x")' in extract[3]
+
+    assert len(extract) == 4
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_downgrade_panic_23307() -> None:
+    lhs = pl.select(a=pl.lit(1, dtype=pl.Int8)).lazy()
+    rhs = pl.select(a=pl.lit(1, dtype=pl.Int16), x=pl.lit(1, dtype=pl.Int32)).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", coalesce=True).filter(pl.col("x") >= 1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.select(
+            a=pl.lit(1, dtype=pl.Int8),
+            x=pl.lit(1, dtype=pl.Int32),
+        ),
+    )
+
+    lhs = pl.select(a=pl.lit(999, dtype=pl.Int16)).lazy()
+
+    # Note: -25 matches to (999).overflowing_cast(Int8).
+    # This is specially chosen to test that we don't accidentally push the filter
+    # to the RHS.
+    rhs = pl.LazyFrame(
+        {"a": [1, -25], "x": [1, 2]}, schema={"a": pl.Int8, "x": pl.Int32}
+    )
+
+    q = lhs.join(
+        rhs,
+        on=pl.col("a").cast(pl.Int8, strict=False, wrap_numerical=True),
+        how="left",
+        coalesce=False,
+    ).filter(pl.col("a") >= 0)
+
+    expect = pl.DataFrame(
+        {"a": 999, "a_right": -25, "x": 2},
+        schema={"a": pl.Int16, "a_right": pl.Int8, "x": pl.Int32},
+    )
+
+    plan = q.explain()
+
+    assert not plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (pl.lit(None, dtype=pl.Int64), lambda col: col >= 1),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (col >= 1).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (~(col >= 1)).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~(col >= 1).is_null()),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
+        (1, lambda col: col.is_between(None, 1)),
+        (1, lambda col: col.is_between(1, None)),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_close(1)),
+        (1, lambda col: col.is_close(pl.lit(None, dtype=pl.Int64))),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_infinite()),
+        #
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_infinite()),
+    ],
+)
+def test_join_downgrade_null_preserving_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    assert (
+        pl.select(expr_first_input)
+        .select(expr_func(pl.first()))
+        .select(pl.first().is_null() | ~pl.first())
+        .to_series()
+        .item()
+    )
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("INNER JOIN")
+
+    out = q.collect()
+
+    assert out.height == 0
+    assert_frame_equal(out, q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: ~(x.is_in([1, None], nulls_equal=True)),
+        ),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in([1, None], nulls_equal=True) > True,
+        ),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in([1], nulls_equal=True),
+        ),
+    ],
+)
+def test_join_downgrade_forbid_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))

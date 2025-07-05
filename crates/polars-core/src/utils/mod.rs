@@ -336,7 +336,6 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 }
 
 #[inline]
-#[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let signed_start_offset = if offset < 0 {
         offset.saturating_add_unsigned(array_len as u64)
@@ -569,6 +568,18 @@ macro_rules! with_match_physical_integer_polars_type {(
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
         dt => panic!("not implemented for dtype {:?}", dt),
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_categorical_physical_type {(
+    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    match $dtype {
+        CategoricalPhysical::U8 => __with_ty__! { Categorical8Type },
+        CategoricalPhysical::U16 => __with_ty__! { Categorical16Type },
+        CategoricalPhysical::U32 => __with_ty__! { Categorical32Type },
     }
 })}
 

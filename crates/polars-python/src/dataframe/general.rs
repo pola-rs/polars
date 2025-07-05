@@ -450,7 +450,7 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    #[pyo3(signature = (columns, separator, drop_first=false, categories=None))]
+    #[pyo3(signature = (columns, separator, drop_first=false, categories=None, drop_nulls=false))]
     pub fn to_dummies(
         &self,
         py: Python<'_>,
@@ -458,6 +458,7 @@ impl PyDataFrame {
         separator: Option<&str>,
         drop_first: bool,
         categories: Option<HashMap<String, Vec<String>>>,
+        drop_nulls: bool,
     ) -> PyResult<Self> {
         let categories = categories.map(|cats| {
             cats.into_iter()
@@ -470,8 +471,9 @@ impl PyDataFrame {
                 separator,
                 drop_first,
                 categories,
+                drop_nulls,
             ),
-            None => self.df.to_dummies(separator, drop_first, categories),
+            None => self.df.to_dummies(separator, drop_first, categories, drop_nulls),
         })
     }
 

@@ -215,7 +215,7 @@ where
         }
         let categories = categories
             .finish()
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         fields.push(categories);
     };

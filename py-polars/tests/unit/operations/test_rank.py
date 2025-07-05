@@ -25,7 +25,7 @@ def test_rank_random_expr() -> None:
 def test_rank_random_series() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     assert_series_equal(
-        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=pl.UInt32)
+        s.rank("random", seed=1), pl.Series("a", [2, 5, 7, 3, 4, 6, 1], dtype=pl.UInt32)
     )
 
 

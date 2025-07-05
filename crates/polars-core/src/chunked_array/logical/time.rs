@@ -42,7 +42,8 @@ impl Int64Chunked {
         let int64chunked =
             unsafe { Self::new_with_dims(self.field.clone(), chunks, self.length, null_count) };
 
-        TimeChunked::new_logical(int64chunked, DataType::Time)
+        // SAFETY: no invalid states.
+        unsafe { TimeChunked::new_logical(int64chunked, DataType::Time) }
     }
 }
 

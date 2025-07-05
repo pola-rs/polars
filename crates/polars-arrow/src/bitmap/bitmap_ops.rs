@@ -279,6 +279,16 @@ pub fn num_intersections_with(lhs: &Bitmap, rhs: &Bitmap) -> usize {
     )
 }
 
+pub fn intersects_with(lhs: &Bitmap, rhs: &Bitmap) -> bool {
+    binary_fold(
+        lhs,
+        rhs,
+        |lhs, rhs| lhs & rhs != 0,
+        false,
+        |lhs, rhs| lhs || rhs,
+    )
+}
+
 pub fn intersects_with_mut(lhs: &MutableBitmap, rhs: &MutableBitmap) -> bool {
     binary_fold_mut(
         lhs,

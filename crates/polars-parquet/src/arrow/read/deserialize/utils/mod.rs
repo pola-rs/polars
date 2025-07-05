@@ -18,6 +18,7 @@ use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecode
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::schema::Repetition;
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
@@ -118,7 +119,7 @@ pub fn not_implemented(page: &DataPage) -> ParquetError {
 }
 
 pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
-pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity> {
+pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity<'_>> {
     let validity = split_buffer(page)?.def;
     let decoder = hybrid_rle::HybridRleDecoder::new(validity, 1, page.num_values());
     Ok(decoder)
@@ -597,24 +598,27 @@ impl<D: Decoder> PageDecoder<D> {
                     // Handle the case where column is held equal to Null. This can be the same for all
                     // non-nested columns.
                     Some(Filter::Predicate(p))
-                        if p.predicate
-                            .to_equals_scalar()
-                            .is_some_and(|sc| sc.is_null()) =>
+                        if matches!(
+                            p.predicate.as_specialized(),
+                            Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null)),
+                        ) =>
                     {
                         if state.is_optional {
                             match &state.page_validity {
                                 None => pred_true_mask.extend_constant(page.num_values(), false),
                                 Some(v) => {
-                                    pred_true_mask.extend_from_bitmap(v);
+                                    let start_set_bits = pred_true_mask.set_bits();
+                                    pred_true_mask.extend_from_bitmap(&!v);
                                     if p.include_values {
-                                        target.extend_nulls(v.set_bits());
+                                        target.extend_nulls(
+                                            pred_true_mask.set_bits() - start_set_bits,
+                                        );
                                     }
                                 },
                             }
                         } else {
                             pred_true_mask.extend_constant(page.num_values(), false);
                         }
-                        drop(state);
                     },
 
                     // For now, we have a function that indicates whether the predicate can actually be
@@ -687,7 +691,7 @@ impl<D: Decoder> PageDecoder<D> {
 pub(super) fn dict_indices_decoder(
     page: &DataPage,
     null_count: usize,
-) -> ParquetResult<hybrid_rle::HybridRleDecoder> {
+) -> ParquetResult<hybrid_rle::HybridRleDecoder<'_>> {
     let indices_buffer = split_buffer(page)?.values;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),

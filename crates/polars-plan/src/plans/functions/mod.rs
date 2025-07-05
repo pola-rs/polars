@@ -39,7 +39,7 @@ pub enum FunctionIR {
 
     FastCount {
         sources: ScanSources,
-        scan_type: Box<FileScan>,
+        scan_type: Box<FileScanIR>,
         cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
     },
@@ -185,7 +185,7 @@ impl FunctionIR {
         }
     }
 
-    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[PlSmallStr]> {
+    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<'_, [PlSmallStr]> {
         use FunctionIR::*;
         match self {
             Unnest { columns } => Cow::Borrowed(columns.as_ref()),

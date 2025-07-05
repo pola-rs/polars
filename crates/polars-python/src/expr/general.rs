@@ -425,6 +425,13 @@ impl PyExpr {
             .into()
     }
 
+    fn is_close(&self, other: Self, abs_tol: f64, rel_tol: f64, nans_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .is_close(other.inner, abs_tol, rel_tol, nans_equal)
+            .into()
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
@@ -700,24 +707,16 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise, returns_scalar))]
+    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<PyDataTypeExpr>,
-        agg_list: bool,
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
         let output_type = output_type.map(|v| v.inner);
-        map_single(
-            self,
-            lambda,
-            output_type,
-            agg_list,
-            is_elementwise,
-            returns_scalar,
-        )
+        map_single(self, lambda, output_type, is_elementwise, returns_scalar)
     }
 
     fn dot(&self, other: Self) -> Self {

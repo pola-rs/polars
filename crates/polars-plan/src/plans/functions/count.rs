@@ -15,13 +15,14 @@ use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
+use polars_utils::plpath::PlPath;
 
 use super::*;
 
 #[allow(unused_variables)]
 pub fn count_rows(
     sources: &ScanSources,
-    scan_type: &FileScan,
+    scan_type: &FileScanIR,
     cloud_options: Option<&CloudOptions>,
     alias: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
@@ -44,21 +45,21 @@ pub fn count_rows(
     {
         let count: PolarsResult<usize> = match scan_type {
             #[cfg(feature = "csv")]
-            FileScan::Csv { options } => count_all_rows_csv(sources, options),
+            FileScanIR::Csv { options } => count_all_rows_csv(sources, options),
             #[cfg(feature = "parquet")]
-            FileScan::Parquet { .. } => count_rows_parquet(sources, cloud_options),
+            FileScanIR::Parquet { .. } => count_rows_parquet(sources, cloud_options),
             #[cfg(feature = "ipc")]
-            FileScan::Ipc { options, metadata } => count_rows_ipc(
+            FileScanIR::Ipc { options, metadata } => count_rows_ipc(
                 sources,
                 #[cfg(feature = "cloud")]
                 cloud_options,
                 metadata.as_deref(),
             ),
             #[cfg(feature = "json")]
-            FileScan::NDJson { options } => count_rows_ndjson(sources, cloud_options),
+            FileScanIR::NDJson { options } => count_rows_ndjson(sources, cloud_options),
             #[cfg(feature = "python")]
-            FileScan::PythonDataset { .. } => unreachable!(),
-            FileScan::Anonymous { .. } => {
+            FileScanIR::PythonDataset { .. } => unreachable!(),
+            FileScanIR::Anonymous { .. } => {
                 unreachable!()
             },
         };
@@ -81,8 +82,8 @@ fn count_all_rows_csv(
     sources
         .iter()
         .map(|source| match source {
-            ScanSourceRef::Path(path) => polars_io::csv::read::count_rows(
-                path,
+            ScanSourceRef::Path(addr) => polars_io::csv::read::count_rows(
+                addr,
                 parse_options.separator,
                 parse_options.quote_char,
                 parse_options.comment_prefix.as_ref(),
@@ -119,9 +120,8 @@ pub(super) fn count_rows_parquet(
     if sources.is_empty() {
         return Ok(0);
     };
-    let is_cloud = sources.is_cloud_url();
 
-    if is_cloud {
+    if sources.is_cloud_url() {
         feature_gated!("cloud", {
             get_runtime().block_on(count_rows_cloud_parquet(
                 sources.as_paths().unwrap(),
@@ -140,15 +140,15 @@ pub(super) fn count_rows_parquet(
 
 #[cfg(all(feature = "parquet", feature = "async"))]
 async fn count_rows_cloud_parquet(
-    paths: &[std::path::PathBuf],
+    addrs: &[PlPath],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_io::prelude::ParquetObjectStore;
 
-    let collection = paths.iter().map(|path| {
+    let collection = addrs.iter().map(|path| {
         with_concurrency_budget(1, || async {
             let mut reader =
-                ParquetObjectStore::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
+                ParquetObjectStore::from_uri(path.to_str(), cloud_options, None).await?;
             reader.num_rows().await
         })
     });
@@ -189,15 +189,15 @@ pub(super) fn count_rows_ipc(
 
 #[cfg(all(feature = "ipc", feature = "async"))]
 async fn count_rows_cloud_ipc(
-    paths: &[std::path::PathBuf],
+    addrs: &[PlPath],
     cloud_options: Option<&CloudOptions>,
     metadata: Option<&arrow::io::ipc::read::FileMetadata>,
 ) -> PolarsResult<usize> {
     use polars_io::ipc::IpcReaderAsync;
 
-    let collection = paths.iter().map(|path| {
+    let collection = addrs.iter().map(|path| {
         with_concurrency_budget(1, || async {
-            let reader = IpcReaderAsync::from_uri(&path.to_string_lossy(), cloud_options).await?;
+            let reader = IpcReaderAsync::from_uri(path.to_str(), cloud_options).await?;
             reader.count_rows(metadata).await
         })
     });
@@ -229,7 +229,7 @@ pub(super) fn count_rows_ndjson(
                         .as_paths()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .map(|path| Arc::from(path.to_str()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,

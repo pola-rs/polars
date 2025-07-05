@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:scan]
     let args = ScanArgsParquet::default();
-    let lf = LazyFrame::scan_parquet("docs/assets/data/path.parquet", args).unwrap();
+    let lf = LazyFrame::scan_parquet(PlPath::new("docs/assets/data/path.parquet"), args).unwrap();
     // --8<-- [end:scan]
     println!("{}", lf.collect()?);
 

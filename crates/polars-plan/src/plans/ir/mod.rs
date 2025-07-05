@@ -60,7 +60,7 @@ pub enum IR {
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
-        scan_type: Box<FileScan>,
+        scan_type: Box<FileScanIR>,
         /// generic options that can be used for all file types.
         unified_scan_args: Box<UnifiedScanArgs>,
         /// This used as part of a hack to prevent deadlocks when we run the in-memory engine with
@@ -186,7 +186,7 @@ impl IRPlan {
         self.lp_arena.get(self.lp_top)
     }
 
-    pub fn as_ref(&self) -> IRPlanRef {
+    pub fn as_ref(&self) -> IRPlanRef<'_> {
         IRPlanRef {
             lp_top: self.lp_top,
             lp_arena: &self.lp_arena,
@@ -202,11 +202,11 @@ impl IRPlan {
         self.as_ref().describe_tree_format()
     }
 
-    pub fn display(&self) -> format::IRDisplay {
+    pub fn display(&self) -> format::IRDisplay<'_> {
         self.as_ref().display()
     }
 
-    pub fn display_dot(&self) -> dot::IRDotDisplay {
+    pub fn display_dot(&self) -> dot::IRDotDisplay<'_> {
         self.as_ref().display_dot()
     }
 }

@@ -38,26 +38,20 @@ fn modify_supertype(
     match (type_left, type_right, left, right) {
         // if the we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
-        (Categorical(_, ordering), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
-        | (String | Unknown(UnknownKind::Str), Categorical(_, ordering), AExpr::Literal(_), _) => {
-            st = Categorical(None, *ordering)
-        },
-        #[cfg(feature = "dtype-categorical")]
-        (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        (dt @ Categorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
+        | (String | Unknown(UnknownKind::Str), dt @ Categorical(_, _), AExpr::Literal(_), _)
+        | (dt @ Enum(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
         | (String | Unknown(UnknownKind::Str), dt @ Enum(_, _), AExpr::Literal(_), _) => {
             st = dt.clone()
         },
+
         // when then expression literals can have a different list type.
         // so we cast the literal to the other hand side.
         (List(inner), List(other), _, AExpr::Literal(_))
         | (List(other), List(inner), AExpr::Literal(_), _)
             if inner != other =>
         {
-            st = match &**inner {
-                #[cfg(feature = "dtype-categorical")]
-                Categorical(_, ordering) => List(Box::new(Categorical(None, *ordering))),
-                _ => List(inner.clone()),
-            };
+            st = List(inner.clone())
         },
         // do nothing
         _ => {},
@@ -126,14 +120,12 @@ impl OptimizationRule for TypeCoercionRule {
                         }
                         .should_cast_column("", cast_to, &cast_from);
 
-                        #[expect(clippy::single_match)]
                         match v {
                             // No casting needed
-                            // TODO: Enable after release 1.30.0
-                            // Ok(false) => {
-                            //     return Ok(Some(expr_arena.get(input_expr).clone()));
-                            // },
-                            Ok(true | false) => {
+                            Ok(false) => {
+                                return Ok(Some(expr_arena.get(input_expr).clone()));
+                            },
+                            Ok(true) => {
                                 let options = if cast_from.is_primitive_numeric()
                                     && cast_to.is_primitive_numeric()
                                 {
@@ -873,7 +865,10 @@ fn try_inline_literal_cast(
             let s = s.cast_with_options(dtype, options)?;
             LiteralValue::Series(SpecialEq::new(s))
         },
-        LiteralValue::Dyn(dyn_value) => dyn_value.clone().try_materialize_to_dtype(dtype)?.into(),
+        LiteralValue::Dyn(dyn_value) => dyn_value
+            .clone()
+            .try_materialize_to_dtype(dtype, options)?
+            .into(),
         lv if lv.is_null() => match dtype {
             DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
                 LiteralValue::untyped_null()
@@ -897,11 +892,11 @@ fn try_inline_literal_cast(
                 #[cfg(feature = "dtype-duration")]
                 (AnyValue::Duration(_, _), _) => return Ok(None),
                 #[cfg(feature = "dtype-categorical")]
-                (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
+                (AnyValue::Categorical(_, _), _) | (_, DataType::Categorical(_, _)) => {
                     return Ok(None);
                 },
                 #[cfg(feature = "dtype-categorical")]
-                (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
+                (AnyValue::Enum(_, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
                 #[cfg(feature = "dtype-struct")]
                 (_, DataType::Struct(_)) => return Ok(None),
                 (av, _) => {
@@ -1036,7 +1031,7 @@ mod test {
 
         let df = DataFrame::new(Vec::from([Column::new_empty(
             PlSmallStr::from_static("fruits"),
-            &DataType::Categorical(None, Default::default()),
+            &DataType::from_categories(Categories::global()),
         )]))
         .unwrap();
 

@@ -357,9 +357,7 @@ def test_date_agg() -> None:
     ("s", "min", "max"),
     [
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series(["a", "c", "b"], dtype=pl.Categorical), "a", "b"),
         (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series([None, "c", "a", "b"], dtype=pl.Categorical), "c", "b"),
         (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
@@ -528,7 +526,7 @@ def test_to_pandas(test_data: list[Any]) -> None:
         vals_b = [(None if x is None else x.tolist()) for x in b]
     else:
         v = b.replace({np.nan: None}).values.tolist()
-        vals_b = cast(list[Any], v)
+        vals_b = cast("list[Any]", v)
 
     assert vals_b == test_data
 
@@ -629,30 +627,32 @@ def test_arrow() -> None:
     assert out == pa.nulls(3)
 
     s = cast(
-        pl.Series,
+        "pl.Series",
         pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
     )
     assert s.dtype == pl.List
 
-    # categorical dtype tests (including various forms of empty pyarrow array)
-    with pl.StringCache():
-        arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
-        assert_series_equal(
-            pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
-        )
-        arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
-        arr2 = pa.array([]).dictionary_encode()
-        arr3 = pa.chunked_array([], arr1.type)
-        arr4 = pa.array([], arr1.type)
 
+def test_arrow_cat() -> None:
+    # categorical dtype tests (including various forms of empty pyarrow array)
+    arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
+    assert_series_equal(
+        pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
+    )
+    arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
+    arr2 = pa.chunked_array([], arr1.type)
+    arr3 = pa.array([], arr1.type)
+    arr4 = pa.array([]).dictionary_encode()
+
+    assert_series_equal(
+        pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
+        pl.Series("arr", arr1),
+    )
+    for arr in (arr2, arr3):
         assert_series_equal(
-            pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
-            pl.Series("arr", arr1),
+            pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
         )
-        for arr in (arr2, arr3, arr4):
-            assert_series_equal(
-                pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
-            )
+    assert_series_equal(pl.Series("arr", [], dtype=pl.Null), pl.Series("arr", arr4))
 
 
 def test_pycapsule_interface() -> None:
@@ -1323,9 +1323,10 @@ def test_comparisons_bool_series_to_int() -> None:
 
     for op in (ge, gt, le, lt):
         for scalar in (0, 1.0, True, False):
+            op_str = op.__name__.replace("e", "t_eq")
             with pytest.raises(
-                TypeError,
-                match=r"'\W{1,2}' not supported .* 'Series' and '(int|bool|float)'",
+                NotImplementedError,
+                match=rf"Series of type Boolean does not have {op_str} operator",
             ):
                 op(srs_bool, scalar)
 
@@ -1375,6 +1376,16 @@ def test_to_dummies_drop_first() -> None:
     expected = pl.DataFrame(
         {"a_2": [0, 1, 0], "a_3": [0, 0, 1]},
         schema={"a_2": pl.UInt8, "a_3": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_to_dummies_drop_nulls() -> None:
+    s = pl.Series("a", [1, 2, None])
+    result = s.to_dummies(drop_nulls=True)
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_2": [0, 1, 0]},
+        schema={"a_1": pl.UInt8, "a_2": pl.UInt8},
     )
     assert_frame_equal(result, expected)
 
@@ -1458,8 +1469,6 @@ def test_arg_sort() -> None:
         (pl.Series(["a", "c", "b"]), 0, 1),
         (pl.Series([None, "a", None, "b"]), 1, 3),
         # Categorical
-        (pl.Series(["c", "b", "a"], dtype=pl.Categorical), 0, 2),
-        (pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical), 1, 4),
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
         (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical("lexical")), 4, 1),
     ],
@@ -1698,13 +1707,19 @@ def test_to_physical() -> None:
 
     # casting a categorical results in a UInt32
     s = pl.Series(["cat1"]).cast(pl.Categorical)
-    expected = pl.Series([0], dtype=UInt32)
-    assert_series_equal(s.to_physical(), expected)
+    assert s.to_physical().dtype == pl.UInt32
+
+    # casting a small enum results in a UInt8
+    s = pl.Series(["cat1"]).cast(pl.Enum(["cat1"]))
+    assert s.to_physical().dtype == pl.UInt8
 
     # casting a List(Categorical) results in a List(UInt32)
     s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
-    expected = pl.Series([[0]], dtype=pl.List(UInt32))
-    assert_series_equal(s.to_physical(), expected)
+    assert s.to_physical().dtype == pl.List(pl.UInt32)
+
+    # casting a List(Enum) with a small enum results in a List(UInt8)
+    s = pl.Series(["cat1"]).cast(pl.List(pl.Enum(["cat1"])))
+    assert s.to_physical().dtype == pl.List(pl.UInt8)
 
 
 def test_to_physical_rechunked_21285() -> None:
@@ -2050,7 +2065,7 @@ def test_numpy_series_arithmetic() -> None:
     assert_series_equal(result_add1, expected_add)  # type: ignore[arg-type]
     assert_series_equal(result_add2, expected_add)
 
-    result_sub1 = cast(pl.Series, y - sx)  # py37 is different vs py311 on this one
+    result_sub1 = cast("pl.Series", y - sx)  # py37 is different vs py311 on this one
     expected = pl.Series([2.0, 2.0], dtype=pl.Float64)
     assert_series_equal(result_sub1, expected)
     result_sub2 = sx - y
@@ -2245,3 +2260,62 @@ def test_repeat_by() -> None:
     calculated = pl.select(a=pl.Series("a", [1, 2]).repeat_by(2))
     expected = pl.select(a=pl.Series("a", [[1, 1], [2, 2]]))
     assert calculated.equals(expected)
+
+
+def test_is_close() -> None:
+    a = pl.Series(
+        "a",
+        [
+            1.0,
+            1.0,
+            float("-inf"),
+            float("inf"),
+            float("inf"),
+            float("inf"),
+            float("nan"),
+        ],
+    )
+    b = pl.Series(
+        "b", [1.3, 1.7, float("-inf"), float("inf"), float("-inf"), 1.0, float("nan")]
+    )
+    assert a.is_close(b, abs_tol=0.5).to_list() == [
+        True,
+        False,
+        True,
+        True,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_is_close_literal() -> None:
+    a = pl.Series("a", [1.1, 1.2, 1.3, 1.4, float("inf"), float("nan")])
+    assert a.is_close(1.2).to_list() == [False, True, False, False, False, False]
+
+
+def test_is_close_nans_equal() -> None:
+    a = pl.Series("a", [1.0, float("nan")])
+    b = pl.Series("b", [2.0, float("nan")])
+    assert a.is_close(b, nans_equal=True).to_list() == [False, True]
+
+
+def test_is_close_invalid_abs_tol() -> None:
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.select(pl.lit(1.0).is_close(1, abs_tol=-1.0))
+
+
+def test_is_close_invalid_rel_tol() -> None:
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.select(pl.lit(1.0).is_close(1, rel_tol=1.0))
+
+
+def test_comparisons_structs_raise() -> None:
+    s = pl.Series([{"x": 1}, {"x": 2}, {"x": 3}])
+    rhss = ["", " ", 5, {"x": 1}]
+    for rhs in rhss:
+        with pytest.raises(
+            NotImplementedError,
+            match=r"Series of type Struct\(\{'x': Int64\}\) does not have eq operator",
+        ):
+            s == rhs  # noqa: B015

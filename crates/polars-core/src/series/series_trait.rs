@@ -62,7 +62,7 @@ pub(crate) mod private {
         }
 
         /// Get field (used in schema)
-        fn _field(&self) -> Cow<Field>;
+        fn _field(&self) -> Cow<'_, Field>;
 
         fn _dtype(&self) -> &DataType;
 
@@ -212,13 +212,13 @@ pub trait SeriesTrait:
     fn rename(&mut self, name: PlSmallStr);
 
     /// Get the lengths of the underlying chunks
-    fn chunk_lengths(&self) -> ChunkLenIter;
+    fn chunk_lengths(&self) -> ChunkLenIter<'_>;
 
     /// Name of series.
     fn name(&self) -> &PlSmallStr;
 
     /// Get field (used in schema)
-    fn field(&self) -> Cow<Field> {
+    fn field(&self) -> Cow<'_, Field> {
         self._field()
     }
 
@@ -402,7 +402,7 @@ pub trait SeriesTrait:
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(index < self.len(), oob = index, self.len());
         // SAFETY: Just did bounds check
         let value = unsafe { self.get_unchecked(index) };
@@ -416,7 +416,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue;
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue<'_>;
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         polars_bail!(opq = sort_with, self._dtype());

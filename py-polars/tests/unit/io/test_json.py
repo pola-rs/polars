@@ -329,6 +329,19 @@ def test_ndjson_null_inference_13183() -> None:
     }
 
 
+def test_ndjson_expected_null_got_object_inference_22807() -> None:
+    buf = io.StringIO()
+    for _ in range(100):
+        buf.write('{"a":[]}\n')
+    buf.write('{"a":[{"b":[]}]}\n')
+
+    buf.seek(0)
+
+    assert pl.read_ndjson(buf, infer_schema_length=None).schema == (
+        {"a": pl.List(pl.Struct([pl.Field("b", pl.List(pl.Null))]))}
+    )
+
+
 @pytest.mark.write_disk
 def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     # This shouldn't be passed, but still we test if we can handle it gracefully

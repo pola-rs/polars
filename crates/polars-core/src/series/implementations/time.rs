@@ -20,10 +20,10 @@ unsafe impl IntoSeries for TimeChunked {
 
 impl private::PrivateSeries for SeriesWrap<TimeChunked> {
     fn compute_len(&mut self) {
-        self.0.compute_len()
+        self.0.physical_mut().compute_len()
     }
 
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Owned(self.0.field())
     }
 
@@ -32,17 +32,18 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
     }
 
     fn _get_flags(&self) -> StatisticsFlags {
-        self.0.get_flags()
+        self.0.physical().get_flags()
     }
 
     fn _set_flags(&mut self, flags: StatisticsFlags) {
-        self.0.set_flags(flags)
+        self.0.physical_mut().set_flags(flags)
     }
 
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
         self.0
+            .physical()
             .zip_with(mask, other.as_ref().as_ref())
             .map(|ca| ca.into_time().into_series())
     }
@@ -59,7 +60,7 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
         random_state: PlSeedableRandomStateQuality,
         buf: &mut Vec<u64>,
     ) -> PolarsResult<()> {
-        self.0.vec_hash(random_state, buf)?;
+        self.0.physical().vec_hash(random_state, buf)?;
         Ok(())
     }
 
@@ -68,24 +69,25 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
         build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
-        self.0.vec_hash_combine(build_hasher, hashes)?;
+        self.0.physical().vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
-        self.0.agg_min(groups).into_time().into_series()
+        self.0.physical().agg_min(groups).into_time().into_series()
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
-        self.0.agg_max(groups).into_time().into_series()
+        self.0.physical().agg_max(groups).into_time().into_series()
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
+            .physical()
             .agg_list(groups)
             .cast(&DataType::List(Box::new(self.dtype().clone())))
             .unwrap()
@@ -120,7 +122,7 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        self.0.group_tuples(multithreaded, sorted)
+        self.0.physical().group_tuples(multithreaded, sorted)
     }
 
     fn arg_sort_multiple(
@@ -128,7 +130,7 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
         by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        self.0.deref().arg_sort_multiple(by, options)
+        self.0.physical().arg_sort_multiple(by, options)
     }
 }
 
@@ -137,53 +139,56 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
-        self.0.chunk_lengths()
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
+        self.0.physical().chunk_lengths()
     }
     fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
     fn chunks(&self) -> &Vec<ArrayRef> {
-        self.0.chunks()
+        self.0.physical().chunks()
     }
+
     unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
-        self.0.chunks_mut()
+        self.0.physical_mut().chunks_mut()
     }
 
     fn shrink_to_fit(&mut self) {
-        self.0.shrink_to_fit()
+        self.0.physical_mut().shrink_to_fit()
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0.slice(offset, length).into_time().into_series()
+        self.0.slice(offset, length).into_series()
     }
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
-        (a.into_time().into_series(), b.into_time().into_series())
+        (a.into_series(), b.into_series())
     }
 
     fn _sum_as_f64(&self) -> f64 {
-        self.0._sum_as_f64()
+        self.0.physical()._sum_as_f64()
     }
 
     fn mean(&self) -> Option<f64> {
-        self.0.mean()
+        self.0.physical().mean()
     }
 
     fn median(&self) -> Option<f64> {
-        self.0.median()
+        self.0.physical().median()
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let mut other = other.to_physical_repr().into_owned();
         self.0
+            .physical_mut()
             .append_owned(std::mem::take(other._get_inner_mut().as_mut()))
     }
+
     fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        self.0.append_owned(std::mem::take(
+        self.0.physical_mut().append_owned(std::mem::take(
             &mut other
                 ._get_inner_mut()
                 .as_any_mut()
@@ -200,28 +205,41 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.extend(other.as_ref().as_ref().as_ref())?;
+        self.0
+            .physical_mut()
+            .extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        self.0.filter(filter).map(|ca| ca.into_time().into_series())
+        self.0
+            .physical()
+            .filter(filter)
+            .map(|ca| ca.into_time().into_series())
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        Ok(self.0.take(indices)?.into_time().into_series())
+        Ok(self.0.physical().take(indices)?.into_time().into_series())
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.0.take_unchecked(indices).into_time().into_series()
+        self.0
+            .physical()
+            .take_unchecked(indices)
+            .into_time()
+            .into_series()
     }
 
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        Ok(self.0.take(indices)?.into_time().into_series())
+        Ok(self.0.physical().take(indices)?.into_time().into_series())
     }
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.0.take_unchecked(indices).into_time().into_series()
+        self.0
+            .physical()
+            .take_unchecked(indices)
+            .into_time()
+            .into_series()
     }
 
     fn len(&self) -> usize {
@@ -229,11 +247,17 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_owned().into_time().into_series()
+        self.0
+            .physical()
+            .rechunk()
+            .into_owned()
+            .into_time()
+            .into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
+            .physical()
             .new_from_index(index, length)
             .into_time()
             .into_series()
@@ -254,16 +278,21 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        Ok(self.0.sort_with(options).into_time().into_series())
+        Ok(self
+            .0
+            .physical()
+            .sort_with(options)
+            .into_time()
+            .into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        self.0.arg_sort(options)
+        self.0.physical().arg_sort(options)
     }
 
     fn null_count(&self) -> usize {
@@ -276,17 +305,20 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
-        self.0.unique().map(|ca| ca.into_time().into_series())
+        self.0
+            .physical()
+            .unique()
+            .map(|ca| ca.into_time().into_series())
     }
 
     #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
-        self.0.n_unique()
+        self.0.physical().n_unique()
     }
 
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        self.0.arg_unique()
+        self.0.physical().arg_unique()
     }
 
     fn is_null(&self) -> BooleanChunked {
@@ -298,25 +330,25 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
 
     fn reverse(&self) -> Series {
-        self.0.reverse().into_time().into_series()
+        self.0.physical().reverse().into_time().into_series()
     }
 
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-        self.0.as_single_ptr()
+        self.0.physical_mut().as_single_ptr()
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.0.shift(periods).into_time().into_series()
+        self.0.physical().shift(periods).into_time().into_series()
     }
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
-        let sc = self.0.max_reduce();
+        let sc = self.0.physical().max_reduce();
         let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
-        let sc = self.0.min_reduce();
+        let sc = self.0.physical().min_reduce();
         let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
@@ -333,7 +365,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
-        self.0.find_validity_mismatch(other, idxs)
+        self.0.physical().find_validity_mismatch(other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -355,6 +387,6 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
 impl private::PrivateSeriesNumeric for SeriesWrap<TimeChunked> {
     fn bit_repr(&self) -> Option<BitRepr> {
-        Some(self.0.to_bit_repr())
+        Some(self.0.physical().to_bit_repr())
     }
 }

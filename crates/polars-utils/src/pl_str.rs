@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[macro_export]
@@ -67,6 +68,12 @@ impl PlSmallStr {
     #[inline(always)]
     pub fn as_mut_str(&mut self) -> &mut str {
         self.0.as_mut_str()
+    }
+
+    #[inline(always)]
+    #[allow(clippy::inherent_to_string_shadow_display)] // This is faster.
+    pub fn to_string(&self) -> String {
+        self.0.as_str().to_owned()
     }
 
     #[inline(always)]
@@ -150,6 +157,13 @@ impl From<String> for PlSmallStr {
     #[inline(always)]
     fn from(value: String) -> Self {
         Self::from_string(value)
+    }
+}
+
+impl From<Cow<'_, str>> for PlSmallStr {
+    #[inline(always)]
+    fn from(value: Cow<str>) -> Self {
+        Self(Inner::from(value))
     }
 }
 

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -11,6 +10,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -30,7 +30,7 @@ pub struct PartedPartitionSinkNode {
     sink_input_schema: SchemaRef,
 
     key_cols: Arc<[PlSmallStr]>,
-    base_path: Arc<PathBuf>,
+    base_path: Arc<PlPath>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -58,7 +58,7 @@ impl PartedPartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -216,7 +216,7 @@ impl SinkNode for PartedPartitionSinkNode {
                             None => {
                                 let keys = parted_df.select_columns(key_cols.iter().cloned())?;
                                 let result = open_new_sink(
-                                    base_path.as_path(),
+                                    base_path.as_ref().as_ref(),
                                     file_path_cb.as_ref(),
                                     super::default_by_key_file_path_cb,
                                     file_idx,

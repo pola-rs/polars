@@ -22,7 +22,7 @@ use crate::record_batch::RecordBatchT;
 fn read_message(
     mut bytes: &[u8],
     block: arrow_format::ipc::Block,
-) -> PolarsResult<(MessageRef, usize)> {
+) -> PolarsResult<(MessageRef<'_>, usize)> {
     let offset: usize = block.offset.try_into().map_err(
         |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
     )?;

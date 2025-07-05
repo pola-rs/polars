@@ -121,8 +121,6 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_index: Option<RowIndex>,
-    #[cfg_attr(not(feature = "dtype-categorical"), allow(unused))]
-    has_categorical: bool,
 }
 
 impl fmt::Debug for CoreReader<'_> {
@@ -217,7 +215,7 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        let has_categorical = prepare_csv_schema(&mut schema, &mut to_cast)?;
+        prepare_csv_schema(&mut schema, &mut to_cast)?;
 
         // Create a null value for every column
         let null_values = parse_options
@@ -253,7 +251,6 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_index,
-            has_categorical,
         })
     }
 
@@ -518,15 +515,7 @@ impl<'a> CoreReader<'a> {
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn finish(mut self) -> PolarsResult<DataFrame> {
-        #[cfg(feature = "dtype-categorical")]
-        let mut _cat_lock = if self.has_categorical {
-            Some(polars_core::StringCacheHolder::hold())
-        } else {
-            None
-        };
-
         let reader_bytes = self.reader_bytes.take().unwrap();
-
         let mut df = self.parse_csv(&reader_bytes)?;
 
         // if multi-threaded the n_rows was probabilistically determined.

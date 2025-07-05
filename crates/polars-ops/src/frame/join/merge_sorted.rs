@@ -1,31 +1,6 @@
 use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
-
-fn check_and_union_revmaps(
-    lhs_revmap: &Option<Arc<RevMapping>>,
-    rhs_revmap: &Option<Arc<RevMapping>>,
-) -> PolarsResult<Option<Arc<RevMapping>>> {
-    // Ensure we are operating on either identical locals, or compatible globals.
-    let lhs_revmap = lhs_revmap.as_ref().unwrap();
-    let rhs_revmap = rhs_revmap.as_ref().unwrap();
-    match (&**lhs_revmap, &**rhs_revmap) {
-        (RevMapping::Local(_, l_hash), RevMapping::Local(_, r_hash)) => {
-            // Same local categoricals, we return immediately
-            polars_ensure!(l_hash == r_hash, ComputeError: "cannot merge-sort incompatible categoricals");
-            Ok(None)
-        },
-        // Return revmap that is the union of the two revmaps.
-        (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => {
-            polars_ensure!(l == r, ComputeError: "cannot merge-sort incompatible categoricals");
-            let mut rev_map_merger = GlobalRevMapMerger::new(lhs_revmap.clone());
-            rev_map_merger.merge_map(rhs_revmap)?;
-            let new_map = rev_map_merger.finish();
-            Ok(Some(new_map))
-        },
-        _ => unreachable!(),
-    }
-}
+use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
 
 pub fn _merge_sorted_dfs(
     left: &DataFrame,
@@ -44,15 +19,6 @@ pub fn _merge_sorted_dfs(
         dtype_lhs == dtype_rhs,
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
     );
-
-    if dtype_lhs.is_categorical() {
-        let rev_map_lhs = left_s.categorical().unwrap().get_rev_map();
-        let rev_map_rhs = right_s.categorical().unwrap().get_rev_map();
-        polars_ensure!(
-            rev_map_lhs.same_src(rev_map_rhs),
-            ComputeError: "can only merge-sort categoricals with the same categories"
-        );
-    }
 
     // If one frame is empty, we can return the other immediately.
     if right_s.is_empty() {
@@ -76,20 +42,7 @@ pub fn _merge_sorted_dfs(
                 &merge_indicator,
             )?);
 
-            let lhs_dt = lhs.dtype();
-            let dtype_out = match (lhs_dt, rhs.dtype()) {
-                // Global categorical revmaps must be merged for the output.
-                (DataType::Categorical(lhs_revmap, ord), DataType::Categorical(rhs_revmap, _)) => {
-                    if let Some(new_revmap) = check_and_union_revmaps(lhs_revmap, rhs_revmap)? {
-                        &DataType::Categorical(Some(new_revmap), *ord)
-                    } else {
-                        lhs_dt
-                    }
-                },
-                _ => lhs_dt,
-            };
-
-            let mut out = unsafe { out.from_physical_unchecked(dtype_out) }.unwrap();
+            let mut out = unsafe { out.from_physical_unchecked(lhs.dtype()) }.unwrap();
             out.rename(lhs.name().clone());
             Ok(out)
         })
@@ -182,13 +135,12 @@ where
 }
 
 fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
-    if lhs.dtype().is_categorical() {
-        let lhs_ca = lhs.categorical().unwrap();
-        if lhs_ca.uses_lexical_ordering() {
-            let rhs_ca = rhs.categorical().unwrap();
-            let out = get_merge_indicator(lhs_ca.iter_str(), rhs_ca.iter_str());
-            return Ok(out);
-        }
+    if let Ok(cat_phys) = lhs.dtype().cat_physical() {
+        with_match_categorical_physical_type!(cat_phys, |$C| {
+            let lhs = lhs.cat::<$C>().unwrap();
+            let rhs = rhs.cat::<$C>().unwrap();
+            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str()));
+        })
     }
 
     let lhs_s = lhs.to_physical_repr().into_owned();

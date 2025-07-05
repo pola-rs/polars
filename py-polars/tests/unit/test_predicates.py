@@ -652,9 +652,6 @@ def test_predicate_pushdown_join_19772(
 
     q = left.join(right, on="k", how=join_type).filter(predicate)  # type: ignore[arg-type]
 
-    plan = q.explain()
-    assert plan.startswith("FILTER")
-
     expect = pl.DataFrame({"k": 1, "v": 7, "b": True})
 
     if join_type == "right":
@@ -1155,6 +1152,6 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     ).filter(pl.col("y").map_elements(bool))
 
     plan = q.explain()
-    assert plan.index("map_list") > plan.index("PYTHON SCAN")
+    assert plan.index("SELECTION") > plan.index("PYTHON SCAN")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))

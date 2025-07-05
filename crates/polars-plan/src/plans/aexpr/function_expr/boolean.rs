@@ -2,6 +2,8 @@ use std::ops::{BitAnd, BitOr};
 
 use polars_core::POOL;
 use polars_core::utils::SuperTypeFlags;
+#[cfg(feature = "is_close")]
+use polars_utils::total_ord::TotalOrdWrap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::*;
@@ -40,6 +42,12 @@ pub enum IRBooleanFunction {
     IsIn {
         nulls_equal: bool,
     },
+    #[cfg(feature = "is_close")]
+    IsClose {
+        abs_tol: TotalOrdWrap<f64>,
+        rel_tol: TotalOrdWrap<f64>,
+        nans_equal: bool,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -67,9 +75,9 @@ impl IRBooleanFunction {
         use IRBooleanFunction as B;
         match self {
             B::Any { .. } | B::All { .. } => FunctionOptions::aggregation(),
-            B::IsNull | B::IsNotNull | B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => {
-                FunctionOptions::elementwise()
-            },
+            B::IsNull | B::IsNotNull => FunctionOptions::elementwise(),
+            B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
             #[cfg(feature = "is_first_distinct")]
             B::IsFirstDistinct => FunctionOptions::length_preserving(),
             #[cfg(feature = "is_last_distinct")]
@@ -79,15 +87,32 @@ impl IRBooleanFunction {
             #[cfg(feature = "is_unique")]
             B::IsDuplicated => FunctionOptions::length_preserving(),
             #[cfg(feature = "is_between")]
-            B::IsBetween { .. } => FunctionOptions::elementwise().with_supertyping(
-                (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-            ),
+            B::IsBetween { .. } => FunctionOptions::elementwise()
+                .with_supertyping(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                )
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
             #[cfg(feature = "is_in")]
-            B::IsIn { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            B::IsIn { nulls_equal } => FunctionOptions::elementwise()
+                .with_supertyping(Default::default())
+                .with_flags(|f| {
+                    if !*nulls_equal {
+                        f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT
+                    } else {
+                        f
+                    }
+                }),
+            #[cfg(feature = "is_close")]
+            B::IsClose { .. } => FunctionOptions::elementwise()
+                .with_supertyping(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                )
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
             B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_EMPTY_INPUTS
             }),
-            B::Not => FunctionOptions::elementwise(),
+            B::Not => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
         }
     }
 }
@@ -116,6 +141,8 @@ impl Display for IRBooleanFunction {
             IsBetween { .. } => "is_between",
             #[cfg(feature = "is_in")]
             IsIn { .. } => "is_in",
+            #[cfg(feature = "is_close")]
+            IsClose { .. } => "is_close",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",
@@ -148,6 +175,12 @@ impl From<IRBooleanFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             IsBetween { closed } => map_as_slice!(is_between, closed),
             #[cfg(feature = "is_in")]
             IsIn { nulls_equal } => wrap!(is_in, nulls_equal),
+            #[cfg(feature = "is_close")]
+            IsClose {
+                abs_tol,
+                rel_tol,
+                nans_equal,
+            } => wrap!(is_close, abs_tol, rel_tol, nans_equal),
             Not => map!(not),
             AllHorizontal => map_as_slice!(all_horizontal),
             AnyHorizontal => map_as_slice!(any_horizontal),
@@ -245,6 +278,25 @@ fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Option<Column>> {
         left.as_materialized_series(),
         other.as_materialized_series(),
         nulls_equal,
+    )
+    .map(|ca| Some(ca.into_column()))
+}
+
+#[cfg(feature = "is_close")]
+fn is_close(
+    s: &mut [Column],
+    abs_tol: TotalOrdWrap<f64>,
+    rel_tol: TotalOrdWrap<f64>,
+    nans_equal: bool,
+) -> PolarsResult<Option<Column>> {
+    let left = &s[0];
+    let right = &s[1];
+    polars_ops::prelude::is_close(
+        left.as_materialized_series(),
+        right.as_materialized_series(),
+        abs_tol.0,
+        rel_tol.0,
+        nans_equal,
     )
     .map(|ca| Some(ca.into_column()))
 }

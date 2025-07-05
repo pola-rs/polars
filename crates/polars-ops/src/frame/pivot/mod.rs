@@ -29,22 +29,6 @@ pub enum PivotAgg {
 fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     // restore logical type
     match (logical_type, s.dtype()) {
-        #[cfg(feature = "dtype-categorical")]
-        (dt @ DataType::Categorical(Some(rev_map), ordering), _)
-        | (dt @ DataType::Enum(Some(rev_map), ordering), _) => {
-            let cats = s.u32().unwrap().clone();
-            // SAFETY:
-            // the rev-map comes from these categoricals
-            unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    cats,
-                    rev_map.clone(),
-                    matches!(dt, DataType::Enum(_, _)),
-                    *ordering,
-                )
-                .into_series()
-            }
-        },
         (DataType::Float32, DataType::UInt32) => {
             let ca = s.u32().unwrap();
             ca._reinterpret_float().into_series()

@@ -19,6 +19,7 @@ pub trait ToDummies {
         separator: Option<&str>,
         drop_first: bool,
         categories: Option<&Vec<PlSmallStr>>,
+        drop_nulls: bool,
     ) -> PolarsResult<DataFrame>;
 }
 
@@ -28,6 +29,7 @@ impl ToDummies for Series {
         separator: Option<&str>,
         drop_first: bool,
         categories: Option<&Vec<PlSmallStr>>,
+        drop_nulls: bool,
     ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
@@ -43,6 +45,9 @@ impl ToDummies for Series {
                 Some(s) => s.to_string(),
                 None => format!("{av}"),
             };
+            if av.is_null() && drop_nulls {
+                continue;
+            }
             if columns.contains_key(&name) {
                 polars_bail!(Duplicate: "column with name '{name}' has more than one occurrence")
             }

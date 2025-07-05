@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::prelude::deletion::DeletionFilesList;
@@ -8,6 +7,7 @@ use polars::prelude::{
 };
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
+use polars_utils::plpath::PlPathRef;
 use polars_utils::slice_enum::Slice;
 use pyo3::types::PyAnyMethods;
 use pyo3::{Bound, FromPyObject, PyObject, PyResult};
@@ -27,7 +27,7 @@ impl PyScanOptions<'_> {
     pub fn extract_unified_scan_args(
         &self,
         // For cloud_options init
-        first_path: Option<&PathBuf>,
+        first_path: Option<PlPathRef>,
     ) -> PyResult<UnifiedScanArgs> {
         #[derive(FromPyObject)]
         struct Extract {
@@ -77,9 +77,9 @@ impl PyScanOptions<'_> {
 
                 use crate::prelude::parse_cloud_options;
 
-                let first_path_url = first_path.to_string_lossy();
+                let first_path_url = first_path.to_str();
                 let cloud_options =
-                    parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
+                    parse_cloud_options(first_path_url, cloud_options.unwrap_or_default())?;
 
                 Some(
                     cloud_options

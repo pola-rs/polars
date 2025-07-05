@@ -183,7 +183,7 @@ fn read_footer<R: Read + Seek>(reader: &mut R, footer_len: usize) -> PolarsResul
 
 fn deserialize_footer_blocks(
     footer_data: &[u8],
-) -> PolarsResult<(FooterRef, Vec<arrow_format::ipc::Block>)> {
+) -> PolarsResult<(FooterRef<'_>, Vec<arrow_format::ipc::Block>)> {
     let footer = arrow_format::ipc::FooterRef::read_as_root(footer_data)
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
 
@@ -199,14 +199,14 @@ fn deserialize_footer_blocks(
     Ok((footer, blocks))
 }
 
-pub(super) fn deserialize_footer_ref(footer_data: &[u8]) -> PolarsResult<FooterRef> {
+pub(super) fn deserialize_footer_ref(footer_data: &[u8]) -> PolarsResult<FooterRef<'_>> {
     arrow_format::ipc::FooterRef::read_as_root(footer_data)
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))
 }
 
 pub(super) fn deserialize_schema_ref_from_footer(
-    footer: arrow_format::ipc::FooterRef,
-) -> PolarsResult<arrow_format::ipc::SchemaRef> {
+    footer: arrow_format::ipc::FooterRef<'_>,
+) -> PolarsResult<arrow_format::ipc::SchemaRef<'_>> {
     footer
         .schema()
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferSchema(err)))?
@@ -215,7 +215,7 @@ pub(super) fn deserialize_schema_ref_from_footer(
 
 /// Get the IPC blocks from the footer containing record batches
 pub(super) fn iter_recordbatch_blocks_from_footer(
-    footer: arrow_format::ipc::FooterRef,
+    footer: arrow_format::ipc::FooterRef<'_>,
 ) -> PolarsResult<impl SendableIterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_> {
     let blocks = footer
         .record_batches()
@@ -228,7 +228,7 @@ pub(super) fn iter_recordbatch_blocks_from_footer(
 }
 
 pub(super) fn iter_dictionary_blocks_from_footer(
-    footer: arrow_format::ipc::FooterRef,
+    footer: arrow_format::ipc::FooterRef<'_>,
 ) -> PolarsResult<Option<impl SendableIterator<Item = PolarsResult<arrow_format::ipc::Block>> + '_>>
 {
     let dictionaries = footer

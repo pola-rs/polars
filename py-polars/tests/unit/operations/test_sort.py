@@ -1174,7 +1174,6 @@ def test_sort_bool_nulls_last() -> None:
     [
         pl.Enum(["a", "b"]),
         pl.Categorical(ordering="lexical"),
-        pl.Categorical(ordering="physical"),
     ],
 )
 def test_sort_cat_nulls_last(dtype: PolarsDataType) -> None:

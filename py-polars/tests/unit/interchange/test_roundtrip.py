@@ -40,7 +40,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Datetime,
     # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    # pl.Categorical("physical"),
+    # pl.Categorical("lexical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -287,9 +287,4 @@ def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
 
     assert_series_equal(
         df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
-    )
-    assert_series_equal(
-        df.select(pl.col.col1.cat.get_categories()).to_series(),
-        pl.Series(["A", "B"]),
-        check_names=False,
     )

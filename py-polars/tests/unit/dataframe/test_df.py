@@ -680,6 +680,7 @@ def test_hstack_dataframe(in_place: bool) -> None:
         assert_frame_equal(df_out, expected)
 
 
+@pytest.mark.may_fail_cloud
 def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
@@ -702,14 +703,6 @@ def test_shift() -> None:
         {"A": [None, "a", "b"], "B": [None, 1, 3]},
     )
     assert_frame_equal(a, b)
-
-
-def test_custom_group_by() -> None:
-    df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
-    out = df.group_by("b", maintain_order=True).agg(
-        [pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)]
-    )
-    assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
 
 
 def test_multiple_columns_drop() -> None:
@@ -845,6 +838,36 @@ def test_to_dummies_categories_duplicates_error() -> None:
         DuplicateError, match="column with name 'col_x' has more than one occurrence"
     ):
         _ = df.to_dummies(categories={"col": ["x", "x"]})
+def test_to_dummies_drop_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [0, 1, None],
+            "bar": [3, None, 5],
+            "baz": [None, "y", "z"],
+        }
+    )
+
+    dm = df.to_dummies(drop_nulls=True)
+
+    expected = pl.DataFrame(
+        {
+            "foo_0": [1, 0, 0],
+            "foo_1": [0, 1, 0],
+            "bar_3": [1, 0, 0],
+            "bar_5": [0, 0, 1],
+            "baz_y": [0, 1, 0],
+            "baz_z": [0, 0, 1],
+        },
+        schema={
+            "foo_0": pl.UInt8,
+            "foo_1": pl.UInt8,
+            "bar_3": pl.UInt8,
+            "bar_5": pl.UInt8,
+            "baz_y": pl.UInt8,
+            "baz_z": pl.UInt8,
+        },
+    )
+    assert_frame_equal(dm, expected)
 
 
 def test_to_pandas(df: pl.DataFrame) -> None:

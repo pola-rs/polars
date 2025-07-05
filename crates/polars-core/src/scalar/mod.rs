@@ -86,7 +86,7 @@ impl Scalar {
         &self.value
     }
 
-    pub fn as_any_value(&self) -> AnyValue {
+    pub fn as_any_value(&self) -> AnyValue<'_> {
         self.value
             .strict_cast(&self.dtype)
             .unwrap_or_else(|| self.value.clone())
@@ -114,6 +114,17 @@ impl Scalar {
     #[inline(always)]
     pub fn with_value(mut self, value: AnyValue<'static>) -> Self {
         self.update(value);
+        self
+    }
+
+    #[inline(always)]
+    pub fn any_value_mut(&mut self) -> &mut AnyValue<'static> {
+        &mut self.value
+    }
+
+    pub fn to_physical(mut self) -> Scalar {
+        self.dtype = self.dtype.to_physical();
+        self.value = self.value.to_physical();
         self
     }
 }

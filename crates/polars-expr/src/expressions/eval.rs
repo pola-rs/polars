@@ -35,7 +35,6 @@ pub struct EvalExpr {
     is_scalar: bool,
     pd_group: ExprPushdownGroup,
     evaluation_is_scalar: bool,
-    is_user_apply: bool,
 }
 
 fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
@@ -76,7 +75,6 @@ impl EvalExpr {
         is_scalar: bool,
         pd_group: ExprPushdownGroup,
         evaluation_is_scalar: bool,
-        is_user_apply: bool,
     ) -> Self {
         Self {
             input,
@@ -89,7 +87,6 @@ impl EvalExpr {
             is_scalar,
             pd_group,
             evaluation_is_scalar,
-            is_user_apply,
         }
     }
 
@@ -257,10 +254,6 @@ impl EvalExpr {
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let fits_idx_size = lst.get_inner().len() < (IdxSize::MAX as usize);
-        // If a users passes a return type to `apply`, e.g. `return_dtype=pl.Int64`,
-        // this fails as the list builder expects `List<Int64>`, so let's skip that for now.
-        let is_user_apply = self.is_user_apply;
-
         if match self.pd_group {
             ExprPushdownGroup::Pushable => true,
             ExprPushdownGroup::Fallible => !lst.has_nulls(),
@@ -268,11 +261,7 @@ impl EvalExpr {
         } && !self.evaluation_is_scalar
         {
             self.run_elementwise_on_values(lst, state)
-        } else if fits_idx_size
-            && lst.null_count() == 0
-            && !is_user_apply
-            && self.evaluation_is_scalar
-        {
+        } else if fits_idx_size && lst.null_count() == 0 && self.evaluation_is_scalar {
             self.run_on_group_by_engine(lst, state)
         } else {
             self.run_per_sublist(lst, state)
