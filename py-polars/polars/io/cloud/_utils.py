@@ -23,7 +23,7 @@ def _first_scan_path(
 def _get_path_scheme(path: str | Path) -> str | None:
     splitted = str(path).split("://", maxsplit=1)
 
-    return None if not splitted else splitted[0]
+    return None if len(splitted) < 2 else splitted[0]
 
 
 def _is_aws_cloud(scheme: str) -> bool:

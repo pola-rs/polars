@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from polars.io.cloud._utils import _get_path_scheme
 import pytest
 
 import polars as pl
@@ -69,3 +70,10 @@ def test_looks_like_url(url: str, result: bool) -> None:
 def test_filename_in_err(scan: Any) -> None:
     with pytest.raises(FileNotFoundError, match=r".*does not exist"):
         scan("does not exist").collect()
+
+
+def test_get_path_scheme() -> None:
+    assert _get_path_scheme("") is None
+    assert _get_path_scheme("A") is None
+    assert _get_path_scheme("scheme://") == "scheme"
+    assert _get_path_scheme("://") == ""
