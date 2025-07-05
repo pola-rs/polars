@@ -77,3 +77,4 @@ def test_get_path_scheme() -> None:
     assert _get_path_scheme("A") is None
     assert _get_path_scheme("scheme://") == "scheme"
     assert _get_path_scheme("://") == ""
+    assert _get_path_scheme("://...") == ""
