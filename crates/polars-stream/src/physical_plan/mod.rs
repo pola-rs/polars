@@ -97,6 +97,10 @@ pub enum PhysNodeKind {
         selectors: Vec<ExprIR>,
         extend_original: bool,
     },
+    Shift {
+        input: PhysStream,
+        offset: PhysStream,
+    },
 
     WithRowIndex {
         input: PhysStream,
@@ -364,6 +368,12 @@ fn visit_node_inputs_mut(
                 rec!(input_right.node);
                 visit(input_left);
                 visit(input_right);
+            },
+            PhysNodeKind::Shift { input, offset } => {
+                rec!(input.node);
+                rec!(offset.node);
+                visit(input);
+                visit(offset);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
