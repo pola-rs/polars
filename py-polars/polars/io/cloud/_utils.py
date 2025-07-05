@@ -21,9 +21,10 @@ def _first_scan_path(
 
 
 def _get_path_scheme(path: str | Path) -> str | None:
-    splitted = str(path).split("://", maxsplit=1)
+    path_str = str(path)
+    i = path_str.find("://")
 
-    return None if len(splitted) < 2 else splitted[0]
+    return None if i == -1 else path_str[:i]
 
 
 def _is_aws_cloud(scheme: str) -> bool:
