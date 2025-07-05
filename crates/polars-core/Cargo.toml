@@ -25,7 +25,6 @@ chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.1.1", default-features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
-hashbrown_old_nightly_hack = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
@@ -54,7 +53,7 @@ version_check = { workspace = true }
 
 [features]
 simd = ["arrow/simd", "polars-compute/simd"]
-nightly = ["simd", "hashbrown/nightly", "hashbrown_old_nightly_hack/nightly", "polars-utils/nightly", "arrow/nightly"]
+nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
