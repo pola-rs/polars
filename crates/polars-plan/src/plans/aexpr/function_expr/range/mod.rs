@@ -17,6 +17,7 @@ use polars_time::{ClosedWindow, Duration};
 
 use super::{FunctionOptions, IRFunctionExpr};
 use crate::dsl::SpecialEq;
+use crate::dsl::function_expr::DateRangeArgs;
 use crate::map_as_slice;
 use crate::plans::aexpr::function_expr::FieldsMapper;
 use crate::prelude::{ColumnsUdf, FunctionFlags};
@@ -40,8 +41,9 @@ pub enum IRRangeFunction {
     },
     #[cfg(feature = "dtype-date")]
     DateRange {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-date")]
     DateRanges {
@@ -50,10 +52,11 @@ pub enum IRRangeFunction {
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRange {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRanges {
@@ -126,6 +129,7 @@ impl IRRangeFunction {
                 closed: _,
                 time_unit,
                 time_zone,
+                ..
             } => {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let dtype =
@@ -165,9 +169,9 @@ impl IRRangeFunction {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-datetime")]
-            R::DatetimeRange { .. } => FunctionOptions::row_separable()
-                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-                .with_supertyping(Default::default()),
+            R::DatetimeRange { .. } => {
+                FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "dtype-time")]
             R::TimeRange { .. } => {
                 FunctionOptions::row_separable().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
@@ -239,8 +243,12 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 map_as_slice!(linear_space::linear_spaces, closed, array_width)
             },
             #[cfg(feature = "dtype-date")]
-            DateRange { interval, closed } => {
-                map_as_slice!(date_range::date_range, interval, closed)
+            DateRange {
+                interval,
+                closed,
+                arg_type,
+            } => {
+                map_as_slice!(date_range::date_range, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-date")]
             DateRanges { interval, closed } => {
@@ -252,13 +260,15 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 closed,
                 time_unit,
                 time_zone,
+                arg_type,
             } => {
                 map_as_slice!(
                     datetime_range::datetime_range,
                     interval,
                     closed,
                     time_unit,
-                    time_zone.clone()
+                    time_zone.clone(),
+                    arg_type
                 )
             },
             #[cfg(feature = "dtype-datetime")]

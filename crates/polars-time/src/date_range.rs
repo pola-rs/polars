@@ -35,11 +35,11 @@ pub fn date_range(
             end.and_utc().timestamp_millis(),
         ),
     };
-    datetime_range_impl(name, start, end, interval, closed, tu, tz)
+    datetime_range_impl_start_end_interval(name, start, end, interval, closed, tu, tz)
 }
 
 #[doc(hidden)]
-pub fn datetime_range_impl(
+pub fn datetime_range_impl_start_end_interval(
     name: PlSmallStr,
     start: i64,
     end: i64,
@@ -50,7 +50,7 @@ pub fn datetime_range_impl(
 ) -> PolarsResult<DatetimeChunked> {
     let out = Int64Chunked::new_vec(
         name,
-        datetime_range_i64(start, end, interval, closed, tu, tz)?,
+        datetime_range_i64_start_end_interval(start, end, interval, closed, tu, tz)?,
     );
     let mut out = match tz {
         #[cfg(feature = "timezones")]
@@ -59,6 +59,71 @@ pub fn datetime_range_impl(
     };
 
     out.physical_mut().set_sorted_flag(IsSorted::Ascending);
+    Ok(out)
+}
+
+#[doc(hidden)]
+pub fn datetime_range_impl_start_interval_samples(
+    name: PlSmallStr,
+    start: i64,
+    interval: Duration,
+    num_samples: u64,
+    closed: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<&Tz>,
+) -> PolarsResult<DatetimeChunked> {
+    let out = Int64Chunked::new_vec(
+        name,
+        datetime_range_i64_start_interval_samples(start, interval, num_samples, closed, tu, tz)?,
+    );
+    let mut out = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => out.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
+        _ => out.into_datetime(tu, None),
+    };
+
+    out.set_sorted_flag(IsSorted::Ascending);
+    Ok(out)
+}
+
+#[doc(hidden)]
+pub fn datetime_range_impl_start_end_samples(
+    name: PlSmallStr,
+    start: i64,
+    end: i64,
+    num_samples: u64,
+    closed: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<&Tz>,
+) -> PolarsResult<DatetimeChunked> {
+    // The bin width depends on the interval closure.
+    let divisor = match closed {
+        ClosedWindow::None => num_samples + 1,
+        ClosedWindow::Left => num_samples,
+        ClosedWindow::Right => num_samples,
+        ClosedWindow::Both => num_samples - 1,
+    };
+    let bin_width = (end - start) as f64 / (divisor as f64);
+    let start = start as f64;
+
+    let mut values: Vec<i64> = (0..num_samples)
+        .map(|x| (x as f64 * bin_width + start) as i64)
+        .collect();
+
+    // For right-closed and fully-closed interval, ensure the last point is exact.
+    if closed == ClosedWindow::Right || closed == ClosedWindow::Both {
+        let last = values.len() - 1;
+        values[last] = end;
+    }
+    let out = Int64Chunked::new_vec(name, values);
+
+    let mut out = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => out.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
+        _ => out.into_datetime(tu, None),
+    };
+
+    out.set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
@@ -85,7 +150,14 @@ pub fn time_range_impl(
 ) -> PolarsResult<TimeChunked> {
     let mut out = Int64Chunked::new_vec(
         name,
-        datetime_range_i64(start, end, interval, closed, TimeUnit::Nanoseconds, None)?,
+        datetime_range_i64_start_end_interval(
+            start,
+            end,
+            interval,
+            closed,
+            TimeUnit::Nanoseconds,
+            None,
+        )?,
     )
     .into_time();
 
@@ -94,7 +166,7 @@ pub fn time_range_impl(
 }
 
 /// vector of i64 representing temporal values
-pub(crate) fn datetime_range_i64(
+pub(crate) fn datetime_range_i64_start_end_interval(
     start: i64,
     end: i64,
     interval: Duration,
@@ -170,5 +242,69 @@ pub(crate) fn datetime_range_i64(
         },
     }
     debug_assert!(size >= ts.len());
+    Ok(ts)
+}
+
+pub(crate) fn datetime_range_i64_start_interval_samples(
+    start: i64,
+    interval: Duration,
+    num_samples: u64,
+    closed: ClosedWindow,
+    time_unit: TimeUnit,
+    time_zone: Option<&Tz>,
+) -> PolarsResult<Vec<i64>> {
+    let num_samples = num_samples as i64;
+    let time_zone_opt: Option<TimeZone> = match time_zone {
+        #[cfg(feature = "timezones")]
+        Some(tz) => Some(TimeZone::from_chrono(tz)),
+        _ => None,
+    };
+    if interval.is_constant_duration(time_zone_opt.as_ref()) {
+        let mut duration = match time_unit {
+            TimeUnit::Nanoseconds => interval.duration_ns(),
+            TimeUnit::Microseconds => interval.duration_us(),
+            TimeUnit::Milliseconds => interval.duration_ms(),
+        };
+        if interval.negative {
+            duration = -duration;
+        }
+
+        // Fast path!
+        let step: i64 = duration
+            .try_into()
+            .map_err(|_err| polars_err!(ComputeError: "Could not convert {:?} to i64", duration))?;
+        polars_ensure!(
+            step != 0,
+            InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
+            interval,
+            time_unit,
+        );
+        let out = if step < 0 {
+            // Negative interval, we move backwards.
+            let step = -step;
+            (start - (step * num_samples) + 1..=start)
+                .rev()
+                .step_by(step as usize)
+                .collect::<Vec<i64>>()
+        } else {
+            // Positive interval, we move forwards.
+            (start..start + step * num_samples)
+                .step_by(step as usize)
+                .collect::<Vec<i64>>()
+        };
+        return Ok(out);
+    }
+
+    let offset_fn = match time_unit {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
+    // Start with one interval offset if we're not left-closed.
+    let start_idx: i64 = 0 + (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
+    let ts = (start_idx..start_idx + num_samples)
+        .map(|i| offset_fn(&(interval * i), start, time_zone))
+        .collect::<PolarsResult<Vec<i64>>>()?;
+    debug_assert!(num_samples as usize == ts.len());
     Ok(ts)
 }

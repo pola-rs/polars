@@ -34,11 +34,42 @@ pub fn int_ranges(start: Expr, end: Expr, step: Expr, dtype: impl Into<DataTypeE
 
 /// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
-pub fn date_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
-    Expr::n_ary(
-        RangeFunction::DateRange { interval, closed },
-        vec![start, end],
-    )
+pub fn date_range(
+    start: Option<Expr>,
+    end: Option<Expr>,
+    mut interval: Option<Duration>,
+    num_samples: Option<Expr>,
+    closed: ClosedWindow,
+) -> PolarsResult<Expr> {
+    let (input, arg_type) = match (start, end, interval, num_samples) {
+        (Some(start), Some(end), Some(_), None) => {
+            (vec![start, end], DateRangeArgs::StartEndInterval)
+        },
+        (Some(start), Some(end), None, Some(num_samples)) => (
+            vec![start, end, num_samples],
+            DateRangeArgs::StartEndSamples,
+        ),
+        (Some(start), None, Some(_), Some(num_samples)) => (
+            vec![start, num_samples],
+            DateRangeArgs::StartIntervalSamples,
+        ),
+        (None, Some(end), Some(_), Some(num_samples)) => {
+            interval = interval.map(|x| -x);
+            (vec![end, num_samples], DateRangeArgs::StartEndSamples)
+        },
+        _ => {
+            polars_bail!(InvalidOperation: "Invalid");
+        },
+    };
+
+    Ok(Expr::n_ary(
+        RangeFunction::DateRange {
+            interval,
+            closed,
+            arg_type,
+        },
+        input,
+    ))
 }
 
 /// Create a column of date ranges from a `start` and `stop` expression.
@@ -53,22 +84,44 @@ pub fn date_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
 /// Create a datetime range from a `start` and `stop` expression.
 #[cfg(feature = "dtype-datetime")]
 pub fn datetime_range(
-    start: Expr,
-    end: Expr,
-    interval: Duration,
+    start: Option<Expr>,
+    end: Option<Expr>,
+    interval: Option<Duration>,
+    num_samples: Option<Expr>,
     closed: ClosedWindow,
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
-) -> Expr {
-    Expr::n_ary(
+) -> PolarsResult<Expr> {
+    let (input, arg_type) = match (start, end, interval, num_samples) {
+        (Some(start), Some(end), Some(_), None) => {
+            (vec![start, end], DateRangeArgs::StartEndInterval)
+        },
+        (Some(start), Some(end), None, Some(num_samples)) => (
+            vec![start, end, num_samples],
+            DateRangeArgs::StartEndSamples,
+        ),
+        (Some(start), None, Some(_), Some(num_samples)) => (
+            vec![start, num_samples],
+            DateRangeArgs::StartIntervalSamples,
+        ),
+        (None, Some(end), Some(_), Some(num_samples)) => {
+            (vec![end, num_samples], DateRangeArgs::EndIntervalSamples)
+        },
+        _ => {
+            polars_bail!(InvalidOperation: "Exactly three of 'start', 'end', 'interval', and 'num_samples' must be supplied.");
+        },
+    };
+
+    Ok(Expr::n_ary(
         RangeFunction::DatetimeRange {
             interval,
             closed,
             time_unit,
             time_zone,
+            arg_type,
         },
-        vec![start, end],
-    )
+        input,
+    ))
 }
 
 /// Create a column of datetime ranges from a `start` and `stop` expression.
