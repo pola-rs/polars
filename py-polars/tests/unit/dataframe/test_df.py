@@ -838,6 +838,8 @@ def test_to_dummies_categories_duplicates_error() -> None:
         DuplicateError, match="column with name 'col_x' has more than one occurrence"
     ):
         _ = df.to_dummies(categories={"col": ["x", "x"]})
+
+
 def test_to_dummies_drop_nulls() -> None:
     df = pl.DataFrame(
         {

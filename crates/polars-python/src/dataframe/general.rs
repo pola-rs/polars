@@ -473,7 +473,9 @@ impl PyDataFrame {
                 categories,
                 drop_nulls,
             ),
-            None => self.df.to_dummies(separator, drop_first, categories, drop_nulls),
+            None => self
+                .df
+                .to_dummies(separator, drop_first, categories, drop_nulls),
         })
     }
 

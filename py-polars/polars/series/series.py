@@ -2324,7 +2324,9 @@ class Series:
         """
         if categories is not None:
             categories = [str(c) for c in categories]
-        return wrap_df(self._s.to_dummies(separator, drop_first, categories, drop_nulls))
+        return wrap_df(
+            self._s.to_dummies(separator, drop_first, categories, drop_nulls)
+        )
 
     @unstable()
     def cut(
