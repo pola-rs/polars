@@ -77,7 +77,7 @@ impl<
                 let v = if idx != top_idx {
                     let mut vals = self
                         .sorted
-                        .index_range(idx + null_count..top_idx + null_count);
+                        .index_range(idx + null_count..top_idx + null_count + 1);
                     let low = vals.next().unwrap().unwrap();
                     let high = vals.next().unwrap().unwrap();
                     (low + high) / T::from::<f64>(2.0f64).unwrap()
@@ -96,7 +96,7 @@ impl<
                 } else {
                     let mut vals = self
                         .sorted
-                        .index_range(idx + null_count..top_idx + null_count);
+                        .index_range(idx + null_count..top_idx + null_count + 1);
                     let low = vals.next().unwrap().unwrap();
                     let high = vals.next().unwrap().unwrap();
 

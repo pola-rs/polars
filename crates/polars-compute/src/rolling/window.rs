@@ -80,6 +80,7 @@ impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
     pub(super) fn len(&self) -> usize {
         self.buf.len()
     }
+    // Note: range is not inclusive
     pub(super) fn index_range(
         &self,
         range: std::ops::Range<usize>,
@@ -196,6 +197,7 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
         self.buf[idx]
     }
 
+    // Note: range is not inclusive
     pub(super) fn index_range(
         &self,
         range: std::ops::Range<usize>,
