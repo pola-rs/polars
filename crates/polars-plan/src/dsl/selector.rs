@@ -38,6 +38,17 @@ impl schemars::JsonSchema for TimeUnitSet {
     }
 }
 
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum TimeZoneSet {
+    Any,
+    AnySet,
+    Unset,
+    UnsetOrAnyOf(Arc<[TimeZone]>),
+    AnyOf(Arc<[TimeZone]>),
+}
+
 bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
@@ -99,12 +110,48 @@ impl fmt::Display for TimeUnitSet {
 #[derive(Clone, PartialEq, Hash, Debug, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum DataTypeSelector {
+    Union(Arc<DataTypeSelector>, Arc<DataTypeSelector>),
+    Difference(Arc<DataTypeSelector>, Arc<DataTypeSelector>),
+    ExclusiveOr(Arc<DataTypeSelector>, Arc<DataTypeSelector>),
+    Intersect(Arc<DataTypeSelector>, Arc<DataTypeSelector>),
+
+    Wildcard,
+    Empty,
+
+    AnyOf(Arc<[DataType]>),
+
+    Integer,
+    UnsignedInteger,
+    SignedInteger,
+    Float,
+
+    Enum,
+    Categorical,
+
+    Nested,
+    List(Option<Arc<DataTypeSelector>>),
+    Array(Option<Arc<DataTypeSelector>>, Option<usize>),
+    Struct,
+
+    Decimal,
+    Numeric,
+    Temporal,
+    /// Selector for `DataType::Datetime` with optional matching on TimeUnit and TimeZone.
+    Datetime(TimeUnitSet, TimeZoneSet),
+    /// Selector for `DataType::Duration` with optional matching on TimeUnit.
+    Duration(TimeUnitSet),
+    Object,
+}
+
+#[derive(Clone, PartialEq, Hash, Debug, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Selector {
     Union(Arc<Selector>, Arc<Selector>),
     Difference(Arc<Selector>, Arc<Selector>),
     ExclusiveOr(Arc<Selector>, Arc<Selector>),
     Intersect(Arc<Selector>, Arc<Selector>),
-    Exclude(Arc<Selector>, Arc<[Excluded]>),
 
     // Leaf nodes
 
@@ -118,24 +165,11 @@ pub enum Selector {
         strict: bool,
     },
 
-    ByDType(Arc<[DataType]>),
     Matches(PlSmallStr),
+    ByDType(DataTypeSelector),
+
     Wildcard,
     Empty,
-
-    Integer,
-    UnsignedInteger,
-    SignedInteger,
-    Float,
-    Categorical,
-    Decimal,
-    Numeric,
-    Temporal,
-    /// Selector for `DataType::Datetime` with optional matching on TimeUnit and TimeZone.
-    Datetime(TimeUnitSet, Option<Vec<Option<TimeZone>>>),
-    /// Selector for `DataType::Duration` with optional matching on TimeUnit.
-    Duration(TimeUnitSet),
-    Object,
 }
 
 fn dtype_selector(
@@ -212,36 +246,8 @@ impl Selector {
                 });
                 lhs
             },
-            Selector::Exclude(input, excludes) => {
-                let mut out = input.into_columns(schema, ignored_columns)?;
-                for exclude in excludes.iter() {
-                    // @PERF: This is quadratic
-                    match exclude {
-                        #[cfg(feature = "regex")]
-                        Excluded::Name(regex_str) if is_regex_projection(regex_str) => {
-                            let re = polars_utils::regex_cache::compile_regex(regex_str)
-                                .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
-                            out.retain(|name| !re.is_match(name));
-                        },
-                        Excluded::Name(excluded_name) => out.retain(|name| name != excluded_name),
-                        Excluded::Dtype(excluded_dt) => {
-                            out.retain(|name| schema.get(name).unwrap() != excluded_dt)
-                        },
-                    }
-                }
-                out.sort_unstable_by(|l, r| {
-                    schema
-                        .index_of(l)
-                        .unwrap()
-                        .cmp(&schema.index_of(r).unwrap())
-                });
-                out
-            },
 
-            Selector::ByDType(data_types) => {
-                let dtypes = PlHashSet::from_iter(data_types.iter().cloned());
-                dtype_selector(schema, ignored_columns, |dtype| dtypes.contains(dtype))
-            },
+            Selector::ByDType(dts) => dts.into_columns(schema, ignored_columns)?,
             Selector::ByName { names, strict } => {
                 let mut out = PlIndexSet::with_capacity(names.len());
                 for name in names.iter() {
@@ -282,74 +288,215 @@ impl Selector {
                     .cloned(),
             ),
             Selector::Empty => Default::default(),
-
-            Selector::Float => dtype_selector(schema, ignored_columns, |dtype| dtype.is_float()),
-            Selector::Integer => {
-                dtype_selector(schema, ignored_columns, |dtype| dtype.is_integer())
-            },
-            Selector::SignedInteger => {
-                dtype_selector(schema, ignored_columns, |dtype| dtype.is_signed_integer())
-            },
-            Selector::UnsignedInteger => {
-                dtype_selector(schema, ignored_columns, |dtype| dtype.is_unsigned_integer())
-            },
-            Selector::Categorical => {
-                dtype_selector(schema, ignored_columns, |dtype| dtype.is_categorical())
-            },
-            Selector::Decimal => {
-                dtype_selector(schema, ignored_columns, |dtype| dtype.is_decimal())
-            },
-            Selector::Numeric => {
-                dtype_selector(schema, ignored_columns, |dtype| dtype.is_numeric())
-            },
-            Selector::Temporal => {
-                dtype_selector(schema, ignored_columns, |dtype| dtype.is_temporal())
-            },
-            Selector::Datetime(selector_tu, selector_tz) => {
-                let selector_tz = selector_tz.as_ref().map(|tz| PlIndexSet::from_iter(tz));
-                dtype_selector(schema, ignored_columns, |dtype| {
-                    let DataType::Datetime(tu, tz) = dtype else {
-                        return false;
-                    };
-
-                    selector_tu.contains(TimeUnitSet::from(*tu))
-                        && match selector_tz.as_ref() {
-                            None => tz.is_some(),
-                            Some(stz) => stz.contains(tz),
-                        }
-                })
-            },
-            Selector::Duration(selector_tu) => dtype_selector(schema, ignored_columns, |dtype| {
-                let DataType::Duration(tu) = dtype else {
-                    return false;
-                };
-
-                selector_tu.contains(TimeUnitSet::from(*tu))
-            }),
-            Selector::Object => dtype_selector(schema, ignored_columns, |dtype| dtype.is_object()),
         };
         Ok(out)
+    }
+
+    pub fn as_expr(self) -> Expr {
+        self.into()
+    }
+
+    pub fn to_dtype_selector(&self) -> Option<DataTypeSelector> {
+        use DataTypeSelector as DS;
+        match self {
+            Self::Union(l, r) => Some(DS::Union(
+                Arc::new(l.to_dtype_selector()?),
+                Arc::new(r.to_dtype_selector()?),
+            )),
+            Self::Difference(l, r) => Some(DS::Difference(
+                Arc::new(l.to_dtype_selector()?),
+                Arc::new(r.to_dtype_selector()?),
+            )),
+            Self::ExclusiveOr(l, r) => Some(DS::ExclusiveOr(
+                Arc::new(l.to_dtype_selector()?),
+                Arc::new(r.to_dtype_selector()?),
+            )),
+            Self::Intersect(l, r) => Some(DS::ExclusiveOr(
+                Arc::new(l.to_dtype_selector()?),
+                Arc::new(r.to_dtype_selector()?),
+            )),
+            Self::Wildcard => Some(DS::Wildcard),
+            Self::Empty => Some(DS::Empty),
+
+            Self::ByDType(dts) => Some(dts.clone()),
+
+            Self::ByName { .. } | Self::ByIndex { .. } | Self::Matches(_) => return None,
+        }
     }
 
     /// Exclude a column from a wildcard/regex selection.
     ///
     /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
     pub fn exclude_cols(self, columns: impl IntoVec<PlSmallStr>) -> Self {
-        let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
-        Self::Exclude(Arc::new(self), v)
+        self - cols(columns.into_vec())
     }
 
     pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Self {
-        let v = dtypes
-            .as_ref()
-            .iter()
-            .map(|dt| Excluded::Dtype(dt.clone()))
-            .collect();
-        Self::Exclude(Arc::new(self), v)
+        self - DataTypeSelector::AnyOf(dtypes.as_ref().into()).as_selector()
+    }
+}
+
+fn list_matches(inner_dts: Option<&DataTypeSelector>, dtype: &DataType) -> bool {
+    matches!(dtype, DataType::List(inner) if inner_dts.is_none_or(|dts| dts.matches(inner.as_ref())))
+}
+
+fn array_matches(
+    inner_dts: Option<&DataTypeSelector>,
+    swidth: Option<usize>,
+    dtype: &DataType,
+) -> bool {
+    matches!(dtype, DataType::Array(inner, width) if inner_dts.is_none_or(|dts| dts.matches(inner.as_ref())) && swidth.is_none_or(|w| w == *width))
+}
+
+fn datetime_matches(stu: TimeUnitSet, stz: &TimeZoneSet, dtype: &DataType) -> bool {
+    let DataType::Datetime(tu, tz) = dtype else {
+        return false;
+    };
+
+    if !stu.contains(TimeUnitSet::from(*tu)) {
+        return false;
     }
 
-    pub fn as_expr(self) -> Expr {
-        self.into()
+    use TimeZoneSet as TZS;
+    match (stz, tz) {
+        (TZS::Any, _) | (TZS::Unset, None) | (TZS::AnySet, Some(_)) => true,
+        (TZS::AnyOf(stz), Some(tz)) => stz.contains(tz),
+        _ => false,
+    }
+}
+
+fn duration_matches(stu: TimeUnitSet, dtype: &DataType) -> bool {
+    matches!(dtype, DataType::Duration(tu) if stu.contains(TimeUnitSet::from(*tu)))
+}
+
+impl DataTypeSelector {
+    fn matches(&self, dtype: &DataType) -> bool {
+        match self {
+            Self::Union(lhs, rhs) => lhs.matches(dtype) || rhs.matches(dtype),
+            Self::Difference(lhs, rhs) => lhs.matches(dtype) && !rhs.matches(dtype),
+            Self::ExclusiveOr(lhs, rhs) => lhs.matches(dtype) ^ rhs.matches(dtype),
+            Self::Intersect(lhs, rhs) => lhs.matches(dtype) && rhs.matches(dtype),
+            Self::Wildcard => true,
+            Self::Empty => false,
+            Self::AnyOf(dtypes) => dtypes.iter().any(|dt| dt == dtype),
+            Self::Integer => dtype.is_integer(),
+            Self::UnsignedInteger => dtype.is_unsigned_integer(),
+            Self::SignedInteger => dtype.is_signed_integer(),
+            Self::Float => dtype.is_float(),
+            Self::Enum => dtype.is_enum(),
+            Self::Categorical => dtype.is_categorical(),
+            Self::Nested => dtype.is_nested(),
+            Self::List(inner_dts) => list_matches(inner_dts.as_deref(), dtype),
+            Self::Array(inner_dts, swidth) => array_matches(inner_dts.as_deref(), *swidth, dtype),
+            Self::Struct => dtype.is_struct(),
+            Self::Decimal => dtype.is_decimal(),
+            Self::Numeric => dtype.is_numeric(),
+            Self::Temporal => dtype.is_temporal(),
+            Self::Datetime(stu, stz) => datetime_matches(*stu, stz, dtype),
+            Self::Duration(stu) => duration_matches(*stu, dtype),
+            Self::Object => dtype.is_object(),
+        }
+    }
+    fn into_columns(
+        &self,
+        schema: &Schema,
+        ignored_columns: &PlHashSet<PlSmallStr>,
+    ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
+        Ok(match self {
+            Self::Union(lhs, rhs) => {
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
+                let rhs = rhs.into_columns(schema, ignored_columns)?;
+                lhs.extend(rhs);
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                lhs
+            },
+            Self::Difference(lhs, rhs) => {
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
+                let rhs = rhs.into_columns(schema, ignored_columns)?;
+                lhs.retain(|n| !rhs.contains(n));
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                lhs
+            },
+            Self::ExclusiveOr(lhs, rhs) => {
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
+                let mut rhs = rhs.into_columns(schema, ignored_columns)?;
+                rhs.retain(|n| !lhs.contains(n));
+                lhs.extend(rhs);
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                lhs
+            },
+            Self::Intersect(lhs, rhs) => {
+                let mut lhs = lhs.into_columns(schema, ignored_columns)?;
+                let rhs = rhs.into_columns(schema, ignored_columns)?;
+                lhs.retain(|n| rhs.contains(n));
+                lhs.sort_unstable_by(|l, r| {
+                    schema
+                        .index_of(l)
+                        .unwrap()
+                        .cmp(&schema.index_of(r).unwrap())
+                });
+                lhs
+            },
+            Self::Wildcard => schema
+                .iter_names()
+                .filter(|n| ignored_columns.contains(*n))
+                .cloned()
+                .collect(),
+            Self::Empty => Default::default(),
+            Self::AnyOf(dtypes) => {
+                let dtypes = PlHashSet::from_iter(dtypes.iter().cloned());
+                dtype_selector(schema, ignored_columns, |dtype| dtypes.contains(dtype))
+            },
+            Self::Integer => dtype_selector(schema, ignored_columns, |dtype| dtype.is_integer()),
+            Self::UnsignedInteger => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_unsigned_integer())
+            },
+            Self::SignedInteger => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_unsigned_integer())
+            },
+            Self::Float => dtype_selector(schema, ignored_columns, |dtype| dtype.is_float()),
+            Self::Enum => dtype_selector(schema, ignored_columns, |dtype| dtype.is_enum()),
+            Self::Categorical => {
+                dtype_selector(schema, ignored_columns, |dtype| dtype.is_categorical())
+            },
+            Self::Nested => dtype_selector(schema, ignored_columns, |dtype| dtype.is_nested()),
+            Self::List(inner_dts) => dtype_selector(schema, ignored_columns, |dtype| {
+                list_matches(inner_dts.as_deref(), dtype)
+            }),
+            Self::Array(inner_dts, swidth) => dtype_selector(schema, ignored_columns, |dtype| {
+                array_matches(inner_dts.as_deref(), *swidth, dtype)
+            }),
+            Self::Struct => dtype_selector(schema, ignored_columns, |dtype| dtype.is_struct()),
+            Self::Decimal => dtype_selector(schema, ignored_columns, |dtype| dtype.is_decimal()),
+            Self::Numeric => dtype_selector(schema, ignored_columns, |dtype| dtype.is_numeric()),
+            Self::Temporal => dtype_selector(schema, ignored_columns, |dtype| dtype.is_temporal()),
+            Self::Datetime(stu, stz) => dtype_selector(schema, ignored_columns, |dtype| {
+                datetime_matches(*stu, stz, dtype)
+            }),
+            Self::Duration(stu) => dtype_selector(schema, ignored_columns, |dtype| {
+                duration_matches(*stu, dtype)
+            }),
+            Self::Object => dtype_selector(schema, ignored_columns, |dtype| dtype.is_object()),
+        })
+    }
+
+    pub fn as_selector(self) -> Selector {
+        Selector::ByDType(self)
     }
 }
 
@@ -428,6 +575,77 @@ impl Not for Selector {
     }
 }
 
+impl BitOr for DataTypeSelector {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::Union(Arc::new(self), Arc::new(rhs))
+    }
+}
+
+impl BitOrAssign for DataTypeSelector {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = Self::Union(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
+    }
+}
+
+impl BitAnd for DataTypeSelector {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self::Intersect(Arc::new(self), Arc::new(rhs))
+    }
+}
+
+impl BitAndAssign for DataTypeSelector {
+    fn bitand_assign(&mut self, rhs: Self) {
+        *self = Self::Intersect(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
+    }
+}
+
+impl BitXor for DataTypeSelector {
+    type Output = Self;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self::ExclusiveOr(Arc::new(self), Arc::new(rhs))
+    }
+}
+
+impl BitXorAssign for DataTypeSelector {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        *self = Self::ExclusiveOr(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
+    }
+}
+
+impl Sub for DataTypeSelector {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::Difference(Arc::new(self), Arc::new(rhs))
+    }
+}
+
+impl SubAssign for DataTypeSelector {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = Self::Difference(
+            Arc::new(std::mem::replace(self, Self::Empty)),
+            Arc::new(rhs),
+        )
+    }
+}
+
+impl Not for DataTypeSelector {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        Self::Wildcard - self
+    }
+}
+
 impl From<Selector> for Expr {
     fn from(value: Selector) -> Self {
         Expr::Selector(value)
@@ -437,24 +655,114 @@ impl From<Selector> for Expr {
 impl fmt::Display for Selector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Selector::Union(left, right) => write!(f, "[{left} | {right}]"),
-            Selector::Difference(left, right) => write!(f, "[{left} - {right}]"),
-            Selector::ExclusiveOr(left, right) => write!(f, "[{left} ^ {right}]"),
-            Selector::Intersect(left, right) => write!(f, "[{left} & {right}]"),
-            Selector::Exclude(input, excludes) => {
-                write!(f, "{input}.exclude(")?;
+            Self::Union(left, right) => write!(f, "[{left} | {right}]"),
+            Self::Difference(left, right) => write!(f, "[{left} - {right}]"),
+            Self::ExclusiveOr(left, right) => write!(f, "[{left} ^ {right}]"),
+            Self::Intersect(left, right) => write!(f, "[{left} & {right}]"),
 
-                if let Some(e) = excludes.first() {
-                    fmt::Display::fmt(e, f)?;
-                    for e in &excludes[1..] {
-                        write!(f, ", {e}")?;
-                    }
+            Self::ByDType(dst) => fmt::Display::fmt(dst, f),
+            Self::ByName { names, strict } => {
+                f.write_str("cs.by_name(")?;
+
+                for e in names.iter() {
+                    write!(f, "'{e}', ")?;
                 }
 
-                f.write_char(')')
+                write!(f, "strict={strict})")
             },
+            Self::ByIndex { indices, strict } if indices.as_ref() == &[0] => {
+                write!(f, "cs.first(strict={strict})")
+            },
+            Self::ByIndex { indices, strict } if indices.as_ref() == &[-1] => {
+                write!(f, "cs.last(strict={strict})")
+            },
+            Self::ByIndex { indices, strict } if indices.len() == 1 => {
+                write!(f, "cs.nth({}, strict={strict})", indices[0])
+            },
+            Self::ByIndex { indices, strict } => {
+                write!(f, "cs.by_index({:?}, strict={strict})", indices.as_ref())
+            },
+            Self::Matches(s) => write!(f, "cs.matches(\"{s}\")"),
+            Self::Wildcard => f.write_str("cs.all()"),
+            Self::Empty => f.write_str("cs.empty()"),
+        }
+    }
+}
 
-            Selector::ByDType(dtypes) => {
+impl fmt::Display for DataTypeSelector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Union(left, right) => write!(f, "[{left} | {right}]"),
+            Self::Difference(left, right) => write!(f, "[{left} - {right}]"),
+            Self::ExclusiveOr(left, right) => write!(f, "[{left} ^ {right}]"),
+            Self::Intersect(left, right) => write!(f, "[{left} & {right}]"),
+
+            Self::Float => f.write_str("cs.float()"),
+            Self::Integer => f.write_str("cs.integer()"),
+            Self::SignedInteger => f.write_str("cs.signed_integer()"),
+            Self::UnsignedInteger => f.write_str("cs.unsigned_integer()"),
+
+            Self::Enum => f.write_str("cs.enum()"),
+            Self::Categorical => f.write_str("cs.categorical()"),
+
+            Self::Nested => f.write_str("cs.nested()"),
+            Self::List(inner_dst) => {
+                f.write_str("cs.list(")?;
+                if let Some(inner_dst) = inner_dst {
+                    fmt::Display::fmt(inner_dst.as_ref(), f)?;
+                }
+                f.write_str(")")
+            },
+            Self::Array(inner_dst, swidth) => {
+                f.write_str("cs.list(")?;
+                if let Some(inner_dst) = inner_dst {
+                    fmt::Display::fmt(inner_dst.as_ref(), f)?;
+                }
+                f.write_str(", width=")?;
+                match swidth {
+                    None => f.write_str("*")?,
+                    Some(swidth) => write!(f, "{swidth}")?,
+                }
+                f.write_str(")")
+            },
+            Self::Struct => f.write_str("cs.struct()"),
+
+            Self::Numeric => f.write_str("cs.numeric()"),
+            Self::Decimal => f.write_str("cs.decimal()"),
+            Self::Temporal => f.write_str("cs.temporal()"),
+            Self::Datetime(tu, tz) => {
+                write!(f, "cs.datetime(time_unit={tu}, time_zone=")?;
+                use TimeZoneSet as TZS;
+                match tz {
+                    TZS::Any => f.write_str("*")?,
+                    TZS::AnySet => f.write_str("*set")?,
+                    TZS::Unset => f.write_str("None")?,
+                    TZS::UnsetOrAnyOf(tz) => {
+                        f.write_str("[None")?;
+                        for e in tz.iter() {
+                            write!(f, ", '{e}'")?;
+                        }
+                        f.write_str("]")?;
+                    },
+                    TZS::AnyOf(tz) => {
+                        f.write_str("[")?;
+                        if let Some(e) = tz.first() {
+                            write!(f, "'{e}'")?;
+                            for e in &tz[1..] {
+                                write!(f, ", '{e}'")?;
+                            }
+                        }
+                        f.write_str("]")?;
+                    },
+                }
+                f.write_str(")")
+            },
+            Self::Duration(tu) => {
+                write!(f, "cs.duration(time_unit={tu})")
+            },
+            Self::Object => f.write_str("cs.object()"),
+
+            Self::AnyOf(dtypes) => {
                 use DataType as D;
                 match dtypes.as_ref() {
                     [D::Boolean] => f.write_str("cs.boolean()"),
@@ -465,72 +773,9 @@ impl fmt::Display for Selector {
                     _ => write!(f, "cs.by_dtype({:?})", dtypes),
                 }
             },
-            Selector::ByName { names, strict } => {
-                f.write_str("cs.by_name(")?;
 
-                for e in names.iter() {
-                    write!(f, "'{e}', ")?;
-                }
-
-                write!(f, "strict={strict})")
-            },
-            Selector::ByIndex { indices, strict } if indices.as_ref() == &[0] => {
-                write!(f, "cs.first(strict={strict})")
-            },
-            Selector::ByIndex { indices, strict } if indices.as_ref() == &[-1] => {
-                write!(f, "cs.last(strict={strict})")
-            },
-            Selector::ByIndex { indices, strict } if indices.len() == 1 => {
-                write!(f, "cs.nth({}, strict={strict})", indices[0])
-            },
-            Selector::ByIndex { indices, strict } => {
-                write!(f, "cs.by_index({:?}, strict={strict})", indices.as_ref())
-            },
-            Selector::Matches(s) => write!(f, "cs.matches(\"{s}\")"),
-
-            Selector::Float => write!(f, "cs.float()"),
-            Selector::Integer => write!(f, "cs.integer()"),
-            Selector::SignedInteger => write!(f, "cs.signed_integer()"),
-            Selector::UnsignedInteger => write!(f, "cs.unsigned_integer()"),
-            Selector::Categorical => write!(f, "cs.categorical()"),
-            Selector::Numeric => write!(f, "cs.numeric()"),
-            Selector::Decimal => write!(f, "cs.decimal()"),
-            Selector::Temporal => write!(f, "cs.temporal()"),
-            Selector::Datetime(tu, tz) => {
-                write!(f, "cs.datetime(time_unit={tu}, time_zone=")?;
-                match tz {
-                    None => f.write_str("*")?,
-                    Some(tz) => {
-                        if tz.len() > 1 {
-                            f.write_str("[")?;
-                        }
-
-                        if let Some(e) = tz.first() {
-                            match e {
-                                None => f.write_str("None"),
-                                Some(e) => write!(f, "'{e}'"),
-                            }?;
-                            for e in &tz[1..] {
-                                match e {
-                                    None => f.write_str("None"),
-                                    Some(e) => write!(f, "'{e}'"),
-                                }?;
-                            }
-                        }
-
-                        if tz.len() > 1 {
-                            f.write_str("]")?;
-                        }
-                    },
-                }
-                f.write_str(")")
-            },
-            Selector::Duration(tu) => {
-                write!(f, "cs.duration(time_unit={tu})")
-            },
-            Selector::Object => write!(f, "cs.object()"),
-            Selector::Wildcard => f.write_str("cs.all()"),
-            Selector::Empty => f.write_str("cs.empty()"),
+            Self::Wildcard => f.write_str("cs.all()"),
+            Self::Empty => f.write_str("cs.empty()"),
         }
     }
 }

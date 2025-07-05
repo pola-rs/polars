@@ -1,7 +1,11 @@
 use std::hash::{Hash, Hasher};
 
-use polars::prelude::{DataType, Selector, TimeUnit, TimeZone, TimeUnitSet};
+use polars::prelude::{
+    DataType, DataTypeSelector, Selector, TimeUnit, TimeUnitSet, TimeZone, TimeZoneSet,
+};
 use polars_plan::dsl;
+use pyo3::PyResult;
+use pyo3::exceptions::PyTypeError;
 
 use crate::prelude::Wrap;
 
@@ -28,6 +32,15 @@ fn parse_time_unit_set(time_units: Vec<Wrap<TimeUnit>>) -> TimeUnitSet {
         }
     }
     tu
+}
+
+pub fn parse_datatype_selector(selector: PySelector) -> PyResult<DataTypeSelector> {
+    selector.inner.to_dtype_selector().ok_or_else(|| {
+        PyTypeError::new_err(format!(
+            "expected datatype based expression got '{}'",
+            selector.inner
+        ))
+    })
 }
 
 #[cfg(feature = "pymethods")]
@@ -57,15 +70,6 @@ impl PySelector {
         }
     }
 
-    fn exclude_columns(&self, names: Vec<String>) -> Self {
-        self.inner.clone().exclude_cols(names).into()
-    }
-
-    fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        let dtypes = dtypes.into_iter().map(|x| x.0).collect::<Vec<_>>();
-        self.inner.clone().exclude_dtype(dtypes).into()
-    }
-
     #[staticmethod]
     fn by_dtype(dtypes: Vec<Wrap<DataType>>) -> Self {
         let dtypes = dtypes.into_iter().map(|x| x.0).collect::<Vec<_>>();
@@ -80,17 +84,29 @@ impl PySelector {
 
     #[staticmethod]
     fn by_index(indices: Vec<i64>, strict: bool) -> Self {
-        Selector::ByIndex { indices: indices.into(), strict }.into()
+        Selector::ByIndex {
+            indices: indices.into(),
+            strict,
+        }
+        .into()
     }
 
     #[staticmethod]
     fn first(strict: bool) -> Self {
-        Selector::ByIndex { indices: [0].into(), strict }.into()
+        Selector::ByIndex {
+            indices: [0].into(),
+            strict,
+        }
+        .into()
     }
 
     #[staticmethod]
     fn last(strict: bool) -> Self {
-        Selector::ByIndex { indices: [-1].into(), strict }.into()
+        Selector::ByIndex {
+            indices: [-1].into(),
+            strict,
+        }
+        .into()
     }
 
     #[staticmethod]
@@ -99,61 +115,105 @@ impl PySelector {
     }
 
     #[staticmethod]
+    fn enum_() -> Self {
+        DataTypeSelector::Enum.as_selector().into()
+    }
+
+    #[staticmethod]
     fn categorical() -> Self {
-        Selector::Categorical.into()
+        DataTypeSelector::Categorical.as_selector().into()
+    }
+
+    #[staticmethod]
+    fn nested() -> Self {
+        DataTypeSelector::Nested.as_selector().into()
+    }
+
+    #[staticmethod]
+    fn list(inner_dst: Option<Self>) -> PyResult<Self> {
+        let inner_dst = parse_datatype_selector(inner_dst)?;
+        DataTypeSelector::List(inner_dst).as_selector().into()
+    }
+
+    #[staticmethod]
+    fn array(inner_dst: Option<Self>, width: Option<usize>) -> PyResult<Self> {
+        let inner_dst = parse_datatype_selector(inner_dst)?;
+        DataTypeSelector::Array(inner_dst, width)
+            .as_selector()
+            .into()
+    }
+
+    #[staticmethod]
+    fn struct_() -> Self {
+        DataTypeSelector::Struct.as_selector().into()
     }
 
     #[staticmethod]
     fn integer() -> Self {
-        Selector::Integer.into()
+        DataTypeSelector::Integer.as_selector().into()
     }
-    
+
     #[staticmethod]
     fn signed_integer() -> Self {
-        Selector::SignedInteger.into()
+        DataTypeSelector::SignedInteger.as_selector().into()
     }
 
     #[staticmethod]
     fn unsigned_integer() -> Self {
-        Selector::UnsignedInteger.into()
+        DataTypeSelector::UnsignedInteger.as_selector().into()
     }
 
     #[staticmethod]
     fn float() -> Self {
-        Selector::Float.into()
+        DataTypeSelector::Float.as_selector().into()
     }
 
     #[staticmethod]
     fn decimal() -> Self {
-        Selector::Decimal.into()
+        DataTypeSelector::Decimal.as_selector().into()
     }
 
     #[staticmethod]
     fn numeric() -> Self {
-        Selector::Numeric.into()
+        DataTypeSelector::Numeric.as_selector().into()
     }
 
     #[staticmethod]
     fn temporal() -> Self {
-        Selector::Temporal.into()
+        DataTypeSelector::Temporal.as_selector().into()
     }
 
     #[staticmethod]
-    fn datetime(tu: Vec<Wrap<TimeUnit>>, tz: Option<Vec<Wrap<Option<TimeZone>>>>) -> Self {
+    fn datetime(tu: Vec<Wrap<TimeUnit>>, tz: Vec<Wrap<Option<TimeZone>>>) -> Self {
+        let mut any_of: Option<Vec<TimeZone>> = None;
+        let mut tzs = TimeZoneSet {
+            allow_unset: false,
+            allow_set: true,
+            any_of: None,
+        };
+
         let tu = parse_time_unit_set(tu);
-        let tz = tz.map(|v| v.into_iter().map(|v| v.0).collect());
-        Selector::Datetime(tu, tz).into()
+        for t in tz {
+            let t = t.0;
+            match t {
+                None => tzs.allow_unset = true,
+                Some(s) if s.as_str() == "*" => tzs.allow_set = true,
+                Some(t) => any_of.get_or_insert_default().push(t),
+            }
+        }
+        tzs.any_of = any_of.into();
+        DataTypeSelector::Datetime(tu, tzs).as_selector().into()
     }
 
     #[staticmethod]
     fn duration(tu: Vec<Wrap<TimeUnit>>) -> Self {
         let tu = parse_time_unit_set(tu);
-        Selector::Duration(tu).into()
+        DataTypeSelector::Duration(tu).as_selector().into()
     }
 
     #[staticmethod]
     fn object() -> Self {
-        Selector::Object.into()
+        DataTypeSelector::Object.as_selector().into()
     }
 
     #[staticmethod]

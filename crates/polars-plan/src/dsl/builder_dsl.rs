@@ -144,7 +144,10 @@ impl DslBuilder {
     }
 
     pub fn drop_nans(self, subset: Option<Selector>) -> Self {
-        let is_nan = subset.unwrap_or(Selector::Float).as_expr().is_nan();
+        let is_nan = subset
+            .unwrap_or(DataTypeSelector::Float.as_selector())
+            .as_expr()
+            .is_nan();
         self.remove(any_horizontal([is_nan]).unwrap())
     }
 

@@ -435,8 +435,6 @@
                     # Set openssl for `cargo test` to work.
                     export LD_LIBRARY_PATH="${pkgs.openssl_3_4.out}/lib:${stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
 
-                    export RUSTFLAGS="-Zthreads=0 ${rustLinkFlagsString} $RUSTFLAGS"
-
                     export PYTHON_LIBS=$($VENV/bin/python -c "import site; print(site.getsitepackages()[0])")
 
                     export PYTHONPATH="$PYTHONPATH:$PYTHON_LIBS"

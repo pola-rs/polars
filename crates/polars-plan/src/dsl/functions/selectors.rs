@@ -52,23 +52,53 @@ where
     I: IntoIterator<Item = S>,
     S: Into<PlSmallStr>,
 {
-    let names = names.into_iter().map(|x| x.into()).collect();
-    Selector::ByName { names, strict: true }
+    let mut selector = None;
+    let _s = &mut selector;
+    let names = names
+        .into_iter()
+        .map(Into::into)
+        .filter_map(|name| match name.as_str() {
+            "*" => {
+                *_s = Some(std::mem::take(_s).map_or(all(), |s| s | all()));
+                None
+            },
+            n if is_regex_projection(n) => {
+                let m = Selector::Matches(name);
+                *_s = Some(std::mem::take(_s).map_or_else(|| m.clone(), |s| s | m.clone()));
+                None
+            },
+            _ => Some(name),
+        })
+        .collect::<Arc<[_]>>();
+
+    let no_names = names.is_empty();
+    let names = Selector::ByName {
+        names,
+        strict: true,
+    };
+    if let Some(selector) = selector {
+        if no_names { selector } else { selector | names }
+    } else {
+        names
+    }
 }
 
 /// Select multiple columns by dtype.
-pub fn dtype_col(dtype: &DataType) -> Selector {
-    Selector::ByDType([dtype.clone()].into())
+pub fn dtype_col(dtype: &DataType) -> DataTypeSelector {
+    DataTypeSelector::AnyOf([dtype.clone()].into())
 }
 
 /// Select multiple columns by dtype.
-pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Selector {
+pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> DataTypeSelector {
     let dtypes = dtype.as_ref();
-    Selector::ByDType(dtypes.into())
+    DataTypeSelector::AnyOf(dtypes.into())
 }
 
 /// Select multiple columns by index.
 pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Selector {
     let indices = indices.as_ref().into();
-    Selector::ByIndex { indices, strict: true }
+    Selector::ByIndex {
+        indices,
+        strict: true,
+    }
 }

@@ -72,7 +72,7 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
-pub use selector::{Selector, TimeUnitSet};
+pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -1793,5 +1793,8 @@ pub fn last() -> Selector {
 
 /// Nth column in a DataFrame.
 pub fn nth(n: i64) -> Selector {
-    Selector::ByIndex{ indices: [n].into(), strict: true }
+    Selector::ByIndex {
+        indices: [n].into(),
+        strict: true,
+    }
 }

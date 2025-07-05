@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+import datetime as pydatetime
+import sys
 from collections.abc import Collection, Mapping, Sequence
-from datetime import timezone
+from decimal import Decimal as PyDecimal
 from functools import reduce
 from operator import or_
 from typing import (
@@ -13,6 +15,7 @@ from typing import (
     overload,
 )
 
+import polars.datatypes.classes as pldt
 from polars import functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.parse.expr import _parse_inputs_as_iterable
@@ -31,8 +34,13 @@ from polars.expr import Expr
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr, PySelector
 
+if sys.version_info >= (3, 10):
+    from types import NoneType
+else:  # pragma: no cover
+    # Define equivalent for older Python versions
+    NoneType = type(None)
+
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
@@ -324,8 +332,80 @@ class Selector(Expr):
         return self._pyselector.hash()
 
     @classmethod
-    def _by_dtype(cls, dtypes: list[PolarsDataType]) -> Selector:
-        return cls._from_pyselector(PySelector.by_dtype(dtypes))
+    def _by_dtype(cls, dtypes: list[PythonDataType | PolarsDataType]) -> Selector:
+        selectors = []
+        concrete_dtypes = []
+        for dt in all_dtypes:
+            if is_polars_dtype(dt):
+                if dt == pldt.Datetime:
+                    selectors += [datetime()]
+                if isinstance(dt, pldt.Datetime) and dt.time_zone == "*":
+                    selectors += [datetime(time_unit=dt.time_unit, time_zone="*")]
+                elif dt == pldt.Duration:
+                    selectors += [duration()]
+                elif dt == pldt.Categorical:
+                    selectors += [categorical()]
+                elif dt == pldt.Enum:
+                    selectors += [enum()]
+                elif dt == pldt.List:
+                    selectors += [list()]
+                elif dt == pldt.Array:
+                    selectors += [array()]
+                elif dt == pldt.Struct:
+                    selectors += [struct()]
+                elif dt == pldt.Decimal:
+                    selectors += [decimal()]
+                else:
+                    concrete_dtypes += [dt]
+            elif isinstance(dt, type):
+                if dt is int:
+                    selectors += [integer()]
+                elif dt is float:
+                    selectors += [float()]
+                elif dt is bool:
+                    selectors += [boolean()]
+                elif dt is str:
+                    concrete_dtypes += [pldt.String()]
+                elif dt is bytes:
+                    concrete_dtypes += [pldt.Binary()]
+                elif dt is object:
+                    selectors += [object()]
+                elif dt is NoneType:
+                    concrete_dtypes += [pldt.Null()]
+                elif dt is pydatetime.time:
+                    concrete_dtypes += [pldt.Time()]
+                elif dt is pydatetime.datetime:
+                    selectors += [datetime()]
+                elif dt is pydatetime.timedelta:
+                    selectors += [duration()]
+                elif dt is pydatetime.date:
+                    selectors += [date()]
+                elif dt is PyDecimal:
+                    selectors += [decimal()]
+                elif dt is list or dt is tuple:
+                    selectors += [list()]
+                else:
+                    input_type = (
+                        input
+                        if type(input) is type
+                        else f"of type {type(input).__name__!r}"
+                    )
+                    input_detail = "" if type(input) is type else f" (given: {input!r})"
+                    msg = f"cannot parse input {input_type} into Polars selector{input_detail}"
+                    raise TypeError(msg) from None
+
+        dtype_selector = cls._from_pyselector(PySelector.by_dtype(dtypes))
+        selector = selectors[0]
+        for s in selectors[1:]:
+            selectors = selector | s
+        return selector
+
+        if len(selectors) == 0:
+            return dtype_selector
+        elif len(concrete_dtypes) == 0:
+            return selector
+        else:
+            return dtype_selector | selector
 
     @classmethod
     def _by_name(cls, names: list[str], *, strict: bool) -> Selector:
@@ -479,9 +559,9 @@ class Selector(Expr):
             msg = "cannot exclude by both column name and dtype; use a selector instead"
             raise TypeError(msg)
         elif exclude_dtypes:
-            return self._from_pyselector(self._pyselector.exclude_dtype(exclude_dtypes))
+            return self - by_dtype(exclude_dtypes)
         else:
-            return self._from_pyselector(self._pyselector.exclude_columns(exclude_cols))
+            return self - by_name(exclude_cols)
 
     def as_expr(self) -> Expr:
         """
@@ -991,7 +1071,7 @@ def by_dtype(
             msg = f"invalid dtype: {tp!r}"
             raise TypeError(msg)
 
-    return F.col(all_dtypes).meta.as_selector()
+    return Selector._by_dtype(all_dtypes)
 
 
 def by_index(
@@ -1188,6 +1268,24 @@ def by_name(*names: str | Collection[str], strict: bool = True) -> Selector:
     return Selector._by_name(all_names, strict=strict)
 
 
+def enum() -> Selector:
+    return Selector._from_pyselector(PySelector.enum_())
+
+
+def list(*, inner: None | Selector = None) -> Selector:
+    inner_s = inner._pyselector if inner is not None else None
+    return Selector._from_pyselector(PySelector.list(inner_s))
+
+
+def array(*, inner: Selector | None = None, width: int | None = None) -> Selector:
+    inner_s = inner._pyselector if inner is not None else None
+    return Selector._from_pyselector(PySelector.array(inner_s, width))
+
+
+def struct() -> Selector:
+    return Selector._from_pyselector(PySelector.struct_())
+
+
 def categorical() -> Selector:
     """
     Select all categorical columns.
@@ -1364,7 +1462,9 @@ def date() -> Selector:
 
 def datetime(
     time_unit: TimeUnit | Collection[TimeUnit] | None = None,
-    time_zone: (str | timezone | Collection[str | timezone | None] | None) = (
+    time_zone: (
+        str | pydatetime.timezone | Collection[str | pydatetime.timezone | None] | None
+    ) = (
         "*",
         None,
     ),
@@ -1506,7 +1606,9 @@ def datetime(
         time_zone = [None]
     elif time_zone:
         time_zone = (
-            [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
+            [time_zone]
+            if isinstance(time_zone, (str, pydatetime.timezone))
+            else list(time_zone)
         )
 
     if "*" in time_zone:
