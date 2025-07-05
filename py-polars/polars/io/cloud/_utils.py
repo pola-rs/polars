@@ -24,7 +24,7 @@ def _get_path_scheme(path: str | Path) -> str | None:
     path_str = str(path)
     i = path_str.find("://")
 
-    return None if i == -1 else path_str[:i]
+    return path_str[:i] if i >= 0 else None
 
 
 def _is_aws_cloud(scheme: str) -> bool:
