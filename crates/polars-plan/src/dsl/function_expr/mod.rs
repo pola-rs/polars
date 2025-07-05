@@ -126,9 +126,15 @@ pub enum FunctionExpr {
     FillNull,
     FillNullWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
-    RollingExpr(RollingFunction),
+    RollingExpr {
+        function: RollingFunction,
+        options: RollingOptionsFixedWindow,
+    },
     #[cfg(feature = "rolling_window_by")]
-    RollingExprBy(RollingFunctionBy),
+    RollingExprBy {
+        function_by: RollingFunctionBy,
+        options: RollingOptionsDynamicWindow,
+    },
     ShiftAndFill,
     Shift,
     DropNans,
@@ -408,12 +414,17 @@ impl Hash for FunctionExpr {
             Hash(a, b, c, d) => (a, b, c, d).hash(state),
             FillNull => {},
             #[cfg(feature = "rolling_window")]
-            RollingExpr(f) => {
-                f.hash(state);
+            RollingExpr { function, options } => {
+                function.hash(state);
+                options.hash(state);
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy(f) => {
-                f.hash(state);
+            RollingExprBy {
+                function_by,
+                options,
+            } => {
+                function_by.hash(state);
+                options.hash(state);
             },
             #[cfg(feature = "moment")]
             Skew(a) => a.hash(state),
@@ -613,9 +624,9 @@ impl Display for FunctionExpr {
             Sign => "sign",
             FillNull => "fill_null",
             #[cfg(feature = "rolling_window")]
-            RollingExpr(func, ..) => return write!(f, "{func}"),
+            RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy(func, ..) => return write!(f, "{func}"),
+            RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",

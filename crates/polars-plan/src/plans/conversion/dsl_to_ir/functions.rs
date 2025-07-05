@@ -623,47 +623,55 @@ pub(super) fn convert_functions(
         F::FillNull => I::FillNull,
         F::FillNullWithStrategy(fill_null_strategy) => I::FillNullWithStrategy(fill_null_strategy),
         #[cfg(feature = "rolling_window")]
-        F::RollingExpr(rolling_function) => {
+        F::RollingExpr { function, options } => {
             use RollingFunction as R;
             use aexpr::IRRollingFunction as IR;
 
-            I::RollingExpr(match rolling_function {
-                R::Min(r) => IR::Min(r),
-                R::Max(r) => IR::Max(r),
-                R::Mean(r) => IR::Mean(r),
-                R::Sum(r) => IR::Sum(r),
-                R::Quantile(r) => IR::Quantile(r),
-                R::Var(r) => IR::Var(r),
-                R::Std(r) => IR::Std(r),
-                #[cfg(feature = "moment")]
-                R::Skew(r) => IR::Skew(r),
-                #[cfg(feature = "moment")]
-                R::Kurtosis(r) => IR::Kurtosis(r),
-                #[cfg(feature = "cov")]
-                R::CorrCov {
-                    rolling_options,
-                    corr_cov_options,
-                    is_corr,
-                } => IR::CorrCov {
-                    rolling_options,
-                    corr_cov_options,
-                    is_corr,
+            I::RollingExpr {
+                function: match function {
+                    R::Min => IR::Min,
+                    R::Max => IR::Max,
+                    R::Mean => IR::Mean,
+                    R::Sum => IR::Sum,
+                    R::Quantile => IR::Quantile,
+                    R::Var => IR::Var,
+                    R::Std => IR::Std,
+                    #[cfg(feature = "moment")]
+                    R::Skew => IR::Skew,
+                    #[cfg(feature = "moment")]
+                    R::Kurtosis => IR::Kurtosis,
+                    #[cfg(feature = "cov")]
+                    R::CorrCov {
+                        corr_cov_options,
+                        is_corr,
+                    } => IR::CorrCov {
+                        corr_cov_options,
+                        is_corr,
+                    },
                 },
-            })
+                options,
+            }
         },
         #[cfg(feature = "rolling_window_by")]
-        F::RollingExprBy(rolling_function_by) => {
+        F::RollingExprBy {
+            function_by,
+            options,
+        } => {
             use RollingFunctionBy as R;
             use aexpr::IRRollingFunctionBy as IR;
-            I::RollingExprBy(match rolling_function_by {
-                R::MinBy(r) => IR::MinBy(r),
-                R::MaxBy(r) => IR::MaxBy(r),
-                R::MeanBy(r) => IR::MeanBy(r),
-                R::SumBy(r) => IR::SumBy(r),
-                R::QuantileBy(r) => IR::QuantileBy(r),
-                R::VarBy(r) => IR::VarBy(r),
-                R::StdBy(r) => IR::StdBy(r),
-            })
+
+            I::RollingExprBy {
+                function_by: match function_by {
+                    R::MinBy => IR::MinBy,
+                    R::MaxBy => IR::MaxBy,
+                    R::MeanBy => IR::MeanBy,
+                    R::SumBy => IR::SumBy,
+                    R::QuantileBy => IR::QuantileBy,
+                    R::VarBy => IR::VarBy,
+                    R::StdBy => IR::StdBy,
+                },
+                options,
+            }
         },
         F::ShiftAndFill => {
             polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
