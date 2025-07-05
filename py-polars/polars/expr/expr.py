@@ -2464,7 +2464,7 @@ class Expr:
         │ 0    ┆ 2     ┆ 4   │
         └──────┴───────┴─────┘
         """
-        element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
+        element = parse_into_expression(element, str_as_lit=True, list_as_series=False)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.search_sorted(element, side, descending))
 
     def sort_by(
