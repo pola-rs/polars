@@ -539,6 +539,59 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 );
                 None
             },
+            // cast fill_value and inner list dtype to common super type.
+            #[cfg(feature = "list_pad")]
+            AExpr::Function {
+                function: IRFunctionExpr::ListExpr(IRListFunction::PadStart),
+                ref input,
+                options,
+            } => {
+                let (_, type_list) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, length_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_fill_value) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+
+                let inner_list_type = match type_list {
+                    DataType::List(inner_dtype) => inner_dtype,
+                    _ => polars_bail!(op = "list.pad_start", type_list),
+                };
+
+                let mut input = input.clone();
+                let needs_length_cast = length_dtype != DataType::UInt64;
+                let needs_fill_value_cast = type_fill_value != *inner_list_type;
+
+                if !needs_length_cast && !needs_fill_value_cast {
+                    None
+                } else {
+                    if needs_length_cast {
+                        cast_expr_ir(
+                            &mut input[1],
+                            &length_dtype,
+                            &DataType::UInt64,
+                            expr_arena,
+                            CastOptions::Strict,
+                        )?;
+                    }
+
+                    if needs_fill_value_cast {
+                        cast_expr_ir(
+                            &mut input[2],
+                            &type_fill_value,
+                            &inner_list_type,
+                            expr_arena,
+                            CastOptions::Strict,
+                        )?;
+                    };
+
+                    Some(AExpr::Function {
+                        function: IRFunctionExpr::ListExpr(IRListFunction::PadStart),
+                        input,
+                        options,
+                    })
+                }
+            },
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:

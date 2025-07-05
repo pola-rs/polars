@@ -1431,3 +1431,64 @@ class ExprListNameSpace:
         else:
             other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+
+    def pad_start(self, length: IntoExpr, fill_value: IntoExpr) -> Expr:
+        """
+        Pad the start of each list with fill_value until it reaches the given length.
+
+        Parameters
+        ----------
+        length
+            Target length for each list. If a list already has `length` or more
+            elements, it remains unchanged. If it has fewer elements, `fill_value`
+            is prepended until the target length is reached. Can be a literal
+            integer or an expression.
+        fill_value
+            Element to add at the beginning of each list. Can be a literal value
+            or an expression. If an expression is used, it's evaluated per row,
+            allowing different fill values for each list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1], [], [1, 2, 3]]})
+        >>> df.select(pl.col("a").list.pad_start(3, 0))
+        shape: (3, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [0, 0, 1] │
+        │ [0, 0, 0] │
+        │ [1, 2, 3] │
+        └───────────┘
+
+        >>> df = pl.DataFrame({"a": [[1], [], [1, 2, 3]], "fill": [0, 999, 2]})
+        >>> df.select(pl.col("a").list.pad_start(3, pl.col("fill")))
+        shape: (3, 1)
+        ┌─────────────────┐
+        │ a               │
+        │ ---             │
+        │ list[i64]       │
+        ╞═════════════════╡
+        │ [0, 0, 1]       │
+        │ [999, 999, 999] │
+        │ [1, 2, 3]       │
+        └─────────────────┘
+
+        >>> df = pl.DataFrame({"a": [["a"], [], ["b", "c", "d"]]})
+        >>> df.select(pl.col("a").list.pad_start(pl.col("a").list.len().max(), "foo"))
+        shape: (3, 1)
+        ┌───────────────────────┐
+        │ a                     │
+        │ ---                   │
+        │ list[str]             │
+        ╞═══════════════════════╡
+        │ ["foo", "foo", "a"]   │
+        │ ["foo", "foo", "foo"] │
+        │ ["b", "c", "d"]       │
+        └───────────────────────┘
+        """
+        fill_value = parse_into_expression(fill_value, str_as_lit=True)
+        length = parse_into_expression(length, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_pad_start(length, fill_value))

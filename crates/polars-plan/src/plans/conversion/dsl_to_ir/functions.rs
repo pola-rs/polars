@@ -148,6 +148,8 @@ pub(super) fn convert_functions(
                 L::ToArray(v) => IL::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 L::ToStruct(list_to_struct_args) => IL::ToStruct(list_to_struct_args),
+                #[cfg(feature = "list_pad")]
+                L::PadStart => IL::PadStart,
             })
         },
         #[cfg(feature = "strings")]

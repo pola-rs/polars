@@ -1,8 +1,21 @@
 use std::borrow::Cow;
+#[cfg(feature = "list_pad")]
+use std::cmp::max;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
-#[cfg(feature = "list_gather")]
+#[cfg(feature = "list_pad")]
+use arrow::{
+    Either,
+    array::{
+        Array as ArrowArray, ListArray,
+        builder::{ShareStrategy, make_builder},
+    },
+    legacy::is_valid::IsValid,
+    offset::Offsets,
+    pushable::Pushable,
+};
+#[cfg(any(feature = "list_gather", feature = "list_pad"))]
 use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
 use num_traits::{NumCast, Signed, Zero};
@@ -569,6 +582,96 @@ pub trait ListNameSpaceImpl: AsList {
         let list_ca = self.as_list();
 
         list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
+    }
+
+    #[cfg(feature = "list_pad")]
+    fn lst_pad_start(
+        &self,
+        fill_value: &Column,
+        length: &UInt64Chunked,
+    ) -> PolarsResult<ListChunked> {
+        let list_ca = self.as_list();
+        let fill_value_is_scalar = fill_value.len() == 1;
+        let fill_value = fill_value
+            .to_owned()
+            .rechunk_to_arrow(CompatLevel::newest());
+
+        Ok(arity::binary(list_ca, length, |list_arr, length_arr| {
+            let rows = list_arr.len();
+            let values_arr: &dyn ArrowArray = list_arr.values().as_ref();
+            let inner_dtype = values_arr.dtype().clone();
+            let raw_offsets = list_arr.offsets().as_slice();
+
+            let len_iter = if length_arr.len() == 1 {
+                Either::Left(std::iter::repeat_n(length_arr.values()[0], rows))
+            } else {
+                Either::Right(length_arr.values().iter().copied())
+            };
+
+            let total_inner = list_arr
+                .offsets()
+                .offset_and_length_iter()
+                .zip(len_iter)
+                .map(|((_, offset_length), length)| max(offset_length, length as usize))
+                .sum();
+
+            // list values count will be greater or equal after pad
+            // take fast path if equal (no work to be done)
+            if total_inner == list_arr.get_values_size() {
+                return list_arr.to_owned();
+            }
+
+            let mut builder = make_builder(&inner_dtype);
+            builder.reserve(total_inner);
+
+            let validity = match (length_arr.validity(), list_arr.validity()) {
+                (None, None) => None,
+                (Some(a), None) => Some(a.to_owned()),
+                (None, Some(b)) => Some(b.to_owned()),
+                (Some(a), Some(b)) => Some(a & b),
+            };
+
+            let mut offsets = Offsets::with_capacity(rows + 1);
+
+            for row in 0..rows {
+                let idx_row = if length_arr.len() == 1 { 0 } else { row };
+
+                let row_is_valid = unsafe {
+                    list_arr.is_valid_unchecked(row) && length_arr.is_valid_unchecked(idx_row)
+                };
+                if !row_is_valid {
+                    offsets.push_null();
+                    continue;
+                }
+
+                let start = unsafe { *raw_offsets.get_unchecked(row) } as usize;
+                let end = unsafe { *raw_offsets.get_unchecked(row + 1) } as usize;
+                let row_len = end - start;
+
+                let target_length =
+                    unsafe { length_arr.value_unchecked(idx_row).to_usize().unwrap() };
+                let pad_count = target_length.saturating_sub(row_len);
+
+                if pad_count > 0 {
+                    let fill_value_start = if fill_value_is_scalar { 0 } else { row };
+                    builder.subslice_extend_each_repeated(
+                        fill_value.as_ref(),
+                        fill_value_start,
+                        1,
+                        pad_count,
+                        ShareStrategy::Always,
+                    );
+                }
+                let right_offset = max(row_len, target_length);
+                builder.subslice_extend(values_arr, start, row_len, ShareStrategy::Always);
+
+                offsets.push(right_offset);
+            }
+
+            let values = builder.freeze_reset();
+            let list_dtype = ListArray::<i64>::default_datatype(inner_dtype);
+            LargeListArray::new(list_dtype, offsets.into(), values, validity)
+        }))
     }
 
     #[cfg(feature = "list_sample")]

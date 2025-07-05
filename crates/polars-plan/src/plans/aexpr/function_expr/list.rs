@@ -61,6 +61,8 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    #[cfg(feature = "list_pad")]
+    PadStart,
 }
 
 impl IRListFunction {
@@ -129,6 +131,8 @@ impl IRListFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
+            #[cfg(feature = "list_pad")]
+            PadStart => mapper.with_same_dtype(),
         }
     }
 
@@ -183,6 +187,8 @@ impl IRListFunction {
             L::ToStruct(ListToStructArgs::FixedWidth(_)) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(ListToStructArgs::InferWidth { .. }) => FunctionOptions::groupwise(),
+            #[cfg(feature = "list_pad")]
+            L::PadStart => FunctionOptions::elementwise(),
         }
     }
 }
@@ -256,6 +262,8 @@ impl Display for IRListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_pad")]
+            PadStart => "pad_start",
         };
         write!(f, "list.{name}")
     }
@@ -319,6 +327,8 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
+            #[cfg(feature = "list_pad")]
+            PadStart => map_as_slice!(pad_start),
         }
     }
 }
@@ -785,4 +795,15 @@ pub(super) fn to_struct(s: &Column, args: &ListToStructArgs) -> PolarsResult<Col
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+#[cfg(feature = "list_pad")]
+pub(super) fn pad_start(s: &[Column]) -> PolarsResult<Column> {
+    let s1 = s[0].as_materialized_series();
+    let length = &s[1].u64()?;
+    polars_ensure!(
+        s1.len() == 1 || length.len() == 1 || s1.len() == length.len(),
+        ShapeMismatch: "cannot pad_start with 'length' array of length {}", length.len()
+    );
+    Ok(s1.list()?.lst_pad_start(&s[2], length)?.into_column())
 }

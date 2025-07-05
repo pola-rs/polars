@@ -1089,3 +1089,41 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+    def pad_start(self, length: int | IntoExprColumn, fill_value: IntoExpr) -> Series:
+        """
+        Pad the start of each list with fill_value until it reaches the given length.
+
+        Parameters
+        ----------
+        length
+            Target length for each list. If a list already has `length` or more
+            elements, it remains unchanged. If it has fewer elements, `fill_value`
+            is prepended until the target length is reached. Can be a literal
+            integer or an expression.
+        fill_value
+            Element to add at the beginning of each list. Can be a literal value
+            or an expression. If an expression is used, it's evaluated per row,
+            allowing different fill values for each list.
+
+        Examples
+        --------
+        >>> pl.Series([[1], [], [1, 2, 3]]).list.pad_start(3, 0)
+        shape: (3,)
+        Series: '' [list[i64]]
+        [
+            [0, 0, 1]
+            [0, 0, 0]
+            [1, 2, 3]
+        ]
+
+        >>> s = pl.Series([[1], [], [1, 2]])
+        >>> s.list.pad_start(s.list.len().max(), 99)
+        shape: (3,)
+        Series: '' [list[i64]]
+        [
+            [99, 1]
+            [99, 99]
+            [1, 2]
+        ]
+        """
