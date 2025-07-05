@@ -72,11 +72,20 @@ impl<
         match self.method {
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
-                Some(
-                    (self.sorted.get(idx + null_count).unwrap()
-                        + self.sorted.get(top_idx + null_count).unwrap())
-                        / T::from::<f64>(2.0f64).unwrap(),
-                )
+
+                debug_assert!(idx <= top_idx);
+                let v = if idx != top_idx {
+                    let mut vals = self
+                        .sorted
+                        .index_range(idx + null_count..top_idx + null_count + 1);
+                    let low = vals.next().unwrap().unwrap();
+                    let high = vals.next().unwrap().unwrap();
+                    (low + high) / T::from::<f64>(2.0f64).unwrap()
+                } else {
+                    self.sorted.get(idx + null_count).unwrap()
+                };
+
+                Some(v)
             },
             QuantileMethod::Linear => {
                 let float_idx = (length as f64 - 1.0) * self.prob;
@@ -85,13 +94,14 @@ impl<
                 if top_idx == idx {
                     Some(self.sorted.get(idx + null_count).unwrap())
                 } else {
+                    let mut vals = self
+                        .sorted
+                        .index_range(idx + null_count..top_idx + null_count + 1);
+                    let low = vals.next().unwrap().unwrap();
+                    let high = vals.next().unwrap().unwrap();
+
                     let proportion = T::from(float_idx - idx as f64).unwrap();
-                    Some(
-                        proportion
-                            * (self.sorted.get(top_idx + null_count).unwrap()
-                                - self.sorted.get(idx + null_count).unwrap())
-                            + self.sorted.get(idx + null_count).unwrap(),
-                    )
+                    Some(proportion * (high - low) + low)
                 }
             },
             _ => Some(self.sorted.get(idx + null_count).unwrap()),
