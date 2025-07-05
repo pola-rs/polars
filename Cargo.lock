@@ -3432,6 +3432,7 @@ dependencies = [
  "rayon",
  "recursive",
  "serde_json",
+ "smallvec",
  "version_check",
 ]
 
