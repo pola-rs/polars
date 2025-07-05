@@ -1143,10 +1143,13 @@ impl Expr {
         self,
         by: Expr,
         options: RollingOptionsDynamicWindow,
-        rolling_function_by: fn(RollingOptionsDynamicWindow) -> RollingFunctionBy,
+        rolling_function_by: RollingFunctionBy,
     ) -> Expr {
         self.map_binary(
-            FunctionExpr::RollingExprBy(rolling_function_by(options)),
+            FunctionExpr::RollingExprBy {
+                function_by: rolling_function_by,
+                options,
+            },
             by,
         )
     }
@@ -1164,9 +1167,12 @@ impl Expr {
     fn finish_rolling(
         self,
         options: RollingOptionsFixedWindow,
-        rolling_function: fn(RollingOptionsFixedWindow) -> RollingFunction,
+        rolling_function: RollingFunction,
     ) -> Expr {
-        self.map_unary(FunctionExpr::RollingExpr(rolling_function(options)))
+        self.map_unary(FunctionExpr::RollingExpr {
+            function: rolling_function,
+            options,
+        })
     }
 
     /// Apply a rolling minimum based on another column.

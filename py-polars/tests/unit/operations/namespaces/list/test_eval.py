@@ -49,6 +49,16 @@ def test_list_eval_categorical() -> None:
     )
 
 
+def test_list_eval_cast_categorical() -> None:
+    df = pl.DataFrame({"test": [["a", None], ["c"], [], ["a", "b", "c"]]})
+    expected = pl.DataFrame(
+        {"test": [["a", None], ["c"], [], ["a", "b", "c"]]},
+        schema={"test": pl.List(pl.Categorical)},
+    )
+    result = df.select(pl.col("test").list.eval(pl.element().cast(pl.Categorical)))
+    assert_frame_equal(result, expected)
+
+
 def test_list_eval_type_coercion() -> None:
     last_non_null_value = pl.element().fill_null(3).last()
     df = pl.DataFrame({"array_cols": [[1, None]]})

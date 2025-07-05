@@ -60,25 +60,25 @@ impl IRFunctionExpr {
             Sign => mapper.with_dtype(DataType::Int64),
             FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
-            RollingExpr(rolling_func, ..) => {
+            RollingExpr{function, ..} => {
                 use IRRollingFunction::*;
-                match rolling_func {
-                    Min(_) | Max(_) => mapper.with_same_dtype(),
-                    Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
-                    Sum(_) => mapper.sum_dtype(),
+                match function {
+                    Min | Max => mapper.with_same_dtype(),
+                    Mean | Quantile | Var | Std => mapper.map_to_float_dtype(),
+                    Sum => mapper.sum_dtype(),
                     #[cfg(feature = "cov")]
                     CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
-                    Skew(..) | Kurtosis(..) => mapper.map_to_float_dtype(),
+                    Skew | Kurtosis => mapper.map_to_float_dtype(),
                 }
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy(rolling_func, ..) => {
+            RollingExprBy{function_by, ..} => {
                 use IRRollingFunctionBy::*;
-                match rolling_func {
-                    MinBy(_) | MaxBy(_) => mapper.with_same_dtype(),
-                    MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
-                    SumBy(_) => mapper.sum_dtype(),
+                match function_by {
+                    MinBy | MaxBy => mapper.with_same_dtype(),
+                    MeanBy | QuantileBy | VarBy | StdBy=> mapper.map_to_float_dtype(),
+                    SumBy => mapper.sum_dtype(),
                 }
             },
             ShiftAndFill => mapper.with_same_dtype(),

@@ -2010,7 +2010,7 @@ class DataFrame:
                 if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
                 arrays.append(arr)
-                struct_dtype.append((s.name, arr.dtype))
+                struct_dtype.append((s.name, arr.dtype, arr.shape[1:]))
 
             out = np.empty(self.height, dtype=struct_dtype)
             for idx, c in enumerate(self.columns):

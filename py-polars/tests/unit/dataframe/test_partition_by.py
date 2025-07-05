@@ -75,6 +75,7 @@ def test_partition_by_as_dict_include_keys_false_maintain_order_false() -> None:
         df.partition_by(["a"], maintain_order=False, include_key=False, as_dict=True)
 
 
+@pytest.mark.may_fail_cloud
 @pytest.mark.slow
 def test_partition_by_as_dict_include_keys_false_large() -> None:
     # test with both as_dict and include_key=False

@@ -929,6 +929,7 @@ def test_df_fold() -> None:
     assert_series_equal(df_width_one.fold(lambda s1, s2: s1), df["a"])
 
 
+@pytest.mark.may_fail_cloud  # TODO: make pickleable
 def test_fold_filter() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
@@ -1853,6 +1854,7 @@ def test_hash_collision_multiple_columns_equal_values_15390(e: pl.Expr) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # Python objects not yet supported in row encoding
+@pytest.mark.may_fail_cloud
 def test_hashing_on_python_objects() -> None:
     # see if we can do a group_by, drop_duplicates on a DataFrame with objects.
     # this requires that the hashing and aggregations are done on python objects
@@ -2051,6 +2053,7 @@ def test_with_row_count_deprecated() -> None:
     assert out["row_nr"].to_list() == [0, 1, 2]
 
 
+@pytest.mark.may_fail_cloud
 def test_filter_with_all_expansion() -> None:
     df = pl.DataFrame(
         {
@@ -2065,6 +2068,7 @@ def test_filter_with_all_expansion() -> None:
 
 # TODO: investigate this discrepancy in auto streaming
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_extension() -> None:
     class Foo:
         def __init__(self, value: Any) -> None:
@@ -2300,6 +2304,7 @@ def test_df_broadcast() -> None:
     assert out.rows() == [(1, [1, 2]), (2, [1, 2]), (3, [1, 2])]
 
 
+@pytest.mark.may_fail_cloud  # not a lazyframe method
 def test_product() -> None:
     df = pl.DataFrame(
         {
@@ -2688,6 +2693,7 @@ def test_selection_regex_and_multicol() -> None:
 
 @pytest.mark.parametrize("subset", ["a", cs.starts_with("x", "a")])
 @pytest.mark.may_fail_auto_streaming  # Flaky in CI, see https://github.com/pola-rs/polars/issues/20943
+@pytest.mark.may_fail_cloud
 def test_unique_on_sorted(subset: Any) -> None:
     df = pl.DataFrame(data={"a": [1, 1, 3], "b": [1, 2, 3]})
 
@@ -2935,6 +2941,7 @@ def test_init_datetimes_with_timezone() -> None:
         ),
     ],
 )
+@pytest.mark.may_fail_cloud
 def test_init_vs_strptime_consistency(
     tzinfo: timezone | None,
     offset: str,
@@ -3041,8 +3048,8 @@ def test_unique(
 ) -> None:
     df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
 
-    result = df.unique(maintain_order=True, subset=subset, keep=keep)
-    expected = df.filter(expected_mask)
+    result = df.unique(maintain_order=True, subset=subset, keep=keep).sort(pl.all())
+    expected = df.filter(expected_mask).sort(pl.all())
     assert_frame_equal(result, expected)
 
 

@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 mod dispatch;
 #[cfg(feature = "rolling_window_by")]
 mod rolling_kernels;
@@ -26,4 +28,12 @@ pub struct RollingOptionsDynamicWindow {
     /// Optional parameters for the rolling
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(default))]
     pub fn_params: Option<RollingFnParams>,
+}
+
+impl Hash for RollingOptionsDynamicWindow {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.window_size.hash(state);
+        self.min_periods.hash(state);
+        self.closed_window.hash(state);
+    }
 }
