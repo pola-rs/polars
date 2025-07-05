@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from polars.io.cloud._utils import _get_path_scheme
 import pytest
 
 import polars as pl
 from polars.io._utils import looks_like_url, parse_columns_arg, parse_row_index_args
+from polars.io.cloud._utils import _get_path_scheme
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
