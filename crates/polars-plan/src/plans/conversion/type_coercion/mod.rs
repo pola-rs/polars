@@ -1,9 +1,12 @@
 mod binary;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+mod datetime_range;
 mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
 use binary::process_binary;
+use datetime_range::{update_date_range_types, update_datetime_range_types};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -767,13 +770,15 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             #[cfg(all(feature = "range", feature = "temporal"))]
             AExpr::Function {
                 function:
-                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
                         interval: _,
                         closed: _,
-                        time_unit: _,
-                        time_zone: _,
                         arg_type,
-                        date_range,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRanges {
+                        interval: _,
+                        closed: _,
+                        arg_type,
                     }),
                 ref input,
                 options,
@@ -781,61 +786,61 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let function = function.clone();
                 let mut input = input.clone();
 
-                macro_rules! extract_date {
-                    ($idx:literal, $arg:literal) => {{
-                        let (_, dtype) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[$idx].node(), schema));
-                        polars_ensure!(
-                            matches!(dtype, DataType::Datetime(_, _) | DataType::Date),
-                            ComputeError: "'{}' must be Date or Datetime, got {:?}", $arg, dtype
-                        );
-                        dtype
-                    }}
+                let (from_types, to_types) = unpack!(update_date_range_types(
+                    &mut input, expr_arena, schema, arg_type
+                ));
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
+                let mut modified = false;
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if from_dtype != to_dtype {
+                        modified = true;
+                        cast_expr_ir(
+                            &mut input[i],
+                            &from_dtype,
+                            &to_dtype,
+                            expr_arena,
+                            CastOptions::Strict,
+                        )?;
+                    }
                 }
-                macro_rules! extract_samples {
-                    ($idx:literal) => {{
-                        let (_, dtype) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[$idx].node(), schema));
-                        polars_ensure!(
-                            dtype.is_integer(),
-                            ComputeError: "'num_samples' must be integer, got {:?}", dtype
-                        );
-                        dtype
-                    }}
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
                 }
-                let (from_types, to_types) = match arg_type {
-                    DateRangeArgs::StartEndInterval => {
-                        let type_start = extract_date!(0, "start");
-                        let type_end = extract_date!(1, "end");
-                        let super_type = unpack!(get_supertype(&type_start, &type_end));
-                        let from_types = vec![type_start, type_end];
-                        let to_types = vec![super_type.clone(), super_type];
-                        (from_types, to_types)
-                    },
-                    DateRangeArgs::StartEndSamples => {
-                        let type_start = extract_date!(0, "start");
-                        let type_end = extract_date!(1, "end");
-                        let type_samples = extract_samples!(2);
-                        let super_type = unpack!(get_supertype(&type_start, &type_end));
-                        let from_types = vec![type_start, type_end, type_samples];
-                        let to_types = vec![super_type.clone(), super_type, DataType::UInt64];
-                        (from_types, to_types)
-                    },
-                    DateRangeArgs::StartIntervalSamples => {
-                        let type_start = extract_date!(0, "start");
-                        let type_samples = extract_samples!(1);
-                        let from_types = vec![type_start.clone(), type_samples];
-                        let to_types = vec![type_start, DataType::UInt64];
-                        (from_types, to_types)
-                    },
-                    DateRangeArgs::EndIntervalSamples => {
-                        let type_end = extract_date!(0, "end");
-                        let type_samples = extract_samples!(1);
-                        let from_types = vec![type_end.clone(), type_samples];
-                        let to_types = vec![type_end, DataType::UInt64];
-                        (from_types, to_types)
-                    },
-                };
+            },
+            #[cfg(all(feature = "range", feature = "temporal"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
+                        interval: ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                        arg_type,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
+                        interval: ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                        arg_type,
+                    }),
+                ref input,
+                options,
+            } => {
+                let function = function.clone();
+                let mut input = input.clone();
+
+                let (from_types, to_types) = unpack!(update_datetime_range_types(
+                    &mut input, expr_arena, schema, interval, tu, tz, arg_type,
+                ));
 
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
@@ -852,14 +857,15 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         )?;
                     }
                 }
-                if !modified {
-                    return Ok(None);
-                } else {
+
+                if modified {
                     Some(AExpr::Function {
                         function,
                         input,
                         options,
                     })
+                } else {
+                    return Ok(None);
                 }
             },
             #[cfg(feature = "range")]

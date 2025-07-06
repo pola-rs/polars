@@ -83,16 +83,23 @@ pub fn date_range(
 
 #[pyfunction]
 pub fn date_ranges(
-    start: PyExpr,
-    end: PyExpr,
-    interval: &str,
+    start: Option<PyExpr>,
+    end: Option<PyExpr>,
+    interval: Option<&str>,
+    num_samples: Option<PyExpr>,
     closed: Wrap<ClosedWindow>,
 ) -> PyResult<PyExpr> {
-    let start = start.inner;
-    let end = end.inner;
-    let interval = Duration::try_parse(interval).map_err(PyPolarsErr::from)?;
+    let start = start.map(|x| x.inner);
+    let end = end.map(|x| x.inner);
+    let interval = match interval {
+        None => None,
+        Some(x) => Some(Duration::try_parse(x).map_err(PyPolarsErr::from)?),
+    };
+    let num_samples = num_samples.map(|x| x.inner);
     let closed = closed.0;
-    Ok(dsl::date_ranges(start, end, interval, closed).into())
+    let out =
+        dsl::date_ranges(start, end, interval, num_samples, closed).map_err(PyPolarsErr::from)?;
+    Ok(out.into())
 }
 
 #[pyfunction]
@@ -130,22 +137,37 @@ pub fn datetime_range(
 }
 
 #[pyfunction]
-#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=Wrap(None)))]
+#[pyo3(signature = (start, end, interval, num_samples, closed, time_unit=None, time_zone=Wrap(None)))]
 pub fn datetime_ranges(
-    start: PyExpr,
-    end: PyExpr,
-    every: &str,
+    start: Option<PyExpr>,
+    end: Option<PyExpr>,
+    interval: Option<&str>,
+    num_samples: Option<PyExpr>,
     closed: Wrap<ClosedWindow>,
     time_unit: Option<Wrap<TimeUnit>>,
     time_zone: Wrap<Option<TimeZone>>,
 ) -> PyResult<PyExpr> {
-    let start = start.inner;
-    let end = end.inner;
-    let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
+    let start = start.map(|x| x.inner);
+    let end = end.map(|x| x.inner);
+    let interval = match interval {
+        None => None,
+        Some(x) => Some(Duration::try_parse(x).map_err(PyPolarsErr::from)?),
+    };
+    let num_samples = num_samples.map(|x| x.inner);
     let closed = closed.0;
     let time_unit = time_unit.map(|x| x.0);
     let time_zone = time_zone.0;
-    Ok(dsl::datetime_ranges(start, end, every, closed, time_unit, time_zone).into())
+    let out = dsl::datetime_ranges(
+        start,
+        end,
+        interval,
+        num_samples,
+        closed,
+        time_unit,
+        time_zone,
+    )
+    .map_err(PyPolarsErr::from)?;
+    Ok(out.into())
 }
 
 #[pyfunction]

@@ -11,33 +11,6 @@ pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     !(ndt.year() > 2554 || ndt.year() < 1386)
 }
 
-/// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
-pub fn date_range(
-    name: PlSmallStr,
-    start: NaiveDateTime,
-    end: NaiveDateTime,
-    interval: Duration,
-    closed: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<&Tz>,
-) -> PolarsResult<DatetimeChunked> {
-    let (start, end) = match tu {
-        TimeUnit::Nanoseconds => (
-            start.and_utc().timestamp_nanos_opt().unwrap(),
-            end.and_utc().timestamp_nanos_opt().unwrap(),
-        ),
-        TimeUnit::Microseconds => (
-            start.and_utc().timestamp_micros(),
-            end.and_utc().timestamp_micros(),
-        ),
-        TimeUnit::Milliseconds => (
-            start.and_utc().timestamp_millis(),
-            end.and_utc().timestamp_millis(),
-        ),
-    };
-    datetime_range_impl_start_end_interval(name, start, end, interval, closed, tu, tz)
-}
-
 #[doc(hidden)]
 pub fn datetime_range_impl_start_end_interval(
     name: PlSmallStr,
@@ -82,7 +55,7 @@ pub fn datetime_range_impl_start_interval_samples(
         _ => out.into_datetime(tu, None),
     };
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
@@ -123,7 +96,7 @@ pub fn datetime_range_impl_start_end_samples(
         _ => out.into_datetime(tu, None),
     };
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 

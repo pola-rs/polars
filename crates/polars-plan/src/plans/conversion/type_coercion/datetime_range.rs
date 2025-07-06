@@ -1,0 +1,199 @@
+use polars_core::prelude::*;
+use polars_core::utils::get_supertype;
+use polars_time::Duration;
+use polars_utils::arena::Arena;
+
+use super::get_aexpr_and_type;
+use crate::dsl::DateRangeArgs;
+use crate::plans::{AExpr, ExprIR};
+
+macro_rules! unpack {
+    ($packed:expr) => {
+        match $packed {
+            Some(payload) => payload,
+            None => return None,
+        }
+    };
+}
+
+macro_rules! extract_date {
+    ($input:expr, $expr_arena:expr, $schema:expr, $idx:literal, $arg:literal) => {{
+        let (_, dtype) =
+            unpack!(get_aexpr_and_type($expr_arena, $input[$idx].node(), $schema));
+        polars_ensure!(
+            matches!(dtype, DataType::Datetime(_, _) | DataType::Date),
+            ComputeError: "'{}' must be Date or Datetime, got {:?}", $arg, dtype
+        );
+        dtype
+    }}
+}
+
+macro_rules! extract_samples {
+    ($input:expr, $expr_arena:expr, $schema:expr, $idx:literal) => {{
+        let (_, dtype) =
+        unpack!(get_aexpr_and_type($expr_arena, $input[$idx].node(), $schema));
+        polars_ensure!(
+            dtype.is_integer(),
+            ComputeError: "'num_samples' must be integer, got {:?}", dtype
+        );
+        dtype
+    }}
+}
+
+// Determines the output data type, including user-specified t tz, and interval.
+pub(super) fn build_datetime_supertype(
+    default: DataType,
+    tu: &Option<TimeUnit>,
+    tz: &Option<TimeZone>,
+    interval: &Option<Duration>,
+) -> PolarsResult<DataType> {
+    let mut dtype_out = match (&default, tu) {
+        (DataType::Date, time_unit) => {
+            if let Some(tu) = time_unit {
+                DataType::Datetime(*tu, None)
+            } else if interval.is_some_and(|i| i.nanoseconds() % 1_000 != 0) {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            } else {
+                DataType::Datetime(TimeUnit::Microseconds, None)
+            }
+        },
+        // overwrite nothing, keep as-is
+        (DataType::Datetime(_, _), None) => default,
+        // overwrite time unit, keep timezone
+        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(*tu, tz.clone()),
+        (dt, _) => {
+            polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt)
+        },
+    };
+
+    // Overwrite time zone, if specified
+    #[cfg(feature = "timezones")]
+    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, tz) {
+        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
+    };
+    Ok(dtype_out)
+}
+
+// How do we do this in the IR?
+fn localize_tz(
+    c: &Column,
+    dtype_in: &DataType,
+    dtype_out: &DataType,
+    time_zone: &Option<TimeZone>,
+) -> PolarsResult<Column> {
+    match (dtype_in, time_zone) {
+        // If `start` and `end` are naive, but a time zone was specified,
+        // then first localize them
+        #[cfg(feature = "timezones")]
+        (DataType::Datetime(_, None), Some(tz)) => Ok(polars_ops::prelude::replace_time_zone(
+            c.datetime().unwrap(),
+            Some(tz),
+            &StringChunked::from_iter(std::iter::once("raise")),
+            NonExistent::Raise,
+        )?
+        .cast(dtype_out)?
+        .into_column()),
+        _ => c.cast(dtype_out),
+    }
+}
+
+pub(super) fn update_date_range_types(
+    input: &mut Vec<ExprIR>,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    arg_type: DateRangeArgs,
+) -> Option<(Vec<DataType>, Vec<DataType>)> {
+    let dt_date = DataType::Date;
+    Some(match arg_type {
+        DateRangeArgs::StartEndInterval => {
+            let type_start = extract_date!(input, expr_arena, schema, 0, "start");
+            let type_end = extract_date!(input, expr_arena, schema, 1, "end");
+            let from_types = vec![type_start, type_end];
+            let to_types = vec![dt_date.clone(), dt_date];
+            (from_types, to_types)
+        },
+        DateRangeArgs::StartEndSamples => {
+            let type_start = extract_date!(input, expr_arena, schema, 0, "start");
+            let type_end = extract_date!(input, expr_arena, schema, 1, "end");
+            let type_samples = extract_samples!(input, expr_arena, schema, 2);
+            let from_types = vec![type_start, type_end, type_samples];
+            let to_types = vec![dt_date.clone(), dt_date, DataType::UInt64];
+            (from_types, to_types)
+        },
+        DateRangeArgs::StartIntervalSamples => {
+            let type_start = extract_date!(input, expr_arena, schema, 0, "start");
+            let type_samples = extract_samples!(input, expr_arena, schema, 1);
+            let from_types = vec![type_start.clone(), type_samples];
+            let to_types = vec![type_start, DataType::UInt64];
+            (from_types, to_types)
+        },
+        DateRangeArgs::EndIntervalSamples => {
+            let type_end = extract_date!(input, expr_arena, schema, 0, "end");
+            let type_samples = extract_samples!(input, expr_arena, schema, 1);
+            let from_types = vec![type_end.clone(), type_samples];
+            let to_types = vec![dt_date, DataType::UInt64];
+            (from_types, to_types)
+        },
+    })
+}
+
+pub(super) fn update_datetime_range_types(
+    input: &mut Vec<ExprIR>,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    interval: &Option<Duration>,
+    tu: &Option<TimeUnit>,
+    tz: &Option<TimeZone>,
+    arg_type: DateRangeArgs,
+) -> Option<(Vec<DataType>, Vec<DataType>)> {
+    macro_rules! extract_date {
+        ($idx:literal, $arg:literal) => {{
+            let (_, dtype) =
+            unpack!(get_aexpr_and_type(expr_arena, input[$idx].node(), schema));
+            polars_ensure!(
+                matches!(dtype, DataType::Datetime(_, _) | DataType::Date),
+                ComputeError: "'{}' must be Date or Datetime, got {:?}", $arg, dtype
+            );
+            dtype
+        }}
+    }
+
+    Some(match arg_type {
+        DateRangeArgs::StartEndInterval => {
+            // Determine supertype of input types.
+            let type_start = extract_date!(0, "start");
+            let type_end = extract_date!(1, "end");
+            let default = unpack!(get_supertype(&type_start, &type_end));
+            let supertype = build_datetime_supertype(default, tu, tz, interval)?;
+            let from_types = vec![type_start, type_end];
+            let to_types = vec![supertype.clone(), supertype];
+            (from_types, to_types)
+        },
+        DateRangeArgs::StartEndSamples => {
+            let type_start = extract_date!(0, "start");
+            let type_end = extract_date!(1, "end");
+            let type_samples = extract_samples!(input, expr_arena, schema, 2);
+            let default = unpack!(get_supertype(&type_start, &type_end));
+            let supertype = build_datetime_supertype(default, tu, tz, interval)?;
+            let from_types = vec![type_start, type_end, type_samples];
+            let to_types = vec![supertype.clone(), supertype, DataType::UInt64];
+            (from_types, to_types)
+        },
+        DateRangeArgs::StartIntervalSamples => {
+            let type_start = extract_date!(0, "start");
+            let type_samples = extract_samples!(input, expr_arena, schema, 1);
+            let supertype = build_datetime_supertype(type_start.clone(), tu, tz, interval)?;
+            let from_types = vec![supertype.clone(), type_samples];
+            let to_types = vec![supertype, DataType::UInt64];
+            (from_types, to_types)
+        },
+        DateRangeArgs::EndIntervalSamples => {
+            let type_end = extract_date!(0, "end");
+            let type_samples = extract_samples!(input, expr_arena, schema, 1);
+            let supertype = build_datetime_supertype(type_end.clone(), tu, tz, interval)?;
+            let from_types = vec![type_end, type_samples];
+            let to_types = vec![supertype, DataType::UInt64];
+            (from_types, to_types)
+        },
+    })
+}

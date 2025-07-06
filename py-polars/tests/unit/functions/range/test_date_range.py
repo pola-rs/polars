@@ -33,8 +33,8 @@ def test_date_range_invalid_time_unit() -> None:
 def test_date_range_lazy_with_literals() -> None:
     df = pl.DataFrame({"misc": ["x"]}).with_columns(
         pl.date_ranges(
-            date(2000, 1, 1),
-            date(2023, 8, 31),
+            start=date(2000, 1, 1),
+            end=date(2023, 8, 31),
             interval="987d",
             eager=False,
         ).alias("dts")

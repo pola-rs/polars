@@ -7,15 +7,45 @@ use polars_time::{ClosedWindow, Duration};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::{DataTypeExpr, FunctionExpr};
+use super::{DataTypeExpr, Expr, FunctionExpr};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub enum DateRangeArgs {
     StartEndInterval,
     StartEndSamples,
     StartIntervalSamples,
     EndIntervalSamples,
+}
+
+impl DateRangeArgs {
+    pub fn parse(
+        start: Option<Expr>,
+        end: Option<Expr>,
+        interval: Option<Duration>,
+        num_samples: Option<Expr>,
+    ) -> PolarsResult<(Vec<Expr>, DateRangeArgs)> {
+        match (start, end, interval, num_samples) {
+            (Some(start), Some(end), Some(_), None) => {
+                Ok((vec![start, end], DateRangeArgs::StartEndInterval))
+            },
+            (Some(start), Some(end), None, Some(num_samples)) => Ok((
+                vec![start, end, num_samples],
+                DateRangeArgs::StartEndSamples,
+            )),
+            (Some(start), None, Some(_), Some(num_samples)) => Ok((
+                vec![start, num_samples],
+                DateRangeArgs::StartIntervalSamples,
+            )),
+            (None, Some(end), Some(_), Some(num_samples)) => {
+                Ok((vec![end, num_samples], DateRangeArgs::EndIntervalSamples))
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "Exactly three of 'start', 'end', 'interval', and 'num_samples' must be supplied.");
+            },
+        }
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -37,25 +67,32 @@ pub enum RangeFunction {
         array_width: Option<usize>,
     },
     #[cfg(feature = "dtype-date")]
-    DateRanges {
-        interval: Duration,
+    DateRange {
+        interval: Option<Duration>,
         closed: ClosedWindow,
+        arg_type: DateRangeArgs,
     },
-    #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+    #[cfg(feature = "dtype-date")]
+    DateRanges {
+        interval: Option<Duration>,
+        closed: ClosedWindow,
+        arg_type: DateRangeArgs,
+    },
+    #[cfg(feature = "dtype-datetime")]
     DatetimeRange {
         interval: Option<Duration>,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
         arg_type: DateRangeArgs,
-        date_range: bool,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRanges {
-        interval: Duration,
+        interval: Option<Duration>,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
+        arg_type: DateRangeArgs,
     },
     #[cfg(feature = "dtype-time")]
     TimeRange {
@@ -83,9 +120,11 @@ impl fmt::Display for RangeFunction {
             IntRanges { .. } => "int_ranges",
             LinearSpace { .. } => "linear_space",
             LinearSpaces { .. } => "linear_spaces",
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date")]
+            DateRange { .. } => "date_range",
+            #[cfg(feature = "dtype-date")]
             DateRanges { .. } => "date_ranges",
-            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+            #[cfg(feature = "dtype-datetime")]
             DatetimeRange { .. } => "datetime_range",
             #[cfg(feature = "dtype-datetime")]
             DatetimeRanges { .. } => "datetime_ranges",
