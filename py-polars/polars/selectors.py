@@ -295,7 +295,7 @@ def _combine_as_selector(
 
     selected = []
     if names:
-        selected.append(by_name(*names))
+        selected.append(by_name(*names, require_all=False))
     if dtypes:
         selected.append(by_dtype(*dtypes))
     if regexes:
@@ -1334,7 +1334,7 @@ def enum() -> Selector:
 
     Select all columns *except* for those that are enum:
 
-    >>> df.select(~cs.categorical())
+    >>> df.select(~cs.enum())
     shape: (2, 2)
     ┌─────┬─────┐
     │ bar ┆ baz │
