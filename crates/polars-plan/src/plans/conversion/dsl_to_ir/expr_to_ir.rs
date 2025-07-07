@@ -401,8 +401,9 @@ pub(super) fn to_aexpr_impl(
         Expr::KeepName(expr) => {
             let (expr, _) = to_aexpr_impl(owned(expr), ctx)?;
             let name = ArenaExprIter::iter(&&*ctx.arena, expr).find_map(|e| match e.1 {
-                AExpr::Column(name)
-                | AExpr::Function {
+                AExpr::Column(name) => Some(name.clone()),
+                #[cfg(feature = "dtype-struct")]
+                AExpr::Function {
                     input: _,
                     function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
                     options: _,
