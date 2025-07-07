@@ -20,7 +20,7 @@ import polars.datatypes.classes as pldt
 from polars import functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.parse.expr import _parse_inputs_as_iterable
-from polars._utils.various import is_column, re_escape
+from polars._utils.various import is_column, qualified_type_name, re_escape
 from polars.datatypes import (
     Binary,
     Boolean,
@@ -437,9 +437,15 @@ class Selector(Expr):
         else:
             return self.as_expr().__add__(other)
 
+    @overload
+    def __radd__(self, other: Expr) -> Expr: ...
+
     def __radd__(self, other: Any) -> Expr:
-        msg = "unsupported operand type(s) for op: ('Expr' + 'Selector')"
-        raise TypeError(msg)
+        if is_selector(other):
+            msg = "unsupported operand type(s) for op: ('Selector' + 'Selector')"
+            raise TypeError(msg)
+        else:
+            return self.as_expr().__radd__(other)
 
     @overload
     def __and__(self, other: Selector) -> Selector: ...

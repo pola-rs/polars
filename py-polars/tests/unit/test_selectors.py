@@ -1018,3 +1018,21 @@ def test_expand_more_than_one_22567() -> None:
         .item()
         == 3
     )
+
+
+def test_selectors_radd_21978() -> None:
+    pl.DataFrame(
+        [
+            {"sales": "94.71 billion"},
+            {"sales": "134.19 billion"},
+            {"sales": "76.66 billion"},
+        ]
+    )
+
+    assert_frame_equal(
+        df.select(cs.by_name("sales") + " USD"), df.select(pl.col("sales") + " USD")
+    )
+
+    assert_frame_equal(
+        df.select("$" + cs.by_name("sales")), df.select("$" + pl.col("sales"))
+    )
