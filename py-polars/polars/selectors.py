@@ -1601,7 +1601,7 @@ def nested() -> Selector:
 
     Select all nested columns:
 
-    >>> df.select(cs.struct())
+    >>> df.select(cs.nested())
     shape: (2, 2)
     ┌────────────┬───────────┐
     │ foo        ┆ wow       │
