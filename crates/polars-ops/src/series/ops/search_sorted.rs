@@ -3,6 +3,21 @@ use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
+/// Check if we'll hit https://github.com/pola-rs/polars/issues/20171
+pub fn is_recursively_categorical(dtype: &DataType) -> bool {
+    if dtype.leaf_dtype().is_categorical() {
+        return true;
+    }
+    if let DataType::Struct(fields) = dtype {
+        for field in fields {
+            if is_recursively_categorical(&field.dtype) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub fn search_sorted(
     s: &Series,
     search_values: &Series,
@@ -11,7 +26,7 @@ pub fn search_sorted(
 ) -> PolarsResult<IdxCa> {
     let original_dtype = s.dtype();
 
-    if s.dtype().is_categorical() {
+    if is_recursively_categorical(original_dtype) {
         // See https://github.com/pola-rs/polars/issues/20171
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
@@ -84,17 +99,23 @@ pub fn search_sorted(
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         dt if dt.is_nested() => {
+            let nulls_last = s.is_empty() || s.last().value().is_null();
+            // NOTE: This is O(n), unlike the rest of the implementation which
+            // is O(logn). This could be improved by only row-encoding entries
+            // that the binary search is explicitly asking for, on-demand,
+            // instead of all of them in advance. This would be a significant
+            // speed-up for large columns.
             let ca = _get_rows_encoded_ca(
                 "".into(),
                 &[s.as_ref().clone().into_column()],
                 &[descending],
-                &[false],
+                &[nulls_last],
             )?;
             let search_values = _get_rows_encoded_ca(
                 "".into(),
                 &[search_values.clone().into_column()],
                 &[descending],
-                &[false],
+                &[nulls_last],
             )?;
             let idx = binary_search_ca(&ca, search_values.iter(), side, false);
             Ok(IdxCa::new_vec(s.name().clone(), idx))
