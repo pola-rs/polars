@@ -30,7 +30,7 @@ fn test_groups_update() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("group")])
         .agg([col("id").unique_counts().log(2.0)])
-        .explode([col("id")])
+        .explode(cols(["id"]))
         .collect()?;
     assert_eq!(
         out.column("id")?
@@ -53,7 +53,7 @@ fn test_groups_update_binary_shift_log() -> PolarsResult<()> {
     .group_by([col("b")])
     .agg([col("a") - col("a").shift(lit(1)).log(2.0)])
     .sort(["b"], Default::default())
-    .explode([col("a")])
+    .explode(cols(["a"]))
     .collect()?;
     assert_eq!(
         Vec::from(out.column("a")?.f64()?),
@@ -71,7 +71,7 @@ fn test_expand_list() -> PolarsResult<()> {
         "b" => [2, 3],
     ]?
     .lazy()
-    .select([cols(["a", "b"]).cum_sum(false)])
+    .select([cols(["a", "b"]).as_expr().cum_sum(false)])
     .collect()?;
 
     let expected = df![

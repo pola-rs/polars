@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_column(
-            (dtype_col(&DataType::Float64).as_expr() / lit(eur_usd_rate))
+            (dtype_col(&DataType::Float64).as_selector().as_expr() / lit(eur_usd_rate))
                 .round(2, RoundMode::default()),
         )
         .collect()?;
@@ -61,8 +61,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_column(
-            (dtype_cols([DataType::Float32, DataType::Float64]).as_expr() / lit(eur_usd_rate))
-                .round(2, RoundMode::default()),
+            (dtype_cols([DataType::Float32, DataType::Float64])
+                .as_selector()
+                .as_expr()
+                / lit(eur_usd_rate))
+            .round(2, RoundMode::default()),
         )
         .collect()?;
     println!("{}", result.equals(&result2));
@@ -96,7 +99,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = df
         .clone()
         .lazy()
-        .select([dtype_col(&DataType::Float64).exclude_cols(["^day_.*$"])])
+        .select([dtype_col(&DataType::Float64)
+            .as_selector()
+            .exclude_cols(["^day_.*$"])
+            .as_expr()])
         .collect()?;
     println!("{result}");
     // --8<-- [end:col-exclude]

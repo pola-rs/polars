@@ -190,7 +190,7 @@ impl Selector {
     ///
     /// - The order of the columns corresponds to the order in the schema.
     /// - Column names in `ignored_columns` are only used if they are explicitly mentioned by a
-    /// `ByName` or `Nth`.
+    ///   `ByName` or `Nth`.
     pub fn into_columns(
         &self,
         schema: &Schema,
@@ -259,7 +259,7 @@ impl Selector {
                 out
             },
             Self::Matches(regex_str) => {
-                let re = polars_utils::regex_cache::compile_regex(&regex_str).unwrap();
+                let re = polars_utils::regex_cache::compile_regex(regex_str)?;
                 PlIndexSet::from_iter(
                     schema
                         .iter_names()
@@ -306,7 +306,7 @@ impl Selector {
 
             Self::ByDType(dts) => Some(dts.clone()),
 
-            Self::ByName { .. } | Self::ByIndex { .. } | Self::Matches(_) => return None,
+            Self::ByName { .. } | Self::ByIndex { .. } | Self::Matches(_) => None,
         }
     }
 
@@ -392,6 +392,8 @@ impl DataTypeSelector {
             Self::Object => dtype.is_object(),
         }
     }
+
+    #[allow(clippy::wrong_self_convention)]
     fn into_columns(
         &self,
         schema: &Schema,
@@ -642,10 +644,10 @@ impl fmt::Display for Selector {
 
                 write!(f, "require_all={strict})")
             },
-            Self::ByIndex { indices, strict } if indices.as_ref() == &[0] => {
+            Self::ByIndex { indices, strict } if indices.as_ref() == [0] => {
                 write!(f, "cs.first(require={strict})")
             },
-            Self::ByIndex { indices, strict } if indices.as_ref() == &[-1] => {
+            Self::ByIndex { indices, strict } if indices.as_ref() == [-1] => {
                 write!(f, "cs.last(require={strict})")
             },
             Self::ByIndex { indices, strict } if indices.len() == 1 => {
@@ -746,7 +748,7 @@ impl fmt::Display for DataTypeSelector {
                     [D::Time] => f.write_str("cs.time()"),
                     [D::Date] => f.write_str("cs.date()"),
                     [D::String] => f.write_str("cs.string()"),
-                    _ => write!(f, "cs.by_dtype({:?})", dtypes),
+                    _ => write!(f, "cs.by_dtype({dtypes:?})"),
                 }
             },
 

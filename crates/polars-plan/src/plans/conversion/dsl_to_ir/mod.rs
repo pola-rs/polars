@@ -267,11 +267,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             slice,
             mut sort_options,
         } => {
+            let input =
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(select)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
             // note: if given an Expr::Columns, count the individual cols
             let n_by_exprs = if by_column.len() == 1 {
                 match &by_column[0] {
-                    // @TODO
-                    // Expr::Columns(cols) => cols.len(),
+                    Expr::Selector(s) => s.into_columns(&input_schema, &Default::default())?.len(),
                     _ => 1,
                 }
             } else {
@@ -287,9 +290,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 n_nulls_last == n_by_exprs || n_nulls_last == 1,
                 ComputeError: "the length of `nulls_last` ({}) does not match the length of `by` ({})", n_nulls_last, by_column.len()
             );
-
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sort)))?;
 
             let mut expanded_cols = Vec::new();
             let mut nulls_last = Vec::new();

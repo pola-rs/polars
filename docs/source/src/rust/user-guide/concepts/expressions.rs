@@ -118,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:group_by-3]
 
     // --8<-- [start:expression-expansion-1]
-    let expr = (dtype_col(&DataType::Float64).as_expr() * lit(1.1))
+    let expr = (dtype_col(&DataType::Float64).as_selector().as_expr() * lit(1.1))
         .name()
         .suffix("*1.1");
     let result = df.clone().lazy().select([expr.clone()]).collect()?;

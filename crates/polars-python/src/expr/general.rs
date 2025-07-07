@@ -955,6 +955,7 @@ impl PyExpr {
         })
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn into_selector(&self) -> PyResult<PySelector> {
         Ok(self
             .inner

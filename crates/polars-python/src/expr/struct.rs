@@ -28,11 +28,7 @@ impl PyExpr {
 
     fn struct_with_fields(&self, fields: Vec<PyExpr>) -> Self {
         let fields = fields.to_exprs();
-        let e = self
-            .inner
-            .clone()
-            .struct_()
-            .with_fields(fields);
+        let e = self.inner.clone().struct_().with_fields(fields);
         e.into()
     }
 }

@@ -423,8 +423,7 @@ impl LazyFrame {
     ///
     /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
     /// error while materializing the [`LazyFrame`].
-    pub fn drop(self, columns: Selector) -> Self
-    {
+    pub fn drop(self, columns: Selector) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop(columns).build();
         Self::from_logical_plan(lp, opt_state)
@@ -2177,7 +2176,7 @@ impl LazyGroupBy {
             .iter()
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
-        
+
         self.agg([all().as_expr().tail(n).explode()])
             .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }

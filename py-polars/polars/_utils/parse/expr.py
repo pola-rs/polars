@@ -113,6 +113,7 @@ def parse_into_selector(
 ) -> pl.Selector:
     if isinstance(i, str):
         import polars.selectors as cs
+
         return cs.by_name([i], require_all=strict)
     elif isinstance(i, pl.Selector):
         return i

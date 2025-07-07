@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = df
         .clone()
         .lazy()
-        .select([all().exclude(["logged_at", "index"]).into_expr()])
+        .select([all().exclude_cols(["logged_at", "index"]).as_expr()])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:exclude]
@@ -59,7 +59,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = df
         .clone()
         .lazy()
-        .select([dtype_cols([DataType::Int64, DataType::UInt32, DataType::Boolean]).n_unique()])
+        .select([
+            dtype_cols([DataType::Int64, DataType::UInt32, DataType::Boolean])
+                .as_selector()
+                .as_expr()
+                .n_unique(),
+        ])
         .collect()?;
     // gives different result than python as the id col is i32 in rust
     println!("{}", &out);

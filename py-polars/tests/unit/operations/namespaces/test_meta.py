@@ -37,7 +37,9 @@ def test_root_and_output_names() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=re.escape("unable to find root column name for expr 'cs.all()' when calling 'output_name'"),
+        match=re.escape(
+            "unable to find root column name for expr 'cs.all()' when calling 'output_name'"
+        ),
     ):
         pl.all().name.suffix("_").meta.output_name()
 

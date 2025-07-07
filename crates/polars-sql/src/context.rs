@@ -1602,7 +1602,7 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
             .into_columns(schema, &Default::default())
             .unwrap()
             .into_iter()
-            .map(|name| col(name))
+            .map(col)
             .collect::<Vec<_>>(),
         _ => vec![expr],
     }

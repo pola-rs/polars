@@ -610,7 +610,7 @@ fn expand_expression_rec(
                     },
                     _ => {
                         _ = expand_expression_by_combination(
-                            &input,
+                            input,
                             ignored_selector_columns,
                             schema,
                             out,
@@ -737,12 +737,12 @@ fn expand_expression_rec(
                     input: expanded_input,
                     function: function.clone(),
                     output_type: output_type.clone(),
-                    options: options.clone(),
+                    options: *options,
                     fmt_str: fmt_str.clone(),
                 });
             } else {
                 expand_expression_by_combination(
-                    &input,
+                    input,
                     ignored_selector_columns,
                     schema,
                     out,
@@ -751,7 +751,7 @@ fn expand_expression_rec(
                         input: e.to_vec(),
                         function: function.clone(),
                         output_type: output_type.clone(),
-                        options: options.clone(),
+                        options: *options,
                         fmt_str: fmt_str.clone(),
                     },
                 )?;

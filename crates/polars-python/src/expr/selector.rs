@@ -212,7 +212,7 @@ impl PySelector {
             (false, true) => TZS::AnySet,
             (true, false) if any_of.is_empty() => TZS::Unset,
             (true, false) => TZS::UnsetOrAnyOf(any_of.into()),
-            (false, false) => TZS::AnyOf(any_of.into())
+            (false, false) => TZS::AnyOf(any_of.into()),
         };
         DataTypeSelector::Datetime(tu, tzs).as_selector().into()
     }

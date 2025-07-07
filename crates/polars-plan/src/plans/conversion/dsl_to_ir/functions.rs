@@ -38,7 +38,7 @@ pub(super) fn convert_functions(
         let mut e = Vec::with_capacity(input.len());
         e.push(struct_input);
 
-        let prev = std::mem::replace(&mut ctx.with_fields, Some((struct_node, struct_schema)));
+        let prev = ctx.with_fields.replace((struct_node, struct_schema));
         for i in input {
             e.push(to_expr_ir_with_context(i, ctx)?);
         }
