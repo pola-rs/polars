@@ -187,9 +187,9 @@ impl fmt::Debug for Expr {
                 RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.suffix({s})"),
                 RenameAliasFn::ToLowercase => write!(f, "{expr:?}.to_lowercase()"),
                 RenameAliasFn::ToUppercase => write!(f, "{expr:?}.to_uppercase()"),
-                RenameAliasFn::Python(_) | RenameAliasFn::Rust(_) => {
-                    write!(f, "{expr:?}.rename_alias()")
-                },
+                #[cfg(feature = "python")]
+                RenameAliasFn::Python(_) => write!(f, "{expr:?}.rename_alias()"),
+                RenameAliasFn::Rust(_) => write!(f, "{expr:?}.rename_alias()"),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
