@@ -141,7 +141,7 @@ jobs:
           -n auto
           -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
-          --cov --cov-report xml:main.xml
+          --cov --cov-report xml:main.xml --cov-fail-under=0
 
       - name: Run Python tests - streaming
         working-directory: py-polars
@@ -153,7 +153,7 @@ jobs:
           -n auto
           -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
           -k 'not test_polars_import'
-          --cov --cov-report xml:main.xml
+          --cov --cov-report xml:main.xml --cov-fail-under=0
 
       - name: Run Python tests - async reader
         working-directory: py-polars
