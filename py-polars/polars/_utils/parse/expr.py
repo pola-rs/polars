@@ -133,7 +133,7 @@ def parse_list_into_selector(
         import polars.selectors as cs
 
         columns = list(filter(lambda i: isinstance(i, str), inputs))
-        selector = cs.by_name(columns, require_all=strict)
+        selector = cs.by_name(columns, require_all=strict)  # type: ignore[arg-type]
 
         if len(columns) == len(inputs):
             return selector

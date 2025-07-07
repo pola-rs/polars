@@ -650,11 +650,11 @@ def test_selector_expansion() -> None:
     s = s | pl.col("a").meta.as_selector()
     assert df.select(s).columns == ["a", "b", "e"]
 
-    s1 = pl.col(["a", "b", "c"])
-    s2 = pl.col(["b", "c", "d"])
+    s1e = pl.col(["a", "b", "c"])
+    s2e = pl.col(["b", "c", "d"])
 
-    s = s1.meta.as_selector()
-    s = s & s2.meta.as_selector()
+    s = s1e.meta.as_selector()
+    s = s & s2e.meta.as_selector()
     assert df.select(s).columns == ["b", "c"]
 
 
