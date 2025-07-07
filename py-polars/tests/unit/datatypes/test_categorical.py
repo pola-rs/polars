@@ -883,8 +883,17 @@ def test_categorical_min_max() -> None:
     assert result.schema == schema
     assert result.to_dict(as_series=False) == {"b": ["bar"], "c": ["foo"]}
 
+    # See issue #21432
+    q_alt = lf.min()
+    result_alt = q_alt.collect()
+    assert result_alt.to_dict(as_series=False) == result.to_dict(as_series=False)
+
     q = lf.select(pl.all().max())
     result = q.collect()
     assert q.collect_schema() == schema
     assert result.schema == schema
     assert result.to_dict(as_series=False) == {"b": ["foo"], "c": ["bar"]}
+
+    q_alt = lf.max()
+    result_alt = q_alt.collect()
+    assert result_alt.to_dict(as_series=False) == result.to_dict(as_series=False)
