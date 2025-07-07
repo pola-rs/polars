@@ -1254,12 +1254,12 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
     >>> df.select(cs.by_name("baz", "moose", "foo", "bear", require_all=False))
     shape: (2, 2)
     ┌─────┬─────┐
-    │ foo ┆ baz │
+    │ baz ┆ foo │
     │ --- ┆ --- │
-    │ str ┆ f64 │
+    │ f64 ┆ str │
     ╞═════╪═════╡
-    │ x   ┆ 2.0 │
-    │ y   ┆ 5.5 │
+    │ 2.0 ┆ x   │
+    │ 5.5 ┆ y   │
     └─────┴─────┘
 
     Match all columns *except* for those given:
@@ -1345,7 +1345,6 @@ def enum() -> Selector:
     │ 456 ┆ 5.5 │
     └─────┴─────┘
     """
-    return Selector._from_pyselector(PySelector.categorical())
     return Selector._from_pyselector(PySelector.enum_())
 
 
