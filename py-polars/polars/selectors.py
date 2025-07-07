@@ -1165,7 +1165,7 @@ def by_index(
     │ abc ┆ 0.0 ┆ 10.0 ┆ 20.0 ┆ 30.0 ┆ 40.0 │
     └─────┴─────┴──────┴──────┴──────┴──────┘
 
-    >>> df.select(cs.by_index(0, range(101, 0, -25)))
+    >>> df.select(cs.by_index(0, range(101, 0, -25), require_all=False))
     shape: (1, 5)
     ┌─────┬──────┬──────┬──────┬─────┐
     │ key ┆ c75  ┆ c50  ┆ c25  ┆ c00 │
