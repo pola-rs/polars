@@ -63,7 +63,6 @@ impl MetaNameSpace {
     pub fn has_multiple_outputs(&self) -> bool {
         self.0.into_iter().any(|e| match e {
             Expr::Selector(_) => true,
-            Expr::Column(name) => is_regex_projection(name),
             _ => false,
         })
     }

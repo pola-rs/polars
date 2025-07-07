@@ -4,6 +4,7 @@ import contextlib
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
+from typing_extensions import deprecated
 
 from polars._typing import EngineType
 from polars._utils.various import normalize_filepath
@@ -512,14 +513,35 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    @deprecated("deprecated since version 1.32.0")
     def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
         """
         Allow multi-output expressions to be automatically turned into Structs.
 
         .. note::
-            This setting does not do anything since 1.32.0.
+            Deprecated since 1.32.0.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
+        >>> with pl.Config(set_auto_structify=True):
+        ...     out = df.select(pl.all())
+        >>> out
+        shape: (3, 1)
+        ┌───────────┐
+        │ v         │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {1,4}     │
+        │ {2,5}     │
+        │ {3,6}     │
+        └───────────┘
         """
-        # noop
+        if active is None:
+            os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
+        else:
+            os.environ["POLARS_AUTO_STRUCTIFY"] = str(int(active))
         return cls
 
     @classmethod

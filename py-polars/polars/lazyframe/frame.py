@@ -4385,9 +4385,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ {true,false} │
         └──────────────┘
         """
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=False
+            *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.select(pyexprs))
 
@@ -4414,8 +4415,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         select
         """
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
         pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=False
+            *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
@@ -5911,8 +5914,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ {1,3.0}     │
         └─────┴──────┴─────────────┘
         """
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
         pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=False
+            *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
@@ -5948,8 +5953,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         with_columns
         """
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
         pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=False
+            *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 

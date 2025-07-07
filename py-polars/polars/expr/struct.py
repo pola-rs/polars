@@ -348,8 +348,10 @@ class ExprStructNameSpace:
         --------
         field
         """
+        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+
         pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=False
+            *exprs, **named_exprs, __structify=structify
         )
 
         return wrap_expr(self._pyexpr.struct_with_fields(pyexprs))
