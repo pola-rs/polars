@@ -153,9 +153,9 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     polars_ensure!(leaves.len() <= 1, ComputeError: "found more than one root column name");
     match leaves.pop() {
         Some(Expr::Column(name)) => Ok(name.clone()),
-        // Some(Expr::Wildcard) => polars_bail!(
-        //     ComputeError: "wildcard has no root column name",
-        // ),
+        Some(Expr::Selector(_)) => polars_bail!(
+            ComputeError: "selector has no root column name",
+        ),
         Some(_) => unreachable!(),
         None => polars_bail!(
             ComputeError: "no root column name found",

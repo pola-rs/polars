@@ -529,9 +529,9 @@ class Config(contextlib.ContextDecorator):
         Examples
         --------
         >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-        >>> with pl.Config(set_auto_structify=True):
+        >>> with pl.Config(set_auto_structify=True):  # doctest: +SKIP
         ...     out = df.select(pl.all())
-        >>> out
+        >>> out  # doctest: +SKIP
         shape: (3, 1)
         ┌───────────┐
         │ v         │

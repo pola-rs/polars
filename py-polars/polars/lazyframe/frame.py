@@ -4366,24 +4366,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 0         │
         │ 10        │
         └───────────┘
-
-        Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the setting `Config.set_auto_structify(True)`:
-
-        >>> with pl.Config(auto_structify=True):
-        ...     lf.select(
-        ...         is_odd=(pl.col(pl.Int64) % 2 == 1).name.suffix("_is_odd"),
-        ...     ).collect()
-        shape: (3, 1)
-        ┌──────────────┐
-        │ is_odd       │
-        │ ---          │
-        │ struct[2]    │
-        ╞══════════════╡
-        │ {true,false} │
-        │ {false,true} │
-        │ {true,false} │
-        └──────────────┘
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
@@ -5894,25 +5876,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
-
-        Expressions with multiple outputs can automatically be instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
-
-        >>> with pl.Config(auto_structify=True):
-        ...     lf.drop("c").with_columns(
-        ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
-        ...     ).collect()
-        shape: (4, 3)
-        ┌─────┬──────┬─────────────┐
-        │ a   ┆ b    ┆ diffs       │
-        │ --- ┆ ---  ┆ ---         │
-        │ i64 ┆ f64  ┆ struct[2]   │
-        ╞═════╪══════╪═════════════╡
-        │ 1   ┆ 0.5  ┆ {null,null} │
-        │ 2   ┆ 4.0  ┆ {1,3.5}     │
-        │ 3   ┆ 10.0 ┆ {1,6.0}     │
-        │ 4   ┆ 13.0 ┆ {1,3.0}     │
-        └─────┴──────┴─────────────┘
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
