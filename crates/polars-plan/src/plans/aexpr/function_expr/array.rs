@@ -60,9 +60,9 @@ impl IRArrayFunction {
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
             Unique(_) => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
             NUnique => mapper.with_dtype(IDX_DTYPE),
-            Std(_) => mapper.map_to_float_dtype(),
-            Var(_) => mapper.map_to_float_dtype(),
-            Median => mapper.map_to_float_dtype(),
+            Std(_) => mapper.moment_dtype(),
+            Var(_) => mapper.var_dtype(),
+            Median => mapper.moment_dtype(),
             #[cfg(feature = "array_any_all")]
             Any | All => mapper.with_dtype(DataType::Boolean),
             Sort(_) => mapper.with_same_dtype(),
