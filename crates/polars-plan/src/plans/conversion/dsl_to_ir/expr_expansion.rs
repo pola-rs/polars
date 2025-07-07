@@ -245,18 +245,24 @@ fn try_expand_single(
 
 fn needs_expansion(expr: &Expr) -> bool {
     expr.into_iter().any(|e| {
-        matches!(e, Expr::Selector(_))
-            || matches!(e, Expr::Eval { evaluation, .. } if needs_expansion(evaluation.as_ref()))
-            || matches!(e, Expr::Field(s) if s.len() != 1)
-            || matches!(
-                e,
-                Expr::Function {
-                    function: FunctionExpr::StructExpr(
-                        StructFunction::SelectFields(_) | StructFunction::FieldByName(_)
-                    ),
-                    ..
-                }
-            )
+        let mut v = matches!(e, Expr::Selector(_))
+            || matches!(e, Expr::Eval { evaluation, .. } if needs_expansion(evaluation.as_ref()));
+
+        #[cfg(feature = "dtype-struct")]
+        {
+            v |= matches!(e, Expr::Field(s) if s.len() != 1)
+                || matches!(
+                    e,
+                    Expr::Function {
+                        function: FunctionExpr::StructExpr(
+                            StructFunction::SelectFields(_) | StructFunction::FieldByName(_)
+                        ),
+                        ..
+                    }
+                );
+        }
+
+        v
     })
 }
 
@@ -595,6 +601,7 @@ fn expand_expression_rec(
                     polars_bail!(InvalidOperation: "expected at least 1 input in {expr}")
                 }
 
+                #[cfg(feature = "dtype-struct")]
                 if matches!(
                     function,
                     FunctionExpr::StructExpr(
@@ -605,6 +612,7 @@ fn expand_expression_rec(
                 }
 
                 match function {
+                    #[cfg(feature = "dtype-struct")]
                     FunctionExpr::StructExpr(StructFunction::SelectFields(selector)) => {
                         let mut tmp_out = Vec::new();
                         expand_single(
@@ -816,6 +824,7 @@ fn expand_expression_rec(
             )?
         },
 
+        #[cfg(feature = "dtype-struct")]
         Expr::Field(names) => {
             toggle_cse_for_structs(opt_flags);
             out.extend(names.iter().cloned().map(|n| Expr::Field([n].into())));

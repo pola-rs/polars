@@ -259,7 +259,9 @@ impl Selector {
                 out
             },
             Self::Matches(regex_str) => {
-                let re = polars_utils::regex_cache::compile_regex(regex_str)?;
+                let re = polars_utils::regex_cache::compile_regex(regex_str).map_err(
+                    |_| polars_err!(InvalidOperation: "invalid regex in selector '{regex_str}'"),
+                )?;
                 PlIndexSet::from_iter(
                     schema
                         .iter_names()
@@ -331,7 +333,15 @@ fn array_matches(
     swidth: Option<usize>,
     dtype: &DataType,
 ) -> bool {
-    matches!(dtype, DataType::Array(inner, width) if inner_dts.is_none_or(|dts| dts.matches(inner.as_ref())) && swidth.is_none_or(|w| w == *width))
+    #[cfg(feature = "dtype-array")]
+    {
+        matches!(dtype, DataType::Array(inner, width) if inner_dts.is_none_or(|dts| dts.matches(inner.as_ref())) && swidth.is_none_or(|w| w == *width))
+    }
+
+    #[cfg(not(feature = "dtype-array"))]
+    {
+        false
+    }
 }
 
 fn datetime_matches(stu: TimeUnitSet, stz: &TimeZoneSet, dtype: &DataType) -> bool {

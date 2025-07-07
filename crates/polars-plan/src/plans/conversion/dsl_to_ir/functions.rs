@@ -17,6 +17,7 @@ pub(super) fn convert_functions(
 ) -> PolarsResult<(Node, PlSmallStr)> {
     use {FunctionExpr as F, IRFunctionExpr as I};
 
+    #[cfg(feature = "dtype-struct")]
     if matches!(
         function,
         FunctionExpr::StructExpr(StructFunction::WithFields)

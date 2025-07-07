@@ -1210,7 +1210,7 @@ impl LazyFrame {
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select([col(PlSmallStr::from_static("*")).exclude(["foo"])])
+    ///         .select([all().exclude_cols(["foo"])].as_expr())
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
