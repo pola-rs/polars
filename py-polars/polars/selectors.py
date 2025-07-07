@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import PolarsDataType, PythonDataType, Selector, TimeUnit
+    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -53,9 +53,12 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 __all__ = [
+    # class"
+    "Selector",
     "all",
     "alpha",
     "alphanumeric",
+    "array",
     "binary",
     "boolean",
     "by_dtype",
@@ -69,6 +72,7 @@ __all__ = [
     "digit",
     "duration",
     "ends_with",
+    "enum",
     "exclude",
     "expand_selector",
     "first",
@@ -76,17 +80,18 @@ __all__ = [
     "integer",
     "is_selector",
     "last",
+    "list",
     "matches",
+    "nested",
     "numeric",
     "signed_integer",
     "starts_with",
     "string",
+    "struct",
     "temporal",
     "time",
     "unsigned_integer",
 ]
-
-pylist = list
 
 
 @overload
@@ -110,7 +115,6 @@ def is_selector(obj: Any) -> bool:
     >>> is_selector(cs.first() | cs.last())
     True
     """
-    # note: don't want to expose the "_selector_proxy_" object
     return isinstance(obj, Selector)
 
 
@@ -197,7 +201,7 @@ def expand_selector(
 
 # TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
 #  This should move to IR conversion / Rust.
-def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> pylist[Any]:
+def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> builtins.list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.
 
@@ -222,7 +226,7 @@ def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> pylist[Any]:
     """
     items_iter = _parse_inputs_as_iterable(items)
 
-    expanded: pylist[Any] = []
+    expanded: builtins.list[Any] = []
     for item in items_iter:
         if is_selector(item):
             selector_cols = expand_selector(frame, item)
@@ -268,7 +272,8 @@ def _combine_as_selector(
     *more_items: str | Expr | PolarsDataType | Selector,
 ) -> Selector:
     """Create a combined selector from cols, names, dtypes, and/or other selectors."""
-    names, regexes, dtypes, selectors = [], [], [], []  # type: ignore[var-annotated]
+    names, regexes, dtypes = [], [], []
+    selectors: builtins.list[Selector] = []
     for item in (
         *(
             items
@@ -340,7 +345,9 @@ class Selector(Expr):
         return self._pyselector.hash()
 
     @classmethod
-    def _by_dtype(cls, dtypes: pylist[PythonDataType | PolarsDataType]) -> Selector:
+    def _by_dtype(
+        cls, dtypes: builtins.list[PythonDataType | PolarsDataType]
+    ) -> Selector:
         selectors = []
         concrete_dtypes = []
         for dt in dtypes:
@@ -425,24 +432,18 @@ class Selector(Expr):
             return dtype_selector | selector
 
     @classmethod
-    def _by_name(cls, names: pylist[str], *, strict: bool) -> Selector:
+    def _by_name(cls, names: builtins.list[str], *, strict: bool) -> Selector:
         return cls._from_pyselector(PySelector.by_name(names, strict))
 
-    def __invert__(self) -> Self:
+    def __invert__(cls) -> Selector:
         """Invert the selector."""
-        return all() - self
-
-    @overload
-    def __add__(self, other: Any) -> Expr: ...
+        return all() - cls
 
     def __add__(self, other: Any) -> Expr:
         if is_selector(other):
             return self.as_expr().__add__(other.as_expr())
         else:
             return self.as_expr().__add__(other)
-
-    @overload
-    def __radd__(self, other: Expr) -> Expr: ...
 
     def __radd__(self, other: Any) -> Expr:
         if is_selector(other):
@@ -551,8 +552,8 @@ class Selector(Expr):
             Additional names or datatypes of columns to exclude, specified as positional
             arguments.
         """
-        exclude_cols: pylist[str] = []
-        exclude_dtypes: pylist[PolarsDataType] = []
+        exclude_cols: builtins.list[str] = []
+        exclude_dtypes: builtins.list[PolarsDataType] = []
         for item in (
             *(
                 columns
@@ -635,7 +636,7 @@ def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     if isinstance(string, str):
         rx = re_escape(string) if escape else string
     else:
-        strings: pylist[str] = []
+        strings: builtins.list[str] = []
         for st in string:
             if isinstance(st, Collection) and not isinstance(st, str):  # type: ignore[redundant-expr]
                 strings.extend(st)
@@ -1085,7 +1086,7 @@ def by_dtype(
     │ foo   ┆ -3265500 │
     └───────┴──────────┘
     """
-    all_dtypes: pylist[PolarsDataType | PythonDataType] = []
+    all_dtypes: builtins.list[PolarsDataType | PythonDataType] = []
     for tp in dtypes:
         if is_polars_dtype(tp) or isinstance(tp, type):
             all_dtypes.append(tp)
@@ -1190,7 +1191,7 @@ def by_index(
     │ abc ┆ 0.5 ┆ 1.5 ┆ 2.5 ┆ … ┆ 46.5 ┆ 47.5 ┆ 48.5 ┆ 49.5 │
     └─────┴─────┴─────┴─────┴───┴──────┴──────┴──────┴──────┘
     """
-    all_indices: pylist[int] = []
+    all_indices: builtins.list[int] = []
     for idx in indices:
         if isinstance(idx, (range, Sequence)):
             all_indices.extend(idx)  # type: ignore[arg-type]
@@ -1945,7 +1946,9 @@ def datetime(
     if time_unit is None:
         time_unit = ["ms", "us", "ns"]
     else:
-        time_unit = [time_unit] if isinstance(time_unit, str) else pylist(time_unit)
+        time_unit = (
+            [time_unit] if isinstance(time_unit, str) else builtins.list(time_unit)
+        )
 
     if time_zone is None:
         time_zone = [None]
@@ -1953,7 +1956,7 @@ def datetime(
         time_zone = (
             [time_zone]
             if isinstance(time_zone, (str, pydatetime.timezone))
-            else pylist(time_zone)
+            else builtins.list(time_zone)
         )
 
     return Selector._from_pyselector(PySelector.datetime(time_unit, time_zone))
@@ -2204,7 +2207,9 @@ def duration(
     if time_unit is None:
         time_unit = ["ms", "us", "ns"]
     else:
-        time_unit = [time_unit] if isinstance(time_unit, str) else pylist(time_unit)
+        time_unit = (
+            [time_unit] if isinstance(time_unit, str) else builtins.list(time_unit)
+        )
 
     return Selector._from_pyselector(PySelector.duration(time_unit))
 
@@ -2990,7 +2995,7 @@ def string(*, include_categorical: bool = False) -> Selector:
     │ yy  ┆ b   ┆ 6   ┆ 7.0  │
     └─────┴─────┴─────┴──────┘
     """
-    string_dtypes: pylist[PolarsDataType] = [String]
+    string_dtypes: builtins.list[PolarsDataType] = [String]
     if include_categorical:
         string_dtypes.append(Categorical)
 

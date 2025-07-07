@@ -11,7 +11,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._typing import SelectorType
 from polars._utils.various import qualified_type_name
-from polars.exceptions import ColumnNotFoundError, InvalidOperationError
+from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
@@ -22,11 +22,7 @@ def assert_repr_equals(item: Any, expected: str) -> None:
     if not isinstance(expected, str):
         msg = f"`expected` must be a string; found {qualified_type_name(expected)!r}"
         raise TypeError(msg)
-    try:
-        assert repr(item) == expected
-    except Exception as e:
-        e.add_note(f"'{item!r}' != '{expected}'")
-        raise
+    assert repr(item) == expected
 
 
 @pytest.fixture
