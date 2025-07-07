@@ -192,3 +192,8 @@ def test_drop_strict() -> None:
 
     df.drop("a", strict=False)
     df.drop("b", strict=False)
+
+
+def test_drop_regex_14069() -> None:
+    df = pl.DataFrame({"a": 1, "a2": 2, "b": 3})
+    assert df.drop(pl.col("^a.*$")).columns == ["b"]
