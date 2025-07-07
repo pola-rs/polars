@@ -1,3 +1,4 @@
+import pickle
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from decimal import Decimal as PyDecimal
@@ -1131,3 +1132,17 @@ def test_select_struct_with_dtype_11067() -> None:
         }
     )
     assert df.select(pl.col(pl.Struct)).columns == ["struct_series"]
+
+
+def test_pickle_selector_11425() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    selectors = [cs.by_name("a"), cs.by_name("b")]
+    unpickled_selectors = [
+        pickle.loads(pickle.dumps(selector)) for selector in selectors
+    ]
+
+    assert df.select(selectors[0] | selectors[1]).columns == ["a", "b"]
+    assert df.select(unpickled_selectors[0] | unpickled_selectors[1]).columns == [
+        "a",
+        "b",
+    ]

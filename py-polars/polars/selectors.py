@@ -323,6 +323,14 @@ class Selector(Expr):
         slf._pyexpr = PyExpr.new_selector(pyselector)
         return slf
 
+    def __getstate__(self) -> bytes:
+        return self._pyexpr.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        self._pyexpr = F.lit(0)._pyexpr  # Initialize with a dummy
+        self._pyexpr.__setstate__(state)
+        self._pyselector = self.meta.as_selector()._pyselector
+
     def __repr__(self) -> str:
         return str(Expr._from_pyexpr(self._pyexpr))
 
