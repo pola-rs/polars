@@ -50,7 +50,6 @@ def assert_index_of(
         value = pl.lit(value, dtype=series.dtype)
 
     # Eager API:
-    print(series.index_of(value), expected_index, value, series)
     assert series.index_of(value) == expected_index
     # Lazy API:
     assert pl.LazyFrame({"series": series}).select(
@@ -326,15 +325,7 @@ def test_enum(convert_to_literal: bool) -> None:
 
 @pytest.mark.parametrize(
     "convert_to_literal",
-    [
-        True,
-        pytest.param(
-            False,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20171"
-            ),
-        ),
-    ],
+    [True, False],
 )
 def test_categorical(convert_to_literal: bool) -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
