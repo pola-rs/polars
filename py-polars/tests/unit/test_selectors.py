@@ -1104,3 +1104,12 @@ def test_by_name_order_19384() -> None:
     df1 = df.select(cs.by_name("b", "a"))
     df2 = df.select(cs.by_name("b", "a", require_all=False))
     assert_frame_equal(df1, df2)
+
+
+def test_exclude_when_then_21352() -> None:
+    df = pl.DataFrame([[1], [2]], schema=["A", "B"])
+
+    assert df.select(pl.all().exclude("B")).columns == ["A"]
+    assert df.select(
+        pl.when(True).then(pl.all()).otherwise(pl.all().exclude("B"))
+    ).columns == ["A", "B"]
