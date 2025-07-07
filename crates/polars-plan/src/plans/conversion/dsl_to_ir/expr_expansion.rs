@@ -98,10 +98,10 @@ pub fn rewrite_projections(
     Ok(result)
 }
 
-fn expand_expression_by_combination(
+fn expand_expression_by_combination_with_schemas(
     exprs: &[Expr],
     ignored_selector_columns: &PlHashSet<PlSmallStr>,
-    schema: &Schema,
+    schemas: &[Schema],
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
     f: impl Fn(&[Expr]) -> Expr,
@@ -111,6 +111,11 @@ fn expand_expression_by_combination(
     let mut expansion_size = 0;
     for (i, expr) in exprs.iter().enumerate() {
         let start_len = out.len();
+        let schema = if schemas.len() == 1 {
+            &schemas[0]
+        } else {
+            &schemas[i]
+        };
         let size = expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
         if size != 1 {
             results.reserve(exprs.len() + 1);
@@ -129,8 +134,13 @@ fn expand_expression_by_combination(
         return Ok(1);
     }
 
-    for expr in &exprs[results.len()..] {
+    for (i, expr) in exprs.iter().skip(results.len()).enumerate() {
         let start_len = out.len();
+        let schema = if schemas.len() == 1 {
+            &schemas[0]
+        } else {
+            &schemas[i]
+        };
         let size = expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
         polars_ensure!(
             size == 1 || size == expansion_size,
@@ -162,6 +172,24 @@ fn expand_expression_by_combination(
     out.extend(tmp_out);
 
     Ok(size)
+}
+
+fn expand_expression_by_combination(
+    exprs: &[Expr],
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    schema: &Schema,
+    out: &mut Vec<Expr>,
+    opt_flags: &mut OptFlags,
+    f: impl Fn(&[Expr]) -> Expr,
+) -> PolarsResult<usize> {
+    expand_expression_by_combination_with_schemas(
+        exprs,
+        ignored_selector_columns,
+        std::slice::from_ref(schema),
+        out,
+        opt_flags,
+        f,
+    )
 }
 
 fn expand_single(
@@ -734,10 +762,15 @@ fn expand_expression_rec(
             evaluation,
             variant,
         } => {
-            _ = expand_expression_by_combination(
+            let expr_dtype = expr.to_field(schema, Context::Default)?.dtype;
+            let element_dtype = variant.element_dtype(&expr_dtype)?;
+            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+            let schemas = &[schema.clone(), evaluation_schema];
+
+            _ = expand_expression_by_combination_with_schemas(
                 &[expr.as_ref().clone(), evaluation.as_ref().clone()],
                 ignored_selector_columns,
-                schema,
+                schemas,
                 out,
                 opt_flags,
                 |e| Expr::Eval {
