@@ -920,3 +920,78 @@ def test_selector_python_dtypes() -> None:
     assert df.select(cs.by_dtype(float)).columns == ["float"]
     assert df.select(cs.by_dtype(bool)).columns == ["bool"]
     assert df.select(cs.by_dtype(str)).columns == ["str"]
+
+
+def test_list_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.List(pl.Int32)),
+            pl.Series("c", [], pl.List(pl.UInt32)),
+            pl.Series("d", [], pl.Array(pl.Int32, 3)),
+            pl.Series("e", [], pl.List(pl.String)),
+            pl.Series("f", [], pl.Struct({"x": pl.Int32})),
+        ]
+    )
+
+    assert df.select(cs.list()).columns == ["b", "c", "e"]
+    assert df.select(cs.list(inner=cs.integer())).columns == ["b", "c"]
+    assert df.select(cs.list(inner=cs.string())).columns == ["e"]
+
+    with pytest.raises(TypeError):
+        df.select(cs.list(inner=cs.by_name("???")))
+
+
+def test_array_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.Array(pl.Int32, 4)),
+            pl.Series("c", [], pl.Array(pl.UInt32, 4)),
+            pl.Series("d", [], pl.Array(pl.Int32, 3)),
+            pl.Series("e", [], pl.List(pl.Int32)),
+            pl.Series("f", [], pl.Array(pl.String, 4)),
+            pl.Series("g", [], pl.Struct({"x": pl.Int32})),
+        ]
+    )
+
+    assert df.select(cs.array()).columns == ["b", "c", "d", "f"]
+    assert df.select(cs.array(width=4)).columns == ["b", "c", "f"]
+    assert df.select(cs.array(inner=cs.integer())).columns == ["b", "c", "d"]
+    assert df.select(cs.array(inner=cs.string())).columns == ["f"]
+
+    with pytest.raises(TypeError):
+        df.select(cs.array(inner=cs.by_name("???")))
+
+
+def test_enum_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.UInt32),
+            pl.Series("c", [], pl.Enum([])),
+            pl.Series("d", [], pl.Categorical()),
+            pl.Series("e", [], pl.String()),
+            pl.Series("f", [], pl.Enum(["a", "b"])),
+        ]
+    )
+
+    assert df.select(cs.enum()).columns == ["c", "f"]
+    assert df.select(~cs.enum()).columns == ["a", "b", "d", "e"]
+
+
+def test_struct_selector() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [], pl.Int32),
+            pl.Series("b", [], pl.Array(pl.Int32, 4)),
+            pl.Series("c", [], pl.Struct({})),
+            pl.Series("d", [], pl.Array(pl.UInt32, 4)),
+            pl.Series("e", [], pl.Struct({"x": pl.Int32, "y": pl.String})),
+            pl.Series("f", [], pl.List(pl.Int32)),
+            pl.Series("g", [], pl.Array(pl.String, 4)),
+            pl.Series("h", [], pl.Struct({"x": pl.Int32})),
+        ]
+    )
+
+    assert df.select(cs.struct()).columns == ["c", "e", "h"]
