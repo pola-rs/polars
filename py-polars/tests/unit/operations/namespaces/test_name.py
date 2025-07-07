@@ -75,3 +75,18 @@ def test_name_map_chain_21164() -> None:
         df.select(pl.all().name.to_lowercase().name.suffix("_suffix")),
         df.select(mycol_suffix=pl.col("MyCol")),
     )
+
+
+def test_when_then_keep_map_13858() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    assert_frame_equal(
+        df.with_columns(
+            pl.when(True)
+            .then(pl.int_range(3))
+            .otherwise(pl.all())
+            .name.keep()
+            .name.suffix("_other")
+        ),
+        df.with_columns(a_other=pl.int_range(3), b_other=pl.int_range(3)),
+    )
