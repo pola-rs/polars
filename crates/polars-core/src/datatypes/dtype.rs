@@ -518,6 +518,10 @@ impl DataType {
         matches!(self, DataType::Datetime(..))
     }
 
+    pub fn is_duration(&self) -> bool {
+        matches!(self, DataType::Duration(..))
+    }
+
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
