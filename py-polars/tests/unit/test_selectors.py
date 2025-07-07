@@ -1119,3 +1119,15 @@ def test_select_list_with_dtype_22200() -> None:
     df = pl.from_dict({"a": [[1, 2], [3, 4]]})
 
     assert df.select(pl.col(pl.List)).columns == ["a"]
+
+
+def test_select_struct_with_dtype_11067() -> None:
+    df = pl.DataFrame(
+        {
+            "struct_series": [
+                {"a": [1], "b": [2], "c": [3]},
+                {"a": [4], "b": [5], "c": [6]},
+            ],
+        }
+    )
+    assert df.select(pl.col(pl.Struct)).columns == ["struct_series"]
