@@ -61,13 +61,15 @@ impl MetaNameSpace {
 
     /// Indicate if this expression expands to multiple expressions.
     pub fn has_multiple_outputs(&self) -> bool {
-        self.0.into_iter().any(|e| match e {
-            Expr::Selector(_) => true,
-            Expr::Function {
-                function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
-                ..
-            } => true,
-            _ => false,
+        self.0.into_iter().any(|e| {
+            matches!(
+                e,
+                Expr::Selector(_)
+                    | Expr::Function {
+                        function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
+                        ..
+                    }
+            )
         })
     }
 
