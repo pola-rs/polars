@@ -4,6 +4,7 @@ import contextlib
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
+
 from typing_extensions import deprecated
 
 from polars._typing import EngineType

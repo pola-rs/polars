@@ -47,14 +47,10 @@ if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
     from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
 __all__ = [
-    # class"
+    # class
     "Selector",
+    # functions
     "all",
     "alpha",
     "alphanumeric",

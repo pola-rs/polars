@@ -45,7 +45,6 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
     Int64,
-    is_polars_dtype,
     parse_into_datatype_expr,
 )
 from polars.dependencies import _check_for_numpy
