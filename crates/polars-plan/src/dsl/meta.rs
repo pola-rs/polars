@@ -63,6 +63,10 @@ impl MetaNameSpace {
     pub fn has_multiple_outputs(&self) -> bool {
         self.0.into_iter().any(|e| match e {
             Expr::Selector(_) => true,
+            Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
+                ..
+            } => true,
             _ => false,
         })
     }
