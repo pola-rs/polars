@@ -1071,3 +1071,23 @@ def test_selector_arith_dtypes_12850() -> None:
         .item()
         == 1.0
     )
+
+
+def test_multiple_regexes_8282() -> None:
+    df = pl.DataFrame(
+        {
+            "a-col": [1, 2, 3],
+            "b-col": [3, 5, 2],
+        }
+    )
+
+    assert_frame_equal(
+        df.with_columns(
+            diff1=pl.col(r"^a-\w*$") - pl.col(r"b-col"),
+            diff2=pl.col(r"^a-\w*$") - pl.col(r"^b-\w*$"),
+        ),
+        df.with_columns(
+            diff1=pl.col("a-col") - pl.col("b-col"),
+            diff2=pl.col("a-col") - pl.col("b-col"),
+        ),
+    )
