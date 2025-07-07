@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 use super::datatype::PyDataTypeExpr;
 use super::selector::PySelector;
 use crate::PyExpr;
-use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
+use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::utils::EnterPolarsExt;

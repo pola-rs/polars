@@ -12,7 +12,6 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::lazyframe::PyOptFlags;
 use crate::map::lazy::binary_lambda;
-use crate::prelude::vec_extract_wrapped;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
 

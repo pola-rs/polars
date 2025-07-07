@@ -476,10 +476,6 @@ impl DataTypeSelector {
     }
 }
 
-pub fn is_regex_projection(name: &str) -> bool {
-    name.starts_with('^') && name.ends_with('$')
-}
-
 impl BitOr for Selector {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
