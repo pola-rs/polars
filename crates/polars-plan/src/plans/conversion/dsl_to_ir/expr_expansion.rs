@@ -251,13 +251,14 @@ fn needs_expansion(expr: &Expr) -> bool {
             || matches!(
                 e,
                 Expr::Function {
-                    function: FunctionExpr::StructExpr(StructFunction::SelectFields(_) | StructFunction::FieldByName(_)),
+                    function: FunctionExpr::StructExpr(
+                        StructFunction::SelectFields(_) | StructFunction::FieldByName(_)
+                    ),
                     ..
                 }
             )
     })
 }
-
 
 fn expand_expression_rec(
     expr: &Expr,
