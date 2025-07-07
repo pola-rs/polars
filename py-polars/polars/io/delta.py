@@ -305,7 +305,7 @@ def scan_delta(
     )
 
     if isinstance(source, DeltaTable) and storage_options is None:
-        storage_options = source._storage_options  # type: ignore[arg-type]
+        storage_options = source._storage_options  # type: ignore
     if not isinstance(source, DeltaTable):
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, source, storage_options, "scan_delta"
