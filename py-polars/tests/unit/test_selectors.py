@@ -1009,3 +1009,12 @@ def test_matches_selector_22816() -> None:
 
     assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
     assert df.select(cs.matches(".*burger")) == ["hamburger"]
+
+
+def test_expand_more_than_one_22567() -> None:
+    assert (
+        pl.select(x=1, y=2)
+        .select(cs.by_name("x").as_expr() + cs.by_name("y").as_expr())
+        .item()
+        == 3
+    )
