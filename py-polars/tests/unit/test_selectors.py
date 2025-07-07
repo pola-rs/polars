@@ -995,3 +995,17 @@ def test_struct_selector() -> None:
     )
 
     assert df.select(cs.struct()).columns == ["c", "e", "h"]
+
+
+def test_matches_selector_22816() -> None:
+    df = pl.DataFrame(
+        {
+            "ham": [1, 2, 3],
+            "hamburger": [11, 22, 33],
+            "foo": [3, 2, 1],
+            "bar": ["a", "b", "c"],
+        }
+    )
+
+    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
+    assert df.select(cs.matches(".*burger")) == ["hamburger"]
