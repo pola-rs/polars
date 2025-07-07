@@ -18,9 +18,9 @@ from typing import (
 
 import polars.datatypes.classes as pldt
 from polars import functions as F
-from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.parse.expr import _parse_inputs_as_iterable
-from polars._utils.various import is_column, qualified_type_name, re_escape
+from polars._utils.unstable import unstable
+from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
     Binary,
     Boolean,
@@ -649,9 +649,20 @@ def empty() -> Selector:
     """
     Select no columns.
 
+    This is useful for composition with other selectors.
+
     See Also
     --------
     all : Select all columns in the current scope.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> pl.DataFrame({"a": 1, "b": 2}).select(cs.empty())
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
     """
     return Selector._from_pyselector(PySelector.empty())
 
@@ -1284,22 +1295,340 @@ def by_name(*names: str | Collection[str], require_all: bool = True) -> Selector
     return Selector._by_name(all_names, strict=require_all)
 
 
+@unstable()
 def enum() -> Selector:
+    """
+    Select all enum columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    categorical : Select all categorical columns.
+    string : Select all string columns (optionally including categoricals).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": ["xx", "yy"],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ...     schema_overrides={"foo": pl.Enum(["xx", "yy"])},
+    ... )
+
+    Select all enum columns:
+
+    >>> df.select(cs.enum())
+    shape: (2, 1)
+    ┌──────┐
+    │ foo  │
+    │ ---  │
+    │ enum │
+    ╞══════╡
+    │ xx   │
+    │ yy   │
+    └──────┘
+
+    Select all columns *except* for those that are enum:
+
+    >>> df.select(~cs.categorical())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+    """
+    return Selector._from_pyselector(PySelector.categorical())
     return Selector._from_pyselector(PySelector.enum_())
 
 
-def list(*, inner: None | Selector = None) -> Selector:
+@unstable()
+def list(inner: None | Selector = None) -> Selector:
+    """
+    Select all list columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    array : Select all array columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [["xx", "yy"], ["x"]],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ... )
+
+    Select all list columns:
+
+    >>> df.select(cs.list())
+    shape: (2, 1)
+    ┌──────────────┐
+    │ foo          │
+    │ ---          │
+    │ list[str]    │
+    ╞══════════════╡
+    │ ["xx", "yy"] │
+    │ ["x"]        │
+    └──────────────┘
+
+    Select all columns *except* for those that are list:
+
+    >>> df.select(~cs.list())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+
+    Select all list columns with a certain matching inner type:
+
+    >>> df.select(cs.list(cs.string()))
+    shape: (2, 1)
+    ┌──────────────┐
+    │ foo          │
+    │ ---          │
+    │ list[str]    │
+    ╞══════════════╡
+    │ ["xx", "yy"] │
+    │ ["x"]        │
+    └──────────────┘
+    >>> df.select(cs.list(cs.integer()))
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    """
     inner_s = inner._pyselector if inner is not None else None
     return Selector._from_pyselector(PySelector.list(inner_s))
 
 
-def array(*, inner: Selector | None = None, width: int | None = None) -> Selector:
+@unstable()
+def array(inner: Selector | None = None, *, width: int | None = None) -> Selector:
+    """
+    Select all array columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [["xx", "yy"], ["x", "y"]],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ...     schema_overrides={"foo": pl.Array(pl.String, 2)},
+    ... )
+
+    Select all array columns:
+
+    >>> df.select(cs.array())
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ array[str, 2] │
+    ╞═══════════════╡
+    │ ["xx", "yy"]  │
+    │ ["x", "y"]    │
+    └───────────────┘
+
+    Select all columns *except* for those that are array:
+
+    >>> df.select(~cs.array())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+
+    Select all array columns with a certain matching inner type:
+
+    >>> df.select(cs.array(cs.string()))
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ array[str, 2] │
+    ╞═══════════════╡
+    │ ["xx", "yy"]  │
+    │ ["x", "y"]    │
+    └───────────────┘
+    >>> df.select(cs.array(cs.integer()))
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    >>> df.select(cs.array(width=2))
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ array[str, 2] │
+    ╞═══════════════╡
+    │ ["xx", "yy"]  │
+    │ ["x", "y"]    │
+    └───────────────┘
+    >>> df.select(cs.array(width=3))
+    shape: (0, 0)
+    ┌┐
+    ╞╡
+    └┘
+    """
     inner_s = inner._pyselector if inner is not None else None
     return Selector._from_pyselector(PySelector.array(inner_s, width))
 
 
+@unstable()
 def struct() -> Selector:
+    """
+    Select all struct columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    array : Select all array columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [{"a": "xx", "b": "z"}, {"a": "x", "b": "y"}],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ... )
+
+    Select all struct columns:
+
+    >>> df.select(cs.struct())
+    shape: (2, 1)
+    ┌────────────┐
+    │ foo        │
+    │ ---        │
+    │ struct[2]  │
+    ╞════════════╡
+    │ {"xx","z"} │
+    │ {"x","y"}  │
+    └────────────┘
+
+    Select all columns *except* for those that are struct:
+
+    >>> df.select(~cs.struct())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+    """
     return Selector._from_pyselector(PySelector.struct_())
+
+
+@unstable()
+def nested() -> Selector:
+    """
+    Select all nested columns.
+
+    A nested column is a list, array or struct.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    array : Select all array columns.
+    struct : Select all struct columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [{"a": "xx", "b": "z"}, {"a": "x", "b": "y"}],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...         "wow": [[1, 2], [3]],
+    ...     },
+    ... )
+
+    Select all nested columns:
+
+    >>> df.select(cs.struct())
+    shape: (2, 2)
+    ┌────────────┬───────────┐
+    │ foo        ┆ wow       │
+    │ ---        ┆ ---       │
+    │ struct[2]  ┆ list[i64] │
+    ╞════════════╪═══════════╡
+    │ {"xx","z"} ┆ [1, 2]    │
+    │ {"x","y"}  ┆ [3]       │
+    └────────────┴───────────┘
+
+    Select all columns *except* for those that are nested:
+
+    >>> df.select(~cs.nested())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+    """
+    return Selector._from_pyselector(PySelector.nested())
 
 
 def categorical() -> Selector:
