@@ -1016,9 +1016,6 @@ impl Expr {
     /// Should be used in aggregation context. If you want to filter on a
     /// DataFrame level, use `LazyFrame::filter`.
     pub fn filter<E: Into<Expr>>(self, predicate: E) -> Self {
-        // if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
-        //     panic!("filter '*' not allowed, use LazyFrame::filter")
-        // };
         Expr::Filter {
             input: Arc::new(self),
             by: Arc::new(predicate.into()),

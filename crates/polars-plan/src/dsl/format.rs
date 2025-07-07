@@ -37,7 +37,6 @@ impl fmt::Debug for Expr {
                     }
                 },
             },
-            // Nth(i) => write!(f, "nth({i})"),
             Len => write!(f, "len()"),
             Explode {
                 input: expr,

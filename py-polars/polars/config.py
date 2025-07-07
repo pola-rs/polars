@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
@@ -10,8 +11,13 @@ from polars._utils.various import normalize_filepath
 from polars.dependencies import json
 from polars.lazyframe.engine_config import GPUEngine
 
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated
+
+
 if TYPE_CHECKING:
-    import sys
     from types import TracebackType
 
     from polars._typing import FloatFmt
@@ -20,11 +26,6 @@ if TYPE_CHECKING:
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
     if sys.version_info >= (3, 11):
         from typing import Self, Unpack
