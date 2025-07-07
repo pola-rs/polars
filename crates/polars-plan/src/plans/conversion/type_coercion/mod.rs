@@ -6,7 +6,7 @@ mod functions;
 mod is_in;
 
 use binary::process_binary;
-use datetime_range::{update_date_range_types, update_datetime_range_types};
+use datetime_range::{replace_tz, update_date_range_types, update_datetime_range_types};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -835,8 +835,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
-                let function = function.clone();
                 let mut input = input.clone();
+                let function = function.clone();
 
                 let (from_types, to_types) = unpack!(update_datetime_range_types(
                     &mut input, expr_arena, schema, interval, tu, tz, arg_type,
@@ -848,6 +848,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
                     if from_dtype != to_dtype {
                         modified = true;
+
+                        // If the target datatype has a different time zone from the existing one,
+                        // we re-localize prior to casting.
+                        if let DataType::Datetime(_, Some(_)) = &to_dtype {
+                            replace_tz(&mut input[i], &to_dtype, expr_arena)?;
+                        };
                         cast_expr_ir(
                             &mut input[i],
                             &from_dtype,

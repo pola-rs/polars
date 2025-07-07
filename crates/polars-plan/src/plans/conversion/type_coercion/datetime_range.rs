@@ -1,3 +1,4 @@
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 use polars_time::Duration;
@@ -5,7 +6,8 @@ use polars_utils::arena::Arena;
 
 use super::get_aexpr_and_type;
 use crate::dsl::DateRangeArgs;
-use crate::plans::{AExpr, ExprIR};
+use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction};
+use crate::prelude::FunctionOptions;
 
 macro_rules! unpack {
     ($packed:expr) => {
@@ -97,6 +99,28 @@ fn localize_tz(
     }
 }
 
+pub(super) fn replace_tz(
+    e: &mut ExprIR,
+    dtype: &DataType,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<()> {
+    let replacement_expr = match &dtype {
+        &DataType::Datetime(_, tz @ Some(_)) => AExpr::Function {
+            input: vec![e.clone()],
+            function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
+                tz.clone(),
+                NonExistent::Raise,
+            )),
+            options: FunctionOptions::elementwise(),
+        },
+        dt => polars_bail!(ComputeError: "cannot replace time zone of dtype {:?}", dt),
+    };
+
+    e.set_node(expr_arena.add(replacement_expr));
+    e.set_dtype(dtype.clone());
+    Ok(())
+}
+
 pub(super) fn update_date_range_types(
     input: &mut Vec<ExprIR>,
     expr_arena: &Arena<AExpr>,
@@ -146,23 +170,11 @@ pub(super) fn update_datetime_range_types(
     tz: &Option<TimeZone>,
     arg_type: DateRangeArgs,
 ) -> Option<(Vec<DataType>, Vec<DataType>)> {
-    macro_rules! extract_date {
-        ($idx:literal, $arg:literal) => {{
-            let (_, dtype) =
-            unpack!(get_aexpr_and_type(expr_arena, input[$idx].node(), schema));
-            polars_ensure!(
-                matches!(dtype, DataType::Datetime(_, _) | DataType::Date),
-                ComputeError: "'{}' must be Date or Datetime, got {:?}", $arg, dtype
-            );
-            dtype
-        }}
-    }
-
     Some(match arg_type {
         DateRangeArgs::StartEndInterval => {
             // Determine supertype of input types.
-            let type_start = extract_date!(0, "start");
-            let type_end = extract_date!(1, "end");
+            let type_start = extract_date!(input, expr_arena, schema, 0, "start");
+            let type_end = extract_date!(input, expr_arena, schema, 1, "end");
             let default = unpack!(get_supertype(&type_start, &type_end));
             let supertype = build_datetime_supertype(default, tu, tz, interval)?;
             let from_types = vec![type_start, type_end];
@@ -170,8 +182,8 @@ pub(super) fn update_datetime_range_types(
             (from_types, to_types)
         },
         DateRangeArgs::StartEndSamples => {
-            let type_start = extract_date!(0, "start");
-            let type_end = extract_date!(1, "end");
+            let type_start = extract_date!(input, expr_arena, schema, 0, "start");
+            let type_end = extract_date!(input, expr_arena, schema, 1, "end");
             let type_samples = extract_samples!(input, expr_arena, schema, 2);
             let default = unpack!(get_supertype(&type_start, &type_end));
             let supertype = build_datetime_supertype(default, tu, tz, interval)?;
@@ -180,7 +192,7 @@ pub(super) fn update_datetime_range_types(
             (from_types, to_types)
         },
         DateRangeArgs::StartIntervalSamples => {
-            let type_start = extract_date!(0, "start");
+            let type_start = extract_date!(input, expr_arena, schema, 0, "start");
             let type_samples = extract_samples!(input, expr_arena, schema, 1);
             let supertype = build_datetime_supertype(type_start.clone(), tu, tz, interval)?;
             let from_types = vec![supertype.clone(), type_samples];
@@ -188,7 +200,7 @@ pub(super) fn update_datetime_range_types(
             (from_types, to_types)
         },
         DateRangeArgs::EndIntervalSamples => {
-            let type_end = extract_date!(0, "end");
+            let type_end = extract_date!(input, expr_arena, schema, 0, "end");
             let type_samples = extract_samples!(input, expr_arena, schema, 1);
             let supertype = build_datetime_supertype(type_end.clone(), tu, tz, interval)?;
             let from_types = vec![type_end, type_samples];
