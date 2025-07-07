@@ -207,13 +207,16 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                     polars_bail!(InvalidOperation: "{:?}", dtype);
                 };
                 let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
-
+                let ArrowDataType::FixedSizeList(_, array_size) = arrow_data_type else {
+                    // We've already verified this is an array.
+                    unreachable!()
+                };
                 let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
                             binview_to_fixed_size_list_dyn::<$T>(
                                 &**chunk,
-                                &arrow_data_type,
+                                array_size,
                                 is_little_endian
                             )
                         }).collect::<Result<Vec<ArrayRef>, _>>()

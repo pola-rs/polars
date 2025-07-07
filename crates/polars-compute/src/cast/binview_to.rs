@@ -198,26 +198,22 @@ where
 
 /// Casts a [`BinaryArray`] to a [`FixedSizeListArray`], making any un-castable value a Null.
 ///
-/// # Panics
-///    Panics if `to` is not `ArrowDataType::FixedSizeList`.
+/// # Arguments
+///
+/// * `array_items`: The number of items in each `Array`.
 pub(super) fn try_binview_to_fixed_size_list<T>(
     from: &BinaryViewArray,
-    to: &ArrowDataType,
+    array_items: usize,
     is_little_endian: bool,
 ) -> PolarsResult<FixedSizeListArray>
 where
     T: FromBytes + NativeType,
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
-    let ArrowDataType::FixedSizeList(_, array_size) = to else {
-        // Higher-level code should have ensured we only get FixedSizeList:
-        unreachable!();
-    };
     let element_size = std::mem::size_of::<T>();
-    let array_size = *array_size;
     let mut result = MutableFixedSizeListArray::new(
-        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_size),
-        array_size,
+        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_items),
+        array_items,
     );
 
     // It would be nice to have a fast path that just use a memory copy.
@@ -226,7 +222,7 @@ where
     // not obvious that would actually be much of a speed up.
     from.iter().try_for_each(|x| {
         if let Some(x) = x {
-            if x.len() != element_size * array_size {
+            if x.len() != element_size * array_items {
                 result.push_null();
                 return Ok(());
             }
@@ -249,11 +245,15 @@ where
 
 /// Casts a `dyn` [`Array`] to a [`FixedSizeListArray`], making any un-castable value a Null.
 ///
+/// # Arguments
+///
+/// * `array_items`: The number of items in each `Array`.
+///
 /// # Panics
-///    Panics if `to` is not `ArrowDataType::FixedSizeList`, or `from` is not `BinaryViewArray`.
+///    Panics if `from` is not `BinaryViewArray`.
 pub fn binview_to_fixed_size_list_dyn<T>(
     from: &dyn Array,
-    to: &ArrowDataType,
+    array_items: usize,
     is_little_endian: bool,
 ) -> PolarsResult<Box<dyn Array>>
 where
@@ -264,7 +264,7 @@ where
 
     Ok(Box::new(try_binview_to_fixed_size_list::<T>(
         from,
-        to,
+        array_items,
         is_little_endian,
     )?))
 }
