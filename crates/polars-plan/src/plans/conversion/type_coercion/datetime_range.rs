@@ -1,4 +1,3 @@
-use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 use polars_time::Duration;
@@ -13,7 +12,7 @@ macro_rules! unpack {
     ($packed:expr) => {
         match $packed {
             Some(payload) => payload,
-            None => return None,
+            None => return Ok(None),
         }
     };
 }
@@ -126,9 +125,9 @@ pub(super) fn update_date_range_types(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
     arg_type: DateRangeArgs,
-) -> Option<(Vec<DataType>, Vec<DataType>)> {
+) -> PolarsResult<Option<(Vec<DataType>, Vec<DataType>)>> {
     let dt_date = DataType::Date;
-    Some(match arg_type {
+    Ok(Some(match arg_type {
         DateRangeArgs::StartEndInterval => {
             let type_start = extract_date!(input, expr_arena, schema, 0, "start");
             let type_end = extract_date!(input, expr_arena, schema, 1, "end");
@@ -158,7 +157,7 @@ pub(super) fn update_date_range_types(
             let to_types = vec![dt_date, DataType::UInt64];
             (from_types, to_types)
         },
-    })
+    }))
 }
 
 pub(super) fn update_datetime_range_types(
@@ -169,8 +168,8 @@ pub(super) fn update_datetime_range_types(
     tu: &Option<TimeUnit>,
     tz: &Option<TimeZone>,
     arg_type: DateRangeArgs,
-) -> Option<(Vec<DataType>, Vec<DataType>)> {
-    Some(match arg_type {
+) -> PolarsResult<Option<(Vec<DataType>, Vec<DataType>)>> {
+    Ok(Some(match arg_type {
         DateRangeArgs::StartEndInterval => {
             // Determine supertype of input types.
             let type_start = extract_date!(input, expr_arena, schema, 0, "start");
@@ -207,5 +206,5 @@ pub(super) fn update_datetime_range_types(
             let to_types = vec![supertype, DataType::UInt64];
             (from_types, to_types)
         },
-    })
+    }))
 }

@@ -788,7 +788,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 let (from_types, to_types) = unpack!(update_date_range_types(
                     &mut input, expr_arena, schema, arg_type
-                ));
+                )?);
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
                 let mut modified = false;
@@ -840,7 +840,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 let (from_types, to_types) = unpack!(update_datetime_range_types(
                     &mut input, expr_arena, schema, interval, tu, tz, arg_type,
-                ));
+                )?);
 
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();

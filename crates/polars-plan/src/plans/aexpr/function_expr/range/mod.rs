@@ -278,18 +278,11 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             DatetimeRange {
                 interval,
                 closed,
-                time_unit,
-                time_zone,
+                time_unit: _,
+                time_zone: _,
                 arg_type,
             } => {
-                map_as_slice!(
-                    datetime_range::datetime_range,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone(),
-                    arg_type
-                )
+                map_as_slice!(datetime_range::datetime_range, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-datetime")]
             DatetimeRanges {
