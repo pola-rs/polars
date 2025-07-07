@@ -1,4 +1,4 @@
-use std::intrinsics::copy_nonoverlapping;
+use std::ptr::copy_nonoverlapping;
 
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
@@ -204,16 +204,20 @@ where
 /// # Arguments
 ///
 /// * `array_items`: The number of items in each `Array`.
-pub(super) fn try_binview_to_fixed_size_list<T>(
+pub(super) fn try_binview_to_fixed_size_list<T, const IS_LITTLE_ENDIAN: bool>(
     from: &BinaryViewArray,
     array_items: usize,
-    is_little_endian: bool,
 ) -> PolarsResult<FixedSizeListArray>
 where
     T: FromBytes + NativeType,
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let element_size = std::mem::size_of::<T>();
+    let from_bytes = if IS_LITTLE_ENDIAN {
+        <T as FromBytes>::from_le_bytes
+    } else {
+        <T as FromBytes>::from_be_bytes
+    };
 
     // It would be nice to have a fast path that just use a memory copy.
     // However, that is only possible if all the binaryviews are the correct
@@ -223,44 +227,45 @@ where
     let mut out: Vec<T> = Vec::with_capacity(primitive_length);
     let mut validity = MutableBitmap::from_len_set(from.len());
 
-    let mut values_buffer = vec![T::default(); array_items];
+    // Values for primitive array when values are NULL, so we don't leave
+    // uninitialized memory.
     let empty = vec![T::default(); array_items];
 
     for (index, value) in from.iter().enumerate() {
-        let to_write = if let Some(value) = value
+        if let Some(value) = value
             && value.len() == element_size * array_items
         {
             for j in 0..array_items {
                 let jth_bytes = &value[(j * element_size)..((j + 1) * element_size)];
-                let jth_value = if is_little_endian {
-                    <T as FromBytes>::from_le_bytes(jth_bytes.try_into().ok().unwrap())
-                } else {
-                    <T as FromBytes>::from_be_bytes(jth_bytes.try_into().ok().unwrap())
-                };
                 // # Safety
-                // We made sure values_buffer has length `array_items`.
+                // We just made sure that the slice has length `element_size`
+                let byte_array = unsafe { jth_bytes.try_into().unwrap_unchecked() };
+                let jth_value = from_bytes(byte_array);
+
+                let write_index = array_items * index + j;
+                debug_assert!(write_index < primitive_length);
+                // # Safety
+                // - The target index is smaller than the vector's pre-allocated capacity.
                 unsafe {
-                    *values_buffer.get_unchecked_mut(j) = jth_value;
+                    std::ptr::write(out.as_mut_ptr().offset(write_index as isize), jth_value);
                 }
             }
-            &values_buffer
         } else {
             validity.set(index, false);
-            &empty
+            let write_index = array_items * index;
+            debug_assert!(write_index < primitive_length);
+            debug_assert!((write_index + (array_items - 1)) < primitive_length);
+            // # Safety
+            // - The target index is smaller than the vector's pre-allocated capacity.
+            // - We made sure `empty` has length `array_items`.
+            unsafe {
+                copy_nonoverlapping(
+                    empty.as_ptr(),
+                    out.as_mut_ptr().offset(write_index as isize),
+                    array_items,
+                );
+            }
         };
-        // # Safety
-        // - The target index is smaller than the vector's pre-allocated capacity.
-        // - We made sure values_buffer has length `array_items`.
-        let write_index = array_items * index;
-        debug_assert!(write_index < primitive_length);
-        debug_assert!((write_index + (array_items - 1)) < primitive_length);
-        unsafe {
-            copy_nonoverlapping(
-                to_write.as_ptr(),
-                out.as_mut_ptr().offset(write_index as isize),
-                array_items,
-            );
-        }
     }
 
     // # Safety
@@ -297,9 +302,10 @@ where
 {
     let from = from.as_any().downcast_ref().unwrap();
 
-    Ok(Box::new(try_binview_to_fixed_size_list::<T>(
-        from,
-        array_items,
-        is_little_endian,
-    )?))
+    let result = if is_little_endian {
+        try_binview_to_fixed_size_list::<T, true>(from, array_items)
+    } else {
+        try_binview_to_fixed_size_list::<T, false>(from, array_items)
+    }?;
+    Ok(Box::new(result))
 }
