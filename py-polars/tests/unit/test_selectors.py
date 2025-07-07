@@ -1036,3 +1036,11 @@ def test_selectors_radd_21978() -> None:
     assert_frame_equal(
         df.select("$" + cs.by_name("sales")), df.select("$" + pl.col("sales"))
     )
+
+
+def test_arithmetic_expansion_21174() -> None:
+    df = pl.DataFrame({"x": 1, "y": 2, "z": "tree"})
+    assert_frame_equal(
+        df.select(pl.col(pl.Int64).cast(pl.String) + pl.col(pl.String)),
+        pl.DataFrame({"x": "1tree", "y": "2tree"}),
+    )
