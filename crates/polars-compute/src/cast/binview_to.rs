@@ -247,7 +247,7 @@ where
                 // # Safety
                 // - The target index is smaller than the vector's pre-allocated capacity.
                 unsafe {
-                    std::ptr::write(out.as_mut_ptr().offset(write_index as isize), jth_value);
+                    std::ptr::write(out.as_mut_ptr().add(write_index), jth_value);
                 }
             }
         } else {
@@ -261,7 +261,7 @@ where
             unsafe {
                 copy_nonoverlapping(
                     empty.as_ptr(),
-                    out.as_mut_ptr().offset(write_index as isize),
+                    out.as_mut_ptr().add(write_index),
                     array_items,
                 );
             }
