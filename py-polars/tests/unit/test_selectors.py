@@ -736,12 +736,6 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     with pytest.raises(TypeError, match=r"unsupported .* \('Expr' - 'Selector'\)"):
         df.select(pl.col("colx") - cs.matches("[yz]$"))
 
-    with pytest.raises(TypeError, match=r"unsupported .* \('Expr' \+ 'Selector'\)"):
-        df.select(pl.col("colx") + cs.numeric())
-
-    with pytest.raises(TypeError, match=r"unsupported .* \('Selector' \+ 'Selector'\)"):
-        df.select(cs.string() + cs.numeric())
-
     # complement
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
         "abc": pl.UInt16,
@@ -1009,7 +1003,7 @@ def test_matches_selector_22816() -> None:
     )
 
     assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
-    assert df.select(cs.matches(".*burger")) == ["hamburger"]
+    assert df.select(cs.matches(".*burger")).columns == ["hamburger"]
 
 
 def test_expand_more_than_one_22567() -> None:
@@ -1022,7 +1016,7 @@ def test_expand_more_than_one_22567() -> None:
 
 
 def test_selectors_radd_21978() -> None:
-    pl.DataFrame(
+    df = pl.DataFrame(
         [
             {"sales": "94.71 billion"},
             {"sales": "134.19 billion"},

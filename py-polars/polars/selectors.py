@@ -433,15 +433,11 @@ class Selector(Expr):
         return all() - self
 
     @overload
-    def __add__(self, other: Selector) -> Selector: ...
-
-    @overload
     def __add__(self, other: Any) -> Expr: ...
 
-    def __add__(self, other: Any) -> Selector | Expr:
+    def __add__(self, other: Any) -> Expr:
         if is_selector(other):
-            msg = "unsupported operand type(s) for op: ('Selector' + 'Selector')"
-            raise TypeError(msg)
+            return self.as_expr().__add__(other.as_expr())
         else:
             return self.as_expr().__add__(other)
 
