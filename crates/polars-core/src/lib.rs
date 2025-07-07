@@ -34,9 +34,6 @@ pub use datatypes::SchemaExtPl;
 pub use hashing::IdBuildHasher;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
-#[cfg(feature = "dtype-categorical")]
-pub use crate::chunked_array::logical::categorical::string_cache::*;
-
 pub static PROCESS_ID: LazyLock<u128> = LazyLock::new(|| {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

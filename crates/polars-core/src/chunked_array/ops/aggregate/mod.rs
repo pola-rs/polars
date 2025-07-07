@@ -9,7 +9,6 @@ use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
 use polars_utils::min_max::MinMax;
-use polars_utils::sync::SyncPtr;
 pub use quantile::*;
 pub use var::*;
 
@@ -438,137 +437,76 @@ impl ChunkAggSeries for StringChunked {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl CategoricalChunked {
-    fn min_categorical(&self) -> Option<u32> {
+impl<T: PolarsCategoricalType> CategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
+{
+    fn min_categorical(&self) -> Option<CatSize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.uses_lexical_ordering() {
-            let rev_map = self.get_rev_map();
-            // Fast path where all categories are used
-            let c = if self._can_fast_unique() {
-                rev_map.get_categories().min_ignore_nan_kernel()
-            } else {
-                // SAFETY:
-                // Indices are in bounds
-                self.physical()
-                    .iter()
-                    .flat_map(|opt_el: Option<u32>| {
-                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
-                    })
-                    .min()
-            };
-            rev_map.find(c.unwrap())
+            let mapping = self.get_mapping();
+            let s = self
+                .physical()
+                .iter()
+                .flat_map(|opt_cat| {
+                    Some(unsafe { mapping.cat_to_str_unchecked(opt_cat?.as_cat()) })
+                })
+                .min();
+            mapping.get_cat(s.unwrap())
         } else {
-            self.physical().min()
+            Some(self.physical().min()?.as_cat())
         }
     }
 
-    fn max_categorical(&self) -> Option<u32> {
+    fn max_categorical(&self) -> Option<CatSize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.uses_lexical_ordering() {
-            let rev_map = self.get_rev_map();
-            // Fast path where all categories are used
-            let c = if self._can_fast_unique() {
-                rev_map.get_categories().max_ignore_nan_kernel()
-            } else {
-                // SAFETY:
-                // Indices are in bounds
-                self.physical()
-                    .iter()
-                    .flat_map(|opt_el: Option<u32>| {
-                        opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
-                    })
-                    .max()
-            };
-            rev_map.find(c.unwrap())
+            let mapping = self.get_mapping();
+            let s = self
+                .physical()
+                .iter()
+                .flat_map(|opt_cat| {
+                    Some(unsafe { mapping.cat_to_str_unchecked(opt_cat?.as_cat()) })
+                })
+                .max();
+            mapping.get_cat(s.unwrap())
         } else {
-            self.physical().max()
+            Some(self.physical().max()?.as_cat())
         }
     }
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl ChunkAggSeries for CategoricalChunked {
+impl<T: PolarsCategoricalType> ChunkAggSeries for CategoricalChunked<T>
+where
+    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
+{
     fn min_reduce(&self) -> Scalar {
-        match self.dtype() {
-            DataType::Enum(r, _) => match self.physical().min() {
-                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
-                Some(v) => {
-                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
-                        unreachable!()
-                    };
-                    Scalar::new(
-                        self.dtype().clone(),
-                        AnyValue::EnumOwned(
-                            v,
-                            r.as_ref().unwrap().clone(),
-                            SyncPtr::from_const(arr as *const _),
-                        ),
-                    )
-                },
-            },
-            DataType::Categorical(r, _) => match self.min_categorical() {
-                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
-                Some(v) => {
-                    let r = r.as_ref().unwrap();
-                    let arr = match &**r {
-                        RevMapping::Local(arr, _) => arr,
-                        RevMapping::Global(_, arr, _) => arr,
-                    };
-                    Scalar::new(
-                        self.dtype().clone(),
-                        AnyValue::CategoricalOwned(
-                            v,
-                            r.clone(),
-                            SyncPtr::from_const(arr as *const _),
-                        ),
-                    )
-                },
-            },
+        let Some(min) = self.min_categorical() else {
+            return Scalar::new(self.dtype().clone(), AnyValue::Null);
+        };
+        let av = match self.dtype() {
+            DataType::Enum(_, mapping) => AnyValue::EnumOwned(min, mapping.clone()),
+            DataType::Categorical(_, mapping) => AnyValue::CategoricalOwned(min, mapping.clone()),
             _ => unreachable!(),
-        }
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
+
     fn max_reduce(&self) -> Scalar {
-        match self.dtype() {
-            DataType::Enum(r, _) => match self.physical().max() {
-                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
-                Some(v) => {
-                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
-                        unreachable!()
-                    };
-                    Scalar::new(
-                        self.dtype().clone(),
-                        AnyValue::EnumOwned(
-                            v,
-                            r.as_ref().unwrap().clone(),
-                            SyncPtr::from_const(arr as *const _),
-                        ),
-                    )
-                },
-            },
-            DataType::Categorical(r, _) => match self.max_categorical() {
-                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
-                Some(v) => {
-                    let r = r.as_ref().unwrap();
-                    let arr = match &**r {
-                        RevMapping::Local(arr, _) => arr,
-                        RevMapping::Global(_, arr, _) => arr,
-                    };
-                    Scalar::new(
-                        self.dtype().clone(),
-                        AnyValue::CategoricalOwned(
-                            v,
-                            r.clone(),
-                            SyncPtr::from_const(arr as *const _),
-                        ),
-                    )
-                },
-            },
+        let Some(max) = self.max_categorical() else {
+            return Scalar::new(self.dtype().clone(), AnyValue::Null);
+        };
+        let av = match self.dtype() {
+            DataType::Enum(_, mapping) => AnyValue::EnumOwned(max, mapping.clone()),
+            DataType::Categorical(_, mapping) => AnyValue::CategoricalOwned(max, mapping.clone()),
             _ => unreachable!(),
-        }
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
 }
 

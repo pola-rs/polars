@@ -4,8 +4,8 @@ use std::sync::{LazyLock, RwLock};
 
 use arrow::ffi::{ArrowSchema, import_field_from_c};
 use libloading::Library;
-use pyo3::Python;
-use pyo3::types::PyAnyMethods;
+#[cfg(feature = "python")]
+use pyo3::{Python, types::PyAnyMethods};
 
 use super::*;
 
@@ -21,6 +21,7 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
     } else {
         drop(lib_map);
 
+        #[cfg(feature = "python")]
         let load_path = if !std::path::Path::new(lib).is_absolute() {
             // Get python virtual environment path
             let prefix = Python::with_gil(|py| {
@@ -33,6 +34,8 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
         } else {
             lib.to_string()
         };
+        #[cfg(not(feature = "python"))]
+        let load_path = lib.to_string();
 
         let library = unsafe {
             Library::new(&load_path).map_err(|e| {

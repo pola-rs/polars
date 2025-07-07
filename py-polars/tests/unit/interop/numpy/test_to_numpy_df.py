@@ -287,3 +287,20 @@ def test_to_numpy_c_order_1700() -> None:
         df_chunked,
         pl.from_numpy(df_chunked.to_numpy(order="c"), schema=df_chunked.schema),
     )
+
+
+def test_to_numpy_array_shape_23426() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2],
+            "y": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            "z": [[[-1, -1, -2], [4, 5, 6]], [[-3, -5, -8], [10, 20, 30]]],
+        },
+        schema={
+            "x": pl.UInt8,
+            "y": pl.Array(pl.Float32, 3),
+            "z": pl.Array(pl.Int16, (2, 3)),
+        },
+    )
+
+    assert_frame_equal(df, pl.from_numpy(df.to_numpy(structured=True)))

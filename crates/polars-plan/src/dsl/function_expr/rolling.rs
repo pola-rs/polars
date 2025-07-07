@@ -4,20 +4,19 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RollingFunction {
-    Min(RollingOptionsFixedWindow),
-    Max(RollingOptionsFixedWindow),
-    Mean(RollingOptionsFixedWindow),
-    Sum(RollingOptionsFixedWindow),
-    Quantile(RollingOptionsFixedWindow),
-    Var(RollingOptionsFixedWindow),
-    Std(RollingOptionsFixedWindow),
+    Min,
+    Max,
+    Mean,
+    Sum,
+    Quantile,
+    Var,
+    Std,
     #[cfg(feature = "moment")]
-    Skew(RollingOptionsFixedWindow),
+    Skew,
     #[cfg(feature = "moment")]
-    Kurtosis(RollingOptionsFixedWindow),
+    Kurtosis,
     #[cfg(feature = "cov")]
     CorrCov {
-        rolling_options: RollingOptionsFixedWindow,
         corr_cov_options: RollingCovOptions,
         // Whether is Corr or Cov
         is_corr: bool,
@@ -29,17 +28,17 @@ impl Display for RollingFunction {
         use RollingFunction::*;
 
         let name = match self {
-            Min(_) => "min",
-            Max(_) => "max",
-            Mean(_) => "mean",
-            Sum(_) => "rsum",
-            Quantile(_) => "quantile",
-            Var(_) => "var",
-            Std(_) => "std",
+            Min => "min",
+            Max => "max",
+            Mean => "mean",
+            Sum => "rsum",
+            Quantile => "quantile",
+            Var => "var",
+            Std => "std",
             #[cfg(feature = "moment")]
-            Skew(..) => "skew",
+            Skew => "skew",
             #[cfg(feature = "moment")]
-            Kurtosis(..) => "kurtosis",
+            Kurtosis => "kurtosis",
             #[cfg(feature = "cov")]
             CorrCov { is_corr, .. } => {
                 if *is_corr {

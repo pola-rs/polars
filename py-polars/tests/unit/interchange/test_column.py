@@ -44,20 +44,9 @@ def test_describe_categorical() -> None:
 
     out = col.describe_categorical
 
-    assert out["is_ordered"] is True
-    assert out["is_dictionary"] is True
-
-    expected_categories = pl.Series(["b", "a", "c"])
-    assert_series_equal(out["categories"]._col, expected_categories)
-
-
-def test_describe_categorical_lexical_ordering() -> None:
-    s = pl.Series(["b", "a", "a", "c", None, "b"], dtype=pl.Categorical("lexical"))
-    col = PolarsColumn(s)
-
-    out = col.describe_categorical
-
     assert out["is_ordered"] is False
+    assert out["is_dictionary"] is True
+    assert set(out["categories"]._col) >= {"b", "a", "c"}
 
 
 def test_describe_categorical_enum() -> None:
@@ -194,11 +183,12 @@ def test_get_chunks_subdivided_chunks() -> None:
             pl.Series([568080000000000, 0, 1670025600000000], dtype=pl.Int64),
             (DtypeKind.INT, 64, "l", "="),
         ),
-        (
-            pl.Series(["a", "b", None, "a"], dtype=pl.Categorical),
-            pl.Series([0, 1, 0, 0], dtype=pl.UInt32),
-            (DtypeKind.UINT, 32, "I", "="),
-        ),
+        # TODO: cat-rework: re-enable this with a unique named categorical.
+        # (
+        #     pl.Series(["a", "b", None, "a"], dtype=pl.Categorical),
+        #     pl.Series([0, 1, 0, 0], dtype=pl.UInt32),
+        #     (DtypeKind.UINT, 32, "I", "="),
+        # ),
     ],
 )
 def test_get_buffers_data(
@@ -275,25 +265,16 @@ def test_get_buffers_string_zero_copy_fails() -> None:
         col.get_buffers()
 
 
-def test_get_buffers_global_categorical() -> None:
-    with pl.StringCache():
-        _ = pl.Series("a", ["a", "b"], dtype=pl.Categorical)
-        s = pl.Series("a", ["c", "b"], dtype=pl.Categorical)
-
-    # Converted to local categorical
-    col = PolarsColumn(s, allow_copy=True)
+@pytest.mark.parametrize("allow_copy", [False, True])
+def test_get_buffers_categorical(allow_copy: bool) -> None:
+    s = pl.Series("a", ["c", "b"], dtype=pl.Categorical)
+    col = PolarsColumn(s, allow_copy=allow_copy)
     result = col.get_buffers()
 
     data_buffer, _ = result["data"]
-    expected = pl.Series("a", [0, 1], dtype=pl.UInt32)
-    assert_series_equal(data_buffer._data, expected)
-
-    # Zero copy fails
-    col = PolarsColumn(s, allow_copy=False)
-
-    msg = "column 'a' must be converted to a local categorical"
-    with pytest.raises(CopyNotAllowedError, match=msg):
-        col.get_buffers()
+    assert len(data_buffer._data) == 2
+    assert data_buffer._data[0] != data_buffer._data[1]
+    assert data_buffer._data.dtype == pl.UInt32
 
 
 def test_get_buffers_chunked_zero_copy_fails() -> None:

@@ -4,10 +4,9 @@ use std::hash::BuildHasher;
 use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
-use polars_core::error::polars_err;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
-use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType};
+use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
 use polars_core::series::Series;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -30,7 +29,7 @@ pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => HashKeysVariant::Single,
         #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(_, _) => HashKeysVariant::Single,
+        DataType::Enum(_, _) | DataType::Categorical(_, _) => HashKeysVariant::Single,
 
         DataType::String | DataType::Binary => HashKeysVariant::Binview,
 
@@ -66,18 +65,24 @@ macro_rules! downcast_single_key_ca {
             DataType::Float64 => { let $ca = $self.f64().unwrap(); $($body)* },
 
             #[cfg(feature = "dtype-date")]
-            DataType::Date => { let $ca = $self.date().unwrap(); $($body)* },
+            DataType::Date => { let $ca = $self.date().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-time")]
-            DataType::Time => { let $ca = $self.time().unwrap(); $($body)* },
+            DataType::Time => { let $ca = $self.time().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(..) => { let $ca = $self.datetime().unwrap(); $($body)* },
+            DataType::Datetime(..) => { let $ca = $self.datetime().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(..) => { let $ca = $self.duration().unwrap(); $($body)* },
+            DataType::Duration(..) => { let $ca = $self.duration().unwrap().physical(); $($body)* },
 
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(..) => { let $ca = $self.decimal().unwrap(); $($body)* },
+            DataType::Decimal(..) => { let $ca = $self.decimal().unwrap().physical(); $($body)* },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(..) => { let $ca = $self.categorical().unwrap().physical(); $($body)* },
+            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+                match dt.cat_physical().unwrap() {
+                    CategoricalPhysical::U8 => { let $ca = $self.cat8().unwrap().physical(); $($body)* },
+                    CategoricalPhysical::U16 => { let $ca = $self.cat16().unwrap().physical(); $($body)* },
+                    CategoricalPhysical::U32 => { let $ca = $self.cat32().unwrap().physical(); $($body)* },
+                }
+            },
 
             _ => unreachable!(),
         }
@@ -108,16 +113,6 @@ impl HashKeys {
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.get_columns();
-            #[cfg(feature = "dtype-categorical")]
-            for key in keys {
-                if let DataType::Categorical(Some(rev_map), _) = key.dtype() {
-                    assert!(
-                        rev_map.is_active_global(),
-                        "{}",
-                        polars_err!(string_cache_mismatch)
-                    );
-                }
-            }
             let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
 
             if !null_is_valid {

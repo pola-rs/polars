@@ -26,7 +26,7 @@ class ExprCatNameSpace:
         >>> df = pl.Series(
         ...     "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
         ... ).to_frame()
-        >>> df.select(pl.col("cats").cat.get_categories())
+        >>> df.select(pl.col("cats").cat.get_categories())  # doctest: +SKIP
         shape: (3, 1)
         ┌──────┐
         │ cats │

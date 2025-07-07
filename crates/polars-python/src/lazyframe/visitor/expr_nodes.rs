@@ -1155,29 +1155,29 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "sign")]
                 IRFunctionExpr::Sign => ("sign",).into_py_any(py),
                 IRFunctionExpr::FillNull => ("fill_null",).into_py_any(py),
-                IRFunctionExpr::RollingExpr(rolling) => {
-                    return Err(PyNotImplementedError::new_err(format!("{rolling}")));
+                IRFunctionExpr::RollingExpr { function, .. } => {
+                    return Err(PyNotImplementedError::new_err(format!("{function}")));
                 },
-                IRFunctionExpr::RollingExprBy(rolling) => match rolling {
-                    IRRollingFunctionBy::MinBy(_) => {
+                IRFunctionExpr::RollingExprBy { function_by, .. } => match function_by {
+                    IRRollingFunctionBy::MinBy => {
                         return Err(PyNotImplementedError::new_err("rolling min by"));
                     },
-                    IRRollingFunctionBy::MaxBy(_) => {
+                    IRRollingFunctionBy::MaxBy => {
                         return Err(PyNotImplementedError::new_err("rolling max by"));
                     },
-                    IRRollingFunctionBy::MeanBy(_) => {
+                    IRRollingFunctionBy::MeanBy => {
                         return Err(PyNotImplementedError::new_err("rolling mean by"));
                     },
-                    IRRollingFunctionBy::SumBy(_) => {
+                    IRRollingFunctionBy::SumBy => {
                         return Err(PyNotImplementedError::new_err("rolling sum by"));
                     },
-                    IRRollingFunctionBy::QuantileBy(_) => {
+                    IRRollingFunctionBy::QuantileBy => {
                         return Err(PyNotImplementedError::new_err("rolling quantile by"));
                     },
-                    IRRollingFunctionBy::VarBy(_) => {
+                    IRRollingFunctionBy::VarBy => {
                         return Err(PyNotImplementedError::new_err("rolling var by"));
                     },
-                    IRRollingFunctionBy::StdBy(_) => {
+                    IRRollingFunctionBy::StdBy => {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
                 },

@@ -402,18 +402,18 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => {
-                format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
+            DataType::Categorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "cat", self.name(), "Series")
+                })
             },
 
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => format_array!(
-                f,
-                self.categorical().unwrap(),
-                "enum",
-                self.name(),
-                "Series"
-            ),
+            DataType::Enum(fcats, _) => {
+                with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "enum", self.name(), "Series")
+                })
+            },
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
                 f,
@@ -1182,10 +1182,10 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _)
-            | AnyValue::CategoricalOwned(_, _, _)
-            | AnyValue::Enum(_, _, _)
-            | AnyValue::EnumOwned(_, _, _) => {
+            AnyValue::Categorical(_, _)
+            | AnyValue::CategoricalOwned(_, _)
+            | AnyValue::Enum(_, _)
+            | AnyValue::EnumOwned(_, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },

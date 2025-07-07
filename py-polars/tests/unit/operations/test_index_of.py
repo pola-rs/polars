@@ -327,12 +327,7 @@ def test_enum(convert_to_literal: bool) -> None:
 @pytest.mark.parametrize(
     "convert_to_literal",
     [
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20318"
-            ),
-        ),
+        True,
         pytest.param(
             False,
             marks=pytest.mark.xfail(

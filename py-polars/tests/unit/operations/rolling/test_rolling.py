@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -1522,11 +1523,75 @@ def test_rolling_quantile_with_nulls_22781(method: QuantileMethod) -> None:
             "a": [None, None, 1.0, None, None, 1.0, 1.0, None, None],
         }
     )
-    method = "nearest"
     out = (
         lf.rolling("index", period="2i")
         .agg(pl.col("a").quantile(0.5, interpolation=method))
         .collect()
     )
     expected = pl.Series("a", [None, None, 1.0, 1.0, None, 1.0, 1.0, 1.0, None])
+    assert_series_equal(out["a"], expected)
+
+
+def test_rolling_quantile_nearest_23392() -> None:
+    base = range(11)
+    s = pl.Series(base)
+
+    shuffle_base = list(base)
+    random.shuffle(shuffle_base)
+    s_shuffled = pl.Series(shuffle_base)
+
+    for q in np.arange(0, 1.0, 0.02, dtype=float):
+        out = s.rolling_quantile(q, interpolation="nearest", window_size=11)
+
+        # explicit:
+        expected = pl.Series([None] * 10 + [float(round(q * 10.0))])
+        assert_series_equal(out, expected)
+
+        # equivalence:
+        equiv = s.quantile(q, interpolation="nearest")
+        assert out.last() == equiv
+
+        # shuffled:
+        out = s_shuffled.rolling_quantile(q, interpolation="nearest", window_size=11)
+        assert_series_equal(out, expected)
+
+
+def test_rolling_quantile_nearest_kernel_23392() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 2),
+                datetime(2021, 1, 4),
+                datetime(2021, 1, 5),
+                datetime(2021, 1, 7),
+            ],
+            "values": pl.arange(0, 5, eager=True),
+        }
+    )
+    # values (period="3d", quantile=0.7) are chosen to trigger index rounding
+    out = (
+        df.set_sorted("dt")
+        .rolling("dt", period="3d", closed="both")
+        .agg([pl.col("values").quantile(quantile=0.7).alias("quantile")])
+        .select("quantile")
+    )
+    expected = pl.DataFrame({"quantile": [0.0, 1.0, 1.0, 2.0, 3.0]})
+    assert_frame_equal(out, expected)
+
+
+def test_rolling_quantile_nearest_with_nulls_23932() -> None:
+    lf = pl.LazyFrame(
+        {
+            "index": [0, 1, 2, 3, 4, 5, 6],
+            "a": [None, None, 1.0, 2.0, 3.0, None, None],
+        }
+    )
+    # values (period="3i", quantile=0.7) are chosen to trigger index rounding
+    out = (
+        lf.rolling("index", period="3i")
+        .agg(pl.col("a").quantile(0.7, interpolation="nearest"))
+        .collect()
+    )
+    expected = pl.Series("a", [None, None, 1.0, 2.0, 2.0, 3.0, 3.0])
     assert_series_equal(out["a"], expected)

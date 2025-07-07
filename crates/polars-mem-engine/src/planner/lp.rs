@@ -395,26 +395,8 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Filter { input, predicate } => {
-            let mut streamable =
-                is_elementwise_rec_no_cat_cast(expr_arena.get(predicate.node()), expr_arena);
+            let streamable = is_elementwise_rec(predicate.node(), expr_arena);
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            if streamable {
-                // This can cause problems with string caches
-                streamable = !input_schema
-                    .iter_values()
-                    .any(|dt| dt.contains_categoricals())
-                    || {
-                        #[cfg(feature = "dtype-categorical")]
-                        {
-                            polars_core::using_string_cache()
-                        }
-
-                        #[cfg(not(feature = "dtype-categorical"))]
-                        {
-                            false
-                        }
-                    }
-            }
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true);
             let predicate = create_physical_expr(
@@ -559,7 +541,7 @@ fn create_physical_plan_impl(
                 &mut state,
             )?;
 
-            let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec_no_cat_cast(expr_arena.get(e.node()), expr_arena))
+            let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
                 // If all columns are literal we would get a 1 row per thread.
                 && !phys_expr.iter().all(|p| {
                     p.is_literal()
@@ -828,7 +810,7 @@ fn create_physical_plan_impl(
             let allow_vertical_parallelism = options.should_broadcast
                 && exprs
                     .iter()
-                    .all(|e| is_elementwise_rec_no_cat_cast(expr_arena.get(e.node()), expr_arena));
+                    .all(|e| is_elementwise_rec(e.node(), expr_arena));
 
             let mut state =
                 ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
