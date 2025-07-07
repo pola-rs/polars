@@ -819,14 +819,14 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
-                        interval: ref interval,
+                        ref interval,
                         closed: _,
                         time_unit: ref tu,
                         time_zone: ref tz,
                         arg_type,
                     })
                     | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
-                        interval: ref interval,
+                        ref interval,
                         closed: _,
                         time_unit: ref tu,
                         time_zone: ref tz,

@@ -5,7 +5,7 @@ use polars_utils::arena::Arena;
 
 use super::get_aexpr_and_type;
 use crate::dsl::DateRangeArgs;
-use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction};
+use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction, LiteralValue};
 use crate::prelude::FunctionOptions;
 
 macro_rules! unpack {
@@ -75,37 +75,21 @@ pub(super) fn build_datetime_supertype(
     Ok(dtype_out)
 }
 
-// How do we do this in the IR?
-fn localize_tz(
-    c: &Column,
-    dtype_in: &DataType,
-    dtype_out: &DataType,
-    time_zone: &Option<TimeZone>,
-) -> PolarsResult<Column> {
-    match (dtype_in, time_zone) {
-        // If `start` and `end` are naive, but a time zone was specified,
-        // then first localize them
-        #[cfg(feature = "timezones")]
-        (DataType::Datetime(_, None), Some(tz)) => Ok(polars_ops::prelude::replace_time_zone(
-            c.datetime().unwrap(),
-            Some(tz),
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(dtype_out)?
-        .into_column()),
-        _ => c.cast(dtype_out),
-    }
-}
-
 pub(super) fn replace_tz(
     e: &mut ExprIR,
     dtype: &DataType,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<()> {
     let replacement_expr = match &dtype {
+        // Wrap our node in a ReplaceTimezone node
         &DataType::Datetime(_, tz @ Some(_)) => AExpr::Function {
-            input: vec![e.clone()],
+            input: {
+                // We must add the ambiguous input argument.
+                let scalar = Scalar::new(DataType::String, AnyValue::from("raise"));
+                let node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(scalar)));
+                let ambiguous = ExprIR::from_node(node, expr_arena);
+                vec![e.clone(), ambiguous]
+            },
             function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
                 tz.clone(),
                 NonExistent::Raise,

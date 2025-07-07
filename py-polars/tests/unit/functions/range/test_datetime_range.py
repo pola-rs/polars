@@ -109,8 +109,8 @@ def test_datetime_range_lazy_time_zones() -> None:
         pl.DataFrame({"start": [start], "stop": [stop]})
         .with_columns(
             pl.datetime_range(
-                start,
-                stop,
+                start=start,
+                end=stop,
                 interval="678d",
                 eager=False,
                 time_zone="Pacific/Tarawa",
