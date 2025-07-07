@@ -983,7 +983,7 @@ def test_head_group_by() -> None:
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(pl.col("*").exclude(keys))
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.shape == (5, 4)

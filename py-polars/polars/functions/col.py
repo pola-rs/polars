@@ -75,7 +75,7 @@ def _create_col(
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
-            return pl.Selector._by_name(names, strict=True).as_expr()
+            return pl.Selector._by_name(names, strict=True).as_expr()  # type: ignore[arg-type]
 
         item = names[0]
         if isinstance(item, str):
