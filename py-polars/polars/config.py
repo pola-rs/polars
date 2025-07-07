@@ -5,8 +5,6 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
-from typing_extensions import deprecated
-
 from polars._typing import EngineType
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
@@ -22,6 +20,11 @@ if TYPE_CHECKING:
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
     if sys.version_info >= (3, 11):
         from typing import Self, Unpack
