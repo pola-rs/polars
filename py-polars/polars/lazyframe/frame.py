@@ -7168,7 +7168,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        subset = parse_list_into_selector(columns) | parse_list_into_selector(
+        subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
         return self._from_pyldf(self._ldf.explode(subset=subset._pyselector))
