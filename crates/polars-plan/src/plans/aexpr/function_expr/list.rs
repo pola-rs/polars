@@ -88,8 +88,8 @@ impl IRListFunction {
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),
             Median => mapper.nested_mean_median_type(),
-            Std(_) => mapper.map_to_float_dtype(), // Need to also have this sometimes marked as float32 or duration..
-            Var(_) => mapper.map_to_float_dtype(),
+            Std(_) => mapper.moment_dtype(), // Need to also have this sometimes marked as float32 or duration..
+            Var(_) => mapper.var_dtype(),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]

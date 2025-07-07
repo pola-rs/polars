@@ -64,18 +64,6 @@ def test_categorical_lexical_ordering_after_concat() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
-@pytest.mark.may_fail_auto_streaming
-def test_sort_categoricals_6014_internal() -> None:
-    # create basic categorical
-    df = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
-        pl.col("key").cast(pl.Categorical)
-    )
-
-    out = df.sort("key")
-    assert out.to_dict(as_series=False) == {"key": ["bbb", "aaa", "ccc"]}
-
-
-@pytest.mark.usefixtures("test_global_and_local")
 def test_sort_categoricals_6014_lexical() -> None:
     # create lexically-ordered categorical
     df = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
@@ -88,71 +76,25 @@ def test_sort_categoricals_6014_lexical() -> None:
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_get_categories() -> None:
-    assert pl.Series(
-        "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
-    ).cat.get_categories().to_list() == ["foo", "bar", "ham"]
+    s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
+    assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
 
 
 def test_cat_to_local() -> None:
-    with pl.StringCache():
-        s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-        s2 = pl.Series(["c", "b", "d"], dtype=pl.Categorical)
-
-    # s2 physical starts after s1
-    assert s1.to_physical().to_list() == [0, 1, 0]
-    assert s2.to_physical().to_list() == [2, 1, 3]
-
-    out = s2.cat.to_local()
-
-    # Physical has changed and now starts at 0, string values are the same
-    assert out.cat.is_local()
-    assert out.to_physical().to_list() == [0, 1, 2]
-    assert out.to_list() == s2.to_list()
-
-    # s2 should be unchanged after the operation
-    assert not s2.cat.is_local()
-    assert s2.to_physical().to_list() == [2, 1, 3]
-    assert s2.to_list() == ["c", "b", "d"]
-
-
-def test_cat_to_local_missing_values() -> None:
-    with pl.StringCache():
-        _ = pl.Series(["a", "b"], dtype=pl.Categorical)
-        s = pl.Series(["c", "b", None, "d"], dtype=pl.Categorical)
-
-    out = s.cat.to_local()
-    assert out.to_physical().to_list() == [0, 1, None, 2]
-
-
-def test_cat_to_local_already_local() -> None:
-    s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
-
-    assert s.cat.is_local()
-    out = s.cat.to_local()
-
-    assert out.to_physical().to_list() == [0, 1, 0, 2]
-    assert out.to_list() == ["a", "c", "a", "b"]
-
-
-def test_cat_is_local() -> None:
-    s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
-    assert s.cat.is_local()
-
-    with pl.StringCache():
-        s2 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    assert not s2.cat.is_local()
+    s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
+    assert_series_equal(s, s.cat.to_local())
 
 
 @pytest.mark.usefixtures("test_global_and_local")
 def test_cat_uses_lexical_ordering() -> None:
     s = pl.Series(["a", "b", None, "b"]).cast(pl.Categorical)
-    assert s.cat.uses_lexical_ordering() is False
+    assert s.cat.uses_lexical_ordering()
 
     s = s.cast(pl.Categorical("lexical"))
-    assert s.cat.uses_lexical_ordering() is True
+    assert s.cat.uses_lexical_ordering()
 
-    s = s.cast(pl.Categorical("physical"))
-    assert s.cat.uses_lexical_ordering() is False
+    s = s.cast(pl.Categorical("physical"))  # Deprecated.
+    assert s.cat.uses_lexical_ordering()
 
 
 @pytest.mark.usefixtures("test_global_and_local")

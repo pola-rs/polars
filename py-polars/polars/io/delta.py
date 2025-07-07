@@ -4,12 +4,12 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
+from polars.io.cloud._utils import _get_path_scheme
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 def read_delta(
-    source: str | DeltaTable,
+    source: str | Path | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
@@ -164,7 +164,7 @@ def read_delta(
 
 
 def scan_delta(
-    source: str | DeltaTable,
+    source: str | Path | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
@@ -415,12 +415,10 @@ def scan_delta(
     )
 
 
-def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
-    parsed_result = urlparse(table_uri)
-
+def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
     resolved_uri = str(
         Path(table_uri).expanduser().resolve(strict)
-        if parsed_result.scheme == ""
+        if _get_path_scheme(table_uri) is None
         else table_uri
     )
 
@@ -428,7 +426,7 @@ def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
 
 
 def _get_delta_lake_table(
-    table_path: str | DeltaTable,
+    table_path: str | Path | DeltaTable,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,

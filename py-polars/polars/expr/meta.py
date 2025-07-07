@@ -376,7 +376,10 @@ class ExprMetaNameSpace:
 
     @overload
     def tree_format(
-        self, *, return_as_string: Literal[False], schema: None | SchemaDict = None
+        self,
+        *,
+        return_as_string: Literal[False] = ...,
+        schema: None | SchemaDict = None,
     ) -> None: ...
 
     @overload

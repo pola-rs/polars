@@ -1,4 +1,6 @@
 mod boolean;
+#[cfg(feature = "dtype-categorical")]
+mod categorical;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
 pub mod list;
@@ -11,6 +13,8 @@ use std::sync::Arc;
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 pub use boolean::*;
+#[cfg(feature = "dtype-categorical")]
+pub use categorical::*;
 #[cfg(feature = "dtype-array")]
 pub(crate) use fixed_size_list::*;
 pub use list::*;

@@ -33,7 +33,7 @@ def test_schema() -> None:
         pl.Schema(
             {
                 "foo": pl.UInt32(),
-                "bar": pl.Categorical("physical"),
+                "bar": pl.Categorical(),
                 "baz": pl.Struct({"x": pl.Int64(), "y": pl.Float64()}),
             }
         ),

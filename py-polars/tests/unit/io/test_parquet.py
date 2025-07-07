@@ -2718,19 +2718,12 @@ def test_parquet_roundtrip_lex_cat_20288() -> None:
 def test_from_parquet_string_cache_20271() -> None:
     with pl.StringCache():
         f = io.BytesIO()
-        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
         df = pl.Series("b", ["D", "E"], pl.Categorical).to_frame()
         df.write_parquet(f)
+        del df
         f.seek(0)
         df = pl.read_parquet(f)
-
-        assert_series_equal(
-            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
-        )
         assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
-        assert_series_equal(
-            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
-        )
 
 
 def test_boolean_slice_pushdown_20314() -> None:

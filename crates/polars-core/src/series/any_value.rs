@@ -1,8 +1,9 @@
-use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
+#[cfg(feature = "dtype-categorical")]
+use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
@@ -19,48 +20,6 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     fn new(name: PlSmallStr, values: T) -> Self {
         let values = values.as_ref();
         Series::from_any_values(name, values, true).expect("data types of values should match")
-    }
-}
-
-fn initialize_empty_categorical_revmap_rec(dtype: &DataType) -> Cow<'_, DataType> {
-    use DataType as T;
-    match dtype {
-        #[cfg(feature = "dtype-categorical")]
-        T::Categorical(None, o) => {
-            Cow::Owned(T::Categorical(Some(Arc::new(RevMapping::default())), *o))
-        },
-        T::List(inner_dtype) => match initialize_empty_categorical_revmap_rec(inner_dtype) {
-            Cow::Owned(inner_dtype) => Cow::Owned(T::List(Box::new(inner_dtype))),
-            _ => Cow::Borrowed(dtype),
-        },
-        #[cfg(feature = "dtype-array")]
-        T::Array(inner_dtype, width) => {
-            match initialize_empty_categorical_revmap_rec(inner_dtype) {
-                Cow::Owned(inner_dtype) => Cow::Owned(T::Array(Box::new(inner_dtype), *width)),
-                _ => Cow::Borrowed(dtype),
-            }
-        },
-        #[cfg(feature = "dtype-struct")]
-        T::Struct(fields) => {
-            for (i, field) in fields.iter().enumerate() {
-                if let Cow::Owned(field_dtype) =
-                    initialize_empty_categorical_revmap_rec(field.dtype())
-                {
-                    let mut new_fields = Vec::with_capacity(fields.len());
-                    new_fields.extend(fields[..i].iter().cloned());
-                    new_fields.push(Field::new(field.name().clone(), field_dtype));
-                    new_fields.extend(fields[i + 1..].iter().map(|field| {
-                        let field_dtype =
-                            initialize_empty_categorical_revmap_rec(field.dtype()).into_owned();
-                        Field::new(field.name().clone(), field_dtype)
-                    }));
-                    return Cow::Owned(T::Struct(new_fields));
-                }
-            }
-
-            Cow::Borrowed(dtype)
-        },
-        _ => Cow::Borrowed(dtype),
     }
 }
 
@@ -132,12 +91,7 @@ impl Series {
         strict: bool,
     ) -> PolarsResult<Self> {
         if values.is_empty() {
-            return Ok(Self::new_empty(
-                name,
-                // This is given categoricals with empty revmaps, but we need to always return
-                // categoricals with non-empty revmaps.
-                initialize_empty_categorical_revmap_rec(dtype).as_ref(),
-            ));
+            return Ok(Self::new_empty(name, dtype));
         }
 
         let mut s = match dtype {
@@ -172,9 +126,9 @@ impl Series {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Categorical(_, _) => any_values_to_categorical(values, dt, strict)?,
-            #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Enum(_, _) => any_values_to_enum(values, dt, strict)?,
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
+                any_values_to_categorical(values, dt, strict)?
+            },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
@@ -498,91 +452,52 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    let ordering = match dtype {
-        DataType::Categorical(_, ordering) => ordering,
-        _ => panic!("any_values_to_categorical with dtype={dtype:?}"),
-    };
+    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+        let mut builder = CategoricalChunkedBuilder::<$C>::new(PlSmallStr::EMPTY, dtype.clone());
 
-    let mut builder = CategoricalChunkedBuilder::new(PlSmallStr::EMPTY, values.len(), *ordering);
+        let mut owned = String::new(); // Amortize allocations.
+        for av in values {
+            let ret = match av {
+                AnyValue::String(s) => builder.append_str(s),
+                AnyValue::StringOwned(s) => builder.append_str(s),
 
-    let mut owned = String::new(); // Amortize allocations.
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_value(s),
-            AnyValue::StringOwned(s) => builder.append_value(s),
+                &AnyValue::Enum(cat, &ref map) |
+                &AnyValue::EnumOwned(cat, ref map) |
+                &AnyValue::Categorical(cat, &ref map) |
+                &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map),
 
-            AnyValue::Enum(s, rev, _) => builder.append_value(rev.get(*s)),
-            AnyValue::EnumOwned(s, rev, _) => builder.append_value(rev.get(*s)),
-
-            AnyValue::Categorical(s, rev, _) => builder.append_value(rev.get(*s)),
-            AnyValue::CategoricalOwned(s, rev, _) => builder.append_value(rev.get(*s)),
-
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
-            AnyValue::Null => builder.append_null(),
-
-            av => {
-                if strict {
-                    return Err(invalid_value_error(&DataType::String, av));
+                AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => {
+                    builder.append_null();
+                    Ok(())
+                },
+                AnyValue::Null => {
+                    builder.append_null();
+                    Ok(())
                 }
 
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_value(&owned);
-            },
+                av => {
+                    if strict {
+                        return Err(invalid_value_error(&DataType::String, av));
+                    }
+
+                    owned.clear();
+                    write!(owned, "{av}").unwrap();
+                    builder.append_str(&owned)
+                },
+            };
+
+            if let Err(e) = ret {
+                if strict {
+                    return Err(e);
+                } else {
+                    builder.append_null();
+                }
+            }
         }
-    }
 
-    let ca = builder.finish();
-
-    Ok(ca.into_series())
-}
-
-#[cfg(feature = "dtype-categorical")]
-fn any_values_to_enum(values: &[AnyValue], dtype: &DataType, strict: bool) -> PolarsResult<Series> {
-    use self::enum_::EnumChunkedBuilder;
-
-    let (rev, ordering) = match dtype {
-        DataType::Enum(rev, ordering) => (rev.clone(), ordering),
-        _ => panic!("any_values_to_categorical with dtype={dtype:?}"),
-    };
-
-    let Some(rev) = rev else {
-        polars_bail!(nyi = "Not yet possible to create enum series without a rev-map");
-    };
-
-    let mut builder =
-        EnumChunkedBuilder::new(PlSmallStr::EMPTY, values.len(), rev, *ordering, strict);
-
-    let mut owned = String::new(); // Amortize allocations.
-    for av in values {
-        match av {
-            AnyValue::String(s) => builder.append_str(s)?,
-            AnyValue::StringOwned(s) => builder.append_str(s)?,
-
-            AnyValue::Enum(s, rev, _) => builder.append_enum(*s, rev)?,
-            AnyValue::EnumOwned(s, rev, _) => builder.append_enum(*s, rev)?,
-
-            AnyValue::Categorical(s, rev, _) => builder.append_str(rev.get(*s))?,
-            AnyValue::CategoricalOwned(s, rev, _) => builder.append_str(rev.get(*s))?,
-
-            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
-            AnyValue::Null => builder.append_null(),
-
-            av => {
-                if strict {
-                    return Err(invalid_value_error(&DataType::String, av));
-                }
-
-                owned.clear();
-                write!(owned, "{av}").unwrap();
-                builder.append_str(&owned)?
-            },
-        };
-    }
-
-    let ca = builder.finish();
-
-    Ok(ca.into_series())
+        let ca = builder.finish();
+        Ok(ca.into_series())
+    })
 }
 
 #[cfg(feature = "dtype-decimal")]
@@ -701,20 +616,8 @@ fn any_values_to_list(
         DataType::Object(_) => polars_bail!(nyi = "Nested object types"),
 
         _ => {
-            let list_inner_type = match inner_type {
-                // Categoricals may not have a revmap yet. We just give them an empty one here and
-                // the list builder takes care of the rest.
-                #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(None, ordering) => {
-                    DataType::Categorical(Some(Arc::new(RevMapping::default())), *ordering)
-                },
-
-                _ => inner_type.clone(),
-            };
-
             let mut builder =
-                get_list_builder(&list_inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
-
+                get_list_builder(inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
             for av in avs {
                 match av {
                     AnyValue::List(b) => match b.cast(inner_type) {

@@ -365,6 +365,12 @@ impl PlPath {
         self.as_ref().is_cloud_url()
     }
 
+    // We don't want FromStr since we are infallible.
+    #[expect(clippy::should_implement_trait)]
+    pub fn from_str(uri: &str) -> Self {
+        Self::new(uri)
+    }
+
     pub fn from_string(uri: String) -> Self {
         Self::new(&uri)
     }

@@ -10,8 +10,6 @@
 mod _serde;
 mod aliases;
 mod any_value;
-#[cfg(feature = "dtype-categorical")]
-mod categories;
 mod dtype;
 mod field;
 mod into_scalar;
@@ -35,14 +33,17 @@ pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
-#[cfg(feature = "dtype-categorical")]
-pub use categories::{CategoricalMapping, Categories, FrozenCategories};
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
+#[cfg(feature = "dtype-categorical")]
+pub use polars_dtype::categorical::{
+    CatNative, CatSize, CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories,
+    ensure_same_categories, ensure_same_frozen_categories,
+};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
@@ -117,6 +118,16 @@ where
 pub trait PolarsIntegerType: PolarsNumericType {}
 pub trait PolarsFloatType: PolarsNumericType {}
 
+/// # Safety
+/// The physical() return type must be correct for Native.
+#[cfg(feature = "dtype-categorical")]
+pub unsafe trait PolarsCategoricalType: PolarsDataType {
+    type Native: NumericNative + CatNative + DictionaryKey + PartialEq + Eq + Hash;
+    type PolarsPhysical: PolarsIntegerType<Native = Self::Native>;
+
+    fn physical() -> CategoricalPhysical;
+}
+
 macro_rules! impl_polars_num_datatype {
     ($trait: ident, $pdt:ident, $variant:ident, $physical:ty, $owned_phys:ty) => {
         #[derive(Clone, Copy)]
@@ -169,6 +180,31 @@ macro_rules! impl_polars_datatype {
     };
 }
 
+macro_rules! impl_polars_categorical_datatype {
+    ($pdt:ident, $phys:ty, $native:ty, $phys_variant:ident) => {
+        impl_polars_datatype!(
+            $pdt,
+            unimplemented!(),
+            PrimitiveArray<$native>,
+            'a,
+            $native,
+            $native,
+            $native,
+            FalseT
+        );
+
+        #[cfg(feature = "dtype-categorical")]
+        unsafe impl PolarsCategoricalType for $pdt {
+            type Native = $native;
+            type PolarsPhysical = $phys;
+
+            fn physical() -> CategoricalPhysical {
+                CategoricalPhysical::$phys_variant
+            }
+        }
+    }
+}
+
 impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8, u8);
 impl_polars_num_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16, u16);
 impl_polars_num_datatype!(PolarsIntegerType, UInt32Type, UInt32, u32, u32);
@@ -194,6 +230,10 @@ impl_polars_datatype!(DurationType, unimplemented!(), PrimitiveArray<i64>, 'a, i
 impl_polars_datatype!(CategoricalType, unimplemented!(), PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT);
 impl_polars_datatype!(DateType, DataType::Date, PrimitiveArray<i32>, 'a, i32, i32, i32, FalseT);
 impl_polars_datatype!(TimeType, DataType::Time, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
+
+impl_polars_categorical_datatype!(Categorical8Type, UInt8Type, u8, U8);
+impl_polars_categorical_datatype!(Categorical16Type, UInt16Type, u16, U16);
+impl_polars_categorical_datatype!(Categorical32Type, UInt32Type, u32, U32);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}

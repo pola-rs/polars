@@ -61,7 +61,7 @@ def test_from_pandas() -> None:
         "floats_nulls": pl.Float64,
         "strings": pl.String,
         "strings_nulls": pl.String,
-        "strings-cat": pl.Categorical(ordering="physical"),
+        "strings-cat": pl.Categorical(ordering="lexical"),
     }
     assert out.rows() == [
         (False, None, 1, 1.0, 1.0, 1.0, "foo", "foo", "foo"),

@@ -26,7 +26,7 @@ def test_streaming_cat_14933() -> None:
     df2 = pl.LazyFrame(
         [
             pl.Series("a", [0, 1], dtype=pl.UInt32),
-            pl.Series("l", [None, None], dtype=pl.Categorical(ordering="physical")),
+            pl.Series("l", [None, None], dtype=pl.Categorical()),
         ]
     )
     result = df1.join(df2, on="a", how="left")

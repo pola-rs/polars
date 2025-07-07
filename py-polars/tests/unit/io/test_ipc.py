@@ -203,9 +203,7 @@ def test_ipc_schema_from_file(
         "datetime": pl.Datetime(),
         "time": pl.Time(),
         "cat": pl.Categorical(),
-        "enum": pl.Enum(
-            []
-        ),  # at schema inference categories are not read an empty Enum is returned
+        "enum": pl.Enum(["foo", "ham", "bar"]),
     }
     assert schema == expected
 

@@ -1,5 +1,8 @@
 use arrow::array::StructArray;
-use arrow::datatypes::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, IntegerType};
+use arrow::datatypes::{
+    DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
+    DTYPE_ENUM_VALUES_NEW, IntegerType,
+};
 use polars_compute::cast::CastOptionsImpl;
 
 use self::categorical::CategoricalDecoder;
@@ -142,7 +145,10 @@ pub fn columns_to_iter_recursive(
                 init.push(InitNested::Primitive(field.is_nullable));
 
                 if field.metadata.as_ref().is_none_or(|md| {
-                    !md.contains_key(DTYPE_ENUM_VALUES) && !md.contains_key(DTYPE_CATEGORICAL)
+                    !md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
+                        && !md.contains_key(DTYPE_ENUM_VALUES_NEW)
+                        && !md.contains_key(DTYPE_CATEGORICAL_NEW)
+                        && !md.contains_key(DTYPE_CATEGORICAL_LEGACY)
                 }) {
                     let (nested, arr, ptm) = PageDecoder::new(
                         &field.name,
@@ -162,16 +168,33 @@ pub fn columns_to_iter_recursive(
 
                     Ok((nested, arr, ptm))
                 } else {
-                    assert!(matches!(key_type, IntegerType::UInt32));
-
-                    let (nested, arr, ptm) = PageDecoder::new(
-                        &field.name,
-                        columns.pop().unwrap(),
-                        field.dtype().clone(),
-                        CategoricalDecoder::new(),
-                        Some(init),
-                    )?
-                    .collect_boxed(filter)?;
+                    let (nested, arr, ptm) = match key_type {
+                        IntegerType::UInt8 => PageDecoder::new(
+                            &field.name,
+                            columns.pop().unwrap(),
+                            field.dtype().clone(),
+                            CategoricalDecoder::<u8>::new(),
+                            Some(init),
+                        )?
+                        .collect_boxed(filter)?,
+                        IntegerType::UInt16 => PageDecoder::new(
+                            &field.name,
+                            columns.pop().unwrap(),
+                            field.dtype().clone(),
+                            CategoricalDecoder::<u16>::new(),
+                            Some(init),
+                        )?
+                        .collect_boxed(filter)?,
+                        IntegerType::UInt32 => PageDecoder::new(
+                            &field.name,
+                            columns.pop().unwrap(),
+                            field.dtype().clone(),
+                            CategoricalDecoder::<u32>::new(),
+                            Some(init),
+                        )?
+                        .collect_boxed(filter)?,
+                        _ => unimplemented!(),
+                    };
 
                     Ok((nested.unwrap(), arr, ptm))
                 }

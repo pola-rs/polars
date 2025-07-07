@@ -5,7 +5,13 @@
 //! - Compact activated with `FC: false`
 use polars_error::{PolarsResult, to_compute_err};
 
-fn serialize_impl<W, T, const FC: bool>(writer: W, value: &T) -> PolarsResult<()>
+fn config() -> bincode::config::Configuration {
+    bincode::config::standard()
+        .with_no_limit()
+        .with_variable_int_encoding()
+}
+
+fn serialize_impl<W, T, const FC: bool>(mut writer: W, value: &T) -> PolarsResult<()>
 where
     W: std::io::Write,
     T: serde::ser::Serialize,
@@ -14,11 +20,13 @@ where
         let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
         value.serialize(&mut s).map_err(to_compute_err)
     } else {
-        bincode::serialize_into(writer, value).map_err(to_compute_err)
+        bincode::serde::encode_into_std_write(value, &mut writer, config())
+            .map_err(to_compute_err)
+            .map(|_| ())
     }
 }
 
-pub fn deserialize_impl<T, R, const FC: bool>(reader: R) -> PolarsResult<T>
+pub fn deserialize_impl<T, R, const FC: bool>(mut reader: R) -> PolarsResult<T>
 where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
@@ -26,7 +34,7 @@ where
     if FC {
         rmp_serde::from_read(reader).map_err(to_compute_err)
     } else {
-        bincode::deserialize_from(reader).map_err(to_compute_err)
+        bincode::serde::decode_from_std_read(&mut reader, config()).map_err(to_compute_err)
     }
 }
 
