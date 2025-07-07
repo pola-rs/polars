@@ -443,6 +443,7 @@ impl<'a> FieldsMapper<'a> {
             };
 
             self.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-array")]
                 DataType::Array(inner, _) => map_inner(inner),
                 DataType::List(inner) => map_inner(inner),
                 _ => map_inner(dt),
@@ -468,6 +469,7 @@ impl<'a> FieldsMapper<'a> {
         };
 
         self.map_dtype(|dt| match dt {
+            #[cfg(feature = "dtype-array")]
             DataType::Array(inner, _) => map_inner(inner),
             DataType::List(inner) => map_inner(inner),
             _ => map_inner(dt),
