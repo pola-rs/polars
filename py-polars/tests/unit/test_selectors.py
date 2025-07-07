@@ -1044,3 +1044,30 @@ def test_arithmetic_expansion_21174() -> None:
         df.select(pl.col(pl.Int64).cast(pl.String) + pl.col(pl.String)),
         pl.DataFrame({"x": "1tree", "y": "2tree"}),
     )
+
+
+def test_selector_arith_dtypes_12850() -> None:
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() - cs.integer().as_expr())
+        .item()
+        == 1.0
+    )
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() + cs.integer().as_expr())
+        .item()
+        == 3.0
+    )
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() - cs.last().as_expr())
+        .item()
+        == 1.0
+    )
+    assert (
+        pl.DataFrame({"a": [2.0], "b": [1]})
+        .select(cs.float().as_expr() - cs.by_name("b").as_expr())
+        .item()
+        == 1.0
+    )
