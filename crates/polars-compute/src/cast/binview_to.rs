@@ -1,7 +1,10 @@
+use std::intrinsics::copy_nonoverlapping;
+
 use arrow::array::*;
+use arrow::bitmap::MutableBitmap;
 #[cfg(feature = "dtype-decimal")]
 use arrow::compute::decimal::deserialize_decimal;
-use arrow::datatypes::{ArrowDataType, TimeUnit};
+use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
 use chrono::Datelike;
@@ -211,36 +214,68 @@ where
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let element_size = std::mem::size_of::<T>();
-    let mut result = MutableFixedSizeListArray::new(
-        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_items),
-        array_items,
-    );
 
     // It would be nice to have a fast path that just use a memory copy.
     // However, that is only possible if all the binaryviews are the correct
     // length, and checking that requires iterating over all of them, so it's
     // not obvious that would actually be much of a speed up.
-    from.iter().try_for_each(|x| {
-        if let Some(x) = x {
-            if x.len() != element_size * array_items {
-                result.push_null();
-                return Ok(());
-            }
+    let primitive_length = from.len() * array_items;
+    let mut out: Vec<T> = Vec::with_capacity(primitive_length);
+    let mut validity = MutableBitmap::from_len_set(from.len());
 
-            result.try_push(Some(x.chunks_exact(element_size).map(|val| {
-                if is_little_endian {
-                    Some(<T as FromBytes>::from_le_bytes(val.try_into().ok()?))
+    let mut values_buffer = vec![T::default(); array_items];
+    let empty = vec![T::default(); array_items];
+
+    for (index, value) in from.iter().enumerate() {
+        let to_write = if let Some(value) = value
+            && value.len() == element_size * array_items
+        {
+            for j in 0..array_items {
+                let jth_bytes = &value[(j * element_size)..((j + 1) * element_size)];
+                let jth_value = if is_little_endian {
+                    <T as FromBytes>::from_le_bytes(jth_bytes.try_into().ok().unwrap())
                 } else {
-                    Some(<T as FromBytes>::from_be_bytes(val.try_into().ok()?))
+                    <T as FromBytes>::from_be_bytes(jth_bytes.try_into().ok().unwrap())
+                };
+                // # Safety
+                // We made sure values_buffer has length `array_items`.
+                unsafe {
+                    *values_buffer.get_unchecked_mut(j) = jth_value;
                 }
-            })))
+            }
+            &values_buffer
         } else {
-            result.push_null();
-            Ok(())
+            validity.set(index, false);
+            &empty
+        };
+        // # Safety
+        // - The target index is smaller than the vector's pre-allocated capacity.
+        // - We made sure values_buffer has length `array_items`.
+        let write_index = array_items * index;
+        debug_assert!(write_index < primitive_length);
+        debug_assert!((write_index + (array_items - 1)) < primitive_length);
+        unsafe {
+            copy_nonoverlapping(
+                to_write.as_ptr(),
+                out.as_mut_ptr().offset(write_index as isize),
+                array_items,
+            );
         }
-    })?;
+    }
 
-    Ok(result.into())
+    // # Safety
+    // `out` was created with capacity primitive_length.
+    unsafe { out.set_len(primitive_length) };
+
+    FixedSizeListArray::try_new(
+        ArrowDataType::FixedSizeList(
+            Box::new(Field::new("".into(), T::PRIMITIVE.into(), true)),
+            array_items,
+        ),
+        from.len(),
+        Box::new(PrimitiveArray::<T>::from_vec(out)),
+        validity.into(),
+    )
 }
 
 /// Casts a `dyn` [`Array`] to a [`FixedSizeListArray`], making any un-castable value a Null.
