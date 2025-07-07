@@ -197,3 +197,11 @@ def test_drop_strict() -> None:
 def test_drop_regex_14069() -> None:
     df = pl.DataFrame({"a": 1, "a2": 2, "b": 3})
     assert df.drop(pl.col("^a.*$")).columns == ["b"]
+
+
+def test_drop_invalid_selector_19023() -> None:
+    df = pl.DataFrame(
+        data={"x": [1, 2], "x_b": [3, 4], "y_b": [10, 20], "z": ["a", "b"]}
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="is not a selector"):
+        df.drop(pl.selectors.ends_with("_b") + [])
