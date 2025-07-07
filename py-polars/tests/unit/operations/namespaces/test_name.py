@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_name_change_case() -> None:
@@ -65,4 +66,12 @@ def test_name_update_all() -> None:
             ("prefix_col1", pl.UInt64),
             ("col1_suffix", pl.UInt64),
         ]
+    )
+
+
+def test_name_map_chain_21164() -> None:
+    df = pl.DataFrame({"MyCol": [0, 1, 2]})
+    assert_frame_equal(
+        df.select(pl.all().name.to_lowercase().name.suffix("_suffix")),
+        df.select(mycol_suffix=pl.col("MyCol")),
     )
