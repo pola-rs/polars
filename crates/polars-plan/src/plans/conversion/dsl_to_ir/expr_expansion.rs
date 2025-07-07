@@ -16,7 +16,45 @@ pub fn is_regex_projection(name: &str) -> bool {
     name.starts_with('^') && name.ends_with('$')
 }
 
-pub fn toggle_cse_for_structs(opt_flags: &mut OptFlags) {
+pub fn expand_expression(
+    expr: &Expr,
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    schema: &Schema,
+    out: &mut Vec<Expr>,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<()> {
+    if expr.into_iter().all(|e| !needs_expansion(e)) {
+        out.push(expr.clone());
+        return Ok(());
+    }
+
+    expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
+    Ok(())
+}
+
+/// In case of single col(*) -> do nothing, no selection is the same as select all
+/// In other cases replace the wildcard with an expression with all columns
+pub fn rewrite_projections(
+    exprs: Vec<Expr>,
+    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    schema: &Schema,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<Vec<Expr>> {
+    let mut result = Vec::with_capacity(exprs.len() + schema.len());
+    for expr in &exprs {
+        expand_expression(
+            expr,
+            ignored_selector_columns,
+            schema,
+            &mut result,
+            opt_flags,
+        )?;
+    }
+
+    Ok(result)
+}
+
+fn toggle_cse_for_structs(opt_flags: &mut OptFlags) {
     if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::NEW_STREAMING) {
         use polars_core::config::verbose;
         if verbose() {
@@ -76,28 +114,6 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
     }
 }
 
-/// In case of single col(*) -> do nothing, no selection is the same as select all
-/// In other cases replace the wildcard with an expression with all columns
-pub fn rewrite_projections(
-    exprs: Vec<Expr>,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
-    schema: &Schema,
-    opt_flags: &mut OptFlags,
-) -> PolarsResult<Vec<Expr>> {
-    let mut result = Vec::with_capacity(exprs.len() + schema.len());
-    for expr in &exprs {
-        expand_expression(
-            expr,
-            ignored_selector_columns,
-            schema,
-            &mut result,
-            opt_flags,
-        )?;
-    }
-
-    Ok(result)
-}
-
 fn expand_expression_by_combination_with_schemas(
     exprs: &[Expr],
     ignored_selector_columns: &PlHashSet<PlSmallStr>,
@@ -144,7 +160,7 @@ fn expand_expression_by_combination_with_schemas(
         let size = expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
         polars_ensure!(
             size == 1 || size == expansion_size,
-            InvalidOperation: "cannot combine selectors that produce a different number of columns"
+            InvalidOperation: "cannot combine selectors that produce a different number of columns ({size} != {expansion_size})"
         );
         results.push(start_len);
     }
@@ -227,16 +243,21 @@ fn try_expand_single(
     Ok(did_expand)
 }
 
-pub fn expand_expression(
-    expr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
-    schema: &Schema,
-    out: &mut Vec<Expr>,
-    opt_flags: &mut OptFlags,
-) -> PolarsResult<()> {
-    expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
-    Ok(())
+fn needs_expansion(expr: &Expr) -> bool {
+    expr.into_iter().any(|e| {
+        matches!(e, Expr::Selector(_))
+            || matches!(e, Expr::Eval { evaluation, .. } if needs_expansion(evaluation.as_ref()))
+            || matches!(e, Expr::Field(s) if s.len() != 1)
+            || matches!(
+                e,
+                Expr::Function {
+                    function: FunctionExpr::StructExpr(StructFunction::SelectFields(_) | StructFunction::FieldByName(_)),
+                    ..
+                }
+            )
+    })
 }
+
 
 fn expand_expression_rec(
     expr: &Expr,
