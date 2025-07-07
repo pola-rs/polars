@@ -1113,3 +1113,9 @@ def test_exclude_when_then_21352() -> None:
     assert df.select(
         pl.when(True).then(pl.all()).otherwise(pl.all().exclude("B"))
     ).columns == ["A", "B"]
+
+
+def test_select_list_with_dtype_22200() -> None:
+    df = pl.from_dict({"a": [[1, 2], [3, 4]]})
+
+    assert df.select(pl.col(pl.List)).columns == ["a"]
