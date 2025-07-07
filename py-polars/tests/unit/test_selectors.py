@@ -1091,3 +1091,16 @@ def test_multiple_regexes_8282() -> None:
             diff2=pl.col("a-col") - pl.col("b-col"),
         ),
     )
+
+
+def test_by_name_order_19384() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 4, 4],
+            "b": [4, 3, 2, 1],
+        }
+    )
+
+    df1 = df.select(cs.by_name("b", "a"))
+    df2 = df.select(cs.by_name("b", "a", require_all=False))
+    assert_frame_equal(df1, df2)
