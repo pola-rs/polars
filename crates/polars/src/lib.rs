@@ -427,7 +427,6 @@ pub use polars_io as io;
 pub use polars_lazy as lazy;
 #[cfg(feature = "temporal")]
 pub use polars_time as time;
-
 #[doc(hidden)]
 pub use polars_utils;
 

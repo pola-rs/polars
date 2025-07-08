@@ -11,9 +11,12 @@ pub fn prepare_cloud_plan(dsl: DslPlan) -> PolarsResult<Vec<u8>> {
 
     // Serialize the plan.
     let mut writer = Vec::new();
-    dsl.serialize_versioned(&mut writer, PlanSerializationContext {
-        use_cloudpickle: true,
-    })?;
+    dsl.serialize_versioned(
+        &mut writer,
+        PlanSerializationContext {
+            use_cloudpickle: true,
+        },
+    )?;
 
     Ok(writer)
 }

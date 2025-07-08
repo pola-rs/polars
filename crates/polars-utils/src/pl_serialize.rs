@@ -216,7 +216,7 @@ where
 }
 
 thread_local! {
-    pub static USE_CLOUDPICKLE: std::cell::Cell<bool> = std::cell::Cell::new(false);
+    pub static USE_CLOUDPICKLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[cfg(feature = "python")]

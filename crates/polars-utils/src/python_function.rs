@@ -191,9 +191,7 @@ mod serde_wrap {
                 .try_serialize_to_bytes()
                 .map_err(|e| S::Error::custom(e.to_string()))?;
 
-            serializer.serialize_bytes(
-                dumped.as_slice()
-            )
+            serializer.serialize_bytes(dumped.as_slice())
         }
     }
 

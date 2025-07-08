@@ -68,7 +68,7 @@ impl PythonUdfExpression {
         let python_function = pl_serialize::python_object_deserialize(buf)?;
 
         Ok(Arc::new(Self::new(
-            python_function.into(),
+            python_function,
             output_type,
             is_elementwise,
             returns_scalar,
