@@ -30,6 +30,11 @@ fn rolling_agg<T>(
 where
     T: PolarsNumericType,
 {
+    polars_ensure!(
+        options.window_size > 0,
+        InvalidOperation: "`window_size` must be strictly positive, got: {}",
+        options.window_size
+    );
     polars_ensure!(options.min_periods <= options.window_size, InvalidOperation: "`min_periods` should be <= `window_size`");
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
