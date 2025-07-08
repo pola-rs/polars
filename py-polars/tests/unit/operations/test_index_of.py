@@ -363,8 +363,10 @@ def test_index_of_null_parametric(s: pl.Series) -> None:
 
 
 def test_out_of_range_integers() -> None:
-    series = pl.Series([0, 255, None, 3], dtype=pl.UInt8)
+    series = pl.Series([0, 255, None, 1, 2], dtype=pl.UInt8)
     with pytest.raises(InvalidOperationError, match="256 does not fit in a u8"):
-        assert series.index_of(256) is None
-    with pytest.raises(InvalidOperationError, match="256 does not fit in a u8"):
-        assert series.index_of(np.int16(256)) is None
+        assert series.index_of(256)
+    with pytest.raises(InvalidOperationError, match="257 does not fit in a u8"):
+        assert series.index_of(np.int16(257))
+    with pytest.raises(InvalidOperationError, match="258 does not fit in a u8"):
+        assert series.index_of(pl.lit(258, dtype=pl.UInt16))
