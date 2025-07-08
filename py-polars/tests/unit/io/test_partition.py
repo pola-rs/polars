@@ -106,7 +106,7 @@ def test_max_size_partition_lambda(
 
     i = 0
     while length > 0:
-        assert (io_type["scan"])(tmp_path / f"abc-{i}.{io_type['ext']}").select(
+        assert (io_type["scan"])(tmp_path / f"abc-{i:07x}.{io_type['ext']}").select(
             pl.len()
         ).collect()[0, 0] == min(max_size, length)
 
@@ -357,7 +357,7 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
         sync_on_close="data",
     )
 
-    assert output_files == [tmp_path / f"{i}.{io_type['ext']}" for i in range(6)]
+    assert output_files == [tmp_path / f"{i:07x}.{io_type['ext']}" for i in range(6)]
 
 
 @pytest.mark.parametrize(("io_type"), io_types)
@@ -537,3 +537,11 @@ def test_finish_callback_nested_23306() -> None:
     )
 
     lf.sink_parquet(partitioning, mkdir=True)
+
+
+def test_parquet_preserve_order_within_partition_23376(tmp_path: Path) -> None:
+    ll = list(range(20))
+    df = pl.DataFrame({"a": ll})
+    df.lazy().sink_parquet(pl.PartitionMaxSize(tmp_path, max_size=1))
+    out = pl.scan_parquet(tmp_path).collect().to_series().to_list()
+    assert ll == out

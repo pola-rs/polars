@@ -6,7 +6,7 @@ use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -95,7 +95,8 @@ fn default_file_path_cb(
     _columns: Option<&[Column]>,
     _separator: char,
 ) -> PolarsResult<String> {
-    Ok(format!("{file_idx}.{ext}"))
+    polars_ensure!(file_idx < 1<<(7*4), ComputeError: "exceeded maximum file count (268,435,455)");
+    Ok(format!("{file_idx:07X}.{ext}"))
 }
 
 impl SinkNode for MaxSizePartitionSinkNode {
