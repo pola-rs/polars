@@ -230,16 +230,23 @@ pub fn python_object_serialize(
 
     use crate::python_function::PYTHON3_VERSION;
 
-    let use_cloudpickle = USE_CLOUDPICKLE.get();
+    let mut use_cloudpickle = USE_CLOUDPICKLE.get();
     let dumped = Python::with_gil(|py| {
         // Pickle with whatever pickling method was selected.
         if use_cloudpickle {
             let cloudpickle = PyModule::import(py, "cloudpickle")?.getattr("dumps")?;
-            cloudpickle.call1((pyobj.clone_ref(py),))
+            cloudpickle.call1((pyobj.clone_ref(py),))?
         } else {
             let pickle = PyModule::import(py, "pickle")?.getattr("dumps")?;
-            pickle.call1((pyobj.clone_ref(py),))
-        }?
+            match pickle.call1((pyobj.clone_ref(py),)) {
+                Ok(dumped) => dumped,
+                Err(_) => {
+                    use_cloudpickle = true;
+                    let cloudpickle = PyModule::import(py, "cloudpickle")?.getattr("dumps")?;
+                    cloudpickle.call1((pyobj.clone_ref(py),))?
+                },
+            }
+        }
         .extract::<PyBackedBytes>()
     })?;
 
