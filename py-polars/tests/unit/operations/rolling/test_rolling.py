@@ -1602,8 +1602,8 @@ def test_rolling_median_23480() -> None:
     vals = [None] * 17 + [3262645.8, 856191.4, 1635379.0, 34707156.0]
     evals = [None] * 19 + [1635379.0, (3262645.8 + 1635379.0) / 2]
     out = pl.DataFrame({"a": vals}).select(
-        r15 = pl.col("a").rolling_median(15, min_samples=3),
-        r17 = pl.col("a").rolling_median(17, min_samples=3),
+        r15=pl.col("a").rolling_median(15, min_samples=3),
+        r17=pl.col("a").rolling_median(17, min_samples=3),
     )
     expected = pl.DataFrame({"r15": evals, "r17": evals})
     assert_frame_equal(out, expected)

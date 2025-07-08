@@ -195,12 +195,11 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
     }
 
     // Note: range is not inclusive
-    pub fn index_range(
-        &self,
-        range: std::ops::Range<usize>,
-    ) -> impl Iterator<Item=Option<T>> {
-        let nonnull_range = range.start.saturating_sub(self.null_count)..range.end.saturating_sub(self.null_count);
-        (0..range.len() - nonnull_range.len()).map(|_| None)
+    pub fn index_range(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Option<T>> {
+        let nonnull_range =
+            range.start.saturating_sub(self.null_count)..range.end.saturating_sub(self.null_count);
+        (0..range.len() - nonnull_range.len())
+            .map(|_| None)
             .chain(self.buf.index_range(nonnull_range).map(|x| Some(*x)))
     }
 }
