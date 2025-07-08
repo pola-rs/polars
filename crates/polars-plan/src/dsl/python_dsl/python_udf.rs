@@ -54,6 +54,11 @@ impl PythonUdfExpression {
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
         use polars_utils::pl_serialize;
 
+        if !buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK) {
+            polars_bail!(InvalidOperation: "serialization expected python magic byte mark");
+        }
+        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
+
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataTypeExpr>, bool, bool) =
@@ -117,6 +122,9 @@ impl ColumnsUdf for PythonUdfExpression {
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         use polars_utils::pl_serialize;
+
+        // Write byte marks
+        buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
 
         // Write UDF metadata
         pl_serialize::serialize_into_writer::<_, _, true>(

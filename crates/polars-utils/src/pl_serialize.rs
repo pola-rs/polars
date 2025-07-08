@@ -228,10 +228,7 @@ pub fn python_object_serialize(
     use pyo3::pybacked::PyBackedBytes;
     use pyo3::types::{PyAnyMethods, PyModule};
 
-    use crate::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VERSION};
-
-    // Write byte marks
-    buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
+    use crate::python_function::PYTHON3_VERSION;
 
     Python::with_gil(|py| {
         // Pickle with whatever pickling method was selected.
@@ -257,16 +254,11 @@ pub fn python_object_serialize(
 
 #[cfg(feature = "python")]
 pub fn python_object_deserialize(buf: &[u8]) -> PolarsResult<pyo3::Py<pyo3::PyAny>> {
-    use polars_error::{polars_bail, polars_ensure};
+    use polars_error::polars_ensure;
     use pyo3::Python;
     use pyo3::types::{PyAnyMethods, PyBytes, PyModule};
 
-    use crate::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VERSION};
-
-    if !buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK) {
-        polars_bail!(InvalidOperation: "serialization expected python magic byte mark");
-    }
-    let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
+    use crate::python_function::PYTHON3_VERSION;
 
     // Handle pickle metadata
     let use_cloudpickle = buf[0] != 0;
