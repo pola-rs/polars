@@ -230,26 +230,26 @@ pub fn python_object_serialize(
 
     use crate::python_function::PYTHON3_VERSION;
 
-    Python::with_gil(|py| {
+    let use_cloudpickle = USE_CLOUDPICKLE.get();
+    let dumped = Python::with_gil(|py| {
         // Pickle with whatever pickling method was selected.
-        let use_cloudpickle = USE_CLOUDPICKLE.get();
-        let dumped = if use_cloudpickle {
+        if use_cloudpickle {
             let cloudpickle = PyModule::import(py, "cloudpickle")?.getattr("dumps")?;
-            cloudpickle.call1((pyobj.clone_ref(py),))?
+            cloudpickle.call1((pyobj.clone_ref(py),))
         } else {
             let pickle = PyModule::import(py, "pickle")?.getattr("dumps")?;
-            pickle.call1((pyobj.clone_ref(py),))?
-        };
+            pickle.call1((pyobj.clone_ref(py),))
+        }?
+        .extract::<PyBackedBytes>()
+    })?;
 
-        // Write pickle metadata
-        buf.push(use_cloudpickle as u8);
-        buf.extend_from_slice(&*PYTHON3_VERSION);
+    // Write pickle metadata
+    buf.push(use_cloudpickle as u8);
+    buf.extend_from_slice(&*PYTHON3_VERSION);
 
-        // Write UDF
-        let dumped = dumped.extract::<PyBackedBytes>().unwrap();
-        buf.extend_from_slice(&dumped);
-        Ok(())
-    })
+    // Write UDF
+    buf.extend_from_slice(&dumped);
+    Ok(())
 }
 
 #[cfg(feature = "python")]
@@ -276,11 +276,7 @@ pub fn python_object_deserialize(buf: &[u8]) -> PolarsResult<pyo3::Py<pyo3::PyAn
     let buf = &buf[3..];
 
     Python::with_gil(|py| {
-        let loads = if use_cloudpickle {
-            PyModule::import(py, "cloudpickle")?.getattr("loads")
-        } else {
-            PyModule::import(py, "pickle")?.getattr("loads")
-        }?;
+        let loads = PyModule::import(py, "pickle")?.getattr("loads")?;
         let arg = (PyBytes::new(py, buf),);
         let python_function = loads.call1(arg)?;
         Ok(python_function.into())

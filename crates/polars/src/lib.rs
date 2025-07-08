@@ -428,5 +428,8 @@ pub use polars_lazy as lazy;
 #[cfg(feature = "temporal")]
 pub use polars_time as time;
 
+#[doc(hidden)]
+pub use polars_utils;
+
 /// Polars crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
