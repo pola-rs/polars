@@ -12,7 +12,7 @@ pub fn search_sorted(
     let original_dtype = s.dtype();
 
     if s.dtype().is_categorical() {
-        // Hopefully to be fixed in https://github.com/pola-rs/polars/pull/22633
+        // See https://github.com/pola-rs/polars/issues/20171
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
 
