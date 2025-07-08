@@ -507,7 +507,7 @@ def test_finish_callback_nested_23306() -> None:
 
     partitioning = pl.PartitionByKey(
         "/",
-        file_path_cb=lambda _: io.BytesIO(),
+        file_path=lambda _: io.BytesIO(),
         by=["a", "b"],
         finish_callback=finish_callback,
     )
