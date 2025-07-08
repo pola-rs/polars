@@ -213,48 +213,50 @@ where
     let mut out: Vec<T> = Vec::with_capacity(primitive_length);
     let mut validity = MutableBitmap::from_len_set(from.len());
 
-    // Values for primitive array when values are NULL, so we don't leave
-    // uninitialized memory.
-    let empty = vec![T::default(); array_items];
-
     for (index, value) in from.iter().enumerate() {
         if let Some(value) = value
             && value.len() == element_size * array_items
         {
-            for j in 0..array_items {
-                let jth_bytes = &value[(j * element_size)..((j + 1) * element_size)];
-                // # Safety
-                // We just made sure that the slice has length `element_size`
-                let byte_array = unsafe { jth_bytes.try_into().unwrap_unchecked() };
-                let jth_value = if IS_LITTLE_ENDIAN {
-                    <T as FromBytes>::from_le_bytes(byte_array)
-                } else {
-                    <T as FromBytes>::from_be_bytes(byte_array)
-                };
-
-                let write_index = array_items * index + j;
+            if cfg!(target_endian = "little") && IS_LITTLE_ENDIAN {
+                // Fast path, we can just copy the data with no need to
+                // reinterpret.
+                let write_index = array_items * index;
                 debug_assert!(write_index < primitive_length);
+                debug_assert!((write_index + (array_items - 1)) < primitive_length);
                 // # Safety
                 // - The target index is smaller than the vector's pre-allocated capacity.
+                // - We made sure `value` has byte length `array_items * element_size`.
                 unsafe {
-                    std::ptr::write(out.as_mut_ptr().add(write_index), jth_value);
+                    copy_nonoverlapping(
+                        value.as_ptr(),
+                        out.as_mut_ptr().add(write_index) as *mut u8,
+                        value.len(),
+                    );
+                }
+            } else {
+                // Slow path, reinterpret items one by one.
+                for j in 0..array_items {
+                    let jth_bytes = &value[(j * element_size)..((j + 1) * element_size)];
+                    // # Safety
+                    // We just made sure that the slice has length `element_size`
+                    let byte_array = unsafe { jth_bytes.try_into().unwrap_unchecked() };
+                    let jth_value = if IS_LITTLE_ENDIAN {
+                        <T as FromBytes>::from_le_bytes(byte_array)
+                    } else {
+                        <T as FromBytes>::from_be_bytes(byte_array)
+                    };
+
+                    let write_index = array_items * index + j;
+                    debug_assert!(write_index < primitive_length);
+                    // # Safety
+                    // - The target index is smaller than the vector's pre-allocated capacity.
+                    unsafe {
+                        std::ptr::write(out.as_mut_ptr().add(write_index), jth_value);
+                    }
                 }
             }
         } else {
             validity.set(index, false);
-            let write_index = array_items * index;
-            debug_assert!(write_index < primitive_length);
-            debug_assert!((write_index + (array_items - 1)) < primitive_length);
-            // # Safety
-            // - The target index is smaller than the vector's pre-allocated capacity.
-            // - We made sure `empty` has length `array_items`.
-            unsafe {
-                copy_nonoverlapping(
-                    empty.as_ptr(),
-                    out.as_mut_ptr().add(write_index),
-                    array_items,
-                );
-            }
         };
     }
 
