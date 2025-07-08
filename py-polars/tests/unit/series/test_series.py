@@ -363,7 +363,6 @@ def test_date_agg() -> None:
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
     ],
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
     assert s.min() == min
     assert s.max() == max
@@ -1611,11 +1610,10 @@ def test_cast_datetime_to_time(unit: TimeUnit) -> None:
 
 
 def test_init_categorical() -> None:
-    with pl.StringCache():
-        for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
-            expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
-            a = pl.Series("a", values, dtype=pl.Categorical)
-            assert_series_equal(a, expected)
+    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+        expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
+        a = pl.Series("a", values, dtype=pl.Categorical)
+        assert_series_equal(a, expected)
 
 
 def test_iter_nested_list() -> None:

@@ -1168,7 +1168,6 @@ def test_sort_bool_nulls_last() -> None:
     )
 
 
-@pl.StringCache()
 @pytest.mark.parametrize(
     "dtype",
     [

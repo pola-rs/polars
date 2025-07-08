@@ -65,7 +65,6 @@ def test_dtype() -> None:
     ]
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical() -> None:
     # https://github.com/pola-rs/polars/issues/2038
     df = pl.DataFrame(
