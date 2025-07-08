@@ -73,8 +73,16 @@ impl<K> FixedIndexTable<K> {
         V: FnMut(Q, &mut K),
     {
         let tag = hash as u32;
-        let h1 = (hash >> self.shift) as usize;
-        let h2 = (hash.wrapping_mul(H2_MULT) >> self.shift) as usize;
+        let h1 = if (self.shift as u32) < u64::BITS {
+            (hash >> self.shift) as usize
+        } else {
+            0
+        };
+        let h2 = if (self.shift as u32) < u64::BITS {
+            (hash.wrapping_mul(H2_MULT) >> self.shift) as usize
+        } else {
+            0
+        };
 
         unsafe {
             // We only want a single branch for the hot hit/miss check. This is
