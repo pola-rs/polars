@@ -732,39 +732,83 @@ def test_rolling_window_size_zero_validation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
 
     # Test Series rolling functions with window_size=0
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
         s.rolling_sum(window_size=0)
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
         s.rolling_mean(window_size=0)
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
         s.rolling_std(window_size=0)
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
         s.rolling_min(window_size=0)
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
         s.rolling_max(window_size=0)
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
         s.rolling_var(window_size=0)
 
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        s.rolling_median(window_size=0)
+
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        s.rolling_quantile(window_size=0, quantile=0.5)
+
     # Test expression rolling functions with window_size=0
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
-        df.select(pl.col("a").rolling_sum(window_size=0)).collect()
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_sum(window_size=0))
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
-        df.select(pl.col("a").rolling_mean(window_size=0)).collect()
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_mean(window_size=0))
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
-        df.select(pl.col("a").rolling_std(window_size=0)).collect()
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_std(window_size=0))
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
-        df.select(pl.col("a").rolling_min(window_size=0)).collect()
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_min(window_size=0))
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
-        df.select(pl.col("a").rolling_max(window_size=0)).collect()
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_max(window_size=0))
 
-    with pytest.raises(InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"):
-        df.select(pl.col("a").rolling_var(window_size=0)).collect()
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_var(window_size=0))
+
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_median(window_size=0))
+
+    with pytest.raises(
+        InvalidOperationError, match=r"`window_size` must be strictly positive, got: 0"
+    ):
+        df.select(pl.col("a").rolling_quantile(window_size=0, quantile=0.5))
