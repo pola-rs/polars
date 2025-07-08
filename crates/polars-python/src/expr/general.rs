@@ -12,8 +12,9 @@ use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
 use super::datatype::PyDataTypeExpr;
+use super::selector::PySelector;
 use crate::PyExpr;
-use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
+use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::utils::EnterPolarsExt;
@@ -729,13 +730,6 @@ impl PyExpr {
     fn mode(&self) -> Self {
         self.inner.clone().mode().into()
     }
-    fn exclude(&self, columns: Vec<String>) -> Self {
-        self.inner.clone().exclude(columns).into()
-    }
-    fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        let dtypes = vec_extract_wrapped(dtypes);
-        self.inner.clone().exclude_dtype(&dtypes).into()
-    }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
     }
@@ -959,5 +953,23 @@ impl PyExpr {
                 inner: skip_batch_predicate,
             }))
         })
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    fn into_selector(&self) -> PyResult<PySelector> {
+        Ok(self
+            .inner
+            .clone()
+            .into_selector()
+            .ok_or_else(
+                || polars_err!(InvalidOperation: "expr `{}` is not a selector", &self.inner),
+            )
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
+    #[staticmethod]
+    fn new_selector(selector: PySelector) -> Self {
+        Expr::Selector(selector.inner).into()
     }
 }

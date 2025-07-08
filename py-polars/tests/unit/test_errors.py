@@ -427,21 +427,6 @@ def test_date_string_comparison(e: pl.Expr) -> None:
         df.select(e)
 
 
-def test_err_on_multiple_column_expansion() -> None:
-    # this would be a great feature :)
-    with pytest.raises(
-        ComputeError, match=r"expanding more than one `col` is not allowed"
-    ):
-        pl.DataFrame(
-            {
-                "a": [1],
-                "b": [2],
-                "c": [3],
-                "d": [4],
-            }
-        ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])])
-
-
 def test_compare_different_len() -> None:
     df = pl.DataFrame(
         {

@@ -16,6 +16,7 @@ use polars_python::cloud_client;
 use polars_python::cloud_server;
 use polars_python::dataframe::PyDataFrame;
 use polars_python::expr::datatype::PyDataTypeExpr;
+use polars_python::expr::selector::PySelector;
 use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
@@ -100,6 +101,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyDataTypeExpr>().unwrap();
+    m.add_class::<PySelector>().unwrap();
     m.add_class::<PyPartitioning>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "csv")]
@@ -207,18 +209,11 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::index_cols))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::duration))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::first)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::nth)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
