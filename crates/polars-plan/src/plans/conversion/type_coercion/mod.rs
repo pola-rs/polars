@@ -6,7 +6,10 @@ mod is_in;
 use binary::process_binary;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
+use polars_core::utils::{
+    get_numeric_upcast_supertype_lossless, get_supertype, get_supertype_with_options,
+    materialize_dyn_int,
+};
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
@@ -402,31 +405,10 @@ impl OptimizationRule for TypeCoercionRule {
                             }
                         },
                         CastingRules::FirstArgLossless => {
-                            if super_type.is_integer() {
-                                for other in &input[1..] {
-                                    let other =
-                                        other.dtype(schema, Context::Default, expr_arena)?;
-                                    if other.is_float() {
-                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
-                                    }
-                                    if let DataType::Unknown(UnknownKind::Int(value)) = other {
-                                        if !super_type.value_within_range(AnyValue::Int128(*value))
-                                        {
-                                            polars_bail!(InvalidOperation: "{} does not fit in a {}", value, super_type);
-                                        }
-                                    }
-                                }
-                            }
-                            if super_type.is_categorical() || super_type.is_enum() {
-                                for other in &input[1..] {
-                                    let other =
-                                        other.dtype(schema, Context::Default, expr_arena)?;
-                                    if !(other.is_string()
-                                        || other.is_null()
-                                        || *other == super_type)
-                                    {
-                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
-                                    }
+                            for other in &input[1..] {
+                                let other = other.dtype(schema, Context::Default, expr_arena)?;
+                                if !can_cast_to_lossless(&super_type, other) {
+                                    polars_bail!(InvalidOperation: "cannot cast lossless from {} to {}", other, super_type)
                                 }
                             }
                         },
@@ -1019,6 +1001,59 @@ fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Opt
     };
 
     Ok(out)
+}
+
+/// Can we cast the `from` dtype to the `to` dtype without losing information?
+fn can_cast_to_lossless(to: &DataType, from: &DataType) -> bool {
+    match (to, from) {
+        (a, b) if a == b => true,
+        (_, DataType::Null) => true,
+        (to, DataType::Unknown(UnknownKind::Int(value))) if to.is_integer() => {
+            to.value_within_range(AnyValue::Int128(*value))
+        },
+        (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
+        // Handles both String and UnknownKind::Str:
+        (DataType::String, from) => from.is_string(),
+        (to, from) if to.is_primitive_numeric() && from.is_primitive_numeric() => {
+            if let Some(upcast) = get_numeric_upcast_supertype_lossless(to, from) {
+                &upcast == to
+            } else {
+                false
+            }
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Enum(_, _), from) => from.is_string(),
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(_, _), from) => from.is_string(),
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => true,
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, _), DataType::Decimal(_, _)) => true,
+        // Can't check for more granular time_unit in less-granular time_unit
+        // data, or we'll cast away valid/necessary precision (eg: nanosecs to
+        // millisecs):
+        (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => lhs_unit <= rhs_unit,
+        (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => lhs_unit <= rhs_unit,
+        (DataType::List(to), DataType::List(from)) => can_cast_to_lossless(to, from),
+        #[cfg(feature = "dtype-array")]
+        (DataType::List(to), DataType::Array(from, _)) => can_cast_to_lossless(to, from),
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(to, _), DataType::List(from)) => can_cast_to_lossless(to, from),
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(to, to_count), DataType::Array(from, from_count)) => {
+            from_count == to_count && can_cast_to_lossless(to, from)
+        },
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(to_fields), DataType::Struct(from_fields)) => {
+            to_fields.len() == from_fields.len()
+                && to_fields
+                    .iter()
+                    .zip(from_fields.iter())
+                    .map(|(to, from)| can_cast_to_lossless(&to.dtype, &from.dtype))
+                    .all(|v| v)
+        },
+        _ => false,
+    }
 }
 
 #[cfg(test)]

@@ -155,7 +155,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     // @TAG: 2.0
                     // @HACK: `is_in` does supertype casting between primitive numerics, which
                     // honestly makes very little sense. To stay backwards compatible we keep this,
-                    // but please in 2.0 remove this.
+                    // but please in 2.0 remove this. FirstArgLossless might be a good alternative,
+                    // as used by index_of().
 
                     let super_type =
                         polars_core::utils::try_get_supertype(&type_left, type_other_inner)?;
