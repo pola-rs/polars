@@ -664,6 +664,7 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
 #[derive(Default)]
 pub struct NullGroupedReduction {
     length: usize,
+    num_evictions: usize,
 }
 
 impl GroupedReduction for NullGroupedReduction {
@@ -701,7 +702,9 @@ impl GroupedReduction for NullGroupedReduction {
         assert!(values.dtype() == &DataType::Null);
         assert!(subset.len() == group_idxs.len());
 
-        // no-op
+        for g in group_idxs {
+            self.num_evictions += g.should_evict() as usize;
+        }
         Ok(())
     }
 
@@ -718,7 +721,12 @@ impl GroupedReduction for NullGroupedReduction {
     }
 
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::default())
+        let out = Box::new(Self {
+            length: self.num_evictions,
+            num_evictions: 0,
+        });
+        self.num_evictions = 0;
+        out
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

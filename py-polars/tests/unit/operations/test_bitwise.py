@@ -331,7 +331,7 @@ def test_bitwise_boolean(expr: pl.Expr, result: list[bool]) -> None:
 # POLARS_MAX_THREADS is only honored when tested in isolation, see issue #22070
 def test_bitwise_boolean_evict_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_MAX_THREADS", "1")
-    monkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "1")
+    monkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
     n_groups = 100
     group_size_pairs = 10
     group_size = group_size_pairs * 2
