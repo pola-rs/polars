@@ -62,6 +62,7 @@ def test_array_in_group_by() -> None:
         }
 
 
+@pytest.mark.may_fail_cloud
 def test_array_invalid_operation() -> None:
     s = pl.Series(
         [[1, 2], [8, 9]],

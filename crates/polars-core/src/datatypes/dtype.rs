@@ -518,6 +518,10 @@ impl DataType {
         matches!(self, DataType::Datetime(..))
     }
 
+    pub fn is_duration(&self) -> bool {
+        matches!(self, DataType::Duration(..))
+    }
+
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
@@ -605,19 +609,13 @@ impl DataType {
 
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
-        #[cfg(feature = "dtype-categorical")]
-        let is_cat = matches!(self, DataType::Categorical(_, _) | DataType::Enum(_, _)); // TODO @ cat-rework: is this right? Why not sortable?
-        #[cfg(not(feature = "dtype-categorical"))]
-        let is_cat = false;
-
         let phys = self.to_physical();
-        (phys.is_primitive_numeric()
+        phys.is_primitive_numeric()
             || self.is_decimal()
             || matches!(
                 phys,
                 DataType::Binary | DataType::String | DataType::Boolean
-            ))
-            && !is_cat
+            )
     }
 
     /// Check if this [`DataType`] is a Decimal type (of any scale/precision).

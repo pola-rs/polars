@@ -39,7 +39,7 @@ impl IRFunctionExpr {
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 IRPowFunction::Generic => mapper.pow_dtype(),
-                _ => mapper.map_to_float_dtype(),
+                _ => mapper.map_numeric_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
@@ -64,7 +64,8 @@ impl IRFunctionExpr {
                 use IRRollingFunction::*;
                 match function {
                     Min | Max => mapper.with_same_dtype(),
-                    Mean | Quantile | Var | Std => mapper.map_to_float_dtype(),
+                    Mean | Quantile | Std => mapper.moment_dtype(),
+                    Var => mapper.var_dtype(),
                     Sum => mapper.sum_dtype(),
                     #[cfg(feature = "cov")]
                     CorrCov {..} => mapper.map_to_float_dtype(),
@@ -77,7 +78,8 @@ impl IRFunctionExpr {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
-                    MeanBy | QuantileBy | VarBy | StdBy=> mapper.map_to_float_dtype(),
+                    MeanBy | QuantileBy | StdBy=> mapper.moment_dtype(),
+                    VarBy => mapper.var_dtype(),
                     SumBy => mapper.sum_dtype(),
                 }
             },
@@ -354,13 +356,13 @@ impl IRFunctionExpr {
                 })
             }
             #[cfg(feature = "ewma")]
-            EwmMean { .. } => mapper.map_to_float_dtype(),
+            EwmMean { .. } => mapper.map_numeric_to_float_dtype(),
             #[cfg(feature = "ewma_by")]
-            EwmMeanBy { .. } => mapper.map_to_float_dtype(),
+            EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(),
             #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_to_float_dtype(),
+            EwmStd { .. } => mapper.map_numeric_to_float_dtype(),
             #[cfg(feature = "ewma")]
-            EwmVar { .. } => mapper.map_to_float_dtype(),
+            EwmVar { .. } => mapper.var_dtype(),
             #[cfg(feature = "replace")]
             Replace => mapper.with_same_dtype(),
             #[cfg(feature = "replace")]
@@ -432,6 +434,48 @@ impl<'a> FieldsMapper<'a> {
         func(&self.fields[0])
     }
 
+    pub fn var_dtype(&self) -> PolarsResult<Field> {
+        if self.fields[0].dtype().leaf_dtype().is_duration() {
+            let map_inner = |dt: &DataType| match dt {
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(_) => DataType::Duration(TimeUnit::Milliseconds),
+                dt => dt.clone(),
+            };
+
+            self.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(inner, _) => map_inner(inner),
+                DataType::List(inner) => map_inner(inner),
+                _ => map_inner(dt),
+            })
+        } else {
+            self.moment_dtype()
+        }
+    }
+
+    pub fn moment_dtype(&self) -> PolarsResult<Field> {
+        let map_inner = |dt: &DataType| match dt {
+            #[cfg(feature = "dtype-datetime")]
+            dt @ DataType::Datetime(_, _) => dt.clone(),
+            #[cfg(feature = "dtype-duration")]
+            dt @ DataType::Duration(_) => dt.clone(),
+            #[cfg(feature = "dtype-time")]
+            dt @ DataType::Time => dt.clone(),
+            DataType::Float32 => DataType::Float32,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(..) => DataType::Float64,
+            DataType::Boolean => DataType::Float64,
+            _ => DataType::Float64,
+        };
+
+        self.map_dtype(|dt| match dt {
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => map_inner(inner),
+            DataType::List(inner) => map_inner(inner),
+            _ => map_inner(dt),
+        })
+    }
+
     /// Map to a float supertype.
     pub fn map_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| match dtype {
@@ -442,14 +486,19 @@ impl<'a> FieldsMapper<'a> {
 
     /// Map to a float supertype if numeric, else preserve
     pub fn map_numeric_to_float_dtype(&self) -> PolarsResult<Field> {
-        self.map_dtype(|dtype| {
-            if dtype.is_primitive_numeric() {
-                match dtype {
-                    DataType::Float32 => DataType::Float32,
-                    _ => DataType::Float64,
-                }
+        self.map_dtype(|dt| {
+            let should_coerce = match dt {
+                DataType::Float32 => false,
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(..) => true,
+                DataType::Boolean => true,
+                dt => dt.is_primitive_numeric(),
+            };
+
+            if should_coerce {
+                DataType::Float64
             } else {
-                dtype.clone()
+                dt.clone()
             }
         })
     }
