@@ -84,9 +84,7 @@ impl AsRef<Expr> for AggExpr {
 pub enum Expr {
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
-    Columns(Arc<[PlSmallStr]>),
-    DtypeColumn(Vec<DataType>),
-    IndexColumn(Arc<[i64]>),
+    Selector(Selector),
     Literal(LiteralValue),
     BinaryExpr {
         left: Arc<Expr>,
@@ -142,21 +140,15 @@ pub enum Expr {
         order_by: Option<(Arc<Expr>, SortOptions)>,
         options: WindowType,
     },
-    Wildcard,
     Slice {
         input: Arc<Expr>,
         /// length is not yet known so we accept negative offsets
         offset: Arc<Expr>,
         length: Arc<Expr>,
     },
-    /// Can be used in a select statement to exclude a column from selection
-    /// TODO: See if we can replace `Vec<Excluded>` with `Arc<Excluded>`
-    Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
-    /// Take the nth column in the `DataFrame`
-    Nth(i64),
     #[cfg(feature = "dtype-struct")]
     Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
@@ -181,13 +173,6 @@ pub enum Expr {
         variant: EvalVariant,
     },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
-    /// Expressions in this node should only be expanding
-    /// e.g.
-    /// `Expr::Columns`
-    /// `Expr::Dtypes`
-    /// `Expr::Wildcard`
-    /// `Expr::Exclude`
-    Selector(super::selector::Selector),
     RenameAlias {
         function: RenameAliasFn,
         expr: Arc<Expr>,
@@ -266,12 +251,12 @@ impl Hash for Expr {
         d.hash(state);
         match self {
             Expr::Column(name) => name.hash(state),
-            Expr::Columns(names) => names.hash(state),
-            Expr::DtypeColumn(dtypes) => dtypes.hash(state),
-            Expr::IndexColumn(indices) => indices.hash(state),
+            // Expr::Columns(names) => names.hash(state),
+            // Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            // Expr::IndexColumn(indices) => indices.hash(state),
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
-            Expr::Nth(v) => v.hash(state),
+            // Expr::Nth(v) => v.hash(state),
             Expr::Filter { input, by } => {
                 input.hash(state);
                 by.hash(state);
@@ -322,7 +307,7 @@ impl Hash for Expr {
                 returns_scalar.hash(state);
             },
             // already hashed by discriminant
-            Expr::Wildcard | Expr::Len => {},
+            Expr::Len => {},
             Expr::SortBy {
                 expr,
                 by,
@@ -357,10 +342,10 @@ impl Hash for Expr {
                 offset.hash(state);
                 length.hash(state);
             },
-            Expr::Exclude(input, excl) => {
-                input.hash(state);
-                excl.hash(state);
-            },
+            // Expr::Exclude(input, excl) => {
+            //     input.hash(state);
+            //     excl.hash(state);
+            // },
             Expr::RenameAlias { function, expr } => {
                 function.hash(state);
                 expr.hash(state);
@@ -425,6 +410,28 @@ impl Expr {
         let (node, output_name) = expr.into_inner();
         let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
+    }
+
+    pub fn into_selector(self) -> Option<Selector> {
+        match self {
+            Expr::Column(name) => Some(Selector::ByName {
+                names: [name].into(),
+                strict: true,
+            }),
+            Expr::Selector(selector) => Some(selector),
+            _ => None,
+        }
+    }
+
+    pub fn try_into_selector(self) -> PolarsResult<Selector> {
+        match self {
+            Expr::Column(name) => Ok(Selector::ByName {
+                names: [name].into(),
+                strict: true,
+            }),
+            Expr::Selector(selector) => Ok(selector),
+            expr => Err(polars_err!(InvalidOperation: "cannot turn `{expr}` into selector")),
+        }
     }
 
     /// Extract a constant usize from an expression.

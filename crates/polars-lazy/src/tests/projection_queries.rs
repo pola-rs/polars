@@ -28,7 +28,7 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
         .right_on([col("id")])
         .suffix("_sire")
         .finish()
-        .drop(["sireid"])
+        .drop(cols(["sireid"]))
         .collect()?;
 
     assert_eq!(out.shape(), (1, 3));

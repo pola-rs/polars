@@ -1,7 +1,6 @@
 use pyo3::prelude::*;
 
 use crate::PyExpr;
-use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 
 #[pymethods]
@@ -27,14 +26,9 @@ impl PyExpr {
         self.inner.clone().struct_().json_encode().into()
     }
 
-    fn struct_with_fields(&self, fields: Vec<PyExpr>) -> PyResult<Self> {
+    fn struct_with_fields(&self, fields: Vec<PyExpr>) -> Self {
         let fields = fields.to_exprs();
-        let e = self
-            .inner
-            .clone()
-            .struct_()
-            .with_fields(fields)
-            .map_err(PyPolarsErr::from)?;
-        Ok(e.into())
+        let e = self.inner.clone().struct_().with_fields(fields);
+        e.into()
     }
 }
