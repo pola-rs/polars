@@ -1278,9 +1278,9 @@ impl IRFunctionExpr {
                 FunctionOptions::aggregation().with_casting_rules(CastingRules::FirstArgLossless)
             },
             #[cfg(feature = "search_sorted")]
-            F::SearchSorted { .. } => {
-                FunctionOptions::groupwise().with_casting_rules(CastingRules::FirstArgLossless)
-            },
+            F::SearchSorted { .. } => FunctionOptions::groupwise().with_supertyping(
+                (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+            ),
             #[cfg(feature = "trigonometry")]
             F::Trigonometry(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "trigonometry")]
