@@ -494,3 +494,22 @@ def test_partition_to_memory_finish_callback(io_type: IOType) -> None:
             ),
         )
     assert num_calls == 1  # Should not get called here
+
+
+def test_finish_callback_nested_23306() -> None:
+    data = [{"a": "foo", "b": "bar", "c": ["hello", "ciao", "hola", "bonjour"]}]
+
+    lf = pl.LazyFrame(data)
+
+    def finish_callback(df: None | pl.DataFrame = None) -> None:
+        assert df is not None
+        assert df.height == 1
+
+    partitioning = pl.PartitionByKey(
+        "/",
+        file_path_cb=lambda _: io.BytesIO(),
+        by=["a", "b"],
+        finish_callback=finish_callback,
+    )
+
+    lf.sink_parquet(partitioning, mkdir=True)

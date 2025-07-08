@@ -54,6 +54,14 @@ impl SeriesBuilder {
         self.builder.len() == 0
     }
 
+    pub fn dtype(&self) -> &DataType {
+        &self.dtype
+    }
+    /// Extend this builder with the given number of null elements.
+    pub fn extend_nulls(&mut self, length: usize) {
+        self.builder.extend_nulls(length);
+    }
+
     /// Extends this builder with the contents of the given series. May panic if
     /// other does not match the dtype of this builder.
     #[inline(always)]
