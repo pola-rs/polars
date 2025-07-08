@@ -161,10 +161,6 @@ where
     T: FromBytes + NativeType,
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
-    // It would be nice to have a fast path that just use a memory copy.
-    // However, that is only possible if all the binaryviews are the correct
-    // length, and checking that requires iterating over all of them, so it's
-    // not obvious that would actually be much of a speed up.
     let iter = from.iter().map(|x| {
         x.and_then::<T, _>(|x| {
             if is_little_endian {
@@ -213,16 +209,6 @@ where
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let element_size = std::mem::size_of::<T>();
-    let from_bytes = if IS_LITTLE_ENDIAN {
-        <T as FromBytes>::from_le_bytes
-    } else {
-        <T as FromBytes>::from_be_bytes
-    };
-
-    // It would be nice to have a fast path that just use a memory copy.
-    // However, that is only possible if all the binaryviews are the correct
-    // length, and checking that requires iterating over all of them, so it's
-    // not obvious that would actually be much of a speed up.
     let primitive_length = from.len() * array_items;
     let mut out: Vec<T> = Vec::with_capacity(primitive_length);
     let mut validity = MutableBitmap::from_len_set(from.len());
@@ -240,7 +226,11 @@ where
                 // # Safety
                 // We just made sure that the slice has length `element_size`
                 let byte_array = unsafe { jth_bytes.try_into().unwrap_unchecked() };
-                let jth_value = from_bytes(byte_array);
+                let jth_value = if IS_LITTLE_ENDIAN {
+                    <T as FromBytes>::from_le_bytes(byte_array)
+                } else {
+                    <T as FromBytes>::from_be_bytes(byte_array)
+                };
 
                 let write_index = array_items * index + j;
                 debug_assert!(write_index < primitive_length);
