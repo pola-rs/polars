@@ -426,7 +426,6 @@ def test_is_in_date_range() -> None:
     assert out.to_list() == [False, True, True]
 
 
-
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_cat_is_in_series(dtype: pl.DataType, nulls_equal: bool) -> None:

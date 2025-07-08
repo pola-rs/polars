@@ -230,9 +230,7 @@ def test_filter_logical_type_13194() -> None:
         ],
     }
 
-    df = pl.DataFrame(data).with_columns(
-        pl.col("cat").cast(pl.List(pl.Categorical()))
-    )
+    df = pl.DataFrame(data).with_columns(pl.col("cat").cast(pl.List(pl.Categorical())))
 
     df = df.filter(pl.col("id") == pl.col("id").shift(1))
     expected_df = pl.DataFrame(

@@ -10,7 +10,6 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-
 def test_categorical_full_outer_join() -> None:
     df1 = pl.DataFrame(
         [
@@ -144,7 +143,6 @@ def test_categorical_equality(
         (pl.Series.ne_missing, pl.Series([True, True, True, True, True, True])),
     ],
 )
-
 def test_categorical_equality_global_fastpath(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -175,7 +173,6 @@ def test_categorical_equality_global_fastpath(
         ),
     ],
 )
-
 def test_categorical_global_ordering(
     op: Callable[[pl.Series, pl.Series], pl.Series],
     expected_lexical: pl.Series,
@@ -201,7 +198,6 @@ def test_categorical_global_ordering(
         (operator.gt, pl.Series([True, False, True])),
     ],
 )
-
 def test_categorical_global_ordering_broadcast_rhs(
     op: Callable[[pl.Series, pl.Series], pl.Series],
     expected_lexical: pl.Series,
@@ -228,7 +224,6 @@ def test_categorical_global_ordering_broadcast_rhs(
         ),
     ],
 )
-
 def test_categorical_global_ordering_broadcast_lhs(
     op: Callable[[pl.Series, pl.Series], pl.Series],
     expected_lexical: pl.Series,
@@ -313,7 +308,6 @@ def test_compare_categorical_single(
         (pl.Series.eq_missing, pl.Series([False, False, False, False, False, False])),
     ],
 )
-
 def test_compare_categorical_single_non_existent(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -356,7 +350,6 @@ def test_compare_categorical_single_non_existent(
         (pl.Series.eq_missing, pl.Series([True, False, False, False, False, False])),
     ],
 )
-
 def test_compare_categorical_single_none(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -380,7 +373,6 @@ def test_cast_null_to_categorical() -> None:
     assert pl.DataFrame().with_columns(
         pl.lit(None).cast(pl.Categorical).alias("nullable_enum")
     ).dtypes == [pl.Categorical]
-
 
 
 def test_merge_lit_under_global_cache_4491() -> None:
@@ -540,9 +532,7 @@ def test_fast_unique_flag_from_arrow() -> None:
         }
     ).with_columns([pl.col("colB").cast(pl.Categorical)])
 
-    filtered = df.to_arrow().filter(
-        [True, False, True, True, False, True, True, True]
-    )
+    filtered = df.to_arrow().filter([True, False, True, True, False, True, True, True])
     assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4  # type: ignore[union-attr]
 
 
@@ -785,9 +775,7 @@ def test_categorical_unique() -> None:
 
 
 def test_categorical_unique_20539() -> None:
-    df = pl.DataFrame(
-        {"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]}
-    )
+    df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})
 
     result = (
         df.cast({"letter": pl.Categorical})

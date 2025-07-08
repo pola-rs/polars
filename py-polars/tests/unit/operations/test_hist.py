@@ -10,7 +10,6 @@ from polars.testing import assert_frame_equal
 inf = float("inf")
 
 
-
 def test_hist_empty_data_no_inputs() -> None:
     s = pl.Series([], dtype=pl.UInt8)
 
@@ -42,7 +41,6 @@ def test_hist_empty_data_no_inputs() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_empty_data_empty_bins() -> None:
     s = pl.Series([], dtype=pl.UInt8)
 
@@ -56,7 +54,6 @@ def test_hist_empty_data_empty_bins() -> None:
     )
     result = s.hist(bins=[])
     assert_frame_equal(result, expected)
-
 
 
 def test_hist_empty_data_single_bin_edge() -> None:
@@ -74,7 +71,6 @@ def test_hist_empty_data_single_bin_edge() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_empty_data_valid_edges() -> None:
     s = pl.Series([], dtype=pl.UInt8)
 
@@ -90,19 +86,16 @@ def test_hist_empty_data_valid_edges() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_empty_data_invalid_edges() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     with pytest.raises(ComputeError, match="bins must increase monotonically"):
         s.hist(bins=[1, 0])  # invalid order
 
 
-
 def test_hist_empty_data_bad_bin_count() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     with pytest.raises(OverflowError, match="can't convert negative int to unsigned"):
         s.hist(bin_count=-1)  # invalid order
-
 
 
 def test_hist_empty_data_zero_bin_count() -> None:
@@ -118,7 +111,6 @@ def test_hist_empty_data_zero_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_empty_data_single_bin_count() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     expected = pl.DataFrame(
@@ -130,7 +122,6 @@ def test_hist_empty_data_single_bin_count() -> None:
     )
     result = s.hist(bin_count=1)
     assert_frame_equal(result, expected)
-
 
 
 def test_hist_empty_data_valid_bin_count() -> None:
@@ -155,19 +146,16 @@ def test_hist_empty_data_valid_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_invalid_bin_count() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     with pytest.raises(OverflowError, match="can't convert negative int to unsigned"):
         s.hist(bin_count=-1)  # invalid order
 
 
-
 def test_hist_invalid_bins() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     with pytest.raises(ComputeError, match="bins must increase monotonically"):
         s.hist(bins=[1, 0])  # invalid order
-
 
 
 def test_hist_bin_outside_data() -> None:
@@ -183,7 +171,6 @@ def test_hist_bin_outside_data() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_bins_between_data() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[4.5, 10.5])
@@ -197,7 +184,6 @@ def test_hist_bins_between_data() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_bins_first_edge() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[2, 3, 4])
@@ -209,7 +195,6 @@ def test_hist_bins_first_edge() -> None:
         }
     )
     assert_frame_equal(result, expected)
-
 
 
 def test_hist_bins_last_edge() -> None:
@@ -232,7 +217,6 @@ def test_hist_bins_last_edge() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_single_value_single_bin_count() -> None:
     s = pl.Series([1], dtype=pl.Int32)
     result = s.hist(bin_count=1)
@@ -246,7 +230,6 @@ def test_hist_single_value_single_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_single_bin_count() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bin_count=1)
@@ -258,7 +241,6 @@ def test_hist_single_bin_count() -> None:
         }
     )
     assert_frame_equal(result, expected)
-
 
 
 def test_hist_partial_covering() -> None:
@@ -276,7 +258,6 @@ def test_hist_partial_covering() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_hist_full_covering() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[-5.5, 2.5, 50, 105])
@@ -290,7 +271,6 @@ def test_hist_full_covering() -> None:
         }
     )
     assert_frame_equal(result, expected)
-
 
 
 def test_hist_more_bins_than_data() -> None:
@@ -312,7 +292,6 @@ def test_hist_more_bins_than_data() -> None:
         }
     )
     assert_frame_equal(result, expected)
-
 
 
 def test_hist() -> None:

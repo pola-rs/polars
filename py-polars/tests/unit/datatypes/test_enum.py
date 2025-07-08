@@ -267,7 +267,6 @@ def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 
 
-
 def test_casting_to_an_enum_from_global_categorical() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
@@ -276,7 +275,6 @@ def test_casting_to_an_enum_from_global_categorical() -> None:
     assert s2.null_count() == 1
     expected = pl.Series([None, "a", "b", "c"], dtype=dtype)
     assert_series_equal(s2, expected)
-
 
 
 def test_casting_to_an_enum_from_global_categorical_nonexistent() -> None:
@@ -295,7 +293,6 @@ def test_casting_from_an_enum_to_local() -> None:
     s2 = s.cast(pl.Categorical)
     expected = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
     assert_series_equal(s2, expected)
-
 
 
 def test_casting_from_an_enum_to_global() -> None:

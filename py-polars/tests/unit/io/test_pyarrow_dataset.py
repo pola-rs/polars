@@ -176,9 +176,7 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("cat").is_in([])).select(
-            "bools", "floats", "date"
-        ),
+        lambda lf: lf.filter(pl.col("cat").is_in([])).select("bools", "floats", "date"),
         n_expected=0,
     )
     helper_dataset_test(
