@@ -30,12 +30,13 @@ fn rolling_agg<T>(
 where
     T: PolarsNumericType,
 {
-    polars_ensure!(
-        options.window_size > 0,
-        InvalidOperation: "`window_size` must be strictly positive, got: {}",
-        options.window_size
-    );
-    polars_ensure!(options.min_periods <= options.window_size, InvalidOperation: "`min_periods` should be <= `window_size`");
+    // Allow window_size=0 for compatibility - it should return empty results like empty series
+    // Only check that min_periods is valid if window_size > 0
+    if options.window_size > 0 {
+        polars_ensure!(options.min_periods <= options.window_size, InvalidOperation: "`min_periods` should be <= `window_size`");
+    } else if options.min_periods > 0 {
+        polars_ensure!(false, InvalidOperation: "`min_periods` must be 0 when `window_size` is 0");
+    }
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
@@ -90,7 +91,8 @@ where
     polars_ensure!(by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
     polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
     ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
-    polars_ensure!(!options.window_size.is_zero() && !options.window_size.negative, InvalidOperation: "`window_size` must be strictly positive");
+    polars_ensure!(!options.window_size.negative, InvalidOperation: "`window_size` must not be negative");
+    // Allow window_size=0 for dynamic windows - should return empty results
     let (by, tz) = match by.dtype() {
         DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
         DataType::Date => (
