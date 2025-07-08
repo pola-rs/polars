@@ -310,7 +310,6 @@ def test_hist() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_hist_all_null() -> None:
     s = pl.Series([None], dtype=pl.Float64)
     out = s.hist()
@@ -342,7 +341,6 @@ def test_hist_all_null() -> None:
 
 @pytest.mark.parametrize("n_null", [0, 5])
 @pytest.mark.parametrize("n_values", [3, 10, 250])
-@pytest.mark.may_fail_auto_streaming
 def test_hist_rand(n_values: int, n_null: int) -> None:
     s_rand = pl.Series([None] * n_null, dtype=pl.Int64)
     s_values = pl.Series(np.random.randint(0, 100, n_values), dtype=pl.Int64)
@@ -422,7 +420,6 @@ def test_hist_max_boundary_20133() -> None:
     assert result["count"].sum() == 2
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_hist_same_values_20030() -> None:
     out = pl.Series([1, 1]).hist(bin_count=2)
     expected = pl.DataFrame(
@@ -435,7 +432,6 @@ def test_hist_same_values_20030() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_hist_breakpoint_accuracy() -> None:
     s = pl.Series([1, 2, 3, 4])
     out = s.hist(bin_count=3)
