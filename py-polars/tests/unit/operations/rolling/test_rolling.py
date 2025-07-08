@@ -1598,6 +1598,7 @@ def test_rolling_quantile_nearest_with_nulls_23932() -> None:
     assert_series_equal(out["a"], expected)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
     values: list[float | None] = [
