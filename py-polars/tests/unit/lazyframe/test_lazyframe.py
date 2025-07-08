@@ -362,6 +362,7 @@ def test_fetch(fruits_cars: pl.DataFrame) -> None:
     assert_frame_equal(res, res[:2])
 
 
+@pytest.mark.may_fail_cloud  # TODO: make pickleable
 def test_fold_filter() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
@@ -432,7 +433,7 @@ def test_head_group_by() -> None:
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(pl.col("*").exclude(keys))
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.collect().rows() == [

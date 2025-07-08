@@ -5,6 +5,7 @@ use std::sync::Arc;
 use arrow::datatypes::ArrowDataType;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, IDX_DTYPE, IntoColumn};
+use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::datatypes::ArrowSchemaRef;
@@ -20,10 +21,13 @@ use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::async_executor;
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
+use crate::nodes::io_sources::multi_file_reader::extra_ops::cast_columns::CastColumns;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::parquet::PredicateApplyMode;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
 
+#[expect(clippy::too_many_arguments)]
 async fn calculate_row_group_pred_pushdown_skip_mask(
     row_group_slice: Range<usize>,
     use_statistics: bool,
@@ -31,6 +35,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
     metadata: &Arc<FileMetadata>,
     reader_schema: &ArrowSchemaRef,
     mut row_index: Option<RowIndex>,
+    cast_columns: Option<(CastColumns, SchemaRef)>,
     verbose: bool,
 ) -> PolarsResult<Option<Bitmap>> {
     if !use_statistics {
@@ -49,6 +54,9 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
     let metadata = metadata.clone();
     let live_columns = predicate.live_columns.clone();
     let reader_schema = reader_schema.clone();
+
+    // Note: We are spawning here onto the computational async runtime because the caller is being run
+    // on a tokio async thread.
     let skip_row_group_mask = async_executor::spawn(TaskPriority::High, async move {
         if let Some(ri) = &mut row_index {
             for md in metadata.row_groups[0..row_group_slice.start].iter() {
@@ -129,7 +137,12 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
             columns.extend([min, max, nc]);
         }
 
-        let statistics_df = DataFrame::new_with_height(num_row_groups, columns)?;
+        let mut statistics_df = DataFrame::new_with_height(num_row_groups, columns)?;
+
+        if let Some((cast_columns, file_schema)) = cast_columns {
+            cast_columns.apply_cast_to_statistics(&mut statistics_df, &file_schema)?;
+        }
+
         sbp.evaluate_with_stat_df(&statistics_df)
     })
     .await?;
@@ -192,6 +205,7 @@ impl ParquetReadImpl {
             tokio::sync::mpsc::channel(row_group_prefetch_size);
 
         let row_index = self.row_index.clone();
+        let live_filter_columns_cast = self.live_filter_columns_cast.take();
 
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
             polars_ensure!(
@@ -255,6 +269,7 @@ impl ParquetReadImpl {
                 &metadata,
                 &reader_schema,
                 row_index,
+                live_filter_columns_cast,
                 verbose,
             )
             .await?;
@@ -365,18 +380,23 @@ impl ParquetReadImpl {
     /// This must be called AFTER the following have been initialized:
     /// * `self.projected_arrow_schema`
     /// * `self.physical_predicate`
-    pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
+    pub(super) fn init_row_group_decoder(&mut self) -> RowGroupDecoder {
         let projected_arrow_schema = self.projected_arrow_schema.clone();
         let row_index = self.row_index.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 
+        let predicate = match self.predicate_apply_mode {
+            PredicateApplyMode::StatisticsOnly => None,
+            PredicateApplyMode::Full => self.predicate.clone(),
+        };
+
         let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
         use_prefiltered |=
-            self.predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
+            predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
 
         let mut predicate_arrow_field_indices = vec![];
         if use_prefiltered {
-            if let Some(predicate) = self.predicate.as_ref() {
+            if let Some(predicate) = predicate.as_ref() {
                 predicate_arrow_field_indices = predicate
                     .live_columns
                     .iter()
@@ -413,7 +433,7 @@ impl ParquetReadImpl {
             num_pipelines: self.config.num_pipelines,
             projected_arrow_schema,
             row_index,
-            predicate: self.predicate.clone(),
+            predicate,
             use_prefiltered,
             predicate_arrow_field_indices,
             non_predicate_arrow_field_indices,

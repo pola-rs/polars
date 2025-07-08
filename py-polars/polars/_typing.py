@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from polars.dependencies import pyarrow as pa
     from polars.dependencies import torch
     from polars.lazyframe.engine_config import GPUEngine
-    from polars.selectors import _selector_proxy_
+    from polars.selectors import Selector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyPartitioning
@@ -96,7 +96,7 @@ IntoExpr: TypeAlias = Union[PythonLiteral, IntoExprColumn, None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # selector type, and related collection/sequence
-SelectorType: TypeAlias = "_selector_proxy_"
+SelectorType: TypeAlias = "Selector"
 ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
 
 # User-facing string literal types

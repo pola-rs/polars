@@ -41,7 +41,7 @@ impl Default for RankOptions {
 
 #[cfg(feature = "random")]
 fn get_random_seed() -> u64 {
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SmallRng::from_os_rng();
 
     rng.next_u64()
 }

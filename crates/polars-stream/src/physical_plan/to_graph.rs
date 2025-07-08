@@ -995,9 +995,7 @@ fn to_graph_rec<'a>(
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
-            let sources = ScanSources::Paths(Arc::from([PlPath::from_string(
-                "python-scan-0".to_string(),
-            )]));
+            let sources = ScanSources::Paths(Arc::from([PlPath::from_str("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
             let projected_file_schema = output_schema.clone();

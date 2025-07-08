@@ -408,7 +408,7 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
-    assert df.schema == {"key": pl.Categorical(ordering="physical"), "val": pl.Float64}
+    assert df.schema == {"key": pl.Categorical(ordering="lexical"), "val": pl.Float64}
 
 
 def test_group_by_custom_agg_empty_list() -> None:
@@ -1361,3 +1361,25 @@ def test_group_by_empty_groups_23338() -> None:
     )
     expected = df.group_by("k").agg(pl.col("a").filter(pl.col("a") == 1).sum())
     assert_frame_equal(out.sort("k"), expected.sort("k"))
+
+
+def test_group_by_filter_all_22955() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": [1, 2, 3, 4, 5],
+            "value": [10, 20, 30, 40, 50],
+        }
+    )
+
+    assert_frame_equal(
+        df.group_by("grp").agg(
+            pl.all().filter(pl.col("value") > 20),
+        ),
+        pl.DataFrame(
+            {
+                "grp": [1, 2, 3, 4, 5],
+                "value": [[], [], [30], [40], [50]],
+            }
+        ),
+        check_row_order=False,
+    )

@@ -5,6 +5,7 @@ import polars as pl
 
 # TODO: remove this skip when streaming raises
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_raise_invalid_shape_19108() -> None:
     df = pl.DataFrame({"foo": [1, 2], "bar": [3, 4]})
     with pytest.raises(pl.exceptions.ShapeError):

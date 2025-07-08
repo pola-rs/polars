@@ -130,7 +130,7 @@ by a value column (`v1`). In pandas this would be:
 
 ```python
 df = pd.read_csv(csv_file, usecols=["id1","v1"])
-grouped_df = df.loc[:,["id1","v1"]].groupby("id1").sum("v1")
+grouped_df = df.loc[:,["id1","v1"]].groupby("id1").sum()
 ```
 
 In Polars you can build this query in lazy mode with query optimization and evaluate it by replacing

@@ -58,7 +58,7 @@ pub fn datetime_range_impl(
         _ => out.into_datetime(tu, None),
     };
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
@@ -89,7 +89,7 @@ pub fn time_range_impl(
     )
     .into_time();
 
-    out.set_sorted_flag(IsSorted::Ascending);
+    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 

@@ -272,14 +272,12 @@ impl PyTemporalFunction {
 #[pyclass(name = "StructFunction", eq)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
-    FieldByIndex,
     FieldByName,
     RenameFields,
     PrefixFields,
     SuffixFields,
     JsonEncode,
     WithFields,
-    MultipleFields,
     MapFieldNames,
 }
 
@@ -914,9 +912,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                 },
                 IRFunctionExpr::StructExpr(fun) => match fun {
-                    IRStructFunction::FieldByIndex(index) => {
-                        (PyStructFunction::FieldByIndex, index).into_py_any(py)
-                    },
                     IRStructFunction::FieldByName(name) => {
                         (PyStructFunction::FieldByName, name.as_str()).into_py_any(py)
                     },
@@ -933,9 +928,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
                     IRStructFunction::WithFields => {
                         return Err(PyNotImplementedError::new_err("with_fields"));
-                    },
-                    IRStructFunction::MultipleFields(_) => {
-                        return Err(PyNotImplementedError::new_err("multiple_fields"));
                     },
                     IRStructFunction::MapFieldNames(_) => {
                         return Err(PyNotImplementedError::new_err("map_field_names"));
@@ -1155,29 +1147,29 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "sign")]
                 IRFunctionExpr::Sign => ("sign",).into_py_any(py),
                 IRFunctionExpr::FillNull => ("fill_null",).into_py_any(py),
-                IRFunctionExpr::RollingExpr(rolling) => {
-                    return Err(PyNotImplementedError::new_err(format!("{rolling}")));
+                IRFunctionExpr::RollingExpr { function, .. } => {
+                    return Err(PyNotImplementedError::new_err(format!("{function}")));
                 },
-                IRFunctionExpr::RollingExprBy(rolling) => match rolling {
-                    IRRollingFunctionBy::MinBy(_) => {
+                IRFunctionExpr::RollingExprBy { function_by, .. } => match function_by {
+                    IRRollingFunctionBy::MinBy => {
                         return Err(PyNotImplementedError::new_err("rolling min by"));
                     },
-                    IRRollingFunctionBy::MaxBy(_) => {
+                    IRRollingFunctionBy::MaxBy => {
                         return Err(PyNotImplementedError::new_err("rolling max by"));
                     },
-                    IRRollingFunctionBy::MeanBy(_) => {
+                    IRRollingFunctionBy::MeanBy => {
                         return Err(PyNotImplementedError::new_err("rolling mean by"));
                     },
-                    IRRollingFunctionBy::SumBy(_) => {
+                    IRRollingFunctionBy::SumBy => {
                         return Err(PyNotImplementedError::new_err("rolling sum by"));
                     },
-                    IRRollingFunctionBy::QuantileBy(_) => {
+                    IRRollingFunctionBy::QuantileBy => {
                         return Err(PyNotImplementedError::new_err("rolling quantile by"));
                     },
-                    IRRollingFunctionBy::VarBy(_) => {
+                    IRRollingFunctionBy::VarBy => {
                         return Err(PyNotImplementedError::new_err("rolling var by"));
                     },
-                    IRRollingFunctionBy::StdBy(_) => {
+                    IRRollingFunctionBy::StdBy => {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
                 },

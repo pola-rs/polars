@@ -39,7 +39,7 @@ impl IRFunctionExpr {
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 IRPowFunction::Generic => mapper.pow_dtype(),
-                _ => mapper.map_to_float_dtype(),
+                _ => mapper.map_numeric_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
@@ -60,25 +60,27 @@ impl IRFunctionExpr {
             Sign => mapper.with_dtype(DataType::Int64),
             FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
-            RollingExpr(rolling_func, ..) => {
+            RollingExpr{function, ..} => {
                 use IRRollingFunction::*;
-                match rolling_func {
-                    Min(_) | Max(_) => mapper.with_same_dtype(),
-                    Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
-                    Sum(_) => mapper.sum_dtype(),
+                match function {
+                    Min | Max => mapper.with_same_dtype(),
+                    Mean | Quantile | Std => mapper.moment_dtype(),
+                    Var => mapper.var_dtype(),
+                    Sum => mapper.sum_dtype(),
                     #[cfg(feature = "cov")]
                     CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
-                    Skew(..) | Kurtosis(..) => mapper.map_to_float_dtype(),
+                    Skew | Kurtosis => mapper.map_to_float_dtype(),
                 }
             },
             #[cfg(feature = "rolling_window_by")]
-            RollingExprBy(rolling_func, ..) => {
+            RollingExprBy{function_by, ..} => {
                 use IRRollingFunctionBy::*;
-                match rolling_func {
-                    MinBy(_) | MaxBy(_) => mapper.with_same_dtype(),
-                    MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
-                    SumBy(_) => mapper.sum_dtype(),
+                match function_by {
+                    MinBy | MaxBy => mapper.with_same_dtype(),
+                    MeanBy | QuantileBy | StdBy=> mapper.moment_dtype(),
+                    VarBy => mapper.var_dtype(),
+                    SumBy => mapper.sum_dtype(),
                 }
             },
             ShiftAndFill => mapper.with_same_dtype(),
@@ -164,7 +166,7 @@ impl IRFunctionExpr {
                     if *include_category {
                         fields.push(Field::new(
                             PlSmallStr::from_static("category"),
-                            DataType::Categorical(None, Default::default()),
+                            DataType::from_categories(Categories::global()),
                         ));
                     }
                     fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
@@ -240,7 +242,7 @@ impl IRFunctionExpr {
             Cut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
+            } => mapper.with_dtype(DataType::from_categories(Categories::global())),
             #[cfg(feature = "cutqcut")]
             Cut {
                 include_breaks: true,
@@ -250,7 +252,7 @@ impl IRFunctionExpr {
                     Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
                     Field::new(
                         PlSmallStr::from_static("category"),
-                        DataType::Categorical(None, Default::default()),
+                        DataType::from_categories(Categories::global()),
                     ),
                 ]);
                 mapper.with_dtype(struct_dt)
@@ -299,7 +301,7 @@ impl IRFunctionExpr {
             QCut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
+            } => mapper.with_dtype(DataType::from_categories(Categories::global())),
             #[cfg(feature = "cutqcut")]
             QCut {
                 include_breaks: true,
@@ -309,7 +311,7 @@ impl IRFunctionExpr {
                     Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
                     Field::new(
                         PlSmallStr::from_static("category"),
-                        DataType::Categorical(None, Default::default()),
+                        DataType::from_categories(Categories::global()),
                     ),
                 ]);
                 mapper.with_dtype(struct_dt)
@@ -354,13 +356,13 @@ impl IRFunctionExpr {
                 })
             }
             #[cfg(feature = "ewma")]
-            EwmMean { .. } => mapper.map_to_float_dtype(),
+            EwmMean { .. } => mapper.map_numeric_to_float_dtype(),
             #[cfg(feature = "ewma_by")]
-            EwmMeanBy { .. } => mapper.map_to_float_dtype(),
+            EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(),
             #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_to_float_dtype(),
+            EwmStd { .. } => mapper.map_numeric_to_float_dtype(),
             #[cfg(feature = "ewma")]
-            EwmVar { .. } => mapper.map_to_float_dtype(),
+            EwmVar { .. } => mapper.var_dtype(),
             #[cfg(feature = "replace")]
             Replace => mapper.with_same_dtype(),
             #[cfg(feature = "replace")]
@@ -432,6 +434,48 @@ impl<'a> FieldsMapper<'a> {
         func(&self.fields[0])
     }
 
+    pub fn var_dtype(&self) -> PolarsResult<Field> {
+        if self.fields[0].dtype().leaf_dtype().is_duration() {
+            let map_inner = |dt: &DataType| match dt {
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(_) => DataType::Duration(TimeUnit::Milliseconds),
+                dt => dt.clone(),
+            };
+
+            self.map_dtype(|dt| match dt {
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(inner, _) => map_inner(inner),
+                DataType::List(inner) => map_inner(inner),
+                _ => map_inner(dt),
+            })
+        } else {
+            self.moment_dtype()
+        }
+    }
+
+    pub fn moment_dtype(&self) -> PolarsResult<Field> {
+        let map_inner = |dt: &DataType| match dt {
+            #[cfg(feature = "dtype-datetime")]
+            dt @ DataType::Datetime(_, _) => dt.clone(),
+            #[cfg(feature = "dtype-duration")]
+            dt @ DataType::Duration(_) => dt.clone(),
+            #[cfg(feature = "dtype-time")]
+            dt @ DataType::Time => dt.clone(),
+            DataType::Float32 => DataType::Float32,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(..) => DataType::Float64,
+            DataType::Boolean => DataType::Float64,
+            _ => DataType::Float64,
+        };
+
+        self.map_dtype(|dt| match dt {
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => map_inner(inner),
+            DataType::List(inner) => map_inner(inner),
+            _ => map_inner(dt),
+        })
+    }
+
     /// Map to a float supertype.
     pub fn map_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| match dtype {
@@ -442,14 +486,19 @@ impl<'a> FieldsMapper<'a> {
 
     /// Map to a float supertype if numeric, else preserve
     pub fn map_numeric_to_float_dtype(&self) -> PolarsResult<Field> {
-        self.map_dtype(|dtype| {
-            if dtype.is_primitive_numeric() {
-                match dtype {
-                    DataType::Float32 => DataType::Float32,
-                    _ => DataType::Float64,
-                }
+        self.map_dtype(|dt| {
+            let should_coerce = match dt {
+                DataType::Float32 => false,
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(..) => true,
+                DataType::Boolean => true,
+                dt => dt.is_primitive_numeric(),
+            };
+
+            if should_coerce {
+                DataType::Float64
             } else {
-                dtype.clone()
+                dt.clone()
             }
         })
     }
@@ -654,7 +703,7 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
 
     match (dtypes[0].as_ref(), &st) {
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, ord), DataType::String) => st = DataType::Categorical(None, *ord),
+        (cat @ DataType::Categorical(_, _), DataType::String) => st = cat.clone(),
         _ => {
             if let DataType::Unknown(kind) = st {
                 match kind {

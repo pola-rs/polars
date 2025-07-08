@@ -1,16 +1,13 @@
 use std::io::BufReader;
 
-use arrow::array::Utf8ViewArray;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
-use polars_core::datatypes::create_enum_dtype;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{EitherRustPythonFile, get_either_file};
-use crate::prelude::ArrowDataType;
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
@@ -52,13 +49,7 @@ pub fn read_parquet_metadata(py: Python, py_f: PyObject) -> PyResult<Bound<PyDic
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>) -> PyResult<()> {
     for field in schema.iter_values() {
-        let dt = if field.is_enum() {
-            Wrap(create_enum_dtype(Utf8ViewArray::new_empty(
-                ArrowDataType::Utf8View,
-            )))
-        } else {
-            Wrap(polars::prelude::DataType::from_arrow_field(field))
-        };
+        let dt = Wrap(polars::prelude::DataType::from_arrow_field(field));
         dict.set_item(field.name.as_str(), &dt)?;
     }
     Ok(())

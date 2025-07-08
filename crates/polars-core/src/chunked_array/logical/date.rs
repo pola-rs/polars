@@ -4,7 +4,8 @@ pub type DateChunked = Logical<DateType, Int32Type>;
 
 impl Int32Chunked {
     pub fn into_date(self) -> DateChunked {
-        DateChunked::new_logical(self, DataType::Date)
+        // SAFETY: no invalid states.
+        unsafe { DateChunked::new_logical(self, DataType::Date) }
     }
 }
 
@@ -39,7 +40,7 @@ impl LogicalType for DateChunked {
                     TimeUnit::Milliseconds => MS_IN_DAY,
                 };
                 Ok(casted
-                    .deref()
+                    .physical()
                     .checked_mul_scalar(conversion)
                     .into_datetime(*tu, tz.clone())
                     .into_series())

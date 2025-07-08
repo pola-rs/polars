@@ -25,7 +25,7 @@ fn fuzz_exprs() {
     .lazy();
 
     fn rnd_prime(rng: &'_ mut rand::rngs::ThreadRng) -> i32 {
-        PRIMES[rng.gen_range(0..PRIMES.len())]
+        PRIMES[rng.random_range(0..PRIMES.len())]
     }
 
     fn gen_expr(rng: &mut rand::rngs::ThreadRng) -> Expr {
@@ -34,7 +34,7 @@ fn fuzz_exprs() {
         use rand::Rng;
 
         fn leaf(rng: &mut rand::rngs::ThreadRng) -> Expr {
-            match rng.r#gen::<u32>() % 4 {
+            match rng.random::<u32>() % 4 {
                 0 => col("A"),
                 1 => col("B"),
                 2 => col("C"),
@@ -45,12 +45,12 @@ fn fuzz_exprs() {
         let mut e = leaf(rng);
 
         loop {
-            if depth >= 10 || rng.r#gen::<u32>() % 4 == 0 {
+            if depth >= 10 || rng.random::<u32>() % 4 == 0 {
                 return e;
             } else {
                 let rhs = leaf(rng);
 
-                e = match rng.r#gen::<u32>() % 19 {
+                e = match rng.random::<u32>() % 19 {
                     0 => e.eq(rhs),
                     1 => e.eq_missing(rhs),
                     2 => e.neq(rhs),
@@ -83,7 +83,7 @@ fn fuzz_exprs() {
         }
     }
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let rng = &mut rng;
 
     let num_fuzzes = 100_000;
@@ -97,7 +97,7 @@ fn fuzz_exprs() {
             gen_expr(rng).alias("J"),
         ];
 
-        let wc = match rng.r#gen::<u32>() % 2 {
+        let wc = match rng.random::<u32>() % 2 {
             0 => lf.clone(),
             _ => empty.clone(),
         };

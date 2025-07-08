@@ -585,7 +585,7 @@ def test_repr_short_expression() -> None:
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['.rename_alias(*.count())'] at "
+    expected = "<Expr ['cs.all().count().prefix(length…'] at "
     assert result == expected
 
 
@@ -597,7 +597,7 @@ def test_repr_long_expression() -> None:
     result = repr(expr).split("0x")[0]
 
     # note the … denoting that there was truncated text
-    expected = "<Expr ['dtype_columns([String]).str.co…'] at "
+    expected = "<Expr ['cs.string().str.count_matches(…'] at "
     assert result == expected
     assert repr(expr).endswith(">")
 

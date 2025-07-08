@@ -313,6 +313,15 @@
 									# # Used for Altair SVG / PNG conversions
 									"vl-convert-python"
 								];
+
+                rustPkg = rustToolchain.withComponents [
+                  "cargo"
+                  "clippy"
+                  "rust-src"
+                  "rustc"
+                  "rustfmt"
+                  "rust-analyzer"
+                ];
               in
               {
                 packages =
@@ -322,14 +331,7 @@
                     pythonPlatform.venvShellHook
                     pythonPlatform.build
 
-                    (rustToolchain.withComponents [
-                      "cargo"
-                      "clippy"
-                      "rust-src"
-                      "rustc"
-                      "rustfmt"
-                      "rust-analyzer"
-                    ])
+                    rustPkg
 
                     cmake
                     gnumake
@@ -433,11 +435,10 @@
                     # Set openssl for `cargo test` to work.
                     export LD_LIBRARY_PATH="${pkgs.openssl_3_4.out}/lib:${stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
 
-                    export RUSTFLAGS="-Zthreads=0 ${rustLinkFlagsString} $RUSTFLAGS"
-
                     export PYTHON_LIBS=$($VENV/bin/python -c "import site; print(site.getsitepackages()[0])")
 
                     export PYTHONPATH="$PYTHONPATH:$PYTHON_LIBS"
+										export RUST_SRC_PATH="${rustToolchain.rust-src}/lib/rustlib/src/rust/library"
                   '';
 
               }

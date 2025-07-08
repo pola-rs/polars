@@ -5,13 +5,13 @@ use super::*;
 #[derive(Clone, PartialEq, Debug)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRRollingFunctionBy {
-    MinBy(RollingOptionsDynamicWindow),
-    MaxBy(RollingOptionsDynamicWindow),
-    MeanBy(RollingOptionsDynamicWindow),
-    SumBy(RollingOptionsDynamicWindow),
-    QuantileBy(RollingOptionsDynamicWindow),
-    VarBy(RollingOptionsDynamicWindow),
-    StdBy(RollingOptionsDynamicWindow),
+    MinBy,
+    MaxBy,
+    MeanBy,
+    SumBy,
+    QuantileBy,
+    VarBy,
+    StdBy,
 }
 
 impl Display for IRRollingFunctionBy {
@@ -19,13 +19,13 @@ impl Display for IRRollingFunctionBy {
         use IRRollingFunctionBy::*;
 
         let name = match self {
-            MinBy(_) => "rolling_min_by",
-            MaxBy(_) => "rolling_max_by",
-            MeanBy(_) => "rolling_mean_by",
-            SumBy(_) => "rolling_sum_by",
-            QuantileBy(_) => "rolling_quantile_by",
-            VarBy(_) => "rolling_var_by",
-            StdBy(_) => "rolling_std_by",
+            MinBy => "rolling_min_by",
+            MaxBy => "rolling_max_by",
+            MeanBy => "rolling_mean_by",
+            SumBy => "rolling_sum_by",
+            QuantileBy => "rolling_quantile_by",
+            VarBy => "rolling_var_by",
+            StdBy => "rolling_std_by",
         };
 
         write!(f, "{name}")

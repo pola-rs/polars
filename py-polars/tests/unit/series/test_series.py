@@ -357,9 +357,7 @@ def test_date_agg() -> None:
     ("s", "min", "max"),
     [
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series(["a", "c", "b"], dtype=pl.Categorical), "a", "b"),
         (pl.Series([None, "a", "c", "b"], dtype=pl.Categorical("lexical")), "a", "c"),
-        (pl.Series([None, "c", "a", "b"], dtype=pl.Categorical), "c", "b"),
         (pl.Series([], dtype=pl.Categorical("lexical")), None, None),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a"])), "c", "a"),
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
@@ -634,25 +632,27 @@ def test_arrow() -> None:
     )
     assert s.dtype == pl.List
 
-    # categorical dtype tests (including various forms of empty pyarrow array)
-    with pl.StringCache():
-        arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
-        assert_series_equal(
-            pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
-        )
-        arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
-        arr2 = pa.array([]).dictionary_encode()
-        arr3 = pa.chunked_array([], arr1.type)
-        arr4 = pa.array([], arr1.type)
 
+def test_arrow_cat() -> None:
+    # categorical dtype tests (including various forms of empty pyarrow array)
+    arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
+    assert_series_equal(
+        pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
+    )
+    arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
+    arr2 = pa.chunked_array([], arr1.type)
+    arr3 = pa.array([], arr1.type)
+    arr4 = pa.array([]).dictionary_encode()
+
+    assert_series_equal(
+        pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
+        pl.Series("arr", arr1),
+    )
+    for arr in (arr2, arr3):
         assert_series_equal(
-            pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
-            pl.Series("arr", arr1),
+            pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
         )
-        for arr in (arr2, arr3, arr4):
-            assert_series_equal(
-                pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
-            )
+    assert_series_equal(pl.Series("arr", [], dtype=pl.Null), pl.Series("arr", arr4))
 
 
 def test_pycapsule_interface() -> None:
@@ -1454,8 +1454,6 @@ def test_arg_sort() -> None:
         (pl.Series(["a", "c", "b"]), 0, 1),
         (pl.Series([None, "a", None, "b"]), 1, 3),
         # Categorical
-        (pl.Series(["c", "b", "a"], dtype=pl.Categorical), 0, 2),
-        (pl.Series([None, "c", "b", None, "a"], dtype=pl.Categorical), 1, 4),
         (pl.Series(["c", "b", "a"], dtype=pl.Categorical(ordering="lexical")), 2, 0),
         (pl.Series("s", [None, "c", "b", None, "a"], pl.Categorical("lexical")), 4, 1),
     ],
@@ -1694,13 +1692,19 @@ def test_to_physical() -> None:
 
     # casting a categorical results in a UInt32
     s = pl.Series(["cat1"]).cast(pl.Categorical)
-    expected = pl.Series([0], dtype=UInt32)
-    assert_series_equal(s.to_physical(), expected)
+    assert s.to_physical().dtype == pl.UInt32
+
+    # casting a small enum results in a UInt8
+    s = pl.Series(["cat1"]).cast(pl.Enum(["cat1"]))
+    assert s.to_physical().dtype == pl.UInt8
 
     # casting a List(Categorical) results in a List(UInt32)
     s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
-    expected = pl.Series([[0]], dtype=pl.List(UInt32))
-    assert_series_equal(s.to_physical(), expected)
+    assert s.to_physical().dtype == pl.List(pl.UInt32)
+
+    # casting a List(Enum) with a small enum results in a List(UInt8)
+    s = pl.Series(["cat1"]).cast(pl.List(pl.Enum(["cat1"])))
+    assert s.to_physical().dtype == pl.List(pl.UInt8)
 
 
 def test_to_physical_rechunked_21285() -> None:

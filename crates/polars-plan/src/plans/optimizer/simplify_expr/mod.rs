@@ -348,9 +348,10 @@ impl OptimizationRule for SimplifyExprRule {
         schema: &Schema,
         _ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
-        let expr = expr_arena.get(expr_node).clone();
+        let expr = expr_arena.get(expr_node);
 
         let out = match &expr {
+            AExpr::SortBy { expr, by, .. } if by.is_empty() => Some(expr_arena.get(*expr).clone()),
             // drop_nulls().len() -> len() - null_count()
             // drop_nulls().count() -> len() - null_count()
             AExpr::Agg(IRAggExpr::Count(input, _)) => {
@@ -667,7 +668,9 @@ impl OptimizationRule for SimplifyExprRule {
                 function,
                 options,
                 ..
-            } => return optimize_functions(input, function, options, expr_arena),
+            } => {
+                return optimize_functions(input.clone(), function.clone(), *options, expr_arena);
+            },
             _ => None,
         };
         Ok(out)
