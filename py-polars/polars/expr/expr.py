@@ -323,7 +323,7 @@ class Expr:
             if not isinstance(inputs[0], Expr):
                 msg = "Input must be expression."
                 raise OutOfBoundsError(msg)
-            return inputs[0].map_batches(ufunc, is_elementwise=not is_custom_ufunc)
+            return inputs[0].map_batches(ufunc, is_elementwise=not is_custom_ufunc, _is_ufunc=True)
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
@@ -358,7 +358,7 @@ class Expr:
                     args.append(expr[0])
             return ufunc(*args, **kwargs)
 
-        return root_expr.map_batches(function, is_elementwise=not is_custom_ufunc)
+        return root_expr.map_batches(function, is_elementwise=not is_custom_ufunc, _is_ufunc=True)
 
     @classmethod
     def deserialize(
@@ -4352,6 +4352,7 @@ class Expr:
         agg_list: bool = False,
         is_elementwise: bool = False,
         returns_scalar: bool = False,
+        _is_ufunc: bool = False
     ) -> Expr:
         """
         Apply a custom python function to a whole Series or sequence of Series.
@@ -4480,6 +4481,7 @@ Consider using {self}.implode() instead"""
                 return_dtype,
                 is_elementwise,
                 returns_scalar,
+                _is_ufunc
             )
         )
 

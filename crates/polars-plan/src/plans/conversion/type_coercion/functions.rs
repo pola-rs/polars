@@ -23,7 +23,7 @@ pub(super) fn get_function_dtypes(
         // Ignore Unknown in the inputs.
         // We will raise if we cannot find the supertype later.
         match dtype {
-            DataType::Unknown(UnknownKind::Any) => {
+            DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc) => {
                 return Ok(None);
             },
             _ => dtypes.push(dtype),
