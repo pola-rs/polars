@@ -340,6 +340,17 @@ def test_categorical(convert_to_literal: bool) -> None:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
 
 
+@pytest.mark.parametrize("value", [0, 0.1])
+def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
+    msg = "cannot cast lossless"
+    with pytest.raises(InvalidOperationError, match=msg):
+        series.index_of(value)
+    df = pl.DataFrame({"s": series})
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(pl.col("s").index_of(value))
+
+
 @given(s=series(name="s", allow_chunks=True, max_size=10))
 def test_index_of_null_parametric(s: pl.Series) -> None:
     idx_null = s.index_of(None)
