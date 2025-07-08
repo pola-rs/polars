@@ -672,9 +672,7 @@ impl GroupedReduction for NullGroupedReduction {
         Box::new(Self::default())
     }
 
-    fn reserve(&mut self, additional: usize) {
-        self.length += additional;
-    }
+    fn reserve(&mut self, _additional: usize) {}
 
     fn resize(&mut self, num_groups: IdxSize) {
         self.length = num_groups as usize;
