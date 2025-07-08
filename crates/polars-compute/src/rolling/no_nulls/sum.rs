@@ -107,14 +107,12 @@ where
         self.last_end = end;
         if self.non_finite_count == 0 {
             NumCast::from(self.sum)
+        } else if self.non_finite_count == self.pos_inf_count {
+            Some(T::pos_inf_value())
+        } else if self.non_finite_count == self.neg_inf_count {
+            Some(T::neg_inf_value())
         } else {
-            if self.non_finite_count == self.pos_inf_count {
-                Some(T::pos_inf_value())
-            } else if self.non_finite_count == self.neg_inf_count {
-                Some(T::neg_inf_value())
-            } else {
-                Some(T::nan_value())
-            }
+            Some(T::nan_value())
         }
     }
 }

@@ -20,7 +20,7 @@ pub unsafe trait IsFloat: private::Sealed + Sized {
     fn pos_inf_value() -> Self {
         unimplemented!()
     }
-    
+
     fn neg_inf_value() -> Self {
         unimplemented!()
     }
@@ -93,11 +93,11 @@ macro_rules! impl_is_float {
             fn nan_value() -> Self {
                 Self::NAN
             }
-            
+
             fn pos_inf_value() -> Self {
                 Self::INFINITY
             }
-            
+
             fn neg_inf_value() -> Self {
                 Self::NEG_INFINITY
             }
