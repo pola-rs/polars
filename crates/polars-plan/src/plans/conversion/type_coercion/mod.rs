@@ -6,7 +6,9 @@ mod functions;
 mod is_in;
 
 use binary::process_binary;
-use datetime_range::{replace_tz, update_date_range_types, update_datetime_range_types};
+use datetime_range::{
+    convert_tz, replace_tz, update_date_range_types, update_datetime_range_types,
+};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -850,10 +852,18 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         modified = true;
 
                         // If the target datatype has a different time zone from the existing one,
-                        // we re-localize prior to casting.
-                        if let DataType::Datetime(_, Some(_)) = &to_dtype {
-                            replace_tz(&mut input[i], &to_dtype, expr_arena)?;
-                        };
+                        // we replace time zone if we're naive, else we convert
+                        if let DataType::Datetime(_, Some(from_tz)) = &to_dtype {
+                            match &from_dtype {
+                                DataType::Datetime(_, Some(to_tz)) if from_tz != to_tz => {
+                                    convert_tz(&mut input[i], &to_dtype, expr_arena)?;
+                                },
+                                DataType::Datetime(_, None) => {
+                                    replace_tz(&mut input[i], &to_dtype, expr_arena)?;
+                                },
+                                _ => (),
+                            }
+                        }
                         cast_expr_ir(
                             &mut input[i],
                             &from_dtype,

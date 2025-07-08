@@ -645,18 +645,13 @@ def test_datetime_range_with_nanoseconds_overflow_15735() -> None:
 
 def test_datetime_range_start_end_interval() -> None:
     start = date(2025, 1, 1)
-    end = date(2025, 1, 5)
+    end = date(2025, 1, 7)
     values = [
         datetime(2025, 1, 1),
-        datetime(2025, 1, 1, 12),
-        datetime(2025, 1, 2),
         datetime(2025, 1, 2, 12),
-        datetime(2025, 1, 3),
-        datetime(2025, 1, 3, 12),
         datetime(2025, 1, 4),
-        datetime(2025, 1, 4, 12),
-        datetime(2025, 1, 5),
-        datetime(2025, 1, 5),
+        datetime(2025, 1, 5, 12),
+        datetime(2025, 1, 7),
     ]
     assert (
         pl.datetime_range(

@@ -104,6 +104,26 @@ pub(super) fn replace_tz(
     Ok(())
 }
 
+pub(super) fn convert_tz(
+    e: &mut ExprIR,
+    dtype: &DataType,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<()> {
+    let replacement_expr = match &dtype {
+        // Wrap our node in a ReplaceTimezone node
+        &DataType::Datetime(_, Some(tz)) => AExpr::Function {
+            input: vec![e.clone()],
+            function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::ConvertTimeZone(tz.clone())),
+            options: FunctionOptions::elementwise(),
+        },
+        dt => polars_bail!(ComputeError: "cannot replace time zone of dtype {:?}", dt),
+    };
+
+    e.set_node(expr_arena.add(replacement_expr));
+    e.set_dtype(dtype.clone());
+    Ok(())
+}
+
 pub(super) fn update_date_range_types(
     input: &mut Vec<ExprIR>,
     expr_arena: &Arena<AExpr>,

@@ -147,14 +147,6 @@ pub(crate) fn datetime_range_i64_start_end_interval(
     time_unit: TimeUnit,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
-    if start > end {
-        return Ok(Vec::new());
-    }
-    polars_ensure!(
-        !interval.negative && !interval.is_zero(),
-        ComputeError: "`interval` must be positive"
-    );
-
     let duration = match time_unit {
         TimeUnit::Nanoseconds => interval.duration_ns(),
         TimeUnit::Microseconds => interval.duration_us(),
