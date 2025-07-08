@@ -136,7 +136,7 @@ def test_datetime_range_lazy_time_zones() -> None:
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
 @pytest.mark.parametrize("high", ["stop", pl.col("stop")])
-def test_datetime_range_lazy_with_expressions(
+def test_datetime_ranges_lazy_with_expressions(
     low: str | pl.Expr, high: str | pl.Expr
 ) -> None:
     df = pl.DataFrame(
@@ -423,7 +423,7 @@ def test_datetime_ranges_schema(
         ),
     ],
 )
-def test_datetime_range_schema_upcasts_to_datetime(
+def test_datetime_ranges_schema_upcasts_to_datetime(
     input_time_unit: TimeUnit | None,
     input_time_zone: str | None,
     output_dtype: PolarsDataType,
@@ -433,8 +433,8 @@ def test_datetime_range_schema_upcasts_to_datetime(
     df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
     result = df.with_columns(
         datetime_range=pl.datetime_ranges(
-            pl.col("start"),
-            pl.col("end"),
+            start=pl.col("start"),
+            end=pl.col("end"),
             interval=interval,
             time_unit=input_time_unit,
             time_zone=input_time_zone,
