@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -119,3 +120,14 @@ def test_search_sorted_enum() -> None:
 
 def test_search_sorted_categorical() -> None:
     assert_can_find_values(["a", None, "b", "c"], pl.Categorical())
+
+
+@pytest.mark.parametrize("value", [0, 0.1])
+def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
+    msg = "got invalid or ambiguous dtypes"
+    with pytest.raises(InvalidOperationError, match=msg):
+        series.search_sorted(value)
+    df = pl.DataFrame({"s": series})
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(pl.col("s").search_sorted(value))
