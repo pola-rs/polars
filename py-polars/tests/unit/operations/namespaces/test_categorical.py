@@ -6,7 +6,6 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_lexical_sort() -> None:
     df = pl.DataFrame(
         {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
@@ -42,7 +41,6 @@ def test_categorical_lexical_sort() -> None:
     ]
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_lexical_ordering_after_concat() -> None:
     ldf1 = (
         pl.DataFrame([pl.Series("key1", [8, 5]), pl.Series("key2", ["fox", "baz"])])
@@ -63,7 +61,6 @@ def test_categorical_lexical_ordering_after_concat() -> None:
     }
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_sort_categoricals_6014_lexical() -> None:
     # create lexically-ordered categorical
     df = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
@@ -74,7 +71,6 @@ def test_sort_categoricals_6014_lexical() -> None:
     assert out.to_dict(as_series=False) == {"key": ["aaa", "bbb", "ccc"]}
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_get_categories() -> None:
     s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
     assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
@@ -85,7 +81,6 @@ def test_cat_to_local() -> None:
     assert_series_equal(s, s.cat.to_local())
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_cat_uses_lexical_ordering() -> None:
     s = pl.Series(["a", "b", None, "b"]).cast(pl.Categorical)
     assert s.cat.uses_lexical_ordering()
@@ -97,7 +92,6 @@ def test_cat_uses_lexical_ordering() -> None:
     assert s.cat.uses_lexical_ordering()
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_cat_len_bytes() -> None:
     # test Series
     s = pl.Series("a", ["Café", None, "Café", "345", "東京"], dtype=pl.Categorical)
@@ -134,7 +128,6 @@ def test_cat_len_bytes() -> None:
     assert_frame_equal(result_df, expected_df)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_cat_len_chars() -> None:
     # test Series
     s = pl.Series("a", ["Café", None, "Café", "345", "東京"], dtype=pl.Categorical)
@@ -171,7 +164,6 @@ def test_cat_len_chars() -> None:
     assert_frame_equal(result_df, expected_df)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_starts_ends_with() -> None:
     s = pl.Series(
         "a",

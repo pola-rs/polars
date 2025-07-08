@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars import StringCache
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -427,7 +426,7 @@ def test_is_in_date_range() -> None:
     assert out.to_list() == [False, True, True]
 
 
-@StringCache()
+
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_cat_is_in_series(dtype: pl.DataType, nulls_equal: bool) -> None:
@@ -441,7 +440,6 @@ def test_cat_is_in_series(dtype: pl.DataType, nulls_equal: bool) -> None:
     assert_series_equal(s.is_in(s2_str, nulls_equal=nulls_equal), expected)
 
 
-@StringCache()
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_cat_is_in_series_non_existent(nulls_equal: bool) -> None:
     dtype = pl.Categorical
@@ -475,7 +473,6 @@ def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     assert_series_equal(out, expected)
 
 
-@StringCache()
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_cat_is_in_with_lit_str(dtype: pl.DataType, nulls_equal: bool) -> None:
@@ -487,7 +484,6 @@ def test_cat_is_in_with_lit_str(dtype: pl.DataType, nulls_equal: bool) -> None:
     assert_series_equal(s.is_in(lit, nulls_equal=nulls_equal), expected)
 
 
-@StringCache()
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_cat_is_in_with_lit_str_non_existent(nulls_equal: bool) -> None:
     dtype = pl.Categorical()
@@ -499,7 +495,6 @@ def test_cat_is_in_with_lit_str_non_existent(nulls_equal: bool) -> None:
     assert_series_equal(s.is_in(lit, nulls_equal=nulls_equal), expected)
 
 
-@StringCache()
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
 def test_cat_is_in_with_lit_str_cache_setup(dtype: pl.DataType) -> None:
     # init the global cache
@@ -533,7 +528,6 @@ def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
     )
 
 
-@pl.StringCache()
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
 @pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
@@ -553,7 +547,6 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
     assert_frame_equal(res, expected_df)
 
 
-@pl.StringCache()
 @pytest.mark.parametrize(
     ("val", "expected"),
     [
@@ -574,7 +567,6 @@ def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -
     assert_frame_equal(res, expected_df)
 
 
-@pl.StringCache()
 def test_cat_list_is_in_from_str() -> None:
     df = pl.DataFrame(
         [
@@ -592,7 +584,6 @@ def test_cat_list_is_in_from_str() -> None:
     assert_frame_equal(res, expected_df)
 
 
-@pl.StringCache()
 @pytest.mark.parametrize(
     ("val", "expected"),
     [
@@ -709,7 +700,6 @@ def test_null_propagate_all_paths(nulls_equal: bool) -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_null_propagate_all_paths_cat(nulls_equal: bool) -> None:
     # No nulls in either

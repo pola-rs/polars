@@ -4,47 +4,45 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars import StringCache
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 inf = float("inf")
 
 
-@StringCache()
+
 def test_hist_empty_data_no_inputs() -> None:
-    with pl.StringCache():
-        s = pl.Series([], dtype=pl.UInt8)
+    s = pl.Series([], dtype=pl.UInt8)
 
-        # No bins or edges specified: 10 bins around unit interval
-        expected = pl.DataFrame(
-            {
-                "breakpoint": pl.Series(
-                    [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], dtype=pl.Float64
-                ),
-                "category": pl.Series(
-                    [
-                        "[0.0, 0.1]",
-                        "(0.1, 0.2]",
-                        "(0.2, 0.3]",
-                        "(0.3, 0.4]",
-                        "(0.4, 0.5]",
-                        "(0.5, 0.6]",
-                        "(0.6, 0.7]",
-                        "(0.7, 0.8]",
-                        "(0.8, 0.9]",
-                        "(0.9, 1.0]",
-                    ],
-                    dtype=pl.Categorical,
-                ),
-                "count": pl.Series([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=pl.UInt32),
-            }
-        )
-        result = s.hist()
-        assert_frame_equal(result, expected)
+    # No bins or edges specified: 10 bins around unit interval
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], dtype=pl.Float64
+            ),
+            "category": pl.Series(
+                [
+                    "[0.0, 0.1]",
+                    "(0.1, 0.2]",
+                    "(0.2, 0.3]",
+                    "(0.3, 0.4]",
+                    "(0.4, 0.5]",
+                    "(0.5, 0.6]",
+                    "(0.6, 0.7]",
+                    "(0.7, 0.8]",
+                    "(0.8, 0.9]",
+                    "(0.9, 1.0]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=pl.UInt32),
+        }
+    )
+    result = s.hist()
+    assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_empty_data_empty_bins() -> None:
     s = pl.Series([], dtype=pl.UInt8)
 
@@ -60,7 +58,7 @@ def test_hist_empty_data_empty_bins() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_empty_data_single_bin_edge() -> None:
     s = pl.Series([], dtype=pl.UInt8)
 
@@ -76,7 +74,7 @@ def test_hist_empty_data_single_bin_edge() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_empty_data_valid_edges() -> None:
     s = pl.Series([], dtype=pl.UInt8)
 
@@ -92,21 +90,21 @@ def test_hist_empty_data_valid_edges() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_empty_data_invalid_edges() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     with pytest.raises(ComputeError, match="bins must increase monotonically"):
         s.hist(bins=[1, 0])  # invalid order
 
 
-@StringCache()
+
 def test_hist_empty_data_bad_bin_count() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     with pytest.raises(OverflowError, match="can't convert negative int to unsigned"):
         s.hist(bin_count=-1)  # invalid order
 
 
-@StringCache()
+
 def test_hist_empty_data_zero_bin_count() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     expected = pl.DataFrame(
@@ -120,7 +118,7 @@ def test_hist_empty_data_zero_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_empty_data_single_bin_count() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     expected = pl.DataFrame(
@@ -134,7 +132,7 @@ def test_hist_empty_data_single_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_empty_data_valid_bin_count() -> None:
     s = pl.Series([], dtype=pl.UInt8)
     expected = pl.DataFrame(
@@ -157,21 +155,21 @@ def test_hist_empty_data_valid_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_invalid_bin_count() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     with pytest.raises(OverflowError, match="can't convert negative int to unsigned"):
         s.hist(bin_count=-1)  # invalid order
 
 
-@StringCache()
+
 def test_hist_invalid_bins() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     with pytest.raises(ComputeError, match="bins must increase monotonically"):
         s.hist(bins=[1, 0])  # invalid order
 
 
-@StringCache()
+
 def test_hist_bin_outside_data() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[-10, -9])
@@ -185,7 +183,7 @@ def test_hist_bin_outside_data() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_bins_between_data() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[4.5, 10.5])
@@ -199,7 +197,7 @@ def test_hist_bins_between_data() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_bins_first_edge() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[2, 3, 4])
@@ -213,7 +211,7 @@ def test_hist_bins_first_edge() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_bins_last_edge() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[-4, 0, 99, 100])
@@ -234,7 +232,7 @@ def test_hist_bins_last_edge() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_single_value_single_bin_count() -> None:
     s = pl.Series([1], dtype=pl.Int32)
     result = s.hist(bin_count=1)
@@ -248,7 +246,7 @@ def test_hist_single_value_single_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_single_bin_count() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bin_count=1)
@@ -262,7 +260,7 @@ def test_hist_single_bin_count() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_partial_covering() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[-1.5, 2.5, 50, 105])
@@ -278,7 +276,7 @@ def test_hist_partial_covering() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_full_covering() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[-5.5, 2.5, 50, 105])
@@ -294,7 +292,7 @@ def test_hist_full_covering() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist_more_bins_than_data() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bin_count=8)
@@ -316,7 +314,7 @@ def test_hist_more_bins_than_data() -> None:
     assert_frame_equal(result, expected)
 
 
-@StringCache()
+
 def test_hist() -> None:
     s = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
     out = s.hist(bin_count=4)
@@ -476,65 +474,62 @@ def test_hist_breakpoint_accuracy() -> None:
 
 def test_hist_ensure_max_value_20879() -> None:
     s = pl.Series([-1 / 3, 0, 1, 2, 3, 7])
-    with pl.StringCache():
-        result = s.hist(bin_count=3)
-        expected = pl.DataFrame(
-            {
-                "breakpoint": pl.Series(
-                    [
-                        2.0 + 1 / 9,
-                        4.0 + 5 / 9,
-                        7.0,
-                    ],
-                    dtype=pl.Float64,
-                ),
-                "category": pl.Series(
-                    [
-                        "[-0.333333, 2.111111]",
-                        "(2.111111, 4.555556]",
-                        "(4.555556, 7.0]",
-                    ],
-                    dtype=pl.Categorical,
-                ),
-                "count": pl.Series([4, 1, 1], dtype=pl.get_index_type()),
-            }
-        )
+    result = s.hist(bin_count=3)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [
+                    2.0 + 1 / 9,
+                    4.0 + 5 / 9,
+                    7.0,
+                ],
+                dtype=pl.Float64,
+            ),
+            "category": pl.Series(
+                [
+                    "[-0.333333, 2.111111]",
+                    "(2.111111, 4.555556]",
+                    "(4.555556, 7.0]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([4, 1, 1], dtype=pl.get_index_type()),
+        }
+    )
     assert_frame_equal(result, expected)
 
 
 def test_hist_ignore_nans_21082() -> None:
     s = pl.Series([0.0, float("nan"), 0.5, float("nan"), 1.0])
-    with pl.StringCache():
-        result = s.hist(bins=[-0.001, 0.25, 0.5, 0.75, 1.0])
-        expected = pl.DataFrame(
-            {
-                "breakpoint": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
-                "category": pl.Series(
-                    [
-                        "[-0.001, 0.25]",
-                        "(0.25, 0.5]",
-                        "(0.5, 0.75]",
-                        "(0.75, 1.0]",
-                    ],
-                    dtype=pl.Categorical,
-                ),
-                "count": pl.Series([1, 1, 0, 1], dtype=pl.get_index_type()),
-            }
-        )
+    result = s.hist(bins=[-0.001, 0.25, 0.5, 0.75, 1.0])
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
+            "category": pl.Series(
+                [
+                    "[-0.001, 0.25]",
+                    "(0.25, 0.5]",
+                    "(0.5, 0.75]",
+                    "(0.75, 1.0]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 1, 0, 1], dtype=pl.get_index_type()),
+        }
+    )
     assert_frame_equal(result, expected)
 
 
 def test_hist_include_lower_22056() -> None:
     s = pl.Series("a", [1, 5])
-    with pl.StringCache():
-        result = s.hist(bins=[1, 5], include_category=True)
-        expected = pl.DataFrame(
-            {
-                "breakpoint": pl.Series([5.0], dtype=pl.Float64),
-                "category": pl.Series(["[1.0, 5.0]"], dtype=pl.Categorical),
-                "count": pl.Series([2], dtype=pl.get_index_type()),
-            }
-        )
+    result = s.hist(bins=[1, 5], include_category=True)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([5.0], dtype=pl.Float64),
+            "category": pl.Series(["[1.0, 5.0]"], dtype=pl.Categorical),
+            "count": pl.Series([2], dtype=pl.get_index_type()),
+        }
+    )
     assert_frame_equal(result, expected)
 
 
