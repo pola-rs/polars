@@ -223,6 +223,8 @@ impl DataType {
             Int16 => other.extract::<i16>().is_some(),
             Int32 => other.extract::<i32>().is_some(),
             Int64 => other.extract::<i64>().is_some(),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => other.extract::<i128>().is_some(),
             _ => false,
         }
     }

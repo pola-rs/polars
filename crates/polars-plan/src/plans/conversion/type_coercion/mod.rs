@@ -409,6 +409,12 @@ impl OptimizationRule for TypeCoercionRule {
                                     if other.is_float() {
                                         polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
                                     }
+                                    if let DataType::Unknown(UnknownKind::Int(value)) = other {
+                                        if !super_type.value_within_range(AnyValue::Int128(*value))
+                                        {
+                                            polars_bail!(InvalidOperation: "{} does not fit in a {}", value, super_type);
+                                        }
+                                    }
                                 }
                             }
                             if super_type.is_categorical() || super_type.is_enum() {
