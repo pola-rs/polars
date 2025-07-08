@@ -494,10 +494,28 @@ def test_datetime_ranges_no_alias_schema_9037() -> None:
 
 @pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
 def test_datetime_range_invalid_interval(interval: timedelta) -> None:
-    with pytest.raises(ComputeError, match="`interval` must be positive"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="interval must be negative if 'end' precedes 'start'",
+    ):
         pl.datetime_range(
-            datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
+            start=datetime(2000, 3, 20),
+            end=datetime(2000, 3, 25),
+            interval="-1h",
+            eager=True,
         )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="interval must be negative if 'end' precedes 'start'",
+    ):
+        pl.datetime_range(
+            start=datetime(2000, 3, 25),
+            end=datetime(2000, 3, 20),
+            interval="1h",
+            eager=True,
+        )
+
 
 
 @pytest.mark.parametrize(
@@ -514,7 +532,7 @@ def test_datetime_range_end_of_month_5441(
 ) -> None:
     start = date(2020, 1, 31)
     stop = date(2020, 3, 31)
-    result = pl.datetime_range(start, stop, interval="1mo", closed=closed, eager=True)
+    result = pl.datetime_range(start=start, end=stop, interval="1mo", closed="right", eager=True)
     expected = pl.Series("literal", expected_values)
     assert_series_equal(result, expected)
 

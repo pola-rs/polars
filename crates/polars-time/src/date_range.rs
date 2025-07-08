@@ -141,7 +141,7 @@ pub fn time_range_impl(
 /// vector of i64 representing temporal values
 pub(crate) fn datetime_range_i64_start_end_interval(
     start: i64,
-    end: i64,
+    mut end: i64,
     interval: Duration,
     closed: ClosedWindow,
     time_unit: TimeUnit,
@@ -160,21 +160,41 @@ pub(crate) fn datetime_range_i64_start_end_interval(
 
     if interval.is_constant_duration(time_zone_opt.as_ref()) {
         // Fast path!
-        let step: usize = duration.try_into().map_err(
+        let mut step: i64 = duration.try_into().map_err(
             |_err| polars_err!(ComputeError: "Could not convert {:?} to usize", duration),
         )?;
+        if interval.negative {
+            step = -step;
+        }
         polars_ensure!(
             step != 0,
             InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
             interval,
             time_unit,
         );
-        return match closed {
-            ClosedWindow::Both => Ok((start..=end).step_by(step).collect::<Vec<i64>>()),
-            ClosedWindow::None => Ok((start + duration..end).step_by(step).collect::<Vec<i64>>()),
-            ClosedWindow::Left => Ok((start..end).step_by(step).collect::<Vec<i64>>()),
-            ClosedWindow::Right => Ok((start + duration..=end).step_by(step).collect::<Vec<i64>>()),
+        polars_ensure!(
+            (start <= end) == (step > 0),
+            InvalidOperation: "interval must be negative if 'end' precedes 'start'",
+        );
+
+        // Start with one interval offset if we're not left-closed.
+        let start =
+            start + step * (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
+        let end =
+            end - step * (closed == ClosedWindow::Left || closed == ClosedWindow::None) as i64;
+
+        let out = if step < 0 {
+            // Negative interval, we move backwards.
+            let step = -step;
+            (end..=start)
+                .rev()
+                .step_by(step as usize)
+                .collect::<Vec<i64>>()
+        } else {
+            // Positive interval, we move forwards.
+            (start..=end).step_by(step as usize).collect::<Vec<i64>>()
         };
+        return Ok(out);
     }
 
     let size = ((end - start) / duration + 1) as usize;
@@ -183,28 +203,21 @@ pub(crate) fn datetime_range_i64_start_end_interval(
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
     };
+
+    let mut t = start;
     let mut ts = Vec::with_capacity(size);
-    let mut i = match closed {
-        ClosedWindow::Both | ClosedWindow::Left => 0,
-        ClosedWindow::Right | ClosedWindow::None => 1,
-    };
-    let mut t = offset_fn(&(interval * i), start, time_zone)?;
-    i += 1;
-    match closed {
-        ClosedWindow::Both | ClosedWindow::Right => {
-            while t <= end {
-                ts.push(t);
-                t = offset_fn(&(interval * i), start, time_zone)?;
-                i += 1;
-            }
-        },
-        ClosedWindow::Left | ClosedWindow::None => {
-            while t < end {
-                ts.push(t);
-                t = offset_fn(&(interval * i), start, time_zone)?;
-                i += 1;
-            }
-        },
+    if closed == ClosedWindow::Left || closed == ClosedWindow::Both {
+        ts.push(t);
+    }
+
+    // Open the right interval
+    if closed == ClosedWindow::Left || closed == ClosedWindow::None {
+        end = offset_fn(&(-interval), end, time_zone)?;
+    }
+
+    while t <= end {
+        t = offset_fn(&interval, t, time_zone)?;
+        ts.push(t)
     }
     debug_assert!(size >= ts.len());
     Ok(ts)
@@ -262,9 +275,10 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
     };
+
     // Start with one interval offset if we're not left-closed.
-    let start_idx: i64 = (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
-    let ts = (start_idx..start_idx + num_samples)
+    let start = (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
+    let ts = (start..start + num_samples)
         .map(|i| offset_fn(&(interval * i), start, time_zone))
         .collect::<PolarsResult<Vec<i64>>>()?;
     debug_assert!(num_samples as usize == ts.len());
