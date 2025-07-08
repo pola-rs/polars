@@ -71,7 +71,7 @@ def test_max_size_partition(
 
     i = 0
     while length > 0:
-        assert (io_type["scan"])(tmp_path / f"{i}.{io_type['ext']}").select(
+        assert (io_type["scan"])(tmp_path / f"{i:07x}.{io_type['ext']}").select(
             pl.len()
         ).collect()[0, 0] == min(max_size, length)
 
