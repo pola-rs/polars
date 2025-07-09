@@ -37,8 +37,7 @@ pub(super) fn process_join(
 
         #[cfg(feature = "iejoin")]
         JoinType::IEJoin => {
-            // TODO:
-            // Optimize this
+            // TODO: Optimize this - https://github.com/pola-rs/polars/issues/23489
             true
         },
 
