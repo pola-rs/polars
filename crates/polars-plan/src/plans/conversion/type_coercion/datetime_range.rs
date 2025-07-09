@@ -191,7 +191,7 @@ pub(super) fn update_datetime_range_types(
             let default = unpack!(get_supertype(&type_start, &type_end));
             let supertype = build_datetime_supertype(default, tu, tz, interval)?;
             let from_types = vec![type_start, type_end, type_samples];
-            let to_types = vec![supertype.clone(), supertype, DataType::UInt64];
+            let to_types = vec![supertype.clone(), supertype, DataType::Int64];
             (from_types, to_types)
         },
         DateRangeArgs::StartIntervalSamples => {
@@ -199,7 +199,7 @@ pub(super) fn update_datetime_range_types(
             let type_samples = extract_samples!(input, expr_arena, schema, 1);
             let supertype = build_datetime_supertype(type_start.clone(), tu, tz, interval)?;
             let from_types = vec![supertype.clone(), type_samples];
-            let to_types = vec![supertype, DataType::UInt64];
+            let to_types = vec![supertype, DataType::Int64];
             (from_types, to_types)
         },
         DateRangeArgs::EndIntervalSamples => {
@@ -207,7 +207,7 @@ pub(super) fn update_datetime_range_types(
             let type_samples = extract_samples!(input, expr_arena, schema, 1);
             let supertype = build_datetime_supertype(type_end.clone(), tu, tz, interval)?;
             let from_types = vec![type_end, type_samples];
-            let to_types = vec![supertype, DataType::UInt64];
+            let to_types = vec![supertype, DataType::Int64];
             (from_types, to_types)
         },
     }))

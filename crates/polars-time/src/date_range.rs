@@ -40,7 +40,7 @@ pub fn datetime_range_impl_start_interval_samples(
     name: PlSmallStr,
     start: i64,
     interval: Duration,
-    num_samples: u64,
+    num_samples: i64,
     closed: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&Tz>,
@@ -64,7 +64,7 @@ pub fn datetime_range_impl_start_end_samples(
     name: PlSmallStr,
     start: i64,
     end: i64,
-    num_samples: u64,
+    num_samples: i64,
     closed: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&Tz>,
@@ -215,7 +215,6 @@ pub(crate) fn datetime_range_i64_start_end_interval(
         }
     }
 
-    println!("start = {}", start);
     if closed == ClosedWindow::Left || closed == ClosedWindow::Both {
         ts.push(start);
     };
@@ -233,7 +232,7 @@ pub(crate) fn datetime_range_i64_start_end_interval(
 pub(crate) fn datetime_range_i64_start_interval_samples(
     start: i64,
     interval: Duration,
-    num_samples: u64,
+    num_samples: i64,
     closed: ClosedWindow,
     time_unit: TimeUnit,
     time_zone: Option<&Tz>,

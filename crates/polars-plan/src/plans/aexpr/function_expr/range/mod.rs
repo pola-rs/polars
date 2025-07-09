@@ -265,14 +265,7 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 closed,
                 arg_type,
             } => {
-                map_as_slice!(
-                    datetime_range::datetime_ranges,
-                    interval,
-                    closed,
-                    None,
-                    None,
-                    arg_type
-                )
+                map_as_slice!(datetime_range::date_ranges, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange {
@@ -288,18 +281,11 @@ impl From<IRRangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             DatetimeRanges {
                 interval,
                 closed,
-                time_unit,
-                time_zone,
+                time_unit: _,
+                time_zone: _,
                 arg_type,
             } => {
-                map_as_slice!(
-                    datetime_range::datetime_ranges,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone(),
-                    arg_type
-                )
+                map_as_slice!(datetime_range::datetime_ranges, interval, closed, arg_type)
             },
             #[cfg(feature = "dtype-time")]
             TimeRange { interval, closed } => {
