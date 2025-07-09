@@ -31,15 +31,15 @@ pub fn prune_plan(ir_plan: IRPlanRef<'_>) -> IRPlan {
     }
 }
 
-/// Prunes a subgraph reachable from the supplied nodes into the supplied arenas.
+/// Prunes a subgraph reachable from the supplied roots into the supplied arenas.
 ///
-/// The returned nodes point to the pruned copies of the supplied nodes in the same order.
+/// The returned nodes point to the pruned copies of the supplied roots in the same order.
 ///
 /// The cache hit count is updated based on the number of consumers in the pruned subgraph.
 ///
 /// The original plan and arenas are not modified.
 pub fn prune(
-    nodes: &[Node],
+    roots: &[Node],
     src_ir: &Arena<IR>,
     src_expr: &Arena<AExpr>,
     dst_ir: &mut Arena<IR>,
@@ -51,10 +51,10 @@ pub fn prune(
         dst_ir,
         dst_expr,
         dst_caches: PlHashMap::new(),
-        roots: PlHashMap::from_iter(nodes.iter().map(|node| (*node, None))),
+        roots: PlHashMap::from_iter(roots.iter().map(|node| (*node, None))),
     };
 
-    let dst_nodes: Vec<Node> = nodes.iter().map(|&root| ctx.copy_ir(root)).collect();
+    let dst_roots: Vec<Node> = roots.iter().map(|&root| ctx.copy_ir(root)).collect();
 
     assert!(ctx.roots.values().all(|v| v.is_some()));
 
@@ -62,14 +62,14 @@ pub fn prune(
         // Any root nodes that directly point to this cache will be included in the cache hits.
         // Subtract them, so that the number of hits is equal to the number of consumers in the
         // pruned subgraph, minus one (this is a cache thing).
-        let count = dst_nodes.iter().filter(|&&n| n == cache_node).count();
+        let count = dst_roots.iter().filter(|&&n| n == cache_node).count();
         let IR::Cache { cache_hits, .. } = ctx.dst_ir.get_mut(cache_node) else {
             unreachable!();
         };
         *cache_hits = cache_hits.saturating_sub(count as u32);
     }
 
-    dst_nodes
+    dst_roots
 }
 
 struct CopyContext<'a> {
@@ -274,8 +274,8 @@ mod tests {
             (&[p.cache, p.left_sink, p.cache, p.right_sink], 1),
         ];
 
-        for (i, &(nodes, expected_cache_hits)) in cases.iter().enumerate() {
-            let (pruned, arenas) = p.prune(nodes);
+        for (i, &(roots, expected_cache_hits)) in cases.iter().enumerate() {
+            let (pruned, arenas) = p.prune(roots);
             assert_eq!(
                 cache_hits(arenas.plan(pruned[0])).unwrap(),
                 expected_cache_hits,
@@ -381,13 +381,13 @@ mod tests {
             }
         }
 
-        pub fn prune(&self, nodes: &[Node]) -> (Vec<Node>, Arenas) {
+        pub fn prune(&self, roots: &[Node]) -> (Vec<Node>, Arenas) {
             let mut arenas = Arenas {
                 ir: Arena::new(),
                 expr: Arena::new(),
             };
             let pruned = prune(
-                nodes,
+                roots,
                 &self.ir_arena,
                 &self.expr_arena,
                 &mut arenas.ir,
