@@ -162,6 +162,39 @@ pub(super) fn arg_unique(s: &Column) -> PolarsResult<Column> {
         .map(|ok| ok.into_column())
 }
 
+pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_min()
+        .map_or(Scalar::null(IDX_DTYPE), |v| {
+            Scalar::from(IdxSize::try_from(v).expect("idxsize"))
+        })
+        .into_column(s.name().clone()))
+}
+
+pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_max()
+        .map_or(Scalar::null(IDX_DTYPE), |v| {
+            Scalar::from(IdxSize::try_from(v).expect("idxsize"))
+        })
+        .into_column(s.name().clone()))
+}
+
+pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_sort(SortOptions {
+            descending,
+            nulls_last,
+            multithreaded: true,
+            maintain_order: false,
+            limit: None,
+        })
+        .into_column())
+}
+
 #[cfg(feature = "rank")]
 pub(super) fn rank(s: &Column, options: RankOptions, seed: Option<u64>) -> PolarsResult<Column> {
     Ok(s.as_materialized_series().rank(options, seed).into_column())

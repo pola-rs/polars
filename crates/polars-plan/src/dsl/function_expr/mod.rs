@@ -150,6 +150,12 @@ pub enum FunctionExpr {
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
+    ArgMin,
+    ArgMax,
+    ArgSort {
+        descending: bool,
+        nulls_last: bool,
+    },
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
@@ -394,8 +400,17 @@ impl Hash for FunctionExpr {
             | DropNulls
             | Reverse
             | ArgUnique
+            | ArgMin
+            | ArgMax
             | Shift
             | ShiftAndFill => {},
+            ArgSort {
+                descending,
+                nulls_last,
+            } => {
+                descending.hash(state);
+                nulls_last.hash(state);
+            },
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -637,6 +652,9 @@ impl Display for FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
+            ArgSort { .. } => "arg_sort",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",

@@ -270,16 +270,7 @@ impl PyExpr {
     }
 
     fn arg_sort(&self, descending: bool, nulls_last: bool) -> Self {
-        self.inner
-            .clone()
-            .arg_sort(SortOptions {
-                descending,
-                nulls_last,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .into()
+        self.inner.clone().arg_sort(descending, nulls_last).into()
     }
 
     #[cfg(feature = "top_k")]
