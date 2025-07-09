@@ -1,6 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::MutablePrimitiveArray;
-
 use super::*;
 use crate::rolling::quantile_filter::SealedRolling;
 
@@ -143,6 +141,9 @@ where
         true => det_offsets_center,
         false => det_offsets,
     };
+    /*
+    TODO: fix or remove the dancing links based rolling implementation
+    see https://github.com/pola-rs/polars/issues/23480
     if !center {
         let params = params.as_ref().unwrap();
         let RollingFnParams::Quantile(params) = params else {
@@ -159,6 +160,7 @@ where
         let out: PrimitiveArray<T> = out.into();
         return Box::new(out);
     }
+    */
     rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),

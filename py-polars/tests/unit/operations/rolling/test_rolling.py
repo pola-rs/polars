@@ -1598,6 +1598,17 @@ def test_rolling_quantile_nearest_with_nulls_23932() -> None:
     assert_series_equal(out["a"], expected)
 
 
+def test_rolling_median_23480() -> None:
+    vals = [None] * 17 + [3262645.8, 856191.4, 1635379.0, 34707156.0]
+    evals = [None] * 19 + [1635379.0, (3262645.8 + 1635379.0) / 2]
+    out = pl.DataFrame({"a": vals}).select(
+        r15=pl.col("a").rolling_median(15, min_samples=3),
+        r17=pl.col("a").rolling_median(17, min_samples=3),
+    )
+    expected = pl.DataFrame({"r15": evals, "r17": evals})
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
