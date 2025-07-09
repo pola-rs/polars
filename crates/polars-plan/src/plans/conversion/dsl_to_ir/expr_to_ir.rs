@@ -2,11 +2,17 @@ use super::functions::convert_functions;
 use super::*;
 use crate::plans::iterator::ArenaExprIter;
 
-pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>, schema: &Schema) -> PolarsResult<ExprIR> {
+pub fn to_expr_ir(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    allow_unknown: bool,
+) -> PolarsResult<ExprIR> {
     let mut ctx = ExprToIRContext {
         with_fields: None,
         arena,
         schema,
+        allow_unknown,
     };
     to_expr_ir_with_context(expr, &mut ctx)
 }
@@ -20,11 +26,13 @@ pub fn to_expr_ir_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
+    allow_unknown: bool,
 ) -> PolarsResult<ExprIR> {
     let mut ctx = ExprToIRContext {
         with_fields: None,
         arena,
         schema,
+        allow_unknown,
     };
     let (node, output_name) = to_aexpr_impl_materialized_lit(expr, &mut ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
@@ -34,10 +42,11 @@ pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
+    allow_unknown: bool,
 ) -> PolarsResult<Vec<ExprIR>> {
     input
         .into_iter()
-        .map(|e| to_expr_ir(e, arena, schema))
+        .map(|e| to_expr_ir(e, arena, schema, allow_unknown))
         .collect()
 }
 
@@ -74,6 +83,7 @@ pub struct ExprToIRContext<'a> {
     pub with_fields: Option<(Node, Schema)>,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
+    pub allow_unknown: bool,
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -82,20 +92,44 @@ pub(super) fn to_aexpr_impl(
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
     let owned = Arc::unwrap_or_clone;
+
+    macro_rules! recurse {
+        ($input:expr) => {
+            to_aexpr_impl($input, ctx)
+        };
+    }
+    macro_rules! recurse_arc {
+        ($input:expr) => {
+            recurse!(owned($input))
+        };
+    }
+
+    macro_rules! to_aexpr_mat_lit {
+        ($input:expr) => {
+            to_aexpr_impl_materialized_lit($input, ctx)
+        };
+    }
+
+    macro_rules! to_aexpr_mat_lit_arc {
+        ($input:expr) => {
+            to_aexpr_mat_lit!(owned($input))
+        };
+    }
+
     let (v, output_name) = match expr {
         Expr::Explode { input, skip_empty } => {
-            let (expr, output_name) = to_aexpr_impl(owned(input), ctx)?;
+            let (expr, output_name) = recurse_arc!(input)?;
             (AExpr::Explode { expr, skip_empty }, output_name)
         },
-        Expr::Alias(e, name) => return Ok((to_aexpr_impl(owned(e), ctx)?.0, name)),
+        Expr::Alias(e, name) => return Ok((recurse_arc!(e)?.0, name)),
         Expr::Literal(lv) => {
             let output_name = lv.output_column_name().clone();
             (AExpr::Literal(lv), output_name)
         },
         Expr::Column(name) => (AExpr::Column(name.clone()), name),
         Expr::BinaryExpr { left, op, right } => {
-            let (l, output_name) = to_aexpr_impl(owned(left), ctx)?;
-            let (r, _) = to_aexpr_impl(owned(right), ctx)?;
+            let (l, output_name) = recurse_arc!(left)?;
+            let (r, _) = recurse_arc!(right)?;
             (
                 AExpr::BinaryExpr {
                     left: l,
@@ -110,7 +144,7 @@ pub(super) fn to_aexpr_impl(
             dtype,
             options,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), ctx)?;
+            let (expr, output_name) = recurse_arc!(expr)?;
             (
                 AExpr::Cast {
                     expr,
@@ -125,8 +159,8 @@ pub(super) fn to_aexpr_impl(
             idx,
             returns_scalar,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), ctx)?;
-            let (idx, _) = to_aexpr_impl_materialized_lit(owned(idx), ctx)?;
+            let (expr, output_name) = recurse_arc!(expr)?;
+            let (idx, _) = to_aexpr_mat_lit_arc!(idx)?;
             (
                 AExpr::Gather {
                     expr,
@@ -137,7 +171,7 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::Sort { expr, options } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), ctx)?;
+            let (expr, output_name) = recurse_arc!(expr)?;
             (AExpr::Sort { expr, options }, output_name)
         },
         Expr::SortBy {
@@ -145,10 +179,10 @@ pub(super) fn to_aexpr_impl(
             by,
             sort_options,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), ctx)?;
+            let (expr, output_name) = recurse_arc!(expr)?;
             let by = by
                 .into_iter()
-                .map(|e| Ok(to_aexpr_impl(e, ctx)?.0))
+                .map(|e| Ok(recurse!(e)?.0))
                 .collect::<PolarsResult<_>>()?;
 
             (
@@ -161,8 +195,8 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::Filter { input, by } => {
-            let (input, output_name) = to_aexpr_impl(owned(input), ctx)?;
-            let (by, _) = to_aexpr_impl(owned(by), ctx)?;
+            let (input, output_name) = recurse_arc!(input)?;
+            let (by, _) = recurse_arc!(by)?;
             (AExpr::Filter { input, by }, output_name)
         },
         Expr::Agg(agg) => {
@@ -171,7 +205,7 @@ pub(super) fn to_aexpr_impl(
                     input,
                     propagate_nans,
                 } => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (
                         IRAggExpr::Min {
                             input,
@@ -184,7 +218,7 @@ pub(super) fn to_aexpr_impl(
                     input,
                     propagate_nans,
                 } => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (
                         IRAggExpr::Max {
                             input,
@@ -194,31 +228,31 @@ pub(super) fn to_aexpr_impl(
                     )
                 },
                 AggExpr::Median(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Median(input), output_name)
                 },
                 AggExpr::NUnique(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::NUnique(input), output_name)
                 },
                 AggExpr::First(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::First(input), output_name)
                 },
                 AggExpr::Last(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Last(input), output_name)
                 },
                 AggExpr::Mean(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Mean(input), output_name)
                 },
                 AggExpr::Implode(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Implode(input), output_name)
                 },
                 AggExpr::Count(input, include_nulls) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Count(input, include_nulls), output_name)
                 },
                 AggExpr::Quantile {
@@ -226,8 +260,8 @@ pub(super) fn to_aexpr_impl(
                     quantile,
                     method,
                 } => {
-                    let (expr, output_name) = to_aexpr_impl_materialized_lit(owned(expr), ctx)?;
-                    let (quantile, _) = to_aexpr_impl_materialized_lit(owned(quantile), ctx)?;
+                    let (expr, output_name) = to_aexpr_mat_lit_arc!(expr)?;
+                    let (quantile, _) = to_aexpr_mat_lit_arc!(quantile)?;
                     (
                         IRAggExpr::Quantile {
                             expr,
@@ -238,19 +272,19 @@ pub(super) fn to_aexpr_impl(
                     )
                 },
                 AggExpr::Sum(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Sum(input), output_name)
                 },
                 AggExpr::Std(input, ddof) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Std(input, ddof), output_name)
                 },
                 AggExpr::Var(input, ddof) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Var(input, ddof), output_name)
                 },
                 AggExpr::AggGroups(input) => {
-                    let (input, output_name) = to_aexpr_impl_materialized_lit(owned(input), ctx)?;
+                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::AggGroups(input), output_name)
                 },
             };
@@ -261,9 +295,9 @@ pub(super) fn to_aexpr_impl(
             truthy,
             falsy,
         } => {
-            let (p, _) = to_aexpr_impl_materialized_lit(owned(predicate), ctx)?;
-            let (t, output_name) = to_aexpr_impl(owned(truthy), ctx)?;
-            let (f, _) = to_aexpr_impl(owned(falsy), ctx)?;
+            let (p, _) = to_aexpr_mat_lit_arc!(predicate)?;
+            let (t, output_name) = recurse_arc!(truthy)?;
+            let (f, _) = recurse_arc!(falsy)?;
             (
                 AExpr::Ternary {
                     predicate: p,
@@ -280,11 +314,11 @@ pub(super) fn to_aexpr_impl(
             options,
             fmt_str,
         } => {
-            let e = to_expr_irs_with_context(input, ctx)?;
-            let output_name = if e.is_empty() {
+            let input = to_expr_irs_with_context(input, ctx)?;
+            let output_name = if input.is_empty() {
                 fmt_str.as_ref().clone()
             } else {
-                e[0].output_name().clone()
+                input[0].output_name().clone()
             };
 
             let function = function.materialize()?;
@@ -292,9 +326,37 @@ pub(super) fn to_aexpr_impl(
             function.as_ref().resolve_dsl(ctx.schema)?;
             output_type.as_ref().resolve_dsl(ctx.schema)?;
 
+            let fields = input
+                .iter()
+                .map(|e| e.field(ctx.schema, Context::Default, ctx.arena))
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
+            let output_dtype = out.dtype();
+
+            #[cfg(feature = "python")]
+            {
+                if output_dtype.is_unknown()
+                    && !matches!(output_dtype, DataType::Unknown(UnknownKind::Ufunc))
+                {
+                    let msg = format!(
+                        "'return_dtype' of function {fmt_str} must be set\n\nA later expression might fail because the output type is not known. Set return_dtype='same' if the type is unchanged, or set the proper output data type."
+                    );
+                    if ctx.allow_unknown {
+                        polars_warn!(MapWithoutReturnDtypeWarning, "{}", msg)
+                    } else {
+                        polars_bail!(InvalidOperation: msg)
+                    }
+                }
+            }
+            #[cfg(not(feature = "python"))]
+            assert!(
+                output_dtype.is_known(),
+                "output type of anonymous functions must bet set"
+            );
             (
                 AExpr::AnonymousFunction {
-                    input: e,
+                    input,
                     function: LazySerde::Deserialized(function),
                     output_type: LazySerde::Deserialized(output_type),
                     options,
@@ -312,9 +374,9 @@ pub(super) fn to_aexpr_impl(
             order_by,
             options,
         } => {
-            let (function, output_name) = to_aexpr_impl(owned(function), ctx)?;
+            let (function, output_name) = recurse_arc!(function)?;
             let order_by = if let Some((e, options)) = order_by {
-                Some((to_aexpr_impl(owned(e.clone()), ctx)?.0, options))
+                Some((recurse_arc!(e)?.0, options))
             } else {
                 None
             };
@@ -337,9 +399,9 @@ pub(super) fn to_aexpr_impl(
             offset,
             length,
         } => {
-            let (input, output_name) = to_aexpr_impl(owned(input), ctx)?;
-            let (offset, _) = to_aexpr_impl_materialized_lit(owned(offset), ctx)?;
-            let (length, _) = to_aexpr_impl_materialized_lit(owned(length), ctx)?;
+            let (input, output_name) = recurse_arc!(input)?;
+            let (offset, _) = to_aexpr_mat_lit_arc!(offset)?;
+            let (length, _) = to_aexpr_mat_lit_arc!(length)?;
             (
                 AExpr::Slice {
                     input,
@@ -354,7 +416,7 @@ pub(super) fn to_aexpr_impl(
             evaluation,
             variant,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), ctx)?;
+            let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype =
                 ctx.arena
                     .get(expr)
@@ -365,6 +427,7 @@ pub(super) fn to_aexpr_impl(
                 with_fields: None,
                 schema: &evaluation_schema,
                 arena: ctx.arena,
+                allow_unknown: ctx.allow_unknown,
             };
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 

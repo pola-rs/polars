@@ -122,18 +122,13 @@ def test_struct_unnesting() -> None:
         out_lazy = df.lazy().unnest(cols)
         assert_frame_equal(out_lazy, expected.lazy())
 
-    out = (
-        df_base.lazy()
-        .select(
-            pl.all().alias("a_original"),
-            pl.col("a")
-            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
-            .struct.rename_fields(["a", "a_squared", "mod2eq0"])
-            .alias("foo"),
-        )
-        .unnest("foo")
-        .collect()
-    )
+    out = df_base.select(
+        pl.all().alias("a_original"),
+        pl.col("a")
+        .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+        .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+        .alias("foo"),
+    ).unnest("foo")
     assert_frame_equal(out, expected)
 
 

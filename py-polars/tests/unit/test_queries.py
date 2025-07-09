@@ -235,7 +235,8 @@ def test_opaque_filter_on_lists_3784() -> None:
             pl.col("str_list").map_elements(
                 lambda variant: pre in variant
                 and succ in variant
-                and variant.to_list().index(pre) < variant.to_list().index(succ)
+                and variant.to_list().index(pre) < variant.to_list().index(succ),
+                return_dtype=pl.Boolean,
             )
         )
     ).collect().to_dict(as_series=False) == {

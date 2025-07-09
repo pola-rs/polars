@@ -699,15 +699,21 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar))]
+    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<PyDataTypeExpr>,
         is_elementwise: bool,
         returns_scalar: bool,
+        is_ufunc: bool,
     ) -> Self {
-        let output_type = output_type.map(|v| v.inner);
+        let output_type = if is_ufunc {
+            debug_assert!(output_type.is_none());
+            Some(DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc)))
+        } else {
+            output_type.map(|v| v.inner)
+        };
         map_single(self, lambda, output_type, is_elementwise, returns_scalar)
     }
 
@@ -934,7 +940,7 @@ impl PyExpr {
     fn skip_batch_predicate(&self, py: Python<'_>, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
         let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
-            let node = to_expr_ir(self.inner.clone(), &mut aexpr_arena, &schema.0)?.node();
+            let node = to_expr_ir(self.inner.clone(), &mut aexpr_arena, &schema.0, true)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);

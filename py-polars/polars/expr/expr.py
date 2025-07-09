@@ -323,7 +323,9 @@ class Expr:
             if not isinstance(inputs[0], Expr):
                 msg = "Input must be expression."
                 raise OutOfBoundsError(msg)
-            return inputs[0].map_batches(ufunc, is_elementwise=not is_custom_ufunc)
+            return inputs[0].map_batches(
+                ufunc, is_elementwise=not is_custom_ufunc, _is_ufunc=True
+            )
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
@@ -358,7 +360,9 @@ class Expr:
                     args.append(expr[0])
             return ufunc(*args, **kwargs)
 
-        return root_expr.map_batches(function, is_elementwise=not is_custom_ufunc)
+        return root_expr.map_batches(
+            function, is_elementwise=not is_custom_ufunc, _is_ufunc=True
+        )
 
     @classmethod
     def deserialize(
@@ -4338,8 +4342,18 @@ class Expr:
             self.function = function
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            return_dtype = kwargs.pop("return_dtype")
-            result = self.function(*args, **kwargs)
+            return_dtype = kwargs["return_dtype"]
+
+            # ufunc and numba don't expect return_dtype
+            try:
+                result = self.function(*args, **kwargs)
+            except TypeError as e:
+                if "unexpected keyword argument 'return_dtype'" in e.args[0]:
+                    kwargs.pop("return_dtype")
+                    result = self.function(*args, **kwargs)
+                else:
+                    raise
+
             if _check_for_numpy(result) and isinstance(result, np.ndarray):
                 result = pl.Series(result, dtype=return_dtype)
             return result
@@ -4352,6 +4366,7 @@ class Expr:
         agg_list: bool = False,
         is_elementwise: bool = False,
         returns_scalar: bool = False,
+        _is_ufunc: bool = False,
     ) -> Expr:
         """
         Apply a custom python function to a whole Series or sequence of Series.
@@ -4407,7 +4422,11 @@ class Expr:
         ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        >>> df.select(pl.all().map_batches(lambda x: x.to_numpy().argmax()))
+        >>> df.select(
+        ...     pl.all().map_batches(
+        ...         lambda x: x.to_numpy().argmax(), return_dtype=pl.Int64
+        ...     )
+        ... )
         shape: (1, 2)
         ┌──────┬────────┐
         │ sine ┆ cosine │
@@ -4427,7 +4446,9 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x.max(), returns_scalar=True)
+        ...     pl.col("b").map_batches(
+        ...         lambda x: x.max(), returns_scalar=True, return_dtype=pl.self_dtype()
+        ...     )
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
@@ -4450,7 +4471,8 @@ class Expr:
         ... )
         >>> df.with_columns(
         ...     a_times_b=pl.struct("a", "b").map_batches(
-        ...         lambda x: np.multiply(x.struct.field("a"), x.struct.field("b"))
+        ...         lambda x: np.multiply(x.struct.field("a"), x.struct.field("b")),
+        ...         return_dtype=pl.Int64,
         ...     )
         ... )
         shape: (4, 3)
@@ -4471,7 +4493,9 @@ class Expr:
 Consider using {self}.implode() instead"""
             raise DeprecationWarning(msg)
             self = self.implode()
-        if return_dtype is not None:
+        if isinstance(return_dtype, pl.DataTypeExpr):
+            return_dtype = return_dtype._materialize_udf(self)._pydatatype_expr
+        elif return_dtype is not None:
             return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
         return wrap_expr(
@@ -4480,13 +4504,14 @@ Consider using {self}.implode() instead"""
                 return_dtype,
                 is_elementwise,
                 returns_scalar,
+                _is_ufunc,
             )
         )
 
     def map_elements(
         self,
         function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -4574,7 +4599,7 @@ Consider using {self}.implode() instead"""
 
         >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("a")
-        ...     .map_elements(lambda x: x * 2, return_dtype=pl.Int64)
+        ...     .map_elements(lambda x: x * 2, return_dtype=pl.self_dtype())
         ...     .alias("a_times_2"),
         ... )
         shape: (4, 3)
@@ -4674,13 +4699,11 @@ Consider using {self}.implode() instead"""
         if len(root_names) > 0:
             warn_on_inefficient_map(function, columns=root_names, map_target="expr")
 
-        if isinstance(return_dtype, pl.DataTypeExpr):
-            msg = "DataTypeExpr is not supported for map_elements"
-            raise TypeError(msg)
-
         if pass_name:
 
-            def wrap_f(x: Series) -> Series:  # pragma: no cover
+            def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
+                return_dtype = kwargs["return_dtype"]
+
                 def inner(s: Series | Any) -> Series:  # pragma: no cover
                     if isinstance(s, pl.Series):
                         s = s.alias(x.name)
@@ -4694,9 +4717,11 @@ Consider using {self}.implode() instead"""
 
         else:
 
-            def wrap_f(x: Series) -> Series:  # pragma: no cover
+            def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
+                return_dtype = kwargs["return_dtype"]
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
+
                     return x.map_elements(
                         function, return_dtype=return_dtype, skip_nulls=skip_nulls
                     )

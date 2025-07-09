@@ -344,7 +344,7 @@ def test_arr_eval_named_cols() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
 
     with pytest.raises(
-        ComputeError,
+        ColumnNotFoundError,
     ):
         df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
@@ -724,5 +724,7 @@ def test_raise_on_different_results_20104() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError):
         df.rolling("x", period="3i").agg(
-            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+            result=pl.col("x")
+            .gather_every(2, offset=1)
+            .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )

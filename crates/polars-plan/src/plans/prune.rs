@@ -330,7 +330,8 @@ mod tests {
 
             let filter = ir_arena.add(IR::Filter {
                 input: scan,
-                predicate: to_expr_ir(col("a").gt_eq(lit(10)), &mut expr_arena, &schema).unwrap(),
+                predicate: to_expr_ir(col("a").gt_eq(lit(10)), &mut expr_arena, &schema, true)
+                    .unwrap(),
             });
 
             // Throw in an unreachable node
@@ -352,7 +353,7 @@ mod tests {
 
             let sort = ir_arena.add(IR::Sort {
                 input: cache,
-                by_column: vec![to_expr_ir(col("a"), &mut expr_arena, &schema).unwrap()],
+                by_column: vec![to_expr_ir(col("a"), &mut expr_arena, &schema, true).unwrap()],
                 slice: None,
                 sort_options: Default::default(),
             });
