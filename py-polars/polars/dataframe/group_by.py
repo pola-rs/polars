@@ -366,7 +366,7 @@ class GroupBy:
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .head(n)
-            .collect(optimizations=QueryOptFlags.none())
+            .collect(optimizations=QueryOptFlags._eager())
         )
 
     def tail(self, n: int = 5) -> DataFrame:

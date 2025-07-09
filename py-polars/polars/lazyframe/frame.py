@@ -4,7 +4,7 @@ import contextlib
 import io
 import os
 import warnings
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -21,6 +21,7 @@ from typing import (
 )
 
 import polars._reexport as pl
+import polars.selectors as cs
 from polars import functions as F
 from polars._typing import (
     ParquetMetadata,
@@ -39,6 +40,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -107,14 +109,14 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Iterable, Sequence
+    from collections.abc import Awaitable, Sequence
     from io import IOBase
     from typing import IO, Literal
 
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr, PyPartitioning
+        from polars.polars import PyExpr, PyPartitioning, PySelector
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -4364,24 +4366,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 0         │
         │ 10        │
         └───────────┘
-
-        Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the setting `Config.set_auto_structify(True)`:
-
-        >>> with pl.Config(auto_structify=True):
-        ...     lf.select(
-        ...         is_odd=(pl.col(pl.Int64) % 2 == 1).name.suffix("_is_odd"),
-        ...     ).collect()
-        shape: (3, 1)
-        ┌──────────────┐
-        │ is_odd       │
-        │ ---          │
-        │ struct[2]    │
-        ╞══════════════╡
-        │ {true,false} │
-        │ {false,true} │
-        │ {true,false} │
-        └──────────────┘
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
@@ -5892,25 +5876,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
-
-        Expressions with multiple outputs can automatically be instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
-
-        >>> with pl.Config(auto_structify=True):
-        ...     lf.drop("c").with_columns(
-        ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
-        ...     ).collect()
-        shape: (4, 3)
-        ┌─────┬──────┬─────────────┐
-        │ a   ┆ b    ┆ diffs       │
-        │ --- ┆ ---  ┆ ---         │
-        │ i64 ┆ f64  ┆ struct[2]   │
-        ╞═════╪══════╪═════════════╡
-        │ 1   ┆ 0.5  ┆ {null,null} │
-        │ 2   ┆ 4.0  ┆ {1,3.5}     │
-        │ 3   ┆ 10.0 ┆ {1,6.0}     │
-        │ 4   ┆ 13.0 ┆ {1,3.0}     │
-        └─────┴──────┴─────────────┘
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
@@ -6093,8 +6058,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = parse_into_list_of_expressions(*columns)
-        return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
+        selectors: list[ColumnNameOrSelector] = []
+        for c in columns:
+            if isinstance(c, Iterable) and not isinstance(c, str):
+                selectors += c
+            else:
+                selectors += [c]
+
+        drop_cols = parse_list_into_selector(selectors, strict=strict)
+        return self._from_pyldf(self._ldf.drop(columns=drop_cols._pyselector))
 
     def rename(
         self, mapping: Mapping[str, str] | Callable[[str], str], *, strict: bool = True
@@ -7120,8 +7092,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def explode(
         self,
-        columns: str | Expr | Sequence[str | Expr],
-        *more_columns: str | Expr,
+        columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
@@ -7159,8 +7131,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        columns = parse_into_list_of_expressions(columns, *more_columns)
-        return self._from_pyldf(self._ldf.explode(columns))
+        subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
+            more_columns
+        )
+        return self._from_pyldf(self._ldf.explode(subset=subset._pyselector))
 
     def unique(
         self,
@@ -7247,9 +7221,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
         """
+        selector_subset: PySelector | None = None
         if subset is not None:
-            subset = parse_into_list_of_expressions(subset)
-        return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
+            selector_subset = parse_list_into_selector(subset)._pyselector
+        return self._from_pyldf(self._ldf.unique(maintain_order, selector_subset, keep))
 
     def drop_nans(
         self,
@@ -7335,9 +7310,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ NaN ┆ 5.25 ┆ 10.5  │
         └─────┴──────┴───────┘
         """
+        selector_subset: PySelector | None = None
         if subset is not None:
-            subset = parse_into_list_of_expressions(subset)
-        return self._from_pyldf(self._ldf.drop_nans(subset))
+            selector_subset = parse_list_into_selector(subset)._pyselector
+        return self._from_pyldf(self._ldf.drop_nans(subset=selector_subset))
 
     def drop_nulls(
         self,
@@ -7418,9 +7394,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ 1   ┆ 1    │
         └──────┴─────┴──────┘
         """
+        selector_subset: PySelector | None = None
         if subset is not None:
-            subset = parse_into_list_of_expressions(subset)
-        return self._from_pyldf(self._ldf.drop_nulls(subset))
+            selector_subset = parse_list_into_selector(subset)._pyselector
+        return self._from_pyldf(self._ldf.drop_nulls(subset=selector_subset))
 
     def unpivot(
         self,
@@ -7493,10 +7470,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 version="1.5.0",
             )
 
-        on = [] if on is None else parse_into_list_of_expressions(on)
-        index = [] if index is None else parse_into_list_of_expressions(index)
+        selector_on: pl.Selector = (
+            cs.empty() if on is None else parse_list_into_selector(on)
+        )
+        selector_index: pl.Selector = (
+            cs.empty() if index is None else parse_list_into_selector(index)
+        )
 
-        return self._from_pyldf(self._ldf.unpivot(on, index, value_name, variable_name))
+        return self._from_pyldf(
+            self._ldf.unpivot(
+                selector_on._pyselector,
+                selector_index._pyselector,
+                value_name,
+                variable_name,
+            )
+        )
 
     def map_batches(
         self,
@@ -7677,8 +7665,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
         """
-        columns = parse_into_list_of_expressions(columns, *more_columns)
-        return self._from_pyldf(self._ldf.unnest(columns))
+        subset = parse_list_into_selector(columns) | parse_list_into_selector(
+            more_columns
+        )
+        return self._from_pyldf(self._ldf.unnest(subset._pyselector))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """

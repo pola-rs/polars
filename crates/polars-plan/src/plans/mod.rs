@@ -24,6 +24,7 @@ pub(crate) mod options;
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::*;
+pub mod prune;
 mod schema;
 pub mod visitor;
 

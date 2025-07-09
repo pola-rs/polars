@@ -1,4 +1,4 @@
-# Configuring workspace settings
+# Configure settings
 
 The Workspace Settings page provides a centralized interface for managing your workspace
 configuration.

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
     """Fixture to restore the environment after/during tests."""
-    with pl.StringCache(), pl.Config(restore_defaults=True):
+    with pl.Config(restore_defaults=True):
         yield
 
 
@@ -938,7 +938,6 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
     ("environment_variable", "config_setting", "value", "expected"),
     [
         ("POLARS_ENGINE_AFFINITY", "set_engine_affinity", "gpu", "gpu"),
-        ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
         ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),
         ("POLARS_FMT_STR_LEN", "set_fmt_str_lengths", 42, "42"),

@@ -83,12 +83,7 @@ pub(crate) fn is_column_independent_aexpr(expr: Node, arena: &Arena<AExpr>) -> b
         #[cfg(feature = "dtype-struct")]
         AExpr::Function {
             input: _,
-            function:
-                IRFunctionExpr::StructExpr(
-                    IRStructFunction::FieldByIndex(_)
-                    | IRStructFunction::FieldByName(_)
-                    | IRStructFunction::MultipleFields(_),
-                ),
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(_)),
             options: _,
         } => true,
         _ => false,
@@ -129,14 +124,8 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
             Expr::Window { function, .. } => return expr_output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
-            Expr::KeepName(_) | Expr::Wildcard | Expr::RenameAlias { .. } => polars_bail!(
-                ComputeError:
-                "cannot determine output column without a context for this expression"
-            ),
-            Expr::Columns(_) | Expr::DtypeColumn(_) | Expr::IndexColumn(_) => polars_bail!(
-                ComputeError:
-                "this expression may produce multiple output names"
-            ),
+            Expr::KeepName(_) => polars_bail!(nyi = "`name.keep` is not allowed here"),
+            Expr::RenameAlias { expr, function } => return function.call(&expr_output_name(expr)?),
             Expr::Len => return Ok(get_len_name()),
             Expr::Literal(val) => return Ok(val.output_column_name().clone()),
             _ => {},
@@ -145,25 +134,6 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     polars_bail!(
         ComputeError:
         "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
-    );
-}
-
-/// This function should be used to find the name of the start of an expression
-/// Normal iteration would just return the first root column it found
-pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<PlSmallStr> {
-    for e in expr {
-        match e {
-            Expr::Filter { input, .. } => return get_single_leaf(input),
-            Expr::Gather { expr, .. } => return get_single_leaf(expr),
-            Expr::SortBy { expr, .. } => return get_single_leaf(expr),
-            Expr::Window { function, .. } => return get_single_leaf(function),
-            Expr::Column(name) => return Ok(name.clone()),
-            Expr::Len => return Ok(get_len_name()),
-            _ => {},
-        }
-    }
-    polars_bail!(
-        ComputeError: "unable to find a single leaf column in expr {:?}", expr
     );
 }
 
@@ -183,8 +153,8 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     polars_ensure!(leaves.len() <= 1, ComputeError: "found more than one root column name");
     match leaves.pop() {
         Some(Expr::Column(name)) => Ok(name.clone()),
-        Some(Expr::Wildcard) => polars_bail!(
-            ComputeError: "wildcard has no root column name",
+        Some(Expr::Selector(_)) => polars_bail!(
+            ComputeError: "selector has no root column name",
         ),
         Some(_) => unreachable!(),
         None => polars_bail!(
@@ -218,7 +188,7 @@ pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &PlSmallSt
 /// Get all leaf column expressions in the expression tree.
 pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item = &Expr> {
     expr.into_iter().flat_map(|e| match e {
-        Expr::Column(_) | Expr::Wildcard => Some(e),
+        Expr::Column(_) => Some(e),
         _ => None,
     })
 }

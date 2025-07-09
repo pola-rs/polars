@@ -35,11 +35,11 @@ pub struct WriteMetricsColumn {
     /// The minimum value in the column.
     ///
     /// `NaN`s are always ignored and `None` is the default value.
-    pub lower_bound: Box<dyn GroupedReduction>,
+    pub lower_bound: Option<Box<dyn GroupedReduction>>,
     /// The maximum value in the column.
     ///
     /// `NaN`s are always ignored and `None` is the default value.
-    pub upper_bound: Box<dyn GroupedReduction>,
+    pub upper_bound: Option<Box<dyn GroupedReduction>>,
 }
 
 impl WriteMetrics {
@@ -75,8 +75,12 @@ impl WriteMetrics {
             }
 
             if has_non_null_non_nan_values {
-                w.lower_bound.update_group(c, 0, 0)?;
-                w.upper_bound.update_group(c, 0, 0)?;
+                if let Some(lb) = &mut w.lower_bound {
+                    lb.update_group(c, 0, 0)?;
+                }
+                if let Some(ub) = &mut w.upper_bound {
+                    ub.update_group(c, 0, 0)?;
+                }
             }
         }
         Ok(())
@@ -140,8 +144,14 @@ impl WriteMetrics {
             for (mut w, c) in m.columns.into_iter().zip(columns.iter_mut()) {
                 c.0.append_value(w.null_count);
                 c.1.append_value(w.nan_count);
-                c.2.extend(&w.lower_bound.finalize().unwrap(), ShareStrategy::Always);
-                c.3.extend(&w.upper_bound.finalize().unwrap(), ShareStrategy::Always);
+                match &mut w.lower_bound {
+                    None => c.2.extend_nulls(1),
+                    Some(lb) => c.2.extend(&lb.finalize().unwrap(), ShareStrategy::Always),
+                }
+                match &mut w.upper_bound {
+                    None => c.3.extend_nulls(1),
+                    Some(ub) => c.3.extend(&ub.finalize().unwrap(), ShareStrategy::Always),
+                }
             }
         }
 
@@ -202,11 +212,17 @@ impl WriteMetrics {
 
 impl WriteMetricsColumn {
     pub fn new(dtype: DataType) -> Self {
-        let mut lower_bound = new_min_reduction(dtype.clone(), false);
-        let mut upper_bound = new_max_reduction(dtype, false);
+        let (lower_bound, upper_bound) = if dtype.is_nested() {
+            (None, None)
+        } else {
+            let mut lower_bound = new_min_reduction(dtype.clone(), false);
+            let mut upper_bound = new_max_reduction(dtype, false);
 
-        lower_bound.resize(1);
-        upper_bound.resize(1);
+            lower_bound.resize(1);
+            upper_bound.resize(1);
+
+            (Some(lower_bound), Some(upper_bound))
+        };
 
         Self {
             null_count: 0,

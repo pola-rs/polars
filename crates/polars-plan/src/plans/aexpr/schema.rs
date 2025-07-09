@@ -7,19 +7,6 @@ use recursive::recursive;
 
 use super::*;
 
-fn float_type(field: &mut Field) {
-    let should_coerce = match &field.dtype {
-        DataType::Float32 => false,
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(..) => true,
-        DataType::Boolean => true,
-        dt => dt.is_primitive_numeric(),
-    };
-    if should_coerce {
-        field.coerce(DataType::Float64);
-    }
-}
-
 fn validate_expr(node: Node, arena: &Arena<AExpr>, schema: &Schema) -> PolarsResult<()> {
     let mut ctx = ToFieldContext {
         schema,
@@ -251,7 +238,12 @@ impl AExpr {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         match field.dtype {
                             Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
-                            _ => float_type(&mut field),
+                            _ => {
+                                let field =
+                                    [ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?];
+                                let mapper = FieldsMapper::new(&field);
+                                return mapper.moment_dtype();
+                            },
                         }
                         Ok(field)
                     },
@@ -260,7 +252,12 @@ impl AExpr {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         match field.dtype {
                             Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
-                            _ => float_type(&mut field),
+                            _ => {
+                                let field =
+                                    [ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?];
+                                let mapper = FieldsMapper::new(&field);
+                                return mapper.moment_dtype();
+                            },
                         }
                         Ok(field)
                     },
@@ -272,15 +269,15 @@ impl AExpr {
                     },
                     Std(expr, _) => {
                         *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        float_type(&mut field);
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     Var(expr, _) => {
                         *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        float_type(&mut field);
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.moment_dtype()
                     },
                     NUnique(expr) => {
                         *agg_list = false;
@@ -297,14 +294,14 @@ impl AExpr {
                     AggGroups(expr) => {
                         *agg_list = true;
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        field.coerce(List(IDX_DTYPE.into()));
+                        field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
                     Quantile { expr, .. } => {
                         *agg_list = false;
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        float_type(&mut field);
-                        Ok(field)
+                        let field = [ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?];
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.map_numeric_to_float_dtype()
                     },
                 }
             },

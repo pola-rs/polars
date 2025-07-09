@@ -18,7 +18,7 @@ fn test_multiple_roots() -> PolarsResult<()> {
     assert!(predicate_at_scan(lf));
     // and that we don't have any filter node
     assert!(
-        !(&lp_arena)
+        !lp_arena
             .iter(root)
             .any(|(_, lp)| matches!(lp, IR::Filter { .. }))
     );

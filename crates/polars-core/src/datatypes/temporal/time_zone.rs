@@ -84,10 +84,6 @@ impl TimeZone {
         Ok(canonical_tz.map(|inner| Self { inner }))
     }
 
-    pub fn eq_wildcard_aware(this: &Self, other: &Self) -> bool {
-        this == other || this.inner == "*" || other.inner == "*"
-    }
-
     /// Equality where `None` is treated as UTC.
     pub fn eq_none_as_utc(this: Option<&TimeZone>, other: Option<&TimeZone>) -> bool {
         this.unwrap_or(&Self::UTC) == other.unwrap_or(&Self::UTC)

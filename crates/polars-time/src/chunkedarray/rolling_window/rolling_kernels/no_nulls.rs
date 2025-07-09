@@ -238,7 +238,8 @@ where
         + SubAssign
         + IsFloat
         + Sub<Output = T>
-        + Add<Output = T>,
+        + Add<Output = T>
+        + PartialOrd,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]

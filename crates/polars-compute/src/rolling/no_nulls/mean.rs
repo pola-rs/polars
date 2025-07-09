@@ -18,7 +18,8 @@ where
         + Div<Output = T>
         + NumCast
         + Add<Output = T>
-        + Sub<Output = T>,
+        + Sub<Output = T>
+        + PartialOrd,
 {
     fn new(
         slice: &'a [T],

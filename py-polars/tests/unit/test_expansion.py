@@ -99,6 +99,8 @@ def test_exclude_keys_in_aggregation_16170(expr: pl.Expr, expected: list[str]) -
 
     # wildcard excludes aggregation column
     result = df.lazy().group_by("A").agg(expr)
+    print(result.collect_schema().names())
+    print(expected)
     assert result.collect_schema().names() == expected
 
 
@@ -197,3 +199,17 @@ def test_struct_field_exclude_and_wildcard_expansion() -> None:
         "i": [3],
         "j": [4],
     }
+
+
+def test_err_on_multiple_column_expansion() -> None:
+    assert_frame_equal(
+        pl.DataFrame(
+            {
+                "a": [1],
+                "b": [2],
+                "c": [3],
+                "d": [4],
+            }
+        ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])]),
+        pl.DataFrame({"a": [4], "b": [6]}),
+    )

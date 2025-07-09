@@ -100,7 +100,7 @@ impl PyBatchedCsv {
             .with_has_header(has_header)
             .with_n_rows(n_rows)
             .with_skip_rows(skip_rows)
-            .with_skip_rows(skip_lines)
+            .with_skip_lines(skip_lines)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection.map(Arc::new))
             .with_rechunk(rechunk)

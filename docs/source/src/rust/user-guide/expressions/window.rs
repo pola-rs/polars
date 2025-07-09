@@ -121,6 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = filtered
         .lazy()
         .with_columns([cols(["Name", "Speed"])
+            .as_expr()
             .sort_by(
                 ["Speed"],
                 SortMultipleOptions::default().with_order_descending(true),

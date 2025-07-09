@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -13,7 +14,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import IntoExpr, PolarsDataType
+    from polars._typing import ColumnNameOrSelector, IntoExpr, PolarsDataType
     from polars.polars import PyExpr
 
 
@@ -103,6 +104,49 @@ def parse_into_list_of_expressions(
         exprs.extend(named_exprs)
 
     return exprs
+
+
+def parse_into_selector(
+    i: ColumnNameOrSelector,
+    *,
+    strict: bool = True,
+) -> pl.Selector:
+    if isinstance(i, str):
+        import polars.selectors as cs
+
+        return cs.by_name([i], require_all=strict)
+    elif isinstance(i, pl.Selector):
+        return i
+    elif isinstance(i, pl.Expr):
+        return i.meta.as_selector()
+    else:
+        msg = f"cannot turn {qualified_type_name(i)!r} into selector"
+        raise TypeError(msg)
+
+
+def parse_list_into_selector(
+    inputs: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+    *,
+    strict: bool = True,
+) -> pl.Selector:
+    if isinstance(inputs, Collection) and not isinstance(inputs, str):
+        import polars.selectors as cs
+
+        columns = list(filter(lambda i: isinstance(i, str), inputs))
+        selector = cs.by_name(columns, require_all=strict)  # type: ignore[arg-type]
+
+        if len(columns) == len(inputs):
+            return selector
+
+        # A bit cleaner
+        if len(columns) == 0:
+            selector = cs.empty()
+
+        for i in inputs:
+            selector |= parse_into_selector(i, strict=strict)
+        return selector
+    else:
+        return parse_into_selector(inputs, strict=strict)
 
 
 def _parse_positional_inputs(

@@ -96,15 +96,17 @@ impl ConversionOptimizer {
         // process the expressions on the stack and apply optimizations.
         let schema = get_schema(ir_arena, current_ir_node);
         let plan = ir_arena.get(current_ir_node);
-        let mut ctx = OptimizeExprContext::default();
+        let mut ctx = OptimizeExprContext {
+            in_filter: matches!(plan, IR::Filter { .. }),
+            has_inputs: !get_input(ir_arena, current_ir_node).is_empty(),
+            ..Default::default()
+        };
         #[cfg(feature = "python")]
         {
             use crate::dsl::python_dsl::PythonScanSource;
             ctx.in_pyarrow_scan = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow);
             ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
         };
-        ctx.in_filter = matches!(plan, IR::Filter { .. });
-        ctx.has_inputs = !get_input(ir_arena, current_ir_node).is_empty();
 
         self.schemas.clear();
         while let Some((current_expr_node, schema_idx)) = self.scratch.pop() {

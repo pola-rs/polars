@@ -15,7 +15,7 @@ use recursive::recursive;
 pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
-pub use dsl_to_ir::{expand_selectors, is_regex_projection, prepare_projection};
+pub use dsl_to_ir::{is_regex_projection, prepare_projection};
 pub(crate) use stack_opt::ConversionOptimizer;
 
 use crate::constants::get_len_name;
@@ -260,10 +260,9 @@ impl IR {
             IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
                 let options = DistinctOptionsDSL {
-                    subset: options.subset.map(|s| {
-                        s.iter()
-                            .map(|name| Expr::Column(name.clone()).into())
-                            .collect()
+                    subset: options.subset.map(|names| Selector::ByName {
+                        names,
+                        strict: true,
                     }),
                     maintain_order: options.maintain_order,
                     keep_strategy: options.keep_strategy,

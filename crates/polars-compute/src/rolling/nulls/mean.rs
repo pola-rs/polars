@@ -14,7 +14,8 @@ impl<
         + NumCast
         + Div<Output = T>
         + AddAssign
-        + SubAssign,
+        + SubAssign
+        + PartialOrd,
 > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
     unsafe fn new(

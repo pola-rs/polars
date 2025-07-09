@@ -85,6 +85,10 @@ impl FixedSizeBinaryArray {
             Some(Bitmap::new_zeroed(length)),
         )
     }
+
+    pub fn into_inner(self) -> (ArrowDataType, Buffer<u8>, Option<Bitmap>) {
+        (self.dtype, self.values, self.validity)
+    }
 }
 
 // must use

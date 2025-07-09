@@ -14,7 +14,7 @@ fn count_caches(q: LazyFrame) -> usize {
     let IRPlan {
         lp_top, lp_arena, ..
     } = q.to_alp_optimized().unwrap();
-    (&lp_arena)
+    lp_arena
         .iter(lp_top)
         .filter(|(_node, lp)| matches!(lp, IR::Cache { .. }))
         .count()
@@ -56,7 +56,7 @@ fn test_cse_unions() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let mut cache_count = 0;
-    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+    assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
             Cache { .. } => {
@@ -101,7 +101,7 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let mut cache_count = 0;
-    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+    assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
             Cache { .. } => {
@@ -155,7 +155,7 @@ fn test_cse_union2_4925() -> PolarsResult<()> {
 
     // ensure we get two different caches
     // and ensure that every cache only has 1 hit.
-    let cache_ids = (&lp_arena)
+    let cache_ids = lp_arena
         .iter(lp)
         .flat_map(|(_, lp)| {
             use IR::*;
@@ -208,7 +208,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
 
     // Ensure we get only one cache and it is not above the join
     // and ensure that every cache only has 1 hit.
-    let cache_ids = (&lp_arena)
+    let cache_ids = lp_arena
         .iter(lp)
         .flat_map(|(_, lp)| {
             use IR::*;
@@ -277,7 +277,7 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
 
     // ensure we get two different caches
     // and ensure that every cache only has 1 hit.
-    let cache_ids = (&lp_arena)
+    let cache_ids = lp_arena
         .iter(lp)
         .flat_map(|(_, lp)| {
             use IR::*;

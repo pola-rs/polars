@@ -202,7 +202,7 @@ fn test_literal_exprs() {
     let df_pl = df
         .lazy()
         .select(&[
-            Expr::Nth(0),
+            first().as_expr(),
             lit(1i64).alias("int_lit"),
             lit(1.0).alias("float_lit"),
             lit("foo").alias("string_lit"),
@@ -213,7 +213,7 @@ fn test_literal_exprs() {
         .collect()
         .unwrap()
         .lazy()
-        .drop([Expr::Nth(0)])
+        .drop(first())
         .collect()
         .unwrap();
     assert!(df_sql.equals_missing(&df_pl));

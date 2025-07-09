@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
 from polars._typing import EngineType
+from polars._utils.deprecation import deprecated
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
 from polars.lazyframe.engine_config import GPUEngine
@@ -25,6 +26,11 @@ if TYPE_CHECKING:
         from typing import Self, Unpack
     else:
         from typing_extensions import Self, Unpack
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 __all__ = ["Config"]
 
@@ -50,7 +56,6 @@ TableFormatNames: TypeAlias = Literal[
 # and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
     "POLARS_WARN_UNSTABLE",
-    "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_NUM_DECIMAL",
@@ -513,16 +518,20 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    @deprecated("deprecated since version 1.32.0")
     def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
         """
         Allow multi-output expressions to be automatically turned into Structs.
 
+        .. note::
+            Deprecated since 1.32.0.
+
         Examples
         --------
         >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-        >>> with pl.Config(set_auto_structify=True):
+        >>> with pl.Config(set_auto_structify=True):  # doctest: +SKIP
         ...     out = df.select(pl.all())
-        >>> out
+        >>> out  # doctest: +SKIP
         shape: (3, 1)
         ┌───────────┐
         │ v         │

@@ -148,3 +148,11 @@ def test_list_eval_when_then_23089() -> None:
         pl.Series([[None, 42]]),
         check_dtypes=False,
     )
+
+
+def test_list_eval_selectors_23187() -> None:
+    df = pl.DataFrame({"x": [[{"id": "foo"}]]})
+    assert_frame_equal(
+        df.with_columns(pl.col("x").list.eval(pl.element().struct[0])),
+        pl.DataFrame({"x": [["foo"]]}),
+    )

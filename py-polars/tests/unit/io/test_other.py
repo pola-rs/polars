@@ -99,7 +99,6 @@ def test_copy() -> None:
     assert_series_equal(copy.deepcopy(a), a)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_round_trip() -> None:
     df = pl.DataFrame({"ints": [1, 2, 3], "cat": ["a", "b", "c"]})
     df = df.with_columns(pl.col("cat").cast(pl.Categorical))

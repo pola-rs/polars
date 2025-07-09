@@ -12,7 +12,6 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::lazyframe::PyOptFlags;
 use crate::map::lazy::binary_lambda;
-use crate::prelude::vec_extract_wrapped;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
 
@@ -171,7 +170,7 @@ pub fn collect_all_with_callback(
 
 #[pyfunction]
 pub fn cols(names: Vec<String>) -> PyExpr {
-    dsl::cols(names).into()
+    dsl::cols(names).as_expr().into()
 }
 
 #[pyfunction]
@@ -363,22 +362,6 @@ pub fn concat_expr(e: Vec<PyExpr>, rechunk: bool) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
-    let dtypes = vec_extract_wrapped(dtypes);
-    Ok(dsl::dtype_cols(dtypes).into())
-}
-
-#[pyfunction]
-pub fn index_cols(indices: Vec<i64>) -> PyExpr {
-    if indices.len() == 1 {
-        dsl::nth(indices[0])
-    } else {
-        dsl::index_cols(indices)
-    }
-    .into()
-}
-
-#[pyfunction]
 #[pyo3(signature = (weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds, time_unit))]
 pub fn duration(
     weeks: Option<PyExpr>,
@@ -416,11 +399,6 @@ pub fn duration(
 }
 
 #[pyfunction]
-pub fn first() -> PyExpr {
-    dsl::first().into()
-}
-
-#[pyfunction]
 pub fn fold(
     acc: PyExpr,
     lambda: PyObject,
@@ -446,16 +424,6 @@ pub fn fold(
         return_dtype.map(|w| w.0),
     )
     .into()
-}
-
-#[pyfunction]
-pub fn last() -> PyExpr {
-    dsl::last().into()
-}
-
-#[pyfunction]
-pub fn nth(n: i64) -> PyExpr {
-    dsl::nth(n).into()
 }
 
 #[pyfunction]

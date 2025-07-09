@@ -526,7 +526,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::StructExpr(f) => {
             use {IRStructFunction as IB, StructFunction as B};
             F::StructExpr(match f {
-                IB::FieldByIndex(i) => B::FieldByIndex(i),
                 IB::FieldByName(pl_small_str) => B::FieldByName(pl_small_str),
                 IB::RenameFields(pl_small_strs) => B::RenameFields(pl_small_strs),
                 IB::PrefixFields(pl_small_str) => B::PrefixFields(pl_small_str),
@@ -534,7 +533,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "json")]
                 IB::JsonEncode => B::JsonEncode,
                 IB::WithFields => B::WithFields,
-                IB::MultipleFields(pl_small_strs) => B::MultipleFields(pl_small_strs),
                 #[cfg(feature = "python")]
                 IB::MapFieldNames(special_eq) => B::MapFieldNames(special_eq),
             })
@@ -866,6 +864,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "repeat_by")]
         IF::RepeatBy => F::RepeatBy,
         IF::ArgUnique => F::ArgUnique,
+        IF::ArgMin => F::ArgMin,
+        IF::ArgMax => F::ArgMax,
+        IF::ArgSort {
+            descending,
+            nulls_last,
+        } => F::ArgSort {
+            descending,
+            nulls_last,
+        },
+        IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
         IF::Repeat => F::Repeat,

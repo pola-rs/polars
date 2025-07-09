@@ -199,7 +199,7 @@ impl NodeTraverser {
                 .into_iter()
                 .map(|e| {
                     // NOTE: Probably throwing away the output names here is not okay?
-                    to_expr_ir(e.inner, &mut expr_arena, &schema)
+                    to_expr_ir(e.inner, &mut expr_arena, &schema, true)
                         .map_err(PyPolarsErr::from)
                         .map(|v| v.node().0)
                 })

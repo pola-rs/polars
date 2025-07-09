@@ -443,17 +443,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .agg([
             // keep the head as it test slice correctness
             col("book")
-                .gather(
-                    col("count")
-                        .arg_sort(SortOptions {
-                            descending: true,
-                            nulls_last: false,
-                            multithreaded: true,
-                            maintain_order: false,
-                            limit: None,
-                        })
-                        .head(Some(2)),
-                )
+                .gather(col("count").arg_sort(true, false).head(Some(2)))
                 .alias("ordered"),
         ])
         .sort(["user"], Default::default())
@@ -484,15 +474,7 @@ fn test_take_consistency() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("A")
-            .arg_sort(SortOptions {
-                descending: true,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .get(lit(0))])
+        .select([col("A").arg_sort(true, false).get(lit(0))])
         .collect()?;
 
     let a = out.column("A")?;
@@ -503,15 +485,7 @@ fn test_take_consistency() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("cars")])
-        .agg([col("A")
-            .arg_sort(SortOptions {
-                descending: true,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .get(lit(0))])
+        .agg([col("A").arg_sort(true, false).get(lit(0))])
         .collect()?;
 
     let out = out.column("A")?;
@@ -523,28 +497,9 @@ fn test_take_consistency() -> PolarsResult<()> {
         .group_by_stable([col("cars")])
         .agg([
             col("A"),
+            col("A").arg_sort(true, false).get(lit(0)).alias("1"),
             col("A")
-                .arg_sort(SortOptions {
-                    descending: true,
-                    nulls_last: false,
-                    multithreaded: true,
-                    maintain_order: false,
-                    limit: None,
-                })
-                .get(lit(0))
-                .alias("1"),
-            col("A")
-                .get(
-                    col("A")
-                        .arg_sort(SortOptions {
-                            descending: true,
-                            nulls_last: false,
-                            multithreaded: true,
-                            maintain_order: false,
-                            limit: None,
-                        })
-                        .get(lit(0)),
-                )
+                .get(col("A").arg_sort(true, false).get(lit(0)))
                 .alias("2"),
         ])
         .collect()?;

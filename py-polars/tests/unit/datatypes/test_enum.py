@@ -13,7 +13,6 @@ from typing import Any, Callable
 import pytest
 
 import polars as pl
-from polars import StringCache
 from polars.exceptions import (
     InvalidOperationError,
     SchemaError,
@@ -268,7 +267,6 @@ def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 
 
-@StringCache()
 def test_casting_to_an_enum_from_global_categorical() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
@@ -279,7 +277,6 @@ def test_casting_to_an_enum_from_global_categorical() -> None:
     assert_series_equal(s2, expected)
 
 
-@StringCache()
 def test_casting_to_an_enum_from_global_categorical_nonexistent() -> None:
     with pytest.raises(
         InvalidOperationError,
@@ -298,7 +295,6 @@ def test_casting_from_an_enum_to_local() -> None:
     assert_series_equal(s2, expected)
 
 
-@StringCache()
 def test_casting_from_an_enum_to_global() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, "a", "b", "c"], dtype=dtype)
@@ -676,7 +672,6 @@ def test_init_series_from_int_enum(EnumBase: tuple[type, ...]) -> None:
     assert_series_equal(expected, s)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_read_enum_from_csv() -> None:
     df = pl.DataFrame(
         {

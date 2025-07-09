@@ -64,6 +64,7 @@ impl IntoMetadata for Metadata {
 )]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum UnknownKind {
+    Ufunc,
     // Hold the value to determine the concrete size.
     Int(i128),
     Float,
@@ -79,7 +80,7 @@ impl UnknownKind {
             UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
             UnknownKind::Float => DataType::Float64,
             UnknownKind::Str => DataType::String,
-            UnknownKind::Any => return None,
+            UnknownKind::Any | UnknownKind::Ufunc => return None,
         };
         Some(dtype)
     }
@@ -518,6 +519,10 @@ impl DataType {
         matches!(self, DataType::Datetime(..))
     }
 
+    pub fn is_duration(&self) -> bool {
+        matches!(self, DataType::Duration(..))
+    }
+
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
@@ -605,19 +610,13 @@ impl DataType {
 
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
-        #[cfg(feature = "dtype-categorical")]
-        let is_cat = matches!(self, DataType::Categorical(_, _) | DataType::Enum(_, _)); // TODO @ cat-rework: is this right? Why not sortable?
-        #[cfg(not(feature = "dtype-categorical"))]
-        let is_cat = false;
-
         let phys = self.to_physical();
-        (phys.is_primitive_numeric()
+        phys.is_primitive_numeric()
             || self.is_decimal()
             || matches!(
                 phys,
                 DataType::Binary | DataType::String | DataType::Boolean
-            ))
-            && !is_cat
+            )
     }
 
     /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
@@ -890,7 +889,7 @@ impl DataType {
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
             Unknown(kind) => {
                 let dt = match kind {
-                    UnknownKind::Any => ArrowDataType::Unknown,
+                    UnknownKind::Any | UnknownKind::Ufunc => ArrowDataType::Unknown,
                     UnknownKind::Float => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
@@ -1012,6 +1011,10 @@ impl DataType {
         let mapping = fcats.mapping().clone();
         Self::Enum(fcats, mapping)
     }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_integer() || self.is_float() || self.is_decimal()
+    }
 }
 
 impl Display for DataType {
@@ -1074,6 +1077,7 @@ impl Display for DataType {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown(kind) => match kind {
+                UnknownKind::Ufunc => "unknown ufunc",
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",

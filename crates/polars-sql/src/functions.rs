@@ -1547,13 +1547,13 @@ impl SQLFunctionVisitor<'_> {
                             Ok(if col_names.len() == 1 {
                                 col(col_names.into_iter().next().unwrap())
                             } else {
-                                cols(col_names)
+                                cols(col_names).as_expr()
                             })
                         } else {
                             Ok(col(pat.as_str()))
                         }
                     },
-                    Expr::Wildcard => Ok(col("*")),
+                    Expr::Selector(s) => Ok(s.as_expr()),
                     _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
             },

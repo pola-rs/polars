@@ -122,18 +122,13 @@ def test_struct_unnesting() -> None:
         out_lazy = df.lazy().unnest(cols)
         assert_frame_equal(out_lazy, expected.lazy())
 
-    out = (
-        df_base.lazy()
-        .select(
-            pl.all().alias("a_original"),
-            pl.col("a")
-            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
-            .struct.rename_fields(["a", "a_squared", "mod2eq0"])
-            .alias("foo"),
-        )
-        .unnest("foo")
-        .collect()
-    )
+    out = df_base.select(
+        pl.all().alias("a_original"),
+        pl.col("a")
+        .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+        .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+        .alias("foo"),
+    ).unnest("foo")
     assert_frame_equal(out, expected)
 
 
@@ -878,16 +873,15 @@ def test_struct_field_recognized_as_renaming_expr_16480() -> None:
 
 
 def test_struct_filter_chunked_16498() -> None:
-    with pl.StringCache():
-        N = 5
-        df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
+    N = 5
+    df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
 
-        df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
+    df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
 
-        df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
-        df = df.select(pl.struct(pl.all()).alias("s"))
-        df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
-        assert df.shape == (5, 1)
+    df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
+    df = df.select(pl.struct(pl.all()).alias("s"))
+    df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
+    assert df.shape == (5, 1)
 
 
 def test_struct_field_dynint_nullable_16243() -> None:

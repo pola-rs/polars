@@ -1,21 +1,63 @@
 use arrow::legacy::error::PolarsResult;
-use polars_utils::arena::{Arena, Node};
+use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
 
+use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::dsl::{Expr, FunctionExpr};
+use crate::plans::conversion::dsl_to_ir::expr_to_ir::{
+    to_expr_ir_with_context, to_expr_irs_with_context,
+};
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
     input: Vec<Expr>,
     function: FunctionExpr,
-    arena: &mut Arena<AExpr>,
-    schema: &Schema,
+    ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
     use {FunctionExpr as F, IRFunctionExpr as I};
 
+    #[cfg(feature = "dtype-struct")]
+    if matches!(
+        function,
+        FunctionExpr::StructExpr(StructFunction::WithFields)
+    ) {
+        let mut input = input.into_iter();
+        let struct_input = to_expr_ir_with_context(input.next().unwrap(), ctx)?;
+        let dtype = struct_input
+            .to_expr(ctx.arena)
+            .to_field(ctx.schema, Context::Default)?
+            .dtype;
+        let DataType::Struct(fields) = &dtype else {
+            polars_bail!(op = "struct.with_fields", dtype);
+        };
+
+        let struct_name = struct_input.output_name().clone();
+        let struct_node = struct_input.node();
+        let struct_schema = Schema::from_iter(fields.iter().cloned());
+
+        let mut e = Vec::with_capacity(input.len());
+        e.push(struct_input);
+
+        let prev = ctx.with_fields.replace((struct_node, struct_schema));
+        for i in input {
+            e.push(to_expr_ir_with_context(i, ctx)?);
+        }
+        ctx.with_fields = prev;
+
+        let function = IRFunctionExpr::StructExpr(IRStructFunction::WithFields);
+        let options = function.function_options();
+        let out = ctx.arena.add(AExpr::Function {
+            input: e,
+            function,
+            options,
+        });
+
+        return Ok((out, struct_name));
+    }
+
     // Converts inputs
-    let e = to_expr_irs(input, arena, schema)?;
+    let e = to_expr_irs_with_context(input, ctx)?;
     let mut set_elementwise = false;
 
     // Return before converting inputs
@@ -72,7 +114,7 @@ pub(super) fn convert_functions(
                 B::Size => IB::Size,
                 #[cfg(feature = "binary_encoding")]
                 B::Reinterpret(data_type, v) => {
-                    IB::Reinterpret(data_type.into_datatype(schema)?, v)
+                    IB::Reinterpret(data_type.into_datatype(ctx.schema)?, v)
                 },
             })
         },
@@ -192,7 +234,7 @@ pub(super) fn convert_functions(
                     infer_schema_len,
                 } => IS::JsonDecode {
                     dtype: match dtype {
-                        Some(dtype) => Some(dtype.into_datatype(schema)?),
+                        Some(dtype) => Some(dtype.into_datatype(ctx.schema)?),
                         None => None,
                     },
                     infer_schema_len,
@@ -232,9 +274,9 @@ pub(super) fn convert_functions(
                 S::SplitN(v) => IS::SplitN(v),
                 #[cfg(feature = "temporal")]
                 S::Strptime(data_type, strptime_options) => {
-                    let is_column_independent = is_column_independent_aexpr(e[0].node(), arena);
+                    let is_column_independent = is_column_independent_aexpr(e[0].node(), ctx.arena);
                     set_elementwise = is_column_independent;
-                    let dtype = data_type.into_datatype(schema)?;
+                    let dtype = data_type.into_datatype(ctx.schema)?;
                     polars_ensure!(
                         matches!(dtype,
                             DataType::Date |
@@ -289,15 +331,14 @@ pub(super) fn convert_functions(
         F::StructExpr(struct_function) => {
             use {IRStructFunction as IS, StructFunction as S};
             I::StructExpr(match struct_function {
-                S::FieldByIndex(v) => IS::FieldByIndex(v),
                 S::FieldByName(pl_small_str) => IS::FieldByName(pl_small_str),
                 S::RenameFields(pl_small_strs) => IS::RenameFields(pl_small_strs),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
+                S::SelectFields(_) => unreachable!("handled by expression expansion"),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
-                S::WithFields => IS::WithFields,
-                S::MultipleFields(pl_small_strs) => IS::MultipleFields(pl_small_strs),
+                S::WithFields => unreachable!("handled before"),
                 #[cfg(feature = "python")]
                 S::MapFieldNames(special_eq) => IS::MapFieldNames(special_eq),
             })
@@ -423,7 +464,7 @@ pub(super) fn convert_functions(
                 B::AllHorizontal => {
                     let Some(fst) = e.first() else {
                         return Ok((
-                            arena.add(AExpr::Literal(Scalar::from(true).into())),
+                            ctx.arena.add(AExpr::Literal(Scalar::from(true).into())),
                             format_pl_smallstr!("{}", IB::AllHorizontal),
                         ));
                     };
@@ -431,7 +472,7 @@ pub(super) fn convert_functions(
                     if e.len() == 1 {
                         return Ok((
                             AExprBuilder::new_from_node(fst.node())
-                                .cast(DataType::Boolean, arena)
+                                .cast(DataType::Boolean, ctx.arena)
                                 .node(),
                             fst.output_name().clone(),
                         ));
@@ -442,7 +483,7 @@ pub(super) fn convert_functions(
                     if e.len() < 128 {
                         let mut r = AExprBuilder::new_from_node(fst.node());
                         for expr in &e[1..] {
-                            r = r.logical_and(expr.node(), arena);
+                            r = r.logical_and(expr.node(), ctx.arena);
                         }
                         return Ok((r.node(), fst.output_name().clone()));
                     }
@@ -453,7 +494,7 @@ pub(super) fn convert_functions(
                     // This can be created by col(*).is_null() on empty dataframes.
                     let Some(fst) = e.first() else {
                         return Ok((
-                            arena.add(AExpr::Literal(Scalar::from(false).into())),
+                            ctx.arena.add(AExpr::Literal(Scalar::from(false).into())),
                             format_pl_smallstr!("{}", IB::AnyHorizontal),
                         ));
                     };
@@ -461,7 +502,7 @@ pub(super) fn convert_functions(
                     if e.len() == 1 {
                         return Ok((
                             AExprBuilder::new_from_node(fst.node())
-                                .cast(DataType::Boolean, arena)
+                                .cast(DataType::Boolean, ctx.arena)
                                 .node(),
                             fst.output_name().clone(),
                         ));
@@ -472,7 +513,7 @@ pub(super) fn convert_functions(
                     if e.len() < 128 {
                         let mut r = AExprBuilder::new_from_node(fst.node());
                         for expr in &e[1..] {
-                            r = r.logical_or(expr.node(), arena);
+                            r = r.logical_or(expr.node(), ctx.arena);
                         }
                         return Ok((r.node(), fst.output_name().clone()));
                     }
@@ -538,12 +579,12 @@ pub(super) fn convert_functions(
         #[cfg(feature = "range")]
         F::Range(range_function) => I::Range(match range_function {
             RangeFunction::IntRange { step, dtype } => {
-                let dtype = dtype.into_datatype(schema)?;
+                let dtype = dtype.into_datatype(ctx.schema)?;
                 polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: '{dtype}'");
                 IRRangeFunction::IntRange { step, dtype }
             },
             RangeFunction::IntRanges { dtype } => {
-                let dtype = dtype.into_datatype(schema)?;
+                let dtype = dtype.into_datatype(ctx.schema)?;
                 polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_ranges`: '{dtype}'");
                 IRRangeFunction::IntRanges { dtype }
             },
@@ -675,8 +716,8 @@ pub(super) fn convert_functions(
             }
         },
         F::ShiftAndFill => {
-            polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
-            polars_ensure!(&e[2].is_scalar(arena), ComputeError: "'fill_value' must be scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[2].is_scalar(ctx.arena), ComputeError: "'fill_value' must be scalar value");
             I::ShiftAndFill
         },
         F::Shift => I::Shift,
@@ -693,11 +734,21 @@ pub(super) fn convert_functions(
         #[cfg(feature = "repeat_by")]
         F::RepeatBy => I::RepeatBy,
         F::ArgUnique => I::ArgUnique,
+        F::ArgMin => I::ArgMin,
+        F::ArgMax => I::ArgMax,
+        F::ArgSort {
+            descending,
+            nulls_last,
+        } => I::ArgSort {
+            descending,
+            nulls_last,
+        },
+        F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
         F::Repeat => {
-            polars_ensure!(&e[0].is_scalar(arena), ComputeError: "'value' must be scalar value");
-            polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[0].is_scalar(ctx.arena), ComputeError: "'value' must be scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
             I::Repeat
         },
         #[cfg(feature = "round_series")]
@@ -739,7 +790,7 @@ pub(super) fn convert_functions(
         F::ShrinkType => I::ShrinkType,
         #[cfg(feature = "diff")]
         F::Diff(n) => {
-            polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
             I::Diff(n)
         },
         #[cfg(feature = "pct_change")]
@@ -864,7 +915,7 @@ pub(super) fn convert_functions(
         #[cfg(feature = "replace")]
         F::ReplaceStrict { return_dtype } => I::ReplaceStrict {
             return_dtype: match return_dtype {
-                Some(dtype) => Some(dtype.into_datatype(schema)?),
+                Some(dtype) => Some(dtype.into_datatype(ctx.schema)?),
                 None => None,
             },
         },
@@ -891,5 +942,5 @@ pub(super) fn convert_functions(
         function: ir_function,
         options,
     };
-    Ok((arena.add(ae_function), output_name))
+    Ok((ctx.arena.add(ae_function), output_name))
 }

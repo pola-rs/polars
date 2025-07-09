@@ -9,47 +9,46 @@ from polars.testing import assert_frame_equal
 
 def test_to_init_repr() -> None:
     # round-trip various types
-    with pl.StringCache():
-        df = (
-            pl.LazyFrame(
-                {
-                    "a": [1, 2, None],
-                    "b": [4.5, 5.5, 6.5],
-                    "c": ["x", "y", "z"],
-                    "d": [True, False, True],
-                    "e": [None, "", None],
-                    "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
-                    "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
-                    "h": [
-                        datetime(2022, 7, 5, 10, 30, 45, 4560),
-                        datetime(2023, 10, 12, 20, 3, 8, 11),
-                        None,
-                    ],
-                    "i": [
-                        datetime(2022, 7, 5, 10, 30, 45, 4560),
-                        datetime(2023, 10, 12, 20, 3, 8, 11),
-                        None,
-                    ],
-                    "null": [None, None, None],
-                    "enum": ["a", "b", "c"],
-                    "duration": [timedelta(days=1), timedelta(days=2), None],
-                    "binary": [bytes([0]), bytes([0, 1]), bytes([0, 1, 2])],
-                    "object": [timezone.utc, timezone.utc, timezone.utc],
-                },
-            )
-            .with_columns(
-                pl.col("c").cast(pl.Categorical),
-                pl.col("h").cast(pl.Datetime("ns")),
-                pl.col("i").dt.replace_time_zone("Australia/Melbourne"),
-                pl.col("enum").cast(pl.Enum(["a", "b", "c"])),
-            )
-            .collect()
+    df = (
+        pl.LazyFrame(
+            {
+                "a": [1, 2, None],
+                "b": [4.5, 5.5, 6.5],
+                "c": ["x", "y", "z"],
+                "d": [True, False, True],
+                "e": [None, "", None],
+                "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                "h": [
+                    datetime(2022, 7, 5, 10, 30, 45, 4560),
+                    datetime(2023, 10, 12, 20, 3, 8, 11),
+                    None,
+                ],
+                "i": [
+                    datetime(2022, 7, 5, 10, 30, 45, 4560),
+                    datetime(2023, 10, 12, 20, 3, 8, 11),
+                    None,
+                ],
+                "null": [None, None, None],
+                "enum": ["a", "b", "c"],
+                "duration": [timedelta(days=1), timedelta(days=2), None],
+                "binary": [bytes([0]), bytes([0, 1]), bytes([0, 1, 2])],
+                "object": [timezone.utc, timezone.utc, timezone.utc],
+            },
         )
+        .with_columns(
+            pl.col("c").cast(pl.Categorical),
+            pl.col("h").cast(pl.Datetime("ns")),
+            pl.col("i").dt.replace_time_zone("Australia/Melbourne"),
+            pl.col("enum").cast(pl.Enum(["a", "b", "c"])),
+        )
+        .collect()
+    )
 
-        result = eval(df.to_init_repr().replace("datetime.", ""))
-        expected = df
-        # drop "object" because it can not be compared by assert_frame_equal
-        assert_frame_equal(result.drop("object"), expected.drop("object"))
+    result = eval(df.to_init_repr().replace("datetime.", ""))
+    expected = df
+    # drop "object" because it can not be compared by assert_frame_equal
+    assert_frame_equal(result.drop("object"), expected.drop("object"))
 
 
 def test_to_init_repr_nested_dtype() -> None:

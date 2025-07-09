@@ -72,6 +72,18 @@ pub(crate) fn call_lambda_with_series(
 ) -> PyResult<PyObject> {
     let pypolars = polars(py).bind(py);
 
+    // Set return_dtype in kwargs
+    let mut dict = None;
+    if let Some(output_dtype) = output_dtype {
+        let d = PyDict::new(py);
+        let output_dtype = match output_dtype {
+            None => None,
+            Some(dt) => Some(Wrap(dt).into_pyobject(py)?),
+        };
+        d.set_item("return_dtype", output_dtype)?;
+        dict = Some(d);
+    }
+
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(s.clone());
     // Wrap this PySeries object in the python side Series wrapper
@@ -96,17 +108,6 @@ pub(crate) fn call_lambda_with_series(
             .unwrap()
             .call1((s_location as usize,))
             .unwrap()
-    }
-
-    let mut dict = None;
-    if let Some(output_dtype) = output_dtype {
-        let d = PyDict::new(py);
-        let output_dtype = match output_dtype {
-            None => None,
-            Some(dt) => Some(Wrap(dt).into_pyobject(py)?),
-        };
-        d.set_item("return_dtype", output_dtype)?;
-        dict = Some(d);
     }
 
     lambda.call(py, (python_series_wrapper,), dict.as_ref())

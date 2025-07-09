@@ -20,6 +20,7 @@ use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
+use crate::expr::selector::PySelector;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::io::PyScanOptions;
 use crate::lazyframe::visit::NodeTraverser;
@@ -1403,10 +1404,8 @@ impl PyLazyFrame {
         out.into()
     }
 
-    fn explode(&self, column: Vec<PyExpr>) -> Self {
-        let ldf = self.ldf.clone();
-        let column = column.to_exprs();
-        ldf.explode(column).into()
+    fn explode(&self, subset: PySelector) -> Self {
+        self.ldf.clone().explode(subset.inner).into()
     }
 
     fn null_count(&self) -> Self {
@@ -1418,11 +1417,11 @@ impl PyLazyFrame {
     fn unique(
         &self,
         maintain_order: bool,
-        subset: Option<Vec<PyExpr>>,
+        subset: Option<PySelector>,
         keep: Wrap<UniqueKeepStrategy>,
     ) -> Self {
         let ldf = self.ldf.clone();
-        let subset = subset.map(|e| e.to_exprs());
+        let subset = subset.map(|e| e.inner);
         match maintain_order {
             true => ldf.unique_stable_generic(subset, keep.0),
             false => ldf.unique_generic(subset, keep.0),
@@ -1430,18 +1429,12 @@ impl PyLazyFrame {
         .into()
     }
 
-    #[pyo3(signature = (subset=None))]
-    fn drop_nans(&self, subset: Option<Vec<PyExpr>>) -> Self {
-        let ldf = self.ldf.clone();
-        let subset = subset.map(|e| e.to_exprs());
-        ldf.drop_nans(subset).into()
+    fn drop_nans(&self, subset: Option<PySelector>) -> Self {
+        self.ldf.clone().drop_nans(subset.map(|e| e.inner)).into()
     }
 
-    #[pyo3(signature = (subset=None))]
-    fn drop_nulls(&self, subset: Option<Vec<PyExpr>>) -> Self {
-        let ldf = self.ldf.clone();
-        let subset = subset.map(|e| e.to_exprs());
-        ldf.drop_nulls(subset).into()
+    fn drop_nulls(&self, subset: Option<PySelector>) -> Self {
+        self.ldf.clone().drop_nulls(subset.map(|e| e.inner)).into()
     }
 
     #[pyo3(signature = (offset, len=None))]
@@ -1459,14 +1452,14 @@ impl PyLazyFrame {
     #[pyo3(signature = (on, index, value_name, variable_name))]
     fn unpivot(
         &self,
-        on: Vec<PyExpr>,
-        index: Vec<PyExpr>,
+        on: PySelector,
+        index: PySelector,
         value_name: Option<String>,
         variable_name: Option<String>,
     ) -> Self {
         let args = UnpivotArgsDSL {
-            on: on.into_iter().map(|e| e.inner.into()).collect(),
-            index: index.into_iter().map(|e| e.inner.into()).collect(),
+            on: on.inner,
+            index: index.inner,
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
         };
@@ -1509,15 +1502,8 @@ impl PyLazyFrame {
             .into()
     }
 
-    fn drop(&self, columns: Vec<PyExpr>, strict: bool) -> Self {
-        let ldf = self.ldf.clone();
-        let columns = columns.to_exprs();
-        if strict {
-            ldf.drop(columns)
-        } else {
-            ldf.drop_no_validate(columns)
-        }
-        .into()
+    fn drop(&self, columns: PySelector) -> Self {
+        self.ldf.clone().drop(columns.inner).into()
     }
 
     fn cast(&self, dtypes: HashMap<PyBackedStr, Wrap<DataType>>, strict: bool) -> Self {
@@ -1546,9 +1532,8 @@ impl PyLazyFrame {
         Ok(schema_dict)
     }
 
-    fn unnest(&self, columns: Vec<PyExpr>) -> Self {
-        let columns = columns.to_exprs();
-        self.ldf.clone().unnest(columns).into()
+    fn unnest(&self, columns: PySelector) -> Self {
+        self.ldf.clone().unnest(columns.inner).into()
     }
 
     fn count(&self) -> Self {

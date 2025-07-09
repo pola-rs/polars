@@ -5,6 +5,7 @@ from hypothesis import given
 from hypothesis.strategies import booleans
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
@@ -171,7 +172,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().top_k_by("a", 2))
-        .explode(pl.all().exclude("c")),
+        .explode(cs.all().exclude("c")),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -185,7 +186,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().bottom_k_by("a", 2))
-        .explode(pl.all().exclude("c")),
+        .explode(cs.all().exclude("c")),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],

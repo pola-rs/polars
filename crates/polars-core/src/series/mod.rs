@@ -383,7 +383,7 @@ impl Series {
 
         use DataType as D;
         let do_clone = match dtype {
-            D::Unknown(UnknownKind::Any) => true,
+            D::Unknown(UnknownKind::Any | UnknownKind::Ufunc) => true,
             D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
             D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)

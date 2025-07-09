@@ -21,4 +21,6 @@ Available data type expressions functions:
    :toctree: api/
 
    dtype_of
+   dtype_of
    DataType.to_dtype_expr
+   self_dtype

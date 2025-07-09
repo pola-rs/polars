@@ -767,7 +767,6 @@ def test_overflowing_cast_literals_21023() -> None:
         pl.Series(["a", "b"], dtype=pl.Categorical).dtype,
     ],
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
     # Enum
     with pytest.raises(

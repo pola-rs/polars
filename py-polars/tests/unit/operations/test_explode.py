@@ -289,7 +289,7 @@ def test_df_explode_with_array() -> None:
             "val": ["x", "x", "y", "y", "z", "q", "q"],
         }
     )
-    assert_frame_equal(df.explode(pl.col("arr")), expected_by_arr)
+    assert_frame_equal(df.explode("arr"), expected_by_arr)
 
     expected_by_list = pl.DataFrame(
         {
@@ -303,7 +303,7 @@ def test_df_explode_with_array() -> None:
             "val": pl.String,
         },
     )
-    assert_frame_equal(df.explode(pl.col("list")), expected_by_list)
+    assert_frame_equal(df.explode("list"), expected_by_list)
 
     df = pl.DataFrame(
         {
