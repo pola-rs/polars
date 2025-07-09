@@ -320,10 +320,14 @@ Operations mixing different Categories are often not supported, you may have to 
         polars_bail!(SchemaMismatch: "Categories have same name ('{}'), but have a mismatch in namespace, left: {}, right: {}.
 
 Operations mixing different Categories are often not supported, you may have to cast.", left.name(), left.namespace(), right.namespace())
-    } else {
+    } else if left.physical() != right.physical() {
         polars_bail!(SchemaMismatch: "Categories have same name and namespace ('{}', {}), but have a mismatch in dtype, left: {}, right: {}.
 
 Operations mixing different Categories are often not supported, you may have to cast.", left.name(), left.namespace(), left.physical().as_str(), right.physical().as_str())
+    } else {
+        polars_bail!(SchemaMismatch: "Categories which should be equal have different backing objects.
+
+This is a known problem when combining Polars with multiprocessing using fork().")
     }
 }
 
