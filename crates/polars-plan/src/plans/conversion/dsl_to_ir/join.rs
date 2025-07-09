@@ -150,22 +150,12 @@ pub fn resolve_join(
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(
-            ctxt.expr_arena,
-            ctxt.lp_arena,
-            input_left,
-            ctxt.opt_flags.contains(OptFlags::EAGER),
-        )
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left)
         .map_err(|e| e.context("'join' failed".into()))?;
     ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(
-            ctxt.expr_arena,
-            ctxt.lp_arena,
-            input_right,
-            ctxt.opt_flags.contains(OptFlags::EAGER),
-        )
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right)
         .map_err(|e| e.context("'join' failed".into()))?;
 
     // Re-evaluate because of mutable borrows earlier.
@@ -498,12 +488,7 @@ fn resolve_join_where(
     }
 
     ctxt.conversion_optimizer
-        .optimize_exprs(
-            ctxt.expr_arena,
-            ctxt.lp_arena,
-            last_node,
-            ctxt.opt_flags.contains(OptFlags::EAGER),
-        )
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node)
         .map_err(|e| e.context("'join_where' failed".into()))?;
 
     Ok((last_node, join_node))

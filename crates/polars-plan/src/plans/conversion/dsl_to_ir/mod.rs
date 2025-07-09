@@ -85,15 +85,10 @@ pub fn to_alp(
     }
 }
 
-fn run_conversion(
-    lp: IR,
-    ctxt: &mut DslConversionContext,
-    name: &str,
-    in_eager: bool,
-) -> PolarsResult<Node> {
+fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node, in_eager)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node)
         .map_err(|e| e.context(format!("'{name}' failed").into()))?;
 
     Ok(lp_node)
@@ -214,12 +209,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         ctxt.conversion_optimizer
                             .push_scratch(predicate.node(), ctxt.expr_arena);
                         let lp = IR::Filter { input, predicate };
-                        input = run_conversion(
-                            lp,
-                            ctxt,
-                            "filter",
-                            ctxt.opt_flags.contains(OptFlags::EAGER),
-                        )?;
+                        input = run_conversion(lp, ctxt, "filter")?;
 
                         Ok(())
                     };
@@ -244,7 +234,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 input,
                 predicate: predicate_ae,
             };
-            return run_conversion(lp, ctxt, "filter", ctxt.opt_flags.contains(OptFlags::EAGER));
+            return run_conversion(lp, ctxt, "filter");
         },
         DslPlan::Slice { input, offset, len } => {
             let input =
@@ -289,8 +279,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             };
 
-            return run_conversion(lp, ctxt, "select", ctxt.opt_flags.contains(OptFlags::EAGER))
-                .map_err(|e| e.context(failed_here!(select)));
+            return run_conversion(lp, ctxt, "select").map_err(|e| e.context(failed_here!(select)));
         },
         DslPlan::Sort {
             input,
@@ -395,8 +384,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 sort_options,
             };
 
-            return run_conversion(lp, ctxt, "sort", ctxt.opt_flags.contains(OptFlags::EAGER))
-                .map_err(|e| e.context(failed_here!(sort)));
+            return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
         },
         DslPlan::Cache { input } => {
             let id = UniqueId::from_arc(input.clone());
@@ -456,13 +444,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             };
 
-            return run_conversion(
-                lp,
-                ctxt,
-                "group_by",
-                ctxt.opt_flags.contains(OptFlags::EAGER),
-            )
-            .map_err(|e| e.context(failed_here!(group_by)));
+            return run_conversion(lp, ctxt, "group_by")
+                .map_err(|e| e.context(failed_here!(group_by)));
         },
         DslPlan::Join {
             input_left,
@@ -503,12 +486,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 schema,
                 options,
             };
-            return run_conversion(
-                lp,
-                ctxt,
-                "with_columns",
-                ctxt.opt_flags.contains(OptFlags::EAGER),
-            );
+            return run_conversion(lp, ctxt, "with_columns");
         },
         DslPlan::MatchToSchema {
             input,
@@ -628,12 +606,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     should_broadcast: true,
                 },
             };
-            return run_conversion(
-                lp,
-                ctxt,
-                "match_to_schema",
-                ctxt.opt_flags.contains(OptFlags::EAGER),
-            );
+            return run_conversion(lp, ctxt, "match_to_schema");
         },
         DslPlan::Distinct { input, options } => {
             let input =
@@ -716,12 +689,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             ..Default::default()
                         },
                     };
-                    return run_conversion(
-                        lp,
-                        ctxt,
-                        "fill_nan",
-                        ctxt.opt_flags.contains(OptFlags::EAGER),
-                    );
+                    return run_conversion(lp, ctxt, "fill_nan");
                 },
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
@@ -802,12 +770,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             ..Default::default()
                         },
                     };
-                    return run_conversion(
-                        lp,
-                        ctxt,
-                        "stats",
-                        ctxt.opt_flags.contains(OptFlags::EAGER),
-                    );
+                    return run_conversion(lp, ctxt, "stats");
                 },
                 DslFunction::Rename {
                     existing,
@@ -986,7 +949,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
 
             let lp = IR::Sink { input, payload };
-            return run_conversion(lp, ctxt, "sink", ctxt.opt_flags.contains(OptFlags::EAGER));
+            return run_conversion(lp, ctxt, "sink");
         },
         DslPlan::SinkMultiple { inputs } => {
             let inputs = inputs

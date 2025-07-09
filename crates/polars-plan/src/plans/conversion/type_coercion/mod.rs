@@ -205,35 +205,6 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, schema, node_left, op, node_right),
-            AExpr::AnonymousFunction {
-                ref input,
-                ref output_type,
-                ref fmt_str,
-                ..
-            } => {
-                let fields = input
-                    .iter()
-                    .map(|e| e.field(schema, Context::Default, expr_arena))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                let out = output_type.clone().materialize()?.get_field(
-                    schema,
-                    Context::Default,
-                    &fields,
-                )?;
-
-                if out.dtype().is_unknown() {
-                    if ctx.in_eager {
-                        polars_warn!(
-                            "'return_dtype' of function {} must be set\n\nA later expression might fail because the output type is not known.",
-                            fmt_str
-                        )
-                    } else {
-                        polars_bail!(InvalidOperation: "'return_dtype' of function {} is not set.\n\nSet the output data type of the UDF. ", fmt_str)
-                    }
-                }
-                return Ok(None);
-            },
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 ref function,

@@ -45,7 +45,7 @@ impl<'a> IRBuilder<'a> {
         let mut conversion_optimizer = ConversionOptimizer::new(true, true, true);
         conversion_optimizer.fill_scratch(&b.lp_arena.get(b.root).get_exprs(), b.expr_arena);
         conversion_optimizer
-            .optimize_exprs(b.expr_arena, b.lp_arena, b.root, false)
+            .optimize_exprs(b.expr_arena, b.lp_arena, b.root)
             .map_err(|e| e.context(format!("optimizing '{ir_name}' failed").into()))?;
 
         Ok(b)

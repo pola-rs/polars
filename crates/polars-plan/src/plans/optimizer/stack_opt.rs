@@ -98,7 +98,6 @@ pub struct OptimizeExprContext {
     pub in_io_plugin: bool,
     pub in_filter: bool,
     pub has_inputs: bool,
-    pub in_eager: bool,
 }
 
 pub trait OptimizationRule {

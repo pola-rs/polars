@@ -84,7 +84,6 @@ impl ConversionOptimizer {
         expr_arena: &mut Arena<AExpr>,
         ir_arena: &mut Arena<IR>,
         current_ir_node: Node,
-        in_eager: bool,
     ) -> PolarsResult<()> {
         // Different from the stack-opt in the optimizer phase, this does a single pass until fixed point per expression.
 
@@ -98,7 +97,6 @@ impl ConversionOptimizer {
         let schema = get_schema(ir_arena, current_ir_node);
         let plan = ir_arena.get(current_ir_node);
         let mut ctx = OptimizeExprContext {
-            in_eager,
             in_filter: matches!(plan, IR::Filter { .. }),
             has_inputs: !get_input(ir_arena, current_ir_node).is_empty(),
             ..Default::default()
