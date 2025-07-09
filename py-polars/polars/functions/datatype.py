@@ -40,5 +40,5 @@ def self_dtype() -> pl.DataTypeExpr:
         at any point without it being considered a breaking change.
     """
     from polars.polars import PyDataTypeExpr
+
     return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.self_dtype())
-    ...

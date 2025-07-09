@@ -56,7 +56,9 @@ def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
             .rolling(index_column="index", period="5i")
             .agg(
                 # trigger the apply on the expression engine
-                pl.col("a").map_elements(lambda x: x, return_dtype="same").sum()
+                pl.col("a")
+                .map_elements(lambda x: x, return_dtype=pl.self_dtype())
+                .sum()
             )
         )["a"],
         df["a"].rolling_sum(window_size=5, min_samples=1),
@@ -102,11 +104,11 @@ def test_rolling_group_by_overlapping_groups_21859_b(monkeypatch: Any) -> None:
         .agg(
             # trigger the apply on the expression engine
             pl.col("a")
-            .map_elements(lambda x: x, return_dtype="same")
+            .map_elements(lambda x: x, return_dtype=pl.self_dtype())
             .sum()
             .alias("a1"),
             pl.col("a")
-            .map_elements(lambda x: x, return_dtype="same")
+            .map_elements(lambda x: x, return_dtype=pl.self_dtype())
             .sum()
             .alias("a2"),
         )["a1", "a2"]

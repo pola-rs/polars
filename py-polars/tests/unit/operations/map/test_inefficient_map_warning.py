@@ -365,7 +365,7 @@ def test_parse_apply_raw_functions() -> None:
             match=rf"(?s)Expr\.map_elements.*Replace this expression.*np\.{func_name}",
         ):
             df1 = lf.select(
-                pl.col("a").map_elements(func, return_dtype="same")
+                pl.col("a").map_elements(func, return_dtype=pl.self_dtype())
             ).collect()
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
             assert_frame_equal(df1, df2)

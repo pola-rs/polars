@@ -152,13 +152,13 @@ def test_generalized_ufunc_scalar() -> None:
     # Indirect call of the gufunc:
     indirect = df.select(
         pl.col("values").map_batches(
-            custom_sum, returns_scalar=True, return_dtype="same"
+            custom_sum, returns_scalar=True, return_dtype=pl.self_dtype()
         )
     )
     assert_frame_equal(indirect, pl.DataFrame({"values": 15}))
     indirect = df.select(
         pl.col("values").map_batches(
-            custom_sum, returns_scalar=False, return_dtype="same"
+            custom_sum, returns_scalar=False, return_dtype=pl.self_dtype()
         )
     )
     assert_frame_equal(indirect, pl.DataFrame({"values": [15]}))
@@ -169,7 +169,7 @@ def test_generalized_ufunc_scalar() -> None:
         df.group_by("labels")
         .agg(
             pl.col("values").map_batches(
-                custom_sum, returns_scalar=True, return_dtype="same"
+                custom_sum, returns_scalar=True, return_dtype=pl.self_dtype()
             )
         )
         .sort("labels")
@@ -204,7 +204,7 @@ def test_grouped_generalized_ufunc() -> None:
     df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [1.0, 2.0, 3.0, 4.0]})
     result = (
         df.group_by("id")
-        .agg(pl.col("values").map_batches(gufunc_mean, return_dtype="same"))
+        .agg(pl.col("values").map_batches(gufunc_mean, return_dtype=pl.self_dtype()))
         .sort("id")
     )
     expected = pl.DataFrame({"id": ["a", "b"], "values": [[1.5, 2.5], [3.5, 4.5]]})

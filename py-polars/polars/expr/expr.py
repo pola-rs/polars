@@ -4343,7 +4343,17 @@ class Expr:
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return_dtype = kwargs["return_dtype"]
-            result = self.function(*args, **kwargs)
+
+            # ufunc and numba don't expect return_dtype
+            try:
+                result = self.function(*args, **kwargs)
+            except TypeError as e:
+                if "unexpected keyword argument 'return_dtype'" in e.args[0]:
+                    kwargs.pop("return_dtype")
+                    result = self.function(*args, **kwargs)
+                else:
+                    raise
+
             if _check_for_numpy(result) and isinstance(result, np.ndarray):
                 result = pl.Series(result, dtype=return_dtype)
             return result
@@ -4437,7 +4447,7 @@ class Expr:
         ... )
         >>> df.group_by("a").agg(
         ...     pl.col("b").map_batches(
-        ...         lambda x: x.max(), returns_scalar=True, return_dtype="same"
+        ...         lambda x: x.max(), returns_scalar=True, return_dtype=pl.self_dtype()
         ...     )
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
@@ -4589,7 +4599,7 @@ Consider using {self}.implode() instead"""
 
         >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("a")
-        ...     .map_elements(lambda x: x * 2, return_dtype="same")
+        ...     .map_elements(lambda x: x * 2, return_dtype=pl.self_dtype())
         ...     .alias("a_times_2"),
         ... )
         shape: (4, 3)
