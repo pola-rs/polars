@@ -314,7 +314,7 @@ class ExprArrayNameSpace:
         ...     data={"a": [[1, 2, 3], [1, 1, 16]]},
         ...     schema={"a": pl.Array(pl.Int64, 3)},
         ... )
-        >>> df.select(pl.col("a").arr.median())
+        >>> df.select(pl.col("a").arr.mean())
         shape: (2, 1)
         ┌─────┐
         │ a   │
