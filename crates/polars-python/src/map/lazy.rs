@@ -80,7 +80,6 @@ pub(crate) fn call_lambda_with_series(
             None => None,
             Some(dt) => Some(Wrap(dt).into_pyobject(py)?),
         };
-        dbg!("set");
         d.set_item("return_dtype", output_dtype)?;
         dict = Some(d);
     }

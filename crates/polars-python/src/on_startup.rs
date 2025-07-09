@@ -25,7 +25,6 @@ fn python_function_caller_series(
     output_dtype: Option<DataType>,
     lambda: &PyObject,
 ) -> PolarsResult<Column> {
-    dbg!(&s, &output_dtype);
     Python::with_gil(|py| {
         let object =
             call_lambda_with_series(py, s.as_materialized_series(), Some(output_dtype), lambda)?;

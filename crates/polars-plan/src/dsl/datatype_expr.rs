@@ -14,11 +14,15 @@ use crate::plans::to_expr_ir;
 pub enum DataTypeExpr {
     Literal(DataType),
     OfExpr(Box<Expr>),
+    // Invariant, must be directly materialized in `map_elements/map_batches`
+    // After materialization it becomes `OfExpr<self>`
+    SelfDtype,
 }
 
 #[recursive::recursive]
 fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<DataType> {
     let dtype = match dt_expr {
+        DataTypeExpr::SelfDtype => unreachable!(),
         DataTypeExpr::Literal(dt) => dt,
         DataTypeExpr::OfExpr(expr) => {
             let mut arena = Arena::new();
@@ -40,6 +44,13 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
 }
 
 impl DataTypeExpr {
+    pub fn materialize_udf(self, udf_self: Expr) -> Self {
+        match self {
+            Self::SelfDtype => DataTypeExpr::OfExpr(Box::new(udf_self)),
+            _ => self,
+        }
+    }
+
     pub fn into_datatype(self, schema: &Schema) -> PolarsResult<DataType> {
         into_datatype_impl(self, schema)
     }
@@ -64,6 +75,7 @@ impl fmt::Debug for DataTypeExpr {
         match self {
             DataTypeExpr::Literal(data_type) => data_type.fmt(f),
             DataTypeExpr::OfExpr(expr) => write!(f, "dtype_of({expr:?})"),
+            DataTypeExpr::SelfDtype => write!(f, "self"),
         }
     }
 }

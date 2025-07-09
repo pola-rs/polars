@@ -88,7 +88,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         QuantileMethod,
         RankMethod,
-        ReturnDataType,
         RoundMode,
         SchemaDict,
         SearchSortedSide,
@@ -4352,7 +4351,7 @@ class Expr:
     def map_batches(
         self,
         function: Callable[[Series], Series | Any],
-        return_dtype: ReturnDataType | PolarsDataType | pl.DataTypeExpr | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         agg_list: bool = False,
         is_elementwise: bool = False,
@@ -4484,8 +4483,8 @@ class Expr:
 Consider using {self}.implode() instead"""
             raise DeprecationWarning(msg)
             self = self.implode()
-        if return_dtype == "same":
-            return_dtype = F.dtype_of(self)._pydatatype_expr
+        if isinstance(return_dtype, pl.DataTypeExpr):
+            return_dtype = return_dtype._materialize_udf(self)._pydatatype_expr
         elif return_dtype is not None:
             return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
@@ -4502,7 +4501,7 @@ Consider using {self}.implode() instead"""
     def map_elements(
         self,
         function: Callable[[Any], Any],
-        return_dtype: ReturnDataType | PolarsDataType | None = None,
+        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -4689,10 +4688,6 @@ Consider using {self}.implode() instead"""
         root_names = self.meta.root_names()
         if len(root_names) > 0:
             warn_on_inefficient_map(function, columns=root_names, map_target="expr")
-
-        if isinstance(return_dtype, pl.DataTypeExpr):
-            msg = "DataTypeExpr is not supported for map_elements"
-            raise TypeError(msg)
 
         if pass_name:
 
