@@ -733,6 +733,16 @@ pub(super) fn convert_functions(
         #[cfg(feature = "repeat_by")]
         F::RepeatBy => I::RepeatBy,
         F::ArgUnique => I::ArgUnique,
+        F::ArgMin => I::ArgMin,
+        F::ArgMax => I::ArgMax,
+        F::ArgSort {
+            descending,
+            nulls_last,
+        } => I::ArgSort {
+            descending,
+            nulls_last,
+        },
+        F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
         F::Repeat => {

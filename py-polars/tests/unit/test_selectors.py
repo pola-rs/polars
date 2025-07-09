@@ -530,6 +530,8 @@ def test_selector_matches(df: pl.DataFrame) -> None:
     ]
 
 
+# Python objects are not supported by cloud #2410.
+@pytest.mark.may_fail_cloud
 def test_selector_miscellaneous(df: pl.DataFrame) -> None:
     assert df.select(cs.string()).columns == ["qqR"]
     assert df.select(cs.categorical()).columns == []
@@ -971,6 +973,8 @@ def test_enum_selector() -> None:
     assert df.select(~cs.enum()).columns == ["a", "b", "d", "e"]
 
 
+# Zero Field Structs are not supported by cloud #2410.
+@pytest.mark.may_fail_cloud
 def test_struct_selector() -> None:
     df = pl.DataFrame(
         [
