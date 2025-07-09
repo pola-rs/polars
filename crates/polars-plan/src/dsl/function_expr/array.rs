@@ -76,6 +76,7 @@ impl fmt::Display for ArrayFunction {
             CountMatches => "count_matches",
             Shift => "shift",
             Explode { .. } => "explode",
+            #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
         };
         write!(f, "arr.{name}")
