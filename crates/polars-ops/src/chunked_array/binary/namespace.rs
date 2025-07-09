@@ -4,9 +4,6 @@ use std::borrow::Cow;
 #[cfg(feature = "binary_encoding")]
 use arrow::array::Array;
 #[cfg(feature = "binary_encoding")]
-use arrow::datatypes::PhysicalType;
-use arrow::with_match_primitive_type;
-#[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
@@ -175,17 +172,20 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         dtype: &DataType,
         is_little_endian: bool,
     ) -> PolarsResult<Vec<Box<dyn Array>>> {
+        use polars_core::with_match_physical_numeric_polars_type;
+
         let ca = self.as_binary();
 
-        match dtype.to_arrow(CompatLevel::newest()).to_physical_type() {
-            PhysicalType::Primitive(ty) => {
+        match dtype {
+            dtype if dtype.is_primitive_numeric() || dtype.is_temporal() => {
+                let dtype = dtype.to_physical();
                 let arrow_data_type = dtype
                     .to_arrow(CompatLevel::newest())
                     .underlying_physical_type();
-                with_match_primitive_type!(ty, |$T| {
+                with_match_physical_numeric_polars_type!(dtype, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
-                            binview_to_primitive_dyn::<$T>(
+                            binview_to_primitive_dyn::<<$T as PolarsNumericType>::Native>(
                                 &**chunk,
                                 &arrow_data_type,
                                 is_little_endian,
@@ -195,28 +195,16 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 })
             },
             #[cfg(feature = "dtype-array")]
-            PhysicalType::FixedSizeList => {
-                // In theory the IR dispatch should've made sure we have the
-                // correct types, but we can't prove it so check again. In
-                // particular, no nesting beyond the top-level Array:
-                let Some(PhysicalType::Primitive(primitive_type)) = dtype
-                    .inner_dtype()
-                    .map(|dt| dt.to_arrow(CompatLevel::newest()).to_physical_type())
-                else {
-                    // We should only have primitive dtypes as inner type at this point.
-                    polars_bail!(InvalidOperation: "{:?}", dtype);
-                };
-                let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
-                let ArrowDataType::FixedSizeList(_, array_size) = arrow_data_type else {
-                    // We've already verified this is an array.
-                    unreachable!()
-                };
-                let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
+            DataType::Array(inner_dtype, array_size)
+                if inner_dtype.is_primitive_numeric() || inner_dtype.is_temporal() =>
+            {
+                let inner_dtype = inner_dtype.to_physical();
+                let result: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
-                            binview_to_fixed_size_list_dyn::<$T>(
+                            binview_to_fixed_size_list_dyn::<<$T as PolarsNumericType>::Native>(
                                 &**chunk,
-                                array_size,
+                                *array_size,
                                 is_little_endian
                             )
                         }).collect::<Result<Vec<ArrayRef>, _>>()
