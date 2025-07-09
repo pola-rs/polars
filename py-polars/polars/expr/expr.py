@@ -4438,7 +4438,7 @@ class Expr:
         ... )
         >>> df.group_by("a").agg(
         ...     pl.col("b").map_batches(lambda x: x.max(), returns_scalar=True,
-        ....    return_dtype="same")
+        ...    return_dtype="same")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
