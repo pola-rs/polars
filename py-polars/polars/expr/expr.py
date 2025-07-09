@@ -4413,7 +4413,11 @@ class Expr:
         ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        >>> df.select(pl.all().map_batches(lambda x: x.to_numpy().argmax()))
+        >>> df.select(
+        ...     pl.all().map_batches(
+        ...         lambda x: x.to_numpy().argmax(), return_dtype="same"
+        ...     )
+        ... )
         shape: (1, 2)
         ┌──────┬────────┐
         │ sine ┆ cosine │
@@ -4433,7 +4437,8 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x.max(), returns_scalar=True)
+        ...     pl.col("b").map_batches(lambda x: x.max(), returns_scalar=True,
+        ....    return_dtype="same")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
@@ -4456,7 +4461,8 @@ class Expr:
         ... )
         >>> df.with_columns(
         ...     a_times_b=pl.struct("a", "b").map_batches(
-        ...         lambda x: np.multiply(x.struct.field("a"), x.struct.field("b"))
+        ...         lambda x: np.multiply(x.struct.field("a"), x.struct.field("b")),
+        ...         return_dtype=pl.Int64,
         ...     )
         ... )
         shape: (4, 3)
