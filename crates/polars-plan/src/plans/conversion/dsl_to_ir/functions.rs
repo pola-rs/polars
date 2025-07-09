@@ -742,6 +742,7 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
+        F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
         F::Repeat => {

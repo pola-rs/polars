@@ -156,6 +156,7 @@ pub enum FunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
+    Product,
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
@@ -402,6 +403,7 @@ impl Hash for FunctionExpr {
             | ArgUnique
             | ArgMin
             | ArgMax
+            | Product
             | Shift
             | ShiftAndFill => {},
             ArgSort {
@@ -655,6 +657,7 @@ impl Display for FunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
+            Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",

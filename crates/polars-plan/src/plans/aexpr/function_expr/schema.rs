@@ -95,6 +95,17 @@ impl IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
             ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            Product => mapper.map_dtype(|dtype| {
+                use DataType as T;
+                match dtype {
+                    T::Float32 => T::Float32,
+                    T::Float64 => T::Float64,
+                    T::UInt64 => T::UInt64,
+                    #[cfg(feature = "dtype-i128")]
+                    T::Int128 => T::Int128,
+                    _ => T::Int64,
+                }
+            }),
             Repeat => mapper.with_same_dtype(),
             #[cfg(feature = "rank")]
             Rank { options, .. } => mapper.with_dtype(match options.method {

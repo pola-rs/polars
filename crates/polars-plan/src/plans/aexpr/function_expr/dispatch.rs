@@ -195,6 +195,13 @@ pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> Polars
         .into_column())
 }
 
+pub(super) fn product(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .product()
+        .map(|sc| sc.into_column(s.name().clone()))
+}
+
 #[cfg(feature = "rank")]
 pub(super) fn rank(s: &Column, options: RankOptions, seed: Option<u64>) -> PolarsResult<Column> {
     Ok(s.as_materialized_series().rank(options, seed).into_column())

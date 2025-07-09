@@ -1195,6 +1195,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     descending,
                     nulls_last,
                 } => ("arg_max", descending, nulls_last).into_py_any(py),
+                IRFunctionExpr::Product => ("product",).into_py_any(py),
                 IRFunctionExpr::Repeat => ("repeat",).into_py_any(py),
                 IRFunctionExpr::Rank {
                     options: _,

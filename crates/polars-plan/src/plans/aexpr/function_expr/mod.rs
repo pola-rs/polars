@@ -205,6 +205,7 @@ pub enum IRFunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
+    Product,
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
@@ -455,6 +456,7 @@ impl Hash for IRFunctionExpr {
             | ArgUnique
             | ArgMin
             | ArgMax
+            | Product
             | Shift
             | ShiftAndFill => {},
             ArgSort {
@@ -708,6 +710,7 @@ impl Display for IRFunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
+            Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
@@ -1079,6 +1082,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 descending,
                 nulls_last,
             } => map!(dispatch::arg_sort, descending, nulls_last),
+            Product => map!(dispatch::product),
             Repeat => map_as_slice!(repeat::repeat),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
@@ -1338,6 +1342,7 @@ impl IRFunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
+            F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
             F::Repeat => {

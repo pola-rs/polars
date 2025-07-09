@@ -674,27 +674,7 @@ impl Expr {
 
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
-        self.agg_with_fmt_str(
-            move |c: Column| {
-                Some(
-                    c.product()
-                        .map(|sc| sc.into_series(c.name().clone()).into_column()),
-                )
-                .transpose()
-            },
-            GetOutput::map_dtype(|dt| {
-                use DataType as T;
-                Ok(match dt {
-                    T::Float32 => T::Float32,
-                    T::Float64 => T::Float64,
-                    T::UInt64 => T::UInt64,
-                    #[cfg(feature = "dtype-i128")]
-                    T::Int128 => T::Int128,
-                    _ => T::Int64,
-                })
-            }),
-            "product",
-        )
+        self.map_unary(FunctionExpr::Product)
     }
 
     /// Round underlying floating point array to given decimal numbers.
