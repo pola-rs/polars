@@ -83,7 +83,6 @@ def test_cat_to_dummies() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.
     # we should not cast within the function as this would be expensive within a
@@ -513,7 +512,6 @@ def test_categorical_fill_null_existing_category() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_categorical_fill_null() -> None:
     df = pl.LazyFrame(
         {"index": [1, 2, 3], "cat": ["a", "b", None]},
