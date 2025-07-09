@@ -334,19 +334,26 @@ pub(super) fn to_aexpr_impl(
             let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
             let output_dtype = out.dtype();
 
-            if output_dtype.is_unknown()
-                && !matches!(output_dtype, DataType::Unknown(UnknownKind::Ufunc))
+            #[cfg(feature = "python")]
             {
-                if ctx.allow_unknown {
-                    polars_warn!(
-                        "'return_dtype' of function {} must be set\n\nA later expression might fail because the output type is not known.",
-                        fmt_str
-                    )
-                } else {
-                    polars_bail!(InvalidOperation: "'return_dtype' of function {} is not set.\n\nSet the output data type of the UDF. ", fmt_str)
+                if output_dtype.is_unknown()
+                    && !matches!(output_dtype, DataType::Unknown(UnknownKind::Ufunc))
+                {
+                    let msg = format!(
+                        "'return_dtype' of function {fmt_str} must be set\n\nA later expression might fail because the output type is not known. Set return_dtype='same' if the type is unchanged, or set the proper output data type."
+                    );
+                    if ctx.allow_unknown {
+                        polars_warn!(MapWithoutReturnDtypeWarning, "{}", msg)
+                    } else {
+                        polars_bail!(InvalidOperation: msg)
+                    }
                 }
             }
-
+            #[cfg(not(feature = "python"))]
+            assert!(
+                output_dtype.is_known(),
+                "output type of anonymous functions must bet set"
+            );
             (
                 AExpr::AnonymousFunction {
                     input,

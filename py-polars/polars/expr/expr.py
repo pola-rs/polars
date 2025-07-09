@@ -77,7 +77,6 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
-        ReturnDataType,
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
@@ -89,6 +88,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         QuantileMethod,
         RankMethod,
+        ReturnDataType,
         RoundMode,
         SchemaDict,
         SearchSortedSide,
@@ -324,7 +324,9 @@ class Expr:
             if not isinstance(inputs[0], Expr):
                 msg = "Input must be expression."
                 raise OutOfBoundsError(msg)
-            return inputs[0].map_batches(ufunc, is_elementwise=not is_custom_ufunc, _is_ufunc=True)
+            return inputs[0].map_batches(
+                ufunc, is_elementwise=not is_custom_ufunc, _is_ufunc=True
+            )
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
@@ -359,7 +361,9 @@ class Expr:
                     args.append(expr[0])
             return ufunc(*args, **kwargs)
 
-        return root_expr.map_batches(function, is_elementwise=not is_custom_ufunc, _is_ufunc=True)
+        return root_expr.map_batches(
+            function, is_elementwise=not is_custom_ufunc, _is_ufunc=True
+        )
 
     @classmethod
     def deserialize(
@@ -4353,7 +4357,7 @@ class Expr:
         agg_list: bool = False,
         is_elementwise: bool = False,
         returns_scalar: bool = False,
-        _is_ufunc: bool = False
+        _is_ufunc: bool = False,
     ) -> Expr:
         """
         Apply a custom python function to a whole Series or sequence of Series.
@@ -4484,7 +4488,7 @@ Consider using {self}.implode() instead"""
                 return_dtype,
                 is_elementwise,
                 returns_scalar,
-                _is_ufunc
+                _is_ufunc,
             )
         )
 
@@ -4579,7 +4583,7 @@ Consider using {self}.implode() instead"""
 
         >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("a")
-        ...     .map_elements(lambda x: x * 2, return_dtype=pl.Int64)
+        ...     .map_elements(lambda x: x * 2, return_dtype="same")
         ...     .alias("a_times_2"),
         ... )
         shape: (4, 3)
@@ -4683,7 +4687,10 @@ Consider using {self}.implode() instead"""
             msg = "DataTypeExpr is not supported for map_elements"
             raise TypeError(msg)
         elif return_dtype == "same":
-            return_dtype = F.dtype_of(self)
+            same_type = True
+            return_dtype = F.dtype_of(self)  # type: ignore[assignment]
+        else:
+            same_type = False
 
         if pass_name:
 
@@ -4695,8 +4702,12 @@ Consider using {self}.implode() instead"""
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
+                    if same_type:
+                        return_dtype_set = x.dtype
+                    else:
+                        return_dtype_set = return_dtype  # type: ignore[assignment]
                     return x.map_elements(
-                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
+                        inner, return_dtype=return_dtype_set, skip_nulls=skip_nulls
                     )
 
         else:
@@ -4704,8 +4715,13 @@ Consider using {self}.implode() instead"""
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
+                    if same_type:
+                        return_dtype_set = x.dtype
+                    else:
+                        return_dtype_set = return_dtype  # type: ignore[assignment]
+
                     return x.map_elements(
-                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
+                        function, return_dtype=return_dtype_set, skip_nulls=skip_nulls
                     )
 
         if strategy == "thread_local":

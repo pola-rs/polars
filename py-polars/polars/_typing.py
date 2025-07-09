@@ -203,7 +203,7 @@ TorchExportType: TypeAlias = Literal["tensor", "dataset", "dict"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
 WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 ExplainFormat: TypeAlias = Literal["plain", "tree"]
-ReturnDtype: TypeAlias = Literal["same"]
+ReturnDataType: TypeAlias = Literal["same"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = Union[
@@ -425,6 +425,7 @@ __all__ = [
     "PythonLiteral",
     "QuantileMethod",
     "RankMethod",
+    "ReturnDataType",
     "Roll",
     "RowTotalsDefinition",
     "SchemaDefinition",

@@ -1149,7 +1149,7 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
 
     q = register_io_source(
         io_source=generator, schema={"x": pl.Int64, "y": pl.Int64}
-    ).filter(pl.col("y").map_elements(bool))
+    ).filter(pl.col("y").map_elements(bool, return_dtype=pl.Boolean))
 
     plan = q.explain()
     assert plan.index("SELECTION") > plan.index("PYTHON SCAN")
