@@ -10,13 +10,13 @@ if TYPE_CHECKING:
 
 
 def pandas_series_to_arrow(
-    values: pd.Series[Any] | pd.Index[Any],
+    values: pd.Series[Any] | pd.Index[Any] | pd.core.arrays.ExtensionArray,
     *,
     length: int | None = None,
     nan_to_null: bool = True,
 ) -> pa.Array:
     """
-    Convert a pandas Series to an Arrow Array.
+    Convert a pandas Series or ExtensionArray to an Arrow Array.
 
     Parameters
     ----------
@@ -34,7 +34,7 @@ def pandas_series_to_arrow(
     """
     dtype = getattr(values, "dtype", None)
     if dtype == "object":
-        first_non_none = get_first_non_none(values.values)  # type: ignore[arg-type]
+        first_non_none = get_first_non_none(values)  # type: ignore[arg-type]
         if isinstance(first_non_none, str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_null)
         elif first_non_none is None:

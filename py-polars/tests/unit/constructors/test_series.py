@@ -169,6 +169,25 @@ def test_series_init_np_2d_empty() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "array",
+    [
+        pytest.param(pd.array(["2000"], dtype="datetime64[us]"), id="DatetimeArray"),
+        pytest.param(pd.array(["1h"], dtype="timedelta64[us]"), id="TimedeltaArray"),
+        pytest.param(pd.array([0], dtype="Int64"), id="IntegerArray"),
+        pytest.param(pd.array([0.0], dtype="Float64"), id="FloatingArray"),
+        pytest.param(pd.array([""], dtype="string"), id="StringArray"),
+        pytest.param(pd.array([""], dtype="string[pyarrow]"), id="ArrowStringArray"),
+        pytest.param(pd.array([False], dtype="boolean"), id="BooleanArray"),
+        pytest.param(pd.array([0], dtype="int64[pyarrow]"), id="ArrowExtensionArray"),
+    ],
+)
+def test_series_init_pandas_extension_array(
+    array: pd.core.arrays.ExtensionArray,
+) -> None:
+    assert [*pl.Series(array)] == [*array]
+
+
 def test_list_null_constructor_schema() -> None:
     expected = pl.List(pl.Null)
     assert pl.Series([[]]).dtype == expected
