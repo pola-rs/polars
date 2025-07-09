@@ -3493,3 +3493,11 @@ def test_scan_parquet_filter_with_cast_inclusions(
     assert "reading 1 / 1 row groups" in capfd.readouterr().err
 
     assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
+
+
+def test_roundtrip_int128() -> None:
+    f = io.BytesIO()
+    s = pl.Series("a", [1, 2, 3], pl.Int128)
+    s.to_frame().write_parquet(f)
+    f.seek(0)
+    assert_series_equal(pl.read_parquet(f).to_series(), s)
