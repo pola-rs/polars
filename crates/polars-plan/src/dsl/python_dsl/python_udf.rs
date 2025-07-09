@@ -84,9 +84,9 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 }
 
 impl ColumnsUdf for PythonUdfExpression {
-    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
+    fn resolve_dsl(&self, input_schema: &Schema, self_dtype: Option<&DataType>) -> PolarsResult<()> {
         if let Some(output_type) = self.output_type.as_ref() {
-            let dtype = output_type.clone().into_datatype(input_schema)?;
+            let dtype = output_type.clone().into_datatype_with_opt_self(input_schema, self_dtype)?;
             self.materialized_output_type.get_or_init(|| dtype);
         }
         Ok(())
@@ -184,7 +184,7 @@ impl FunctionOutputField for PythonGetOutput {
             Some(dtype) => dtype.clone(),
             None => {
                 let dtype = if let Some(output_type) = self.return_dtype.as_ref() {
-                    output_type.clone().into_datatype(input_schema)?
+                    output_type.clone().into_datatype_with_self(input_schema, fields[0].dtype())?
                 } else {
                     DataType::Unknown(UnknownKind::Any)
                 };

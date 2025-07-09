@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 import polars as pl
@@ -35,3 +37,11 @@ def test_expressions(e: pl.Expr, equiv: pl.Expr) -> None:
         df.select(e),
         df.select(equiv),
     )
+
+
+def test_self_dtype_in_wrong_context() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=re.escape("'self_dtype' cannot be used in this context"),
+    ):
+        pl.select(pl.lit("a").cast(pl.self_dtype()))
