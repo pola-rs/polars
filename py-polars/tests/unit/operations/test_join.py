@@ -3617,4 +3617,6 @@ def test_join_filter_pushdown_iejoin_cse_23469() -> None:
         .filter(pl.col("x") >= 0)
     )
 
-    assert_frame_equal(q.collect(), pl.DataFrame({"x": [1, 2, 3], "y": [1, 2, 3]}))
+    assert_frame_equal(
+        q.collect().sort(pl.all()), pl.DataFrame({"x": [1, 2, 3], "y": [1, 2, 3]})
+    )
