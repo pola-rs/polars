@@ -32,6 +32,10 @@ impl PyExpr {
         self.inner.clone().arr().var(ddof).into()
     }
 
+    fn arr_mean(&self) -> Self {
+        self.inner.clone().arr().mean().into()
+    }
+
     fn arr_median(&self) -> Self {
         self.inner.clone().arr().median().into()
     }

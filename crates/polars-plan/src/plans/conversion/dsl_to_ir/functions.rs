@@ -76,6 +76,7 @@ pub(super) fn convert_functions(
                 A::NUnique => IA::NUnique,
                 A::Std(v) => IA::Std(v),
                 A::Var(v) => IA::Var(v),
+                A::Mean => IA::Mean,
                 A::Median => IA::Median,
                 #[cfg(feature = "array_any_all")]
                 A::Any => IA::Any,
