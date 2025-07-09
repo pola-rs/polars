@@ -2,6 +2,7 @@ use std::fmt::{self, Formatter};
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
+#[cfg(feature = "python")]
 use polars_utils::python_function::PythonFunction;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
