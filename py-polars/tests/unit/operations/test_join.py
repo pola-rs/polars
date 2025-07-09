@@ -3599,6 +3599,18 @@ def test_join_filter_pushdown_iejoin_cse_23469() -> None:
         ),
     )
 
+    q = pl.concat([lf_xy, lf_xy]).filter(pl.col("x") > pl.col("y"))
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        pl.DataFrame(
+            {
+                "x": [2, 2, 3, 3, 3, 3],
+                "y": [1, 1, 1, 1, 2, 2],
+            },
+        ),
+    )
+
     q = (
         lf_x.join_where(lf_y, pl.col("x") == pl.col("y"))
         .cache()
