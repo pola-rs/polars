@@ -330,7 +330,7 @@ pub(super) fn to_aexpr_impl(
             let output_type = output_type.materialize()?;
             function
                 .as_ref()
-                .resolve_dsl(ctx.schema, fields.get(0).map(|f| f.dtype()))?;
+                .resolve_dsl(ctx.schema, fields.first().map(|f| f.dtype()))?;
             output_type.as_ref().resolve_dsl(ctx.schema)?;
 
             let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
