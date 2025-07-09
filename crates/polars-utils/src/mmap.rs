@@ -1,4 +1,3 @@
-use std::ffi::c_void;
 use std::fs::File;
 use std::io;
 use std::mem::ManuallyDrop;
@@ -159,8 +158,6 @@ use polars_error::polars_bail;
 pub use private::MemSlice;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
-use crate::mem::PAGE_SIZE;
-
 /// A cursor over a [`MemSlice`].
 #[derive(Debug, Clone)]
 pub struct MemReader {
@@ -314,7 +311,8 @@ impl Drop for MMapSemaphore {
                         // If the unmap is bigger than our chunk size (32 MiB), we do it in chunks.
                         // This is because munmap holds a lock on the unmap file, which we don't
                         // want to hold for extended periods of time.
-                        let chunk_size = (32_usize * 1024 * 1024).next_multiple_of(*PAGE_SIZE);
+                        let chunk_size =
+                            (32_usize * 1024 * 1024).next_multiple_of(*crate::mem::PAGE_SIZE);
                         if len > chunk_size {
                             let mmap = ManuallyDrop::new(mmap);
                             let ptr: *const u8 = mmap.as_ptr();
@@ -322,7 +320,7 @@ impl Drop for MMapSemaphore {
                             while offset < len {
                                 let remaining = len - offset;
                                 libc::munmap(
-                                    ptr.add(offset) as *mut c_void,
+                                    ptr.add(offset) as *mut std::ffi::c_void,
                                     remaining.min(chunk_size),
                                 );
                                 offset += chunk_size;

@@ -9,6 +9,7 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use rayon::prelude::*;
+use simd_json::prelude::ValueObjectAccess;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
@@ -24,6 +25,7 @@ where
     R: MmapBytesReader,
 {
     reader: R,
+    sub_json_path: &'a [&'a str],
     rechunk: bool,
     n_rows: Option<usize>,
     n_threads: Option<usize>,
@@ -43,6 +45,11 @@ impl<'a, R> JsonLineReader<'a, R>
 where
     R: 'a + MmapBytesReader,
 {
+    pub fn with_sub_json_path(mut self, sub_json_path: &'a [&'a str]) -> Self {
+        self.sub_json_path = sub_json_path;
+        self
+    }
+
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
         self
@@ -115,6 +122,7 @@ where
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
         let json_reader = CoreJsonReader::new(
             reader_bytes,
+            self.sub_json_path,
             self.n_rows,
             self.schema,
             self.schema_overwrite,
@@ -149,6 +157,7 @@ where
     fn new(reader: R) -> Self {
         JsonLineReader {
             reader,
+            sub_json_path: &[],
             rechunk: true,
             n_rows: None,
             n_threads: None,
@@ -169,6 +178,7 @@ where
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
         let mut json_reader = CoreJsonReader::new(
             reader_bytes,
+            self.sub_json_path,
             self.n_rows,
             self.schema,
             self.schema_overwrite,
@@ -193,6 +203,7 @@ where
 
 pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
+    sub_json_path: &'a [&'a str],
     n_rows: Option<usize>,
     schema: SchemaRef,
     n_threads: Option<usize>,
@@ -204,10 +215,12 @@ pub(crate) struct CoreJsonReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     projection: Option<Arc<[PlSmallStr]>>,
 }
+
 impl<'a> CoreJsonReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
+        sub_json_path: &'a [&'a str],
         n_rows: Option<usize>,
         schema: Option<SchemaRef>,
         schema_overwrite: Option<&Schema>,
@@ -238,6 +251,7 @@ impl<'a> CoreJsonReader<'a> {
 
         Ok(CoreJsonReader {
             reader_bytes: Some(reader_bytes),
+            sub_json_path,
             schema,
             sample_size,
             n_rows,
@@ -292,6 +306,7 @@ impl<'a> CoreJsonReader<'a> {
         let file_chunks = get_file_chunks_json(bytes, n_threads);
 
         let row_index = self.row_index.as_ref().map(|ri| ri as &RowIndex);
+
         let (mut dfs, prepredicate_heights) = POOL.install(|| {
             file_chunks
                 .into_par_iter()
@@ -300,6 +315,7 @@ impl<'a> CoreJsonReader<'a> {
                         &bytes[start_pos..stop_at_nbytes],
                         Some(capacity),
                         &self.schema,
+                        self.sub_json_path,
                         self.ignore_errors,
                     )?;
 
@@ -353,6 +369,7 @@ impl<'a> CoreJsonReader<'a> {
 #[inline(always)]
 fn parse_impl(
     bytes: &[u8],
+    sub_json_path: impl IntoIterator<Item = impl AsRef<str>>,
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
     scratch: &mut Scratch,
 ) -> PolarsResult<usize> {
@@ -361,10 +378,19 @@ fn parse_impl(
     let n = scratch.json.len();
     let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
         .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
+
+    let mut value = &value;
+    for section in sub_json_path {
+        let section = section.as_ref();
+        value = value.get(section).ok_or_else(
+            || polars_err!(NoData: "Can not find the field in JSON line. Field: {}", section),
+        )?;
+    }
+
     match value {
         simd_json::BorrowedValue::Object(value) => {
             buffers.iter_mut().try_for_each(|(s, inner)| {
-                match s.0.map_lookup(&value) {
+                match s.0.map_lookup(value) {
                     Some(v) => inner.add(v)?,
                     None => inner.add_null(),
                 }
@@ -397,12 +423,16 @@ pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     })
 }
 
-fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
+fn parse_lines(
+    bytes: &[u8],
+    sub_json_path: impl IntoIterator<Item = impl AsRef<str>> + Copy,
+    buffers: &mut PlIndexMap<BufferKey, Buffer>,
+) -> PolarsResult<()> {
     let mut scratch = Scratch::default();
 
     let iter = json_lines(bytes);
     for bytes in iter {
-        parse_impl(bytes, buffers, &mut scratch)?;
+        parse_impl(bytes, sub_json_path, buffers, &mut scratch)?;
     }
     Ok(())
 }
@@ -411,12 +441,13 @@ pub fn parse_ndjson(
     bytes: &[u8],
     n_rows_hint: Option<usize>,
     schema: &Schema,
+    sub_json_path: impl IntoIterator<Item = impl AsRef<str>> + Copy,
     ignore_errors: bool,
 ) -> PolarsResult<DataFrame> {
     let capacity = n_rows_hint.unwrap_or_else(|| estimate_n_lines_in_chunk(bytes));
 
     let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
-    parse_lines(bytes, &mut buffers)?;
+    parse_lines(bytes, sub_json_path, &mut buffers)?;
 
     DataFrame::new(
         buffers
