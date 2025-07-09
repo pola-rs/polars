@@ -22,7 +22,7 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
         DataTypeExpr::Literal(dt) => dt,
         DataTypeExpr::OfExpr(expr) => {
             let mut arena = Arena::new();
-            let e = to_expr_ir(*expr, &mut arena, schema)?;
+            let e = to_expr_ir(*expr, &mut arena, schema, true)?;
             let dtype = arena
                 .get(e.node())
                 .to_dtype(schema, Default::default(), &arena)?;

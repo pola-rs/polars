@@ -2,11 +2,17 @@ use super::functions::convert_functions;
 use super::*;
 use crate::plans::iterator::ArenaExprIter;
 
-pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>, schema: &Schema) -> PolarsResult<ExprIR> {
+pub fn to_expr_ir(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    in_eager: bool,
+) -> PolarsResult<ExprIR> {
     let mut ctx = ExprToIRContext {
         with_fields: None,
         arena,
         schema,
+        in_eager,
     };
     to_expr_ir_with_context(expr, &mut ctx)
 }
@@ -20,11 +26,13 @@ pub fn to_expr_ir_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
+    in_eager: bool,
 ) -> PolarsResult<ExprIR> {
     let mut ctx = ExprToIRContext {
         with_fields: None,
         arena,
         schema,
+        in_eager,
     };
     let (node, output_name) = to_aexpr_impl_materialized_lit(expr, &mut ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
@@ -34,10 +42,11 @@ pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
+    in_eager: bool,
 ) -> PolarsResult<Vec<ExprIR>> {
     input
         .into_iter()
-        .map(|e| to_expr_ir(e, arena, schema))
+        .map(|e| to_expr_ir(e, arena, schema, in_eager))
         .collect()
 }
 
@@ -74,6 +83,7 @@ pub struct ExprToIRContext<'a> {
     pub with_fields: Option<(Node, Schema)>,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
+    pub in_eager: bool,
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -304,11 +314,11 @@ pub(super) fn to_aexpr_impl(
             options,
             fmt_str,
         } => {
-            let e = to_expr_irs_with_context(input, ctx)?;
-            let output_name = if e.is_empty() {
+            let input = to_expr_irs_with_context(input, ctx)?;
+            let output_name = if input.is_empty() {
                 fmt_str.as_ref().clone()
             } else {
-                e[0].output_name().clone()
+                input[0].output_name().clone()
             };
 
             let function = function.materialize()?;
@@ -316,9 +326,27 @@ pub(super) fn to_aexpr_impl(
             function.as_ref().resolve_dsl(ctx.schema)?;
             output_type.as_ref().resolve_dsl(ctx.schema)?;
 
+            let fields = input
+                .iter()
+                .map(|e| e.field(ctx.schema, Context::Default, ctx.arena))
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
+
+            if out.dtype().is_unknown() {
+                if ctx.in_eager {
+                    polars_warn!(
+                        "'return_dtype' of function {} must be set\n\nA later expression might fail because the output type is not known.",
+                        fmt_str
+                    )
+                } else {
+                    polars_bail!(InvalidOperation: "'return_dtype' of function {} is not set.\n\nSet the output data type of the UDF. ", fmt_str)
+                }
+            }
+
             (
                 AExpr::AnonymousFunction {
-                    input: e,
+                    input,
                     function: LazySerde::Deserialized(function),
                     output_type: LazySerde::Deserialized(output_type),
                     options,
@@ -389,6 +417,7 @@ pub(super) fn to_aexpr_impl(
                 with_fields: None,
                 schema: &evaluation_schema,
                 arena: ctx.arena,
+                in_eager: ctx.in_eager,
             };
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 
