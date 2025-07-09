@@ -189,11 +189,11 @@ impl<'a> Iterator for AExprIter<'a> {
 }
 
 pub trait ArenaExprIter<'a> {
-    fn iter(&self, root: Node) -> AExprIter<'a>;
+    fn iter(&'a self, root: Node) -> AExprIter<'a>;
 }
 
-impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
-    fn iter(&self, root: Node) -> AExprIter<'a> {
+impl<'a> ArenaExprIter<'a> for Arena<AExpr> {
+    fn iter(&'a self, root: Node) -> AExprIter<'a> {
         let stack = unitvec![root];
         AExprIter {
             stack,
@@ -208,11 +208,11 @@ pub struct AlpIter<'a> {
 }
 
 pub trait ArenaLpIter<'a> {
-    fn iter(&self, root: Node) -> AlpIter<'a>;
+    fn iter(&'a self, root: Node) -> AlpIter<'a>;
 }
 
-impl<'a> ArenaLpIter<'a> for &'a Arena<IR> {
-    fn iter(&self, root: Node) -> AlpIter<'a> {
+impl<'a> ArenaLpIter<'a> for Arena<IR> {
+    fn iter(&'a self, root: Node) -> AlpIter<'a> {
         let stack = unitvec![root];
         AlpIter { stack, arena: self }
     }

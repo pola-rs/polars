@@ -863,6 +863,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "repeat_by")]
         IF::RepeatBy => F::RepeatBy,
         IF::ArgUnique => F::ArgUnique,
+        IF::ArgMin => F::ArgMin,
+        IF::ArgMax => F::ArgMax,
+        IF::ArgSort {
+            descending,
+            nulls_last,
+        } => F::ArgSort {
+            descending,
+            nulls_last,
+        },
+        IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
         IF::Repeat => F::Repeat,

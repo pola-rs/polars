@@ -199,6 +199,13 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
+    ArgMin,
+    ArgMax,
+    ArgSort {
+        descending: bool,
+        nulls_last: bool,
+    },
+    Product,
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
@@ -447,8 +454,18 @@ impl Hash for IRFunctionExpr {
             | DropNulls
             | Reverse
             | ArgUnique
+            | ArgMin
+            | ArgMax
+            | Product
             | Shift
             | ShiftAndFill => {},
+            ArgSort {
+                descending,
+                nulls_last,
+            } => {
+                descending.hash(state);
+                nulls_last.hash(state);
+            },
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -690,6 +707,10 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
+            ArgSort { .. } => "arg_sort",
+            Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
@@ -1055,6 +1076,13 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "moment")]
             Kurtosis(fisher, bias) => map!(dispatch::kurtosis, fisher, bias),
             ArgUnique => map!(dispatch::arg_unique),
+            ArgMin => map!(dispatch::arg_min),
+            ArgMax => map!(dispatch::arg_max),
+            ArgSort {
+                descending,
+                nulls_last,
+            } => map!(dispatch::arg_sort, descending, nulls_last),
+            Product => map!(dispatch::product),
             Repeat => map_as_slice!(repeat::repeat),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
@@ -1312,6 +1340,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "repeat_by")]
             F::RepeatBy => FunctionOptions::elementwise(),
             F::ArgUnique => FunctionOptions::groupwise(),
+            F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
+            F::ArgSort { .. } => FunctionOptions::length_preserving(),
+            F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
             F::Repeat => {

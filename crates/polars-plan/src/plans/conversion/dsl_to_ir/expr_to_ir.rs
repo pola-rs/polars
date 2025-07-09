@@ -433,7 +433,7 @@ pub(super) fn to_aexpr_impl(
 
             match variant {
                 EvalVariant::List => {
-                    for (_, e) in ArenaExprIter::iter(&&*ctx.arena, evaluation) {
+                    for (_, e) in ArenaExprIter::iter(ctx.arena, evaluation) {
                         if let AExpr::Column(name) = e {
                             polars_ensure!(
                                 name.is_empty(),
@@ -463,7 +463,7 @@ pub(super) fn to_aexpr_impl(
         Expr::Len => (AExpr::Len, get_len_name()),
         Expr::KeepName(expr) => {
             let (expr, _) = to_aexpr_impl(owned(expr), ctx)?;
-            let name = ArenaExprIter::iter(&&*ctx.arena, expr).find_map(|e| match e.1 {
+            let name = ArenaExprIter::iter(ctx.arena, expr).find_map(|e| match e.1 {
                 AExpr::Column(name) => Some(name.clone()),
                 #[cfg(feature = "dtype-struct")]
                 AExpr::Function {
