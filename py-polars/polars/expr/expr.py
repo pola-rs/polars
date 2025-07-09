@@ -4343,7 +4343,7 @@ class Expr:
             self.function = function
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            return_dtype = kwargs.pop("return_dtype")
+            return_dtype = kwargs["return_dtype"]
             result = self.function(*args, **kwargs)
             if _check_for_numpy(result) and isinstance(result, np.ndarray):
                 result = pl.Series(result, dtype=return_dtype)
@@ -4437,8 +4437,9 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x.max(), returns_scalar=True,
-        ...    return_dtype="same")
+        ...     pl.col("b").map_batches(
+        ...         lambda x: x.max(), returns_scalar=True, return_dtype="same"
+        ...     )
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
@@ -4692,15 +4693,12 @@ Consider using {self}.implode() instead"""
         if isinstance(return_dtype, pl.DataTypeExpr):
             msg = "DataTypeExpr is not supported for map_elements"
             raise TypeError(msg)
-        elif return_dtype == "same":
-            same_type = True
-            return_dtype = F.dtype_of(self)  # type: ignore[assignment]
-        else:
-            same_type = False
 
         if pass_name:
 
-            def wrap_f(x: Series) -> Series:  # pragma: no cover
+            def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
+                return_dtype = kwargs["return_dtype"]
+
                 def inner(s: Series | Any) -> Series:  # pragma: no cover
                     if isinstance(s, pl.Series):
                         s = s.alias(x.name)
@@ -4708,26 +4706,19 @@ Consider using {self}.implode() instead"""
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
-                    if same_type:
-                        return_dtype_set = x.dtype
-                    else:
-                        return_dtype_set = return_dtype  # type: ignore[assignment]
                     return x.map_elements(
-                        inner, return_dtype=return_dtype_set, skip_nulls=skip_nulls
+                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
                     )
 
         else:
 
-            def wrap_f(x: Series) -> Series:  # pragma: no cover
+            def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
+                return_dtype = kwargs["return_dtype"]
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
-                    if same_type:
-                        return_dtype_set = x.dtype
-                    else:
-                        return_dtype_set = return_dtype  # type: ignore[assignment]
 
                     return x.map_elements(
-                        function, return_dtype=return_dtype_set, skip_nulls=skip_nulls
+                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
                     )
 
         if strategy == "thread_local":
