@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
     """Fixture to restore the environment after/during tests."""
-    with pl.StringCache(), pl.Config(restore_defaults=True):
+    with pl.Config(restore_defaults=True):
         yield
 
 

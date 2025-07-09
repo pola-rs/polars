@@ -362,7 +362,6 @@ def test_str_find_escaped_chars() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_str_find_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises(ShapeError):

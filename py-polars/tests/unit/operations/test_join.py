@@ -18,7 +18,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import time_func, with_string_cache_if_auto_streaming
+from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy, PolarsDataType
@@ -65,7 +65,6 @@ def test_semi_anti_join() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
@@ -1259,7 +1258,6 @@ def test_array_explode_join_19763() -> None:
     assert_frame_equal(q.collect().sort("k"), pl.DataFrame({"k": [1, 2]}))
 
 
-@with_string_cache_if_auto_streaming
 def test_join_full_19814() -> None:
     schema = {"a": pl.Int64, "c": pl.Categorical}
     a = pl.LazyFrame({"a": [1], "c": [None]}, schema=schema)
@@ -1967,36 +1965,35 @@ def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> 
 
 
 def test_join_categorical_21815() -> None:
-    with pl.StringCache():
-        left = pl.DataFrame({"x": ["a", "b", "c", "d"]}).with_columns(
-            xc=pl.col.x.cast(pl.Categorical)
-        )
-        right = pl.DataFrame({"x": ["c", "d", "e", "f"]}).with_columns(
-            xc=pl.col.x.cast(pl.Categorical)
-        )
+    left = pl.DataFrame({"x": ["a", "b", "c", "d"]}).with_columns(
+        xc=pl.col.x.cast(pl.Categorical)
+    )
+    right = pl.DataFrame({"x": ["c", "d", "e", "f"]}).with_columns(
+        xc=pl.col.x.cast(pl.Categorical)
+    )
 
-        # As key.
-        cat_key = left.join(right, on="xc", how="full")
+    # As key.
+    cat_key = left.join(right, on="xc", how="full")
 
-        # As payload.
-        cat_payload = left.join(right, on="x", how="full")
+    # As payload.
+    cat_payload = left.join(right, on="x", how="full")
 
-        expected = pl.DataFrame(
-            {
-                "x": ["a", "b", "c", "d", None, None],
-                "x_right": [None, None, "c", "d", "e", "f"],
-            }
-        ).with_columns(
-            xc=pl.col.x.cast(pl.Categorical),
-            xc_right=pl.col.x_right.cast(pl.Categorical),
-        )
+    expected = pl.DataFrame(
+        {
+            "x": ["a", "b", "c", "d", None, None],
+            "x_right": [None, None, "c", "d", "e", "f"],
+        }
+    ).with_columns(
+        xc=pl.col.x.cast(pl.Categorical),
+        xc_right=pl.col.x_right.cast(pl.Categorical),
+    )
 
-        assert_frame_equal(
-            cat_key, expected, check_row_order=False, check_column_order=False
-        )
-        assert_frame_equal(
-            cat_payload, expected, check_row_order=False, check_column_order=False
-        )
+    assert_frame_equal(
+        cat_key, expected, check_row_order=False, check_column_order=False
+    )
+    assert_frame_equal(
+        cat_payload, expected, check_row_order=False, check_column_order=False
+    )
 
 
 def test_join_where_nested_boolean() -> None:

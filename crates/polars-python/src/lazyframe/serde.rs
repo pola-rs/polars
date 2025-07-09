@@ -15,7 +15,11 @@ impl PyLazyFrame {
     fn serialize_binary(&self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        py.enter_polars(|| self.ldf.logical_plan.serialize_versioned(writer))
+        py.enter_polars(|| {
+            self.ldf
+                .logical_plan
+                .serialize_versioned(writer, Default::default())
+        })
     }
 
     /// Serialize into a JSON string.

@@ -335,27 +335,26 @@ def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
 
 
 def test_streaming_group_by_categorical_aggregate() -> None:
-    with pl.StringCache():
-        out = (
-            pl.LazyFrame(
-                {
-                    "a": pl.Series(
-                        ["a", "a", "b", "b", "c", "c", None, None], dtype=pl.Categorical
-                    ),
-                    "b": pl.Series(
-                        pl.date_range(
-                            date(2023, 4, 28),
-                            date(2023, 5, 5),
-                            eager=True,
-                        ).to_list(),
-                        dtype=pl.Date,
-                    ),
-                }
-            )
-            .group_by(["a", "b"])
-            .agg([pl.col("a").first().alias("sum")])
-            .collect(engine="streaming")
+    out = (
+        pl.LazyFrame(
+            {
+                "a": pl.Series(
+                    ["a", "a", "b", "b", "c", "c", None, None], dtype=pl.Categorical
+                ),
+                "b": pl.Series(
+                    pl.date_range(
+                        date(2023, 4, 28),
+                        date(2023, 5, 5),
+                        eager=True,
+                    ).to_list(),
+                    dtype=pl.Date,
+                ),
+            }
         )
+        .group_by(["a", "b"])
+        .agg([pl.col("a").first().alias("sum")])
+        .collect(engine="streaming")
+    )
 
     assert out.sort("b").to_dict(as_series=False) == {
         "a": ["a", "a", "b", "b", "c", "c", None, None],

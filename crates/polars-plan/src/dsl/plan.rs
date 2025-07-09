@@ -234,6 +234,11 @@ impl Default for DslPlan {
     }
 }
 
+#[derive(Default, Clone, Copy)]
+pub struct PlanSerializationContext {
+    pub use_cloudpickle: bool,
+}
+
 impl DslPlan {
     pub fn describe(&self) -> PolarsResult<String> {
         Ok(self.clone().to_alp()?.describe())
@@ -269,9 +274,19 @@ impl DslPlan {
     }
 
     #[cfg(feature = "serde")]
-    pub fn serialize_versioned<W: Write>(&self, mut writer: W) -> PolarsResult<()> {
+    pub fn serialize_versioned<W: Write>(
+        &self,
+        mut writer: W,
+        ctx: PlanSerializationContext,
+    ) -> PolarsResult<()> {
         let le_major = DSL_VERSION.0.to_le_bytes();
         let le_minor = DSL_VERSION.1.to_le_bytes();
+
+        // @GB:
+        // This is absolute horrendous but serde does not allow for state to passed along with the
+        // serialization so there is no proper way to do this except replace serde.
+        polars_utils::pl_serialize::USE_CLOUDPICKLE.set(ctx.use_cloudpickle);
+
         writer.write_all(DSL_MAGIC_BYTES)?;
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
