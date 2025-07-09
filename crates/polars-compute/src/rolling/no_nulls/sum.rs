@@ -182,6 +182,7 @@ where
                 det_offsets_center,
                 no_nulls::compute_sum_weights,
                 &weights,
+                false
             )
         },
         (false, Some(weights)) => {
@@ -193,6 +194,7 @@ where
                 det_offsets,
                 no_nulls::compute_sum_weights,
                 &weights,
+                false
             )
         },
     }

@@ -7711,7 +7711,8 @@ Consider using {self}.implode() instead"""
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weights` vector. The resulting values will be aggregated to their mean.
+        `weights` vector. The resulting values will be aggregated to their mean. Weights
+        are normalized to sum to 1.
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
@@ -7725,7 +7726,8 @@ Consider using {self}.implode() instead"""
             The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            elementwise with the values in the window, after being normalized to sum to
+            1.
         min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
@@ -7932,7 +7934,8 @@ Consider using {self}.implode() instead"""
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weights` vector. The resulting values will be aggregated to their std.
+        `weights` vector. The resulting values will be aggregated to their std. Weights
+        are normalized to sum to 1.
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
@@ -7946,7 +7949,8 @@ Consider using {self}.implode() instead"""
             The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            elementwise with the values in the window after being normalized to sum to 
+            1.
         min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
@@ -8046,7 +8050,8 @@ Consider using {self}.implode() instead"""
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weights` vector. The resulting values will be aggregated to their var.
+        `weights` vector. The resulting values will be aggregated to their var. Weights
+        are normalized to sum to 1.
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
@@ -8060,7 +8065,8 @@ Consider using {self}.implode() instead"""
             The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
+            elementwise with the values in the window after being normalized to sum to
+            1.
         min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.

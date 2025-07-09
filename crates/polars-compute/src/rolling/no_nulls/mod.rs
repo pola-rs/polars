@@ -81,6 +81,7 @@ pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     det_offsets_fn: Fo,
     aggregator: Fa,
     weights: &[T],
+    normalize: bool
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + num_traits::Zero + std::ops::Div<Output = T> + Copy,
@@ -105,7 +106,7 @@ where
                 weights
             };
             
-            if win_len != window_size {
+            if normalize && win_len != window_size {
                 // Renormalize weights so they sum to 1
                 let wsum = weights_slice.iter().copied().fold(T::zero(), |acc, x| acc + x);
                 if wsum == T::zero() {
