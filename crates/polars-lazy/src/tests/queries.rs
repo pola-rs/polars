@@ -1981,3 +1981,30 @@ fn test_over_with_options_empty_join() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_when_then_casts_correctly() -> PolarsResult<()> {
+    let df = df![
+        "a" => &[1000i64]
+    ]?
+    .lazy();
+    let lf = df.lazy();
+
+    let then_expression = col("a").cast(DataType::Float64);
+
+    let lf_with_new_col = lf.with_column(
+        when(col("a").gt(lit(0i64)))
+            .then(then_expression)
+            .otherwise(lit(0.1f64))
+            .alias("b"),
+    );
+
+    let out = lf_with_new_col.collect()?;
+
+    assert!(out.equals(&df![
+        "a" => &[1000i64],
+        "b" => &[1000.0f64]
+    ]?));
+
+    Ok(())
+}
