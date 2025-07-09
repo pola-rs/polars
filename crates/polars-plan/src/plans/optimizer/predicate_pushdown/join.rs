@@ -38,8 +38,8 @@ pub(super) fn process_join(
         #[cfg(feature = "iejoin")]
         JoinType::IEJoin => {
             // IEJoin should only reach here in the case that the predicate pushdown optimizer
-            // is run on a cached subgraph of the IR, beginning at the IEJoin node.
-            // This means that `acc_predicates` should always be empty for this case. The codepaths
+            // is run on a cached subgraph of the IR containing IEJoin nodes.
+            // `acc_predicates` should always be empty for this case. The codepaths
             // below will panic with unreachable if this is not the case.
             debug_assert!(acc_predicates.is_empty());
             true
