@@ -101,7 +101,7 @@ impl<'a> CopyContext<'a> {
         }
 
         // If this is one of the root nodes and was already visited, don't visit again, just return
-        // the matching dst node. This is useful for tracking IR nodes across copying.
+        // the matching dst node.
         if let Some(&Some(root_node)) = self.roots.get(&src_node) {
             return root_node;
         }
