@@ -1,4 +1,5 @@
 use polars::prelude::*;
+use polars_plan::utils::PlanCallback;
 use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 use pyo3::pymethods;
@@ -116,7 +117,7 @@ impl PyExpr {
 
     #[pyo3(signature = (name_gen))]
     fn arr_to_struct(&self, name_gen: Option<PyObject>) -> Self {
-        let name_gen = name_gen.map(|o| DslNameGenerator::Python(PythonObject(o)));
+        let name_gen = name_gen.map(|o| PlanCallback::new_python(PythonObject(o)));
         self.inner.clone().arr().to_struct(name_gen).into()
     }
 

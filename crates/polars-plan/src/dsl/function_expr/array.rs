@@ -2,7 +2,7 @@ use std::fmt;
 
 use polars_core::prelude::SortOptions;
 
-use super::{DslNameGenerator, FunctionExpr};
+use super::FunctionExpr;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -41,7 +41,7 @@ pub enum ArrayFunction {
     },
     Concat,
     #[cfg(feature = "array_to_struct")]
-    ToStruct(Option<DslNameGenerator>),
+    ToStruct(Option<super::DslNameGenerator>),
 }
 
 impl fmt::Display for ArrayFunction {

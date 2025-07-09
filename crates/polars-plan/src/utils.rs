@@ -2,6 +2,7 @@ use std::fmt::{self, Formatter};
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
+use polars_utils::python_function::PythonFunction;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
@@ -339,7 +340,7 @@ pub fn rename_columns(
 #[derive(Eq, PartialEq)]
 pub enum PlanCallback<Args, Out> {
     #[cfg(feature = "python")]
-    Python(polars_utils::python_function::PythonFunction),
+    Python(SpecialEq<Arc<polars_utils::python_function::PythonFunction>>),
     Rust(SpecialEq<Arc<dyn Fn(Args) -> PolarsResult<Out> + Send + Sync>>),
 }
 
@@ -377,9 +378,9 @@ impl<'de, Args, Out> serde::Deserialize<'de> for PlanCallback<Args, Out> {
     {
         #[cfg(feature = "python")]
         {
-            Ok(Self::Python(
+            Ok(Self::Python(SpecialEq::new(Arc::new(
                 polars_utils::python_function::PythonFunction::deserialize(_deserializer)?,
-            ))
+            ))))
         }
         #[cfg(not(feature = "python"))]
         {
@@ -434,6 +435,10 @@ impl<Args: for<'py> pyo3::IntoPyObject<'py>, Out: for<'py> pyo3::FromPyObject<'p
             }),
             Self::Rust(f) => f(args),
         }
+    }
+
+    pub fn new_python(pyfn: PythonFunction) -> Self {
+        Self::Python(SpecialEq::new(Arc::new(pyfn)))
     }
 }
 

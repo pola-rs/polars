@@ -207,7 +207,7 @@ impl PyExpr {
         name_gen: Option<PyObject>,
         upper_bound: Option<usize>,
     ) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| PlanCallback::Python(PythonObject(lambda)));
+        let name_gen = name_gen.map(|lambda| PlanCallback::new_python(PythonObject(lambda)));
 
         Ok(self
             .inner
