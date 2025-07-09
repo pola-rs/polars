@@ -236,7 +236,11 @@ where
             } else {
                 // Slow path, reinterpret items one by one.
                 for j in 0..array_items {
-                    let jth_bytes = &value[(j * element_size)..((j + 1) * element_size)];
+                    let jth_range = (j * element_size)..((j + 1) * element_size);
+                    debug_assert!(value.get(jth_range.clone()).is_some());
+                    // # Safety
+                    // We made sure the range is smaller than `value` length.
+                    let jth_bytes = unsafe { value.get_unchecked(jth_range) };
                     // # Safety
                     // We just made sure that the slice has length `element_size`
                     let byte_array = unsafe { jth_bytes.try_into().unwrap_unchecked() };
