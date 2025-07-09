@@ -243,9 +243,8 @@ impl ListNameSpace {
     /// an `upper_bound` of struct fields that will be set.
     /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
     /// will look in the current schema to determine which columns to select.
-    pub fn to_struct(self, args: ListToStructArgs) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::ToStruct(args)))
+    pub fn to_struct(self, args: ListToStruct) -> Expr {
+        self.0.map_unary(ListFunction::ToStruct(args))
     }
 
     #[cfg(feature = "is_in")]

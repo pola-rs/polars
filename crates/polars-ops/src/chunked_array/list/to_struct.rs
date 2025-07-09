@@ -6,14 +6,11 @@ use rayon::prelude::*;
 use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListToStructArgs {
     FixedWidth(Arc<[PlSmallStr]>),
     InferWidth {
         infer_field_strategy: ListToStructWidthStrategy,
         // Can serialize only when None (null), so we override to `()` which serializes to null.
-        #[cfg_attr(feature = "dsl-schema", schemars(with = "()"))]
         get_index_name: Option<NameGenerator>,
         /// If this is None, it means unbounded.
         max_fields: Option<usize>,
@@ -29,42 +26,6 @@ pub enum ListToStructWidthStrategy {
 }
 
 impl ListToStructArgs {
-    pub fn get_output_dtype(&self, input_dtype: &DataType) -> PolarsResult<DataType> {
-        let DataType::List(inner_dtype) = input_dtype else {
-            polars_bail!(
-                InvalidOperation:
-                "attempted list to_struct on non-list dtype: {}",
-                input_dtype
-            );
-        };
-        let inner_dtype = inner_dtype.as_ref();
-
-        match self {
-            Self::FixedWidth(names) => Ok(DataType::Struct(
-                names
-                    .iter()
-                    .map(|x| Field::new(x.clone(), inner_dtype.clone()))
-                    .collect::<Vec<_>>(),
-            )),
-            Self::InferWidth {
-                get_index_name,
-                max_fields: Some(max_fields),
-                ..
-            } => {
-                let get_index_name_func = get_index_name.as_ref().map_or(
-                    &_default_struct_name_gen as &dyn Fn(usize) -> PlSmallStr,
-                    |x| x.0.as_ref(),
-                );
-                Ok(DataType::Struct(
-                    (0..*max_fields)
-                        .map(|i| Field::new(get_index_name_func(i), inner_dtype.clone()))
-                        .collect::<Vec<_>>(),
-                ))
-            },
-            Self::InferWidth { .. } => Ok(DataType::Unknown(UnknownKind::Any)),
-        }
-    }
-
     fn det_n_fields(&self, ca: &ListChunked) -> usize {
         match self {
             Self::FixedWidth(v) => v.len(),
@@ -117,7 +78,7 @@ impl ListToStructArgs {
         }
     }
 
-    fn set_output_names(&self, columns: &mut [Series]) {
+    fn set_output_names(&self, columns: &mut [Series]) -> PolarsResult<()> {
         match self {
             Self::FixedWidth(v) => {
                 assert_eq!(columns.len(), v.len());
@@ -127,24 +88,29 @@ impl ListToStructArgs {
                 }
             },
             Self::InferWidth { get_index_name, .. } => {
-                let get_index_name_func = get_index_name.as_ref().map_or(
-                    &_default_struct_name_gen as &dyn Fn(usize) -> PlSmallStr,
-                    |x| x.0.as_ref(),
-                );
+                let get_index_name_func = get_index_name
+                    .as_ref()
+                    .map_or(&(|i| Ok(_default_struct_name_gen(i))) as _, |x| {
+                        x.0.as_ref()
+                    });
 
                 for (i, c) in columns.iter_mut().enumerate() {
-                    c.rename(get_index_name_func(i));
+                    c.rename(get_index_name_func(i)?);
                 }
             },
         }
+
+        Ok(())
     }
 }
 
 #[derive(Clone)]
-pub struct NameGenerator(pub Arc<dyn Fn(usize) -> PlSmallStr + Send + Sync>);
+pub struct NameGenerator(pub Arc<dyn Fn(usize) -> PolarsResult<PlSmallStr> + Send + Sync>);
 
 impl NameGenerator {
-    pub fn from_func(func: impl Fn(usize) -> PlSmallStr + Send + Sync + 'static) -> Self {
+    pub fn from_func(
+        func: impl Fn(usize) -> PolarsResult<PlSmallStr> + Send + Sync + 'static,
+    ) -> Self {
         Self(Arc::new(func))
     }
 }
@@ -189,40 +155,10 @@ pub trait ToStruct: AsList {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        args.set_output_names(&mut fields);
+        args.set_output_names(&mut fields)?;
 
         StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())
     }
 }
 
 impl ToStruct for ListChunked {}
-
-#[cfg(feature = "serde")]
-mod _serde_impl {
-    use super::*;
-
-    impl serde::Serialize for NameGenerator {
-        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            use serde::ser::Error;
-            Err(S::Error::custom(
-                "cannot serialize name generator function for to_struct, \
-                consider passing a list of field names instead.",
-            ))
-        }
-    }
-
-    impl<'de> serde::Deserialize<'de> for NameGenerator {
-        fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            use serde::de::Error;
-            Err(D::Error::custom(
-                "invalid data: attempted to deserialize list::to_struct::NameGenerator",
-            ))
-        }
-    }
-}

@@ -94,6 +94,8 @@ pub(super) fn convert_functions(
                 A::Explode { skip_empty } => IA::Explode { skip_empty },
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
+                #[cfg(feature = "array_to_struct")]
+                A::ToStruct(ng) => IA::ToStruct(ng),
             })
         },
         F::BinaryExpr(binary_function) => {

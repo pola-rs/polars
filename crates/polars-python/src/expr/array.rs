@@ -1,8 +1,6 @@
 use polars::prelude::*;
-use polars_ops::prelude::array::ArrToStructNameGenerator;
-use polars_utils::pl_str::PlSmallStr;
+use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
 use pyo3::pymethods;
 
 use crate::error::PyPolarsErr;
@@ -117,24 +115,9 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (name_gen))]
-    fn arr_to_struct(&self, name_gen: Option<PyObject>) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| {
-            Arc::new(move |idx: usize| {
-                Python::with_gil(|py| {
-                    let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: PlSmallStr = (&*out.extract::<PyBackedStr>(py).unwrap()).into();
-                    out
-                })
-            }) as ArrToStructNameGenerator
-        });
-
-        Ok(self
-            .inner
-            .clone()
-            .arr()
-            .to_struct(name_gen)
-            .map_err(PyPolarsErr::from)?
-            .into())
+    fn arr_to_struct(&self, name_gen: Option<PyObject>) -> Self {
+        let name_gen = name_gen.map(|o| DslNameGenerator::Python(PythonObject(o)));
+        self.inner.clone().arr().to_struct(name_gen).into()
     }
 
     fn arr_slice(&self, offset: PyExpr, length: Option<PyExpr>, as_array: bool) -> PyResult<Self> {
