@@ -137,7 +137,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     inputs,
                     ctxt.lp_arena,
                     ctxt.expr_arena,
-                    &ctxt.opt_flags,
+                    ctxt.opt_flags,
                 )?;
             }
 
@@ -146,7 +146,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     &mut inputs,
                     ctxt.lp_arena,
                     ctxt.expr_arena,
-                    &ctxt.opt_flags,
+                    ctxt.opt_flags,
                 )
                 .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }

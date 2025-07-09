@@ -6,13 +6,13 @@ pub fn to_expr_ir(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-    in_eager: bool,
+    allow_unknown: bool,
 ) -> PolarsResult<ExprIR> {
     let mut ctx = ExprToIRContext {
         with_fields: None,
         arena,
         schema,
-        in_eager,
+        allow_unknown,
     };
     to_expr_ir_with_context(expr, &mut ctx)
 }
@@ -26,13 +26,13 @@ pub fn to_expr_ir_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-    in_eager: bool,
+    allow_unknown: bool,
 ) -> PolarsResult<ExprIR> {
     let mut ctx = ExprToIRContext {
         with_fields: None,
         arena,
         schema,
-        in_eager,
+        allow_unknown,
     };
     let (node, output_name) = to_aexpr_impl_materialized_lit(expr, &mut ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
@@ -42,11 +42,11 @@ pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-    in_eager: bool,
+    allow_unknown: bool,
 ) -> PolarsResult<Vec<ExprIR>> {
     input
         .into_iter()
-        .map(|e| to_expr_ir(e, arena, schema, in_eager))
+        .map(|e| to_expr_ir(e, arena, schema, allow_unknown))
         .collect()
 }
 
@@ -83,7 +83,7 @@ pub struct ExprToIRContext<'a> {
     pub with_fields: Option<(Node, Schema)>,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
-    pub in_eager: bool,
+    pub allow_unknown: bool,
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -332,9 +332,12 @@ pub(super) fn to_aexpr_impl(
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
+            let output_dtype = out.dtype();
 
-            if out.dtype().is_unknown() {
-                if ctx.in_eager {
+            if output_dtype.is_unknown()
+                && !matches!(output_dtype, DataType::Unknown(UnknownKind::Ufunc))
+            {
+                if ctx.allow_unknown {
                     polars_warn!(
                         "'return_dtype' of function {} must be set\n\nA later expression might fail because the output type is not known.",
                         fmt_str
@@ -417,7 +420,7 @@ pub(super) fn to_aexpr_impl(
                 with_fields: None,
                 schema: &evaluation_schema,
                 arena: ctx.arena,
-                in_eager: ctx.in_eager,
+                allow_unknown: ctx.allow_unknown,
             };
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 

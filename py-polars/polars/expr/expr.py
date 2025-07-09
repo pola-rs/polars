@@ -77,6 +77,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
+        ReturnDataType,
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
@@ -4347,7 +4348,7 @@ class Expr:
     def map_batches(
         self,
         function: Callable[[Series], Series | Any],
-        return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
+        return_dtype: ReturnDataType | PolarsDataType | pl.DataTypeExpr | None = None,
         *,
         agg_list: bool = False,
         is_elementwise: bool = False,
@@ -4472,7 +4473,9 @@ class Expr:
 Consider using {self}.implode() instead"""
             raise DeprecationWarning(msg)
             self = self.implode()
-        if return_dtype is not None:
+        if return_dtype == "same":
+            return_dtype = F.dtype_of(self)._pydatatype_expr
+        elif return_dtype is not None:
             return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
         return wrap_expr(
@@ -4488,7 +4491,7 @@ Consider using {self}.implode() instead"""
     def map_elements(
         self,
         function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
+        return_dtype: ReturnDataType | PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -4679,6 +4682,8 @@ Consider using {self}.implode() instead"""
         if isinstance(return_dtype, pl.DataTypeExpr):
             msg = "DataTypeExpr is not supported for map_elements"
             raise TypeError(msg)
+        elif return_dtype == "same":
+            return_dtype = F.dtype_of(self)
 
         if pass_name:
 
