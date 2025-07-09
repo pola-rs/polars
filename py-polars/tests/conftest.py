@@ -28,7 +28,6 @@ def _patched_cloud(
         from pathlib import Path
 
         from polars_cloud import ComputeContext, ComputeContextStatus, InteractiveQuery
-        from polars_cloud.query.query_result import QueryError
 
         TIMEOUT_SECS = 20
 
