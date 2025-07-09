@@ -113,15 +113,17 @@ nav:
           - polars-cloud/index.md
           - polars-cloud/quickstart.md
           - polars-cloud/connect-cloud.md
-          - User guide:
-                - polars-cloud/organizations.md
-                - polars-cloud/run/compute-context.md
-                - polars-cloud/run/workflow.md
-                - polars-cloud/run/interactive-batch.md
-                - polars-cloud/run/distributed-engine.md
-          - Manage workspace:
+
+          - Organizations:
+                - polars-cloud/organization/organizations.md
+          - Workspaces:
                 - polars-cloud/workspace/settings.md
                 - polars-cloud/workspace/team.md
+          - Workflows:
+                - polars-cloud/run/compute-context.md
+                - polars-cloud/run/interactive-batch.md
+                - polars-cloud/run/distributed-engine.md
+                - polars-cloud/run/example-workflow.md
           - Authentication:
                 - polars-cloud/explain/authentication.md
                 - polars-cloud/explain/service-accounts.md

@@ -1,4 +1,4 @@
-# Organizations
+# Set up organization
 
 Organizations in Polars Cloud are the top-level entity and typically represent a company. They can
 have members, contain multiple workspaces and are what you couple your billing to after the current
