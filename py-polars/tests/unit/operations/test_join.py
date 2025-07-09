@@ -3073,7 +3073,7 @@ def test_join_filter_pushdown_asof_join() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_full_join_downgrade() -> None:
+def test_join_filter_pushdown_full_join_rewrite() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3266,7 +3266,7 @@ def test_join_filter_pushdown_full_join_downgrade() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_right_join_downgrade() -> None:
+def test_join_filter_pushdown_right_join_rewrite() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3319,7 +3319,7 @@ def test_join_filter_pushdown_right_join_downgrade() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_join_downgrade_equality_above_and() -> None:
+def test_join_filter_pushdown_join_rewrite_equality_above_and() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3351,7 +3351,7 @@ def test_join_filter_pushdown_join_downgrade_equality_above_and() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_left_join_downgrade() -> None:
+def test_join_filter_pushdown_left_join_rewrite() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3396,7 +3396,7 @@ def test_join_filter_pushdown_left_join_downgrade() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
+def test_join_filter_pushdown_left_join_rewrite_23133() -> None:
     lhs = pl.LazyFrame(
         {
             "foo": [1, 2, 3],
@@ -3449,7 +3449,7 @@ def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_downgrade_panic_23307() -> None:
+def test_join_rewrite_panic_23307() -> None:
     lhs = pl.select(a=pl.lit(1, dtype=pl.Int8)).lazy()
     rhs = pl.select(a=pl.lit(1, dtype=pl.Int16), x=pl.lit(1, dtype=pl.Int32)).lazy()
 
@@ -3521,7 +3521,7 @@ def test_join_downgrade_panic_23307() -> None:
         (pl.lit(None, dtype=pl.Float64), lambda col: col.is_infinite()),
     ],
 )
-def test_join_downgrade_null_preserving_exprs(
+def test_join_rewrite_null_preserving_exprs(
     expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
 ) -> None:
     lhs = pl.LazyFrame({"a": 1})
@@ -3565,7 +3565,7 @@ def test_join_downgrade_null_preserving_exprs(
         ),
     ],
 )
-def test_join_downgrade_forbid_exprs(
+def test_join_rewrite_forbid_exprs(
     expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
 ) -> None:
     lhs = pl.LazyFrame({"a": 1})
@@ -3579,3 +3579,42 @@ def test_join_downgrade_forbid_exprs(
     assert plan.startswith("FILTER")
 
     assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+def test_join_filter_pushdown_iejoin_cse_23469() -> None:
+    lf_x = pl.LazyFrame({"x": [1, 2, 3]})
+    lf_y = pl.LazyFrame({"y": [1, 2, 3]})
+
+    lf_xy = lf_x.join(lf_y, how="cross").filter(pl.col("x") > pl.col("y"))
+
+    q = pl.concat([lf_xy, lf_xy])
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        pl.DataFrame(
+            {
+                "x": [2, 2, 3, 3, 3, 3],
+                "y": [1, 1, 1, 1, 2, 2],
+            },
+        ),
+    )
+
+    q = pl.concat([lf_xy, lf_xy]).filter(pl.col("x") > pl.col("y"))
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        pl.DataFrame(
+            {
+                "x": [2, 2, 3, 3, 3, 3],
+                "y": [1, 1, 1, 1, 2, 2],
+            },
+        ),
+    )
+
+    q = (
+        lf_x.join_where(lf_y, pl.col("x") == pl.col("y"))
+        .cache()
+        .filter(pl.col("x") >= 0)
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": [1, 2, 3], "y": [1, 2, 3]}))

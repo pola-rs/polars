@@ -1,58 +1,39 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use super::*;
 
-fn sum_kahan<
-    T: NativeType
-        + IsFloat
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Sub<Output = T>
-        + Add<Output = T>,
->(
-    vals: &[T],
-) -> (T, T) {
-    if T::is_float() {
-        let mut sum = T::zeroed();
-        let mut err = T::zeroed();
-
-        for val in vals.iter().copied() {
-            if val.is_finite() {
-                let y = val - err;
-                let new_sum = sum + y;
-                err = (new_sum - sum) - y;
-                sum = new_sum;
-            } else {
-                sum += val
-            }
-        }
-        (sum, err)
-    } else {
-        (vals.iter().copied().sum::<T>(), T::zeroed())
-    }
-}
-
 pub struct SumWindow<'a, T, S> {
     slice: &'a [T],
     sum: S,
     err: S,
+    non_finite_count: usize, // NaN or infinity.
+    pos_inf_count: usize,
+    neg_inf_count: usize,
     last_start: usize,
     last_end: usize,
 }
 
 impl<T, S> SumWindow<'_, T, S>
 where
-    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
-    // Kahan summation
+    fn add_finite_kahan(&mut self, val: T) {
+        let val: S = NumCast::from(val).unwrap();
+        let y = val - self.err;
+        let new_sum = self.sum + y;
+        self.err = (new_sum - self.sum) - y;
+        self.sum = new_sum;
+    }
+
     fn add(&mut self, val: T) {
-        if T::is_float() && val.is_finite() {
-            let val: S = NumCast::from(val).unwrap();
-            let y = val - self.err;
-            let new_sum = self.sum + y;
-            self.err = (new_sum - self.sum) - y;
-            self.sum = new_sum;
+        if T::is_float() {
+            if val.is_finite() {
+                self.add_finite_kahan(val);
+            } else {
+                self.non_finite_count += 1;
+                self.pos_inf_count += (val > T::zeroed()) as usize;
+                self.neg_inf_count += (val < T::zeroed()) as usize;
+            }
         } else {
             let val: S = NumCast::from(val).unwrap();
             self.sum += val;
@@ -61,7 +42,13 @@ where
 
     fn sub(&mut self, val: T) {
         if T::is_float() {
-            self.add(T::zeroed() - val)
+            if val.is_finite() {
+                self.add_finite_kahan(T::zeroed() - val);
+            } else {
+                self.non_finite_count -= 1;
+                self.pos_inf_count -= (val > T::zeroed()) as usize;
+                self.neg_inf_count -= (val < T::zeroed()) as usize;
+            }
         } else {
             let val: S = NumCast::from(val).unwrap();
             self.sum -= val;
@@ -71,14 +58,7 @@ where
 
 impl<'a, T, S> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T, S>
 where
-    T: NativeType
-        + IsFloat
-        + Sub<Output = T>
-        + std::iter::Sum
-        + AddAssign
-        + SubAssign
-        + Add<Output = T>
-        + NumCast,
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     fn new(
@@ -88,55 +68,52 @@ where
         _params: Option<RollingFnParams>,
         _window_size: Option<usize>,
     ) -> Self {
-        let (sum, err) = sum_kahan(&slice[start..end]);
-        Self {
+        let mut out = Self {
             slice,
-            sum: NumCast::from(sum).unwrap(),
-            err: NumCast::from(err).unwrap(),
-            last_start: start,
-            last_end: end,
-        }
+            sum: S::zeroed(),
+            err: S::zeroed(),
+            non_finite_count: 0,
+            pos_inf_count: 0,
+            neg_inf_count: 0,
+            last_start: 0,
+            last_end: 0,
+        };
+        unsafe { out.update(start, end) };
+        out
     }
 
+    // # Safety
+    // The start, end range must be in-bounds.
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // if we exceed the end, we have a completely new window
-        // so we recompute
-        let recompute_sum = if start >= self.last_end {
-            true
-        } else {
-            // remove elements that should leave the window
-            let mut recompute_sum = false;
-            for idx in self.last_start..start {
-                // SAFETY:
-                // we are in bounds
-                let leaving_value = self.slice.get_unchecked(idx);
+        if start >= self.last_end {
+            self.sum = S::zeroed();
+            self.err = S::zeroed();
+            self.non_finite_count = 0;
+            self.pos_inf_count = 0;
+            self.neg_inf_count = 0;
+            self.last_start = start;
+            self.last_end = start;
+        }
 
-                if T::is_float() && !leaving_value.is_finite() {
-                    recompute_sum = true;
-                    break;
-                }
+        for val in &self.slice[self.last_start..start] {
+            self.sub(*val);
+        }
 
-                self.sub(*leaving_value);
-            }
-            recompute_sum
-        };
+        for val in &self.slice[self.last_end..end] {
+            self.add(*val);
+        }
+
         self.last_start = start;
-
-        // we traverse all values and compute
-        if recompute_sum {
-            let vals = self.slice.get_unchecked(start..end);
-            let (sum, err) = sum_kahan(vals);
-            self.sum = NumCast::from(sum).unwrap();
-            self.err = NumCast::from(err).unwrap();
-        }
-        // add entering values.
-        else {
-            for idx in self.last_end..end {
-                self.add(*self.slice.get_unchecked(idx))
-            }
-        }
         self.last_end = end;
-        NumCast::from(self.sum)
+        if self.non_finite_count == 0 {
+            NumCast::from(self.sum)
+        } else if self.non_finite_count == self.pos_inf_count {
+            Some(T::pos_inf_value())
+        } else if self.non_finite_count == self.neg_inf_count {
+            Some(T::neg_inf_value())
+        } else {
+            Some(T::nan_value())
+        }
     }
 }
 
@@ -156,7 +133,8 @@ where
         + AddAssign
         + SubAssign
         + IsFloat
-        + Num,
+        + Num
+        + PartialOrd,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _>(

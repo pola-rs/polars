@@ -1596,3 +1596,26 @@ def test_rolling_quantile_nearest_with_nulls_23932() -> None:
     )
     expected = pl.Series("a", [None, None, 1.0, 2.0, 2.0, 3.0, 3.0])
     assert_series_equal(out["a"], expected)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
+    values: list[float | None] = [
+        0.0,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+        42.0,
+        -3.0,
+    ]
+    if with_nulls:
+        values.append(None)
+    data = random.choices(values, k=1000)
+    naive = [
+        sum(0 if x is None else x for x in data[max(0, i + 1 - 4) : i + 1])
+        if sum(x is not None for x in data[max(0, i + 1 - 4) : i + 1]) >= 2
+        else None
+        for i in range(1000)
+    ]
+    assert_series_equal(pl.Series(data).rolling_sum(4, min_samples=2), pl.Series(naive))
