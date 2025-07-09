@@ -7949,7 +7949,7 @@ Consider using {self}.implode() instead"""
             The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window after being normalized to sum to 
+            elementwise with the values in the window after being normalized to sum to
             1.
         min_samples
             The number of values in the window that should be non-null before computing

@@ -77,7 +77,7 @@ where
                 offset_fn,
                 no_nulls::compute_sum_weights,
                 &wts,
-                true
+                true,
             )
         },
     }
