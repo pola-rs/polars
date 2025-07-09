@@ -11,10 +11,11 @@ use self::expr_ir::OutputName;
 use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
 #[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
-use super::super::executors::{self, Executor};
 use super::*;
 use crate::ScanPredicate;
-use crate::executors::{CachePrefiller, SinkExecutor};
+use crate::executors::{
+    self, CachePrefiller, Executor, SinkExecutor, StreamingSinkExecutor, sink_name,
+};
 use crate::predicate::PhysicalColumnPredicates;
 
 pub type StreamingExecutorBuilder =
@@ -227,7 +228,15 @@ fn create_physical_plan_impl(
         };
     }
 
-    let logical_plan = if state.has_cache_parent || matches!(lp_arena.get(root), IR::Scan { .. }) {
+    let logical_plan = if state.has_cache_parent
+        || matches!(
+            lp_arena.get(root),
+            IR::Scan { .. }
+                | IR::Sink {
+                    payload: SinkTypeIR::Partition(_),
+                    ..
+                }
+        ) {
         lp_arena.get(root).clone()
     } else {
         lp_arena.take(root)
@@ -259,22 +268,10 @@ fn create_physical_plan_impl(
                     sink_options,
                     cloud_options,
                 }) => {
-                    let name: &'static str = match &file_type {
-                        #[cfg(feature = "parquet")]
-                        FileType::Parquet(_) => "parquet",
-                        #[cfg(feature = "ipc")]
-                        FileType::Ipc(_) => "ipc",
-                        #[cfg(feature = "csv")]
-                        FileType::Csv(_) => "csv",
-                        #[cfg(feature = "json")]
-                        FileType::Json(_) => "json",
-                        #[allow(unreachable_patterns)]
-                        _ => panic!("enable filetype feature"),
-                    };
-
+                    let name = sink_name(&file_type).to_owned();
                     Ok(Box::new(SinkExecutor {
                         input,
-                        name: name.to_string(),
+                        name,
                         f: Box::new(move |mut df, _state| {
                             let mut file = target
                                 .open_into_writeable(&sink_options, cloud_options.as_ref())?;
@@ -355,11 +352,13 @@ fn create_physical_plan_impl(
                         }),
                     }))
                 },
+                SinkTypeIR::Partition(_) => {
+                    let builder = build_streaming_executor
+                        .expect("invalid build. Missing feature new-streaming");
 
-                SinkTypeIR::Partition { .. } => {
-                    polars_bail!(InvalidOperation:
-                        "partition sinks not yet supported in standard engine."
-                    )
+                    Ok(Box::new(StreamingSinkExecutor::new(
+                        input, builder, root, lp_arena, expr_arena,
+                    )))
                 },
             }
         },
