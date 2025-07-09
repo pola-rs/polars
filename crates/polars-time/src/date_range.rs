@@ -204,20 +204,27 @@ pub(crate) fn datetime_range_i64_start_end_interval(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let mut t = start;
     let mut ts = Vec::with_capacity(size);
-    if closed == ClosedWindow::Left || closed == ClosedWindow::Both {
-        ts.push(t);
-    }
 
-    // Open the right interval
+    // Open the right interval. We are discrete so we can simply move it by 1.
     if closed == ClosedWindow::Left || closed == ClosedWindow::None {
-        end = offset_fn(&(-interval), end, time_zone)?;
+        if interval.negative {
+            end += 1;
+        } else {
+            end -= 1;
+        }
     }
 
+    println!("start = {}", start);
+    if closed == ClosedWindow::Left || closed == ClosedWindow::Both {
+        ts.push(start);
+    };
+    let mut i = 1;
+    let mut t = offset_fn(&interval, start, time_zone)?;
     while t <= end {
-        t = offset_fn(&interval, t, time_zone)?;
-        ts.push(t)
+        ts.push(t);
+        i += 1;
+        t = offset_fn(&(interval * i), start, time_zone)?;
     }
     debug_assert!(size >= ts.len());
     Ok(ts)
