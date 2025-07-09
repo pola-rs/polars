@@ -16,6 +16,7 @@ pub enum ArrayFunction {
     NUnique,
     Std(u8),
     Var(u8),
+    Mean,
     Median,
     #[cfg(feature = "array_any_all")]
     Any,
@@ -55,6 +56,7 @@ impl fmt::Display for ArrayFunction {
             NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
+            Mean => "mean",
             Median => "median",
             #[cfg(feature = "array_any_all")]
             Any => "any",
