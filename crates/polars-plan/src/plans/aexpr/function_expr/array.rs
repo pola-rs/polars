@@ -4,7 +4,7 @@ use polars_ops::chunked_array::array::*;
 use super::*;
 use crate::{map, map_as_slice};
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRArrayFunction {
     Length,
@@ -39,6 +39,8 @@ pub enum IRArrayFunction {
     },
     Concat,
     Slice(i64, i64),
+    #[cfg(feature = "array_to_struct")]
+    ToStruct(Option<DslNameGenerator>),
 }
 
 impl IRArrayFunction {
@@ -79,6 +81,23 @@ impl IRArrayFunction {
             Slice(offset, length) => {
                 mapper.try_map_dtype(map_to_array_fixed_length(offset, length))
             },
+            #[cfg(feature = "array_to_struct")]
+            ToStruct(name_generator) => mapper.try_map_dtype(|dtype| {
+                let DataType::Array(inner, width) = dtype else {
+                    polars_bail!(InvalidOperation: "expected Array type, got: {dtype}")
+                };
+
+                (0..*width)
+                    .map(|i| {
+                        let name = match name_generator {
+                            None => arr_default_struct_name_gen(i),
+                            Some(ng) => PlSmallStr::from_string(ng.call(i)?),
+                        };
+                        Ok(Field::new(name, inner.as_ref().clone()))
+                    })
+                    .collect::<PolarsResult<Vec<Field>>>()
+                    .map(DataType::Struct)
+            }),
         }
     }
 
@@ -112,6 +131,8 @@ impl IRArrayFunction {
             | A::Shift
             | A::Slice(_, _) => FunctionOptions::elementwise(),
             A::Explode { .. } => FunctionOptions::row_separable(),
+            #[cfg(feature = "array_to_struct")]
+            A::ToStruct(_) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -177,6 +198,8 @@ impl Display for IRArrayFunction {
             Shift => "shift",
             Slice(_, _) => "slice",
             Explode { .. } => "explode",
+            #[cfg(feature = "array_to_struct")]
+            ToStruct(_) => "to_struct",
         };
         write!(f, "arr.{name}")
     }
@@ -214,6 +237,8 @@ impl From<IRArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Shift => map_as_slice!(shift),
             Explode { skip_empty } => map_as_slice!(explode, skip_empty),
             Slice(offset, length) => map!(slice, offset, length),
+            #[cfg(feature = "array_to_struct")]
+            ToStruct(ng) => map!(arr_to_struct, ng.clone()),
         }
     }
 }
@@ -411,4 +436,13 @@ fn concat_arr_output_dtype(
         Box::new(first_inner_dtype.clone()),
         out_width,
     ))
+}
+
+#[cfg(feature = "array_to_struct")]
+fn arr_to_struct(s: &Column, name_generator: Option<DslNameGenerator>) -> PolarsResult<Column> {
+    let name_generator =
+        name_generator.map(|f| Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>);
+    s.array()?
+        .to_struct(name_generator)
+        .map(IntoColumn::into_column)
 }

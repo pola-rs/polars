@@ -1,7 +1,9 @@
-use std::fmt::Formatter;
+use std::fmt::{self, Formatter};
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
+#[cfg(feature = "python")]
+use polars_utils::python_function::PythonFunction;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
@@ -334,4 +336,117 @@ pub fn rename_columns(
         .rewrite(&mut RenameColumns(map), expr_arena)
         .unwrap()
         .node()
+}
+
+#[derive(Eq, PartialEq)]
+pub enum PlanCallback<Args, Out> {
+    #[cfg(feature = "python")]
+    Python(SpecialEq<Arc<polars_utils::python_function::PythonFunction>>),
+    Rust(SpecialEq<Arc<dyn Fn(Args) -> PolarsResult<Out> + Send + Sync>>),
+}
+
+impl<Args, Out> fmt::Debug for PlanCallback<Args, Out> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PlanCallback::")?;
+        std::mem::discriminant(self).fmt(f)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<Args, Out> serde::Serialize for PlanCallback<Args, Out> {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::Error;
+
+        #[cfg(feature = "python")]
+        if let Self::Python(v) = self {
+            return v.serialize(_serializer);
+        }
+
+        Err(S::Error::custom(format!(
+            "cannot serialize 'opaque' function in {self:?}"
+        )))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, Args, Out> serde::Deserialize<'de> for PlanCallback<Args, Out> {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[cfg(feature = "python")]
+        {
+            Ok(Self::Python(SpecialEq::new(Arc::new(
+                polars_utils::python_function::PythonFunction::deserialize(_deserializer)?,
+            ))))
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            use serde::de::Error;
+            Err(D::Error::custom("cannot deserialize PlanCallback"))
+        }
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl<Args, Out> schemars::JsonSchema for PlanCallback<Args, Out> {
+    fn schema_name() -> String {
+        "PlanCallback".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlanCallback"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
+    }
+}
+
+impl<Args, Out> std::hash::Hash for PlanCallback<Args, Out> {
+    fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {
+        // no-op.
+    }
+}
+
+impl<Args, Out> Clone for PlanCallback<Args, Out> {
+    fn clone(&self) -> Self {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(p) => Self::Python(p.clone()),
+            Self::Rust(f) => Self::Rust(f.clone()),
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl<Args: for<'py> pyo3::IntoPyObject<'py>, Out: for<'py> pyo3::FromPyObject<'py>>
+    PlanCallback<Args, Out>
+{
+    pub fn call(&self, args: Args) -> PolarsResult<Out> {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(pyfn) => pyo3::Python::with_gil(|py| {
+                let out = pyfn.call1(py, (args,))?.extract::<Out>(py)?;
+                Ok(out)
+            }),
+            Self::Rust(f) => f(args),
+        }
+    }
+
+    pub fn new_python(pyfn: PythonFunction) -> Self {
+        Self::Python(SpecialEq::new(Arc::new(pyfn)))
+    }
+}
+
+#[cfg(not(feature = "python"))]
+impl<Args, Out> PlanCallback<Args, Out> {
+    pub fn call(&self, args: Args) -> PolarsResult<Out> {
+        match self {
+            Self::Rust(f) => f(args),
+        }
+    }
 }

@@ -37,6 +37,8 @@ pub use array::ArrayFunction;
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
+#[cfg(feature = "list_to_struct")]
+pub use list::ListToStruct;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
@@ -785,3 +787,6 @@ impl Display for FunctionExpr {
         write!(f, "{s}")
     }
 }
+
+#[cfg(any(feature = "array_to_struct", feature = "list_to_struct"))]
+pub type DslNameGenerator = PlanCallback<usize, String>;
