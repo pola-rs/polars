@@ -120,7 +120,7 @@ impl Executor for StreamingSinkExecutor {
 }
 
 pub fn sink_name(file_type: &FileType) -> &'static str {
-    match &file_type {
+    match file_type {
         #[cfg(feature = "parquet")]
         FileType::Parquet(_) => "parquet",
         #[cfg(feature = "ipc")]
@@ -129,5 +129,7 @@ pub fn sink_name(file_type: &FileType) -> &'static str {
         FileType::Csv(_) => "csv",
         #[cfg(feature = "json")]
         FileType::Json(_) => "json",
+        #[allow(unreachable_patterns)]
+        _ => panic!("enable filetype feature"),
     }
 }
