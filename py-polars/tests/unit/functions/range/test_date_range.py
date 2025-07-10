@@ -292,7 +292,7 @@ def test_date_ranges_broadcasting_fail() -> None:
     end = pl.Series([date(2021, 1, 2), date(2021, 1, 3)])
 
     with pytest.raises(
-        ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
+        ComputeError, match=r"lengths of `s1` \(3\) and `s2` \(2\) do not match"
     ):
         pl.date_ranges(start=start, end=end, eager=True)
 
