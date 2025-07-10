@@ -318,7 +318,7 @@ class ExprBinaryNameSpace:
         Expr
             Expression of data type `dtype`.
             Note that rows of the binary array where the length does not match
-            the size in bytes of the output array (number of items × byte size
+            the size in bytes of the output array (number of items * byte size
             of item) will become NULL.
 
         Examples
