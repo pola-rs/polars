@@ -2948,10 +2948,11 @@ def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
     )
 
     # scalar
-    for n in (3, 3.0, -3, -3.0):
-        py_div = [tuple(divop(elem, n) for elem in row) for row in df1.rows()]
-        df_div = divop(df1, n).rows()
-        assert py_div == df_div
+    for df in [df1, df1.slice(0, 0)]:
+        for n in (3, 3.0, -3, -3.0):
+            py_div = [tuple(divop(elem, n) for elem in row) for row in df.rows()]
+            df_div = divop(df, n).rows()
+            assert py_div == df_div
 
     # series
     xdf, s = df1["x"].to_frame(), pl.Series([2] * 4)

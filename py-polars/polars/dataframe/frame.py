@@ -12401,7 +12401,10 @@ def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
             raise TypeError(msg)
         other = pl.Series("", [other])
 
-    if length and length > 1:
-        other = other.extend_constant(value=value, n=length - 1)
+    if length is not None:
+        if length > 1:
+            other = other.extend_constant(value=value, n=length - 1)
+        elif length == 0:
+            other = other.slice(0, 0)
 
     return other
