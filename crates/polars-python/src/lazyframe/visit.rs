@@ -246,3 +246,8 @@ impl PyLazyFrame {
         })
     }
 }
+
+#[pyfunction]
+pub fn get_ir_version() -> (u16, u16) {
+    NodeTraverser::VERSION
+}

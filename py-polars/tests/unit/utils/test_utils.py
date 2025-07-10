@@ -289,3 +289,12 @@ def test_is_str_sequence_check(
     assert is_str_sequence(sequence, include_series=include_series) == expected
     if expected:
         assert is_sequence(sequence, include_series=include_series)
+
+
+def test_get_ir_version() -> None:
+    from polars.polars import get_ir_version
+
+    version = get_ir_version()
+    assert isinstance(version, tuple)
+    assert len(version) == 2
+    assert all(isinstance(v, int) for v in version)
