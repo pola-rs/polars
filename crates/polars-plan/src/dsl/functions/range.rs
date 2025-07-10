@@ -42,6 +42,14 @@ pub fn date_range(
     closed: ClosedWindow,
 ) -> PolarsResult<Expr> {
     let (input, arg_type) = DateRangeArgs::parse(start, end, interval, num_samples)?;
+
+    if let Some(interval) = interval {
+        polars_ensure!(
+            interval.is_full_days(),
+            ComputeError: "`interval` input for `date_range` must consist of full days, got: {interval}"
+        )
+    }
+
     Ok(Expr::n_ary(
         RangeFunction::DateRange {
             interval,
@@ -61,6 +69,14 @@ pub fn date_ranges(
     closed: ClosedWindow,
 ) -> PolarsResult<Expr> {
     let (input, arg_type) = DateRangeArgs::parse(start, end, interval, num_samples)?;
+
+    if let Some(interval) = interval {
+        polars_ensure!(
+            interval.is_full_days(),
+            ComputeError: "`interval` input for `date_range` must consist of full days, got: {interval}"
+        )
+    }
+
     Ok(Expr::n_ary(
         RangeFunction::DateRanges {
             interval,
