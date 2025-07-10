@@ -238,7 +238,7 @@ class BinaryNameSpace:
             Series of data type `dtype`.
             Note that rows of the binary array where the length does not match
             the size in bytes of the output array (number of items × byte size
-            of item) output array will become NULL.
+            of item) will become NULL.
 
         Examples
         --------
