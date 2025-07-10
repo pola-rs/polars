@@ -26,7 +26,7 @@ class ArrayNameSpace:
 
     def min(self) -> Series:
         """
-        Compute the min values of the sub-arrays.
+        Compute the min values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -42,7 +42,7 @@ class ArrayNameSpace:
 
     def max(self) -> Series:
         """
-        Compute the max values of the sub-arrays.
+        Compute the max values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -58,7 +58,7 @@ class ArrayNameSpace:
 
     def sum(self) -> Series:
         """
-        Compute the sum values of the sub-arrays.
+        Compute the sum values of the sub-arrays, ignoring null values.
 
         Notes
         -----
@@ -78,7 +78,7 @@ class ArrayNameSpace:
 
     def std(self, ddof: int = 1) -> Series:
         """
-        Compute the std of the values of the sub-arrays.
+        Compute the std of the values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -94,7 +94,7 @@ class ArrayNameSpace:
 
     def var(self, ddof: int = 1) -> Series:
         """
-        Compute the var of the values of the sub-arrays.
+        Compute the var of the values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -110,7 +110,7 @@ class ArrayNameSpace:
 
     def median(self) -> Series:
         """
-        Compute the median of the values of the sub-arrays.
+        Compute the median of the values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -137,6 +137,10 @@ class ArrayNameSpace:
         -------
         Series
             Series of data type :class:`List`.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -455,6 +459,10 @@ class ArrayNameSpace:
             Series of data type :class:`UInt32` or :class:`UInt64`
             (depending on compilation).
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]], dtype=pl.Array(pl.Int64, 3))
@@ -477,6 +485,10 @@ class ArrayNameSpace:
         Series
             Series of data type :class:`UInt32` or :class:`UInt64`
             (depending on compilation).
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------

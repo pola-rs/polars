@@ -9685,6 +9685,10 @@ class DataFrame:
         """
         Get a mask of all unique rows in this DataFrame.
 
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10097,6 +10101,10 @@ class DataFrame:
         """
         Aggregate the columns of this DataFrame to their maximum value.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10152,6 +10160,10 @@ class DataFrame:
         """
         Aggregate the columns of this DataFrame to their minimum value.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10206,6 +10218,10 @@ class DataFrame:
     def sum(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their sum value.
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
@@ -10269,6 +10285,10 @@ class DataFrame:
     def mean(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their mean value.
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
@@ -10341,6 +10361,10 @@ class DataFrame:
             where N represents the number of elements.
             By default ddof is 1.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10384,6 +10408,10 @@ class DataFrame:
             where N represents the number of elements.
             By default ddof is 1.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10420,6 +10448,10 @@ class DataFrame:
         """
         Aggregate the columns of this DataFrame to their median value.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10446,6 +10478,10 @@ class DataFrame:
     def product(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their product values.
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
@@ -10640,8 +10676,9 @@ class DataFrame:
 
         Notes
         -----
-        If you're coming from pandas, this is similar to
-        `pandas.DataFrame.drop_duplicates`.
+        * If you're coming from pandas, this is similar to
+          `pandas.DataFrame.drop_duplicates`.
+        * `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------

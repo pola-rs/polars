@@ -191,7 +191,7 @@ class ExprArrayNameSpace:
 
     def min(self) -> Expr:
         """
-        Compute the min values of the sub-arrays.
+        Compute the min values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -214,7 +214,7 @@ class ExprArrayNameSpace:
 
     def max(self) -> Expr:
         """
-        Compute the max values of the sub-arrays.
+        Compute the max values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -237,7 +237,7 @@ class ExprArrayNameSpace:
 
     def sum(self) -> Expr:
         """
-        Compute the sum values of the sub-arrays.
+        Compute the sum values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -260,7 +260,7 @@ class ExprArrayNameSpace:
 
     def std(self, ddof: int = 1) -> Expr:
         """
-        Compute the std of the values of the sub-arrays.
+        Compute the std of the values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -283,7 +283,7 @@ class ExprArrayNameSpace:
 
     def var(self, ddof: int = 1) -> Expr:
         """
-        Compute the var of the values of the sub-arrays.
+        Compute the var of the values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -306,7 +306,7 @@ class ExprArrayNameSpace:
 
     def median(self) -> Expr:
         """
-        Compute the median of the values of the sub-arrays.
+        Compute the median of the values of the sub-arrays, ignoring null values.
 
         Examples
         --------
@@ -335,6 +335,10 @@ class ExprArrayNameSpace:
         ----------
         maintain_order
             Maintain order of data. This requires more work.
+
+        Notes
+        -----
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Examples
         --------
@@ -554,6 +558,10 @@ class ExprArrayNameSpace:
             Expression of data type :class:`UInt32` or :class:`UInt64`
             (depending on compilation).
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -584,6 +592,10 @@ class ExprArrayNameSpace:
         Expr
             Expression of data type :class:`UInt32` or :class:`UInt64`
             (depending on compilation).
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
