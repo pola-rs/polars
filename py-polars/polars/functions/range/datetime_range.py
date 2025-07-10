@@ -211,12 +211,13 @@ def datetime_range(
     ...     num_samples=4,
     ...     eager=True,
     ... ).alias("date")
-    shape(5)
+    shape: (4,)
+    Series: 'date' [datetime[μs]]
     [
-        1985-01-01 00:00:00
-        1985-01-04 00:00:00
-        1985-01-07 00:00:00
-        1985-01-10 00:00:00
+            1985-01-01 00:00:00
+            1985-01-04 00:00:00
+            1985-01-07 00:00:00
+            1985-01-10 00:00:00
     ]
 
     Omit `eager=True` if you want to use `datetime_range` as an expression:
