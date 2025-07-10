@@ -5,6 +5,7 @@ use polars_core::chunked_array::ops::FillNullStrategy;
 use polars_core::series::IsSorted;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
+use polars_ops::prelude::RankMethod;
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
@@ -1197,10 +1198,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 } => ("arg_max", descending, nulls_last).into_py_any(py),
                 IRFunctionExpr::Product => ("product",).into_py_any(py),
                 IRFunctionExpr::Repeat => ("repeat",).into_py_any(py),
-                IRFunctionExpr::Rank {
-                    options: _,
-                    seed: _,
-                } => return Err(PyNotImplementedError::new_err("rank")),
+                IRFunctionExpr::Rank { options, seed } => {
+                    let method = match options.method {
+                        RankMethod::Average => "average",
+                        RankMethod::Min => "min",
+                        RankMethod::Max => "max",
+                        RankMethod::Dense => "dense",
+                        RankMethod::Ordinal => "ordinal",
+                        RankMethod::Random => "random",
+                    };
+                    ("rank", method, options.descending, seed.map(|s| s as i64)).into_py_any(py)
+                },
                 IRFunctionExpr::Clip { has_min, has_max } => {
                     ("clip", has_min, has_max).into_py_any(py)
                 },
