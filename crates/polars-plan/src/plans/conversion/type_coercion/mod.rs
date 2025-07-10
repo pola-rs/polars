@@ -847,7 +847,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let from_iter = from_types.into_iter();
                 let to_iter = to_types.into_iter();
                 let mut modified = false;
-                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                for (i, (mut from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
                     if from_dtype != to_dtype {
                         modified = true;
 
@@ -866,6 +866,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                                         CastOptions::Strict,
                                     )?;
                                     replace_tz(&mut input[i], &to_dtype, expr_arena)?;
+                                    from_dtype = DataType::Datetime(*tu, None);
                                 },
                                 DataType::Datetime(_, Some(to_tz)) if from_tz != to_tz => {
                                     convert_tz(&mut input[i], &to_dtype, expr_arena)?;

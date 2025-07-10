@@ -157,26 +157,30 @@ def date_range(
     ...     start=date(1985, 1, 1),
     ...     end=date(1985, 1, 10),
     ...     num_samples=5,
+    ...     eager=True,
     ... ).alias("date")
-    shape(5)
+    shape: (5,)
+    Series: 'date' [date]
     [
-        1985-01-01
-        1985-01-03
-        1985-01-05
-        1985-01-07
-        1985-01-09
+            1985-01-01
+            1985-01-03
+            1985-01-05
+            1985-01-07
+            1985-01-10
     ]
     >>> pl.date_range(
     ...     start=date(1985, 1, 1),
     ...     interval="3d",
     ...     num_samples=4,
+    ...     eager=True,
     ... ).alias("date")
-    shape(5)
+    shape: (4,)
+    Series: 'date' [date]
     [
-        1985-01-01
-        1985-01-04
-        1985-01-07
-        1985-01-10
+            1985-01-01
+            1985-01-04
+            1985-01-07
+            1985-01-10
     ]
 
     Omit `eager=True` if you want to use `date_range` as an expression:

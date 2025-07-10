@@ -240,22 +240,23 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
         _ => None,
     };
     if interval.is_constant_duration(time_zone_opt.as_ref()) {
+        // Fast path
         let mut step = match time_unit {
             TimeUnit::Nanoseconds => interval.duration_ns(),
             TimeUnit::Microseconds => interval.duration_us(),
             TimeUnit::Milliseconds => interval.duration_ms(),
         };
-        if interval.negative {
-            step = -step;
-        }
-
-        // Fast path!
         polars_ensure!(
             step != 0,
             InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
             interval,
             time_unit,
         );
+
+        if interval.negative {
+            step = -step;
+        }
+
         let out = if step < 0 {
             // Negative interval, we move backwards.
             let step = -step;

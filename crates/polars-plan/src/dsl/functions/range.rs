@@ -137,20 +137,38 @@ pub fn datetime_ranges(
 
 /// Generate a time range.
 #[cfg(feature = "dtype-time")]
-pub fn time_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
-    Expr::n_ary(
+pub fn time_range(
+    start: Expr,
+    end: Expr,
+    interval: Duration,
+    closed: ClosedWindow,
+) -> PolarsResult<Expr> {
+    polars_ensure!(
+        !(interval.negative() || interval.is_zero()),
+        ComputeError: "'interval' must be positive"
+    );
+    Ok(Expr::n_ary(
         RangeFunction::TimeRange { interval, closed },
         vec![start, end],
-    )
+    ))
 }
 
 /// Create a column of time ranges from a `start` and `stop` expression.
 #[cfg(feature = "dtype-time")]
-pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
-    Expr::n_ary(
+pub fn time_ranges(
+    start: Expr,
+    end: Expr,
+    interval: Duration,
+    closed: ClosedWindow,
+) -> PolarsResult<Expr> {
+    polars_ensure!(
+        !(interval.negative() || interval.is_zero()),
+        ComputeError: "'interval' must be positive"
+    );
+    Ok(Expr::n_ary(
         RangeFunction::TimeRanges { interval, closed },
         vec![start, end],
-    )
+    ))
 }
 
 /// Generate a series of equally-spaced points.

@@ -181,7 +181,8 @@ pub fn time_range(
     let end = end.inner;
     let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
     let closed = closed.0;
-    Ok(dsl::time_range(start, end, every, closed).into())
+    let out = dsl::time_range(start, end, every, closed).map_err(PyPolarsErr::from)?;
+    Ok(out.into())
 }
 
 #[pyfunction]
@@ -195,7 +196,8 @@ pub fn time_ranges(
     let end = end.inner;
     let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
     let closed = closed.0;
-    Ok(dsl::time_ranges(start, end, every, closed).into())
+    let out = dsl::time_ranges(start, end, every, closed).map_err(PyPolarsErr::from)?;
+    Ok(out.into())
 }
 
 #[pyfunction]

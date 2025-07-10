@@ -216,7 +216,7 @@ fn dt_range_start_interval_samples(
         )?;
         Ok(result.into_column())
     } else {
-        polars_bail!(ComputeError: "nope");
+        polars_bail!(ComputeError: "Expected Datetime input, got {:?}", dtype);
     }
 }
 

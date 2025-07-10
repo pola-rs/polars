@@ -198,7 +198,7 @@ pub(super) fn update_datetime_range_types(
             let type_start = extract_date!(input, expr_arena, schema, 0, "start");
             let type_samples = extract_samples!(input, expr_arena, schema, 1);
             let supertype = build_datetime_supertype(type_start.clone(), tu, tz, interval)?;
-            let from_types = vec![supertype.clone(), type_samples];
+            let from_types = vec![type_start, type_samples];
             let to_types = vec![supertype, DataType::Int64];
             (from_types, to_types)
         },
