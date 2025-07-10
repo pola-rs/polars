@@ -900,6 +900,31 @@ pub(super) fn convert_functions(
             symbol,
             kwargs,
         },
+
+        F::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => I::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: match return_dtype {
+                Some(dtype) => Some(dtype.into_datatype(ctx.schema)?),
+                None => None,
+            },
+        },
+        F::ReduceHorizontal(callback) => I::ReduceHorizontal(callback),
+        #[cfg(feature = "dtype-struct")]
+        F::CumReduceHorizontal(callback) => I::CumReduceHorizontal(callback),
+        #[cfg(feature = "dtype-struct")]
+        F::CumFoldHorizontal {
+            callback,
+            include_init,
+        } => I::CumFoldHorizontal {
+            callback,
+            include_init,
+        },
+
         F::MaxHorizontal => I::MaxHorizontal,
         F::MinHorizontal => I::MinHorizontal,
         F::SumHorizontal { ignore_nulls } => I::SumHorizontal { ignore_nulls },

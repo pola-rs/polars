@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             fold_exprs(
                 lit(0),
-                |acc, val| (&acc + &val).map(Some),
+                PlanCallback::Rust(Arc::new(SpecialEq::new(|acc, val| (&acc + &val).map(Some)))),
                 [col("a"), col("b")],
                 false,
                 None,

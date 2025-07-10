@@ -114,11 +114,7 @@ pub(crate) fn call_lambda_with_series(
 }
 
 /// A python lambda taking two Series
-pub(crate) fn binary_lambda(
-    lambda: &PyObject,
-    a: Series,
-    b: Series,
-) -> PolarsResult<Option<Series>> {
+pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> PolarsResult<Series> {
     Python::with_gil(|py| {
         // get the pypolars module
         let pypolars = polars(py).bind(py);
@@ -146,26 +142,8 @@ pub(crate) fn binary_lambda(
                     ComputeError: "custom python function failed: {}", e.value(py),
                 ),
             };
-        let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
-            let pyexpr = expr.extract::<PyExpr>(py).unwrap();
-            let expr = pyexpr.inner;
-            let df = DataFrame::empty();
-            let out = df
-                .lazy()
-                .select([expr])
-                .with_predicate_pushdown(false)
-                .with_projection_pushdown(false)
-                .collect()?;
 
-            let s = out.select_at_idx(0).unwrap().clone();
-            PySeries::new(s.take_materialized_series())
-        } else {
-            return Some(result_series_wrapper.to_series(py, pypolars.as_unbound(), ""))
-                .transpose();
-        };
-
-        // Finally get the actual Series
-        Ok(Some(pyseries.series))
+        result_series_wrapper.to_series(py, pypolars.as_unbound(), "")
     })
 }
 

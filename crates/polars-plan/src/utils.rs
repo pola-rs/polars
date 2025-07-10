@@ -422,15 +422,132 @@ impl<Args, Out> Clone for PlanCallback<Args, Out> {
     }
 }
 
+pub trait PlanCallbackArgs {
+    #[cfg(feature = "python")]
+    fn into_pyany<'py>(self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>>;
+}
+pub trait PlanCallbackOut: Sized {
+    #[cfg(feature = "python")]
+    fn from_pyany<'py>(pyany: pyo3::Py<pyo3::PyAny>, py: pyo3::Python<'py>)
+    -> pyo3::PyResult<Self>;
+}
+
 #[cfg(feature = "python")]
-impl<Args: for<'py> pyo3::IntoPyObject<'py>, Out: for<'py> pyo3::FromPyObject<'py>>
-    PlanCallback<Args, Out>
-{
+mod _python {
+    use pyo3::types::{PyAnyMethods, PyTuple, PyTupleMethods};
+    use pyo3::*;
+
+    macro_rules! impl_pycb_type {
+        ($($type:ty),+) => {
+            $(
+            impl super::PlanCallbackArgs for $type {
+                fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+                    Ok(self.into_pyobject(py)?.into_any().unbind())
+                }
+            }
+
+            impl super::PlanCallbackOut for $type {
+                fn from_pyany<'py>(pyany: Py<PyAny>, py: Python<'py>) -> PyResult<Self> {
+                    pyany.bind(py).extract::<Self>()
+                }
+            }
+            )+
+        };
+    }
+
+    macro_rules! impl_registrycb_type {
+        ($(($type:path, $from:ident, $to:ident)),+) => {
+            $(
+            impl super::PlanCallbackArgs for $type {
+                fn into_pyany<'py>(self, _py: Python<'py>) -> PyResult<Py<PyAny>> {
+                    let registry = polars_utils::python_convert_registry::get_python_convert_registry();
+                    (registry.to_py.$to)(Box::new(self) as _)
+                }
+            }
+
+            impl super::PlanCallbackOut for $type {
+                fn from_pyany<'py>(pyany: Py<PyAny>, _py: Python<'py>) -> PyResult<Self> {
+                    let registry = polars_utils::python_convert_registry::get_python_convert_registry();
+                    let obj = (registry.from_py.$from)(pyany)?;
+                    let obj = obj.downcast().unwrap();
+                    Ok(*obj)
+                }
+            }
+            )+
+        };
+    }
+
+    impl<T: super::PlanCallbackArgs> super::PlanCallbackArgs for Option<T> {
+        fn into_pyany<'py>(self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+            match self {
+                None => Ok(py.None()),
+                Some(v) => v.into_pyany(py),
+            }
+        }
+    }
+
+    impl<T: super::PlanCallbackOut> super::PlanCallbackOut for Option<T> {
+        fn from_pyany<'py>(
+            pyany: pyo3::Py<pyo3::PyAny>,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<Self> {
+            if pyany.is_none(py) {
+                Ok(None)
+            } else {
+                T::from_pyany(pyany, py).map(Some)
+            }
+        }
+    }
+
+    impl<T, U> super::PlanCallbackArgs for (T, U)
+    where
+        T: super::PlanCallbackArgs,
+        U: super::PlanCallbackArgs,
+    {
+        fn into_pyany<'py>(self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+            PyTuple::new(py, [self.0.into_pyany(py)?, self.1.into_pyany(py)?])?.into_py_any(py)
+        }
+    }
+
+    impl<T, U> super::PlanCallbackOut for (T, U)
+    where
+        T: super::PlanCallbackOut,
+        U: super::PlanCallbackOut,
+    {
+        fn from_pyany<'py>(
+            pyany: pyo3::Py<pyo3::PyAny>,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<Self> {
+            use pyo3::prelude::*;
+            let tuple = pyany.downcast_bound::<PyTuple>(py)?;
+            Ok((
+                T::from_pyany(tuple.get_item(0)?.unbind(), py)?,
+                U::from_pyany(tuple.get_item(1)?.unbind(), py)?,
+            ))
+        }
+    }
+
+    impl_pycb_type! {
+        usize,
+        String
+    }
+    impl_registrycb_type! {
+        (polars_core::series::Series, series, series)
+    }
+}
+
+#[cfg(not(feature = "python"))]
+mod _no_python {
+    impl<T> PlanCallbackArgs for T {}
+    impl<T: Sized> PlanCallbackOut for T {}
+}
+
+impl<Args: PlanCallbackArgs, Out: PlanCallbackOut> PlanCallback<Args, Out> {
     pub fn call(&self, args: Args) -> PolarsResult<Out> {
         match self {
             #[cfg(feature = "python")]
             Self::Python(pyfn) => pyo3::Python::with_gil(|py| {
-                let out = pyfn.call1(py, (args,))?.extract::<Out>(py)?;
+                let out = Out::from_pyany(pyfn.call1(py, (args.into_pyany(py)?,))?, py)?;
                 Ok(out)
             }),
             Self::Rust(f) => f(args),

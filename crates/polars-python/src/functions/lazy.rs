@@ -2,6 +2,8 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::UnionArgs;
+use polars_plan::utils::PlanCallback;
+use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
@@ -241,15 +243,7 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
+    let func = PlanCallback::new_python(PythonObject(lambda));
     dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
@@ -257,14 +251,7 @@ pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init:
 pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
+    let func = PlanCallback::new_python(PythonObject(lambda));
     dsl::cum_reduce_exprs(func, exprs).into()
 }
 
@@ -407,15 +394,7 @@ pub fn fold(
     return_dtype: Option<Wrap<DataType>>,
 ) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
+    let func = PlanCallback::new_python(PythonObject(lambda));
     dsl::fold_exprs(
         acc.inner,
         func,
@@ -500,15 +479,7 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
+    let func = PlanCallback::new_python(PythonObject(lambda));
     dsl::reduce_exprs(func, exprs).into()
 }
 

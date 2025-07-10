@@ -1304,6 +1304,18 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));
                 },
+                IRFunctionExpr::FoldHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("fold"))
+                },
+                IRFunctionExpr::ReduceHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("reduce"))
+                },
+                IRFunctionExpr::CumReduceHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("cum_reduce"))
+                },
+                IRFunctionExpr::CumFoldHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("cum_fold"))
+                },
                 IRFunctionExpr::SumHorizontal { ignore_nulls } => {
                     ("sum_horizontal", ignore_nulls).into_py_any(py)
                 },

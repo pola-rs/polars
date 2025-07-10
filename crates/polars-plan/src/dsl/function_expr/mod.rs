@@ -301,6 +301,21 @@ pub enum FunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
+
+    FoldHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
+    },
+    ReduceHorizontal(PlanCallback<(Series, Series), Series>),
+    #[cfg(feature = "dtype-struct")]
+    CumReduceHorizontal(PlanCallback<(Series, Series), Series>),
+    #[cfg(feature = "dtype-struct")]
+    CumFoldHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        include_init: bool,
+    },
+
     MaxHorizontal,
     MinHorizontal,
     SumHorizontal {
@@ -398,19 +413,32 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            MaxHorizontal
-            | MinHorizontal
-            | SumHorizontal { .. }
-            | MeanHorizontal { .. }
-            | DropNans
-            | DropNulls
-            | Reverse
-            | ArgUnique
-            | ArgMin
-            | ArgMax
-            | Product
-            | Shift
-            | ShiftAndFill => {},
+
+            FoldHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+            },
+            ReduceHorizontal(callback) => callback.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal(callback) => callback.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal {
+                callback,
+                include_init,
+            } => {
+                callback.hash(state);
+                include_init.hash(state);
+            },
+            SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
+                ignore_nulls.hash(state)
+            },
+            MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
+            | ArgMax | Product | Shift | ShiftAndFill => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -765,6 +793,12 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            FoldHorizontal { .. } => "fold",
+            ReduceHorizontal(..) => "reduce",
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal(..) => "cum_reduce",
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal { .. } => "cum_fold",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",

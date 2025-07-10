@@ -1036,6 +1036,28 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             symbol,
             kwargs,
         },
+
+        IF::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        IF::ReduceHorizontal(callback) => F::ReduceHorizontal(callback),
+        #[cfg(feature = "dtype-struct")]
+        IF::CumReduceHorizontal(callback) => F::CumReduceHorizontal(callback),
+        #[cfg(feature = "dtype-struct")]
+        IF::CumFoldHorizontal {
+            callback,
+            include_init,
+        } => F::CumFoldHorizontal {
+            callback,
+            include_init,
+        },
+
         IF::MaxHorizontal => F::MaxHorizontal,
         IF::MinHorizontal => F::MinHorizontal,
         IF::SumHorizontal { ignore_nulls } => F::SumHorizontal { ignore_nulls },

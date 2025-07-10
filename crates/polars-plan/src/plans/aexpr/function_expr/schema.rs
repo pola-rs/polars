@@ -352,6 +352,17 @@ impl IRFunctionExpr {
                 symbol,
                 kwargs,
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
+
+            FoldHorizontal { return_dtype, .. } => match return_dtype {
+                None => mapper.map_to_supertype(),
+                Some(dtype) => mapper.with_dtype(dtype.clone()),
+            },
+            ReduceHorizontal(..) => mapper.map_to_supertype(),
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal(..) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal { include_init, .. } => mapper.with_dtype(DataType::Struct(fields[usize::from(!include_init)..].to_vec())),
+
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {
