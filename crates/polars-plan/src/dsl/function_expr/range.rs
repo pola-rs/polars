@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::{DataTypeExpr, Expr, FunctionExpr};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub enum DateRangeArgs {

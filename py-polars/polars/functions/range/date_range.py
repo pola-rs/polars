@@ -242,9 +242,9 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = ...,
@@ -254,9 +254,9 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = ...,
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = ...,
@@ -265,9 +265,9 @@ def date_ranges(
 
 
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
-    interval: str | timedelta = "1d",
+    start: date | datetime | IntoExprColumn | None = None,
+    end: date | datetime | IntoExprColumn | None = None,
+    interval: str | timedelta | None = None,
     num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = "both",

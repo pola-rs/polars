@@ -125,7 +125,7 @@ pub(super) fn convert_tz(
 }
 
 pub(super) fn update_date_range_types(
-    input: &mut Vec<ExprIR>,
+    input: &mut [ExprIR],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
     arg_type: DateRangeArgs,
@@ -165,7 +165,7 @@ pub(super) fn update_date_range_types(
 }
 
 pub(super) fn update_datetime_range_types(
-    input: &mut Vec<ExprIR>,
+    input: &mut [ExprIR],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
     interval: &Option<Duration>,

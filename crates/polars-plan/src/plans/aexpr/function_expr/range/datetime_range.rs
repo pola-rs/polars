@@ -22,19 +22,19 @@ fn dt_range_start_end_interval(
     interval: Duration,
     closed: ClosedWindow,
 ) -> PolarsResult<Column> {
-    ensure_items_contain_exactly_one_value(&[&start, &end], &["start", "end"])?;
+    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
     let dtype = start.dtype();
 
     if let DataType::Datetime(tu, time_zone) = dtype {
         let tz = match time_zone {
             #[cfg(feature = "timezones")]
-            Some(tz) => Some(parse_time_zone(&tz)?),
+            Some(tz) => Some(parse_time_zone(tz)?),
             _ => None,
         };
         let name = start.name();
-        let start = temporal_series_to_i64_scalar(&start)
+        let start = temporal_series_to_i64_scalar(start)
             .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?;
-        let end = temporal_series_to_i64_scalar(&end)
+        let end = temporal_series_to_i64_scalar(end)
             .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
         let result = datetime_range_impl_start_end_interval(
             name.clone(),
@@ -74,7 +74,7 @@ fn dt_ranges_start_end_interval(
 
         let tz = match time_zone {
             #[cfg(feature = "timezones")]
-            Some(tz) => Some(parse_time_zone(&tz)?),
+            Some(tz) => Some(parse_time_zone(tz)?),
             _ => None,
         };
         let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
@@ -106,21 +106,21 @@ fn dt_range_start_end_samples(
     num_samples: &Column,
     closed: ClosedWindow,
 ) -> PolarsResult<Column> {
-    ensure_items_contain_exactly_one_value(&[&start, &end], &["start", "end"])?;
-    ensure_items_contain_exactly_one_value(&[&start, &end], &["start", "end"])?;
+    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
+    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
     let dtype = start.dtype();
 
     if let DataType::Datetime(tu, time_zone) = dtype {
         let tz = match time_zone {
             #[cfg(feature = "timezones")]
-            Some(tz) => Some(parse_time_zone(&tz)?),
+            Some(tz) => Some(parse_time_zone(tz)?),
             _ => None,
         };
 
         let name = start.name();
-        let start = temporal_series_to_i64_scalar(&start)
+        let start = temporal_series_to_i64_scalar(start)
             .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?;
-        let end = temporal_series_to_i64_scalar(&end)
+        let end = temporal_series_to_i64_scalar(end)
             .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
         let num_samples = num_samples.get(0).unwrap().extract::<i64>().unwrap();
         let result = datetime_range_impl_start_end_samples(
@@ -159,7 +159,7 @@ fn dt_ranges_start_end_samples(
 
         let tz = match time_zone {
             #[cfg(feature = "timezones")]
-            Some(tz) => Some(parse_time_zone(&tz)?),
+            Some(tz) => Some(parse_time_zone(tz)?),
             _ => None,
         };
         let range_impl =
@@ -192,17 +192,17 @@ fn dt_range_start_interval_samples(
     num_samples: &Column,
     closed: ClosedWindow,
 ) -> PolarsResult<Column> {
-    ensure_items_contain_exactly_one_value(&[&start, &num_samples], &["start", "num_samples"])?;
+    ensure_items_contain_exactly_one_value(&[start, num_samples], &["start", "num_samples"])?;
     let dtype = start.dtype();
 
     if let DataType::Datetime(tu, time_zone) = dtype {
         let tz = match time_zone {
             #[cfg(feature = "timezones")]
-            Some(tz) => Some(parse_time_zone(&tz)?),
+            Some(tz) => Some(parse_time_zone(tz)?),
             _ => None,
         };
         let name = start.name();
-        let start = temporal_series_to_i64_scalar(&start)
+        let start = temporal_series_to_i64_scalar(start)
             .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?;
         let num_samples = num_samples.get(0).unwrap().extract::<i64>().unwrap();
         let result = datetime_range_impl_start_interval_samples(
@@ -240,7 +240,7 @@ fn dt_ranges_start_interval_samples(
 
         let tz = match time_zone {
             #[cfg(feature = "timezones")]
-            Some(tz) => Some(parse_time_zone(&tz)?),
+            Some(tz) => Some(parse_time_zone(tz)?),
             _ => None,
         };
         let range_impl =
