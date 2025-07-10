@@ -267,6 +267,8 @@ pub fn get_supertype_with_options(
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
 
+            (Float32, Float64) => Some(Float64),
+
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
             #[cfg(feature = "dtype-u16")]
