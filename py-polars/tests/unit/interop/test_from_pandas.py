@@ -10,7 +10,6 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
-from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -324,7 +323,6 @@ def test_from_pandas_null_struct_6412() -> None:
     }
 
 
-@with_string_cache_if_auto_streaming
 def test_untrusted_categorical_input() -> None:
     df_pd = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
     df = pl.from_pandas(df_pd)

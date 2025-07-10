@@ -1,8 +1,4 @@
 use polars_core::prelude::*;
-#[cfg(feature = "array_to_struct")]
-use polars_ops::chunked_array::array::{
-    ArrToStructNameGenerator, ToStruct, arr_default_struct_name_gen,
-};
 
 use crate::dsl::function_expr::ArrayFunction;
 use crate::prelude::*;
@@ -147,28 +143,8 @@ impl ArrayNameSpace {
     }
 
     #[cfg(feature = "array_to_struct")]
-    pub fn to_struct(self, name_generator: Option<ArrToStructNameGenerator>) -> PolarsResult<Expr> {
-        Ok(self.0.map_with_fmt_str(
-            move |s| {
-                s.array()?
-                    .to_struct(name_generator.clone())
-                    .map(|s| Some(s.into_column()))
-            },
-            GetOutput::map_dtype(move |dt: &DataType| {
-                let DataType::Array(inner, width) = dt else {
-                    polars_bail!(InvalidOperation: "expected Array type, got: {}", dt)
-                };
-
-                let fields = (0..*width)
-                    .map(|i| {
-                        let name = arr_default_struct_name_gen(i);
-                        Field::new(name, inner.as_ref().clone())
-                    })
-                    .collect();
-                Ok(DataType::Struct(fields))
-            }),
-            "arr.to_struct",
-        ))
+    pub fn to_struct(self, name_generator: Option<DslNameGenerator>) -> Expr {
+        self.0.map_unary(ArrayFunction::ToStruct(name_generator))
     }
 
     /// Slice every subarray.

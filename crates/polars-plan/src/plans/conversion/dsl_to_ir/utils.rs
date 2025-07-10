@@ -20,8 +20,13 @@ pub(super) fn expand_expressions(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<ExprIR>> {
     let schema = lp_arena.get(input).schema(lp_arena);
-    let exprs = rewrite_projections(exprs, &schema, &[], opt_flags)?;
-    to_expr_irs(exprs, expr_arena, &schema)
+    let exprs = rewrite_projections(exprs, &Default::default(), &schema, opt_flags)?;
+    to_expr_irs(
+        exprs,
+        expr_arena,
+        &schema,
+        opt_flags.contains(OptFlags::EAGER),
+    )
 }
 
 pub(super) fn empty_df() -> IR {

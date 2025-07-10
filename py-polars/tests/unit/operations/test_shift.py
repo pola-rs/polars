@@ -77,7 +77,6 @@ def test_shift_expr() -> None:
     assert out.to_dict(as_series=False) == {"a": [5, 5, 1, 2, 3], "b": [5, 5, 1, 2, 3]}
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_shift_categorical() -> None:
     df = pl.Series("a", ["a", "b"], dtype=pl.Categorical).to_frame()
 

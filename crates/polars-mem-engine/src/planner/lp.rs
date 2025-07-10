@@ -677,7 +677,7 @@ fn create_physical_plan_impl(
             // We first check if we can partition the group_by on the latest moment.
             let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
             if partitionable {
-                let from_partitioned_ds = (&*lp_arena).iter(input).any(|(_, lp)| {
+                let from_partitioned_ds = lp_arena.iter(input).any(|(_, lp)| {
                     if let Union { options, .. } = lp {
                         options.from_partitioned_ds
                     } else {

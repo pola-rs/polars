@@ -28,3 +28,17 @@ def dtype_of(col_or_expr: str | Expr) -> pl.DataTypeExpr:
         e = col_or_expr
 
     return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.of_expr(e._pyexpr))
+
+
+@unstable()
+def self_dtype() -> pl.DataTypeExpr:
+    """
+    Get the dtype of `self` in `map_elements` and `map_batches`.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+    """
+    from polars.polars import PyDataTypeExpr
+
+    return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.self_dtype())

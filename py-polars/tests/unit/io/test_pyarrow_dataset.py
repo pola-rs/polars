@@ -174,21 +174,17 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         n_expected=3,
         check_predicate_pushdown=True,
     )
-    # TODO: remove string cache
-    with pl.StringCache():
-        helper_dataset_test(
-            file_path,
-            lambda lf: lf.filter(pl.col("cat").is_in([])).select(
-                "bools", "floats", "date"
-            ),
-            n_expected=0,
-        )
-        helper_dataset_test(
-            file_path,
-            lambda lf: lf.select(pl.exclude("enum")),
-            batch_size=2,
-            n_expected=3,
-        )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("cat").is_in([])).select("bools", "floats", "date"),
+        n_expected=0,
+    )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.select(pl.exclude("enum")),
+        batch_size=2,
+        n_expected=3,
+    )
 
     # direct filter
     helper_dataset_test(

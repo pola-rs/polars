@@ -9,8 +9,6 @@ use polars_core::prelude::UnknownKind;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedBytes;
-use pyo3::types::PyBytes;
 
 use crate::prelude::*;
 
@@ -54,49 +52,27 @@ impl PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
-        // Handle byte mark
-
         use polars_utils::pl_serialize;
-        debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
-        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
-        // Handle pickle metadata
-        let use_cloudpickle = buf[0];
-        if use_cloudpickle != 0 {
-            let ser_py_version = &buf[1..3];
-            let cur_py_version = *PYTHON3_VERSION;
-            polars_ensure!(
-                ser_py_version == cur_py_version,
-                InvalidOperation:
-                "current Python version {:?} does not match the Python version used to serialize the UDF {:?}",
-                (3, cur_py_version[0], cur_py_version[1]),
-                (3, ser_py_version[0], ser_py_version[1] )
-            );
+        if !buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK) {
+            polars_bail!(InvalidOperation: "serialization expected python magic byte mark");
         }
-        let buf = &buf[3..];
+        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataTypeExpr>, bool, bool) =
             pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
-        let remainder = &buf[reader.position() as usize..];
+        let buf = &buf[reader.position() as usize..];
+        let python_function = pl_serialize::python_object_deserialize(buf)?;
 
-        // Load UDF
-        Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "pickle")
-                .expect("unable to import 'pickle'")
-                .getattr("loads")
-                .unwrap();
-            let arg = (PyBytes::new(py, remainder),);
-            let python_function = pickle.call1(arg)?;
-            Ok(Arc::new(Self::new(
-                python_function.into(),
-                output_type,
-                is_elementwise,
-                returns_scalar,
-            )) as Arc<dyn ColumnsUdf>)
-        })
+        Ok(Arc::new(Self::new(
+            python_function,
+            output_type,
+            is_elementwise,
+            returns_scalar,
+        )))
     }
 }
 
@@ -108,9 +84,15 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 }
 
 impl ColumnsUdf for PythonUdfExpression {
-    fn resolve_dsl(&self, input_schema: &Schema) -> PolarsResult<()> {
+    fn resolve_dsl(
+        &self,
+        input_schema: &Schema,
+        self_dtype: Option<&DataType>,
+    ) -> PolarsResult<()> {
         if let Some(output_type) = self.output_type.as_ref() {
-            let dtype = output_type.clone().into_datatype(input_schema)?;
+            let dtype = output_type
+                .clone()
+                .into_datatype_with_opt_self(input_schema, self_dtype)?;
             self.materialized_output_type.get_or_init(|| dtype);
         }
         Ok(())
@@ -145,48 +127,23 @@ impl ColumnsUdf for PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
-        // Write byte marks
-
         use polars_utils::pl_serialize;
+
+        // Write byte marks
         buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
 
-        Python::with_gil(|py| {
-            // Try pickle to serialize the UDF, otherwise fall back to cloudpickle.
-            let pickle = PyModule::import(py, "pickle")
-                .expect("unable to import 'pickle'")
-                .getattr("dumps")
-                .unwrap();
-            let pickle_result = pickle.call1((self.python_function.clone_ref(py),));
-            let (dumped, use_cloudpickle) = match pickle_result {
-                Ok(dumped) => (dumped, false),
-                Err(_) => {
-                    let cloudpickle = PyModule::import(py, "cloudpickle")?
-                        .getattr("dumps")
-                        .unwrap();
-                    let dumped = cloudpickle.call1((self.python_function.clone_ref(py),))?;
-                    (dumped, true)
-                },
-            };
+        // Write UDF metadata
+        pl_serialize::serialize_into_writer::<_, _, true>(
+            &mut *buf,
+            &(
+                self.output_type.clone(),
+                self.is_elementwise,
+                self.returns_scalar,
+            ),
+        )?;
 
-            // Write pickle metadata
-            buf.push(use_cloudpickle as u8);
-            buf.extend_from_slice(&*PYTHON3_VERSION);
-
-            // Write UDF metadata
-            pl_serialize::serialize_into_writer::<_, _, true>(
-                &mut *buf,
-                &(
-                    self.output_type.clone(),
-                    self.is_elementwise,
-                    self.returns_scalar,
-                ),
-            )?;
-
-            // Write UDF
-            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
-            buf.extend_from_slice(&dumped);
-            Ok(())
-        })
+        pl_serialize::python_object_serialize(&self.python_function, buf)?;
+        Ok(())
     }
 }
 
@@ -233,7 +190,9 @@ impl FunctionOutputField for PythonGetOutput {
             Some(dtype) => dtype.clone(),
             None => {
                 let dtype = if let Some(output_type) = self.return_dtype.as_ref() {
-                    output_type.clone().into_datatype(input_schema)?
+                    output_type
+                        .clone()
+                        .into_datatype_with_self(input_schema, fields[0].dtype())?
                 } else {
                     DataType::Unknown(UnknownKind::Any)
                 };

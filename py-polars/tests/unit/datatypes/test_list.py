@@ -65,7 +65,6 @@ def test_dtype() -> None:
     ]
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical() -> None:
     # https://github.com/pola-rs/polars/issues/2038
     df = pl.DataFrame(
@@ -825,7 +824,6 @@ def test_list_list_sum_exception_12935() -> None:
         pl.Series([[1], [2]]).sum()
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_null_list_categorical_16405() -> None:
     df = pl.DataFrame(
         [(None, "foo")],

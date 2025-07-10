@@ -8,14 +8,17 @@ pub(crate) fn contains_column_refs(expr: &Expr) -> bool {
     for e in expr.into_iter() {
         match e {
             Expr::Column(c) if !c.eq(&PlSmallStr::EMPTY) => return true,
-            Expr::Nth(_) => return true,
-            Expr::Columns(_) => return true,
-            Expr::DtypeColumn(_) => return true,
-            Expr::IndexColumn(_) => return true,
             Expr::Selector(_) => return true,
-            Expr::Exclude(_, _) => return true,
-            Expr::Wildcard => return true,
+            #[cfg(feature = "dtype-struct")]
             Expr::Field(_) => return true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function:
+                    FunctionExpr::StructExpr(
+                        StructFunction::FieldByName(_) | StructFunction::SelectFields(_),
+                    ),
+                ..
+            } => return true,
             _ => {},
         }
     }

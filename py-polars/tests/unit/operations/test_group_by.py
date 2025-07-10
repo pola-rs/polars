@@ -938,7 +938,6 @@ def test_group_by_multiple_null_cols_15623() -> None:
 
 
 @pytest.mark.release
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))
@@ -1361,3 +1360,25 @@ def test_group_by_empty_groups_23338() -> None:
     )
     expected = df.group_by("k").agg(pl.col("a").filter(pl.col("a") == 1).sum())
     assert_frame_equal(out.sort("k"), expected.sort("k"))
+
+
+def test_group_by_filter_all_22955() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": [1, 2, 3, 4, 5],
+            "value": [10, 20, 30, 40, 50],
+        }
+    )
+
+    assert_frame_equal(
+        df.group_by("grp").agg(
+            pl.all().filter(pl.col("value") > 20),
+        ),
+        pl.DataFrame(
+            {
+                "grp": [1, 2, 3, 4, 5],
+                "value": [[], [], [30], [40], [50]],
+            }
+        ),
+        check_row_order=False,
+    )

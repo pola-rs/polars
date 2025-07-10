@@ -139,9 +139,29 @@ impl IR {
                 contexts: inputs,
                 schema: schema.clone(),
             },
-            Sink { payload, .. } => Sink {
-                input: inputs.pop().unwrap(),
-                payload: payload.clone(),
+            Sink { payload, .. } => {
+                let mut payload = payload.clone();
+                if let SinkTypeIR::Partition(p) = &mut payload {
+                    if let Some(sort_by) = &mut p.per_partition_sort_by {
+                        assert!(exprs.len() >= sort_by.len());
+                        let exprs = exprs.drain(exprs.len() - sort_by.len()..);
+                        for (s, expr) in sort_by.iter_mut().zip(exprs) {
+                            s.expr = expr;
+                        }
+                    }
+                    match &mut p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => {
+                            assert_eq!(key_exprs.len(), exprs.len());
+                            *key_exprs = exprs;
+                        },
+                        _ => (),
+                    }
+                }
+                Sink {
+                    input: inputs.pop().unwrap(),
+                    payload,
+                }
             },
             SinkMultiple { .. } => SinkMultiple { inputs },
             SimpleProjection { columns, .. } => SimpleProjection {
@@ -199,9 +219,12 @@ impl IR {
                     match &p.variant {
                         PartitionVariantIR::Parted { key_exprs, .. }
                         | PartitionVariantIR::ByKey { key_exprs, .. } => {
-                            container.extend_from_slice(key_exprs)
+                            container.extend_from_slice(key_exprs);
                         },
                         _ => (),
+                    }
+                    if let Some(sort_by) = &p.per_partition_sort_by {
+                        container.extend(sort_by.iter().map(|s| s.expr.clone()));
                     }
                 }
             },

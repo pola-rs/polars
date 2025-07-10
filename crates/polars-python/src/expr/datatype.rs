@@ -31,6 +31,11 @@ impl PyDataTypeExpr {
         DataTypeExpr::OfExpr(Box::new(expr.inner)).into()
     }
 
+    #[staticmethod]
+    pub fn self_dtype() -> Self {
+        DataTypeExpr::SelfDtype.into()
+    }
+
     pub fn collect_dtype<'py>(
         &self,
         py: Python<'py>,

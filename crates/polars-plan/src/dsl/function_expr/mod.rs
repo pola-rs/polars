@@ -37,6 +37,8 @@ pub use array::ArrayFunction;
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
+#[cfg(feature = "list_to_struct")]
+pub use list::ListToStruct;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
@@ -150,6 +152,13 @@ pub enum FunctionExpr {
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
+    ArgMin,
+    ArgMax,
+    ArgSort {
+        descending: bool,
+        nulls_last: bool,
+    },
+    Product,
     #[cfg(feature = "rank")]
     Rank {
         options: RankOptions,
@@ -394,8 +403,18 @@ impl Hash for FunctionExpr {
             | DropNulls
             | Reverse
             | ArgUnique
+            | ArgMin
+            | ArgMax
+            | Product
             | Shift
             | ShiftAndFill => {},
+            ArgSort {
+                descending,
+                nulls_last,
+            } => {
+                descending.hash(state);
+                nulls_last.hash(state);
+            },
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -637,6 +656,10 @@ impl Display for FunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => "kurtosis",
             ArgUnique => "arg_unique",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
+            ArgSort { .. } => "arg_sort",
+            Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
@@ -764,3 +787,6 @@ impl Display for FunctionExpr {
         write!(f, "{s}")
     }
 }
+
+#[cfg(any(feature = "array_to_struct", feature = "list_to_struct"))]
+pub type DslNameGenerator = PlanCallback<usize, String>;
