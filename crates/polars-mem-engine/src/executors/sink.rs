@@ -12,7 +12,7 @@ use polars_utils::arena::{Arena, Node};
 
 use crate::{Executor, StreamingExecutorBuilder};
 
-pub struct StreamingSinkExecutor {
+pub struct PartitionedSinkExecutor {
     name: String,
     input_exec: Box<dyn Executor>,
     input_scan_node: Node,
@@ -20,7 +20,7 @@ pub struct StreamingSinkExecutor {
     builder: StreamingExecutorBuilder,
 }
 
-impl StreamingSinkExecutor {
+impl PartitionedSinkExecutor {
     pub fn new(
         input: Box<dyn Executor>,
         builder: StreamingExecutorBuilder,
@@ -80,7 +80,7 @@ impl StreamingSinkExecutor {
     }
 }
 
-impl Executor for StreamingSinkExecutor {
+impl Executor for PartitionedSinkExecutor {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
         #[cfg(debug_assertions)]

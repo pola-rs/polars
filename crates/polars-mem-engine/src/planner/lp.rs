@@ -14,7 +14,7 @@ use self::python_dsl::PythonScanSource;
 use super::*;
 use crate::ScanPredicate;
 use crate::executors::{
-    self, CachePrefiller, Executor, SinkExecutor, StreamingSinkExecutor, sink_name,
+    self, CachePrefiller, Executor, PartitionedSinkExecutor, SinkExecutor, sink_name,
 };
 use crate::predicate::PhysicalColumnPredicates;
 
@@ -356,7 +356,7 @@ fn create_physical_plan_impl(
                     let builder = build_streaming_executor
                         .expect("invalid build. Missing feature new-streaming");
 
-                    Ok(Box::new(StreamingSinkExecutor::new(
+                    Ok(Box::new(PartitionedSinkExecutor::new(
                         input, builder, root, lp_arena, expr_arena,
                     )))
                 },
