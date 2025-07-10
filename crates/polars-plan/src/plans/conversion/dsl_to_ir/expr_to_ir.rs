@@ -321,15 +321,17 @@ pub(super) fn to_aexpr_impl(
                 input[0].output_name().clone()
             };
 
-            let function = function.materialize()?;
-            let output_type = output_type.materialize()?;
-            function.as_ref().resolve_dsl(ctx.schema)?;
-            output_type.as_ref().resolve_dsl(ctx.schema)?;
-
             let fields = input
                 .iter()
                 .map(|e| e.field(ctx.schema, Context::Default, ctx.arena))
                 .collect::<PolarsResult<Vec<_>>>()?;
+
+            let function = function.materialize()?;
+            let output_type = output_type.materialize()?;
+            function
+                .as_ref()
+                .resolve_dsl(ctx.schema, fields.first().map(|f| f.dtype()))?;
+            output_type.as_ref().resolve_dsl(ctx.schema)?;
 
             let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
             let output_dtype = out.dtype();
@@ -340,7 +342,7 @@ pub(super) fn to_aexpr_impl(
                     && !matches!(output_dtype, DataType::Unknown(UnknownKind::Ufunc))
                 {
                     let msg = format!(
-                        "'return_dtype' of function {fmt_str} must be set\n\nA later expression might fail because the output type is not known. Set return_dtype='same' if the type is unchanged, or set the proper output data type."
+                        "'return_dtype' of function {fmt_str} must be set\n\nA later expression might fail because the output type is not known. Set return_dtype=pl.self_dtype() if the type is unchanged, or set the proper output data type."
                     );
                     if ctx.allow_unknown {
                         polars_warn!(MapWithoutReturnDtypeWarning, "{}", msg)
