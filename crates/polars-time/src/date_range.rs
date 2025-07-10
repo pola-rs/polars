@@ -172,10 +172,10 @@ pub(crate) fn datetime_range_i64_start_end_interval(
             interval,
             time_unit,
         );
-        polars_ensure!(
-            (start <= end) == (step > 0),
-            InvalidOperation: "interval must be negative if 'end' precedes 'start'",
-        );
+        // If step points in the wrong direction, we have no values.
+        if (start <= end) != (step > 0) {
+            return Ok(Vec::<i64>::new());
+        }
 
         // Start with one interval offset if we're not left-closed.
         let start =
