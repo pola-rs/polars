@@ -195,7 +195,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 })
             },
             #[cfg(feature = "dtype-array")]
-            DataType::Array(inner_dtype, array_size)
+            DataType::Array(inner_dtype, array_width)
                 if inner_dtype.is_primitive_numeric() || inner_dtype.is_temporal() =>
             {
                 let inner_dtype = inner_dtype.to_physical();
@@ -204,7 +204,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                         ca.chunks().iter().map(|chunk| {
                             binview_to_fixed_size_list_dyn::<<$T as PolarsNumericType>::Native>(
                                 &**chunk,
-                                *array_size,
+                                *array_width,
                                 is_little_endian
                             )
                         }).collect::<Result<Vec<ArrayRef>, _>>()

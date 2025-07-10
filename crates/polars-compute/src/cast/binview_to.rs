@@ -195,37 +195,40 @@ where
     )))
 }
 
-/// Casts a [`BinaryArray`] to a [`FixedSizeListArray`], making any un-castable value a Null.
+/// Casts a [`BinaryViewArray`] to a [`FixedSizeListArray`], making any un-castable value a Null.
 ///
 /// # Arguments
 ///
-/// * `array_items`: The number of items in each `Array`.
+/// * `from`: The array to reinterpret.
+/// * `array_width`: The number of items in each `Array`.
 pub(super) fn try_binview_to_fixed_size_list<T, const IS_LITTLE_ENDIAN: bool>(
     from: &BinaryViewArray,
-    array_items: usize,
+    array_width: usize,
 ) -> PolarsResult<FixedSizeListArray>
 where
     T: FromBytes + NativeType,
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let element_size = std::mem::size_of::<T>();
-    let primitive_length = from.len() * array_items;
+    let primitive_length = from.len() * array_width;
     let mut out: Vec<T> = Vec::with_capacity(primitive_length);
     let mut validity = MutableBitmap::from_len_set(from.len());
 
     for (index, value) in from.iter().enumerate() {
         if let Some(value) = value
-            && value.len() == element_size * array_items
+            && value.len() == element_size * array_width
         {
             if cfg!(target_endian = "little") && IS_LITTLE_ENDIAN {
                 // Fast path, we can just copy the data with no need to
                 // reinterpret.
-                let write_index = array_items * index;
+                let write_index = array_width * index;
                 debug_assert!(write_index < primitive_length);
-                debug_assert!((write_index + (array_items - 1)) < primitive_length);
+                debug_assert!((write_index + (array_width - 1)) < primitive_length);
                 // # Safety
-                // - The target index is smaller than the vector's pre-allocated capacity.
-                // - We made sure `value` has byte length `array_items * element_size`.
+                // - The target index is smaller than the vector's pre-allocated
+                //   capacity.
+                // - We made sure `value` has byte length
+                //   `array_width * element_size`.
                 unsafe {
                     copy_nonoverlapping(
                         value.as_ptr(),
@@ -235,7 +238,7 @@ where
                 }
             } else {
                 // Slow path, reinterpret items one by one.
-                for j in 0..array_items {
+                for j in 0..array_width {
                     let jth_range = (j * element_size)..((j + 1) * element_size);
                     debug_assert!(value.get(jth_range.clone()).is_some());
                     // # Safety
@@ -250,7 +253,7 @@ where
                         <T as FromBytes>::from_be_bytes(byte_array)
                     };
 
-                    let write_index = array_items * index + j;
+                    let write_index = array_width * index + j;
                     debug_assert!(write_index < primitive_length);
                     // # Safety
                     // - The target index is smaller than the vector's pre-allocated capacity.
@@ -271,7 +274,7 @@ where
     FixedSizeListArray::try_new(
         ArrowDataType::FixedSizeList(
             Box::new(Field::new("".into(), T::PRIMITIVE.into(), true)),
-            array_items,
+            array_width,
         ),
         from.len(),
         Box::new(PrimitiveArray::<T>::from_vec(out)),
@@ -283,13 +286,14 @@ where
 ///
 /// # Arguments
 ///
-/// * `array_items`: The number of items in each `Array`.
+/// * `from`: The array to reinterpret.
+/// * `array_width`: The number of items in each `Array`.
 ///
 /// # Panics
 ///    Panics if `from` is not `BinaryViewArray`.
 pub fn binview_to_fixed_size_list_dyn<T>(
     from: &dyn Array,
-    array_items: usize,
+    array_width: usize,
     is_little_endian: bool,
 ) -> PolarsResult<Box<dyn Array>>
 where
@@ -299,9 +303,9 @@ where
     let from = from.as_any().downcast_ref().unwrap();
 
     let result = if is_little_endian {
-        try_binview_to_fixed_size_list::<T, true>(from, array_items)
+        try_binview_to_fixed_size_list::<T, true>(from, array_width)
     } else {
-        try_binview_to_fixed_size_list::<T, false>(from, array_items)
+        try_binview_to_fixed_size_list::<T, false>(from, array_width)
     }?;
     Ok(Box::new(result))
 }
