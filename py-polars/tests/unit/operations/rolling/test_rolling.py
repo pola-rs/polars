@@ -1597,6 +1597,7 @@ def test_rolling_quantile_nearest_with_nulls_23932() -> None:
     expected = pl.Series("a", [None, None, 1.0, 2.0, 2.0, 3.0, 3.0])
     assert_series_equal(out["a"], expected)
 
+
 def test_wtd_min_periods_less_window() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
         pl.col("a")
@@ -1636,6 +1637,7 @@ def test_wtd_min_periods_less_window() -> None:
     )
 
     assert_frame_equal(df, expected)
+
 
 def test_rolling_median_23480() -> None:
     vals = [None] * 17 + [3262645.8, 856191.4, 1635379.0, 34707156.0]
