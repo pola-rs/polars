@@ -317,8 +317,9 @@ class ExprBinaryNameSpace:
         -------
         Expr
             Expression of data type `dtype`.
-            Note that if binary array is too short value will be null.
-            If binary array is too long, remainder will be ignored.
+            Note that rows of the binary array where the length does not match
+            the size in bytes of the output array (number of items × byte size
+            of item) output array will become NULL.
 
         Examples
         --------
