@@ -94,7 +94,9 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -345,7 +347,7 @@ def test_reinterpret_to_n_dimensional_array() -> None:
 def test_reinterpret_unsupported(bad_dtype: pl.DataType) -> None:
     series = pl.Series([b"12345678"])
     lazy_df = pl.DataFrame({"s": series}).lazy()
-    expected = "cannot reinterpret binary to dtype.*Only dtypes physically represented by primitive numerics.*"
+    expected = "cannot reinterpret binary to dtype.*Only numeric or temporal dtype.*"
     for endianness in ["little", "big"]:
         with pytest.raises(InvalidOperationError, match=expected):
             series.bin.reinterpret(dtype=bad_dtype, endianness=endianness)  # type: ignore[arg-type]

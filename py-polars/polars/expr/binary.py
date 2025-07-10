@@ -303,8 +303,8 @@ class ExprBinaryNameSpace:
         r"""
         Interpret bytes as another type.
 
-        Support types are numerical polars types, types that are stored as a
-        numerical type, or an ``Array`` of these types.
+        Supported types are numerical or temporal dtypes, or an ``Array`` of
+        these dtypes.
 
         Parameters
         ----------

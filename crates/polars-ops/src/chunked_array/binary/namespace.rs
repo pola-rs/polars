@@ -213,7 +213,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Ok(result)
             },
             _ => Err(
-                polars_err!(InvalidOperation: "unsupported data type {:?} in reinterpret. Only types that map to numerical types, or Arrays of those, are allowed.", dtype),
+                polars_err!(InvalidOperation: "unsupported data type {:?} in reinterpret. Only numeric or temporal types, or Arrays of those, are allowed.", dtype),
             ),
         }
     }

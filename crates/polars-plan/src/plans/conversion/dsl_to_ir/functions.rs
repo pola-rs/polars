@@ -114,15 +114,15 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "binary_encoding")]
                 B::Reinterpret(dtype_expr, v) => {
                     let dtype = dtype_expr.into_datatype(ctx.schema)?;
-                    let physical_dtype = dtype.to_physical();
+                    let can_reinterpret_to =
+                        |dt: &DataType| dt.is_primitive_numeric() || dt.is_temporal();
                     polars_ensure!(
-                        physical_dtype.is_primitive_numeric() || (
-                            physical_dtype.is_array() && physical_dtype.inner_dtype().map(|dt|dt.is_primitive_numeric()) == Some(true)
+                        can_reinterpret_to(&dtype) || (
+                            dtype.is_array() && dtype.inner_dtype().map(can_reinterpret_to) == Some(true)
                         ),
                         InvalidOperation:
-                        "cannot reinterpret binary to dtype {:?} (with physical dtype {:?}). Only dtypes physically represented by primitive numerics, or Arrays of these, are supported. Hint: To reinterpret to a nested Array, first reinterpret to a linear Array, and then use reshape",
-                        dtype,
-                        physical_dtype
+                        "cannot reinterpret binary to dtype {:?}. Only numeric or temporal dtype, or Arrays of these, are supported. Hint: To reinterpret to a nested Array, first reinterpret to a linear Array, and then use reshape",
+                        dtype
                     );
                     IB::Reinterpret(dtype, v)
                 },
