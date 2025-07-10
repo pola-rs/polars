@@ -147,7 +147,7 @@ pub(crate) fn datetime_range_i64_start_end_interval(
     time_unit: TimeUnit,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
-    let duration = match time_unit {
+    let mut step = match time_unit {
         TimeUnit::Nanoseconds => interval.duration_ns(),
         TimeUnit::Microseconds => interval.duration_us(),
         TimeUnit::Milliseconds => interval.duration_ms(),
@@ -160,9 +160,6 @@ pub(crate) fn datetime_range_i64_start_end_interval(
 
     if interval.is_constant_duration(time_zone_opt.as_ref()) {
         // Fast path!
-        let mut step: i64 = duration.try_into().map_err(
-            |_err| polars_err!(ComputeError: "Could not convert {:?} to usize", duration),
-        )?;
         if interval.negative {
             step = -step;
         }
@@ -197,7 +194,7 @@ pub(crate) fn datetime_range_i64_start_end_interval(
         return Ok(out);
     }
 
-    let size = ((end - start) / duration + 1) as usize;
+    let size = ((end - start) / step + 1) as usize;
     let offset_fn = match time_unit {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
@@ -237,7 +234,6 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
     time_unit: TimeUnit,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
-    let num_samples = num_samples as i64;
     let time_zone_opt: Option<TimeZone> = match time_zone {
         #[cfg(feature = "timezones")]
         Some(tz) => Some(TimeZone::from_chrono(tz)),
