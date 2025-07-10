@@ -43,8 +43,9 @@ def concat(
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * diagonal: Finds a union between the column schemas and fills missing column
-          values with `null`.
+        * diagonal: Combines the input DataFrames by unifying their column schemas -
+        matching columns by both name and data type. Columns that are missing in some
+        inputs are added and filled with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
         * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
@@ -62,6 +63,11 @@ def concat(
     parallel
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
+
+    Notes
+    -----
+    If you're coming from PySpark, `how="vertical"` behaves similar to
+    `pyspark.sql.DataFrame.unionByName` with `allowMissingColumns = True`.
 
     Examples
     --------
