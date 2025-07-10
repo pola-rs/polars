@@ -83,6 +83,11 @@ impl IRFunctionExpr {
                     SumBy => mapper.sum_dtype(),
                 }
             },
+            Append { upcast } => if *upcast {
+                mapper.map_to_supertype()
+            } else {
+                mapper.with_same_dtype()
+            },
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),

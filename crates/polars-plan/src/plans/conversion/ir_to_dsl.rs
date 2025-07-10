@@ -850,6 +850,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
+        IF::Append { upcast } => F::Append { upcast },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
