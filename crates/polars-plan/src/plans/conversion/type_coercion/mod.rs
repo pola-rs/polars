@@ -853,8 +853,20 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                         // If the target datatype has a different time zone from the existing one,
                         // we replace time zone if we're naive, else we convert
-                        if let DataType::Datetime(_, Some(from_tz)) = &to_dtype {
+                        if let DataType::Datetime(tu, Some(from_tz)) = &to_dtype {
                             match &from_dtype {
+                                DataType::Date => {
+                                    // We first cast to naive datetime, then convert time zone, then
+                                    // cast to final dt.
+                                    cast_expr_ir(
+                                        &mut input[i],
+                                        &from_dtype,
+                                        &DataType::Datetime(*tu, None),
+                                        expr_arena,
+                                        CastOptions::Strict,
+                                    )?;
+                                    replace_tz(&mut input[i], &to_dtype, expr_arena)?;
+                                },
                                 DataType::Datetime(_, Some(to_tz)) if from_tz != to_tz => {
                                     convert_tz(&mut input[i], &to_dtype, expr_arena)?;
                                 },

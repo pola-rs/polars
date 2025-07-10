@@ -58,7 +58,10 @@ fn dt_ranges_start_end_interval(
     closed: ClosedWindow,
 ) -> PolarsResult<Column> {
     let dtype = start.dtype();
+
+    let start = start.to_physical_repr();
     let start = start.i64()?;
+    let end = end.to_physical_repr();
     let end = end.i64()?;
 
     let out = if let DataType::Datetime(tu, time_zone) = dtype {
@@ -304,7 +307,7 @@ pub(super) fn date_ranges(
 ) -> PolarsResult<Column> {
     let dt_type = DataType::Datetime(TimeUnit::Milliseconds, None);
     match arg_type {
-        DateRangeArgs::StartEndInterval => dt_range_start_end_interval(
+        DateRangeArgs::StartEndInterval => dt_ranges_start_end_interval(
             &s[0].cast(&dt_type)?,
             &s[1].cast(&dt_type)?,
             interval.unwrap(),
@@ -328,7 +331,7 @@ pub(super) fn date_ranges(
         )
         .map(|c| c.reverse()),
     }
-    .map(|c| c.cast(&DataType::Date))?
+    .map(|c| c.cast(&DataType::List(Box::new(DataType::Date))))?
 }
 
 pub(super) fn datetime_range(
