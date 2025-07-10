@@ -417,7 +417,6 @@ impl<Args, Out> Clone for PlanCallback<Args, Out> {
         match self {
             #[cfg(feature = "python")]
             Self::Python(p) => Self::Python(p.clone()),
-            #[cfg(feature = "python")]
             Self::Rust(f) => Self::Rust(f.clone()),
         }
     }
