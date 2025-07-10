@@ -44,8 +44,8 @@ def concat(
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
         * diagonal: Combines the input DataFrames by unifying their column schemas -
-        matching columns by both name and data type. Columns that are missing in some
-        inputs are added and filled with `null`.
+          matching columns by both name and data type. Columns that are missing in some
+          inputs are added and filled with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
         * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
