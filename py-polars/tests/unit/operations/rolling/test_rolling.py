@@ -670,23 +670,23 @@ def test_rolling_negative_period() -> None:
         pl.col("ts").set_sorted()
     )
     with pytest.raises(
-        ComputeError, match="rolling window period should be strictly positive"
+        ComputeError, match="rolling window period should not be negative"
     ):
         df.rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
     with pytest.raises(
-        ComputeError, match="rolling window period should be strictly positive"
+        ComputeError, match="rolling window period should not be negative"
     ):
         df.lazy().rolling("ts", period="-1d", offset="-1d").agg(
             pl.col("value")
         ).collect()
     with pytest.raises(
-        InvalidOperationError, match="`window_size` must be strictly positive"
+        InvalidOperationError, match="`window_size` must not be negative"
     ):
         df.select(
             pl.col("value").rolling_min_by("ts", window_size="-1d", closed="left")
         )
     with pytest.raises(
-        InvalidOperationError, match="`window_size` must be strictly positive"
+        InvalidOperationError, match="`window_size` must not be negative"
     ):
         df.lazy().select(
             pl.col("value").rolling_min_by("ts", window_size="-1d", closed="left")
