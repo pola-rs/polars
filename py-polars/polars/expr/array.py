@@ -304,6 +304,29 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_var(ddof))
 
+    def mean(self) -> Expr:
+        """
+        Compute the mean of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2, 3], [1, 1, 16]]},
+        ...     schema={"a": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.select(pl.col("a").arr.mean())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 2.0 │
+        │ 6.0 │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_mean())
+
     def median(self) -> Expr:
         """
         Compute the median of the values of the sub-arrays.
