@@ -72,14 +72,15 @@ def _patched_cloud(
                 kwargs.pop("optimizations")
             if "engine" in kwargs:
                 kwargs.pop("engine")
-            df = prev_collect(
+
+            return prev_collect(
                 with_timeout(
                     lambda: lf.remote(plan_type="plain")
                     .distributed()
-                    .collect(*args, **kwargs)
-                )
+                    .execute()
+                    .await_result()
+                ).lazy()
             )
-            return df
 
         class LazyExe:
             def __init__(
@@ -91,9 +92,8 @@ def _patched_cloud(
                 self.path = path
 
             def collect(self) -> pl.DataFrame:
-                res = with_timeout(
-                    lambda: prev_collect(self.query.await_result().lazy())
-                )
+                lf = with_timeout(lambda: self.query.await_result().lazy())
+                res = prev_collect(lf)
                 if self.prev_tgt is not None:
                     with Path.open(self.path, "rb") as f:
                         self.prev_tgt.write(f.read())
