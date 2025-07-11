@@ -327,8 +327,10 @@ impl ColumnSelectorBuilder {
 
             // Construct index lookups. We don't construct a full schema here to avoid recursive
             // cloning of nested DataTypes.
-            let mut target_fields_lookup = PlHashMap::with_capacity(target_fields.len());
-            let mut incoming_fields_lookup = PlHashMap::with_capacity(target_fields.len());
+            let mut target_fields_lookup: PlHashMap<&str, usize> =
+                PlHashMap::with_capacity(target_fields.len());
+            let mut incoming_fields_lookup: PlHashMap<&str, usize> =
+                PlHashMap::with_capacity(target_fields.len());
 
             for (i, field) in target_fields.iter().enumerate() {
                 if target_fields_lookup.contains_key(field.name.as_str()) {
