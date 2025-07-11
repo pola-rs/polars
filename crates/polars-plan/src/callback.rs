@@ -205,8 +205,8 @@ mod _python {
 
 #[cfg(not(feature = "python"))]
 mod _no_python {
-    impl<T> PlanCallbackArgs for T {}
-    impl<T: Sized> PlanCallbackOut for T {}
+    impl<T> super::PlanCallbackArgs for T {}
+    impl<T: Sized> super::PlanCallbackOut for T {}
 }
 
 impl<Args: PlanCallbackArgs, Out: PlanCallbackOut> PlanCallback<Args, Out> {
