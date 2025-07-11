@@ -103,13 +103,6 @@ NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
 )
 
-CATEGORICAL_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
-    [
-        Categorical,
-        Categorical("lexical"),
-    ]
-)
-
 DATETIME_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     [
         Datetime,
