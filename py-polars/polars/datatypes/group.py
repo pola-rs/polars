@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 from polars.datatypes.classes import (
     Array,
-    Categorical,
     DataType,
     DataTypeClass,
     Date,
