@@ -35,11 +35,11 @@ pub enum ColumnSelector {
     Constant(Box<ScalarColumn>),
 
     /// `(input_selector, _)`
-    Transformed(Box<(ColumnSelector, ColumnSelectorTransform)>),
+    Transformed(Box<(ColumnSelector, ColumnTransform)>),
 }
 
 #[derive(Debug)]
-pub enum ColumnSelectorTransform {
+pub enum ColumnTransform {
     /// Cast the column to a dtype.
     Cast {
         dtype: DataType,
@@ -58,7 +58,7 @@ pub enum ColumnSelectorTransform {
     FixedSizeListValuesMapping { values_selector: ColumnSelector },
 }
 
-impl ColumnSelectorTransform {
+impl ColumnTransform {
     pub fn into_selector(self, input_selector: ColumnSelector) -> ColumnSelector {
         ColumnSelector::Transformed(Box::new((input_selector, self)))
     }
@@ -83,7 +83,7 @@ impl ColumnSelector {
             S::Transformed(transform) => {
                 let input: Column = transform.0.select_from_columns(columns, output_height)?;
 
-                use ColumnSelectorTransform as TF;
+                use ColumnTransform as TF;
 
                 match &transform.1 {
                     TF::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
@@ -404,7 +404,7 @@ impl ColumnSelectorBuilder {
             return Ok(if is_input_passthrough {
                 input_selector
             } else {
-                ColumnSelectorTransform::StructFieldsMapping {
+                ColumnTransform::StructFieldsMapping {
                     field_selectors: field_selectors.into_boxed_slice(),
                 }
                 .into_selector(input_selector)
@@ -424,10 +424,8 @@ impl ColumnSelectorBuilder {
                     target_name,
                 )? {
                     ColumnSelector::Position(0) => input_selector,
-                    values_selector => {
-                        ColumnSelectorTransform::ListValuesMapping { values_selector }
-                            .into_selector(input_selector)
-                    },
+                    values_selector => ColumnTransform::ListValuesMapping { values_selector }
+                        .into_selector(input_selector),
                 },
             );
         }
@@ -451,7 +449,7 @@ impl ColumnSelectorBuilder {
                 )? {
                     ColumnSelector::Position(0) => input_selector,
                     values_selector => {
-                        ColumnSelectorTransform::FixedSizeListValuesMapping { values_selector }
+                        ColumnTransform::FixedSizeListValuesMapping { values_selector }
                             .into_selector(input_selector)
                     },
                 },
@@ -483,7 +481,7 @@ impl ColumnSelectorBuilder {
         let target_dtype = materialize_unknown(target_dtype);
 
         let attach_selector_transforms = |options: CastOptions| -> PolarsResult<ColumnSelector> {
-            Ok(ColumnSelectorTransform::Cast {
+            Ok(ColumnTransform::Cast {
                 dtype: target_dtype.clone().into_owned(),
                 options,
             }
