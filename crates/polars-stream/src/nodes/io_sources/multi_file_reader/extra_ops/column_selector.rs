@@ -27,8 +27,8 @@ use crate::nodes::io_sources::multi_file_reader::extra_ops::apply_extra_columns_
 /// * Inserting missing struct fields
 /// * Dropping extra struct fields (we just don't select them)
 #[derive(Debug)]
-pub enum CastingSelector {
-    // Note that we Box enum variants to keep `CastingSelector` small (16 bytes).
+pub enum ColumnSelector {
+    // Note that we Box enum variants to keep `ColumnSelector` small (16 bytes).
     // This is an optimization that benefits the case where there are many `Position` selectors.
 
     // Leaf selectors
@@ -38,11 +38,11 @@ pub enum CastingSelector {
     Constant(Box<ScalarColumn>),
 
     /// `(input_selector, _)`
-    Nested(Box<(CastingSelector, NestedCastingSelector)>),
+    Nested(Box<(ColumnSelector, NestedColumnSelector)>),
 }
 
 #[derive(Debug)]
-pub enum NestedCastingSelector {
+pub enum NestedColumnSelector {
     /// Cast the column to a dtype.
     Cast {
         dtype: DataType,
@@ -55,30 +55,30 @@ pub enum NestedCastingSelector {
     },
     /// Construct a struct column by applying column selectors onto the field arrays.
     StructFieldsMapping {
-        field_selectors: Box<[CastingSelector]>,
+        field_selectors: Box<[ColumnSelector]>,
     },
     /// Construct a list column by applying column selectors onto the values array.
     ListValuesMapping {
-        values_selector: CastingSelector,
+        values_selector: ColumnSelector,
     },
     FixedSizeListValuesMapping {
-        values_selector: CastingSelector,
+        values_selector: ColumnSelector,
     },
 }
 
-impl NestedCastingSelector {
-    pub fn into_selector(self, input_selector: CastingSelector) -> CastingSelector {
-        CastingSelector::Nested(Box::new((input_selector, self)))
+impl NestedColumnSelector {
+    pub fn into_selector(self, input_selector: ColumnSelector) -> ColumnSelector {
+        ColumnSelector::Nested(Box::new((input_selector, self)))
     }
 }
 
-impl CastingSelector {
+impl ColumnSelector {
     pub fn select_from_columns(
         &self,
         columns: &[Column],
         output_height: usize,
     ) -> PolarsResult<Column> {
-        use CastingSelector as S;
+        use ColumnSelector as S;
 
         Ok(match self {
             S::Position(i) => columns[*i].clone(),
@@ -91,7 +91,7 @@ impl CastingSelector {
             S::Nested(nested) => {
                 let input: Column = nested.0.select_from_columns(columns, output_height)?;
 
-                use NestedCastingSelector as NS;
+                use NestedColumnSelector as NS;
 
                 match &nested.1 {
                     NS::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
@@ -263,25 +263,25 @@ impl CastingSelector {
 }
 
 #[derive(Clone)]
-pub struct CastingSelectorBuilder {
+pub struct ColumnSelectorBuilder {
     pub cast_columns_policy: CastColumnsPolicy,
     pub missing_columns_policy: MissingColumnsPolicy,
     // This doesn't take an `ExtraColumnsPolicy`, as it only gets called with the projected output columns.
 }
 
-impl CastingSelectorBuilder {
+impl ColumnSelectorBuilder {
     pub fn build_selector_for_column(
         &self,
         incoming_schema: &Schema,
         target_name: &PlSmallStr,
         target_dtype: &DataType,
-    ) -> PolarsResult<CastingSelector> {
+    ) -> PolarsResult<ColumnSelector> {
         let out = if let Some((index, _, incoming_dtype)) = incoming_schema.get_full(target_name) {
-            let input = CastingSelector::Position(index);
-            self.build_casting_selector(input, incoming_dtype, target_dtype, target_name)?
+            let input = ColumnSelector::Position(index);
+            self.build_column_selector(input, incoming_dtype, target_dtype, target_name)?
         } else {
             match &self.missing_columns_policy {
-                MissingColumnsPolicy::Insert => CastingSelector::Constant(Box::new(
+                MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new(
                     ScalarColumn::full_null(target_name.clone(), 1, target_dtype),
                 )),
                 MissingColumnsPolicy::Raise => polars_bail!(
@@ -296,14 +296,14 @@ impl CastingSelectorBuilder {
     }
 
     /// Adds casting on top of a selector where necessary.
-    pub fn build_casting_selector(
+    pub fn build_column_selector(
         &self,
-        input_selector: CastingSelector,
+        input_selector: ColumnSelector,
         incoming_dtype: &DataType,
         target_dtype: &DataType,
         // Note: This is used for logging purposes only
         target_name: &str,
-    ) -> PolarsResult<CastingSelector> {
+    ) -> PolarsResult<ColumnSelector> {
         let mismatch_err = |hint: &str| {
             let hint_spacing = if hint.is_empty() { "" } else { ", " };
 
@@ -361,7 +361,7 @@ impl CastingSelectorBuilder {
                 &mut incoming_fields.iter().map(|x| x.name.as_str()),
             )?;
 
-            let mut field_selectors: Vec<CastingSelector> = Vec::with_capacity(target_fields.len());
+            let mut field_selectors: Vec<ColumnSelector> = Vec::with_capacity(target_fields.len());
             let mut is_input_passthrough = incoming_fields.len() == target_fields.len();
 
             for (target_index, target_field) in target_fields.iter().enumerate() {
@@ -369,8 +369,8 @@ impl CastingSelectorBuilder {
                     .get(target_field.name().as_str())
                     .copied()
                 {
-                    self.build_casting_selector(
-                        CastingSelector::Position(incoming_index),
+                    self.build_column_selector(
+                        ColumnSelector::Position(incoming_index),
                         incoming_fields[incoming_index].dtype(),
                         target_field.dtype(),
                         target_field.name().as_str(),
@@ -378,7 +378,7 @@ impl CastingSelectorBuilder {
                 } else {
                     match &self.cast_columns_policy.missing_struct_fields {
                         MissingColumnsPolicy::Insert => {
-                            CastingSelector::Constant(Box::new(ScalarColumn::full_null(
+                            ColumnSelector::Constant(Box::new(ScalarColumn::full_null(
                                 target_field.name().clone(),
                                 1,
                                 target_field.dtype(),
@@ -393,7 +393,7 @@ impl CastingSelectorBuilder {
                 };
 
                 is_input_passthrough &= match &selector {
-                    CastingSelector::Position(i) => *i == target_index,
+                    ColumnSelector::Position(i) => *i == target_index,
                     _ => false,
                 };
 
@@ -403,7 +403,7 @@ impl CastingSelectorBuilder {
             return Ok(if is_input_passthrough {
                 input_selector
             } else {
-                NestedCastingSelector::StructFieldsMapping {
+                NestedColumnSelector::StructFieldsMapping {
                     field_selectors: field_selectors.into_boxed_slice(),
                 }
                 .into_selector(input_selector)
@@ -416,14 +416,14 @@ impl CastingSelectorBuilder {
             };
 
             return Ok(
-                match self.build_casting_selector(
-                    CastingSelector::Position(0),
+                match self.build_column_selector(
+                    ColumnSelector::Position(0),
                     incoming_inner,
                     target_inner,
                     target_name,
                 )? {
-                    CastingSelector::Position(0) => input_selector,
-                    values_selector => NestedCastingSelector::ListValuesMapping { values_selector }
+                    ColumnSelector::Position(0) => input_selector,
+                    values_selector => NestedColumnSelector::ListValuesMapping { values_selector }
                         .into_selector(input_selector),
                 },
             );
@@ -440,15 +440,15 @@ impl CastingSelectorBuilder {
             }
 
             return Ok(
-                match self.build_casting_selector(
-                    CastingSelector::Position(0),
+                match self.build_column_selector(
+                    ColumnSelector::Position(0),
                     incoming_inner,
                     target_inner,
                     target_name,
                 )? {
-                    CastingSelector::Position(0) => input_selector,
+                    ColumnSelector::Position(0) => input_selector,
                     values_selector => {
-                        NestedCastingSelector::FixedSizeListValuesMapping { values_selector }
+                        NestedColumnSelector::FixedSizeListValuesMapping { values_selector }
                             .into_selector(input_selector)
                     },
                 },
@@ -479,8 +479,8 @@ impl CastingSelectorBuilder {
         let incoming_dtype = materialize_unknown(incoming_dtype);
         let target_dtype = materialize_unknown(target_dtype);
 
-        let build_casting_selector = |options: CastOptions| -> PolarsResult<CastingSelector> {
-            Ok(NestedCastingSelector::Cast {
+        let build_column_selector = |options: CastOptions| -> PolarsResult<ColumnSelector> {
+            Ok(NestedColumnSelector::Cast {
                 dtype: target_dtype.clone().into_owned(),
                 options,
             }
@@ -500,7 +500,7 @@ impl CastingSelectorBuilder {
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
                 Some(ref v) if v == target_dtype => {
                     // Use overflowing on lossless cast to elide validation.
-                    build_casting_selector(CastOptions::Overflowing)
+                    build_column_selector(CastOptions::Overflowing)
                 },
                 _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
             };
@@ -527,7 +527,7 @@ impl CastingSelectorBuilder {
                 _ => unreachable!(),
             };
 
-            return build_casting_selector(CastOptions::NonStrict);
+            return build_column_selector(CastOptions::NonStrict);
         }
 
         if let (
@@ -569,7 +569,7 @@ impl CastingSelectorBuilder {
             }
 
             // Dtype differs and we are allowed to coerce
-            return build_casting_selector(CastOptions::Strict);
+            return build_column_selector(CastOptions::Strict);
         }
 
         mismatch_err("")

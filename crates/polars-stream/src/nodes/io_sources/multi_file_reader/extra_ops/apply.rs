@@ -14,8 +14,8 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
 use super::ExtraOperations;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::casting_selector::{
-    CastingSelector, CastingSelectorBuilder,
+use crate::nodes::io_sources::multi_file_reader::extra_ops::column_selector::{
+    ColumnSelector, ColumnSelectorBuilder,
 };
 use crate::nodes::io_sources::multi_file_reader::initialization::deletion_files::ExternalFilterMask;
 use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
@@ -46,7 +46,7 @@ pub enum ApplyExtraOps {
         external_filter_mask: Option<ExternalFilterMask>,
         row_index: Option<RowIndex>,
         /// This will have include_file_paths, hive columns, missing columns.
-        casting_selectors: Option<Vec<CastingSelector>>,
+        column_selectors: Option<Vec<ColumnSelector>>,
         predicate: Option<ScanIOPredicate>,
     },
 
@@ -102,7 +102,7 @@ impl ApplyExtraOps {
                     row_index,
 
                     // Initialized below
-                    casting_selectors: None,
+                    column_selectors: None,
                     predicate: None,
                 };
 
@@ -120,8 +120,8 @@ impl ApplyExtraOps {
                     df.schema().clone()
                 };
 
-                let mut casting_selectors = Vec::with_capacity(final_output_schema.len());
-                let selector_builder = CastingSelectorBuilder {
+                let mut column_selectors = Vec::with_capacity(final_output_schema.len());
+                let selector_builder = ColumnSelectorBuilder {
                     cast_columns_policy,
                     missing_columns_policy,
                 };
@@ -138,7 +138,7 @@ impl ApplyExtraOps {
                     final_output_schema.iter().enumerate()
                 {
                     let selector = if final_projected_index == file_path_col_idx {
-                        CastingSelector::Constant(Box::new(ScalarColumn::new(
+                        ColumnSelector::Constant(Box::new(ScalarColumn::new(
                             include_file_paths.clone().unwrap(),
                             Scalar::new(
                                 DataType::String,
@@ -154,7 +154,7 @@ impl ApplyExtraOps {
                     } else if let Some(hive_parts) = &hive_parts
                         && let Ok(hive_column) = hive_parts.df().column(final_projected_name)
                     {
-                        CastingSelector::Constant(Box::new(
+                        ColumnSelector::Constant(Box::new(
                             hive_column
                                 .new_from_index(scan_source_idx, 1)
                                 .as_scalar_column()
@@ -170,21 +170,21 @@ impl ApplyExtraOps {
                     };
 
                     is_input_passthrough &= match &selector {
-                        CastingSelector::Position(i) => *i == final_projected_index,
+                        ColumnSelector::Position(i) => *i == final_projected_index,
                         _ => false,
                     };
 
-                    casting_selectors.push(selector);
+                    column_selectors.push(selector);
                 }
 
-                let casting_selectors = if is_input_passthrough {
+                let column_selectors = if is_input_passthrough {
                     None
                 } else {
-                    Some(casting_selectors)
+                    Some(column_selectors)
                 };
 
                 let Self::Initialized {
-                    casting_selectors: slf_casting_selectors,
+                    column_selectors: slf_column_selectors,
                     predicate: slf_predicate,
                     ..
                 } = &mut slf
@@ -192,7 +192,7 @@ impl ApplyExtraOps {
                     unreachable!()
                 };
 
-                *slf_casting_selectors = casting_selectors;
+                *slf_column_selectors = column_selectors;
                 *slf_predicate = predicate;
 
                 // Return a `Noop` if our initialized state does not have any operations. Downstream
@@ -202,7 +202,7 @@ impl ApplyExtraOps {
                         physical_pre_slice: None,
                         external_filter_mask: None,
                         row_index: None,
-                        casting_selectors: None,
+                        column_selectors: None,
                         predicate: None,
                     } => Self::Noop,
 
@@ -228,7 +228,7 @@ impl ApplyExtraOps {
             physical_pre_slice,
             external_filter_mask,
             row_index,
-            casting_selectors,
+            column_selectors,
             predicate,
         } = ({
             use ApplyExtraOps::*;
@@ -309,8 +309,8 @@ impl ApplyExtraOps {
             };
         }
 
-        if let Some(casting_selectors) = casting_selectors.as_deref() {
-            *df = casting_selectors
+        if let Some(column_selectors) = column_selectors.as_deref() {
+            *df = column_selectors
                 .iter()
                 .map(|x| x.select_from_columns(df.get_columns(), df.height()))
                 .collect::<PolarsResult<DataFrame>>()?;

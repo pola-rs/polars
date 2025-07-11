@@ -1,7 +1,7 @@
 //! Extra operations applied during reads.
 pub mod apply;
 pub mod cast_columns;
-pub mod casting_selector;
+pub mod column_selector;
 pub mod missing_columns;
 
 use polars_core::schema::Schema;
