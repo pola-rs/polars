@@ -35,11 +35,11 @@ pub enum ColumnSelector {
     Constant(Box<ScalarColumn>),
 
     /// `(input_selector, _)`
-    Nested(Box<(ColumnSelector, NestedColumnSelector)>),
+    Nested(Box<(ColumnSelector, ColumnSelectorTransform)>),
 }
 
 #[derive(Debug)]
-pub enum NestedColumnSelector {
+pub enum ColumnSelectorTransform {
     /// Cast the column to a dtype.
     Cast {
         dtype: DataType,
@@ -58,7 +58,7 @@ pub enum NestedColumnSelector {
     FixedSizeListValuesMapping { values_selector: ColumnSelector },
 }
 
-impl NestedColumnSelector {
+impl ColumnSelectorTransform {
     pub fn into_selector(self, input_selector: ColumnSelector) -> ColumnSelector {
         ColumnSelector::Nested(Box::new((input_selector, self)))
     }
@@ -83,18 +83,18 @@ impl ColumnSelector {
             S::Nested(nested) => {
                 let input: Column = nested.0.select_from_columns(columns, output_height)?;
 
-                use NestedColumnSelector as NS;
+                use ColumnSelectorTransform as TF;
 
                 match &nested.1 {
-                    NS::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
+                    TF::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
 
-                    NS::Rename { .. } => {
+                    TF::Rename { .. } => {
                         // TODO
                         // Will be used for Iceberg column mapping.
                         unreachable!()
                     },
 
-                    NS::StructFieldsMapping { field_selectors } => {
+                    TF::StructFieldsMapping { field_selectors } => {
                         use polars_core::prelude::StructChunked;
 
                         let struct_ca = input.struct_().unwrap();
@@ -113,7 +113,7 @@ impl ColumnSelector {
                         .into_column()
                     },
 
-                    NS::ListValuesMapping { values_selector } => {
+                    TF::ListValuesMapping { values_selector } => {
                         use polars_core::prelude::{LargeListArray, ListChunked};
                         let list_ca = input.list().unwrap().clone();
 
@@ -185,7 +185,7 @@ impl ColumnSelector {
                     },
 
                     #[cfg(feature = "dtype-array")]
-                    NS::FixedSizeListValuesMapping { values_selector } => {
+                    TF::FixedSizeListValuesMapping { values_selector } => {
                         use arrow::array::FixedSizeListArray;
                         use polars_core::prelude::ArrayChunked;
                         let array_ca = input.array().unwrap().clone();
@@ -404,7 +404,7 @@ impl ColumnSelectorBuilder {
             return Ok(if is_input_passthrough {
                 input_selector
             } else {
-                NestedColumnSelector::StructFieldsMapping {
+                ColumnSelectorTransform::StructFieldsMapping {
                     field_selectors: field_selectors.into_boxed_slice(),
                 }
                 .into_selector(input_selector)
@@ -424,8 +424,10 @@ impl ColumnSelectorBuilder {
                     target_name,
                 )? {
                     ColumnSelector::Position(0) => input_selector,
-                    values_selector => NestedColumnSelector::ListValuesMapping { values_selector }
-                        .into_selector(input_selector),
+                    values_selector => {
+                        ColumnSelectorTransform::ListValuesMapping { values_selector }
+                            .into_selector(input_selector)
+                    },
                 },
             );
         }
@@ -449,7 +451,7 @@ impl ColumnSelectorBuilder {
                 )? {
                     ColumnSelector::Position(0) => input_selector,
                     values_selector => {
-                        NestedColumnSelector::FixedSizeListValuesMapping { values_selector }
+                        ColumnSelectorTransform::FixedSizeListValuesMapping { values_selector }
                             .into_selector(input_selector)
                     },
                 },
@@ -481,7 +483,7 @@ impl ColumnSelectorBuilder {
         let target_dtype = materialize_unknown(target_dtype);
 
         let attach_selector_transforms = |options: CastOptions| -> PolarsResult<ColumnSelector> {
-            Ok(NestedColumnSelector::Cast {
+            Ok(ColumnSelectorTransform::Cast {
                 dtype: target_dtype.clone().into_owned(),
                 options,
             }
