@@ -170,7 +170,7 @@ impl ApplyExtraOps {
                     };
 
                     is_input_passthrough &= match &selector {
-                        ColumnSelector::Position(i) => *i == output_index,
+                        ColumnSelector::Position(input_index) => *input_index == output_index,
                         _ => false,
                     };
 

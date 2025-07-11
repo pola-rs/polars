@@ -362,36 +362,36 @@ impl ColumnSelectorBuilder {
             let mut field_selectors: Vec<ColumnSelector> = Vec::with_capacity(target_fields.len());
             let mut is_input_passthrough = incoming_fields.len() == target_fields.len();
 
-            for (target_index, target_field) in target_fields.iter().enumerate() {
+            for (output_index, output_field) in target_fields.iter().enumerate() {
                 let selector = if let Some(incoming_index) = incoming_fields_lookup
-                    .get(target_field.name().as_str())
+                    .get(output_field.name().as_str())
                     .copied()
                 {
                     self.build_column_selector(
                         ColumnSelector::Position(incoming_index),
                         incoming_fields[incoming_index].dtype(),
-                        target_field.dtype(),
-                        target_field.name().as_str(),
+                        output_field.dtype(),
+                        output_field.name().as_str(),
                     )?
                 } else {
                     match &self.cast_columns_policy.missing_struct_fields {
                         MissingColumnsPolicy::Insert => {
                             ColumnSelector::Constant(Box::new(ScalarColumn::full_null(
-                                target_field.name().clone(),
+                                output_field.name().clone(),
                                 1,
-                                target_field.dtype(),
+                                output_field.dtype(),
                             )))
                         },
                         MissingColumnsPolicy::Raise => polars_bail!(
                             ColumnNotFound:
                             "did not find column {}, consider passing `missing_columns='insert'`",
-                            target_field.name(),
+                            output_field.name(),
                         ),
                     }
                 };
 
                 is_input_passthrough &= match &selector {
-                    ColumnSelector::Position(i) => *i == target_index,
+                    ColumnSelector::Position(input_index) => *input_index == output_index,
                     _ => false,
                 };
 
