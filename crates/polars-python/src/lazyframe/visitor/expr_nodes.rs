@@ -1175,6 +1175,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
                 },
+                IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),

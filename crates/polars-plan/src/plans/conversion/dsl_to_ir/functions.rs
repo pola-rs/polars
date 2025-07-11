@@ -716,6 +716,7 @@ pub(super) fn convert_functions(
                 options,
             }
         },
+        F::Append { upcast } => I::Append { upcast },
         F::ShiftAndFill => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
             polars_ensure!(&e[2].is_scalar(ctx.arena), ComputeError: "'fill_value' must be scalar value");

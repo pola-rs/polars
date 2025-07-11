@@ -69,7 +69,6 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::try_get_supertype;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
@@ -220,26 +219,7 @@ impl Expr {
 
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
-        let output_type = if upcast {
-            GetOutput::super_type()
-        } else {
-            GetOutput::same_type()
-        };
-
-        apply_binary(
-            self,
-            other.into(),
-            move |mut a, mut b| {
-                if upcast {
-                    let dtype = try_get_supertype(a.dtype(), b.dtype())?;
-                    a = a.cast(&dtype)?;
-                    b = b.cast(&dtype)?;
-                }
-                a.append(&b)?;
-                Ok(Some(a))
-            },
-            output_type,
-        )
+        self.map_binary(FunctionExpr::Append { upcast }, other.into())
     }
 
     /// Get the first `n` elements of the Expr result.

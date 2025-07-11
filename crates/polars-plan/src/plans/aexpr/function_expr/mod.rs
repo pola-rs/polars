@@ -184,6 +184,9 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
+    Append {
+        upcast: bool,
+    },
     ShiftAndFill,
     Shift,
     DropNans,
@@ -459,6 +462,9 @@ impl Hash for IRFunctionExpr {
             | Product
             | Shift
             | ShiftAndFill => {},
+            Append { upcast } => {
+                upcast.hash(state);
+            },
             ArgSort {
                 descending,
                 nulls_last,
@@ -697,6 +703,7 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
+            Append { .. } => "append",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -1060,6 +1067,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     include_breakpoint
                 )
             },
+            Append { upcast } => map_as_slice!(dispatch::append, upcast),
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
             },
@@ -1324,6 +1332,7 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
+            F::Append { .. } => FunctionOptions::groupwise(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => FunctionOptions::row_separable(),
