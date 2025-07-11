@@ -43,20 +43,22 @@ def diff_from_mean(series):
 
 
 # Apply our custom function to a full Series with map_batches():
-out = df.select(pl.col("values").map_batches(diff_from_mean))
+out = df.select(pl.col("values").map_batches(diff_from_mean, return_dtype=pl.Float64))
 print("== select() with UDF ==")
 print(out)
 
 # Apply our custom function per group:
 print("== group_by() with UDF ==")
-out = df.group_by("keys").agg(pl.col("values").map_batches(diff_from_mean))
+out = df.group_by("keys").agg(
+    pl.col("values").map_batches(diff_from_mean, return_dtype=pl.Float64)
+)
 print(out)
 # --8<-- [end:diff_from_mean]
 
 # --8<-- [start:np_log]
 import numpy as np
 
-out = df.select(pl.col("values").map_batches(np.log))
+out = df.select(pl.col("values").map_batches(np.log, return_dtype=pl.Float64))
 print(out)
 # --8<-- [end:np_log]
 
@@ -78,11 +80,15 @@ def diff_from_mean_numba(arr, result):
         result[i] = value - mean
 
 
-out = df.select(pl.col("values").map_batches(diff_from_mean_numba))
+out = df.select(
+    pl.col("values").map_batches(diff_from_mean_numba, return_dtype=pl.Float64)
+)
 print("== select() with UDF ==")
 print(out)
 
-out = df.group_by("keys").agg(pl.col("values").map_batches(diff_from_mean_numba))
+out = df.group_by("keys").agg(
+    pl.col("values").map_batches(diff_from_mean_numba, return_dtype=pl.Float64)
+)
 print("== group_by() with UDF ==")
 print(out)
 # --8<-- [end:diff_from_mean_numba]
