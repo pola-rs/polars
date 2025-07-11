@@ -164,7 +164,7 @@ impl ApplyExtraOps {
                                 .clone(),
                         ))
                     } else {
-                        selector_builder.build_selector_for_column(
+                        selector_builder.build_column_selector(
                             &schema_before_selection,
                             output_name,
                             output_dtype,
