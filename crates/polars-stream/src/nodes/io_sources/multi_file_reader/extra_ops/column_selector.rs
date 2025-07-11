@@ -280,7 +280,7 @@ impl ColumnSelectorBuilder {
     ) -> PolarsResult<ColumnSelector> {
         let out = if let Some((index, _, incoming_dtype)) = incoming_schema.get_full(target_name) {
             let input = ColumnSelector::Position(index);
-            self.attach_selector_transforms(input, incoming_dtype, target_dtype, target_name)?
+            self.attach_transforms(input, incoming_dtype, target_dtype, target_name)?
         } else {
             match &self.missing_columns_policy {
                 MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new(
@@ -297,8 +297,8 @@ impl ColumnSelectorBuilder {
         Ok(out)
     }
 
-    /// Adds casting/renaming/(struct mappings) on top of a selector where necessary.
-    pub fn attach_selector_transforms(
+    /// Adds transforms on top of the `input_selector` if necessary.
+    pub fn attach_transforms(
         &self,
         input_selector: ColumnSelector,
         incoming_dtype: &DataType,
@@ -373,7 +373,7 @@ impl ColumnSelectorBuilder {
                     .get(output_field.name().as_str())
                     .copied()
                 {
-                    self.attach_selector_transforms(
+                    self.attach_transforms(
                         ColumnSelector::Position(incoming_index),
                         incoming_fields[incoming_index].dtype(),
                         output_field.dtype(),
@@ -420,7 +420,7 @@ impl ColumnSelectorBuilder {
             };
 
             return Ok(
-                match self.attach_selector_transforms(
+                match self.attach_transforms(
                     ColumnSelector::Position(0),
                     incoming_inner,
                     target_inner,
@@ -444,7 +444,7 @@ impl ColumnSelectorBuilder {
             }
 
             return Ok(
-                match self.attach_selector_transforms(
+                match self.attach_transforms(
                     ColumnSelector::Position(0),
                     incoming_inner,
                     target_inner,
@@ -483,7 +483,7 @@ impl ColumnSelectorBuilder {
         let incoming_dtype = materialize_unknown(incoming_dtype);
         let target_dtype = materialize_unknown(target_dtype);
 
-        let attach_selector_transforms = |options: CastOptions| -> PolarsResult<ColumnSelector> {
+        let attach_transforms = |options: CastOptions| -> PolarsResult<ColumnSelector> {
             Ok(ColumnTransform::Cast {
                 dtype: target_dtype.clone().into_owned(),
                 options,
@@ -504,7 +504,7 @@ impl ColumnSelectorBuilder {
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
                 Some(ref v) if v == target_dtype => {
                     // Use overflowing on lossless cast to elide validation.
-                    attach_selector_transforms(CastOptions::Overflowing)
+                    attach_transforms(CastOptions::Overflowing)
                 },
                 _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
             };
@@ -531,7 +531,7 @@ impl ColumnSelectorBuilder {
                 _ => unreachable!(),
             };
 
-            return attach_selector_transforms(CastOptions::NonStrict);
+            return attach_transforms(CastOptions::NonStrict);
         }
 
         if let (
@@ -575,7 +575,7 @@ impl ColumnSelectorBuilder {
             }
 
             // Dtype differs and we are allowed to coerce
-            return attach_selector_transforms(CastOptions::Strict);
+            return attach_transforms(CastOptions::Strict);
         }
 
         mismatch_err("")
