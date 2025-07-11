@@ -9,7 +9,8 @@ use arrow::offset::Offset;
 use arrow::types::NativeType;
 use chrono::Datelike;
 use num_traits::FromBytes;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_err};
+use polars_utils::IdxSize;
 
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
@@ -210,13 +211,34 @@ where
     for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
 {
     let element_size = std::mem::size_of::<T>();
-    let primitive_length = from.len() * array_width;
+    // The maximum number of primitives in the result:
+    let primitive_length = (from.len() as IdxSize)
+        .checked_mul(array_width as IdxSize)
+        .ok_or_else(|| {
+            polars_err!(
+                InvalidOperation:
+                "array chunk length * number of items ({} * {}) is too large",
+                from.len(),
+                array_width
+            )
+        })? as usize;
+    // The size of each array, in bytes:
+    let array_bytes_size = (element_size as IdxSize)
+        .checked_mul(array_width as IdxSize)
+        .ok_or_else(|| {
+            polars_err!(
+                InvalidOperation:
+                "array size in bytes ({} * {}) is too large",
+                element_size,
+                array_width
+            )
+        })? as usize;
     let mut out: Vec<T> = Vec::with_capacity(primitive_length);
     let mut validity = MutableBitmap::from_len_set(from.len());
 
     for (index, value) in from.iter().enumerate() {
         if let Some(value) = value
-            && value.len() == element_size * array_width
+            && value.len() == array_bytes_size
         {
             if cfg!(target_endian = "little") && IS_LITTLE_ENDIAN {
                 // Fast path, we can just copy the data with no need to
