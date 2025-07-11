@@ -58,9 +58,8 @@ pub fn apply_extra_columns_policy_impl(
         Ignore => {},
 
         Raise => {
-            #[expect(clippy::filter_next)] // You cannot use `find()` on a trait object
+            #[expect(clippy::filter_next)] // `find()` cannot be used on a trait object
             if let Some(extra_col) = incoming_names.filter(|x| !target_contains_name(x)).next() {
-                // incoming_names.filter(|x| !target_contains_name(x)).next() {
                 polars_bail!(
                     SchemaMismatch:
                     "extra column in file outside of expected schema: {}, \
