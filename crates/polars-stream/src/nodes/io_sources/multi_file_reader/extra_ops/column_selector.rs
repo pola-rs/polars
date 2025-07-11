@@ -1,12 +1,9 @@
-use arrow::array::{Array, FixedSizeListArray};
+use arrow::array::Array;
 use arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::column::ScalarColumn;
-use polars_core::prelude::{
-    ArrayChunked, Column, DataType, InitHashMaps, IntoColumn, LargeListArray, ListChunked,
-    PlHashMap, StructChunked, TimeUnit, TimeZone,
-};
+use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
@@ -50,20 +47,15 @@ pub enum NestedColumnSelector {
     },
     /// Set the name of the column.
     #[expect(unused)]
-    Rename {
-        name: PlSmallStr,
-    },
+    Rename { name: PlSmallStr },
     /// Construct a struct column by applying column selectors onto the field arrays.
     StructFieldsMapping {
         field_selectors: Box<[ColumnSelector]>,
     },
     /// Construct a list column by applying column selectors onto the values array.
-    ListValuesMapping {
-        values_selector: ColumnSelector,
-    },
-    FixedSizeListValuesMapping {
-        values_selector: ColumnSelector,
-    },
+    ListValuesMapping { values_selector: ColumnSelector },
+    #[cfg(feature = "dtype-array")]
+    FixedSizeListValuesMapping { values_selector: ColumnSelector },
 }
 
 impl NestedColumnSelector {
@@ -103,6 +95,8 @@ impl ColumnSelector {
                     },
 
                     NS::StructFieldsMapping { field_selectors } => {
+                        use polars_core::prelude::StructChunked;
+
                         let struct_ca = input.struct_().unwrap();
                         let field_columns: Vec<Column> = struct_ca.fields_as_columns();
 
@@ -120,6 +114,7 @@ impl ColumnSelector {
                     },
 
                     NS::ListValuesMapping { values_selector } => {
+                        use polars_core::prelude::{LargeListArray, ListChunked};
                         let list_ca = input.list().unwrap().clone();
 
                         let values_dtype = {
@@ -189,7 +184,10 @@ impl ColumnSelector {
                         out.into_column()
                     },
 
+                    #[cfg(feature = "dtype-array")]
                     NS::FixedSizeListValuesMapping { values_selector } => {
+                        use arrow::array::FixedSizeListArray;
+                        use polars_core::prelude::ArrayChunked;
                         let array_ca = input.array().unwrap().clone();
 
                         let values_dtype = {
@@ -535,6 +533,8 @@ impl ColumnSelectorBuilder {
             DataType::Datetime(incoming_unit, incoming_zone),
         ) = (target_dtype, incoming_dtype)
         {
+            use polars_core::prelude::{TimeUnit, TimeZone};
+
             // Check timezone
             if !self.cast_columns_policy.datetime_convert_timezone
                 && !TimeZone::eq_none_as_utc(incoming_zone.as_ref(), target_zone.as_ref())
