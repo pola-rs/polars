@@ -134,10 +134,10 @@ impl ApplyExtraOps {
                     |name| final_output_schema.index_of(name).unwrap(),
                 );
 
-                for (final_projected_index, (final_projected_name, final_projected_dtype)) in
+                for (output_index, (output_name, output_dtype)) in
                     final_output_schema.iter().enumerate()
                 {
-                    let selector = if final_projected_index == file_path_col_idx {
+                    let selector = if output_index == file_path_col_idx {
                         ColumnSelector::Constant(Box::new(ScalarColumn::new(
                             include_file_paths.clone().unwrap(),
                             Scalar::new(
@@ -152,7 +152,7 @@ impl ApplyExtraOps {
                             1,
                         )))
                     } else if let Some(hive_parts) = &hive_parts
-                        && let Ok(hive_column) = hive_parts.df().column(final_projected_name)
+                        && let Ok(hive_column) = hive_parts.df().column(output_name)
                     {
                         ColumnSelector::Constant(Box::new(
                             hive_column
@@ -164,13 +164,13 @@ impl ApplyExtraOps {
                     } else {
                         selector_builder.build_selector_for_column(
                             &schema_before_reorder,
-                            final_projected_name,
-                            final_projected_dtype,
+                            output_name,
+                            output_dtype,
                         )?
                     };
 
                     is_input_passthrough &= match &selector {
-                        ColumnSelector::Position(i) => *i == final_projected_index,
+                        ColumnSelector::Position(i) => *i == output_index,
                         _ => false,
                     };
 
