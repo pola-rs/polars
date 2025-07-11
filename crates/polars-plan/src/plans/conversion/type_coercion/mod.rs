@@ -1,11 +1,18 @@
 mod binary;
-#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
 mod datetime_range;
 mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
 use binary::process_binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
 use datetime_range::{
     convert_tz, replace_tz, update_date_range_types, update_datetime_range_types,
 };
@@ -769,7 +776,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
@@ -817,7 +824,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     return Ok(None);
                 }
             },
-            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {

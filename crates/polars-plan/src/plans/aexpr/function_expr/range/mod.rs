@@ -37,13 +37,13 @@ pub enum IRRangeFunction {
         closed: ClosedInterval,
         array_width: Option<usize>,
     },
-    #[cfg(feature = "dtype-datetime")]
+    #[cfg(feature = "dtype-date")]
     DateRange {
         interval: Option<Duration>,
         closed: ClosedWindow,
         arg_type: DateRangeArgs,
     },
-    #[cfg(feature = "dtype-datetime")]
+    #[cfg(feature = "dtype-date")]
     DateRanges {
         interval: Option<Duration>,
         closed: ClosedWindow,

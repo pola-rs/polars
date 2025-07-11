@@ -334,6 +334,7 @@ pub(super) fn date_ranges(
     .map(|c| c.cast(&DataType::List(Box::new(DataType::Date))))?
 }
 
+#[cfg(all(feature = "range", feature = "dtype-datetime"))]
 pub(super) fn datetime_range(
     s: &[Column],
     interval: Option<Duration>,
