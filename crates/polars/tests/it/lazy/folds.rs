@@ -17,7 +17,7 @@ fn test_fold_wildcard() -> PolarsResult<()> {
             PlanCallback::new(|(a, b)| &a + &b),
             [col("*")],
             false,
-            Some(DataType::Int64.into()),
+            Some(DataType::Int32.into()),
         )
         .alias("foo")])
         .collect()?;
