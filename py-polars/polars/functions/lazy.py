@@ -1230,9 +1230,9 @@ def fold(
         Whether or not `function` applied returns a scalar. This must be set correctly
         by the user.
     return_dtype
-            Output datatype.
-            If not set, the dtype will be inferred based on the dtype
-            of the accumulator.
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype
+        of the accumulator.
 
     Notes
     -----
@@ -1338,6 +1338,9 @@ def fold(
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1349,6 +1352,13 @@ def reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expressions.
 
     Notes
     -----
@@ -1393,8 +1403,19 @@ def reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.reduce(_wrap_acc_lamba(function), exprs))
+    return wrap_expr(
+        plr.reduce(
+            _wrap_acc_lamba(function),
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        )
+    )
 
 
 def cum_fold(
@@ -1402,6 +1423,8 @@ def cum_fold(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
     *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
     include_init: bool = False,
 ) -> Expr:
     """
@@ -1419,6 +1442,12 @@ def cum_fold(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the accumulator.
     include_init
         Include the initial accumulator state as struct field.
 
@@ -1455,17 +1484,29 @@ def cum_fold(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
-        plr.cum_fold(acc, _wrap_acc_lamba(function), exprs, include_init).alias(
-            "cum_fold"
-        )
+        plr.cum_fold(
+            acc,
+            _wrap_acc_lamba(function),
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+            include_init=include_init,
+        ).alias("cum_fold")
     )
 
 
 def cum_reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Cumulatively reduce horizontally across columns with a left fold.
@@ -1479,6 +1520,12 @@ def cum_reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expresions.
+    include_init
+        Include the initial accumulator state as struct field.
 
     Examples
     --------
@@ -1505,9 +1552,18 @@ def cum_reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
-        plr.cum_reduce(_wrap_acc_lamba(function), exprs).alias("cum_reduce")
+        plr.cum_reduce(
+            _wrap_acc_lamba(function),
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        ).alias("cum_reduce")
     )
 
 

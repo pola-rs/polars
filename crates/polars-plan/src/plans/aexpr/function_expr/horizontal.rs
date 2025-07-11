@@ -16,11 +16,11 @@ pub fn fold(
     }
     polars_ensure!(
         !returns_scalar || acc.len() == 1,
-        InvalidOperation: "fold is said to return scalar but returned {} elements", acc.len(),
+        InvalidOperation: "`fold` is said to return scalar but returned {} elements", acc.len(),
     );
     polars_ensure!(
         return_dtype.is_none_or(|dt| dt == acc.dtype()),
-        ComputeError: "fold did not return given return_dtype ({} != {})", return_dtype.unwrap(), acc.dtype()
+        ComputeError: "`fold` did not return given return_dtype ({} != {})", return_dtype.unwrap(), acc.dtype()
     );
 
     Ok(acc.into_column())
@@ -29,6 +29,8 @@ pub fn fold(
 pub fn reduce(
     c: &[Column],
     callback: &PlanCallback<(Series, Series), Series>,
+    returns_scalar: bool,
+    return_dtype: Option<&DataType>,
 ) -> PolarsResult<Column> {
     let Some(acc) = c.first() else {
         polars_bail!(ComputeError: "`reduce` did not have any expressions to fold");
@@ -39,6 +41,15 @@ pub fn reduce(
         acc = callback.call((acc.clone(), c.clone().take_materialized_series()))?;
     }
 
+    polars_ensure!(
+        !returns_scalar || acc.len() == 1,
+        InvalidOperation: "`reduce` is said to return scalar but returned {} elements", acc.len(),
+    );
+    polars_ensure!(
+        return_dtype.is_none_or(|dt| dt == acc.dtype()),
+        ComputeError: "`reduce` did not return given return_dtype ({} != {})", return_dtype.unwrap(), acc.dtype()
+    );
+
     Ok(acc.into_column())
 }
 
@@ -46,6 +57,8 @@ pub fn reduce(
 pub fn cum_reduce(
     c: &[Column],
     callback: &PlanCallback<(Series, Series), Series>,
+    returns_scalar: bool,
+    return_dtype: Option<&DataType>,
 ) -> PolarsResult<Column> {
     use polars_core::prelude::StructChunked;
 
@@ -59,6 +72,16 @@ pub fn cum_reduce(
     for c in &c[1..] {
         let name = c.name().clone();
         acc = callback.call((acc.clone(), c.clone().take_materialized_series()))?;
+
+        polars_ensure!(
+            !returns_scalar || acc.len() == 1,
+            InvalidOperation: "`cum_reduce` is said to return scalar but returned {} elements", acc.len(),
+        );
+        polars_ensure!(
+            return_dtype.is_none_or(|dt| dt == acc.dtype()),
+            ComputeError: "`cum_reduce` did not return given return_dtype ({} != {})", return_dtype.unwrap(), acc.dtype()
+        );
+
         acc.rename(name);
         result.push(acc.clone());
     }
@@ -71,6 +94,8 @@ pub fn cum_reduce(
 pub fn cum_fold(
     c: &[Column],
     callback: &PlanCallback<(Series, Series), Series>,
+    returns_scalar: bool,
+    return_dtype: Option<&DataType>,
     include_init: bool,
 ) -> PolarsResult<Column> {
     use polars_core::prelude::StructChunked;
@@ -85,6 +110,16 @@ pub fn cum_fold(
     for c in &c[1..] {
         let name = c.name().clone();
         acc = callback.call((acc.clone(), c.clone().take_materialized_series()))?;
+
+        polars_ensure!(
+            !returns_scalar || acc.len() == 1,
+            InvalidOperation: "`cum_fold` is said to return scalar but returned {} elements", acc.len(),
+        );
+        polars_ensure!(
+            return_dtype.is_none_or(|dt| dt == acc.dtype()),
+            ComputeError: "`cum_fold` did not return given return_dtype ({} != {})", return_dtype.unwrap(), acc.dtype()
+        );
+
         acc.rename(name);
         result.push(acc.clone());
     }

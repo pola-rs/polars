@@ -1,6 +1,7 @@
 use arrow::legacy::error::PolarsResult;
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
+use polars_utils::option::OptionTry;
 
 use super::expr_to_ir::ExprToIRContext;
 use super::*;
@@ -908,20 +909,37 @@ pub(super) fn convert_functions(
         } => I::FoldHorizontal {
             callback,
             returns_scalar,
-            return_dtype: match return_dtype {
-                Some(dtype) => Some(dtype.into_datatype(ctx.schema)?),
-                None => None,
-            },
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
         },
-        F::ReduceHorizontal(callback) => I::ReduceHorizontal(callback),
+        F::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => I::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
+        },
         #[cfg(feature = "dtype-struct")]
-        F::CumReduceHorizontal(callback) => I::CumReduceHorizontal(callback),
+        F::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => I::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
+        },
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal {
             callback,
+            returns_scalar,
+            return_dtype,
             include_init,
         } => I::CumFoldHorizontal {
             callback,
+            returns_scalar,
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
             include_init,
         },
 

@@ -240,18 +240,38 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
+pub fn cum_fold(
+    acc: PyExpr,
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+    include_init: bool,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
     let func = PlanCallback::new_python(PythonObject(lambda));
-    dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
+    dsl::cum_fold_exprs(
+        acc.inner,
+        func,
+        exprs,
+        returns_scalar,
+        return_dtype.map(|v| v.inner),
+        include_init,
+    )
+    .into()
 }
 
 #[pyfunction]
-pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn cum_reduce(
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
 
     let func = PlanCallback::new_python(PythonObject(lambda));
-    dsl::cum_reduce_exprs(func, exprs).into()
+    dsl::cum_reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
 }
 
 #[pyfunction]
@@ -476,10 +496,15 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn reduce(
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
     let func = PlanCallback::new_python(PythonObject(lambda));
-    dsl::reduce_exprs(func, exprs).into()
+    dsl::reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
 }
 
 #[pyfunction]

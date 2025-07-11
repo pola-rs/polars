@@ -30,7 +30,12 @@ where
 /// An accumulator is initialized to the series given by the first expression in `exprs`, and then each subsequent value
 /// of the accumulator is computed from `f(acc, next_expr_series)`. If `exprs` is empty, an error is returned when
 /// `collect` is called.
-pub fn reduce_exprs<E>(f: PlanCallback<(Series, Series), Series>, exprs: E) -> Expr
+pub fn reduce_exprs<E>(
+    f: PlanCallback<(Series, Series), Series>,
+    exprs: E,
+    returns_scalar: bool,
+    return_dtype: Option<DataTypeExpr>,
+) -> Expr
 where
     E: AsRef<[Expr]>,
 {
@@ -38,13 +43,23 @@ where
 
     Expr::Function {
         input: exprs,
-        function: FunctionExpr::ReduceHorizontal(f),
+        function: FunctionExpr::ReduceHorizontal {
+            callback: f,
+            returns_scalar,
+            return_dtype,
+        },
     }
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cum_reduce_exprs<E>(f: PlanCallback<(Series, Series), Series>, exprs: E) -> Expr
+pub fn cum_reduce_exprs<E>(
+    f: PlanCallback<(Series, Series), Series>,
+    exprs: E,
+
+    returns_scalar: bool,
+    return_dtype: Option<DataTypeExpr>,
+) -> Expr
 where
     E: AsRef<[Expr]>,
 {
@@ -52,7 +67,11 @@ where
 
     Expr::Function {
         input: exprs,
-        function: FunctionExpr::CumReduceHorizontal(f),
+        function: FunctionExpr::CumReduceHorizontal {
+            callback: f,
+            returns_scalar,
+            return_dtype,
+        },
     }
 }
 
@@ -62,6 +81,8 @@ pub fn cum_fold_exprs<E>(
     acc: Expr,
     f: PlanCallback<(Series, Series), Series>,
     exprs: E,
+    returns_scalar: bool,
+    return_dtype: Option<DataTypeExpr>,
     include_init: bool,
 ) -> Expr
 where
@@ -76,6 +97,8 @@ where
         input: exprs_v,
         function: FunctionExpr::CumFoldHorizontal {
             callback: f,
+            returns_scalar,
+            return_dtype,
             include_init,
         },
     }

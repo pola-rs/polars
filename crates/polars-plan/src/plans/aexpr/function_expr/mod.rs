@@ -357,12 +357,22 @@ pub enum IRFunctionExpr {
         returns_scalar: bool,
         return_dtype: Option<DataType>,
     },
-    ReduceHorizontal(PlanCallback<(Series, Series), Series>),
+    ReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataType>,
+    },
     #[cfg(feature = "dtype-struct")]
-    CumReduceHorizontal(PlanCallback<(Series, Series), Series>),
+    CumReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataType>,
+    },
     #[cfg(feature = "dtype-struct")]
     CumFoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataType>,
         include_init: bool,
     },
 
@@ -470,20 +480,36 @@ impl Hash for IRFunctionExpr {
                 callback,
                 returns_scalar,
                 return_dtype,
+            }
+            | ReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
             } => {
                 callback.hash(state);
                 returns_scalar.hash(state);
                 return_dtype.hash(state);
             },
-            ReduceHorizontal(callback) => callback.hash(state),
             #[cfg(feature = "dtype-struct")]
-            CumReduceHorizontal(callback) => callback.hash(state),
+            CumReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal {
                 callback,
+                returns_scalar,
+                return_dtype,
                 include_init,
             } => {
                 callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
                 include_init.hash(state);
             },
 
@@ -852,9 +878,9 @@ impl Display for IRFunctionExpr {
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
 
             FoldHorizontal { .. } => "fold",
-            ReduceHorizontal(..) => "reduce",
+            ReduceHorizontal { .. } => "reduce",
             #[cfg(feature = "dtype-struct")]
-            CumReduceHorizontal(..) => "cum_reduce",
+            CumReduceHorizontal { .. } => "cum_reduce",
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal { .. } => "cum_fold",
 
@@ -1294,14 +1320,40 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 returns_scalar,
                 return_dtype.as_ref()
             ),
-            ReduceHorizontal(callback) => map_as_slice!(horizontal::reduce, &callback),
+            ReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => map_as_slice!(
+                horizontal::reduce,
+                &callback,
+                returns_scalar,
+                return_dtype.as_ref()
+            ),
             #[cfg(feature = "dtype-struct")]
-            CumReduceHorizontal(callback) => map_as_slice!(horizontal::cum_reduce, &callback),
+            CumReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => map_as_slice!(
+                horizontal::cum_reduce,
+                &callback,
+                returns_scalar,
+                return_dtype.as_ref()
+            ),
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal {
                 callback,
+                returns_scalar,
+                return_dtype,
                 include_init,
-            } => map_as_slice!(horizontal::cum_fold, &callback, include_init),
+            } => map_as_slice!(
+                horizontal::cum_fold,
+                &callback,
+                returns_scalar,
+                return_dtype.as_ref(),
+                include_init
+            ),
 
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
@@ -1502,23 +1554,25 @@ impl IRFunctionExpr {
             F::MeanHorizontal { .. } | F::SumHorizontal { .. } => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
 
-            F::FoldHorizontal { returns_scalar, .. } => {
-                FunctionOptions::groupwise().with_flags(|mut f| {
+            F::FoldHorizontal { returns_scalar, .. }
+            | F::ReduceHorizontal { returns_scalar, .. } => FunctionOptions::groupwise()
+                .with_flags(|mut f| {
                     f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
                     if *returns_scalar {
                         f |= FunctionFlags::RETURNS_SCALAR;
                     }
                     f
-                })
-            },
-            F::ReduceHorizontal(_) => FunctionOptions::groupwise()
-                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+                }),
             #[cfg(feature = "dtype-struct")]
-            F::CumReduceHorizontal(_) => FunctionOptions::groupwise()
-                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
-            #[cfg(feature = "dtype-struct")]
-            F::CumFoldHorizontal { .. } => FunctionOptions::groupwise()
-                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+            F::CumFoldHorizontal { returns_scalar, .. }
+            | F::CumReduceHorizontal { returns_scalar, .. } => FunctionOptions::groupwise()
+                .with_flags(|mut f| {
+                    f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
+                    if *returns_scalar {
+                        f |= FunctionFlags::RETURNS_SCALAR;
+                    }
+                    f
+                }),
             #[cfg(feature = "ewma")]
             F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
                 FunctionOptions::length_preserving()

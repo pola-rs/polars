@@ -354,14 +354,28 @@ impl IRFunctionExpr {
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
 
             FoldHorizontal { return_dtype, .. } => match return_dtype {
+                None => mapper.with_same_dtype(),
+                Some(dtype) => mapper.with_dtype(dtype.clone()),
+            },
+            ReduceHorizontal { return_dtype, .. } => match return_dtype {
+                // @2.0: This should probably map to `Unknown`.
                 None => mapper.map_to_supertype(),
                 Some(dtype) => mapper.with_dtype(dtype.clone()),
             },
-            ReduceHorizontal(..) => mapper.map_to_supertype(),
             #[cfg(feature = "dtype-struct")]
-            CumReduceHorizontal(..) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            CumReduceHorizontal {
+                return_dtype, ..
+            }=> match return_dtype {
+                // @2.0: This should probably map to `Unknown`.
+                None => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+                Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
+            },
             #[cfg(feature = "dtype-struct")]
-            CumFoldHorizontal { include_init, .. } => mapper.with_dtype(DataType::Struct(fields[usize::from(!include_init)..].to_vec())),
+            CumFoldHorizontal { return_dtype, include_init, .. } => match return_dtype {
+                // @2.0: This should probably map to `Unknown`.
+                None => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), fields[0].dtype().clone())).collect())),
+                Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
+            },
 
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),

@@ -1046,15 +1046,35 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             returns_scalar,
             return_dtype: return_dtype.map(DataTypeExpr::Literal),
         },
-        IF::ReduceHorizontal(callback) => F::ReduceHorizontal(callback),
+        IF::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
         #[cfg(feature = "dtype-struct")]
-        IF::CumReduceHorizontal(callback) => F::CumReduceHorizontal(callback),
+        IF::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
         #[cfg(feature = "dtype-struct")]
         IF::CumFoldHorizontal {
             callback,
+            returns_scalar,
+            return_dtype,
             include_init,
         } => F::CumFoldHorizontal {
             callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
             include_init,
         },
 

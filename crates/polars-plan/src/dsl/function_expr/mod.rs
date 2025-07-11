@@ -307,12 +307,22 @@ pub enum FunctionExpr {
         returns_scalar: bool,
         return_dtype: Option<DataTypeExpr>,
     },
-    ReduceHorizontal(PlanCallback<(Series, Series), Series>),
+    ReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
+    },
     #[cfg(feature = "dtype-struct")]
-    CumReduceHorizontal(PlanCallback<(Series, Series), Series>),
+    CumReduceHorizontal {
+        callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
+    },
     #[cfg(feature = "dtype-struct")]
     CumFoldHorizontal {
         callback: PlanCallback<(Series, Series), Series>,
+        returns_scalar: bool,
+        return_dtype: Option<DataTypeExpr>,
         include_init: bool,
     },
 
@@ -418,20 +428,36 @@ impl Hash for FunctionExpr {
                 callback,
                 returns_scalar,
                 return_dtype,
+            }
+            | ReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
             } => {
                 callback.hash(state);
                 returns_scalar.hash(state);
                 return_dtype.hash(state);
             },
-            ReduceHorizontal(callback) => callback.hash(state),
             #[cfg(feature = "dtype-struct")]
-            CumReduceHorizontal(callback) => callback.hash(state),
+            CumReduceHorizontal {
+                callback,
+                returns_scalar,
+                return_dtype,
+            } => {
+                callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal {
                 callback,
+                returns_scalar,
+                return_dtype,
                 include_init,
             } => {
                 callback.hash(state);
+                returns_scalar.hash(state);
+                return_dtype.hash(state);
                 include_init.hash(state);
             },
             SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
@@ -794,9 +820,9 @@ impl Display for FunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             FoldHorizontal { .. } => "fold",
-            ReduceHorizontal(..) => "reduce",
+            ReduceHorizontal { .. } => "reduce",
             #[cfg(feature = "dtype-struct")]
-            CumReduceHorizontal(..) => "cum_reduce",
+            CumReduceHorizontal { .. } => "cum_reduce",
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal { .. } => "cum_fold",
             MaxHorizontal => "max_horizontal",
