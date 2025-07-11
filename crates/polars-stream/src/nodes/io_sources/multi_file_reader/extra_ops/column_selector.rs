@@ -110,11 +110,13 @@ impl ColumnSelector {
                             struct_ca.len(),
                             &field_columns,
                         )?
+                        .with_outer_validity(struct_ca.rechunk_validity())
                         .into_column()
                     },
 
                     TF::ListValuesMapping { values_selector } => {
                         use polars_core::prelude::{LargeListArray, ListChunked};
+
                         let list_ca = input.list().unwrap().clone();
 
                         let values_dtype = {
@@ -188,6 +190,7 @@ impl ColumnSelector {
                     TF::FixedSizeListValuesMapping { values_selector } => {
                         use arrow::array::FixedSizeListArray;
                         use polars_core::prelude::ArrayChunked;
+
                         let array_ca = input.array().unwrap().clone();
 
                         let values_dtype = {
