@@ -769,7 +769,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     options,
                 })
             },
-            #[cfg(all(feature = "range", feature = "temporal"))]
+            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
@@ -817,7 +817,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     return Ok(None);
                 }
             },
-            #[cfg(all(feature = "range", feature = "temporal"))]
+            #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
             AExpr::Function {
                 function:
                     ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {

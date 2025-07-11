@@ -6,6 +6,64 @@ use polars_core::series::IsSorted;
 
 use crate::prelude::*;
 
+/// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
+pub fn date_range(
+    name: PlSmallStr,
+    start: Option<NaiveDateTime>,
+    end: Option<NaiveDateTime>,
+    interval: Option<Duration>,
+    num_samples: Option<i64>,
+    closed: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<&Tz>,
+) -> PolarsResult<DatetimeChunked> {
+    match (start, end, interval, num_samples) {
+        (Some(start), Some(end), Some(interval), None) => {
+            let start = start.and_utc().timestamp_nanos_opt().unwrap();
+            let end = end.and_utc().timestamp_nanos_opt().unwrap();
+            datetime_range_impl_start_end_interval(name, start, end, interval, closed, tu, tz)
+        },
+        (Some(start), Some(end), None, Some(num_samples)) => {
+            let start = start.and_utc().timestamp_nanos_opt().unwrap();
+            let end = end.and_utc().timestamp_nanos_opt().unwrap();
+            datetime_range_impl_start_end_samples(name, start, end, num_samples, closed, tu, tz)
+        },
+        (Some(start), None, Some(interval), Some(num_samples)) => {
+            let start = start.and_utc().timestamp_nanos_opt().unwrap();
+            datetime_range_impl_start_interval_samples(
+                name,
+                start,
+                interval,
+                num_samples,
+                closed,
+                tu,
+                tz,
+            )
+        },
+        (None, Some(end), Some(interval), Some(num_samples)) => {
+            let end = end.and_utc().timestamp_nanos_opt().unwrap();
+            let out = datetime_range_impl_start_interval_samples(
+                name,
+                end,
+                -interval,
+                num_samples,
+                closed,
+                tu,
+                tz,
+            )?;
+            let out = out.into_physical().reverse();
+            match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => Ok(out.into_datetime(tu, Some(TimeZone::from_chrono(tz)))),
+                _ => Ok(out.into_datetime(tu, None)),
+            }
+        },
+        _ => {
+            polars_bail!(InvalidOperation: "Exactly three of 'start', 'end', 'interval', and 'num_samples' must be supplied.");
+        },
+    }
+}
+
 pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     // ~584 year around 1970
     !(ndt.year() > 2554 || ndt.year() < 1386)
