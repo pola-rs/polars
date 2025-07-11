@@ -483,7 +483,8 @@ impl ColumnSelectorBuilder {
         let incoming_dtype = materialize_unknown(incoming_dtype);
         let target_dtype = materialize_unknown(target_dtype);
 
-        let attach_transforms = |options: CastOptions| -> PolarsResult<ColumnSelector> {
+        // Attaches a cast to the target dtype.
+        let attach_cast = |options: CastOptions| -> PolarsResult<ColumnSelector> {
             Ok(ColumnTransform::Cast {
                 dtype: target_dtype.clone().into_owned(),
                 options,
@@ -504,7 +505,7 @@ impl ColumnSelectorBuilder {
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
                 Some(ref v) if v == target_dtype => {
                     // Use overflowing on lossless cast to elide validation.
-                    attach_transforms(CastOptions::Overflowing)
+                    attach_cast(CastOptions::Overflowing)
                 },
                 _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
             };
@@ -531,7 +532,7 @@ impl ColumnSelectorBuilder {
                 _ => unreachable!(),
             };
 
-            return attach_transforms(CastOptions::NonStrict);
+            return attach_cast(CastOptions::NonStrict);
         }
 
         if let (
@@ -575,7 +576,7 @@ impl ColumnSelectorBuilder {
             }
 
             // Dtype differs and we are allowed to coerce
-            return attach_transforms(CastOptions::NonStrict);
+            return attach_cast(CastOptions::NonStrict);
         }
 
         mismatch_err("")
