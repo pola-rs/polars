@@ -89,13 +89,13 @@ def test_concat_cat_mismatch() -> None:
             with pytest.raises(SchemaError):
                 pl.concat([left, right])
 
-    for left in range(len(CATS)):
-        for right in range(len(CATS)):
-            if left == right:
+    for li in range(len(CATS)):
+        for ri in range(len(CATS)):
+            if li == ri:
                 continue
 
-            ldf = pl.DataFrame({"x": []}, schema={"x": pl.Categorical(CATS[left])})
-            rdf = pl.DataFrame({"x": []}, schema={"x": pl.Categorical(CATS[right])})
+            ldf = pl.DataFrame({"x": []}, schema={"x": pl.Categorical(CATS[li])})
+            rdf = pl.DataFrame({"x": []}, schema={"x": pl.Categorical(CATS[ri])})
             with pytest.raises(SchemaError):
                 pl.concat([ldf, rdf])
 

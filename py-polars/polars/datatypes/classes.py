@@ -727,7 +727,7 @@ class Categories:
         """Returns whether this refers to the global categories."""
         return self._categories.is_global()
 
-    def __getitem__(self, key: str | int) -> str | int:
+    def __getitem__(self, key: str | int | None) -> str | int | None:
         if key is None:
             return key
         elif isinstance(key, str):
@@ -749,7 +749,7 @@ class Categories:
     def __hash__(self) -> int:
         return hash(self._categories)
 
-    def __eq__(self, other: Categories) -> bool:
+    def __eq__(self, other: object) -> bool:
         return isinstance(other, Categories) and self._categories == other._categories
 
 
@@ -768,9 +768,12 @@ class Categorical(DataType):
     """
 
     ordering: CategoricalOrdering | None
+    categories: Categories
 
     def __init__(
-        self, ordering: CategoricalOrdering | None = "lexical", **kwargs: Any
+        self,
+        ordering: CategoricalOrdering | Categories | None = "lexical",
+        **kwargs: Any,
     ) -> None:
         # Future API will be this, already support it for backwards compat.
         if isinstance(ordering, Categories):
