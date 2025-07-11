@@ -1523,7 +1523,7 @@ def cum_reduce(
     return_dtype
         Output datatype.
         If not set, the dtype will be inferred based on the dtype of the input
-        expresions.
+        expressions.
     include_init
         Include the initial accumulator state as struct field.
 
