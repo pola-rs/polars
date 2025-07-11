@@ -5,6 +5,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
 use polars_io::utils::compression::maybe_decompress_bytes;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::*;
 
@@ -507,7 +508,7 @@ pub fn ndjson_file_info(
 
 // Add flags that influence metadata/schema here
 #[derive(Eq, Hash, PartialEq)]
-enum CachedSourceKey {
+pub(super) enum CachedSourceKey {
     ParquetIpc {
         first_path: PlPath,
         schema_overwrite: Option<SchemaRef>,
@@ -731,4 +732,190 @@ impl SourcesToFileInfo {
             Ok(v)
         }
     }
+}
+
+pub(crate) fn find_reachable_dsl_scans<'a>(
+    lp: &'a DslPlan,
+    scans: &mut PlHashMap<CachedSourceKey, (&'a ScanSources, &'a UnifiedScanArgs, &'a FileScanDsl)>,
+) -> PolarsResult<()> {
+    let mut stack = Vec::with_capacity(16);
+    stack.push(lp);
+
+    while let Some(lp) = stack.pop() {
+        match lp {
+            DslPlan::PythonScan { .. } | DslPlan::DataFrameScan { .. } => {},
+            DslPlan::Scan {
+                sources,
+                unified_scan_args,
+                scan_type,
+                cached_ir: _,
+            } => {
+                let scan_type = scan_type.as_ref();
+                let key = sources
+                    .clone()
+                    .into_paths()
+                    .and_then(|paths| match scan_type {
+                        FileScanDsl::Csv { options } => Some(CachedSourceKey::CsvJson {
+                            paths,
+                            schema: options.schema.clone(),
+                            schema_overwrite: options.schema_overwrite.clone(),
+                        }),
+                        FileScanDsl::NDJson { options } => Some(CachedSourceKey::CsvJson {
+                            paths,
+                            schema: options.schema.clone(),
+                            schema_overwrite: options.schema_overwrite.clone(),
+                        }),
+                        FileScanDsl::Parquet { options } => Some(CachedSourceKey::ParquetIpc {
+                            first_path: paths.first()?.clone(),
+                            schema_overwrite: options.schema.clone(),
+                        }),
+                        FileScanDsl::Ipc { .. } => Some(CachedSourceKey::ParquetIpc {
+                            first_path: paths.first()?.clone(),
+                            schema_overwrite: None,
+                        }),
+                        FileScanDsl::PythonDataset { .. } => None,
+                        FileScanDsl::Anonymous { .. } => None,
+                    });
+
+                if let Some(key) = key {
+                    scans.insert(key, (sources, unified_scan_args, scan_type));
+                }
+            },
+
+            DslPlan::Filter { input, .. }
+            | DslPlan::Cache { input }
+            | DslPlan::Select { input, .. }
+            | DslPlan::GroupBy { input, .. }
+            | DslPlan::HStack { input, .. }
+            | DslPlan::MatchToSchema { input, .. }
+            | DslPlan::Distinct { input, .. }
+            | DslPlan::Slice { input, .. }
+            | DslPlan::MapFunction { input, .. }
+            | DslPlan::ExtContext { input, .. }
+            | DslPlan::Sort { input, .. }
+            | DslPlan::Sink { input, .. } => stack.push(input.as_ref()),
+            DslPlan::Join {
+                input_left,
+                input_right,
+                ..
+            }
+            | DslPlan::MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => stack.extend([input_left.as_ref(), input_right.as_ref()]),
+            DslPlan::Union { inputs, .. }
+            | DslPlan::HConcat { inputs, .. }
+            | DslPlan::SinkMultiple { inputs } => stack.extend(inputs.iter()),
+
+            // @TODO
+            DslPlan::IR { .. } => {},
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn resolve_dsl_scans<'a>(
+    scans: PlHashMap<CachedSourceKey, (&'a ScanSources, &'a UnifiedScanArgs, &'a FileScanDsl)>,
+) -> PolarsResult<SourcesToFileInfo> {
+    let scans = scans.into_iter().collect::<Vec<_>>();
+    let inner = scans
+        .into_par_iter()
+        .map(|(key, (sources, args, dsl))| {
+            let (file_info, file_scan) = match dsl {
+                #[cfg(feature = "parquet")]
+                FileScanDsl::Parquet { options } => {
+                    let options = options.clone();
+                    if let Some(schema) = &options.schema {
+                        // We were passed a schema, we don't have to call `parquet_file_info`,
+                        // but this does mean we don't have `row_estimation` and `first_metadata`.
+                        (
+                            FileInfo {
+                                schema: schema.clone(),
+                                reader_schema: Some(either::Either::Left(Arc::new(
+                                    schema.to_arrow(CompatLevel::newest()),
+                                ))),
+                                row_estimation: (None, 0),
+                            },
+                            FileScanIR::Parquet {
+                                options,
+                                metadata: None,
+                            },
+                        )
+                    } else {
+                        let (file_info, metadata) = scans::parquet_file_info(
+                            sources,
+                            args.row_index.as_ref(),
+                            args.cloud_options.as_ref(),
+                        )
+                        .map_err(|e| e.context(failed_here!(parquet scan)))?;
+                        (file_info, FileScanIR::Parquet { options, metadata })
+                    }
+                },
+                #[cfg(feature = "ipc")]
+                FileScanDsl::Ipc { options } => {
+                    let options = options.clone();
+                    let (file_info, md) = scans::ipc_file_info(
+                        sources,
+                        args.row_index.as_ref(),
+                        args.cloud_options.as_ref(),
+                    )
+                    .map_err(|e| e.context(failed_here!(ipc scan)))?;
+                    (
+                        file_info,
+                        FileScanIR::Ipc {
+                            options,
+                            metadata: Some(Arc::new(md)),
+                        },
+                    )
+                },
+                #[cfg(feature = "json")]
+                FileScanDsl::NDJson { options } => {
+                    let options = options.clone();
+                    (
+                        scans::ndjson_file_info(
+                            sources,
+                            args.row_index.as_ref(),
+                            &options,
+                            args.cloud_options.as_ref(),
+                        )
+                        .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+                        FileScanIR::NDJson { options },
+                    )
+                },
+
+                #[cfg(feature = "csv")]
+                FileScanDsl::Csv { options } => {
+                    let mut args = args.clone();
+                    // TODO: This is a hack. We conditionally set `allow_missing_columns` to
+                    // mimic existing behavior, but this should be taken from a user provided
+                    // parameter instead.
+                    if options.schema.is_some() && options.has_header {
+                        args.missing_columns_policy = MissingColumnsPolicy::Insert;
+                    }
+
+                    let mut options = options.clone();
+
+                    (
+                        scans::csv_file_info(
+                            sources,
+                            args.row_index.as_ref(),
+                            &mut options,
+                            args.cloud_options.as_ref(),
+                        )
+                        .map_err(|e| e.context(failed_here!(csv scan)))?,
+                        FileScanIR::Csv { options },
+                    )
+                },
+                _ => unreachable!(),
+            };
+
+            PolarsResult::Ok((key, (file_info, file_scan)))
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    Ok(SourcesToFileInfo {
+        inner: inner.into_iter().collect(),
+    })
 }
