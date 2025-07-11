@@ -230,12 +230,3 @@ impl<Args: PlanCallbackArgs, Out: PlanCallbackOut> PlanCallback<Args, Out> {
         Self::Rust(SpecialEq::new(Arc::new(f) as _))
     }
 }
-
-#[cfg(not(feature = "python"))]
-impl<Args, Out> PlanCallback<Args, Out> {
-    pub fn call(&self, args: Args) -> PolarsResult<Out> {
-        match self {
-            Self::Rust(f) => f(args),
-        }
-    }
-}
