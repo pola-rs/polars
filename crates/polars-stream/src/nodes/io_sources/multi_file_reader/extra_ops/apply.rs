@@ -106,7 +106,8 @@ impl ApplyExtraOps {
                     predicate: None,
                 };
 
-                let schema_before_reorder = if incoming_schema.len() == final_output_schema.len() {
+                let schema_before_selection = if incoming_schema.len() == final_output_schema.len()
+                {
                     // Incoming schema already has all of the columns, either because no extra columns were needed, or
                     // the extra columns were attached by the reader (which is just Parquet when it has a predicate).
                     incoming_schema.clone()
@@ -126,7 +127,8 @@ impl ApplyExtraOps {
                     missing_columns_policy,
                 };
                 // Tracks if the input already has all columns in the right order and type.
-                let mut is_input_passthrough = true;
+                let mut is_input_passthrough =
+                    schema_before_selection.len() == final_output_schema.len();
 
                 let file_path_col_idx = include_file_paths.as_ref().map_or(
                     // Default usize::MAX as it is not a valid index
@@ -163,7 +165,7 @@ impl ApplyExtraOps {
                         ))
                     } else {
                         selector_builder.build_selector_for_column(
-                            &schema_before_reorder,
+                            &schema_before_selection,
                             output_name,
                             output_dtype,
                         )?
