@@ -99,8 +99,6 @@ def test_exclude_keys_in_aggregation_16170(expr: pl.Expr, expected: list[str]) -
 
     # wildcard excludes aggregation column
     result = df.lazy().group_by("A").agg(expr)
-    print(result.collect_schema().names())
-    print(expected)
     assert result.collect_schema().names() == expected
 
 
