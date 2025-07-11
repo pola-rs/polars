@@ -1064,39 +1064,29 @@ fn resolve_with_columns(
 ) -> PolarsResult<(Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let mut output_schema = (**input_schema).clone();
-    let (exprs, exprs_schema) = prepare_projection(exprs, &input_schema, opt_flags)?;
+    let exprs = rewrite_projections(exprs, &PlHashSet::new(), &input_schema, opt_flags)?;
+    let mut output_names = PlHashSet::with_capacity(exprs.len());
 
-    let mut eirs = to_expr_irs(
+    let eirs = to_expr_irs(
         exprs,
         expr_arena,
         &input_schema,
         opt_flags.contains(OptFlags::EAGER),
     )?;
+    for eir in eirs.iter() {
+        let field = eir.field(&input_schema, Context::Default, expr_arena)?;
 
-    if exprs_schema.len() < eirs.len() {
-        // Find the duplicate column
-        let mut output_names = PlHashSet::with_capacity(exprs_schema.len());
-        for eir in eirs {
-            let name = eir.output_name();
-            if !output_names.insert(name.clone()) {
-                let msg = format!(
-                    "the name '{name}' passed to `LazyFrame.with_columns` is duplicate\n\n\
+        if !output_names.insert(field.name().clone()) {
+            let msg = format!(
+                "the name '{}' passed to `LazyFrame.with_columns` is duplicate\n\n\
                     It's possible that multiple expressions are returning the same default column name. \
                     If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
                     duplicate column names.",
-                );
-                polars_bail!(ComputeError: msg)
-            }
+                field.name()
+            );
+            polars_bail!(ComputeError: msg)
         }
-        unreachable!();
-    }
-
-    for eir in eirs.iter_mut() {
-        let name = eir.output_name();
-        let dtype = exprs_schema.get(name).unwrap();
-        output_schema.with_column(name.clone(), dtype.clone());
-        // Cache the dtype, since we have it resolved
-        eir.set_dtype(dtype.clone());
+        output_schema.with_column(field.name, field.dtype.materialize_unknown(true)?);
     }
 
     Ok((eirs, Arc::new(output_schema)))
