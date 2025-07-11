@@ -4,11 +4,11 @@ import io
 import subprocess
 import sys
 
-import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
-from polars.exceptions import SchemaError, ComputeError
 import pytest
 
+import polars as pl
+from polars.exceptions import ComputeError, SchemaError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 CATS = [
     pl.Categories(),
@@ -18,8 +18,9 @@ CATS = [
     pl.Categories("foo", "bar"),
     pl.Categories("foo", "baz"),
     pl.Categories("foo", "bar", physical=pl.UInt8),
-    pl.Categories.random()
+    pl.Categories.random(),
 ]
+
 
 def test_categories_eq_hash() -> None:
     left = CATS
@@ -100,7 +101,7 @@ def test_concat_cat_mismatch() -> None:
 
 
 def test_cat_overflow() -> None:
-    c = pl.Categories.random(physical = pl.UInt8)
+    c = pl.Categories.random(physical=pl.UInt8)
     str_s = pl.Series(range(255)).cast(pl.String)
     cat_s = str_s.cast(pl.Categorical(c))
     assert_series_equal(str_s, cat_s.cast(pl.String))

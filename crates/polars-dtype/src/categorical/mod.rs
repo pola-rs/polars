@@ -154,12 +154,12 @@ impl Categories {
     pub fn global() -> Arc<Self> {
         GLOBAL_CATEGORIES.clone()
     }
-    
+
     /// Returns whether this refers to the global categories.
     pub fn is_global(self: &Arc<Self>) -> bool {
         Arc::ptr_eq(self, &*GLOBAL_CATEGORIES)
     }
-    
+
     /// Generates a Categories with a random (UUID) name.
     pub fn random(namespace: PlSmallStr, physical: CategoricalPhysical) -> Arc<Self> {
         Self::new(uuid::Uuid::new_v4().to_string().into(), namespace, physical)
@@ -179,12 +179,12 @@ impl Categories {
     pub fn physical(&self) -> CategoricalPhysical {
         self.id.physical
     }
-    
+
     /// A stable hash of this Categories object, not the contained categories.
     pub fn hash(&self) -> u64 {
         PlFixedStateQuality::default().hash_one(&self.id)
     }
-    
+
     /// The mapping for this Categories object. If no mapping currently exists
     /// it creates a new empty mapping.
     pub fn mapping(&self) -> Arc<CategoricalMapping> {

@@ -651,10 +651,17 @@ class Categories:
 
     _categories: PyCategories
 
-    def __init__(self, name: str | None = None, namespace: str = "", physical: PolarsDataType = pldt.UInt32) -> None:
+    def __init__(
+        self,
+        name: str | None = None,
+        namespace: str = "",
+        physical: PolarsDataType = pldt.UInt32,
+    ) -> None:
         if name is None or name == "":
             assert namespace == "", "global categories may not specify a namespace"
-            assert physical == pldt.UInt32, "global categories may not specify a physical type"
+            assert physical == pldt.UInt32, (
+                "global categories may not specify a physical type"
+            )
             self._categories = PyCategories.global_categories()
             return
 
@@ -677,7 +684,9 @@ class Categories:
         return self
 
     @staticmethod
-    def random(namespace: str = "", physical: PolarsDataType = pldt.UInt32) -> Categories:
+    def random(
+        namespace: str = "", physical: PolarsDataType = pldt.UInt32
+    ) -> Categories:
         """Creates a new Categories with a random name."""
         if physical == pldt.UInt32:
             internal_phys = "u32"
@@ -689,7 +698,9 @@ class Categories:
             msg = "Categorical physical must be one of pl.UInt(8|16|32)"
             raise TypeError(msg)
 
-        return Categories._from_py_categories(PyCategories.random(namespace, internal_phys))
+        return Categories._from_py_categories(
+            PyCategories.random(namespace, internal_phys)
+        )
 
     def name(self) -> str:
         """The name of this `Categories`."""
@@ -759,9 +770,7 @@ class Categorical(DataType):
     ordering: CategoricalOrdering | None
 
     def __init__(
-        self,
-        ordering: CategoricalOrdering | None = "lexical",
-        **kwargs: Any
+        self, ordering: CategoricalOrdering | None = "lexical", **kwargs: Any
     ) -> None:
         # Future API will be this, already support it for backwards compat.
         if isinstance(ordering, Categories):

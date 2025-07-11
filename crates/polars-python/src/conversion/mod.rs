@@ -1,15 +1,14 @@
 pub(crate) mod any_value;
-pub(crate) mod chunked_array;
 mod categorical;
+pub(crate) mod chunked_array;
 mod datetime;
-
-pub use categorical::PyCategories;
 
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 
+pub use categorical::PyCategories;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
@@ -287,7 +286,8 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             DataType::Categorical(cats, _) => {
                 let categories_class = pl.getattr(intern!(py, "Categories"))?;
                 let categorical_class = pl.getattr(intern!(py, "Categorical"))?;
-                let categories = categories_class.call_method1("_from_py_categories", (PyCategories::from(cats.clone()),))?;
+                let categories = categories_class
+                    .call_method1("_from_py_categories", (PyCategories::from(cats.clone()),))?;
                 let kwargs = [("categories", categories)];
                 categorical_class.call((), Some(&kwargs.into_py_dict(py)?))
             },
