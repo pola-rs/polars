@@ -575,7 +575,7 @@ impl ColumnSelectorBuilder {
             }
 
             // Dtype differs and we are allowed to coerce
-            return attach_transforms(CastOptions::Strict);
+            return attach_transforms(CastOptions::NonStrict);
         }
 
         mismatch_err("")
