@@ -80,12 +80,12 @@ impl ColumnSelector {
                 .into_column()
                 .new_from_index(0, output_height),
 
-            S::Transformed(nested) => {
-                let input: Column = nested.0.select_from_columns(columns, output_height)?;
+            S::Transformed(transform) => {
+                let input: Column = transform.0.select_from_columns(columns, output_height)?;
 
                 use ColumnSelectorTransform as TF;
 
-                match &nested.1 {
+                match &transform.1 {
                     TF::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
 
                     TF::Rename { .. } => {
