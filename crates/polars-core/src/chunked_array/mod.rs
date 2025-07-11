@@ -258,7 +258,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Set flags for the [`ChunkedArray`]
-    pub(crate) fn set_flags(&mut self, flags: StatisticsFlags) {
+    pub fn set_flags(&mut self, flags: StatisticsFlags) {
         self.flags = StatisticsFlagsIM::new(flags);
     }
 
