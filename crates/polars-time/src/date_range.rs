@@ -7,6 +7,7 @@ use polars_core::series::IsSorted;
 use crate::prelude::*;
 
 /// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
+#[allow(clippy::too_many_arguments)]
 pub fn date_range(
     name: PlSmallStr,
     start: Option<NaiveDateTime>,

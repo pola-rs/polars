@@ -4,28 +4,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:selectors_df]
 
     use chrono::prelude::*;
-    use polars::prelude::{date_range, datetime_range, lit};
+    use polars::time::*;
 
     let df = df!(
         "id" => &[9, 4, 2],
         "place" => &["Mars", "Earth", "Saturn"],
         "date" => date_range(
-            Some(lit(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap())),
-            Some(lit(NaiveDate::from_ymd_opt(2022, 1, 3).unwrap().and_hms_opt(0, 0, 0).unwrap())),
-            Some(Duration::parse("1d")),
-            None,
-            ClosedWindow::Both,
-        ),
+            "date".into(),
+            Some(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap()),  // start
+            Some(NaiveDate::from_ymd_opt(2022, 1, 3).unwrap().and_hms_opt(0, 0, 0).unwrap()),  // end
+            Some(Duration::parse("1d")),  // interval
+            None, // num_samples
+            ClosedWindow::Both, // closed
+            TimeUnit::Milliseconds, None // time unit
+        )?,
         "sales" => &[33.4, 2142134.1, 44.7],
         "has_people" => &[false, true, false],
-        "logged_at" => datetime_range(
-            Some(lit(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap())),
-            Some(lit(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 2).unwrap())),
-            Some(Duration::parse("1s")),
-            None,
+        "logged_at" => date_range(
+            "logged_at".into(),
+            Some(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap()),  // start
+            Some(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 2).unwrap()),  // end
+            Some(Duration::parse("1s")),  // interval
+            None, // num_samples
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
-            None,
+            None
         )?,
     )?
     .with_row_index("index".into(), None)?;

@@ -23,9 +23,10 @@ fn test_group_by_dynamic_week_bounds() -> PolarsResult<()> {
         .unwrap();
     let range = polars_time::date_range(
         "dt".into(),
-        start,
-        stop,
-        Duration::parse("1d"),
+        Some(start),
+        Some(stop),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
         None,

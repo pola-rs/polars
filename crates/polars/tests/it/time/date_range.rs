@@ -15,9 +15,10 @@ fn test_time_units_9413() {
         .unwrap();
     let actual = date_range(
         "date".into(),
-        start,
-        stop,
-        Duration::parse("1d"),
+        Some(start),
+        Some(stop),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         None,
@@ -36,9 +37,10 @@ Series: 'date' [datetime[ms]]
     assert_eq!(result, expected);
     let actual = date_range(
         "date".into(),
-        start,
-        stop,
-        Duration::parse("1d"),
+        Some(start),
+        Some(stop),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Microseconds,
         None,
@@ -57,9 +59,10 @@ Series: 'date' [datetime[μs]]
     assert_eq!(result, expected);
     let actual = date_range(
         "date".into(),
-        start,
-        stop,
-        Duration::parse("1d"),
+        Some(start),
+        Some(stop),
+        Some(Duration::parse("1d")),
+        None,
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         None,
