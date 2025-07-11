@@ -356,23 +356,6 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     assert df.select(cs.datetime("ms")).columns == ["d5"]
 
     # bonus check; significantly more verbose, but equivalent to a selector -
-    print()
-    print()
-    print(
-        pl.all().exclude(
-            pl.Datetime("ms", time_zone="*"), pl.Datetime("ns", time_zone="*")
-        )
-    )
-    print(~cs.datetime(["ms", "ns"], time_zone="*"))
-    print(
-        df.select(
-            pl.all().exclude(
-                pl.Datetime("ms", time_zone="*"), pl.Datetime("ns", time_zone="*")
-            )
-        ).columns
-    )
-    print(df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns)
-
     assert (
         df.select(
             pl.all().exclude(
