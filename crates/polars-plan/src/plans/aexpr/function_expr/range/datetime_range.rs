@@ -267,6 +267,7 @@ fn dt_ranges_start_interval_samples(
     out.cast(&to_type)
 }
 
+#[cfg(feature = "dtype-date")]
 pub(super) fn date_range(
     s: &[Column],
     interval: Option<Duration>,
@@ -299,6 +300,7 @@ pub(super) fn date_range(
     .map(|c| c.cast(&DataType::Date))?
 }
 
+#[cfg(feature = "dtype-date")]
 pub(super) fn date_ranges(
     s: &[Column],
     interval: Option<Duration>,
@@ -334,7 +336,7 @@ pub(super) fn date_ranges(
     .map(|c| c.cast(&DataType::List(Box::new(DataType::Date))))?
 }
 
-#[cfg(all(feature = "range", feature = "dtype-datetime"))]
+#[cfg(feature = "dtype-datetime")]
 pub(super) fn datetime_range(
     s: &[Column],
     interval: Option<Duration>,
@@ -359,6 +361,7 @@ pub(super) fn datetime_range(
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 pub(super) fn datetime_ranges(
     s: &[Column],
     interval: Option<Duration>,
