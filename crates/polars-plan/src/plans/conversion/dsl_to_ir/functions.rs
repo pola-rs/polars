@@ -1,6 +1,7 @@
 use arrow::legacy::error::PolarsResult;
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
+use polars_utils::option::OptionTry;
 
 use super::expr_to_ir::ExprToIRContext;
 use super::*;
@@ -900,6 +901,48 @@ pub(super) fn convert_functions(
             symbol,
             kwargs,
         },
+
+        F::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => I::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
+        },
+        F::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => I::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
+        },
+        #[cfg(feature = "dtype-struct")]
+        F::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => I::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
+        },
+        #[cfg(feature = "dtype-struct")]
+        F::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+            include_init,
+        } => I::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
+            include_init,
+        },
+
         F::MaxHorizontal => I::MaxHorizontal,
         F::MinHorizontal => I::MinHorizontal,
         F::SumHorizontal { ignore_nulls } => I::SumHorizontal { ignore_nulls },

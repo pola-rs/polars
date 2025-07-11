@@ -1,6 +1,5 @@
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
-use polars_plan::utils::PlanCallback;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;

@@ -4,6 +4,7 @@
 
 extern crate core;
 
+pub mod callback;
 #[cfg(feature = "polars_cloud_client")]
 pub mod client;
 pub mod constants;
