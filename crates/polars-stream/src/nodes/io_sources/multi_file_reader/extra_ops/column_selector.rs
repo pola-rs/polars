@@ -26,7 +26,7 @@ use crate::nodes::io_sources::multi_file_reader::extra_ops::apply_extra_columns_
 #[derive(Debug)]
 pub enum ColumnSelector {
     // Note that we Box enum variants to keep `ColumnSelector` small (16 bytes).
-    // This is an optimization that benefits the case where there are many `Position` selectors.
+    // This is an optimization that benefits cases where there are many `Position` selectors.
 
     // Leaf selectors
     /// Take the column at this position.
