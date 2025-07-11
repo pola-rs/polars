@@ -388,11 +388,13 @@ impl ColumnSelectorBuilder {
                                 output_field.dtype(),
                             )))
                         },
-                        MissingColumnsPolicy::Raise => polars_bail!(
-                            ColumnNotFound:
-                            "did not find column {}, consider passing `missing_columns='insert'`",
-                            output_field.name(),
-                        ),
+                        MissingColumnsPolicy::Raise => {
+                            return mismatch_err(&format!(
+                                "encountered missing struct field: {}, \
+                                hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
+                                output_field.name(),
+                            ));
+                        },
                     }
                 };
 
