@@ -755,26 +755,29 @@ pub(crate) fn find_reachable_dsl_scans<'a>(
                     .clone()
                     .into_paths()
                     .and_then(|paths| match scan_type {
+                        #[cfg(feature = "csv")]
                         FileScanDsl::Csv { options } => Some(CachedSourceKey::CsvJson {
                             paths,
                             schema: options.schema.clone(),
                             schema_overwrite: options.schema_overwrite.clone(),
                         }),
+                        #[cfg(feature = "json")]
                         FileScanDsl::NDJson { options } => Some(CachedSourceKey::CsvJson {
                             paths,
                             schema: options.schema.clone(),
                             schema_overwrite: options.schema_overwrite.clone(),
                         }),
+                        #[cfg(feature = "parquet")]
                         FileScanDsl::Parquet { options } => Some(CachedSourceKey::ParquetIpc {
                             first_path: paths.first()?.clone(),
                             schema_overwrite: options.schema.clone(),
                         }),
+                        #[cfg(feature = "ipc")]
                         FileScanDsl::Ipc { .. } => Some(CachedSourceKey::ParquetIpc {
                             first_path: paths.first()?.clone(),
                             schema_overwrite: None,
                         }),
-                        FileScanDsl::PythonDataset { .. } => None,
-                        FileScanDsl::Anonymous { .. } => None,
+                        _ => None,
                     });
 
                 if let Some(key) = key {
