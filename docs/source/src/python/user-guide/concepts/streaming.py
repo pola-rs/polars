@@ -1,7 +1,7 @@
-# --8<-- [start:import]
 import base64
-import polars as pl
 
+# --8<-- [start:import]
+import polars as pl
 # --8<-- [end:import]
 
 # --8<-- [start:streaming]
@@ -30,6 +30,9 @@ q1 = (
 """
 
 # --8<-- [start:createplan]
+import base64
+import polars as pl
+
 q1 = (
     pl.scan_csv("docs/assets/data/iris.csv")
     .filter(pl.col("sepal_length") > 5)
