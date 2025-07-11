@@ -3,6 +3,7 @@ use std::hash::BuildHasher;
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars::prelude::*;
+use polars_core::random::get_global_random_u64;
 use polars_ffi::version_0::SeriesExport;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
@@ -98,6 +99,7 @@ impl PyDataFrame {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
+        let seed = seed.unwrap_or_else(|| get_global_random_u64());
         py.enter_polars_df(|| self.df.sample_n(&n.series, with_replacement, shuffle, seed))
     }
 
@@ -110,6 +112,7 @@ impl PyDataFrame {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
+        let seed = seed.unwrap_or_else(|| get_global_random_u64());
         py.enter_polars_df(|| {
             self.df
                 .sample_frac(&frac.series, with_replacement, shuffle, seed)

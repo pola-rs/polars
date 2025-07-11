@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
 
 use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
@@ -23,7 +22,6 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     output_field: Field,
-    inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl ApplyExpr {
@@ -54,7 +52,6 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             output_field,
-            inlined_eval: Default::default(),
         }
     }
 
@@ -99,8 +96,12 @@ impl ApplyExpr {
     }
 
     /// Evaluates and flattens `Option<Column>` to `Column`.
-    fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
-        if let Some(out) = self.function.call_udf(inputs)? {
+    fn eval_and_flatten(
+        &self,
+        state: &UdfExecutionState,
+        inputs: &mut [Column],
+    ) -> PolarsResult<Column> {
+        if let Some(out) = self.function.call_udf(state, inputs)? {
             Ok(out)
         } else {
             Ok(Column::full_null(
@@ -112,6 +113,7 @@ impl ApplyExpr {
     }
     fn apply_single_group_aware<'a>(
         &self,
+        state: &UdfExecutionState,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = ac.get_values();
@@ -134,7 +136,7 @@ impl ApplyExpr {
             let input_dtype = agg.inner_dtype();
             let input = Column::full_null(PlSmallStr::EMPTY, 0, input_dtype);
 
-            let output = self.eval_and_flatten(&mut [input])?;
+            let output = self.eval_and_flatten(state, &mut [input])?;
             let ca = ListChunked::full(name, output.as_materialized_series(), 0);
             return self.finish_apply_groups(ac, ca);
         }
@@ -147,7 +149,7 @@ impl ApplyExpr {
                 }
                 Ok(self
                     .function
-                    .call_udf(&mut [Column::from(s)])?
+                    .call_udf(state, &mut [Column::from(s)])?
                     .map(|c| c.as_materialized_series().clone()))
             },
         };
@@ -194,6 +196,7 @@ impl ApplyExpr {
     /// Apply elementwise e.g. ignore the group/list indices.
     fn apply_single_elementwise<'a>(
         &self,
+        state: &UdfExecutionState,
         mut ac: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
         let (c, aggregated) = match ac.agg_state() {
@@ -201,18 +204,20 @@ impl ApplyExpr {
                 let ca = c.list().unwrap();
                 let out = ca.apply_to_inner(&|s| {
                     Ok(self
-                        .eval_and_flatten(&mut [s.into_column()])?
+                        .eval_and_flatten(state, &mut [s.into_column()])?
                         .take_materialized_series())
                 })?;
                 (out.into_column(), true)
             },
             AggState::NotAggregated(c) => {
-                let (out, aggregated) = (self.eval_and_flatten(&mut [c.clone()])?, false);
+                let (out, aggregated) = (self.eval_and_flatten(state, &mut [c.clone()])?, false);
                 check_map_output_len(c.len(), out.len(), &self.expr)?;
                 (out, aggregated)
             },
             agg_state => {
-                ac.with_agg_state(agg_state.try_map(|s| self.eval_and_flatten(&mut [s.clone()]))?);
+                ac.with_agg_state(
+                    agg_state.try_map(|s| self.eval_and_flatten(state, &mut [s.clone()]))?,
+                );
                 return Ok(ac);
             },
         };
@@ -222,6 +227,7 @@ impl ApplyExpr {
     }
     fn apply_multiple_group_aware<'a>(
         &self,
+        state: &UdfExecutionState,
         mut acs: Vec<AggregationContext<'a>>,
         df: &DataFrame,
     ) -> PolarsResult<AggregationContext<'a>> {
@@ -253,7 +259,7 @@ impl ApplyExpr {
                 }
                 let out = self
                     .function
-                    .call_udf(&mut container)
+                    .call_udf(state, &mut container)
                     .map(|r| r.map(|c| c.as_materialized_series().clone()))?;
 
                 builder.append_opt_series(out.as_ref())?
@@ -271,7 +277,7 @@ impl ApplyExpr {
                         }
                     }
                     self.function
-                        .call_udf(&mut container)
+                        .call_udf(state, &mut container)
                         .map(|r| r.map(|c| c.as_materialized_series().clone()))
                 })
                 .collect::<PolarsResult<ListChunked>>()?
@@ -319,31 +325,18 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
+        let udf_state = UdfExecutionState {
+            execution_seed: state.execution_seed,
+        };
 
         if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut inputs)
+            self.eval_and_flatten(&udf_state, &mut inputs)
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
+            Ok(self
+                .eval_and_flatten(&udf_state, &mut inputs)?
+                .with_name(in_name))
         }
-    }
-
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        // For predicate evaluation at I/O of:
-        // `lit("2024-01-01").str.strptime()`
-
-        self.inlined_eval
-            .get_or_init(|| {
-                let depth_limit = depth_limit.checked_sub(1)?;
-                let mut inputs = self
-                    .inputs
-                    .iter()
-                    .map(|x| x.evaluate_inline_impl(depth_limit).filter(|s| s.len() == 1))
-                    .collect::<Option<Vec<_>>>()?;
-
-                self.eval_and_flatten(&mut inputs).ok()
-            })
-            .clone()
     }
 
     #[allow(clippy::ptr_arg)]
@@ -358,18 +351,21 @@ impl PhysicalExpr for ApplyExpr {
             expr = self.expr,
             ComputeError: "this expression cannot run in the group_by context",
         );
+        let udf_state = UdfExecutionState {
+            execution_seed: state.execution_seed,
+        };
         if self.inputs.len() == 1 {
             let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
             match self.flags.is_elementwise() {
-                false => self.apply_single_group_aware(ac),
-                true => self.apply_single_elementwise(ac),
+                false => self.apply_single_group_aware(&udf_state, ac),
+                true => self.apply_single_elementwise(&udf_state, ac),
             }
         } else {
             let acs = self.prepare_multiple_inputs(df, groups, state)?;
 
             match self.flags.is_elementwise() {
-                false => self.apply_multiple_group_aware(acs, df),
+                false => self.apply_multiple_group_aware(&udf_state, acs, df),
                 true => {
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
@@ -383,9 +379,10 @@ impl PhysicalExpr for ApplyExpr {
                         }
                     }
                     if has_agg_list || (has_agg_scalar && has_not_agg) {
-                        self.apply_multiple_group_aware(acs, df)
+                        self.apply_multiple_group_aware(&udf_state, acs, df)
                     } else {
                         apply_multiple_elementwise(
+                            &udf_state,
                             acs,
                             self.function.as_ref(),
                             &self.expr,
@@ -414,6 +411,7 @@ impl PhysicalExpr for ApplyExpr {
 }
 
 fn apply_multiple_elementwise<'a>(
+    state: &UdfExecutionState,
     mut acs: Vec<AggregationContext<'a>>,
     function: &dyn ColumnsUdf,
     expr: &Expr,
@@ -436,7 +434,7 @@ fn apply_multiple_elementwise<'a>(
                 args.push(s.into());
                 args.extend_from_slice(&other);
                 Ok(function
-                    .call_udf(&mut args)?
+                    .call_udf(state, &mut args)?
                     .unwrap()
                     .as_materialized_series()
                     .clone())
@@ -464,7 +462,7 @@ fn apply_multiple_elementwise<'a>(
                 .collect::<Vec<_>>();
 
             let input_len = c[0].len();
-            let c = function.call_udf(&mut c)?.unwrap();
+            let c = function.call_udf(state, &mut c)?.unwrap();
             if check_lengths {
                 check_map_output_len(input_len, c.len(), expr)?;
             }
@@ -487,11 +485,16 @@ impl PartitionedAggregation for ApplyExpr {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
         let s = a.evaluate_partitioned(df, groups, state)?;
 
+        let udf_state = UdfExecutionState {
+            execution_seed: state.execution_seed,
+        };
         if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut [s])
+            self.eval_and_flatten(&udf_state, &mut [s])
         } else {
             let in_name = s.name().clone();
-            Ok(self.eval_and_flatten(&mut [s])?.with_name(in_name))
+            Ok(self
+                .eval_and_flatten(&udf_state, &mut [s])?
+                .with_name(in_name))
         }
     }
 

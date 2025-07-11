@@ -119,6 +119,7 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+use crate::dsl::UdfExecutionState;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -336,7 +337,7 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "random")]
     Random {
         method: IRRandomMethod,
-        seed: Option<u64>,
+        seed: Seed,
     },
     SetSortedFlag(IsSorted),
     #[cfg(feature = "ffi_plugin")]
@@ -914,12 +915,13 @@ impl Display for IRFunctionExpr {
 
 #[macro_export]
 macro_rules! wrap {
-    ($e:expr) => {
-        SpecialEq::new(Arc::new($e))
-    };
+    ($e:expr) => {{
+        let f = move |_state: &$crate::dsl::UdfExecutionState, s: &mut [Column]| $e(s);
+        SpecialEq::new(Arc::new(f))
+    }};
 
     ($e:expr, $($args:expr),*) => {{
-        let f = move |s: &mut [Column]| {
+        let f = move |_state: &$crate::dsl::UdfExecutionState, s: &mut [Column]| {
             $e(s, $($args),*)
         };
 
@@ -932,17 +934,17 @@ macro_rules! wrap {
 /// * the first element is the root expression.
 #[macro_export]
 macro_rules! map_as_slice {
-    ($func:path) => {{
-        let f = move |s: &mut [Column]| {
-            $func(s).map(Some)
+    ($func:path $(, $args:expr)* $(,)?) => {{
+        let f = move |_state: &$crate::dsl::UdfExecutionState, s: &mut [Column]| {
+            $func(s $(, $args)*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 
-    ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Column]| {
-            $func(s, $($args),*).map(Some)
+    (@state $func:path $(, $args:expr)* $(,)?) => {{
+        let f = move |state: &$crate::dsl::UdfExecutionState, s: &mut [Column]| {
+            $func(s, state $(, $args)*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -954,7 +956,7 @@ macro_rules! map_as_slice {
 #[macro_export]
 macro_rules! map_owned {
     ($func:path) => {{
-        let f = move |c: &mut [Column]| {
+        let f = move |_state: &$crate::dsl::UdfExecutionState, c: &mut [Column]| {
             let c = std::mem::take(&mut c[0]);
             $func(c).map(Some)
         };
@@ -963,7 +965,7 @@ macro_rules! map_owned {
     }};
 
     ($func:path, $($args:expr),*) => {{
-        let f = move |c: &mut [Column]| {
+        let f = move |_state: &$crate::dsl::UdfExecutionState, c: &mut [Column]| {
             let c = std::mem::take(&mut c[0]);
             $func(c, $($args),*).map(Some)
         };
@@ -975,19 +977,19 @@ macro_rules! map_owned {
 /// `Fn(&Series, args)`
 #[macro_export]
 macro_rules! map {
-    ($func:path) => {{
-        let f = move |c: &mut [Column]| {
+    ($func:path $(, $args:expr)* $(,)?) => {{
+        let f = move |_state: &$crate::dsl::UdfExecutionState, c: &mut [Column]| {
             let c = &c[0];
-            $func(c).map(Some)
+            $func(c $(, $args)*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 
-    ($func:path, $($args:expr),*) => {{
-        let f = move |c: &mut [Column]| {
+    (@state $func:path$(, $args:expr)* $(,)?) => {{
+        let f = move |state: &$crate::dsl::UdfExecutionState, c: &mut [Column]| {
             let c = &c[0];
-            $func(c, $($args),*).map(Some)
+            $func(c, state $(, $args)*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -1280,16 +1282,16 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Random { method, seed } => {
                 use IRRandomMethod::*;
                 match method {
-                    Shuffle => map!(random::shuffle, seed),
+                    Shuffle => map!(@state random::shuffle, seed),
                     Sample {
                         is_fraction,
                         with_replacement,
                         shuffle,
                     } => {
                         if is_fraction {
-                            map_as_slice!(random::sample_frac, with_replacement, shuffle, seed)
+                            map_as_slice!(@state random::sample_frac, with_replacement, shuffle, seed)
                         } else {
-                            map_as_slice!(random::sample_n, with_replacement, shuffle, seed)
+                            map_as_slice!(@state random::sample_n, with_replacement, shuffle, seed)
                         }
                     },
                 }

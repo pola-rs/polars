@@ -6,6 +6,7 @@ use std::time::Duration;
 use bitflags::bitflags;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
+use polars_core::random::get_global_random_u64;
 use polars_ops::prelude::ChunkJoinOptIds;
 use polars_utils::unique_id::UniqueId;
 
@@ -111,6 +112,9 @@ pub struct ExecutionState {
     pub branch_idx: usize,
     pub flags: AtomicU8,
     pub ext_contexts: Arc<Vec<DataFrame>>,
+    /// A seed that is generated for this seed and combined with non-deterministic operator seeds
+    /// to generate the final seed.
+    pub execution_seed: u64, 
     node_timer: Option<NodeTimer>,
     stop: Arc<AtomicBool>,
 }
@@ -121,6 +125,7 @@ impl ExecutionState {
         if verbose() {
             flags |= StateFlags::VERBOSE;
         }
+        
         Self {
             df_cache: Default::default(),
             schema_cache: Default::default(),
@@ -129,6 +134,7 @@ impl ExecutionState {
             flags: AtomicU8::new(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
             node_timer: None,
+            execution_seed: get_global_random_u64(),
             stop: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -194,6 +200,7 @@ impl ExecutionState {
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
+            execution_seed: self.execution_seed,
         }
     }
 
@@ -307,6 +314,7 @@ impl Clone for ExecutionState {
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
+            execution_seed: self.execution_seed,
         }
     }
 }

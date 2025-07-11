@@ -363,7 +363,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     is_fraction,
                     with_replacement,
                     shuffle,
-                    seed,
+                    seed: seed.into_optional(),
                 },
                 IL::Slice => L::Slice,
                 IL::Shift => L::Shift,
@@ -1020,7 +1020,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                         shuffle,
                     },
                 },
-                seed,
+                seed: seed.into_optional(),
             }
         },
         IF::SetSortedFlag(s) => F::SetSortedFlag(s),

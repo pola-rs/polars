@@ -98,7 +98,7 @@ impl ColumnsUdf for PythonUdfExpression {
         Ok(())
     }
 
-    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
+    fn call_udf(&self, _state: &UdfExecutionState, s: &mut [Column]) -> PolarsResult<Option<Column>> {
         let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
 
         let output_type = self

@@ -433,7 +433,6 @@ fn create_physical_expr_inner(
                 dtype: dtype.clone(),
                 expr: node_to_expr(expression, expr_arena),
                 options: *options,
-                inlined_eval: Default::default(),
             }))
         },
         Ternary {
@@ -573,7 +572,7 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             let skip_empty = *skip_empty;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| {
+                move |_state: &UdfExecutionState, c: &mut [polars_core::frame::column::Column]| {
                     c[0].explode(skip_empty).map(Some)
                 },
             ) as Arc<dyn ColumnsUdf>);

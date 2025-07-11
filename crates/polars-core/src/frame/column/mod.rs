@@ -1337,7 +1337,7 @@ impl Column {
     }
 
     #[cfg(feature = "random")]
-    pub fn shuffle(&self, seed: Option<u64>) -> Self {
+    pub fn shuffle(&self, seed: u64) -> Self {
         // @scalar-opt
         self.as_materialized_series().shuffle(seed).into()
     }
@@ -1348,7 +1348,7 @@ impl Column {
         frac: f64,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         self.as_materialized_series()
             .sample_frac(frac, with_replacement, shuffle, seed)
@@ -1361,7 +1361,7 @@ impl Column {
         n: usize,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         self.as_materialized_series()
             .sample_n(n, with_replacement, shuffle, seed)

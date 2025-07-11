@@ -20,7 +20,7 @@ pub enum IRListFunction {
         is_fraction: bool,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: Seed,
     },
     Slice,
     Shift,
@@ -310,9 +310,9 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 seed,
             } => {
                 if is_fraction {
-                    map_as_slice!(sample_fraction, with_replacement, shuffle, seed)
+                    map_as_slice!(@state sample_fraction, with_replacement, shuffle, seed)
                 } else {
-                    map_as_slice!(sample_n, with_replacement, shuffle, seed)
+                    map_as_slice!(@state sample_n, with_replacement, shuffle, seed)
                 }
             },
             Slice => wrap!(slice),
@@ -380,10 +380,12 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 #[cfg(feature = "list_sample")]
 pub(super) fn sample_n(
     s: &[Column],
+    state: &UdfExecutionState,
     with_replacement: bool,
     shuffle: bool,
-    seed: Option<u64>,
+    seed: Seed,
 ) -> PolarsResult<Column> {
+    let seed = seed.get(state.execution_seed);
     let list = s[0].list()?;
     let n = &s[1];
     list.lst_sample_n(n.as_materialized_series(), with_replacement, shuffle, seed)
@@ -393,10 +395,12 @@ pub(super) fn sample_n(
 #[cfg(feature = "list_sample")]
 pub(super) fn sample_fraction(
     s: &[Column],
+    state: &UdfExecutionState,
     with_replacement: bool,
     shuffle: bool,
-    seed: Option<u64>,
+    seed: Seed,
 ) -> PolarsResult<Column> {
+    let seed = seed.get(state.execution_seed);
     let list = s[0].list()?;
     let fraction = &s[1];
     list.lst_sample_fraction(
