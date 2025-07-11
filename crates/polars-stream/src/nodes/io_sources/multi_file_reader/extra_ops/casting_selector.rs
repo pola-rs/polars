@@ -372,7 +372,7 @@ impl CastingSelectorBuilder {
                     self.build_casting_selector(
                         CastingSelector::Position(incoming_index),
                         incoming_fields[incoming_index].dtype(),
-                        &target_field.dtype(),
+                        target_field.dtype(),
                         target_field.name().as_str(),
                     )?
                 } else {

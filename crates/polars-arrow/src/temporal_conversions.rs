@@ -159,8 +159,7 @@ pub fn timestamp_s_to_datetime_opt(seconds: i64) -> Option<NaiveDateTime> {
 /// converts a `i64` representing a `timestamp(ms)` to [`NaiveDateTime`]
 #[inline]
 pub fn timestamp_ms_to_datetime(v: i64) -> NaiveDateTime {
-    timestamp_ms_to_datetime_opt(v)
-        .unwrap_or_else(|| panic!("invalid or out-of-range datetime {}", v))
+    timestamp_ms_to_datetime_opt(v).expect("invalid or out-of-range datetime")
 }
 
 /// converts a `i64` representing a `timestamp(ms)` to [`NaiveDateTime`]
