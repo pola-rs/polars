@@ -6,7 +6,7 @@ use polars_core::series::IsSorted;
 
 use crate::prelude::*;
 
-/// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
+/// Create a [`DatetimeChunked`] from a given `start`, `end`, `interval`, and `num_samples`.
 #[allow(clippy::too_many_arguments)]
 pub fn date_range(
     name: PlSmallStr,
@@ -18,19 +18,29 @@ pub fn date_range(
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
+    macro_rules! extract {
+        ($t:ident, $tu:ident) => {
+            match $tu {
+                TimeUnit::Nanoseconds => $t.and_utc().timestamp_nanos_opt().unwrap(),
+                TimeUnit::Microseconds => $t.and_utc().timestamp_micros(),
+                TimeUnit::Milliseconds => $t.and_utc().timestamp_millis(),
+            }
+        };
+    }
+
     match (start, end, interval, num_samples) {
         (Some(start), Some(end), Some(interval), None) => {
-            let start = start.and_utc().timestamp_nanos_opt().unwrap();
-            let end = end.and_utc().timestamp_nanos_opt().unwrap();
+            let start = extract!(start, tu);
+            let end = extract!(end, tu);
             datetime_range_impl_start_end_interval(name, start, end, interval, closed, tu, tz)
         },
         (Some(start), Some(end), None, Some(num_samples)) => {
-            let start = start.and_utc().timestamp_nanos_opt().unwrap();
-            let end = end.and_utc().timestamp_nanos_opt().unwrap();
+            let start = extract!(start, tu);
+            let end = extract!(end, tu);
             datetime_range_impl_start_end_samples(name, start, end, num_samples, closed, tu, tz)
         },
         (Some(start), None, Some(interval), Some(num_samples)) => {
-            let start = start.and_utc().timestamp_nanos_opt().unwrap();
+            let start = extract!(start, tu);
             datetime_range_impl_start_interval_samples(
                 name,
                 start,
@@ -42,7 +52,7 @@ pub fn date_range(
             )
         },
         (None, Some(end), Some(interval), Some(num_samples)) => {
-            let end = end.and_utc().timestamp_nanos_opt().unwrap();
+            let end = extract!(end, tu);
             let out = datetime_range_impl_start_interval_samples(
                 name,
                 end,

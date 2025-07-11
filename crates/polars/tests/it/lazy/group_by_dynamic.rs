@@ -15,16 +15,14 @@ use super::*;
 fn test_group_by_dynamic_week_bounds() -> PolarsResult<()> {
     let start = NaiveDate::from_ymd_opt(2022, 2, 1)
         .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+        .and_hms_opt(0, 0, 0);
     let stop = NaiveDate::from_ymd_opt(2022, 2, 14)
         .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+        .and_hms_opt(0, 0, 0);
     let range = polars_time::date_range(
         "dt".into(),
-        Some(start),
-        Some(stop),
+        start,
+        stop,
         Some(Duration::parse("1d")),
         None,
         ClosedWindow::Left,
@@ -32,6 +30,7 @@ fn test_group_by_dynamic_week_bounds() -> PolarsResult<()> {
         None,
     )?
     .into_series();
+    println!("range len: {}", range.len());
 
     let a = Int32Chunked::full("a".into(), 1, range.len());
     let df = df![
