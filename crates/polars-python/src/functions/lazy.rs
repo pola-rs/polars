@@ -2,8 +2,7 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::UnionArgs;
-use polars_plan::utils::PlanCallback;
-use polars_utils::python_function::{PythonFunction, PythonObject};
+use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
@@ -12,8 +11,8 @@ use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::expr::datatype::PyDataTypeExpr;
 use crate::lazyframe::PyOptFlags;
-use crate::map::lazy::binary_lambda;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
 
@@ -391,7 +390,7 @@ pub fn fold(
     lambda: PyObject,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
-    return_dtype: Option<Wrap<DataType>>,
+    return_dtype: Option<PyDataTypeExpr>,
 ) -> PyExpr {
     let exprs = exprs.to_exprs();
     let func = PlanCallback::new_python(PythonObject(lambda));
@@ -400,7 +399,7 @@ pub fn fold(
         func,
         exprs,
         returns_scalar,
-        return_dtype.map(|w| w.0),
+        return_dtype.map(|w| w.inner),
     )
     .into()
 }

@@ -2,7 +2,7 @@ use polars_core::prelude::{Column, DataType, IntoColumn};
 use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 
-use crate::utils::PlanCallback;
+use crate::callback::PlanCallback;
 
 pub fn fold(
     c: &[Column],
@@ -15,7 +15,7 @@ pub fn fold(
         acc = callback.call((acc.clone(), c.clone().take_materialized_series()))?;
     }
     polars_ensure!(
-        returns_scalar || acc.len() == 1,
+        !returns_scalar || acc.len() == 1,
         InvalidOperation: "fold is said to return scalar but returned {} elements", acc.len(),
     );
     polars_ensure!(

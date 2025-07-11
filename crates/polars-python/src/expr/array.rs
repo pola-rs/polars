@@ -1,5 +1,4 @@
 use polars::prelude::*;
-use polars_plan::utils::PlanCallback;
 use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 use pyo3::pymethods;

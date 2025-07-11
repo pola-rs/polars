@@ -1,35 +1,15 @@
 use super::*;
 
-#[cfg(feature = "dtype-struct")]
-fn cum_fold_dtype() -> GetOutput {
-    GetOutput::map_fields(|fields| {
-        let mut st = fields[0].dtype.clone();
-        for fld in &fields[1..] {
-            st = get_supertype(&st, &fld.dtype).unwrap();
-        }
-        Ok(Field::new(
-            fields[0].name.clone(),
-            DataType::Struct(
-                fields
-                    .iter()
-                    .map(|fld| Field::new(fld.name().clone(), st.clone()))
-                    .collect(),
-            ),
-        ))
-    })
-}
-
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<E, DT>(
+pub fn fold_exprs<E>(
     acc: Expr,
     f: PlanCallback<(Series, Series), Series>,
     exprs: E,
     returns_scalar: bool,
-    return_dtype: Option<DT>,
+    return_dtype: Option<DataTypeExpr>,
 ) -> Expr
 where
     E: AsRef<[Expr]>,
-    DT: Into<DataTypeExpr>,
 {
     let mut exprs_v = Vec::with_capacity(exprs.as_ref().len() + 1);
     exprs_v.push(acc);
@@ -40,7 +20,7 @@ where
         function: FunctionExpr::FoldHorizontal {
             callback: f,
             returns_scalar,
-            return_dtype: return_dtype.map(Into::into),
+            return_dtype,
         },
     }
 }
@@ -50,7 +30,7 @@ where
 /// An accumulator is initialized to the series given by the first expression in `exprs`, and then each subsequent value
 /// of the accumulator is computed from `f(acc, next_expr_series)`. If `exprs` is empty, an error is returned when
 /// `collect` is called.
-pub fn reduce_exprs<F, E>(f: PlanCallback<(Series, Series), Series>, exprs: E) -> Expr
+pub fn reduce_exprs<E>(f: PlanCallback<(Series, Series), Series>, exprs: E) -> Expr
 where
     E: AsRef<[Expr]>,
 {
@@ -78,7 +58,12 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cum_fold_exprs<E>(acc: Expr, f: PlanCallback<(Series, Series), Series>, exprs: E, include_init: bool) -> Expr
+pub fn cum_fold_exprs<E>(
+    acc: Expr,
+    f: PlanCallback<(Series, Series), Series>,
+    exprs: E,
+    include_init: bool,
+) -> Expr
 where
     E: AsRef<[Expr]>,
 {
@@ -89,7 +74,10 @@ where
 
     Expr::Function {
         input: exprs_v,
-        function: FunctionExpr::CumFoldHorizontal { callback: f, include_init },
+        function: FunctionExpr::CumFoldHorizontal {
+            callback: f,
+            include_init,
+        },
     }
 }
 

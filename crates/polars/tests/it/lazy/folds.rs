@@ -1,3 +1,5 @@
+use polars_plan::prelude::PlanCallback;
+
 use super::*;
 
 #[test]
@@ -12,10 +14,10 @@ fn test_fold_wildcard() -> PolarsResult<()> {
         .lazy()
         .select([fold_exprs(
             lit(0),
-            |a, b| (&a + &b).map(Some),
+            PlanCallback::new(|(a, b)| &a + &b),
             [col("*")],
             false,
-            Some(DataType::Int64),
+            Some(DataType::Int64.into()),
         )
         .alias("foo")])
         .collect()?;

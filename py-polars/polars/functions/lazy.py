@@ -19,8 +19,9 @@ from polars._utils.parse import (
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
-from polars._utils.wrap import wrap_df, wrap_expr
+from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.datatypes._parse import parse_into_datatype_expr
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
@@ -1194,13 +1195,23 @@ def map_groups(
     )
 
 
+def _wrap_acc_lamba(
+    function: Callable[[Series, Series], Series],
+) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
+    def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
+        a, b = t
+        return function(wrap_s(a), wrap_s(b))._s
+
+    return wrapper
+
+
 def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
     *,
     returns_scalar: bool = False,
-    return_dtype: PolarsDataType | None = None,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1308,14 +1319,18 @@ def fold(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.fold(
             acc,
-            function,
+            _wrap_acc_lamba(function),
             exprs,
             returns_scalar=returns_scalar,
-            return_dtype=return_dtype,
+            return_dtype=rt,
         )
     )
 
@@ -1379,7 +1394,7 @@ def reduce(
         exprs = [exprs]
 
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.reduce(function, exprs))
+    return wrap_expr(plr.reduce(_wrap_acc_lamba(function), exprs))
 
 
 def cum_fold(
@@ -1441,7 +1456,11 @@ def cum_fold(
         exprs = [exprs]
 
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
+    return wrap_expr(
+        plr.cum_fold(acc, _wrap_acc_lamba(function), exprs, include_init).alias(
+            "cum_fold"
+        )
+    )
 
 
 def cum_reduce(
@@ -1487,7 +1506,9 @@ def cum_reduce(
         exprs = [exprs]
 
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
+    return wrap_expr(
+        plr.cum_reduce(_wrap_acc_lamba(function), exprs).alias("cum_reduce")
+    )
 
 
 def arctan2(y: str | Expr, x: str | Expr) -> Expr:

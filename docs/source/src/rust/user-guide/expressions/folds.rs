@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             fold_exprs(
                 lit(0),
-                PlanCallback::Rust(Arc::new(SpecialEq::new(|acc, val| (&acc + &val).map(Some)))),
+                PlanCallback::new(|(acc, val)| &acc + &val),
                 [col("a"), col("b")],
                 false,
                 None,
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             f(f(acc, col("a")), col("b")),
             fold_exprs(
                 lit(0),
-                |acc, val| (&acc + &val).map(Some),
+                PlanCallback::new(|(acc, val)| (&acc + &val)),
                 [col("a"), col("b")],
                 false,
                 None,
@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([fold_exprs(
             lit(0),
-            |acc, val| (&acc * &val).map(Some),
+            PlanCallback::new(|(acc, val)| (&acc * &val)),
             [col("a"), col("b")],
             false,
             None,
@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([fold_exprs(
             lit(1),
-            |acc, val| (&acc * &val).map(Some),
+            PlanCallback::new(|(acc, val)| (&acc * &val)),
             [col("a"), col("b")],
             false,
             None,
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .filter(fold_exprs(
             lit(true),
-            |acc, val| (&acc & &val).map(Some),
+            PlanCallback::new(|(acc, val)| (&acc & &val)),
             [col("*").gt(1)],
             false,
             None,
