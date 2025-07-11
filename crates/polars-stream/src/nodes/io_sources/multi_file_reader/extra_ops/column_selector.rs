@@ -35,7 +35,7 @@ pub enum ColumnSelector {
     Constant(Box<ScalarColumn>),
 
     /// `(input_selector, _)`
-    Nested(Box<(ColumnSelector, ColumnSelectorTransform)>),
+    Transformed(Box<(ColumnSelector, ColumnSelectorTransform)>),
 }
 
 #[derive(Debug)]
@@ -60,7 +60,7 @@ pub enum ColumnSelectorTransform {
 
 impl ColumnSelectorTransform {
     pub fn into_selector(self, input_selector: ColumnSelector) -> ColumnSelector {
-        ColumnSelector::Nested(Box::new((input_selector, self)))
+        ColumnSelector::Transformed(Box::new((input_selector, self)))
     }
 }
 
@@ -80,7 +80,7 @@ impl ColumnSelector {
                 .into_column()
                 .new_from_index(0, output_height),
 
-            S::Nested(nested) => {
+            S::Transformed(nested) => {
                 let input: Column = nested.0.select_from_columns(columns, output_height)?;
 
                 use ColumnSelectorTransform as TF;
