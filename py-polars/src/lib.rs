@@ -14,6 +14,7 @@ use polars_python::catalog::unity::PyCatalogClient;
 use polars_python::cloud_client;
 #[cfg(feature = "polars_cloud_server")]
 use polars_python::cloud_server;
+use polars_python::conversion::PyCategories;
 use polars_python::dataframe::PyDataFrame;
 use polars_python::expr::datatype::PyDataTypeExpr;
 use polars_python::expr::selector::PySelector;
@@ -108,6 +109,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
+    m.add_class::<PyCategories>().unwrap();
 
     // Submodules
     // LogicalPlan objects

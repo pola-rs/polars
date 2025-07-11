@@ -1,6 +1,9 @@
 pub(crate) mod any_value;
 pub(crate) mod chunked_array;
+mod categorical;
 mod datetime;
+
+pub use categorical::PyCategories;
 
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
@@ -32,7 +35,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::GILOnceCell;
-use pyo3::types::{PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -281,9 +284,12 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
-            DataType::Categorical(_, _) => {
-                let class = pl.getattr(intern!(py, "Categorical"))?;
-                class.call1((Wrap(CategoricalOrdering::Lexical),))
+            DataType::Categorical(cats, _) => {
+                let categories_class = pl.getattr(intern!(py, "Categories"))?;
+                let categorical_class = pl.getattr(intern!(py, "Categorical"))?;
+                let categories = categories_class.call_method1("_from_py_categories", (PyCategories::from(cats.clone()),))?;
+                let kwargs = [("categories", categories)];
+                categorical_class.call((), Some(&kwargs.into_py_dict(py)?))
             },
             DataType::Enum(_, mapping) => {
                 let categories = unsafe {
@@ -402,7 +408,12 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Boolean" => DataType::Boolean,
             "String" => DataType::String,
             "Binary" => DataType::Binary,
-            "Categorical" => DataType::from_categories(Categories::global()),
+            "Categorical" => {
+                let categories = ob.getattr(intern!(py, "categories")).unwrap();
+                let py_categories = categories.getattr(intern!(py, "_categories")).unwrap();
+                let py_categories = py_categories.extract::<PyCategories>()?;
+                DataType::from_categories(py_categories.categories().clone())
+            },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(&categories.as_borrowed())?;

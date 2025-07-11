@@ -11,6 +11,7 @@ description = "Enable running Polars workloads in Python"
 [dependencies]
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
