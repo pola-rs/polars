@@ -35,7 +35,9 @@ def test_sample_expr() -> None:
     assert out.unique().shape == (10,)
     assert set(out).issubset(set(a))
 
-    out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, shuffle=True, seed=1)).to_series()
+    out = pl.select(
+        pl.lit(a).sample(n=10, with_replacement=False, shuffle=True, seed=1)
+    ).to_series()
     assert out.shape == (10,)
     assert out.to_list() != out.sort().to_list()
     assert out.unique().shape == (10,)
@@ -115,12 +117,16 @@ def test_sample_series() -> None:
     # unless you use with_replacement=True
     assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
 
+
 def test_sample_order_shuffle_false() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4]})
     n = 3
     for i in range(10):
         out = df.sample(n=n, shuffle=False, seed=i)
-        assert out["a"].to_list() == [1, 2, 3], f"shuffle=False should preserve order, got {out['a'].to_list()}"
+        assert out["a"].to_list() == [1, 2, 3], (
+            f"shuffle=False should preserve order, got {out['a'].to_list()}"
+        )
+
 
 def test_sample_order_shuffle_true() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4]})
@@ -130,6 +136,7 @@ def test_sample_order_shuffle_true() -> None:
         out = df.sample(n=n, shuffle=True, seed=i)
         seen.add(tuple(out["a"].to_list()))
     assert len(seen) > 1, "shuffle=True should produce different orderings"
+
 
 def test_shuffle_expr() -> None:
     # pl.set_random_seed should lead to reproducible results.
