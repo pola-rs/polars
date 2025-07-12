@@ -302,3 +302,93 @@ impl BooleanChunked {
         Ok(builder.finish())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_sample() {
+        let df = df![
+            "foo" => &[1, 2, 3, 4, 5]
+        ]
+        .unwrap();
+
+        // Default samples are random and don't require seeds.
+        assert!(
+            df.sample_n(
+                &Series::new(PlSmallStr::from_static("s"), &[3]),
+                false,
+                false,
+                None
+            )
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
+                &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
+                false,
+                false,
+                None
+            )
+            .is_ok()
+        );
+        // With seeding.
+        assert!(
+            df.sample_n(
+                &Series::new(PlSmallStr::from_static("s"), &[3]),
+                false,
+                false,
+                Some(0)
+            )
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
+                &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
+                false,
+                false,
+                Some(0)
+            )
+            .is_ok()
+        );
+        // Without replacement can not sample more than 100%.
+        assert!(
+            df.sample_frac(
+                &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
+                false,
+                false,
+                Some(0)
+            )
+            .is_err()
+        );
+        assert!(
+            df.sample_n(
+                &Series::new(PlSmallStr::from_static("s"), &[3]),
+                true,
+                false,
+                Some(0)
+            )
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
+                &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
+                true,
+                false,
+                Some(0)
+            )
+            .is_ok()
+        );
+        // With replacement can sample more than 100%.
+        assert!(
+            df.sample_frac(
+                &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
+                true,
+                false,
+                Some(0)
+            )
+            .is_ok()
+        );
+    }
+}
