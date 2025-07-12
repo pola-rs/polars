@@ -355,6 +355,7 @@ def test_array_invalid_physical_type_18920() -> None:
     assert_frame_equal(df, expected)
 
 
+@pytest.mark.may_fail_cloud #  Arrow doesn't support zero-width in IPC
 @pytest.mark.parametrize(
     "fn",
     [
