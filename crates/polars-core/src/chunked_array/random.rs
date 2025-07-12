@@ -10,11 +10,11 @@ use crate::prelude::*;
 use crate::random::get_global_random_u64;
 use crate::utils::NoNull;
 
-fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
+fn create_rand_index_with_replacement(n: usize, len: usize, seed: u64) -> IdxCa {
     if len == 0 {
         return IdxCa::new_vec(PlSmallStr::EMPTY, vec![]);
     }
-    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
+    let mut rng = SmallRng::seed_from_u64(seed);
     let dist = Uniform::new(0, len as IdxSize).unwrap();
     (0..n as IdxSize)
         .map(move |_| dist.sample(&mut rng))
@@ -22,13 +22,8 @@ fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -
         .into_inner()
 }
 
-fn create_rand_index_no_replacement(
-    n: usize,
-    len: usize,
-    seed: Option<u64>,
-    shuffle: bool,
-) -> IdxCa {
-    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
+fn create_rand_index_no_replacement(n: usize, len: usize, seed: u64, shuffle: bool) -> IdxCa {
+    let mut rng = SmallRng::seed_from_u64(seed);
     let mut buf: Vec<IdxSize>;
     if n == len {
         buf = (0..len as IdxSize).collect();
@@ -83,7 +78,7 @@ impl Series {
         n: usize,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.len(), with_replacement)?;
         if n == 0 {
@@ -113,13 +108,13 @@ impl Series {
         frac: f64,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
     }
 
-    pub fn shuffle(&self, seed: Option<u64>) -> Self {
+    pub fn shuffle(&self, seed: u64) -> Self {
         let len = self.len();
         let n = len;
         let idx = create_rand_index_no_replacement(n, len, seed, true);
@@ -140,7 +135,7 @@ where
         n: usize,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.len(), with_replacement)?;
         let len = self.len();
@@ -167,7 +162,7 @@ where
         frac: f64,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
@@ -181,7 +176,7 @@ impl DataFrame {
         n: &Series,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         polars_ensure!(
         n.len() == 1,
@@ -202,7 +197,7 @@ impl DataFrame {
         n: usize,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.height(), with_replacement)?;
         // All columns should used the same indices. So we first create the indices.
@@ -220,7 +215,7 @@ impl DataFrame {
         frac: &Series,
         with_replacement: bool,
         shuffle: bool,
-        seed: Option<u64>,
+        seed: u64,
     ) -> PolarsResult<Self> {
         polars_ensure!(
         frac.len() == 1,
@@ -320,7 +315,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
                 false,
-                None
+                123,
             )
             .is_ok()
         );
@@ -329,7 +324,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
                 false,
-                None
+                123,
             )
             .is_ok()
         );
@@ -339,7 +334,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
                 false,
-                Some(0)
+                0
             )
             .is_ok()
         );
@@ -348,7 +343,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
                 false,
-                Some(0)
+                0
             )
             .is_ok()
         );
@@ -358,7 +353,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 false,
                 false,
-                Some(0)
+                0
             )
             .is_err()
         );
@@ -367,7 +362,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 true,
                 false,
-                Some(0)
+                0
             )
             .is_ok()
         );
@@ -376,7 +371,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 true,
                 false,
-                Some(0)
+                0
             )
             .is_ok()
         );
@@ -386,7 +381,7 @@ mod test {
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 true,
                 false,
-                Some(0)
+                0
             )
             .is_ok()
         );

@@ -457,7 +457,8 @@ impl Expr {
     where
         F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        let f =
+            move |_state: &UdfExecutionState, c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         let options =
             FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT);
@@ -480,7 +481,8 @@ impl Expr {
     where
         F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        let f =
+            move |_state: &UdfExecutionState, c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         let options = FunctionOptions::aggregation();
         let fmt_str = Box::new(fmt_str.into());
@@ -502,7 +504,8 @@ impl Expr {
     where
         F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        let f =
+            move |_state: &UdfExecutionState, c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         let options = FunctionOptions::groupwise();
         let fmt_str = Box::new(fmt_str.into());
@@ -525,6 +528,7 @@ impl Expr {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
+        let function = move |_state: &UdfExecutionState, s: &mut [Column]| function(s);
         let options = FunctionOptions::elementwise();
         Expr::AnonymousFunction {
             input,
@@ -548,7 +552,8 @@ impl Expr {
     where
         F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        let f =
+            move |_state: &UdfExecutionState, c: &mut [Column]| function(std::mem::take(&mut c[0]));
 
         let options = FunctionOptions::groupwise();
         Expr::AnonymousFunction {
@@ -570,6 +575,7 @@ impl Expr {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
+        let function = move |_state: &UdfExecutionState, s: &mut [Column]| function(s);
         let options = FunctionOptions::groupwise();
         Expr::AnonymousFunction {
             input,
@@ -1669,6 +1675,7 @@ where
 {
     let input = expr.as_ref().to_vec();
 
+    let function = move |_state: &UdfExecutionState, s: &mut [Column]| function(s);
     let options = FunctionOptions::elementwise();
     Expr::AnonymousFunction {
         input,
@@ -1698,6 +1705,7 @@ where
     F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
+    let function = move |_state: &UdfExecutionState, s: &mut [Column]| function(s);
     let input = expr.as_ref().to_vec();
     let options = FunctionOptions::groupwise().with_flags(|mut f| {
         f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);

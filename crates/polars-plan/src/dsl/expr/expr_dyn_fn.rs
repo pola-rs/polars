@@ -6,13 +6,20 @@ use polars_core::utils::try_get_supertype;
 
 use super::*;
 
+pub struct UdfExecutionState {
+    /// Random seed that is specific to the current plan execution.
+    ///
+    /// This gets combined with seeds of non-deterministic operators to generate the final seed.
+    pub execution_seed: u64,
+}
+
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait ColumnsUdf: Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any {
         unimplemented!("as_any not implemented for this 'opaque' function")
     }
 
-    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>>;
+    fn call_udf(&self, state: &UdfExecutionState, s: &mut [Column]) -> PolarsResult<Option<Column>>;
 
     /// Called when converting from DSL to IR with the input schema to the expression.
     fn resolve_dsl(
@@ -31,10 +38,10 @@ pub trait ColumnsUdf: Send + Sync {
 
 impl<F> ColumnsUdf for F
 where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + Send + Sync,
+    F: Fn(&UdfExecutionState, &mut [Column]) -> PolarsResult<Option<Column>> + Send + Sync,
 {
-    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
-        self(s)
+    fn call_udf(&self, state: &UdfExecutionState, s: &mut [Column]) -> PolarsResult<Option<Column>> {
+        self(state, s)
     }
 }
 
