@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `PolarsUpsample` trait in crate `polars`."><title>PolarsUpsample in polars::prelude - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="polars" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../static.files/storage-4e99c027.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../polars/index.html">polars</a><span class="version">0.49.1</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Polars<wbr>Upsample</a></h2><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.upsample" title="upsample">upsample</a></li><li><a href="#tymethod.upsample_stable" title="upsample_stable">upsample_stable</a></li></ul><h3><a href="#dyn-compatibility">Dyn Compatibility</a></h3><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In polars::<wbr>prelude</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">polars</a>::<wbr><a href="index.html">prelude</a></div><h1>Trait <span class="trait">PolarsUpsample</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/polars_time/upsample.rs.html#9">Source</a> </span></div><pre class="rust item-decl"><code>pub trait PolarsUpsample {
+    // Required methods
+    fn <a href="#tymethod.upsample" class="fn">upsample</a>&lt;I&gt;(
+        &amp;self,
+        by: I,
+        time_column: &amp;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+        every: <a class="struct" href="struct.Duration.html" title="struct polars::prelude::Duration">Duration</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="struct.DataFrame.html" title="struct polars::prelude::DataFrame">DataFrame</a>, <a class="enum" href="enum.PolarsError.html" title="enum polars::prelude::PolarsError">PolarsError</a>&gt;
+       <span class="where">where I: <a class="trait" href="trait.IntoVec.html" title="trait polars::prelude::IntoVec">IntoVec</a>&lt;<a class="struct" href="struct.PlSmallStr.html" title="struct polars::prelude::PlSmallStr">PlSmallStr</a>&gt;</span>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.upsample_stable" class="fn">upsample_stable</a>&lt;I&gt;(
+        &amp;self,
+        by: I,
+        time_column: &amp;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+        every: <a class="struct" href="struct.Duration.html" title="struct polars::prelude::Duration">Duration</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="struct.DataFrame.html" title="struct polars::prelude::DataFrame">DataFrame</a>, <a class="enum" href="enum.PolarsError.html" title="enum polars::prelude::PolarsError">PolarsError</a>&gt;
+       <span class="where">where I: <a class="trait" href="trait.IntoVec.html" title="trait polars::prelude::IntoVec">IntoVec</a>&lt;<a class="struct" href="struct.PlSmallStr.html" title="struct polars::prelude::PlSmallStr">PlSmallStr</a>&gt;</span>;
+}</code></pre><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>temporal</code></strong> only.</div></span><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.upsample" class="method"><a class="src rightside" href="../../src/polars_time/upsample.rs.html#41-46">Source</a><h4 class="code-header">fn <a href="#tymethod.upsample" class="fn">upsample</a>&lt;I&gt;(
+    &amp;self,
+    by: I,
+    time_column: &amp;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+    every: <a class="struct" href="struct.Duration.html" title="struct polars::prelude::Duration">Duration</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="struct.DataFrame.html" title="struct polars::prelude::DataFrame">DataFrame</a>, <a class="enum" href="enum.PolarsError.html" title="enum polars::prelude::PolarsError">PolarsError</a>&gt;<div class="where">where
+    I: <a class="trait" href="trait.IntoVec.html" title="trait polars::prelude::IntoVec">IntoVec</a>&lt;<a class="struct" href="struct.PlSmallStr.html" title="struct polars::prelude::PlSmallStr">PlSmallStr</a>&gt;,</div></h4></section></summary><div class="docblock"><p>Upsample a <a href="struct.DataFrame.html" title="struct polars::prelude::DataFrame"><code>DataFrame</code></a> at a regular frequency.</p>
+<h5 id="arguments"><a class="doc-anchor" href="#arguments">§</a>Arguments</h5>
+<ul>
+<li><code>by</code> - First group by these columns and then upsample for every group</li>
+<li><code>time_column</code> - Will be used to determine a date_range.
+Note that this column has to be sorted for the output to make sense.</li>
+<li><code>every</code> - interval will start ‘every’ duration</li>
+<li><code>offset</code> - change the start of the date_range by this offset.</li>
+</ul>
+<p>The <code>every</code> and <code>offset</code> arguments are created with
+the following string language:</p>
+<ul>
+<li>1ns   (1 nanosecond)</li>
+<li>1us   (1 microsecond)</li>
+<li>1ms   (1 millisecond)</li>
+<li>1s    (1 second)</li>
+<li>1m    (1 minute)</li>
+<li>1h    (1 hour)</li>
+<li>1d    (1 calendar day)</li>
+<li>1w    (1 calendar week)</li>
+<li>1mo   (1 calendar month)</li>
+<li>1q    (1 calendar quarter)</li>
+<li>1y    (1 calendar year)</li>
+<li>1i    (1 index count)</li>
+</ul>
+<p>Or combine them:
+“3d12h4m25s” # 3 days, 12 hours, 4 minutes, and 25 seconds</p>
+<p>By “calendar day”, we mean the corresponding time on the next
+day (which may not be 24 hours, depending on daylight savings).
+Similarly for “calendar week”, “calendar month”, “calendar quarter”,
+and “calendar year”.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.upsample_stable" class="method"><a class="src rightside" href="../../src/polars_time/upsample.rs.html#82-87">Source</a><h4 class="code-header">fn <a href="#tymethod.upsample_stable" class="fn">upsample_stable</a>&lt;I&gt;(
+    &amp;self,
+    by: I,
+    time_column: &amp;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+    every: <a class="struct" href="struct.Duration.html" title="struct polars::prelude::Duration">Duration</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="struct.DataFrame.html" title="struct polars::prelude::DataFrame">DataFrame</a>, <a class="enum" href="enum.PolarsError.html" title="enum polars::prelude::PolarsError">PolarsError</a>&gt;<div class="where">where
+    I: <a class="trait" href="trait.IntoVec.html" title="trait polars::prelude::IntoVec">IntoVec</a>&lt;<a class="struct" href="struct.PlSmallStr.html" title="struct polars::prelude::PlSmallStr">PlSmallStr</a>&gt;,</div></h4></section></summary><div class="docblock"><p>Upsample a <a href="struct.DataFrame.html" title="struct polars::prelude::DataFrame"><code>DataFrame</code></a> at a regular frequency.</p>
+<p>Similar to <a href="trait.PolarsUpsample.html#tymethod.upsample" title="method polars::prelude::PolarsUpsample::upsample"><code>upsample</code></a>, but order of the
+DataFrame is maintained when <code>by</code> is specified.</p>
+<h5 id="arguments-1"><a class="doc-anchor" href="#arguments-1">§</a>Arguments</h5>
+<ul>
+<li><code>by</code> - First group by these columns and then upsample for every group</li>
+<li><code>time_column</code> - Will be used to determine a date_range.
+Note that this column has to be sorted for the output to make sense.</li>
+<li><code>every</code> - interval will start ‘every’ duration</li>
+<li><code>offset</code> - change the start of the date_range by this offset.</li>
+</ul>
+<p>The <code>every</code> and <code>offset</code> arguments are created with
+the following string language:</p>
+<ul>
+<li>1ns   (1 nanosecond)</li>
+<li>1us   (1 microsecond)</li>
+<li>1ms   (1 millisecond)</li>
+<li>1s    (1 second)</li>
+<li>1m    (1 minute)</li>
+<li>1h    (1 hour)</li>
+<li>1d    (1 calendar day)</li>
+<li>1w    (1 calendar week)</li>
+<li>1mo   (1 calendar month)</li>
+<li>1q    (1 calendar quarter)</li>
+<li>1y    (1 calendar year)</li>
+<li>1i    (1 index count)</li>
+</ul>
+<p>Or combine them:
+“3d12h4m25s” # 3 days, 12 hours, 4 minutes, and 25 seconds</p>
+<p>By “calendar day”, we mean the corresponding time on the next
+day (which may not be 24 hours, depending on daylight savings).
+Similarly for “calendar week”, “calendar month”, “calendar quarter”,
+and “calendar year”.</p>
+</div></details></div><h2 id="dyn-compatibility" class="section-header">Dyn Compatibility<a href="#dyn-compatibility" class="anchor">§</a></h2><div class="dyn-compatibility-info"><p>This trait is <b>not</b> <a href="https://doc.rust-lang.org/nightly/reference/items/traits.html#dyn-compatibility">dyn compatible</a>.</p><p><i>In older versions of Rust, dyn compatibility was called "object safety", so this trait is not object safe.</i></p></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-PolarsUpsample-for-DataFrame" class="impl"><a class="src rightside" href="../../src/polars_time/upsample.rs.html#90">Source</a><a href="#impl-PolarsUpsample-for-DataFrame" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.PolarsUpsample.html" title="trait polars::prelude::PolarsUpsample">PolarsUpsample</a> for <a class="struct" href="struct.DataFrame.html" title="struct polars::prelude::DataFrame">DataFrame</a></h3></section></div><script src="../../trait.impl/polars_time/upsample/trait.PolarsUpsample.js" data-ignore-extern-crates="polars_core" async></script></section></div></main></body></html>

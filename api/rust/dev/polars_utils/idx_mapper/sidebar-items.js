@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["map_range"],"struct":["IdxMapper"]};

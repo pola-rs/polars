@@ -1,0 +1,6 @@
+﻿polars.Expr.cos
+===============
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.cos
