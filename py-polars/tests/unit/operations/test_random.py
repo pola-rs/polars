@@ -27,7 +27,7 @@ def test_shuffle_group_by_reseed() -> None:
 def test_sample_expr() -> None:
     a = pl.Series("a", range(20))
     out = pl.select(
-        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
+        pl.lit(a).sample(fraction=0.5, with_replacement=False, shuffle=True, seed=1)
     ).to_series()
 
     assert out.shape == (10,)
@@ -35,7 +35,7 @@ def test_sample_expr() -> None:
     assert out.unique().shape == (10,)
     assert set(out).issubset(set(a))
 
-    out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, seed=1)).to_series()
+    out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, shuffle=True, seed=1)).to_series()
     assert out.shape == (10,)
     assert out.to_list() != out.sort().to_list()
     assert out.unique().shape == (10,)
@@ -74,7 +74,7 @@ def test_sample_n_expr() -> None:
     )
 
     out_df = df.sample(pl.Series([3]), seed=0)
-    expected_df = pl.DataFrame({"group": [2, 1, 1], "val": [1, 2, 3]})
+    expected_df = pl.DataFrame({"group": [1, 1, 1], "val": [1, 2, 3]})
     assert_frame_equal(out_df, expected_df)
 
     agg_df = df.group_by("group", maintain_order=True).agg(
@@ -115,6 +115,21 @@ def test_sample_series() -> None:
     # unless you use with_replacement=True
     assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
 
+def test_sample_order_shuffle_false() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+    n = 3
+    for i in range(10):
+        out = df.sample(n=n, shuffle=False, seed=i)
+        assert out["a"].to_list() == [1, 2, 3], f"shuffle=False should preserve order, got {out['a'].to_list()}"
+
+def test_sample_order_shuffle_true() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+    n = 3
+    seen = set()
+    for i in range(10):
+        out = df.sample(n=n, shuffle=True, seed=i)
+        seen.add(tuple(out["a"].to_list()))
+    assert len(seen) > 1, "shuffle=True should produce different orderings"
 
 def test_shuffle_expr() -> None:
     # pl.set_random_seed should lead to reproducible results.

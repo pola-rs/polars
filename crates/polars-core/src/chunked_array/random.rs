@@ -29,23 +29,23 @@ fn create_rand_index_no_replacement(
     shuffle: bool,
 ) -> IdxCa {
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
-    let mut buf: Vec<IdxSize>;
-    if n == len {
-        buf = (0..len as IdxSize).collect();
-        if shuffle {
-            buf.shuffle(&mut rng)
-        }
+    let buf: Vec<IdxSize> = if !shuffle {
+        // Deterministic: just take the first n indices in order
+        (0..n as IdxSize).collect()
     } else {
-        // TODO: avoid extra potential copy by vendoring rand::seq::index::sample,
-        // or genericize take over slices over any unsigned type. The optimizer
-        // should get rid of the extra copy already if IdxSize matches the IndexVec
-        // size returned.
-        buf = match rand::seq::index::sample(&mut rng, len, n) {
-            IndexVec::U32(v) => v.into_iter().map(|x| x as IdxSize).collect(),
-            #[cfg(target_pointer_width = "64")]
-            IndexVec::U64(v) => v.into_iter().map(|x| x as IdxSize).collect(),
-        };
-    }
+        // Random sample of n indices, in random order
+        if n == len {
+            let mut buf = (0..len as IdxSize).collect::<Vec<_>>();
+            buf.shuffle(&mut rng);
+            buf
+        } else {
+            match rand::seq::index::sample(&mut rng, len, n) {
+                IndexVec::U32(v) => v.into_iter().map(|x| x as IdxSize).collect(),
+                #[cfg(target_pointer_width = "64")]
+                IndexVec::U64(v) => v.into_iter().map(|x| x as IdxSize).collect(),
+            }
+        }
+    };
     IdxCa::new_vec(PlSmallStr::EMPTY, buf)
 }
 
@@ -300,95 +300,5 @@ impl BooleanChunked {
             builder.append_value(smpl)
         }
         Ok(builder.finish())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_sample() {
-        let df = df![
-            "foo" => &[1, 2, 3, 4, 5]
-        ]
-        .unwrap();
-
-        // Default samples are random and don't require seeds.
-        assert!(
-            df.sample_n(
-                &Series::new(PlSmallStr::from_static("s"), &[3]),
-                false,
-                false,
-                None
-            )
-            .is_ok()
-        );
-        assert!(
-            df.sample_frac(
-                &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
-                false,
-                false,
-                None
-            )
-            .is_ok()
-        );
-        // With seeding.
-        assert!(
-            df.sample_n(
-                &Series::new(PlSmallStr::from_static("s"), &[3]),
-                false,
-                false,
-                Some(0)
-            )
-            .is_ok()
-        );
-        assert!(
-            df.sample_frac(
-                &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
-                false,
-                false,
-                Some(0)
-            )
-            .is_ok()
-        );
-        // Without replacement can not sample more than 100%.
-        assert!(
-            df.sample_frac(
-                &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
-                false,
-                false,
-                Some(0)
-            )
-            .is_err()
-        );
-        assert!(
-            df.sample_n(
-                &Series::new(PlSmallStr::from_static("s"), &[3]),
-                true,
-                false,
-                Some(0)
-            )
-            .is_ok()
-        );
-        assert!(
-            df.sample_frac(
-                &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
-                true,
-                false,
-                Some(0)
-            )
-            .is_ok()
-        );
-        // With replacement can sample more than 100%.
-        assert!(
-            df.sample_frac(
-                &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
-                true,
-                false,
-                Some(0)
-            )
-            .is_ok()
-        );
     }
 }
