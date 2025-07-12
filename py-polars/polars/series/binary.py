@@ -220,7 +220,10 @@ class BinaryNameSpace:
         self, *, dtype: PolarsDataType, endianness: Endianness = "little"
     ) -> Series:
         r"""
-        Interpret a buffer as a numerical polars type.
+        Interpret bytes as another type.
+
+        Supported types are numerical or temporal dtypes, or an ``Array`` of
+        these dtypes.
 
         Parameters
         ----------
@@ -233,8 +236,9 @@ class BinaryNameSpace:
         -------
         Series
             Series of data type `dtype`.
-            Note that if binary array is too short value will be null.
-            If binary array is too long, remainder will be ignored.
+            Note that rows of the binary array where the length does not match
+            the size in bytes of the output array (number of items * byte size
+            of item) will become NULL.
 
         Examples
         --------

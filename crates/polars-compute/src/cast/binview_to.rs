@@ -1,12 +1,16 @@
+use std::ptr::copy_nonoverlapping;
+
 use arrow::array::*;
+use arrow::bitmap::MutableBitmap;
 #[cfg(feature = "dtype-decimal")]
 use arrow::compute::decimal::deserialize_decimal;
-use arrow::datatypes::{ArrowDataType, TimeUnit};
+use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
 use chrono::Datelike;
 use num_traits::FromBytes;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_err};
+use polars_utils::IdxSize;
 
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
@@ -190,4 +194,140 @@ where
         to,
         is_little_endian,
     )))
+}
+
+/// Casts a [`BinaryViewArray`] to a [`FixedSizeListArray`], making any un-castable value a Null.
+///
+/// # Arguments
+///
+/// * `from`: The array to reinterpret.
+/// * `array_width`: The number of items in each `Array`.
+pub(super) fn try_binview_to_fixed_size_list<T, const IS_LITTLE_ENDIAN: bool>(
+    from: &BinaryViewArray,
+    array_width: usize,
+) -> PolarsResult<FixedSizeListArray>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let element_size = std::mem::size_of::<T>();
+    // The maximum number of primitives in the result:
+    let primitive_length = (from.len() as IdxSize)
+        .checked_mul(array_width as IdxSize)
+        .ok_or_else(|| {
+            polars_err!(
+                InvalidOperation:
+                "array chunk length * number of items ({} * {}) is too large",
+                from.len(),
+                array_width
+            )
+        })? as usize;
+    // The size of each array, in bytes:
+    let array_bytes_size = (element_size as IdxSize)
+        .checked_mul(array_width as IdxSize)
+        .ok_or_else(|| {
+            polars_err!(
+                InvalidOperation:
+                "array size in bytes ({} * {}) is too large",
+                element_size,
+                array_width
+            )
+        })? as usize;
+    let mut out: Vec<T> = Vec::with_capacity(primitive_length);
+    let mut validity = MutableBitmap::from_len_set(from.len());
+
+    for (index, value) in from.iter().enumerate() {
+        if let Some(value) = value
+            && value.len() == array_bytes_size
+        {
+            if cfg!(target_endian = "little") && IS_LITTLE_ENDIAN {
+                // Fast path, we can just copy the data with no need to
+                // reinterpret.
+                let write_index = array_width * index;
+                debug_assert!(write_index < primitive_length);
+                debug_assert!((write_index + (array_width - 1)) < primitive_length);
+                // # Safety
+                // - The target index is smaller than the vector's pre-allocated
+                //   capacity.
+                // - We made sure `value` has byte length
+                //   `array_width * element_size`.
+                unsafe {
+                    copy_nonoverlapping(
+                        value.as_ptr(),
+                        out.as_mut_ptr().add(write_index) as *mut u8,
+                        value.len(),
+                    );
+                }
+            } else {
+                // Slow path, reinterpret items one by one.
+                for j in 0..array_width {
+                    let jth_range = (j * element_size)..((j + 1) * element_size);
+                    debug_assert!(value.get(jth_range.clone()).is_some());
+                    // # Safety
+                    // We made sure the range is smaller than `value` length.
+                    let jth_bytes = unsafe { value.get_unchecked(jth_range) };
+                    // # Safety
+                    // We just made sure that the slice has length `element_size`
+                    let byte_array = unsafe { jth_bytes.try_into().unwrap_unchecked() };
+                    let jth_value = if IS_LITTLE_ENDIAN {
+                        <T as FromBytes>::from_le_bytes(byte_array)
+                    } else {
+                        <T as FromBytes>::from_be_bytes(byte_array)
+                    };
+
+                    let write_index = array_width * index + j;
+                    debug_assert!(write_index < primitive_length);
+                    // # Safety
+                    // - The target index is smaller than the vector's pre-allocated capacity.
+                    unsafe {
+                        std::ptr::write(out.as_mut_ptr().add(write_index), jth_value);
+                    }
+                }
+            }
+        } else {
+            validity.set(index, false);
+        };
+    }
+
+    // # Safety
+    // `out` was created with capacity primitive_length.
+    unsafe { out.set_len(primitive_length) };
+
+    FixedSizeListArray::try_new(
+        ArrowDataType::FixedSizeList(
+            Box::new(Field::new("".into(), T::PRIMITIVE.into(), true)),
+            array_width,
+        ),
+        from.len(),
+        Box::new(PrimitiveArray::<T>::from_vec(out)),
+        validity.into(),
+    )
+}
+
+/// Casts a `dyn` [`Array`] to a [`FixedSizeListArray`], making any un-castable value a Null.
+///
+/// # Arguments
+///
+/// * `from`: The array to reinterpret.
+/// * `array_width`: The number of items in each `Array`.
+///
+/// # Panics
+///    Panics if `from` is not `BinaryViewArray`.
+pub fn binview_to_fixed_size_list_dyn<T>(
+    from: &dyn Array,
+    array_width: usize,
+    is_little_endian: bool,
+) -> PolarsResult<Box<dyn Array>>
+where
+    T: FromBytes + NativeType,
+    for<'a> &'a <T as FromBytes>::Bytes: TryFrom<&'a [u8]>,
+{
+    let from = from.as_any().downcast_ref().unwrap();
+
+    let result = if is_little_endian {
+        try_binview_to_fixed_size_list::<T, true>(from, array_width)
+    } else {
+        try_binview_to_fixed_size_list::<T, false>(from, array_width)
+    }?;
+    Ok(Box::new(result))
 }
