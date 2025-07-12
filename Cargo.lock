@@ -3112,6 +3112,7 @@ dependencies = [
  "polars-utils",
  "schemars",
  "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -3435,6 +3436,7 @@ dependencies = [
  "polars-arrow",
  "polars-compute",
  "polars-core",
+ "polars-dtype",
  "polars-error",
  "polars-expr",
  "polars-ffi",

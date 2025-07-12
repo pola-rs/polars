@@ -16,6 +16,10 @@ polars-error = { workspace = true }
 polars-utils = { workspace = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
 
 [features]
 default = []
