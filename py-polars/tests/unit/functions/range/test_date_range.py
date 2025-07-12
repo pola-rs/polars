@@ -30,11 +30,11 @@ def test_date_range_invalid_time_unit() -> None:
         )
 
 
-def test_date_range_lazy_with_literals() -> None:
+def test_date_ranges_lazy_with_literals() -> None:
     df = pl.DataFrame({"misc": ["x"]}).with_columns(
         pl.date_ranges(
-            date(2000, 1, 1),
-            date(2023, 8, 31),
+            start=date(2000, 1, 1),
+            end=date(2023, 8, 31),
             interval="987d",
             eager=False,
         ).alias("dts")
@@ -65,7 +65,7 @@ def test_date_range_lazy_with_literals() -> None:
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
 @pytest.mark.parametrize("high", ["stop", pl.col("stop")])
-def test_date_range_lazy_with_expressions(
+def test_date_ranges_lazy_with_expressions(
     low: str | pl.Expr, high: str | pl.Expr
 ) -> None:
     lf = pl.LazyFrame(
@@ -76,7 +76,7 @@ def test_date_range_lazy_with_expressions(
     )
 
     result = lf.with_columns(
-        pl.date_ranges(low, high, interval="678d", eager=False).alias("dts")
+        pl.date_ranges(start=low, end=high, interval="678d", eager=False).alias("dts")
     )
 
     assert result.collect().rows() == [
@@ -100,7 +100,9 @@ def test_date_range_lazy_with_expressions(
         }
     )
 
-    result_df = df.with_columns(pl.date_ranges(low, high, interval="1d").alias("dts"))
+    result_df = df.with_columns(
+        pl.date_ranges(start=low, end=high, interval="1d").alias("dts")
+    )
 
     assert result_df.to_dict(as_series=False) == {
         "start": [date(2000, 1, 1), date(2022, 6, 1)],
@@ -153,18 +155,22 @@ def test_date_range_end_of_month_5441(
 ) -> None:
     start = date(2020, 1, 31)
     stop = date(2020, 3, 31)
-    result = pl.date_range(start, stop, interval="1mo", closed=closed, eager=True)
+    result = pl.date_range(
+        start=start, end=stop, interval="1mo", closed=closed, eager=True
+    )
     expected = pl.Series("literal", expected_values)
     assert_series_equal(result, expected)
 
 
 def test_date_range_name() -> None:
-    result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)
+    result_eager = pl.date_range(
+        start=date(2020, 1, 1), end=date(2020, 1, 3), eager=True
+    )
     assert result_eager.name == "literal"
 
     start = pl.Series("left", [date(2020, 1, 1)])
     result_lazy = pl.select(
-        pl.date_range(start, date(2020, 1, 3), eager=False)
+        pl.date_range(start=start, end=date(2020, 1, 3), eager=False)
     ).to_series()
     assert result_lazy.name == "left"
 
@@ -173,7 +179,7 @@ def test_date_ranges_eager() -> None:
     start = pl.Series("start", [date(2022, 1, 1), date(2022, 1, 2)])
     end = pl.Series("end", [date(2022, 1, 4), date(2022, 1, 3)])
 
-    result = pl.date_ranges(start, end, eager=True)
+    result = pl.date_ranges(start=start, end=end, eager=True)
 
     expected = pl.Series(
         "start",
@@ -189,7 +195,7 @@ def test_date_range_eager() -> None:
     start = pl.Series("start", [date(2022, 1, 1)])
     end = pl.Series("end", [date(2022, 1, 3)])
 
-    result = pl.date_range(start, end, eager=True)
+    result = pl.date_range(start=start, end=end, eager=True)
 
     expected = pl.Series(
         "start", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]
@@ -204,15 +210,15 @@ def test_date_range_input_shape_empty() -> None:
     with pytest.raises(
         ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
-        pl.date_range(empty, single, eager=True)
+        pl.date_range(start=empty, end=single, eager=True)
     with pytest.raises(
         ComputeError, match="`end` must contain exactly one value, got 0 values"
     ):
-        pl.date_range(single, empty, eager=True)
+        pl.date_range(start=single, end=empty, eager=True)
     with pytest.raises(
         ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
-        pl.date_range(empty, empty, eager=True)
+        pl.date_range(start=empty, end=empty, eager=True)
 
 
 def test_date_range_input_shape_multiple_values() -> None:
@@ -222,19 +228,19 @@ def test_date_range_input_shape_multiple_values() -> None:
     with pytest.raises(
         ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
-        pl.date_range(multiple, single, eager=True)
+        pl.date_range(start=multiple, end=single, eager=True)
     with pytest.raises(
         ComputeError, match="`end` must contain exactly one value, got 2 values"
     ):
-        pl.date_range(single, multiple, eager=True)
+        pl.date_range(start=single, end=multiple, eager=True)
     with pytest.raises(
         ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
-        pl.date_range(multiple, multiple, eager=True)
+        pl.date_range(start=multiple, end=multiple, eager=True)
 
 
 def test_date_range_start_later_than_end() -> None:
-    result = pl.date_range(date(2000, 3, 20), date(2000, 3, 5), eager=True)
+    result = pl.date_range(start=date(2000, 3, 20), end=date(2000, 3, 5), eager=True)
     expected = pl.Series("literal", dtype=pl.Date)
     assert_series_equal(result, expected)
 
@@ -244,11 +250,15 @@ def test_date_range_24h_interval_raises() -> None:
         ComputeError,
         match="`interval` input for `date_range` must consist of full days",
     ):
-        pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h", eager=True)
+        pl.date_range(
+            start=date(2022, 1, 1), end=date(2022, 1, 3), interval="24h", eager=True
+        )
 
 
 def test_long_date_range_12461() -> None:
-    result = pl.date_range(date(1900, 1, 1), date(2300, 1, 1), "1d", eager=True)
+    result = pl.date_range(
+        start=date(1900, 1, 1), end=date(2300, 1, 1), interval="1d", eager=True
+    )
     assert result[0] == date(1900, 1, 1)
     assert result[-1] == date(2300, 1, 1)
     assert (result.diff()[1:].dt.total_days() == 1).all()
@@ -282,14 +292,17 @@ def test_date_ranges_broadcasting_fail() -> None:
     end = pl.Series([date(2021, 1, 2), date(2021, 1, 3)])
 
     with pytest.raises(
-        ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
+        ComputeError, match=r"lengths of `s1` \(3\) and `s2` \(2\) do not match"
     ):
-        pl.date_ranges(start, end, eager=True)
+        pl.date_ranges(start=start, end=end, eager=True)
 
 
 def test_date_range_datetime_input() -> None:
     result = pl.date_range(
-        datetime(2022, 1, 1, 12), datetime(2022, 1, 3), interval="1d", eager=True
+        start=datetime(2022, 1, 1, 12),
+        end=datetime(2022, 1, 3),
+        interval="1d",
+        eager=True,
     )
     expected = pl.Series(
         "literal", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]
@@ -299,7 +312,10 @@ def test_date_range_datetime_input() -> None:
 
 def test_date_ranges_datetime_input() -> None:
     result = pl.date_ranges(
-        datetime(2022, 1, 1, 12), datetime(2022, 1, 3), interval="1d", eager=True
+        start=datetime(2022, 1, 1, 12),
+        end=datetime(2022, 1, 3),
+        interval="1d",
+        eager=True,
     )
     expected = pl.Series(
         "literal", [[date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]]
@@ -315,7 +331,7 @@ def test_date_range_with_subclass_18470_18447() -> None:
         pass
 
     result = pl.datetime_range(
-        MyAmazingDate(2020, 1, 1), MyAmazingDatetime(2020, 1, 2), eager=True
+        start=MyAmazingDate(2020, 1, 1), end=MyAmazingDatetime(2020, 1, 2), eager=True
     )
     expected = pl.Series("literal", [datetime(2020, 1, 1), datetime(2020, 1, 2)])
     assert_series_equal(result, expected)

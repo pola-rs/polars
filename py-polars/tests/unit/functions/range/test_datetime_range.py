@@ -109,8 +109,8 @@ def test_datetime_range_lazy_time_zones() -> None:
         pl.DataFrame({"start": [start], "stop": [stop]})
         .with_columns(
             pl.datetime_range(
-                start,
-                stop,
+                start=start,
+                end=stop,
                 interval="678d",
                 eager=False,
                 time_zone="Pacific/Tarawa",
@@ -136,7 +136,7 @@ def test_datetime_range_lazy_time_zones() -> None:
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
 @pytest.mark.parametrize("high", ["stop", pl.col("stop")])
-def test_datetime_range_lazy_with_expressions(
+def test_datetime_ranges_lazy_with_expressions(
     low: str | pl.Expr, high: str | pl.Expr
 ) -> None:
     df = pl.DataFrame(
@@ -147,7 +147,7 @@ def test_datetime_range_lazy_with_expressions(
     )
 
     result_df = df.with_columns(
-        pl.datetime_ranges(low, high, interval="1d").alias("dts")
+        pl.datetime_ranges(start=low, end=high, interval="1d").alias("dts")
     )
 
     assert result_df.to_dict(as_series=False) == {
@@ -423,7 +423,7 @@ def test_datetime_ranges_schema(
         ),
     ],
 )
-def test_datetime_range_schema_upcasts_to_datetime(
+def test_datetime_ranges_schema_upcasts_to_datetime(
     input_time_unit: TimeUnit | None,
     input_time_zone: str | None,
     output_dtype: PolarsDataType,
@@ -433,8 +433,8 @@ def test_datetime_range_schema_upcasts_to_datetime(
     df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
     result = df.with_columns(
         datetime_range=pl.datetime_ranges(
-            pl.col("start"),
-            pl.col("end"),
+            start=pl.col("start"),
+            end=pl.col("end"),
             interval=interval,
             time_unit=input_time_unit,
             time_zone=input_time_zone,
@@ -492,14 +492,6 @@ def test_datetime_ranges_no_alias_schema_9037() -> None:
     assert result.collect().schema == expected_schema
 
 
-@pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
-def test_datetime_range_invalid_interval(interval: timedelta) -> None:
-    with pytest.raises(ComputeError, match="`interval` must be positive"):
-        pl.datetime_range(
-            datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
-        )
-
-
 @pytest.mark.parametrize(
     ("closed", "expected_values"),
     [
@@ -514,7 +506,13 @@ def test_datetime_range_end_of_month_5441(
 ) -> None:
     start = date(2020, 1, 31)
     stop = date(2020, 3, 31)
-    result = pl.datetime_range(start, stop, interval="1mo", closed=closed, eager=True)
+    result = pl.datetime_range(
+        start=start,
+        end=stop,
+        interval="1mo",
+        closed=closed,
+        eager=True,
+    )
     expected = pl.Series("literal", expected_values)
     assert_series_equal(result, expected)
 
@@ -641,3 +639,65 @@ def test_datetime_range_with_nanoseconds_overflow_15735() -> None:
     s = pl.datetime_range(date(2000, 1, 1), date(2300, 1, 1), "24h", eager=True)
     assert s.dtype == pl.Datetime("us")
     assert s.shape == (109574,)
+
+
+def test_datetime_range_start_end_interval() -> None:
+    start = date(2025, 1, 1)
+    end = date(2025, 1, 7)
+    values = [
+        datetime(2025, 1, 1),
+        datetime(2025, 1, 2, 12),
+        datetime(2025, 1, 4),
+        datetime(2025, 1, 5, 12),
+        datetime(2025, 1, 7),
+    ]
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="left"
+        ).to_list()
+        == values[:-1]
+    )
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="right"
+        ).to_list()
+        == values[1:]
+    )
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="both"
+        ).to_list()
+        == values
+    )
+    assert (
+        pl.datetime_range(
+            start=start, end=end, interval="1d12h", eager=True, closed="none"
+        ).to_list()
+        == values[1:-1]
+    )
+
+    values = values[-1::-1]
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="left"
+        ).to_list()
+        == values[:-1]
+    )
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="right"
+        ).to_list()
+        == values[1:]
+    )
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="both"
+        ).to_list()
+        == values
+    )
+    assert (
+        pl.datetime_range(
+            start=end, end=start, interval="-1d12h", eager=True, closed="none"
+        ).to_list()
+        == values[1:-1]
+    )
