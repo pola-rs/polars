@@ -43,7 +43,7 @@ class GroupBy:
         df: DataFrame,
         *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool,
-        predicates: Iterable[Any] | None = None,
+        predicates: Iterable[Any] | None,
         **named_by: IntoExpr,
     ) -> None:
         """
@@ -837,7 +837,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
-        predicates: Iterable[Any] | None = None,
+        predicates: Iterable[Any] | None,
     ) -> None:
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
@@ -1013,7 +1013,7 @@ class DynamicGroupBy:
         label: Label,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
-        predicates: Iterable[Any] | None = None,
+        predicates: Iterable[Any] | None,
     ) -> None:
         every = parse_as_duration_string(every)
         period = parse_as_duration_string(period)
