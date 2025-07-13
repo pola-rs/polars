@@ -473,3 +473,29 @@ def test_date_range_start_end_samples() -> None:
         ),
         pl.Series("literal", [], dtype=pl.Date),
     )
+
+
+def test_date_range_start_interval_samples() -> None:
+    assert_series_equal(
+        pl.date_range(start=date(2025, 1, 1), interval="1d", num_samples=3, eager=True),
+        pl.Series("literal", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]),
+    )
+
+    assert_series_equal(
+        pl.date_range(start=date(2025, 1, 1), interval="2d", num_samples=3, eager=True),
+        pl.Series("literal", [date(2025, 1, 1), date(2025, 1, 3), date(2025, 1, 5)]),
+    )
+
+    assert_series_equal(
+        pl.date_range(
+            start=date(2025, 1, 31), interval="1mo", num_samples=3, eager=True
+        ),
+        pl.Series("literal", [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)]),
+    )
+
+    assert_series_equal(
+        pl.date_range(
+            start=date(2025, 3, 31), interval="-1mo", num_samples=3, eager=True
+        ),
+        pl.Series("literal", [date(2025, 3, 31), date(2025, 2, 28), date(2025, 1, 31)]),
+    )

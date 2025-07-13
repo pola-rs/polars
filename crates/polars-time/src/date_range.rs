@@ -364,15 +364,15 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
     }
 
     let offset_fn = match time_unit {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Nanoseconds => Duration::add_ns,
     };
 
     // Start with one interval offset if we're not left-closed.
-    let start = (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
-    let ts = (start..start + num_samples)
-        .map(|i| offset_fn(&(interval * i), start, time_zone))
+    let t0 = (closed == ClosedWindow::Right || closed == ClosedWindow::None) as i64;
+    let ts = (t0..t0 + num_samples)
+        .map(|t| offset_fn(&(interval * t), start, time_zone))
         .collect::<PolarsResult<Vec<i64>>>()?;
     debug_assert!(num_samples as usize == ts.len());
     Ok(ts)

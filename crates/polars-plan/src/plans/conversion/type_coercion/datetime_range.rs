@@ -151,7 +151,7 @@ pub(super) fn update_date_range_types(
             let type_start = extract_date!(input, expr_arena, schema, 0, "start");
             let type_samples = extract_samples!(input, expr_arena, schema, 1);
             let from_types = vec![type_start.clone(), type_samples];
-            let to_types = vec![type_start, DataType::UInt64];
+            let to_types = vec![dt_date, DataType::UInt64];
             (from_types, to_types)
         },
         DateRangeArgs::EndIntervalSamples => {
