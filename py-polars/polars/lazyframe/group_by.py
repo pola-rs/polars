@@ -31,6 +31,48 @@ class LazyGroupBy:
     def __init__(self, lgb: PyLazyGroupBy) -> None:
         self.lgb = lgb
 
+    def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> LazyGroupBy:
+        """
+        Filter groups with a list of predicates after aggregation.
+
+        Using this method is equivalent to adding the predicates to the aggregation and
+        filtering afterwards.
+
+        This method can be chained and all conditions will be combined using `&`.
+
+        Parameters
+        ----------
+        *predicates
+            Expressions that evaluate to a boolean value for each group. Typically, this
+            requires the use of an aggregation function. Multiple predicates are combined
+            using `&`.
+
+        Examples
+        --------
+        Filter groups that contain only one element.
+
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "c"],
+        ...     }
+        ...).lazy()
+        >>> ldf.group_by("a").having(
+        ...     pl.len() > 1
+        ... ).agg().collect()  # doctest: +IGNORE_RESULT
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ b   │
+        │ a   │
+        └─────┘
+        """
+        pyexprs = parse_into_list_of_expressions(*predicates)
+        self.lgb = self.lgb.having(pyexprs)
+        return self
+
     def agg(
         self,
         *aggs: IntoExpr | Iterable[IntoExpr],

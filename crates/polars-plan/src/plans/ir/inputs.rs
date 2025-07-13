@@ -40,6 +40,7 @@ impl IR {
             },
             GroupBy {
                 keys,
+                predicates,
                 schema,
                 apply,
                 maintain_order,
@@ -48,7 +49,8 @@ impl IR {
             } => GroupBy {
                 input: inputs[0],
                 keys: exprs[..keys.len()].to_vec(),
-                aggs: exprs[keys.len()..].to_vec(),
+                predicates: exprs[keys.len()..keys.len() + predicates.len()].to_vec(),
+                aggs: exprs[keys.len() + predicates.len()..].to_vec(),
                 schema: schema.clone(),
                 apply: apply.clone(),
                 maintain_order: *maintain_order,
@@ -175,8 +177,17 @@ impl IR {
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
             Select { expr, .. } => container.extend_from_slice(expr),
-            GroupBy { keys, aggs, .. } => {
-                let iter = keys.iter().cloned().chain(aggs.iter().cloned());
+            GroupBy {
+                keys,
+                predicates,
+                aggs,
+                ..
+            } => {
+                let iter = keys
+                    .iter()
+                    .cloned()
+                    .chain(predicates.iter().cloned())
+                    .chain(aggs.iter().cloned());
                 container.extend(iter)
             },
             Join {

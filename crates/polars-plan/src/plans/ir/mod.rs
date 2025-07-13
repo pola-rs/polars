@@ -109,6 +109,7 @@ pub enum IR {
     GroupBy {
         input: Node,
         keys: Vec<ExprIR>,
+        predicates: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
         schema: SchemaRef,
         maintain_order: bool,

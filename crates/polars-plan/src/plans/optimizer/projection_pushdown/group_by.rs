@@ -5,6 +5,7 @@ pub(super) fn process_group_by(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     keys: Vec<ExprIR>,
+    predicates: Vec<ExprIR>,
     aggs: Vec<ExprIR>,
     apply: Option<Arc<dyn DataFrameUdf>>,
     schema: SchemaRef,
@@ -21,6 +22,7 @@ pub(super) fn process_group_by(
         let lp = GroupBy {
             input,
             keys,
+            predicates,
             aggs,
             schema,
             apply: Some(f),
@@ -59,8 +61,18 @@ pub(super) fn process_group_by(
         }
 
         // make sure the keys are projected
-        for key in &*keys {
+        for key in &keys {
             add_expr_to_accumulated(key.node(), &mut acc_projections, &mut names, expr_arena);
+        }
+
+        // make sure the predicates are projected
+        for predicate in &predicates {
+            add_expr_to_accumulated(
+                predicate.node(),
+                &mut acc_projections,
+                &mut names,
+                expr_arena,
+            );
         }
 
         // make sure that the dynamic key is projected
@@ -81,6 +93,7 @@ pub(super) fn process_group_by(
 
         let builder = IRBuilder::new(input, expr_arena, lp_arena).group_by(
             keys,
+            predicates,
             projected_aggs,
             apply,
             maintain_order,

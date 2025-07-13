@@ -310,7 +310,7 @@ impl SlicePushDown {
                     options
                 })
             }
-            (GroupBy { input, keys, aggs, schema, apply, maintain_order, mut options }, Some(state)) => {
+            (GroupBy { input, keys, predicates, aggs, schema, apply, maintain_order, mut options }, Some(state)) => {
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
@@ -322,6 +322,7 @@ impl SlicePushDown {
                 Ok(GroupBy {
                     input,
                     keys,
+                    predicates,
                     aggs,
                     schema,
                     apply,

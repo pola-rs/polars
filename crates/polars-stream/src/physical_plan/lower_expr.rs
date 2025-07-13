@@ -622,6 +622,7 @@ fn lower_exprs_with_ctx(
                     trans_input,
                     &[group_by_key_expr],
                     &[],
+                    &[],
                     group_by_output_schema,
                     maintain_order,
                     Arc::new(GroupbyOptions::default()),
@@ -964,6 +965,7 @@ fn lower_exprs_with_ctx(
                     let group_by_stream = build_group_by_stream(
                         trans_input,
                         &[group_by_key_expr],
+                        &[],
                         &[],
                         group_by_output_schema,
                         false,

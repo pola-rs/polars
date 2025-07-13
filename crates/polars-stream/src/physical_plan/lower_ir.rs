@@ -805,6 +805,7 @@ pub fn lower_ir(
         IR::GroupBy {
             input,
             keys,
+            predicates,
             aggs,
             schema: output_schema,
             apply,
@@ -813,6 +814,7 @@ pub fn lower_ir(
         } => {
             let input = *input;
             let keys = keys.clone();
+            let predicates = predicates.clone();
             let aggs = aggs.clone();
             let output_schema = output_schema.clone();
             let apply = apply.clone();
@@ -823,6 +825,7 @@ pub fn lower_ir(
             return build_group_by_stream(
                 phys_input,
                 &keys,
+                &predicates,
                 &aggs,
                 output_schema,
                 maintain_order,
@@ -1048,6 +1051,7 @@ pub fn lower_ir(
             let mut stream = build_group_by_stream(
                 phys_input,
                 &keys,
+                &[], // TODO: fix
                 &aggs,
                 Arc::new(group_by_output_schema),
                 options.maintain_order,

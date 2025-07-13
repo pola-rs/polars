@@ -229,6 +229,8 @@ pub struct GroupBy {
     #[pyo3(get)]
     keys: Vec<PyExprIR>,
     #[pyo3(get)]
+    predicates: Vec<PyExprIR>,
+    #[pyo3(get)]
     aggs: Vec<PyExprIR>,
     #[pyo3(get)]
     apply: (),
@@ -484,6 +486,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::GroupBy {
             input,
             keys,
+            predicates,
             aggs,
             schema: _,
             apply,
@@ -492,6 +495,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         } => GroupBy {
             input: input.0,
             keys: keys.iter().map(|e| e.into()).collect(),
+            predicates: predicates.iter().map(|e| e.into()).collect(),
             aggs: aggs.iter().map(|e| e.into()).collect(),
             apply: apply.as_ref().map_or(Ok(()), |_| {
                 Err(PyNotImplementedError::new_err(format!(

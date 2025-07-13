@@ -200,6 +200,7 @@ impl IR {
             IR::GroupBy {
                 input,
                 keys,
+                predicates,
                 aggs,
                 schema,
                 apply,
@@ -208,11 +209,13 @@ impl IR {
             } => {
                 let i = convert_to_lp(input, lp_arena);
                 let keys = expr_irs_to_exprs(keys, expr_arena);
+                let predicates = expr_irs_to_exprs(predicates, expr_arena);
                 let aggs = expr_irs_to_exprs(aggs, expr_arena);
 
                 DslPlan::GroupBy {
                     input: Arc::new(i),
                     keys,
+                    predicates,
                     aggs,
                     apply: apply.map(|apply| (apply, schema)),
                     maintain_order,

@@ -1277,6 +1277,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: false,
                 dynamic_options: None,
                 rolling_options: None,
@@ -1324,6 +1325,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
@@ -1369,6 +1371,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: Some(options),
@@ -1391,6 +1394,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: true,
                 dynamic_options: None,
                 rolling_options: None,
@@ -2098,6 +2102,7 @@ pub struct LazyGroupBy {
     pub logical_plan: DslPlan,
     opt_state: OptFlags,
     keys: Vec<Expr>,
+    predicates: Vec<Expr>,
     maintain_order: bool,
     #[cfg(feature = "dynamic_group_by")]
     dynamic_options: Option<DynamicGroupOptions>,
@@ -2116,6 +2121,31 @@ impl From<LazyGroupBy> for LazyFrame {
 }
 
 impl LazyGroupBy {
+    /// Filter groups with a predicate after aggregation.
+    ///
+    /// Similarly to the [LazyGroupBy::agg] method, the predicate must run an aggregation as it
+    /// is evaluated on the groups.
+    /// This method can be chained in which case all predicates must evaluate to `true` for a
+    /// group to be kept.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///        .group_by_stable([col("date")])
+    ///        .having(col("rain").sum() > lit(10))
+    ///        .agg([col("rain").min().alias("min_rain")])
+    /// }
+    /// ```
+    pub fn having(mut self, predicate: Expr) -> Self {
+        self.predicates.push(predicate);
+        self
+    }
+
     /// Group by and aggregate.
     ///
     /// Select a column with [col] and choose an aggregation.
@@ -2142,6 +2172,7 @@ impl LazyGroupBy {
         let lp = DslBuilder::from(self.logical_plan)
             .group_by(
                 self.keys,
+                self.predicates,
                 aggs,
                 None,
                 self.maintain_order,
@@ -2189,6 +2220,13 @@ impl LazyGroupBy {
     where
         F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
+        if !self.predicates.is_empty() {
+            Err::<(), _>(polars_err!(
+                nyi = "`apply` cannot be used with `having` predicates"
+            ))
+            .unwrap();
+        }
+
         #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: self.dynamic_options,
@@ -2202,6 +2240,7 @@ impl LazyGroupBy {
         let lp = DslPlan::GroupBy {
             input: Arc::new(self.logical_plan),
             keys: self.keys,
+            predicates: vec![],
             aggs: vec![],
             apply: Some((Arc::new(f), schema)),
             maintain_order: self.maintain_order,

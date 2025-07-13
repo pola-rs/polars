@@ -7,6 +7,7 @@ pub(super) fn process_group_by(
     expr_arena: &mut Arena<AExpr>,
     input: Node,
     keys: Vec<ExprIR>,
+    predicates: Vec<ExprIR>,
     aggs: Vec<ExprIR>,
     schema: SchemaRef,
     maintain_order: bool,
@@ -27,6 +28,7 @@ pub(super) fn process_group_by(
         let lp = GroupBy {
             input,
             keys,
+            predicates,
             aggs,
             schema,
             apply,
@@ -72,6 +74,7 @@ pub(super) fn process_group_by(
     let lp = GroupBy {
         input,
         keys,
+        predicates,
         aggs,
         schema,
         apply,

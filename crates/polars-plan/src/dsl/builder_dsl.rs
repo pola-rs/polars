@@ -218,6 +218,7 @@ impl DslBuilder {
     pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: E,
         apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
         maintain_order: bool,
@@ -236,6 +237,7 @@ impl DslBuilder {
         DslPlan::GroupBy {
             input: Arc::new(self.0),
             keys,
+            predicates,
             aggs,
             apply,
             maintain_order,

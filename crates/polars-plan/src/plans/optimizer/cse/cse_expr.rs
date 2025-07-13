@@ -994,6 +994,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
             IR::GroupBy {
                 input,
                 keys,
+                predicates,
                 aggs,
                 options,
                 maintain_order,
@@ -1001,35 +1002,47 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                 schema,
             } => {
                 let input_schema = arena.0.get(*input).schema(&arena.0);
-                if let Some(aggs) = self.find_cse(
+                let predicates_cse = self.find_cse(
+                    predicates,
+                    &mut arena.1,
+                    &mut id_array_offsets,
+                    true,
+                    input_schema.as_ref().as_ref(),
+                )?;
+                let aggs_cse = self.find_cse(
                     aggs,
                     &mut arena.1,
                     &mut id_array_offsets,
                     true,
                     input_schema.as_ref().as_ref(),
-                )? {
-                    let keys = keys.clone();
-                    let options = options.clone();
-                    let schema = schema.clone();
-                    let apply = apply.clone();
-                    let maintain_order = *maintain_order;
-                    let input = *input;
+                )?;
+                match (predicates_cse, aggs_cse) {
+                    (Some(predicates), Some(aggs)) => {
+                        let keys = keys.clone();
+                        let options = options.clone();
+                        let schema = schema.clone();
+                        let apply = apply.clone();
+                        let maintain_order = *maintain_order;
+                        let input = *input;
 
-                    let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
-                        .with_columns(aggs.cse_exprs().to_vec(), Default::default())
-                        .build();
-                    let input = arena.0.add(lp);
+                        let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                            .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                            .build();
+                        let input = arena.0.add(lp);
 
-                    let lp = IR::GroupBy {
-                        input,
-                        keys,
-                        aggs: aggs.default_exprs().to_vec(),
-                        options,
-                        schema,
-                        maintain_order,
-                        apply,
-                    };
-                    arena.0.replace(arena_idx, lp);
+                        let lp = IR::GroupBy {
+                            input,
+                            keys,
+                            predicates: predicates.default_exprs().to_vec(),
+                            aggs: aggs.default_exprs().to_vec(),
+                            options,
+                            schema,
+                            maintain_order,
+                            apply,
+                        };
+                        arena.0.replace(arena_idx, lp);
+                    },
+                    _ => {},
                 }
             },
             _ => {},

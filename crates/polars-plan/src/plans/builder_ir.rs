@@ -270,6 +270,7 @@ impl<'a> IRBuilder<'a> {
     pub fn group_by(
         self,
         keys: Vec<ExprIR>,
+        predicates: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
@@ -307,6 +308,7 @@ impl<'a> IRBuilder<'a> {
         let lp = IR::GroupBy {
             input: self.root,
             keys,
+            predicates,
             aggs,
             schema: Arc::new(schema),
             apply,

@@ -399,6 +399,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::GroupBy {
             input,
             keys,
+            predicates,
             aggs,
             apply,
             maintain_order,
@@ -412,9 +413,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt.opt_flags.insert(OptFlags::PROJECTION_PUSHDOWN)
             }
 
-            let (keys, aggs, schema) = resolve_group_by(
+            let (keys, predicates, aggs, schema) = resolve_group_by(
                 input,
                 keys,
+                predicates,
                 aggs,
                 &options,
                 ctxt.lp_arena,
@@ -437,6 +439,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let lp = IR::GroupBy {
                 input,
                 keys,
+                predicates,
                 aggs,
                 schema,
                 apply,
@@ -1095,12 +1098,13 @@ fn resolve_with_columns(
 fn resolve_group_by(
     input: Node,
     keys: Vec<Expr>,
+    predicates: Vec<Expr>,
     aggs: Vec<Expr>,
     _options: &GroupbyOptions,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     opt_flags: &mut OptFlags,
-) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
+) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let input_schema = input_schema.as_ref();
     let mut keys = rewrite_projections(keys, &PlHashSet::default(), input_schema, opt_flags)?;
@@ -1148,6 +1152,7 @@ fn resolve_group_by(
 
     let in_eager = opt_flags.contains(OptFlags::EAGER);
     let keys = to_expr_irs(keys, expr_arena, input_schema, in_eager)?;
+    let predicates = to_expr_irs(predicates, expr_arena, input_schema, in_eager)?;
     let aggs = to_expr_irs(aggs, expr_arena, input_schema, in_eager)?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
@@ -1161,7 +1166,7 @@ fn resolve_group_by(
         }
     }
 
-    Ok((keys, aggs, Arc::new(output_schema)))
+    Ok((keys, predicates, aggs, Arc::new(output_schema)))
 }
 fn stats_helper<F, E>(condition: F, expr: E, schema: &Schema) -> Vec<Expr>
 where
