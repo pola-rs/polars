@@ -74,6 +74,7 @@ fn compute_keys(
     Ok(df.take_columns())
 }
 
+#[allow(clippy::type_complexity)]
 fn run_partitions(
     df: &mut DataFrame,
     exec: &PartitionGroupByExec,
@@ -127,11 +128,11 @@ fn run_partitions(
                 let df = DataFrame::new(columns)?;
                 let predicate_df = DataFrame::new(
                     agg_and_predicate_columns[phys_aggs.len()..]
-                        .into_iter()
+                        .iter()
                         .enumerate()
                         .map(|(i, col)| {
                             col.clone()
-                                .with_name(PlSmallStr::from_string(format!("{}", i)))
+                                .with_name(PlSmallStr::from_string(format!("{i}")))
                         })
                         .collect_vec(),
                 )?;
