@@ -2219,10 +2219,7 @@ impl LazyGroupBy {
         F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         if !self.predicates.is_empty() {
-            Err::<(), _>(polars_err!(
-                nyi = "`apply` cannot be used with `having` predicates"
-            ))
-            .unwrap();
+            panic!("not yet implemented: `apply` cannot be used with `having` predicates");
         }
 
         #[cfg(feature = "dynamic_group_by")]
