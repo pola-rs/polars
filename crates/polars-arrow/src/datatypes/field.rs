@@ -10,7 +10,7 @@ use super::{ArrowDataType, Metadata};
 // were unable to read non-u32-key arrow dictionaries while _PL_ENUM_VALUES
 // is set we switched to a new version.
 pub static DTYPE_ENUM_VALUES_LEGACY: &str = "_PL_ENUM_VALUES";
-pub static DTYPE_ENUM_VALUES_NEW: &str = "_PL_ENUM_VALUES2";
+pub static DTYPE_ENUM_VALUES_NEW: &str = "_PL_ENUM_values_2";
 
 // These have different encodings.
 pub static DTYPE_CATEGORICAL_LEGACY: &str = "_PL_CATEGORICAL";

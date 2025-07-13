@@ -8,7 +8,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
     let mut df = df![
         "index" => [8, 2, 3, 6, 3, 6, 2, 2],
         "values1" => [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000],
-        "values2" => [1, 1, 1, 1, 1, 1, 1, 1],
+        "values_2" => [1, 1, 1, 1, 1, 1, 1, 1],
     ]?;
     df.try_apply("values1", |s| s.cast(&DataType::Date))?;
 
@@ -17,7 +17,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
         &df,
         ["values1"],
         Some(["index"]),
-        Some(["values2"]),
+        Some(["values_2"]),
         true,
         Some(PivotAgg::Count),
         None,
@@ -33,7 +33,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
     // Test with date as the `values` input.
     let mut out = pivot_stable(
         &df,
-        ["values2"],
+        ["values_2"],
         Some(["index"]),
         Some(["values1"]),
         true,
@@ -168,7 +168,7 @@ fn test_pivot_new() -> PolarsResult<()> {
         "cols1"=> ["small", "large", "large", "small", "small", "large", "small", "small", "large"],
         "cols2"=> ["jam", "egg", "egg", "egg", "jam", "jam", "potato", "jam", "jam"],
         "values1"=> [1, 2, 2, 3, 3, 4, 5, 6, 7],
-        "values2"=> [2, 4, 5, 5, 6, 6, 8, 9, 9]
+        "values_2"=> [2, 4, 5, 5, 6, 6, 8, 9, 9]
     ]?;
 
     let out = (pivot_stable(
