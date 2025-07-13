@@ -1286,6 +1286,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: false,
             }
         }
@@ -1403,6 +1404,7 @@ impl LazyFrame {
                 logical_plan: self.logical_plan,
                 opt_state,
                 keys,
+                predicates: vec![],
                 maintain_order: true,
             }
         }
@@ -2133,7 +2135,7 @@ impl LazyGroupBy {
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
     ///        .group_by_stable([col("date")])
-    ///        .having(col("rain").sum() > lit(10))
+    ///        .having(col("rain").sum().gt(lit(10)))
     ///        .agg([col("rain").min().alias("min_rain")])
     /// }
     /// ```
@@ -2179,7 +2181,7 @@ impl LazyGroupBy {
 
         #[cfg(not(feature = "dynamic_group_by"))]
         let lp = DslBuilder::from(self.logical_plan)
-            .group_by(self.keys, aggs, None, self.maintain_order)
+            .group_by(self.keys, self.predicates, aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
