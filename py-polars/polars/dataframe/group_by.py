@@ -3,8 +3,6 @@ from __future__ import annotations
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable
 
-from click import group
-
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecated

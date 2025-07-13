@@ -44,8 +44,8 @@ class LazyGroupBy:
         ----------
         *predicates
             Expressions that evaluate to a boolean value for each group. Typically, this
-            requires the use of an aggregation function. Multiple predicates are combined
-            using `&`.
+            requires the use of an aggregation function. Multiple predicates are
+            combined using `&`.
 
         Examples
         --------

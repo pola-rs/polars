@@ -1016,33 +1016,30 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     true,
                     input_schema.as_ref().as_ref(),
                 )?;
-                match (predicates_cse, aggs_cse) {
-                    (Some(predicates), Some(aggs)) => {
-                        let keys = keys.clone();
-                        let options = options.clone();
-                        let schema = schema.clone();
-                        let apply = apply.clone();
-                        let maintain_order = *maintain_order;
-                        let input = *input;
+                if let (Some(predicates), Some(aggs)) = (predicates_cse, aggs_cse) {
+                    let keys = keys.clone();
+                    let options = options.clone();
+                    let schema = schema.clone();
+                    let apply = apply.clone();
+                    let maintain_order = *maintain_order;
+                    let input = *input;
 
-                        let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
-                            .with_columns(aggs.cse_exprs().to_vec(), Default::default())
-                            .build();
-                        let input = arena.0.add(lp);
+                    let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                        .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                        .build();
+                    let input = arena.0.add(lp);
 
-                        let lp = IR::GroupBy {
-                            input,
-                            keys,
-                            predicates: predicates.default_exprs().to_vec(),
-                            aggs: aggs.default_exprs().to_vec(),
-                            options,
-                            schema,
-                            maintain_order,
-                            apply,
-                        };
-                        arena.0.replace(arena_idx, lp);
-                    },
-                    _ => {},
+                    let lp = IR::GroupBy {
+                        input,
+                        keys,
+                        predicates: predicates.default_exprs().to_vec(),
+                        aggs: aggs.default_exprs().to_vec(),
+                        options,
+                        schema,
+                        maintain_order,
+                        apply,
+                    };
+                    arena.0.replace(arena_idx, lp);
                 }
             },
             _ => {},
