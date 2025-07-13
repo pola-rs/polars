@@ -113,62 +113,6 @@ pub(crate) fn call_lambda_with_series(
     lambda.call(py, (python_series_wrapper,), dict.as_ref())
 }
 
-/// A python lambda taking two Series
-pub(crate) fn binary_lambda(
-    lambda: &PyObject,
-    a: Series,
-    b: Series,
-) -> PolarsResult<Option<Series>> {
-    Python::with_gil(|py| {
-        // get the pypolars module
-        let pypolars = polars(py).bind(py);
-        // create a PySeries struct/object for Python
-        let pyseries_a = PySeries::new(a);
-        let pyseries_b = PySeries::new(b);
-
-        // Wrap this PySeries object in the python side Series wrapper
-        let python_series_wrapper_a = pypolars
-            .getattr("wrap_s")
-            .unwrap()
-            .call1((pyseries_a,))
-            .unwrap();
-        let python_series_wrapper_b = pypolars
-            .getattr("wrap_s")
-            .unwrap()
-            .call1((pyseries_b,))
-            .unwrap();
-
-        // call the lambda and get a python side Series wrapper
-        let result_series_wrapper =
-            match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => polars_bail!(
-                    ComputeError: "custom python function failed: {}", e.value(py),
-                ),
-            };
-        let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
-            let pyexpr = expr.extract::<PyExpr>(py).unwrap();
-            let expr = pyexpr.inner;
-            let df = DataFrame::empty();
-            let out = df
-                .lazy()
-                .select([expr])
-                .with_predicate_pushdown(false)
-                .with_projection_pushdown(false)
-                .collect()?;
-
-            let s = out.select_at_idx(0).unwrap().clone();
-            PySeries::new(s.take_materialized_series())
-        } else {
-            return Some(result_series_wrapper.to_series(py, pypolars.as_unbound(), ""))
-                .transpose();
-        };
-
-        // Finally get the actual Series
-        Ok(Some(pyseries.series))
-    })
-}
-
 pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,

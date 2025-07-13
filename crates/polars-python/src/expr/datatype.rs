@@ -36,10 +36,6 @@ impl PyDataTypeExpr {
         DataTypeExpr::SelfDtype.into()
     }
 
-    pub fn materialize_udf(&self, expr: PyExpr) -> Self {
-        self.inner.clone().materialize_udf(expr.inner).into()
-    }
-
     pub fn collect_dtype<'py>(
         &self,
         py: Python<'py>,

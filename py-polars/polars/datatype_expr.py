@@ -51,12 +51,6 @@ class DataTypeExpr:
         slf._pydatatype_expr = pydatatype_expr
         return slf
 
-    def _materialize_udf(self, udf: pl.Expr) -> DataTypeExpr:
-        """Materialize UDF/SelfDtype in map_batches/map_elements."""
-        return DataTypeExpr._from_pydatatype_expr(
-            self._pydatatype_expr.materialize_udf(udf._pyexpr)
-        )
-
     def collect_dtype(
         self, context: SchemaDict | pl.Schema | pl.DataFrame | pl.LazyFrame
     ) -> DataType:

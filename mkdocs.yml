@@ -20,6 +20,7 @@ nav:
                       - user-guide/concepts/data-types-and-structures.md
                       - user-guide/concepts/expressions-and-contexts.md
                       - user-guide/concepts/lazy-api.md
+                      - user-guide/concepts/streaming.md
                 - Expressions:
                       - user-guide/expressions/index.md
                       - user-guide/expressions/basic-operations.md

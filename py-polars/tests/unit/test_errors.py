@@ -343,9 +343,7 @@ def test_invalid_dtype() -> None:
 def test_arr_eval_named_cols() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
 
-    with pytest.raises(
-        ColumnNotFoundError,
-    ):
+    with pytest.raises(ComputeError):
         df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 

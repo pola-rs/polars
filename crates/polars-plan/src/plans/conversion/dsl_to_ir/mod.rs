@@ -1067,7 +1067,7 @@ fn resolve_with_columns(
 ) -> PolarsResult<(Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let mut output_schema = (**input_schema).clone();
-    let (exprs, _) = prepare_projection(exprs, &input_schema, opt_flags)?;
+    let exprs = rewrite_projections(exprs, &PlHashSet::new(), &input_schema, opt_flags)?;
     let mut output_names = PlHashSet::with_capacity(exprs.len());
 
     let eirs = to_expr_irs(

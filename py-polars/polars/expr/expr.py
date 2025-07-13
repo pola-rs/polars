@@ -4493,8 +4493,6 @@ class Expr:
 Consider using {self}.implode() instead"""
             raise DeprecationWarning(msg)
             self = self.implode()
-        if isinstance(return_dtype, pl.DataTypeExpr):
-            return_dtype = return_dtype._materialize_udf(self)._pydatatype_expr
         elif return_dtype is not None:
             return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
