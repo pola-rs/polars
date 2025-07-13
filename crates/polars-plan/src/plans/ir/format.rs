@@ -915,6 +915,7 @@ pub fn write_ir_non_recursive(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn write_group_by(
     f: &mut dyn fmt::Write,
     indent: usize,
@@ -944,7 +945,7 @@ pub fn write_group_by(
             expr_arena,
         };
         write!(f, "\n{:sub_indent$}{aggs} BY {keys}", "")?;
-        if predicates.len() > 0 {
+        if !predicates.is_empty() {
             let predicates = ExprIRSliceDisplay {
                 exprs: predicates,
                 expr_arena,

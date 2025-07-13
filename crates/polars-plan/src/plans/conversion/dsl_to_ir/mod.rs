@@ -1095,6 +1095,7 @@ fn resolve_with_columns(
     Ok((eirs, Arc::new(output_schema)))
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn resolve_group_by(
     input: Node,
     keys: Vec<Expr>,

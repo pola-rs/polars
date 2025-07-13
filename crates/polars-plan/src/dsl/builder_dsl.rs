@@ -215,6 +215,7 @@ impl DslBuilder {
         .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
