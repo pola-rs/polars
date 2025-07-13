@@ -71,7 +71,7 @@ def test_max_size_partition(
 
     i = 0
     while length > 0:
-        assert (io_type["scan"])(tmp_path / f"{i:07x}.{io_type['ext']}").select(
+        assert (io_type["scan"])(tmp_path / f"{i:08x}.{io_type['ext']}").select(
             pl.len()
         ).collect()[0, 0] == min(max_size, length)
 
@@ -106,7 +106,7 @@ def test_max_size_partition_lambda(
 
     i = 0
     while length > 0:
-        assert (io_type["scan"])(tmp_path / f"abc-{i:07x}.{io_type['ext']}").select(
+        assert (io_type["scan"])(tmp_path / f"abc-{i:08x}.{io_type['ext']}").select(
             pl.len()
         ).collect()[0, 0] == min(max_size, length)
 
@@ -357,7 +357,7 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
         sync_on_close="data",
     )
 
-    assert output_files == [tmp_path / f"{i:07x}.{io_type['ext']}" for i in range(6)]
+    assert output_files == [tmp_path / f"{i:08x}.{io_type['ext']}" for i in range(6)]
 
 
 @pytest.mark.parametrize(("io_type"), io_types)
