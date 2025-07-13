@@ -55,7 +55,7 @@ class LazyGroupBy:
         ...     {
         ...         "a": ["a", "b", "a", "b", "c"],
         ...     }
-        ...).lazy()
+        ... ).lazy()
         >>> ldf.group_by("a").having(
         ...     pl.len() > 1
         ... ).agg().collect()  # doctest: +IGNORE_RESULT
