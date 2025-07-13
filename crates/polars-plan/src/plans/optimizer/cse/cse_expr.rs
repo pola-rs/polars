@@ -1016,7 +1016,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     true,
                     input_schema.as_ref().as_ref(),
                 )?;
-                if let (Some(predicates), Some(aggs)) = (predicates_cse, aggs_cse) {
+                if predicates_cse.is_some() || aggs_cse.is_some() {
                     let keys = keys.clone();
                     let options = options.clone();
                     let schema = schema.clone();
@@ -1024,16 +1024,47 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     let maintain_order = *maintain_order;
                     let input = *input;
 
-                    let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
-                        .with_columns(aggs.cse_exprs().to_vec(), Default::default())
-                        .build();
+                    let (lp, predicates, aggs) = match (predicates_cse, aggs_cse) {
+                        (Some(predicates), Some(aggs)) => (
+                            IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                                .with_columns(predicates.cse_exprs().to_vec(), Default::default())
+                                .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                                .build(),
+                            predicates.default_exprs().to_vec(),
+                            aggs.default_exprs().to_vec(),
+                        ),
+                        (Some(predicates), None) => {
+                            let aggs = aggs.clone();
+                            (
+                                IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                                    .with_columns(
+                                        predicates.cse_exprs().to_vec(),
+                                        Default::default(),
+                                    )
+                                    .build(),
+                                predicates.default_exprs().to_vec(),
+                                aggs,
+                            )
+                        },
+                        (None, Some(aggs)) => {
+                            let predicates = predicates.clone();
+                            (
+                                IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                                    .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                                    .build(),
+                                predicates.clone(),
+                                aggs.default_exprs().to_vec(),
+                            )
+                        },
+                        _ => unreachable!(),
+                    };
                     let input = arena.0.add(lp);
 
                     let lp = IR::GroupBy {
                         input,
                         keys,
-                        predicates: predicates.default_exprs().to_vec(),
-                        aggs: aggs.default_exprs().to_vec(),
+                        predicates,
+                        aggs,
                         options,
                         schema,
                         maintain_order,

@@ -434,6 +434,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             ctxt.conversion_optimizer
                 .fill_scratch(&keys, ctxt.expr_arena);
             ctxt.conversion_optimizer
+                .fill_scratch(&predicates, ctxt.expr_arena);
+            ctxt.conversion_optimizer
                 .fill_scratch(&aggs, ctxt.expr_arena);
 
             let lp = IR::GroupBy {

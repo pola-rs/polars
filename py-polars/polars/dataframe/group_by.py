@@ -166,7 +166,7 @@ class GroupBy:
         ...     {
         ...         "a": ["a", "b", "a", "b", "c"],
         ...     }
-        ...)
+        ... )
         >>> df.group_by("a").having(pl.len() > 1).agg()  # doctest: +IGNORE_RESULT
         shape: (2, 1)
         ┌─────┐
@@ -929,18 +929,18 @@ class RollingGroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return (
-            self.df.lazy()
-            .rolling(
-                index_column=self.time_column,
-                period=self.period,
-                offset=self.offset,
-                closed=self.closed,
-                group_by=self.group_by,
-            )
-            .having(self.predicates)
-            .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none())
+        group_by = self.df.lazy().rolling(
+            index_column=self.time_column,
+            period=self.period,
+            offset=self.offset,
+            closed=self.closed,
+            group_by=self.group_by,
+        )
+        if self.predicates:
+            group_by = group_by.having(self.predicates)
+
+        return group_by.agg(*aggs, **named_aggs).collect(
+            optimizations=QueryOptFlags.none()
         )
 
     def map_groups(
@@ -1118,22 +1118,22 @@ class DynamicGroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return (
-            self.df.lazy()
-            .group_by_dynamic(
-                index_column=self.time_column,
-                every=self.every,
-                period=self.period,
-                offset=self.offset,
-                label=self.label,
-                include_boundaries=self.include_boundaries,
-                closed=self.closed,
-                group_by=self.group_by,
-                start_by=self.start_by,
-            )
-            .having(self.predicates)
-            .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none())
+        group_by = self.df.lazy().group_by_dynamic(
+            index_column=self.time_column,
+            every=self.every,
+            period=self.period,
+            offset=self.offset,
+            label=self.label,
+            include_boundaries=self.include_boundaries,
+            closed=self.closed,
+            group_by=self.group_by,
+            start_by=self.start_by,
+        )
+        if self.predicates:
+            group_by = group_by.having(self.predicates)
+
+        return group_by.agg(*aggs, **named_aggs).collect(
+            optimizations=QueryOptFlags.none()
         )
 
     def map_groups(
