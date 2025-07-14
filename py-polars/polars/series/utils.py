@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import inspect
 import sys
-from functools import wraps
+from functools import reduce, wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
+
+import numpy as np
 
 import polars._reexport as pl
 from polars import functions as F
@@ -11,6 +13,8 @@ from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars import Series
     from polars._typing import PolarsDataType
     from polars.polars import PySeries
@@ -147,6 +151,113 @@ class _EmptyBytecodeHelper:
 
 
 _EMPTY_BYTECODE = _EmptyBytecodeHelper()
+
+
+def np_common(*types: str) -> str:
+    """
+    Find supertype of numpy types.
+
+    Parameters
+    ----------
+    *types
+        The char version of numpy types
+
+    Returns
+    -------
+    str
+        The dtype in common
+    """
+    if hasattr(np, "promote_types"):
+
+        def _np_super(*args: np.dtype[Any]) -> np.dtype[Any]:
+            return reduce(np.promote_types, args)
+    else:
+        # for pre numpy 2.0
+        def _np_super(*args: np.dtype[Any]) -> np.dtype[Any]:
+            return np.find_common_type(args, [])  # type: ignore[attr-defined]
+
+    dtypes = [np.dtype(ch) for ch in types]
+    return _np_super(*dtypes).char
+
+
+def match_in_out_types(
+    ufunc_types: Sequence[str],
+    *,
+    args: Sequence[int | float | np.ndarray[Any, Any]] | None = None,
+    args_types: Sequence[str] | None = None,
+) -> str:
+    """
+    Obtain the proper output type based on ufunc signature and input types.
+
+    Parameters
+    ----------
+    ufunc_types
+        The output of ufunc.types
+            for example ['e->e', 'f->f'] or ['d->L', 'f->I']
+    args_types
+        The types of the inputs
+
+    Returns
+    -------
+    str
+        The dtype to use for choosing the ffi func
+    """
+    NP_INTs = ["b", "h", "i", "l", "B", "H", "I", "L"]
+    if args is None and args_types is None:
+        msg = "must use one of args or args_types"
+        raise ValueError(msg)
+    if args is not None and args_types is not None:
+        msg = "only specify one of args or args_types"
+        raise ValueError(msg)
+    if args_types is None and args is not None:
+        prefer_int = None
+        prefer_float = None
+        args_types = []
+        for arg in args:
+            if isinstance(arg, float):
+                if prefer_float is not None:
+                    args_types.append(prefer_float)
+                else:
+                    args_types.append("d")
+            elif isinstance(arg, int):
+                if prefer_int is not None:
+                    args_types.append(prefer_int)
+                else:
+                    args_types.append("l")
+            else:
+                if arg.dtype.char in NP_INTs:
+                    prefer_int = arg.dtype.char
+                elif arg.dtype.char in ["d", "f"]:
+                    prefer_float = arg.dtype.char
+                args_types.append(arg.dtype.char)
+    in_out = {(splt := typ.split("->", maxsplit=1))[0]: splt[1] for typ in ufunc_types}
+    assert args_types is not None
+    args_str = "".join(args_types)
+    if args_str in in_out:
+        return in_out[args_str]
+    elif len(set(in_out.values())) == 1:
+        return next(iter(in_out.values()))
+    elif all(v not in NP_INTs for v in in_out.values()):
+        if any(x == "f" for x in args_types) and all(x != "d" for x in args_types):
+            return "f"
+        else:
+            return "d"
+    elif (
+        len(args_types) == 2
+        and args_types[0] in ["f", "d"]
+        and args_types[1] in NP_INTs
+    ):
+        return args_types[0]
+    elif all(
+        len(set(k)) == 1 and (num_ins := len(k)) > 1 and len(args_str) > 1
+        for k in in_out
+    ):
+        super_in = np_common(*args_types)
+        super_in_repeated = [super_in for _ in range(num_ins)]
+        return match_in_out_types(ufunc_types, args_types=super_in_repeated)
+    else:
+        msg = "no matching input to output dtype combination found. Try manually setting dtype"
+        raise TypeError(msg)
 
 
 def get_ffi_func(
