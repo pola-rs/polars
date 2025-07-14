@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
@@ -336,6 +338,22 @@ def test_reinterpret_to_zero_length_array() -> None:
     arr_dtype = pl.Array(pl.UInt8, 0)
     result = pl.Series([b"", b""]).bin.reinterpret(dtype=arr_dtype)
     assert_series_equal(result, pl.Series([[], []], dtype=arr_dtype))
+
+
+@given(
+    value1=st.integers(0, 2**63),
+    value2=st.binary(min_size=0, max_size=7),
+    value3=st.integers(0, 2**63),
+)
+def test_reinterpret_to_array_different_alignment(
+    value1: int, value2: bytes, value3: int
+) -> None:
+    series = pl.Series([struct.pack("<Q", value1), value2, struct.pack("<Q", value3)])
+    arr_dtype = pl.Array(pl.UInt64, 1)
+    as_uint64 = series.bin.reinterpret(dtype=arr_dtype, endianness="little")
+    assert_series_equal(
+        pl.Series([[value1], None, [value3]], dtype=arr_dtype), as_uint64
+    )
 
 
 @pytest.mark.parametrize(
