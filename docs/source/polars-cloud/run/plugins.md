@@ -15,12 +15,11 @@ distributed as Python packages that register new expression methods.
 
 ### Setting Up Your Environment
 
-First, configure your compute context to include the required packages. In the compute context, you
-can specify a `requirements.txt` file with additional packages to install on your compute instance.
+Start by creating a `requirements.txt` file with your dependencies. You can do this this as follows
+with `uv` and `pip`:
 
-{{code_block('polars-cloud/plugins','set-context',['ComputeContext'])}}
-
-Create a `requirements.txt` file with your dependencies:
+- `uv export --format requirements-txt`
+- `pip freeze > requirements.txt`
 
 ```python
 # requirements.txt
@@ -30,6 +29,11 @@ polars_cloud
 numpy
 polars_xdt
 ```
+
+After that, include the file in the your compute context. In the compute context, you can specify a
+`requirements.txt` file with additional packages to install on your compute instance.
+
+{{code_block('polars-cloud/plugins','set-context',['ComputeContext'])}}
 
 ### Using Plugins in Remote Workflows
 
@@ -57,22 +61,13 @@ shape: (3, 3)
 Plugins generally offer better performance than UDFs since they run compiled code. However, UDFs
 provide more flexibility for custom logic.
 
-### User-Defined Functions (UDFs)
-
-You can also run your own
-[User-defined Python functions](https://docs.pola.rs/user-guide/expressions/user-defined-python-functions/)
-with Polars Cloud. UDFs allow you to apply custom Python logic to your data when no built-in
-operation or plugin exists for your specific use case.
-
-UDFs are Python functions that you write to handle custom business logic, data transformations, or
-integration with external libraries. They're applied using `map_elements()` for element-wise
-operations or `map_batches()` for operations that need access to the entire Series.
-
 ### Using UDFs in Remote Execution
 
-The process of using a UDF in your workflow is the same as with plugins. Ensure your dependencies
-are included in the requirements file you pass in the compute context. Your custom Python functions
-will execute on the remote compute instances:
+The process of using a
+[user defined function](https://docs.pola.rs/user-guide/expressions/user-defined-python-functions/)
+in your workflow is the same as with plugins. Ensure your dependencies are included in the
+requirements file you pass in the compute context. Your custom Python functions will execute on the
+remote compute instances:
 
 {{code_block('polars-cloud/plugins','run-udf',[])}}
 
