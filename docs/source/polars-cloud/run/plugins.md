@@ -15,8 +15,8 @@ distributed as Python packages that register new expression methods.
 
 ### Setting Up Your Environment
 
-Start by creating a `requirements.txt` file with your dependencies. You can do this as follows
-with `uv` and `pip`:
+Start by creating a `requirements.txt` file with your dependencies. You can do this as follows with
+`uv` and `pip`:
 
 - `uv export --format requirements-txt`
 - `pip freeze > requirements.txt`
@@ -40,7 +40,8 @@ After that, include the file in the compute context. In the compute context, you
 In this example query we use the [polars-xdt](https://github.com/pola-rs/polars-xdt) plugin. This
 plugin offers extra datetime-related functionality which isn't in-scope for the main Polars library.
 
-Once installed, plugins extend the Polars expression API with new namespaces and methods. When importing the plugin, we can use its functionality just as on a local machine:
+Once installed, plugins extend the Polars expression API with new namespaces and methods. When
+importing the plugin, we can use its functionality just as on a local machine:
 
 {{code_block('polars-cloud/plugins','run-plugin',[])}}
 
