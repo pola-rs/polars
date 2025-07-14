@@ -644,7 +644,7 @@ def test_datetime_range_with_nanoseconds_overflow_15735() -> None:
 # Helper function to generate output Series with expected dtype.
 def to_expected(values: list[date | datetime], dtype: PolarsDataType) -> pl.Series:
     if dtype == pl.Date:
-        return pl.Series("literal", values, dtype=pl.Datetime("ms"))
+        return pl.Series("literal", values, dtype=pl.Datetime("us"))
     else:
         if dtype.time_zone is not None:
             tu = dtype.time_unit
