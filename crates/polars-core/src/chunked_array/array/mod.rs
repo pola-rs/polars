@@ -17,6 +17,9 @@ impl ArrayChunked {
         }
     }
 
+    /// # Panics
+    /// Panics if the physical representation of `dtype` differs the physical
+    /// representation of the existing inner `dtype`.
     pub fn set_inner_dtype(&mut self, dtype: DataType) {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
         let width = self.width();
