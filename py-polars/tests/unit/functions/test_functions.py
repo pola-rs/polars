@@ -720,3 +720,11 @@ def test_row_index_expr() -> None:
             },
         ),
     )
+
+    assert_frame_equal(
+        lf.select(pl.row_index()).collect(),
+        pl.DataFrame(
+            {"index": [0, 1, 2, 3, 4]},
+            schema={"index": pl.get_index_type()},
+        ),
+    )

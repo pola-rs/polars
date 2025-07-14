@@ -2559,8 +2559,8 @@ def row_index(name: str = "index") -> pl.Expr:
     """
     Generates a sequence of integers.
 
-    The datatype of the returned sequence will match the one returned by
-    `get_index_dtype()`.
+    The length of the returned sequence will match the context length, and the
+    datatype will match the one returned by `get_index_dtype()`.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -2609,6 +2609,19 @@ def row_index(name: str = "index") -> pl.Expr:
     │ A   ┆ [0, 1]    │
     │ B   ┆ [0, 1, 2] │
     └─────┴───────────┘
+    >>> df.select(pl.row_index())
+    shape: (5, 1)
+    ┌───────┐
+    │ index │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 0     │
+    │ 1     │
+    │ 2     │
+    │ 3     │
+    │ 4     │
+    └───────┘
     """
     # Note: Dispatching to `int_range` means that we cannot accept an offset
     # parameter, as unlike `DataFrame.with_row_index()`, `int_range` will simply
