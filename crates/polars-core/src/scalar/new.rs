@@ -58,7 +58,7 @@ impl Scalar {
         )
     }
 
-    #[cfg(feature = "dtype-decimal")]
+    #[cfg(feature = "dtype-categorical")]
     pub fn new_enum(
         value: polars_dtype::categorical::CatSize,
         categories: &arrow::array::Utf8ViewArray,
@@ -76,7 +76,7 @@ impl Scalar {
         ))
     }
 
-    #[cfg(feature = "dtype-decimal")]
+    #[cfg(feature = "dtype-categorical")]
     pub fn new_categorical(
         value: &str,
         name: PlSmallStr,
