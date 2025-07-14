@@ -4,6 +4,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
+use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
@@ -284,7 +285,7 @@ impl ColumnSelectorBuilder {
         } else {
             match &self.missing_columns_policy {
                 MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new(
-                    ScalarColumn::full_null(target_name.clone(), 1, target_dtype),
+                    ScalarColumn::full_null(target_name.clone(), 1, target_dtype.clone()),
                 )),
                 MissingColumnsPolicy::Raise => polars_bail!(
                     ColumnNotFound:
@@ -385,7 +386,7 @@ impl ColumnSelectorBuilder {
                             ColumnSelector::Constant(Box::new(ScalarColumn::full_null(
                                 output_field.name().clone(),
                                 1,
-                                output_field.dtype(),
+                                output_field.dtype().clone(),
                             )))
                         },
                         MissingColumnsPolicy::Raise => {
