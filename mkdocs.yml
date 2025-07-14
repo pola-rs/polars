@@ -125,6 +125,7 @@ nav:
                 - polars-cloud/run/interactive-batch.md
                 - polars-cloud/run/distributed-engine.md
                 - polars-cloud/run/example-workflow.md
+                - polars-cloud/run/plugins.md
           - Authentication:
                 - polars-cloud/explain/authentication.md
                 - polars-cloud/explain/service-accounts.md
