@@ -2627,8 +2627,6 @@ def row_index(name: str = "index") -> pl.Expr:
     # * Dispatching to `int_range` means that we cannot accept an offset
     #   parameter, as unlike `DataFrame.with_row_index()`, `int_range` will simply
     #   truncate instead of raising an error.
-    # * ignore[call-overload] is due to `get_index_type() -> DataType`, whereas
-    #   `int_range` wants `PolarsIntegerType | DataTypeExpr`.
     return F.int_range(
         F.len(),
         dtype=get_index_type(),
