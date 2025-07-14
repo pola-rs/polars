@@ -743,7 +743,9 @@ pub(crate) fn resolve_known_scans<'a>(lp: &'a DslPlan) -> PolarsResult<SourcesTo
         );
     while let Some(lp) = stack.pop() {
         match lp {
-            DslPlan::PythonScan { .. } | DslPlan::DataFrameScan { .. } => {},
+            #[cfg(feature = "python")]
+            DslPlan::PythonScan { .. } => {},
+            DslPlan::DataFrameScan { .. } => {},
             DslPlan::Scan {
                 sources,
                 unified_scan_args,
@@ -802,8 +804,9 @@ pub(crate) fn resolve_known_scans<'a>(lp: &'a DslPlan) -> PolarsResult<SourcesTo
                 input_left,
                 input_right,
                 ..
-            }
-            | DslPlan::MergeSorted {
+            } => stack.extend([input_left.as_ref(), input_right.as_ref()]),
+            #[cfg(feature = "merge_sorted")]
+            DslPlan::MergeSorted {
                 input_left,
                 input_right,
                 ..
