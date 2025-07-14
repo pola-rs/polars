@@ -220,7 +220,7 @@ where
         )
     })?;
     // The size of each array, in bytes:
-    let array_bytes_size = element_size.checked_mul(array_width).ok_or_else(|| {
+    let row_size_bytes = element_size.checked_mul(array_width).ok_or_else(|| {
         polars_err!(
             InvalidOperation:
             "array size in bytes ({} * {}) is too large",
@@ -233,7 +233,7 @@ where
 
     for (index, value) in from.iter().enumerate() {
         if let Some(value) = value
-            && value.len() == array_bytes_size
+            && value.len() == row_size_bytes
         {
             if cfg!(target_endian = "little") && IS_LITTLE_ENDIAN {
                 // Fast path, we can just copy the data with no need to
