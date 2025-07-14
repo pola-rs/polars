@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::ScalarColumn;
-use polars_core::prelude::{AnyValue, Column, DataType, IntoColumn};
+use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
@@ -14,9 +14,9 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
 use super::ExtraOperations;
-use super::cast_columns::CastColumns;
-use super::reorder_columns::ReorderColumns;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::initialize_missing_columns_policy;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::column_selector::{
+    ColumnSelector, ColumnSelectorBuilder,
+};
 use crate::nodes::io_sources::multi_file_reader::initialization::deletion_files::ExternalFilterMask;
 use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 
@@ -45,11 +45,9 @@ pub enum ApplyExtraOps {
         physical_pre_slice: Option<Slice>,
         external_filter_mask: Option<ExternalFilterMask>,
         row_index: Option<RowIndex>,
-        cast_columns: Option<CastColumns>,
         /// This will have include_file_paths, hive columns, missing columns.
-        extra_columns: Vec<ScalarColumn>,
+        column_selectors: Option<Vec<ColumnSelector>>,
         predicate: Option<ScanIOPredicate>,
-        reorder: ReorderColumns,
     },
 
     /// No-op.
@@ -77,7 +75,8 @@ impl ApplyExtraOps {
 
             Uninitialized {
                 final_output_schema,
-                projected_file_schema,
+                #[expect(unused)]
+                projected_file_schema, // TODO: This can maybe be removed
                 extra_ops:
                     ExtraOperations {
                         row_index,
@@ -97,91 +96,106 @@ impl ApplyExtraOps {
                     panic!("impl error: negative pre_slice at post")
                 }
 
-                let cast_columns = CastColumns::try_init_from_policy(
-                    &cast_columns_policy,
-                    &final_output_schema,
-                    incoming_schema,
-                )?;
-
-                let n_expected_extra_columns = final_output_schema.len()
-                    - incoming_schema.len()
-                    - row_index.is_some() as usize;
-
-                let mut extra_columns: Vec<ScalarColumn> =
-                    Vec::with_capacity(n_expected_extra_columns);
-
-                initialize_missing_columns_policy(
-                    &missing_columns_policy,
-                    &projected_file_schema,
-                    incoming_schema,
-                    &mut extra_columns,
-                )?;
-
-                if let Some(hive_parts) = hive_parts {
-                    extra_columns.extend(hive_parts.df().get_columns().iter().map(|c| {
-                        c.new_from_index(scan_source_idx, 1)
-                            .as_scalar_column()
-                            .unwrap()
-                            .clone()
-                    }))
-                }
-
-                if let Some(file_path_col) = include_file_paths {
-                    extra_columns.push(ScalarColumn::new(
-                        file_path_col,
-                        Scalar::new(
-                            DataType::String,
-                            AnyValue::StringOwned(
-                                scan_source
-                                    .as_scan_source_ref()
-                                    .to_include_path_name()
-                                    .into(),
-                            ),
-                        ),
-                        1,
-                    ))
-                }
-
-                debug_assert_eq!(extra_columns.len(), n_expected_extra_columns);
-
                 let mut slf = Self::Initialized {
                     physical_pre_slice: pre_slice,
                     external_filter_mask,
                     row_index,
-                    cast_columns,
-                    extra_columns,
-                    predicate,
+
                     // Initialized below
-                    reorder: ReorderColumns::Passthrough,
+                    column_selectors: None,
+                    predicate: None,
                 };
 
-                let schema_before_reorder = if incoming_schema.len() == final_output_schema.len() {
+                let schema_before_selection = if incoming_schema.len() == final_output_schema.len()
+                {
                     // Incoming schema already has all of the columns, either because no extra columns were needed, or
                     // the extra columns were attached by the reader (which is just Parquet when it has a predicate).
                     incoming_schema.clone()
                 } else {
                     // We use a trick to determine our schema state before reordering by applying onto an empty DataFrame.
                     // This is much less error prone compared determining it separately.
+                    //
+                    // This schema may contain an additional row index column.
                     let mut df = DataFrame::empty_with_schema(incoming_schema);
                     slf.apply_to_df(&mut df, RowCounter::MAX)?;
                     df.schema().clone()
                 };
 
-                if cfg!(debug_assertions)
-                    && schema_before_reorder.len() != final_output_schema.len()
+                let mut column_selectors = Vec::with_capacity(final_output_schema.len());
+                let selector_builder = ColumnSelectorBuilder {
+                    cast_columns_policy,
+                    missing_columns_policy,
+                };
+                // Tracks if the input already has all columns in the right order and type.
+                let mut is_input_passthrough =
+                    schema_before_selection.len() == final_output_schema.len();
+
+                let file_path_col_idx = include_file_paths.as_ref().map_or(
+                    // Default usize::MAX as it is not a valid index
+                    usize::MAX,
+                    |name| final_output_schema.index_of(name).unwrap(),
+                );
+
+                for (output_index, (output_name, output_dtype)) in
+                    final_output_schema.iter().enumerate()
                 {
-                    assert_eq!(schema_before_reorder, final_output_schema);
-                    unreachable!()
+                    let selector = if output_index == file_path_col_idx {
+                        ColumnSelector::Constant(Box::new(ScalarColumn::new(
+                            include_file_paths.clone().unwrap(),
+                            Scalar::new(
+                                DataType::String,
+                                AnyValue::StringOwned(
+                                    scan_source
+                                        .as_scan_source_ref()
+                                        .to_include_path_name()
+                                        .into(),
+                                ),
+                            ),
+                            1,
+                        )))
+                    } else if let Some(hive_parts) = &hive_parts
+                        && let Ok(hive_column) = hive_parts.df().column(output_name)
+                    {
+                        ColumnSelector::Constant(Box::new(
+                            hive_column
+                                .new_from_index(scan_source_idx, 1)
+                                .as_scalar_column()
+                                .unwrap()
+                                .clone(),
+                        ))
+                    } else {
+                        selector_builder.build_column_selector(
+                            &schema_before_selection,
+                            output_name,
+                            output_dtype,
+                        )?
+                    };
+
+                    is_input_passthrough &= match &selector {
+                        ColumnSelector::Position(input_index) => *input_index == output_index,
+                        _ => false,
+                    };
+
+                    column_selectors.push(selector);
                 }
 
-                let initialized_reorder =
-                    ReorderColumns::initialize(&final_output_schema, &schema_before_reorder);
+                let column_selectors = if is_input_passthrough {
+                    None
+                } else {
+                    Some(column_selectors)
+                };
 
-                let Self::Initialized { reorder, .. } = &mut slf else {
+                let Self::Initialized {
+                    column_selectors: slf_column_selectors,
+                    predicate: slf_predicate,
+                    ..
+                } = &mut slf
+                else {
                     unreachable!()
                 };
 
-                *reorder = initialized_reorder;
+                *slf_column_selectors = column_selectors;
+                *slf_predicate = predicate;
 
                 // Return a `Noop` if our initialized state does not have any operations. Downstream
                 // can see the `Noop` and avoid running through an extra distributor pipeline.
@@ -190,11 +204,9 @@ impl ApplyExtraOps {
                         physical_pre_slice: None,
                         external_filter_mask: None,
                         row_index: None,
-                        cast_columns: None,
-                        extra_columns,
+                        column_selectors: None,
                         predicate: None,
-                        reorder: ReorderColumns::Passthrough,
-                    } if extra_columns.is_empty() => Self::Noop,
+                    } => Self::Noop,
 
                     Initialized { .. } => slf,
 
@@ -218,10 +230,8 @@ impl ApplyExtraOps {
             physical_pre_slice,
             external_filter_mask,
             row_index,
-            cast_columns,
-            extra_columns,
+            column_selectors,
             predicate,
-            reorder,
         } = ({
             use ApplyExtraOps::*;
 
@@ -301,23 +311,17 @@ impl ApplyExtraOps {
             };
         }
 
-        if let Some(cast_columns) = cast_columns {
-            cast_columns.apply_cast(df)?;
-        }
-
-        if !extra_columns.is_empty() {
-            df.clear_schema();
-            let h = df.height();
-            let cols = unsafe { df.get_columns_mut() };
-            cols.extend(extra_columns.iter().map(|c| c.resize(h).into_column()));
+        if let Some(column_selectors) = column_selectors.as_deref() {
+            *df = column_selectors
+                .iter()
+                .map(|x| x.select_from_columns(df.get_columns(), df.height()))
+                .collect::<PolarsResult<DataFrame>>()?;
         }
 
         if let Some(predicate) = predicate {
             let mask = predicate.predicate.evaluate_io(df)?;
             *df = df._filter_seq(mask.bool().expect("predicate not boolean"))?;
         }
-
-        reorder.reorder_columns(df);
 
         df.clear_schema();
 

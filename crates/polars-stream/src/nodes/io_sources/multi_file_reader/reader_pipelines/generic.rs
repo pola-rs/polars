@@ -873,7 +873,11 @@ async fn start_reader_impl(
 
     if !matches!(extra_columns_policy, ExtraColumnsPolicy::Ignore) {
         if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
-            apply_extra_columns_policy(&extra_columns_policy, full_file_schema, this_file_schema)?;
+            apply_extra_columns_policy(
+                &extra_columns_policy,
+                &full_file_schema,
+                &this_file_schema,
+            )?;
         } else {
             drop(reader_output_port);
             return Err(reader_handle.await.unwrap_err());

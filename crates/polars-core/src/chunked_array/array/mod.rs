@@ -17,6 +17,13 @@ impl ArrayChunked {
         }
     }
 
+    pub fn set_inner_dtype(&mut self, dtype: DataType) {
+        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
+        let width = self.width();
+        let field = Arc::make_mut(&mut self.field);
+        field.coerce(DataType::Array(Box::new(dtype), width));
+    }
+
     pub fn width(&self) -> usize {
         match self.dtype() {
             DataType::Array(_dt, size) => *size,
