@@ -332,6 +332,12 @@ def test_reinterpret_to_n_dimensional_array() -> None:
             )
 
 
+def test_reinterpret_to_zero_length_array() -> None:
+    arr_dtype = pl.Array(pl.UInt8, 0)
+    result = pl.Series([b"", b""]).bin.reinterpret(dtype=arr_dtype)
+    assert_series_equal(result, pl.Series([[], []], dtype=arr_dtype))
+
+
 @pytest.mark.parametrize(
     "bad_dtype",
     [
