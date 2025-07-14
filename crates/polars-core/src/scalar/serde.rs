@@ -235,6 +235,7 @@ impl TryFrom<Scalar> for SerializableScalar {
                 )
             },
 
+            #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(v) => {
                 let (avs, fields) = *v;
                 assert_eq!(avs.len(), fields.len());
