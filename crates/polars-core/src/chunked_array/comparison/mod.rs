@@ -842,10 +842,13 @@ where
 
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
+            let mut new_null_count = 0;
             unsafe {
                 for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
-                    arr.set_validity(a.validity().cloned())
+                    arr.set_validity(a.validity().cloned());
+                    new_null_count += arr.null_count();
                 }
+                out.set_null_count(new_null_count);
             }
         }
 
