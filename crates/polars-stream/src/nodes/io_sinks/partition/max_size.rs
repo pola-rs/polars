@@ -97,7 +97,7 @@ fn default_file_path_cb(
 ) -> PolarsResult<String> {
     polars_ensure!(file_idx < u32::MAX as usize,
         ComputeError: "exceeded maximum file count within a partition of {}", u32::MAX);
-    Ok(format!("{file_idx:08X}.{ext}"))
+    Ok(format!("{file_idx:08x}.{ext}"))
 }
 
 impl SinkNode for MaxSizePartitionSinkNode {
