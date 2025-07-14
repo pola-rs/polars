@@ -230,7 +230,9 @@ def match_in_out_types(
                 elif arg.dtype.char in ["d", "f"]:
                     prefer_float = arg.dtype.char
                 args_types.append(arg.dtype.char)
-    in_out = {(splt := typ.split("->", maxsplit=1))[0]: splt[1] for typ in ufunc_types}
+    in_out = {
+        (splt := _type.split("->", maxsplit=1))[0]: splt[1] for _type in ufunc_types
+    }
     assert args_types is not None
     args_str = "".join(args_types)
     if args_str in in_out:
