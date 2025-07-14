@@ -1086,3 +1086,46 @@ pub fn create_scan_predicate(
         hive_predicate_is_full_predicate,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_multiple_physical_plans_reused_cache() {
+        // Check that reusing the same cache node doesn't panic.
+        // CSE creates duplicate cache nodes with the same ID, but cloud reuses them.
+
+        let mut ir = Arena::new();
+
+        let schema = Schema::from_iter([(PlSmallStr::from_static("x"), DataType::Float32)]);
+        let scan = ir.add(IR::DataFrameScan {
+            df: Arc::new(DataFrame::empty_with_schema(&schema)),
+            schema: Arc::new(schema),
+            output_schema: None,
+        });
+
+        let cache = ir.add(IR::Cache {
+            input: scan,
+            id: UniqueId::default(),
+            cache_hits: 1,
+        });
+
+        let left_sink = ir.add(IR::Sink {
+            input: cache,
+            payload: SinkTypeIR::Memory,
+        });
+        let right_sink = ir.add(IR::Sink {
+            input: cache,
+            payload: SinkTypeIR::Memory,
+        });
+
+        let _multiplan = create_multiple_physical_plans(
+            &[left_sink, right_sink],
+            &mut ir,
+            &mut Arena::new(),
+            None,
+        )
+        .unwrap();
+    }
+}
