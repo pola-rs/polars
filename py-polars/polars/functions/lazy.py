@@ -2629,7 +2629,7 @@ def row_index(name: str = "index") -> pl.Expr:
     #   truncate instead of raising an error.
     # * ignore[call-overload] is due to `get_index_type() -> DataType`, whereas
     #   `int_range` wants `PolarsIntegerType | DataTypeExpr`.
-    return F.int_range(  # type: ignore[call-overload]
+    return F.int_range(
         F.len(),
         dtype=get_index_type(),
     ).alias(name)
