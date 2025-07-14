@@ -57,7 +57,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "trigonometry")]
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
-            Sign => mapper.with_dtype(DataType::Int64),
+            Sign => mapper.ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?.with_same_dtype(),
             FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr{function, ..} => {
@@ -733,6 +733,18 @@ impl<'a> FieldsMapper<'a> {
             },
         };
         self.with_dtype(dtype)
+    }
+
+    fn ensure_satisfies(
+        self,
+        f: impl FnMut(usize, &DataType) -> bool,
+        op: &'static str,
+    ) -> PolarsResult<Self> {
+        if let Some(i) = self.fields.iter().position(|field| !f(field.dtype())) {
+            polars_bail!(opidx = op, idx = i, self.fields[i].dtype());
+        }
+
+        Ok(self)
     }
 }
 
