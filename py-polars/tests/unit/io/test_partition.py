@@ -539,6 +539,7 @@ def test_finish_callback_nested_23306() -> None:
     lf.sink_parquet(partitioning, mkdir=True)
 
 
+@pytest.mark.write_disk
 def test_parquet_preserve_order_within_partition_23376(tmp_path: Path) -> None:
     ll = list(range(20))
     df = pl.DataFrame({"a": ll})
