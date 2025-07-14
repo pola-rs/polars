@@ -246,4 +246,42 @@ impl AExpr {
         self.to_field(schema, ctxt, arena)
             .map(|f| f.dtype().clone())
     }
+
+    #[recursive::recursive]
+    fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
+        match self {
+            AExpr::Literal(lv) => lv.is_scalar(),
+            AExpr::Function { options, input, .. }
+            | AExpr::AnonymousFunction { options, input, .. } => {
+                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
+                    true
+                } else if options.is_elementwise()
+                    || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+                {
+                    input.iter().all(|e| e.is_scalar(arena))
+                } else {
+                    false
+                }
+            },
+            AExpr::BinaryExpr { left, right, .. } => {
+                is_scalar_ae(*left, arena) && is_scalar_ae(*right, arena)
+            },
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                is_scalar_ae(*predicate, arena)
+                    && is_scalar_ae(*truthy, arena)
+                    && is_scalar_ae(*falsy, arena)
+            },
+            AExpr::Agg(_) | AExpr::Len => true,
+            AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Eval { expr, variant, .. } => match variant {
+                EvalVariant::List => is_scalar_ae(*expr, arena),
+                EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
+            },
+            _ => false,
+        }
+    }
 }
