@@ -193,7 +193,10 @@ asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join", "po
 iejoin = ["polars-plan/iejoin"]
 business = ["polars-plan/business"]
 concat_str = ["polars-plan/concat_str"]
-range = ["polars-plan/range"]
+range = [
+  "polars-plan/range",
+  "polars-stream?/range",
+]
 mode = ["polars-plan/mode"]
 cum_agg = ["polars-plan/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
