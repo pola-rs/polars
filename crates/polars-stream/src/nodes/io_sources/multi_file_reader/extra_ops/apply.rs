@@ -2,7 +2,6 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
@@ -140,7 +139,7 @@ impl ApplyExtraOps {
                     final_output_schema.iter().enumerate()
                 {
                     let selector = if output_index == file_path_col_idx {
-                        ColumnSelector::Constant(Box::new(ScalarColumn::new(
+                        ColumnSelector::Constant(Box::new((
                             include_file_paths.clone().unwrap(),
                             Scalar::new(
                                 DataType::String,
@@ -151,18 +150,17 @@ impl ApplyExtraOps {
                                         .into(),
                                 ),
                             ),
-                            1,
                         )))
                     } else if let Some(hive_parts) = &hive_parts
                         && let Ok(hive_column) = hive_parts.df().column(output_name)
                     {
-                        ColumnSelector::Constant(Box::new(
-                            hive_column
-                                .new_from_index(scan_source_idx, 1)
-                                .as_scalar_column()
-                                .unwrap()
-                                .clone(),
-                        ))
+                        ColumnSelector::Constant(Box::new((
+                            output_name.clone(),
+                            Scalar::new(
+                                hive_column.dtype().clone(),
+                                hive_column.get(scan_source_idx)?.into_static(),
+                            ),
+                        )))
                     } else {
                         selector_builder.build_column_selector(
                             &schema_before_selection,

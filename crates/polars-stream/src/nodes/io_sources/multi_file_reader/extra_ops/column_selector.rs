@@ -2,7 +2,6 @@ use arrow::array::Array;
 use arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
-use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
@@ -11,6 +10,7 @@ use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_error::{PolarsResult, polars_bail};
 use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
+use recursive::recursive;
 
 use crate::nodes::io_sources::multi_file_reader::extra_ops::apply_extra_columns_policy_impl;
 
@@ -33,7 +33,8 @@ pub enum ColumnSelector {
     /// Take the column at this position.
     Position(usize),
     /// Materialize a constant column.
-    Constant(Box<ScalarColumn>),
+    /// `(column_name, value)`
+    Constant(Box<(PlSmallStr, Scalar)>),
 
     /// `(input_selector, _)`
     Transformed(Box<(ColumnSelector, ColumnTransform)>),
@@ -66,6 +67,7 @@ impl ColumnTransform {
 }
 
 impl ColumnSelector {
+    #[recursive]
     pub fn select_from_columns(
         &self,
         columns: &[Column],
@@ -76,10 +78,10 @@ impl ColumnSelector {
         Ok(match self {
             S::Position(i) => columns[*i].clone(),
 
-            S::Constant(scalar_column) => scalar_column
-                .clone()
-                .into_column()
-                .new_from_index(0, output_height),
+            S::Constant(parts) => {
+                let (name, scalar) = parts.as_ref();
+                Column::new_scalar(name.clone(), scalar.clone(), output_height)
+            },
 
             S::Transformed(transform) => {
                 let input: Column = transform.0.select_from_columns(columns, output_height)?;
@@ -284,9 +286,10 @@ impl ColumnSelectorBuilder {
             self.attach_transforms(input, incoming_dtype, target_dtype, target_name)?
         } else {
             match &self.missing_columns_policy {
-                MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new(
-                    ScalarColumn::full_null(target_name.clone(), 1, target_dtype.clone()),
-                )),
+                MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new((
+                    target_name.clone(),
+                    Scalar::null(target_dtype.clone()),
+                ))),
                 MissingColumnsPolicy::Raise => polars_bail!(
                     ColumnNotFound:
                     "did not find column {}, consider passing `missing_columns='insert'`",
@@ -382,13 +385,10 @@ impl ColumnSelectorBuilder {
                     )?
                 } else {
                     match &self.cast_columns_policy.missing_struct_fields {
-                        MissingColumnsPolicy::Insert => {
-                            ColumnSelector::Constant(Box::new(ScalarColumn::full_null(
-                                output_field.name().clone(),
-                                1,
-                                output_field.dtype().clone(),
-                            )))
-                        },
+                        MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new((
+                            output_field.name().clone(),
+                            Scalar::null(output_field.dtype().clone()),
+                        ))),
                         MissingColumnsPolicy::Raise => {
                             return mismatch_err(&format!(
                                 "encountered missing struct field: {}, \
