@@ -174,11 +174,7 @@ impl AExpr {
                 Ok(field)
             },
             Sort { expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
-            Gather {
-                expr,
-                idx,
-                ..
-            } => {
+            Gather { expr, idx, .. } => {
                 if ctx.validate {
                     validate_expr(*idx, ctx.arena, ctx.schema)?
                 }
