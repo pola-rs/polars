@@ -7,16 +7,16 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsIntegerType
+    from polars.datatypes import DataType
 
 
-def get_index_type() -> PolarsIntegerType:
+def get_index_type() -> DataType:
     """
     Return the data type used for Polars indexing.
 
     Returns
     -------
-    PolarsIntegerType
+    DataType
         :class:`UInt32` in regular Polars, :class:`UInt64` in bigidx Polars.
 
     Examples
