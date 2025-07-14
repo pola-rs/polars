@@ -10,7 +10,6 @@ use arrow::types::NativeType;
 use chrono::Datelike;
 use num_traits::FromBytes;
 use polars_error::{PolarsResult, polars_err};
-use polars_utils::IdxSize;
 
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
@@ -212,27 +211,23 @@ where
 {
     let element_size = std::mem::size_of::<T>();
     // The maximum number of primitives in the result:
-    let primitive_length = (from.len() as IdxSize)
-        .checked_mul(array_width as IdxSize)
-        .ok_or_else(|| {
-            polars_err!(
-                InvalidOperation:
-                "array chunk length * number of items ({} * {}) is too large",
-                from.len(),
-                array_width
-            )
-        })? as usize;
+    let primitive_length = from.len().checked_mul(array_width).ok_or_else(|| {
+        polars_err!(
+            InvalidOperation:
+            "array chunk length * number of items ({} * {}) is too large",
+            from.len(),
+            array_width
+        )
+    })?;
     // The size of each array, in bytes:
-    let array_bytes_size = (element_size as IdxSize)
-        .checked_mul(array_width as IdxSize)
-        .ok_or_else(|| {
-            polars_err!(
-                InvalidOperation:
-                "array size in bytes ({} * {}) is too large",
-                element_size,
-                array_width
-            )
-        })? as usize;
+    let array_bytes_size = element_size.checked_mul(array_width).ok_or_else(|| {
+        polars_err!(
+            InvalidOperation:
+            "array size in bytes ({} * {}) is too large",
+            element_size,
+            array_width
+        )
+    })?;
     let mut out: Vec<T> = Vec::with_capacity(primitive_length);
     let mut validity = MutableBitmap::from_len_set(from.len());
 
