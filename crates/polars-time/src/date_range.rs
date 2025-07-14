@@ -299,16 +299,17 @@ pub(crate) fn datetime_range_i64_start_end_interval(
     let mut ts = Vec::with_capacity(size);
 
     // Shift the left limit if we're right-closed or none
+    let mut t = start;
+    let mut i = 0;
     if closed == ClosedWindow::Right || closed == ClosedWindow::None {
-        start = offset_fn(&interval, start, time_zone)?;
+        t = offset_fn(&interval, start, time_zone)?;
+        i += 1;
     }
     // Shift the right limit if we're right-closed or none
     if closed == ClosedWindow::Left || closed == ClosedWindow::None {
         end = offset_fn(&(-interval), end, time_zone)?;
     }
 
-    let mut i = 0;
-    let mut t = start;
     if step >= 0 {
         while t <= end {
             ts.push(t);
