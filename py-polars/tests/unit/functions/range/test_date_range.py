@@ -314,6 +314,7 @@ def test_date_range_with_subclass_18470_18447() -> None:
     assert_series_equal(result, expected)
 
 
+# start/end/interval
 def test_date_range_start_end_interval_forwards() -> None:
     start = date(2025, 1, 1)
     end = date(2025, 1, 10)
@@ -382,17 +383,55 @@ def test_date_range_expr_scalar() -> None:
         }
     )
     result = df.select(
-        forward=pl.date_range(
+        forward_start_end_interval=pl.date_range(
             start=pl.col("a").min(), end=pl.col("a").max(), interval="1d"
         ),
-        backward=pl.date_range(
+        backward_start_end_interval=pl.date_range(
             start=pl.col("a").max(), end=pl.col("a").min(), interval="-1d"
         ),
+        forward_start_end_samples=pl.date_range(
+            start=pl.col("a").min(),
+            end=pl.col("a").max(),
+            num_samples=3,
+        ),
+        backward_start_end_samples=pl.date_range(
+            start=pl.col("a").max(),
+            end=pl.col("a").min(),
+            num_samples=3,
+        ),
+        forward_start_interval_samples=pl.date_range(
+            start=pl.col("a").min(),
+            interval="1d",
+            num_samples=3,
+        ),
+        backward_start_interval_samples=pl.date_range(
+            start=pl.col("a").max(),
+            interval="-1d",
+            num_samples=3,
+        ),
+        forward_end_interval_samples=pl.date_range(
+            end=pl.col("a").max(),
+            interval="1d",
+            num_samples=3,
+        ),
+        backward_end_interval_samples=pl.date_range(
+            end=pl.col("a").min(),
+            interval="-1d",
+            num_samples=3,
+        ),
     )
+    forward = [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]
+    backward = forward[-1::-1]
     expected = pl.DataFrame(
         {
-            "forward": [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)],
-            "backward": [date(2025, 1, 3), date(2025, 1, 2), date(2025, 1, 1)],
+            "forward_start_end_interval": forward,
+            "backward_start_end_interval": backward,
+            "forward_start_end_samples": forward,
+            "backward_start_end_samples": backward,
+            "forward_start_interval_samples": forward,
+            "backward_start_interval_samples": backward,
+            "forward_end_interval_samples": forward,
+            "backward_end_interval_samples": backward,
         }
     )
     assert_frame_equal(result, expected)
@@ -475,27 +514,233 @@ def test_date_range_start_end_samples() -> None:
     )
 
 
-def test_date_range_start_interval_samples() -> None:
-    assert_series_equal(
-        pl.date_range(start=date(2025, 1, 1), interval="1d", num_samples=3, eager=True),
-        pl.Series("literal", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]),
+# -- start/interval/samples
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]),
+        ("left", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]),
+        ("right", [date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]),
+        ("none", [date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]),
+    ],
+)
+def test_date_range_start_interval_samples_forward_1d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        start=date(2025, 1, 1), interval="1d", num_samples=3, closed=closed, eager=True
     )
+    assert_series_equal(result, pl.Series("literal", expected))
 
-    assert_series_equal(
-        pl.date_range(start=date(2025, 1, 1), interval="2d", num_samples=3, eager=True),
-        pl.Series("literal", [date(2025, 1, 1), date(2025, 1, 3), date(2025, 1, 5)]),
-    )
 
-    assert_series_equal(
-        pl.date_range(
-            start=date(2025, 1, 31), interval="1mo", num_samples=3, eager=True
-        ),
-        pl.Series("literal", [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)]),
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 3), date(2025, 1, 2), date(2025, 1, 1)]),
+        ("left", [date(2025, 1, 3), date(2025, 1, 2), date(2025, 1, 1)]),
+        ("right", [date(2025, 1, 2), date(2025, 1, 1), date(2024, 12, 31)]),
+        ("none", [date(2025, 1, 2), date(2025, 1, 1), date(2024, 12, 31)]),
+    ],
+)
+def test_date_range_start_interval_samples_backward_1d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        start=date(2025, 1, 3), interval="-1d", num_samples=3, closed=closed, eager=True
     )
+    assert_series_equal(result, pl.Series("literal", expected))
 
-    assert_series_equal(
-        pl.date_range(
-            start=date(2025, 3, 31), interval="-1mo", num_samples=3, eager=True
-        ),
-        pl.Series("literal", [date(2025, 3, 31), date(2025, 2, 28), date(2025, 1, 31)]),
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 1), date(2025, 1, 3), date(2025, 1, 5)]),
+        ("left", [date(2025, 1, 1), date(2025, 1, 3), date(2025, 1, 5)]),
+        ("right", [date(2025, 1, 3), date(2025, 1, 5), date(2025, 1, 7)]),
+        ("none", [date(2025, 1, 3), date(2025, 1, 5), date(2025, 1, 7)]),
+    ],
+)
+def test_date_range_start_interval_samples_forward_2d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        start=date(2025, 1, 1), interval="2d", num_samples=3, closed=closed, eager=True
     )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 5), date(2025, 1, 3), date(2025, 1, 1)]),
+        ("left", [date(2025, 1, 5), date(2025, 1, 3), date(2025, 1, 1)]),
+        ("right", [date(2025, 1, 3), date(2025, 1, 1), date(2024, 12, 30)]),
+        ("none", [date(2025, 1, 3), date(2025, 1, 1), date(2024, 12, 30)]),
+    ],
+)
+def test_date_range_start_interval_samples_backward_2d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        start=date(2025, 1, 5), interval="-2d", num_samples=3, closed=closed, eager=True
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)]),
+        ("left", [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)]),
+        ("right", [date(2025, 2, 28), date(2025, 3, 31), date(2025, 4, 30)]),
+        ("none", [date(2025, 2, 28), date(2025, 3, 31), date(2025, 4, 30)]),
+    ],
+)
+def test_date_range_start_interval_samples_forward_1mo(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        start=date(2025, 1, 31),
+        interval="1mo",
+        num_samples=3,
+        closed=closed,
+        eager=True,
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 3, 31), date(2025, 2, 28), date(2025, 1, 31)]),
+        ("left", [date(2025, 3, 31), date(2025, 2, 28), date(2025, 1, 31)]),
+        ("right", [date(2025, 2, 28), date(2025, 1, 31), date(2024, 12, 31)]),
+        ("none", [date(2025, 2, 28), date(2025, 1, 31), date(2024, 12, 31)]),
+    ],
+)
+def test_date_range_start_interval_samples_backward_1mo(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        start=date(2025, 3, 31),
+        interval="-1mo",
+        num_samples=3,
+        closed=closed,
+        eager=True,
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+# -- end/interval/samples
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]),
+        ("left", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]),
+        ("right", [date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]),
+        ("none", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]),
+    ],
+)
+def test_date_range_end_interval_samples_forward_1d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        end=date(2025, 1, 4), interval="1d", num_samples=3, closed=closed, eager=True
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 3), date(2025, 1, 2), date(2025, 1, 1)]),
+        ("left", [date(2025, 1, 4), date(2025, 1, 3), date(2025, 1, 2)]),
+        ("right", [date(2025, 1, 3), date(2025, 1, 2), date(2025, 1, 1)]),
+        ("none", [date(2025, 1, 4), date(2025, 1, 3), date(2025, 1, 2)]),
+    ],
+)
+def test_date_range_end_interval_samples_backward_1d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        end=date(2025, 1, 1), interval="-1d", num_samples=3, closed=closed, eager=True
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 1), date(2025, 1, 3), date(2025, 1, 5)]),
+        ("left", [date(2024, 12, 30), date(2025, 1, 1), date(2025, 1, 3)]),
+        ("right", [date(2025, 1, 1), date(2025, 1, 3), date(2025, 1, 5)]),
+        ("none", [date(2024, 12, 30), date(2025, 1, 1), date(2025, 1, 3)]),
+    ],
+)
+def test_date_range_end_interval_samples_forward_2d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        end=date(2025, 1, 5), interval="2d", num_samples=3, closed=closed, eager=True
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 5), date(2025, 1, 3), date(2025, 1, 1)]),
+        ("left", [date(2025, 1, 7), date(2025, 1, 5), date(2025, 1, 3)]),
+        ("right", [date(2025, 1, 5), date(2025, 1, 3), date(2025, 1, 1)]),
+        ("none", [date(2025, 1, 7), date(2025, 1, 5), date(2025, 1, 3)]),
+    ],
+)
+def test_date_range_end_interval_samples_backward_2d(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        end=date(2025, 1, 1), interval="-2d", num_samples=3, closed=closed, eager=True
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)]),
+        ("left", [date(2024, 12, 31), date(2025, 1, 31), date(2025, 2, 28)]),
+        ("right", [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)]),
+        ("none", [date(2024, 12, 31), date(2025, 1, 31), date(2025, 2, 28)]),
+    ],
+)
+def test_date_range_end_interval_samples_forward_1mo(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        end=date(2025, 3, 31), interval="1mo", num_samples=3, closed=closed, eager=True
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected"),
+    [
+        ("both", [date(2025, 3, 31), date(2025, 2, 28), date(2025, 1, 31)]),
+        ("left", [date(2025, 4, 30), date(2025, 3, 31), date(2025, 2, 28)]),
+        ("right", [date(2025, 3, 31), date(2025, 2, 28), date(2025, 1, 31)]),
+        ("none", [date(2025, 4, 30), date(2025, 3, 31), date(2025, 2, 28)]),
+    ],
+)
+def test_date_range_end_interval_samples_backward_1mo(
+    closed: ClosedInterval, expected: list[date]
+) -> None:
+    result = pl.date_range(
+        end=date(2025, 1, 31),
+        interval="-1mo",
+        num_samples=3,
+        closed=closed,
+        eager=True,
+    )
+    assert_series_equal(result, pl.Series("literal", expected))
+
+

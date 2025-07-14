@@ -15,6 +15,15 @@ use crate::plans::aexpr::function_expr::FieldsMapper;
 
 const CAPACITY_FACTOR: usize = 5;
 
+// Swap left / right closure in the event of an interval inversion.
+fn swap_closed_lr(closed: ClosedWindow) -> ClosedWindow {
+    match closed {
+        ClosedWindow::Left => ClosedWindow::Right,
+        ClosedWindow::Right => ClosedWindow::Left,
+        _ => closed,
+    }
+}
+
 /// Datetime range given start, end, and interval.
 fn dt_range_start_end_interval(
     start: &Column,
@@ -293,7 +302,7 @@ pub(super) fn date_range(
             &s[0].cast(&dt_type)?,
             -interval.unwrap(),
             &s[1],
-            closed,
+            swap_closed_lr(closed),
         )
         .map(|c| c.reverse()),
     }
@@ -329,7 +338,7 @@ pub(super) fn date_ranges(
             &s[0].cast(&dt_type)?,
             -interval.unwrap(),
             &s[1],
-            closed,
+            swap_closed_lr(closed),
         )
         .map(|c| c.reverse()),
     }
@@ -354,10 +363,13 @@ pub(super) fn datetime_range(
             dt_range_start_interval_samples(&s[0], interval.unwrap(), &s[1], closed)
         },
         // We negate the interval, start at the end, and then reverse.
-        DateRangeArgs::EndIntervalSamples => {
-            dt_range_start_interval_samples(&s[0], -interval.unwrap(), &s[1], closed)
-                .map(|c| c.reverse())
-        },
+        DateRangeArgs::EndIntervalSamples => dt_range_start_interval_samples(
+            &s[0],
+            -interval.unwrap(),
+            &s[1],
+            swap_closed_lr(closed),
+        )
+        .map(|c| c.reverse()),
     }
 }
 
@@ -377,10 +389,13 @@ pub(super) fn datetime_ranges(
             dt_ranges_start_interval_samples(&s[0], interval.unwrap(), &s[1], closed)
         },
         // We negate the interval, start at the end, and then reverse.
-        DateRangeArgs::EndIntervalSamples => {
-            dt_ranges_start_interval_samples(&s[0], -interval.unwrap(), &s[1], closed)
-                .map(|c| c.reverse())
-        },
+        DateRangeArgs::EndIntervalSamples => dt_ranges_start_interval_samples(
+            &s[0],
+            -interval.unwrap(),
+            &s[1],
+            swap_closed_lr(closed),
+        )
+        .map(|c| c.reverse()),
     }
 }
 

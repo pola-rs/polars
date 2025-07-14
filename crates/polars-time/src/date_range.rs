@@ -90,17 +90,25 @@ pub fn datetime_range_impl_start_end_interval(
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
-    let out = Int64Chunked::new_vec(
-        name,
-        datetime_range_i64_start_end_interval(start, end, interval, closed, tu, tz)?,
-    );
+    let values = if (end < start) != interval.negative {
+        // Interval is wrong direction, result is empty.
+        Vec::<i64>::new()
+    } else {
+        datetime_range_i64_start_end_interval(start, end, interval, closed, tu, tz)?
+    };
+    let out = Int64Chunked::new_vec(name, values);
     let mut out = match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => out.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
         _ => out.into_datetime(tu, None),
     };
 
-    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
+    let flag = if interval.negative {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    out.physical_mut().set_sorted_flag(flag);
     Ok(out)
 }
 
@@ -124,7 +132,12 @@ pub fn datetime_range_impl_start_interval_samples(
         _ => out.into_datetime(tu, None),
     };
 
-    out.physical_mut().set_sorted_flag(IsSorted::Ascending);
+    let flag = if interval.negative {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    out.physical_mut().set_sorted_flag(flag);
     Ok(out)
 }
 
@@ -176,12 +189,12 @@ pub fn datetime_range_impl_start_end_samples(
         _ => out.into_datetime(tu, None),
     };
 
-    let sorted = if ascending {
+    let flag = if ascending {
         IsSorted::Ascending
     } else {
         IsSorted::Descending
     };
-    out.physical_mut().set_sorted_flag(sorted);
+    out.physical_mut().set_sorted_flag(flag);
     Ok(out)
 }
 
@@ -237,6 +250,9 @@ pub(crate) fn datetime_range_i64_start_end_interval(
         TimeUnit::Microseconds => interval.duration_us(),
         TimeUnit::Milliseconds => interval.duration_ms(),
     };
+    if interval.negative {
+        step = -step;
+    }
     let time_zone_opt: Option<TimeZone> = match time_zone {
         #[cfg(feature = "timezones")]
         Some(tz) => Some(TimeZone::from_chrono(tz)),
@@ -245,19 +261,12 @@ pub(crate) fn datetime_range_i64_start_end_interval(
 
     if interval.is_constant_duration(time_zone_opt.as_ref()) {
         // Fast path!
-        if interval.negative {
-            step = -step;
-        }
         polars_ensure!(
             step != 0,
             InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
             interval,
             time_unit,
         );
-        // If step points in the wrong direction, we have no values.
-        if (start <= end) != (step > 0) {
-            return Ok(Vec::<i64>::new());
-        }
 
         // Update end points based on interval closure.
         if closed == ClosedWindow::Right || closed == ClosedWindow::None {
@@ -289,24 +298,29 @@ pub(crate) fn datetime_range_i64_start_end_interval(
 
     let mut ts = Vec::with_capacity(size);
 
-    // Open the right interval if we're left-closed or right-closed
+    // Shift the left limit if we're right-closed or none
+    if closed == ClosedWindow::Right || closed == ClosedWindow::None {
+        start = offset_fn(&interval, start, time_zone)?;
+    }
+    // Shift the right limit if we're right-closed or none
     if closed == ClosedWindow::Left || closed == ClosedWindow::None {
-        if interval.negative {
-            end += step;
-        } else {
-            end -= step;
-        }
+        end = offset_fn(&(-interval), end, time_zone)?;
     }
 
-    if closed == ClosedWindow::Left || closed == ClosedWindow::Both {
-        ts.push(start);
-    };
-    let mut i = 1;
-    let mut t = offset_fn(&interval, start, time_zone)?;
-    while t <= end {
-        ts.push(t);
-        i += 1;
-        t = offset_fn(&(interval * i), start, time_zone)?;
+    let mut i = 0;
+    let mut t = start;
+    if step >= 0 {
+        while t <= end {
+            ts.push(t);
+            i += 1;
+            t = offset_fn(&(interval * i), start, time_zone)?;
+        }
+    } else {
+        while t >= end {
+            ts.push(t);
+            i += 1;
+            t = offset_fn(&(interval * i), start, time_zone)?;
+        }
     }
     debug_assert!(size >= ts.len());
     Ok(ts)

@@ -742,7 +742,6 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
-                println!("{}", options.cast_options.is_some());
                 polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
 
                 let (_, type_start) =
