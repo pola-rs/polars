@@ -15,7 +15,7 @@ distributed as Python packages that register new expression methods.
 
 ### Setting Up Your Environment
 
-Start by creating a `requirements.txt` file with your dependencies. You can do this this as follows
+Start by creating a `requirements.txt` file with your dependencies. You can do this as follows
 with `uv` and `pip`:
 
 - `uv export --format requirements-txt`
@@ -30,7 +30,7 @@ numpy
 polars_xdt
 ```
 
-After that, include the file in the your compute context. In the compute context, you can specify a
+After that, include the file in the compute context. In the compute context, you can specify a
 `requirements.txt` file with additional packages to install on your compute instance.
 
 {{code_block('polars-cloud/plugins','set-context',['ComputeContext'])}}
@@ -40,8 +40,7 @@ After that, include the file in the your compute context. In the compute context
 In this example query we use the [polars-xdt](https://github.com/pola-rs/polars-xdt) plugin. This
 plugin offers extra datetime-related functionality which isn't in-scope for the main Polars library.
 
-Once installed, plugins extend the Polars expression API with new namespaces and methods. When
-importing the plugin, we can use its functionality just as you would on a local machine:
+Once installed, plugins extend the Polars expression API with new namespaces and methods. When importing the plugin, we can use its functionality just as on a local machine:
 
 {{code_block('polars-cloud/plugins','run-plugin',[])}}
 
@@ -64,7 +63,7 @@ provide more flexibility for custom logic.
 ### Using UDFs in Remote Execution
 
 The process of using a
-[user defined function](https://docs.pola.rs/user-guide/expressions/user-defined-python-functions/)
+[user-defined function](https://docs.pola.rs/user-guide/expressions/user-defined-python-functions/)
 in your workflow is the same as with plugins. Ensure your dependencies are included in the
 requirements file you pass in the compute context. Your custom Python functions will execute on the
 remote compute instances:
