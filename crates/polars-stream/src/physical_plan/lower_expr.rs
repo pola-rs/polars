@@ -1016,6 +1016,7 @@ fn lower_exprs_with_ctx(
             },
 
             // pl.row_index() maps to this.
+            #[cfg(feature = "range")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
