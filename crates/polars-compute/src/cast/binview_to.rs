@@ -7,6 +7,7 @@ use arrow::compute::decimal::deserialize_decimal;
 use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
+use bytemuck::cast_slice_mut;
 use chrono::Datelike;
 use num_traits::FromBytes;
 use polars_error::{PolarsResult, polars_err};
@@ -228,7 +229,18 @@ where
             array_width
         )
     })?;
-    let mut out: Vec<T> = Vec::with_capacity(primitive_length);
+
+    // Creating references to memory that has not been fully initialized is
+    // undefined behavior per
+    // https://doc.rust-lang.org/std/primitive.slice.html#method.assume_init
+    // so we need everything in `out` to be initialized one way or another.
+    //
+    // Luckily, initializing as zero is extremely efficient, because once an
+    // allocation is big enough, in practice it will become a call to e.g.
+    // mmap() which guarantees zero initialization.
+    let mut out: Vec<T> = vec![T::zeroed(); primitive_length];
+    let out_len_bytes = cast_slice_mut::<_, u8>(out.as_mut()).len();
+    assert_eq!(out_len_bytes, row_size_bytes * from.len());
     let mut validity = MutableBitmap::from_len_set(from.len());
 
     for (index, value) in from.iter().enumerate() {
@@ -238,18 +250,16 @@ where
             if cfg!(target_endian = "little") && IS_LITTLE_ENDIAN {
                 // Fast path, we can just copy the data with no need to
                 // reinterpret.
-                let write_index = array_width * index;
-                debug_assert!(write_index < primitive_length);
-                debug_assert!((write_index + (array_width - 1)) < primitive_length);
+                let write_index = index * row_size_bytes;
+                debug_assert!(write_index < out_len_bytes);
+                debug_assert!(write_index + value.len() - 1 < out_len_bytes);
                 // # Safety
-                // - The target index is smaller than the vector's pre-allocated
-                //   capacity.
-                // - We made sure `value` has byte length
-                //   `array_width * element_size`.
+                // - The start index is smaller than `out`'s capacity.
+                // - The end index is smaller than `out`'s capacity.
                 unsafe {
                     copy_nonoverlapping(
                         value.as_ptr(),
-                        out.as_mut_ptr().add(write_index) as *mut u8,
+                        (out.as_mut_ptr() as *mut u8).add(write_index),
                         value.len(),
                     );
                 }
@@ -275,7 +285,7 @@ where
                     // # Safety
                     // - The target index is smaller than the vector's pre-allocated capacity.
                     unsafe {
-                        std::ptr::write(out.as_mut_ptr().add(write_index), jth_value);
+                        *out.get_unchecked_mut(write_index) = jth_value;
                     }
                 }
             }
@@ -283,10 +293,6 @@ where
             validity.set(index, false);
         };
     }
-
-    // # Safety
-    // `out` was created with capacity primitive_length.
-    unsafe { out.set_len(primitive_length) };
 
     FixedSizeListArray::try_new(
         ArrowDataType::FixedSizeList(
