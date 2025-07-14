@@ -356,9 +356,33 @@ fn create_physical_plan_impl(
                     let builder = build_streaming_executor
                         .expect("invalid build. Missing feature new-streaming");
 
-                    Ok(Box::new(PartitionedSinkExecutor::new(
+                    let executor = Box::new(PartitionedSinkExecutor::new(
                         input, builder, root, lp_arena, expr_arena,
-                    )))
+                    ));
+
+                    let cache_id = UniqueId::default();
+
+                    // Use cache so that this runs during the cache pre-filling stage and not on the
+                    // thread pool, it could deadlock since the streaming engine uses the thread
+                    // pool internally.
+                    cache_nodes.insert(
+                        cache_id.clone(),
+                        Box::new(executors::CacheExec {
+                            input: Some(executor),
+                            id: cache_id.clone(),
+                            count: 0,
+                            is_new_streaming_scan: false,
+                        }),
+                    );
+
+                    Ok(Box::new(executors::CacheExec {
+                        id: cache_id,
+                        // Rest of the fields don't matter - the actual node was inserted into
+                        // `cache_nodes`.
+                        input: None,
+                        count: Default::default(),
+                        is_new_streaming_scan: false,
+                    }))
                 },
             }
         },
