@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.meta.index_type import get_index_type
 import polars.selectors as cs
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
@@ -27,6 +26,7 @@ from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
 )
+from polars.meta.index_type import get_index_type
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
