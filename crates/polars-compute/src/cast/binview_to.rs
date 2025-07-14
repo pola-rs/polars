@@ -281,7 +281,7 @@ where
                     };
 
                     let write_index = array_width * index + j;
-                    debug_assert!(write_index < primitive_length);
+                    debug_assert!(write_index < out.len());
                     // # Safety
                     // - The target index is smaller than the vector's pre-allocated capacity.
                     unsafe {
