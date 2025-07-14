@@ -76,6 +76,9 @@ def test_ufunc() -> None:
         cast(pl.Series, np.power(s_uint64, 2)),
         pl.Series("a", [1, 4, 9, 16], dtype=pl.UInt64),
     )
+    print(np.power.types)  # windows runner info
+    print(s_uint64._s.to_numpy_view().dtype.char)  # windows runner info
+    print(s_uint64.to_numpy().dtype.char)  # windows runner info
     assert_series_equal(
         cast(pl.Series, np.power(s_uint64, 2.0)),
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),

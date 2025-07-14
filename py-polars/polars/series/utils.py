@@ -239,6 +239,7 @@ def match_in_out_types(
     elif len(set(in_out.values())) == 1:
         return next(iter(in_out.values()))
     elif all(v not in NP_INTs for v in in_out.values()):
+        print("v not in", args_types)  # windows runner info
         if any(x == "f" for x in args_types) and all(x != "d" for x in args_types):
             return "f"
         else:
@@ -255,6 +256,7 @@ def match_in_out_types(
     ):
         super_in = np_common(*args_types)
         super_in_repeated = [super_in for _ in range(num_ins)]
+        print("super", super_in_repeated)  # windows runner info
         return match_in_out_types(ufunc_types, args_types=super_in_repeated)
     else:
         msg = "no matching input to output dtype combination found. Try manually setting dtype"
