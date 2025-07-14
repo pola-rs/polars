@@ -66,7 +66,7 @@ impl Scalar {
         use arrow::array::Array;
         use polars_dtype::categorical::FrozenCategories;
 
-        assert_ne!(categories.null_count(), 0);
+        assert_eq!(categories.null_count(), 0);
 
         let categories = FrozenCategories::new(categories.values_iter())?;
         let mapping = categories.mapping();
