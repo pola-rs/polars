@@ -1,0 +1,18 @@
+[package]
+name = "expression_lib"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "expression_lib"
+crate-type = ["cdylib"]
+
+[dependencies]
+arrow = { workspace = true, default-features = false }
+num = "*"
+polars = { workspace = true, features = ["fmt", "dtype-date", "timezones"], default-features = false }
+pyo3 = { workspace = true, features = ["abi3-py38"] }
+pyo3-polars = { workspace = true, features = ["derive"] }
+rayon = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
