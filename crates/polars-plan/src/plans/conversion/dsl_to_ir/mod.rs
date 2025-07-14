@@ -43,9 +43,7 @@ pub fn to_alp(
         opt_flags.contains(OptFlags::TYPE_CHECK),
     );
 
-    let mut scans = PlHashMap::new();
-    scans::find_reachable_dsl_scans(&lp, &mut scans)?;
-    let cache_file_info = scans::resolve_dsl_scans(scans)?;
+    let cache_file_info = scans::resolve_known_scans(&lp)?;
 
     let mut ctxt = DslConversionContext {
         expr_arena,
