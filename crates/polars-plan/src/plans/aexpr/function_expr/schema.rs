@@ -737,11 +737,16 @@ impl<'a> FieldsMapper<'a> {
 
     fn ensure_satisfies(
         self,
-        f: impl FnMut(usize, &DataType) -> bool,
+        mut f: impl FnMut(usize, &DataType) -> bool,
         op: &'static str,
     ) -> PolarsResult<Self> {
-        if let Some(i) = self.fields.iter().position(|field| !f(field.dtype())) {
-            polars_bail!(opidx = op, idx = i, self.fields[i].dtype());
+        for (i, field) in self.fields.iter().enumerate() {
+            polars_ensure!(
+                f(i, field.dtype()),
+                opidx = op,
+                idx = i,
+                self.fields[i].dtype()
+            );
         }
 
         Ok(self)
