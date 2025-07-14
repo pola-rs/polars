@@ -251,8 +251,8 @@ where
                 // Fast path, we can just copy the data with no need to
                 // reinterpret.
                 let write_index = index * row_size_bytes;
-                debug_assert!(value.len() == 0 || write_index < out_len_bytes);
-                debug_assert!(value.len() == 0 || (write_index + value.len() - 1 < out_len_bytes));
+                debug_assert!(value.is_empty() || write_index < out_len_bytes);
+                debug_assert!(value.is_empty() || (write_index + value.len() - 1 < out_len_bytes));
                 // # Safety
                 // - The start index is smaller than `out`'s capacity.
                 // - The end index is smaller than `out`'s capacity.
