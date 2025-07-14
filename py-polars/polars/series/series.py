@@ -1532,7 +1532,7 @@ class Series:
         else:
             dtype_char = match_in_out_types(
                 ufunc.types,
-                args=args,  #
+                args=args,
             )
         f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
