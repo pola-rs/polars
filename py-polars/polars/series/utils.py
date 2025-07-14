@@ -5,12 +5,11 @@ import sys
 from functools import reduce, wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
-import numpy as np
-
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
+from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
