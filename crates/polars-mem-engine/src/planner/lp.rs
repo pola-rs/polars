@@ -231,8 +231,9 @@ fn create_physical_plan_impl(
     let logical_plan = if state.has_cache_parent
         || matches!(
             lp_arena.get(root),
-            IR::Scan { .. }
-                | IR::Sink {
+            IR::Scan { .. } // Needed for the streaming impl
+                | IR::Cache { .. } // Needed for plans branching from the same cache node
+                | IR::Sink { // Needed for the streaming impl
                     payload: SinkTypeIR::Partition(_),
                     ..
                 }
