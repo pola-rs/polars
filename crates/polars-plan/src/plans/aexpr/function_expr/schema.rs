@@ -251,9 +251,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "peaks")]
-            PeakMin => mapper.with_same_dtype(),
-            #[cfg(feature = "peaks")]
-            PeakMax => mapper.with_same_dtype(),
+            PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]
             Cut {
                 include_breaks: false,
