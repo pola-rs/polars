@@ -182,13 +182,13 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Clone, Debug, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
-    pub tolerance: Option<AnyValue<'static>>,
+    pub tolerance: Option<Scalar>,
     /// A time duration specified as a string, for example:
     /// - "5m"
     /// - "2h15m"
