@@ -230,16 +230,11 @@ where
         )
     })?;
 
-    // Creating references to memory that has not been fully initialized is
-    // undefined behavior per
-    // https://doc.rust-lang.org/std/primitive.slice.html#method.assume_init
-    // so we need everything in `out` to be initialized one way or another.
-    //
-    // Luckily, initializing as zero is extremely efficient, because once an
-    // allocation is big enough, in practice it will become a call to e.g.
-    // mmap() which guarantees zero initialization.
     let mut out: Vec<T> = vec![T::zeroed(); primitive_length];
-    let out_len_bytes = cast_slice_mut::<_, u8>(out.as_mut()).len();
+    let (out_u8_ptr, out_len_bytes) = {
+        let out_u8_slice = cast_slice_mut::<_, u8>(out.as_mut());
+        (out_u8_slice.as_mut_ptr(), out_u8_slice.len())
+    };
     assert_eq!(out_len_bytes, row_size_bytes * from.len());
     let mut validity = MutableBitmap::from_len_set(from.len());
 
@@ -257,11 +252,7 @@ where
                 // - The start index is smaller than `out`'s capacity.
                 // - The end index is smaller than `out`'s capacity.
                 unsafe {
-                    copy_nonoverlapping(
-                        value.as_ptr(),
-                        (out.as_mut_ptr() as *mut u8).add(write_index),
-                        value.len(),
-                    );
+                    copy_nonoverlapping(value.as_ptr(), out_u8_ptr.add(write_index), value.len());
                 }
             } else {
                 // Slow path, reinterpret items one by one.
