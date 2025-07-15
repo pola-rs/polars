@@ -742,5 +742,3 @@ def test_date_range_end_interval_samples_backward_1mo(
         eager=True,
     )
     assert_series_equal(result, pl.Series("literal", expected))
-
-
