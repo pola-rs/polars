@@ -3,7 +3,9 @@ use std::sync::OnceLock;
 
 use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
+use polars_core::chunked_array::from_iterator_par::{
+    ChunkedCollectParIterExt, try_list_from_par_iter,
+};
 use polars_core::prelude::*;
 use rayon::prelude::*;
 
@@ -164,18 +166,12 @@ impl ApplyExpr {
             let iter = lst.par_iter().map(f);
 
             if let Some(dtype) = dtype {
-                // TODO! uncomment this line and remove debug_assertion after a while.
-                // POOL.install(|| {
-                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, DataType::List(Box::new(dtype)))
-                // })?
-                let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
-
-                if self.flags.returns_scalar() {
-                    debug_assert_eq!(&DataType::List(Box::new(dtype)), out.dtype());
-                } else {
-                    debug_assert_eq!(&dtype, out.dtype());
-                }
-
+                let out: ListChunked = POOL.install(|| {
+                    iter.collect_ca_with_dtype::<PolarsResult<_>>(
+                        PlSmallStr::EMPTY,
+                        DataType::List(Box::new(dtype)),
+                    )
+                })?;
                 out
             } else {
                 POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
@@ -409,7 +405,8 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
     fn is_scalar(&self) -> bool {
-        self.flags.returns_scalar() || self.function_operates_on_scalar
+        self.flags.returns_scalar()
+            || (self.function_operates_on_scalar && self.flags.is_length_preserving())
     }
 }
 

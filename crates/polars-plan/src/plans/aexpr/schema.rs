@@ -257,7 +257,7 @@ impl AExpr {
                     },
                     AggGroups(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        field.coerce(IDX_DTYPE);
+                        field.coerce(IDX_DTYPE.implode());
                         Ok(field)
                     },
                     Quantile { expr, .. } => {

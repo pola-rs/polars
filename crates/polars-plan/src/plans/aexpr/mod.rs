@@ -281,7 +281,14 @@ impl AExpr {
                 EvalVariant::List => is_scalar_ae(*expr, arena),
                 EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
             },
-            _ => false,
+            AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Gather { returns_scalar, .. } => *returns_scalar,
+            AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
+            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Explode { .. }
+            | AExpr::Column(_)
+            | AExpr::Filter { .. }
+            | AExpr::Slice { .. } => false,
         }
     }
 }
