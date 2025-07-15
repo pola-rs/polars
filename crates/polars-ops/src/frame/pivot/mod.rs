@@ -306,13 +306,27 @@ fn pivot_impl_single_column(
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
                             let tmp_df = value_col.into_frame();
-                            let mut aggregated = Column::from(expr.evaluate(&tmp_df, &groups)?);
+                            let mut aggregated =
+                                Column::from(expr.evaluate_on_groups(&tmp_df, &groups)?);
                             aggregated.rename(value_col_name.clone());
                             aggregated
                         },
                     },
                 }
             };
+
+            // For any combination of 'index' and 'on' for which there is no entry in the df,
+            // the default value is defined as the result of the agg_fn on the empty column.
+            let empty_col = Column::new_empty(PlSmallStr::EMPTY, value_col.dtype());
+            let empty_df = empty_col.clone().into_frame();
+            let default_col = match &agg_fn {
+                None => empty_col.clone(),
+                Some(agg_fn) => match agg_fn {
+                    Expr(expr) => expr.evaluate(&empty_df)?,
+                    _ => unimplemented!(),
+                },
+            };
+            let default_val = default_col.get(0).unwrap_or_default();
 
             let headers = column_agg.unique_stable()?.cast(&DataType::String)?;
             let mut headers = headers.str().unwrap().clone();
@@ -338,6 +352,7 @@ fn pivot_impl_single_column(
                             $ca,
                             logical_type,
                             &headers,
+                            &default_val,
                         )
                     }};
                 }
@@ -351,6 +366,7 @@ fn pivot_impl_single_column(
                     value_agg_phys.as_materialized_series(),
                     logical_type,
                     &headers,
+                    &default_val,
                 )
             };
 
