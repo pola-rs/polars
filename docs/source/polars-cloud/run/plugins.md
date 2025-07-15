@@ -15,19 +15,13 @@ distributed as Python packages that register new expression methods.
 
 ### Setting Up Your Environment
 
-Start by creating a `requirements.txt` file with your dependencies. You can do this as follows with
-`uv` and `pip`:
-
-- `uv export --format requirements-txt`
-- `pip freeze > requirements.txt`
+Start by creating a `requirements.txt` file with your dependencies.
 
 ```python
 # requirements.txt
 
-polars
-polars_cloud
-numpy
-polars_xdt
+numpy==2.2.4
+polars-xdt==0.16.8
 ```
 
 After that, include the file in the compute context. In the compute context, you can specify a
