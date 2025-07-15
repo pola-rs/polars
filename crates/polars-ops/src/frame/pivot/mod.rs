@@ -14,17 +14,7 @@ pub use unpivot::UnpivotDF;
 const HASHMAP_INIT_SIZE: usize = 512;
 
 #[derive(Clone)]
-pub enum PivotAgg {
-    First,
-    Sum,
-    Min,
-    Max,
-    Mean,
-    Median,
-    Count,
-    Last,
-    Expr(Arc<dyn PhysicalAggExpr + Send + Sync>),
-}
+pub struct PivotAgg(pub Arc<dyn PhysicalAggExpr + Send + Sync>);
 
 fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
     // restore logical type
@@ -281,7 +271,6 @@ fn pivot_impl_single_column(
         for value_col_name in values {
             let value_col = pivot_df.column(value_col_name)?;
 
-            use PivotAgg::*;
             let value_agg = unsafe {
                 match &agg_fn {
                     None => match value_col.len() > groups.len() {
@@ -292,25 +281,16 @@ fn pivot_impl_single_column(
                         ),
                         false => value_col.agg_first(&groups),
                     },
-                    Some(agg_fn) => match agg_fn {
-                        Sum => value_col.agg_sum(&groups),
-                        Min => value_col.agg_min(&groups),
-                        Max => value_col.agg_max(&groups),
-                        Last => value_col.agg_last(&groups),
-                        First => value_col.agg_first(&groups),
-                        Mean => value_col.agg_mean(&groups),
-                        Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_column(),
-                        Expr(expr) => {
-                            let name = expr.root_name()?.clone();
-                            let mut value_col = value_col.clone();
-                            value_col.rename(name);
-                            let tmp_df = value_col.into_frame();
-                            let mut aggregated =
-                                Column::from(expr.evaluate_on_groups(&tmp_df, &groups)?);
-                            aggregated.rename(value_col_name.clone());
-                            aggregated
-                        },
+                    Some(agg_fn) => {
+                        let expr = agg_fn.0.clone();
+                        let name = expr.root_name()?.clone();
+                        let mut value_col = value_col.clone();
+                        value_col.rename(name);
+                        let tmp_df = value_col.into_frame();
+                        let mut aggregated =
+                            Column::from(expr.evaluate_on_groups(&tmp_df, &groups)?);
+                        aggregated.rename(value_col_name.clone());
+                        aggregated
                     },
                 }
             };
@@ -321,10 +301,7 @@ fn pivot_impl_single_column(
             let empty_df = empty_col.clone().into_frame();
             let default_col = match &agg_fn {
                 None => empty_col.clone(),
-                Some(agg_fn) => match agg_fn {
-                    Expr(expr) => expr.evaluate(&empty_df)?,
-                    _ => unimplemented!(),
-                },
+                Some(agg_fn) => agg_fn.0.evaluate(&empty_df)?,
             };
             let default_val = default_col.get(0).unwrap_or_default();
 

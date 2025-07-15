@@ -79,7 +79,7 @@ where
         polars_bail!(InvalidOperation: "explicit column references are not allowed in aggregate_function");
     }
 
-    let agg_expr = agg_expr.map(|ae| PivotAgg::Expr(Arc::new(PivotExpr(ae))));
+    let agg_expr = agg_expr.map(|ae| PivotAgg(Arc::new(PivotExpr(ae))));
     polars_ops::pivot::pivot(df, on, index, values, sort_columns, agg_expr, separator)
 }
 
@@ -107,6 +107,6 @@ where
         polars_bail!(InvalidOperation: "explicit column references are not allowed in aggregate_function");
     }
 
-    let agg_expr = agg_expr.map(|ae| PivotAgg::Expr(Arc::new(PivotExpr(ae))));
+    let agg_expr = agg_expr.map(|ae| PivotAgg(Arc::new(PivotExpr(ae))));
     polars_ops::pivot::pivot_stable(df, on, index, values, sort_columns, agg_expr, separator)
 }

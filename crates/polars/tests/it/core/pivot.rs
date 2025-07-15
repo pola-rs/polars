@@ -20,10 +20,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
         Some(["index"]),
         Some(["values2"]),
         true,
-        // Some(PivotAgg::Count),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").count(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").count())))),
         None,
     )?;
 
@@ -41,10 +38,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
         Some(["index"]),
         Some(["values1"]),
         true,
-        // Some(PivotAgg::First),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").first(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").first())))),
         None,
     )?;
     out.try_apply("1", |s| {
@@ -74,10 +68,7 @@ fn test_pivot_old() {
         Some(["index"]),
         Some(["values"]),
         false,
-        // Some(PivotAgg::Sum),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").sum(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").sum())))),
         None,
     )
     .unwrap();
@@ -92,10 +83,7 @@ fn test_pivot_old() {
         Some(["index"]),
         Some(["values"]),
         false,
-        // Some(PivotAgg::Min),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").min(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").min())))),
         None,
     )
     .unwrap();
@@ -109,10 +97,7 @@ fn test_pivot_old() {
         Some(["index"]),
         Some(["values"]),
         false,
-        // Some(PivotAgg::Max),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").max(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").max())))),
         None,
     )
     .unwrap();
@@ -126,10 +111,7 @@ fn test_pivot_old() {
         Some(["index"]),
         Some(["values"]),
         false,
-        // Some(PivotAgg::Mean),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").mean(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").mean())))),
         None,
     )
     .unwrap();
@@ -143,10 +125,7 @@ fn test_pivot_old() {
         Some(["index"]),
         Some(["values"]),
         false,
-        // Some(PivotAgg::Count),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").len(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").len())))),
         None,
     )
     .unwrap();
@@ -174,10 +153,7 @@ fn test_pivot_categorical() -> PolarsResult<()> {
         Some(["index"]),
         Some(["values"]),
         true,
-        // Some(PivotAgg::Count),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").len(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").len())))),
         None,
     )?;
     assert_eq!(out.get_column_names(), &["index", "a", "b", "c"]);
@@ -202,10 +178,7 @@ fn test_pivot_new() -> PolarsResult<()> {
         Some(["index1", "index2"]),
         Some(["values1"]),
         true,
-        // Some(PivotAgg::Sum),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").sum(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").sum())))),
         None,
     ))?;
     let expected = df![
@@ -222,10 +195,7 @@ fn test_pivot_new() -> PolarsResult<()> {
         Some(["index1", "index2"]),
         Some(["values1"]),
         true,
-        // Some(PivotAgg::Sum),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").sum(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").sum())))),
         None,
     )?;
     let expected = df![
@@ -256,10 +226,7 @@ fn test_pivot_2() -> PolarsResult<()> {
         Some(["index"]),
         Some(["values"]),
         false,
-        // Some(PivotAgg::First),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").first(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").first())))),
         None,
     )?;
     let expected = df![
@@ -292,10 +259,7 @@ fn test_pivot_datetime() -> PolarsResult<()> {
         Some(["index"]),
         Some(["values"]),
         false,
-        // Some(PivotAgg::Sum),
-        Some(PivotAgg::Expr(Arc::new(PivotExpr::from_expr(
-            col("").sum(),
-        )))),
+        Some(PivotAgg(Arc::new(PivotExpr::from_expr(col("").sum())))),
         None,
     )?;
     let expected = df![
