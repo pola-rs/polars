@@ -1329,7 +1329,8 @@ def test_join_asof_large_int_21276(
     assert_frame_equal(result, expected)
 
 
-def test_join_asof_slice_23583() -> None:
+@pytest.mark.parametrize("by", ["constant", None])
+def test_join_asof_slice_23583(by: str | None) -> None:
     lhs = pl.LazyFrame(
         {
             "index": [0],
@@ -1346,7 +1347,11 @@ def test_join_asof_slice_23583() -> None:
         },
     ).set_sorted("date")
 
-    q = lhs.join_asof(rhs, on="date", by="constant", check_sortedness=False).head(1)
+    q = (
+        lhs.join_asof(rhs, on="date", by=by, check_sortedness=False)
+        .head(1)
+        .select(pl.exclude("constant_right"))
+    )
 
     expect = pl.DataFrame(
         {
