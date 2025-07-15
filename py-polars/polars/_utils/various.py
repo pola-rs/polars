@@ -695,15 +695,13 @@ def display_dot_graph(
             import tempfile
             from uuid import uuid4
 
-            tmpdir = Path(tempfile.gettempdir())
-            p = tmpdir / str(uuid4())
-            p.write_bytes(graph)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                d = Path(tmpdir)
+                p = d / str(uuid4())
 
-            cmd = cmd.replace("%file%", str(p))
-            subprocess.check_output(["sh", "-c", cmd])
-
-            p.unlink()
-            tmpdir.rmdir()
+                cmd = cmd.replace("%file%", str(p))
+                p.write_bytes(graph)
+                subprocess.check_output(["sh", "-c", cmd])
             return None
 
         import_optional(
