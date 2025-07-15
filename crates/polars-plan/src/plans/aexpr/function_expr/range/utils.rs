@@ -6,18 +6,16 @@ use polars_core::prelude::{
 pub(super) fn temporal_series_to_i64_scalar(s: &Column) -> Option<i64> {
     s.to_physical_repr().get(0).unwrap().extract::<i64>()
 }
-pub(super) fn ensure_range_bounds_contain_exactly_one_value(
-    start: &Column,
-    end: &Column,
+pub(super) fn ensure_items_contain_exactly_one_value(
+    values: &[&Column],
+    names: &[&str],
 ) -> PolarsResult<()> {
-    polars_ensure!(
-        start.len() == 1,
-        ComputeError: "`start` must contain exactly one value, got {} values", start.len()
-    );
-    polars_ensure!(
-        end.len() == 1,
-        ComputeError: "`end` must contain exactly one value, got {} values", end.len()
-    );
+    for (value, name) in values.iter().zip(names.iter()) {
+        polars_ensure!(
+            value.len() == 1,
+            ComputeError: "`{name}` must contain exactly one value, got {} values", value.len()
+        )
+    }
     Ok(())
 }
 
@@ -138,10 +136,10 @@ where
     Ok(out)
 }
 
-/// Create a ranges column from the given start/end columns and a range function.
-pub(super) fn temporal_ranges_impl_broadcast<T, U, F>(
-    start: &ChunkedArray<T>,
-    end: &ChunkedArray<T>,
+/// Create a ranges column from two columns and a range function.
+pub(super) fn temporal_ranges_impl_broadcast_2args<T, U, F>(
+    s1: &ChunkedArray<T>,
+    s2: &ChunkedArray<T>,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<Column>
@@ -151,44 +149,161 @@ where
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
     ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
-    match (start.len(), end.len()) {
-        (len_start, len_end) if len_start == len_end => {
-            build_temporal_ranges::<_, _, T, U, F>(
-                start.downcast_iter().flatten(),
-                end.downcast_iter().flatten(),
+    match (s1.len(), s2.len()) {
+        (len_s1, len_s2) if len_s1 == len_s2 => {
+            build_temporal_ranges_2args::<_, _, T, U, F>(
+                s1.downcast_iter().flatten(),
+                s2.downcast_iter().flatten(),
                 range_impl,
                 builder,
             )?;
         },
-        (1, len_end) => {
-            let start_scalar = start.get(0);
-            match start_scalar {
-                Some(start) => build_temporal_ranges::<_, _, T, U, F>(
-                    std::iter::repeat(Some(&start)),
-                    end.downcast_iter().flatten(),
+        (1, len_s2) => {
+            let s1_scalar = s1.get(0);
+            match s1_scalar {
+                Some(s1) => build_temporal_ranges_2args::<_, _, T, U, F>(
+                    std::iter::repeat(Some(&s1)),
+                    s2.downcast_iter().flatten(),
                     range_impl,
                     builder,
                 )?,
-                None => build_nulls(builder, len_end),
+                None => build_nulls(builder, len_s2),
             }
         },
-        (len_start, 1) => {
-            let end_scalar = end.get(0);
-            match end_scalar {
-                Some(end) => build_temporal_ranges::<_, _, T, U, F>(
-                    start.downcast_iter().flatten(),
-                    std::iter::repeat(Some(&end)),
+        (len_s1, 1) => {
+            let s2_scalar = s2.get(0);
+            match s2_scalar {
+                Some(s2) => build_temporal_ranges_2args::<_, _, T, U, F>(
+                    s1.downcast_iter().flatten(),
+                    std::iter::repeat(Some(&s2)),
                     range_impl,
                     builder,
                 )?,
-                None => build_nulls(builder, len_start),
+                None => build_nulls(builder, len_s1),
             }
         },
-        (len_start, len_end) => {
+        (len_s1, len_s2) => {
             polars_bail!(
                 ComputeError:
-                "lengths of `start` ({}) and `end` ({}) do not match",
-                len_start, len_end
+                "lengths of `s1` ({}) and `s2` ({}) do not match",
+                len_s1, len_s2
+            )
+        },
+    };
+    let out = builder.finish().into_column();
+    Ok(out)
+}
+
+/// Create a ranges column from two columns and a range function.
+pub(super) fn temporal_ranges_impl_broadcast_3args<T, U, F>(
+    s1: &ChunkedArray<T>,
+    s2: &ChunkedArray<T>,
+    s3: &ChunkedArray<T>,
+    range_impl: F,
+    builder: &mut ListPrimitiveChunkedBuilder<U>,
+) -> PolarsResult<Column>
+where
+    T: PolarsIntegerType,
+    U: PolarsIntegerType,
+    F: Fn(T::Native, T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
+{
+    match (s1.len(), s2.len(), s3.len()) {
+        (len1, len2, len3) if len1 == len2 && len1 == len3 => {
+            build_temporal_ranges_3args::<_, _, _, T, U, F>(
+                s1.downcast_iter().flatten(),
+                s2.downcast_iter().flatten(),
+                s3.downcast_iter().flatten(),
+                range_impl,
+                builder,
+            )?;
+        },
+        (len1, len2, 1) if (len1 == len2) => {
+            let s3_scalar = s3.get(0);
+            match s3_scalar {
+                Some(s3) => build_temporal_ranges_3args::<_, _, _, T, U, F>(
+                    s1.downcast_iter().flatten(),
+                    s2.downcast_iter().flatten(),
+                    std::iter::repeat(Some(&s3)),
+                    range_impl,
+                    builder,
+                )?,
+                None => build_nulls(builder, len1),
+            }
+        },
+        (len1, 1, len3) if (len1 == len3) => {
+            let s2_scalar = s2.get(0);
+            match s2_scalar {
+                Some(s2) => build_temporal_ranges_3args::<_, _, _, T, U, F>(
+                    s1.downcast_iter().flatten(),
+                    std::iter::repeat(Some(&s2)),
+                    s3.downcast_iter().flatten(),
+                    range_impl,
+                    builder,
+                )?,
+                None => build_nulls(builder, len1),
+            }
+        },
+        (1, len2, len3) if (len2 == len3) => {
+            let s1_scalar = s1.get(0);
+            match s1_scalar {
+                Some(s1) => build_temporal_ranges_3args::<_, _, _, T, U, F>(
+                    std::iter::repeat(Some(&s1)),
+                    s2.downcast_iter().flatten(),
+                    s3.downcast_iter().flatten(),
+                    range_impl,
+                    builder,
+                )?,
+                None => build_nulls(builder, len2),
+            }
+        },
+        (1, 1, len3) => {
+            let s1_scalar = s1.get(0);
+            let s2_scalar = s2.get(0);
+            match (s1_scalar, s2_scalar) {
+                (Some(s1), Some(s2)) => build_temporal_ranges_3args::<_, _, _, T, U, F>(
+                    std::iter::repeat(Some(&s1)),
+                    std::iter::repeat(Some(&s2)),
+                    s3.downcast_iter().flatten(),
+                    range_impl,
+                    builder,
+                )?,
+                _ => build_nulls(builder, len3),
+            }
+        },
+        (1, len2, 1) => {
+            let s1_scalar = s1.get(0);
+            let s3_scalar = s3.get(0);
+            match (s1_scalar, s3_scalar) {
+                (Some(s1), Some(s3)) => build_temporal_ranges_3args::<_, _, _, T, U, F>(
+                    std::iter::repeat(Some(&s1)),
+                    s2.downcast_iter().flatten(),
+                    std::iter::repeat(Some(&s3)),
+                    range_impl,
+                    builder,
+                )?,
+                _ => build_nulls(builder, len2),
+            }
+        },
+        (len1, 1, 1) => {
+            let s2_scalar = s2.get(0);
+            let s3_scalar = s3.get(0);
+            match (s2_scalar, s3_scalar) {
+                (Some(s2), Some(s3)) => build_temporal_ranges_3args::<_, _, _, T, U, F>(
+                    s1.downcast_iter().flatten(),
+                    std::iter::repeat(Some(&s2)),
+                    std::iter::repeat(Some(&s3)),
+                    range_impl,
+                    builder,
+                )?,
+                _ => build_nulls(builder, len1),
+            }
+        },
+        (len1, len2, len3) => {
+            polars_bail!(
+                ComputeError:
+                "lengths of `s1` ({}), `s2` ({}), and `s3` ({}) do not match",
+                len1, len2, len3
             )
         },
     };
@@ -222,10 +337,10 @@ where
     Ok(())
 }
 
-/// Iterate over a start and end column and create a range for each entry.
-fn build_temporal_ranges<'a, I, J, T, U, F>(
-    start: I,
-    end: J,
+/// Iterate over two columns and create a range for each entry.
+fn build_temporal_ranges_2args<'a, I, J, T, U, F>(
+    s1: I,
+    s2: J,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
@@ -237,9 +352,34 @@ where
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
     ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
-    for (start, end) in start.zip(end) {
-        match (start, end) {
-            (Some(start), Some(end)) => range_impl(*start, *end, builder)?,
+    for (s1, s2) in s1.zip(s2) {
+        match (s1, s2) {
+            (Some(s1), Some(s2)) => range_impl(*s1, *s2, builder)?,
+            _ => builder.append_null(),
+        }
+    }
+    Ok(())
+}
+/// Iterate over two columns and create a range for each entry.
+fn build_temporal_ranges_3args<'a, I, J, K, T, U, F>(
+    s1: I,
+    s2: J,
+    s3: K,
+    range_impl: F,
+    builder: &mut ListPrimitiveChunkedBuilder<U>,
+) -> PolarsResult<()>
+where
+    I: Iterator<Item = Option<&'a T::Native>>,
+    J: Iterator<Item = Option<&'a T::Native>>,
+    K: Iterator<Item = Option<&'a T::Native>>,
+    T: PolarsIntegerType,
+    U: PolarsIntegerType,
+    F: Fn(T::Native, T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
+{
+    for ((s1, s2), s3) in s1.zip(s2).zip(s3) {
+        match (s1, s2, s3) {
+            (Some(s1), Some(s2), Some(s3)) => range_impl(*s1, *s2, *s3, builder)?,
             _ => builder.append_null(),
         }
     }

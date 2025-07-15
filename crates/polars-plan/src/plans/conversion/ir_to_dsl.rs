@@ -707,20 +707,38 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     array_width,
                 },
                 #[cfg(feature = "dtype-date")]
-                IR::DateRange { interval, closed } => R::DateRange { interval, closed },
+                IR::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                } => R::DateRange {
+                    interval,
+                    closed,
+                    arg_type,
+                },
                 #[cfg(feature = "dtype-date")]
-                IR::DateRanges { interval, closed } => R::DateRanges { interval, closed },
+                IR::DateRanges {
+                    interval,
+                    closed,
+                    arg_type,
+                } => R::DateRanges {
+                    interval,
+                    closed,
+                    arg_type,
+                },
                 #[cfg(feature = "dtype-datetime")]
                 IR::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 } => R::DatetimeRange {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 },
                 #[cfg(feature = "dtype-datetime")]
                 IR::DatetimeRanges {
@@ -728,11 +746,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 } => R::DatetimeRanges {
                     interval,
                     closed,
                     time_unit,
                     time_zone,
+                    arg_type,
                 },
                 #[cfg(feature = "dtype-time")]
                 IR::TimeRange { interval, closed } => R::TimeRange { interval, closed },
