@@ -5,12 +5,72 @@ use polars_utils::arena::Arena;
 
 use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction, LiteralValue};
 
+#[macro_export]
+macro_rules! ensure_datetime {
+    ($dtype:ident) => {
+        polars_ensure!(
+            matches!($dtype, DataType::Datetime(_, _) | DataType::Date),
+            ComputeError: "'{}' must be Date or Datetime, got {:?}", stringify!($dtype), $dtype
+        )
+    }
+}
+#[macro_export]
+macro_rules! ensure_int {
+    ($dtype:ident) => {
+        polars_ensure!(
+            $dtype.is_integer(),
+            ComputeError: "'{}' must be Date or Datetime, got {:?}", stringify!($dtype), $dtype
+        )
+    }
+}
+pub use {ensure_datetime, ensure_int};
+
+// Determine the output dtype, given a `Date`/`Datetime` dtype and optional time unit, time zone, and
+// interval string.
+//
+// If an explicit time unit is provided, it is used regardless of the interval's temporal
+// granularity.
+#[doc(hidden)]
+pub fn resolve_datetime_dtype(
+    dt: DataType,
+    tu: &Option<TimeUnit>,
+    tz: &Option<TimeZone>,
+    interval: &Option<Duration>,
+) -> PolarsResult<DataType> {
+    let mut dtype_out = match (&dt, tu) {
+        (DataType::Date, time_unit) => {
+            if let Some(tu) = time_unit {
+                DataType::Datetime(*tu, None)
+            } else if interval.is_some_and(|i| i.nanoseconds() % 1_000 != 0) {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            } else {
+                // No datatype, use microseconds
+                DataType::Datetime(TimeUnit::Microseconds, None)
+            }
+        },
+        // overwrite nothing, keep as-is
+        (DataType::Datetime(_, _), None) => dt,
+        // overwrite time unit, keep timezone
+        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(*tu, tz.clone()),
+        (dt, _) => {
+            polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt)
+        },
+    };
+
+    // Overwrite time zone, if specified
+    #[cfg(feature = "timezones")]
+    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, tz) {
+        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
+    };
+    Ok(dtype_out)
+}
+
 /// Cast a date or datetime node to a supertype.
 ///
 /// If the target datetime type has a timezone, then:
-///   * If the source is a Date, we first cast to naive datetime, then replace the time zone.
-///   * If the source is a Datetime and is naive, we replace the time zone.
-///   * If the source is a Datetime with a different time zone, we convert time zone.
+///   * If the source is a `Date`, we first cast to naive datetime, then replace the time zone.
+///   * If the source is a `Datetime` and is naive, we replace the time zone.
+///   * If the source is a `Datetime` with a different time zone, we convert time zone.
 ///
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub fn coerce_temporal_dt(
@@ -55,6 +115,7 @@ pub fn coerce_temporal_dt(
 }
 
 #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+#[doc(hidden)]
 pub(super) fn replace_tz(
     e: &mut ExprIR,
     dtype: &DataType,
@@ -89,6 +150,7 @@ pub(super) fn replace_tz(
 }
 
 #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+#[doc(hidden)]
 pub(super) fn convert_tz(
     e: &mut ExprIR,
     dtype: &DataType,
@@ -112,40 +174,4 @@ pub(super) fn convert_tz(
     e.set_node(expr_arena.add(replacement_expr));
     e.set_dtype(dtype.clone());
     Ok(())
-}
-
-// Determines the output data type, including user-specified t tz, and interval.
-#[cfg(feature = "dtype-datetime")]
-pub(super) fn temporal_range_output_type(
-    start_end_supertype: DataType,
-    tu: &Option<TimeUnit>,
-    tz: &Option<TimeZone>,
-    interval: &Duration,
-) -> PolarsResult<DataType> {
-    let mut dtype_out = match (&start_end_supertype, tu) {
-        (DataType::Date, time_unit) => {
-            if let Some(tu) = time_unit {
-                DataType::Datetime(*tu, None)
-            } else if interval.nanoseconds() % 1_000 != 0 {
-                DataType::Datetime(TimeUnit::Nanoseconds, None)
-            } else {
-                // No datatype, use microseconds
-                DataType::Datetime(TimeUnit::Microseconds, None)
-            }
-        },
-        // overwrite nothing, keep as-is
-        (DataType::Datetime(_, _), None) => start_end_supertype,
-        // overwrite time unit, keep timezone
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(*tu, tz.clone()),
-        (dt, _) => {
-            polars_bail!(InvalidOperation: "expected a temporal datatype, got {}", dt)
-        },
-    };
-
-    // Overwrite time zone, if specified
-    #[cfg(feature = "timezones")]
-    if let (DataType::Datetime(tu, _), Some(tz)) = (&dtype_out, tz) {
-        dtype_out = DataType::Datetime(*tu, Some(tz.clone()));
-    };
-    Ok(dtype_out)
 }

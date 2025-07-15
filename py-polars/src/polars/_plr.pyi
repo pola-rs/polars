@@ -2241,23 +2241,33 @@ def int_ranges(
     start: PyExpr, end: PyExpr, step: PyExpr, dtype: PyDataTypeExpr
 ) -> PyExpr: ...
 def date_range(
-    start: PyExpr, end: PyExpr, interval: str, closed: ClosedWindow
+    start: PyExpr | None,
+    end: PyExpr | None,
+    interval: str | None,
+    num_samples: PyExpr | None,
+    closed: ClosedWindow,
 ) -> PyExpr: ...
 def date_ranges(
-    start: PyExpr, end: PyExpr, interval: str, closed: ClosedWindow
+    start: PyExpr | None,
+    end: PyExpr | None,
+    interval: str | None,
+    num_samples: PyExpr | None,
+    closed: ClosedWindow,
 ) -> PyExpr: ...
 def datetime_range(
-    start: PyExpr,
-    end: PyExpr,
-    every: str,
+    start: PyExpr | None,
+    end: PyExpr | None,
+    interval: str | None,
+    num_samples: PyExpr | None,
     closed: ClosedWindow,
     time_unit: TimeUnit | None,
     time_zone: TimeZone | None,
 ) -> PyExpr: ...
 def datetime_ranges(
-    start: PyExpr,
-    end: PyExpr,
-    every: str,
+    start: PyExpr | None,
+    end: PyExpr | None,
+    interval: str | None,
+    num_samples: PyExpr | None,
     closed: ClosedWindow,
     time_unit: TimeUnit | None,
     time_zone: TimeZone | None,

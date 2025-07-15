@@ -193,14 +193,16 @@ def test_duration_function_literal() -> None:
     expected = pl.DataFrame(
         {
             "A": ["x", "y"],
-            "T": [
-                [timedelta(days=31, seconds=1), timedelta(seconds=1)],
+            "T": pl.Series(
                 [
-                    timedelta(days=61, seconds=1),
-                    timedelta(days=30, seconds=1),
-                    timedelta(seconds=1),
-                ],
-            ],
+                    [timedelta(days=31, seconds=1), timedelta(seconds=1)],
+                    [
+                        timedelta(days=61, seconds=1),
+                        timedelta(days=30, seconds=1),
+                        timedelta(seconds=1),
+                    ],
+                ]
+            ),
         }
     )
     assert_frame_equal(result, expected)

@@ -94,7 +94,7 @@ def test_time_range_start_later_than_end() -> None:
 
 @pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
 def test_time_range_invalid_step(interval: timedelta) -> None:
-    with pytest.raises(ComputeError, match="`interval` must be positive"):
+    with pytest.raises(ComputeError, match="'interval' must be positive"):
         pl.time_range(time(11), time(12), interval=interval, eager=True)
 
 
