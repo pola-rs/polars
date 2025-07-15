@@ -15,7 +15,7 @@ use polars_ops::pivot::PivotAgg;
 use crate::physical_plan::exotic::{contains_column_refs, prepare_expression_for_context};
 use crate::prelude::*;
 
-pub struct PivotExpr(pub Expr);
+pub struct PivotExpr(Expr);
 
 impl PivotExpr {
     pub fn from_expr(expr: Expr) -> Self {
