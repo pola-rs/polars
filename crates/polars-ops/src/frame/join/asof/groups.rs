@@ -485,17 +485,15 @@ pub trait AsofJoinBy: IntoDf {
         allow_eq: bool,
         check_sortedness: bool,
     ) -> PolarsResult<DataFrame> {
-        let (self_sliced_slot, other_sliced_slot, left_slice_s, right_slice_s); // Keeps temporaries alive.
+        let (self_sliced_slot, left_slice_s); // Keeps temporaries alive.
         let (self_df, other_df, left_key, right_key);
         if let Some((offset, len)) = slice {
             self_sliced_slot = self.to_df().slice(offset, len);
-            other_sliced_slot = other.slice(offset, len);
             left_slice_s = left_on.slice(offset, len);
-            right_slice_s = right_on.slice(offset, len);
             left_key = &left_slice_s;
-            right_key = &right_slice_s;
+            right_key = right_on;
             self_df = &self_sliced_slot;
-            other_df = &other_sliced_slot;
+            other_df = other;
         } else {
             self_df = self.to_df();
             other_df = other;
