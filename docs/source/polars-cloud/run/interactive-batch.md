@@ -1,9 +1,9 @@
 # Interactive or batch mode
 
-In Polars Cloud, a user can define two types of compute modes: batch & interactive. Batch mode is
-designed for batch job style queries. These kinds of queries are typically scheduled and run once in
-a certain period. Interactive mode allows for exploratory workflows where a user interacts with the
-dataset and requires more compute resources than are locally available.
+In Polars Cloud, a user can define two types of compute modes: **batch** or **interactive**. Batch
+mode is designed for batch job style queries. These kinds of queries are typically scheduled and run
+once in a certain period. Interactive mode allows for exploratory workflows where a user interacts
+with the dataset and requires more compute resources than are locally available.
 
 The rest of this page will give examples on how to set up one or the other. More information on the
 architectural differences and implications can be found on
@@ -81,7 +81,7 @@ shape: (4, 3)
 └────────────────┴────────────┴───────────┘
 ```
 
-To continue your exploration you can use the returned LazyFrame to build another query.
+To continue your exploration you can use the returned `LazyFrame` to build another query.
 
 {{code_block('polars-cloud/interactive-batch','interactive-next',[])}}
 

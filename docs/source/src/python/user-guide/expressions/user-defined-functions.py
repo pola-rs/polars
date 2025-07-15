@@ -1,5 +1,8 @@
 # --8<-- [start:setup]
 
+from numba import float64, guvectorize, int64
+import numpy as np
+import math
 import warnings
 
 import polars as pl
@@ -19,7 +22,6 @@ print(df)
 # --8<-- [end:dataframe]
 
 # --8<-- [start:individual_log]
-import math
 
 
 def my_log(value):
@@ -56,14 +58,12 @@ print(out)
 # --8<-- [end:diff_from_mean]
 
 # --8<-- [start:np_log]
-import numpy as np
 
 out = df.select(pl.col("values").map_batches(np.log, return_dtype=pl.Float64))
 print(out)
 # --8<-- [end:np_log]
 
 # --8<-- [start:diff_from_mean_numba]
-from numba import float64, guvectorize, int64
 
 
 # This will be compiled to machine code, so it will be fast. The Series is
@@ -102,17 +102,18 @@ def add(arr, arr2, result):
         result[i] = arr[i] + arr2[i]
 
 
-df3 = pl.DataFrame({"values1": [1, 2, 3], "values2": [10, 20, 30]})
+df3 = pl.DataFrame({"values_1": [1, 2, 3], "values_2": [10, 20, 30]})
 
 out = df3.select(
     # Create a struct that has two columns in it:
-    pl.struct(["values1", "values2"])
+    pl.struct(["values_1", "values_2"])
     # Pass the struct to a lambda that then passes the individual columns to
     # the add() function:
     .map_batches(
         lambda combined: add(
-            combined.struct.field("values1"), combined.struct.field("values2")
-        )
+            combined.struct.field("values_1"), combined.struct.field("values_2")
+        ),
+        return_dtype=pl.Float64,
     )
     .alias("add_columns")
 )

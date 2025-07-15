@@ -1128,7 +1128,11 @@ impl PyLazyFrame {
                 strategy: strategy.0,
                 left_by: left_by.map(strings_to_pl_smallstr),
                 right_by: right_by.map(strings_to_pl_smallstr),
-                tolerance: tolerance.map(|t| t.0.into_static()),
+                tolerance: tolerance.map(|t| {
+                    let av = t.0.into_static();
+                    let dtype = av.dtype();
+                    Scalar::new(dtype, av)
+                }),
                 tolerance_str: tolerance_str.map(|s| s.into()),
                 allow_eq,
                 check_sortedness,

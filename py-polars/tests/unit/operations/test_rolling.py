@@ -491,18 +491,25 @@ def test_rolling_by_() -> None:
 
 def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     df1 = pl.DataFrame({"Event": ["Rain", "Sun"]})
-    df2 = pl.DataFrame({"Date": [1, 2, 3, 4]})
-    df = df1.join(df2, how="cross").set_sorted("Date")
+    df2 = pl.DataFrame({"Date": [1, 2, 3, 4]}).set_sorted("Date")
+    df = df1.join(df2, how="cross")
 
     result = df.rolling(
         index_column="Date", period="2i", offset="-2i", group_by="Event", closed="left"
     ).agg(pl.len())
 
-    assert result.to_dict(as_series=False) == {
-        "Event": ["Sun", "Sun", "Sun", "Sun", "Rain", "Rain", "Rain", "Rain"],
-        "Date": [1, 2, 3, 4, 1, 2, 3, 4],
-        "len": [0, 1, 2, 2, 0, 1, 2, 2],
-    }
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "Event": ["Sun", "Sun", "Sun", "Sun", "Rain", "Rain", "Rain", "Rain"],
+                "Date": [1, 2, 3, 4, 1, 2, 3, 4],
+                "len": [0, 1, 2, 2, 0, 1, 2, 2],
+            },
+            schema_overrides={"len": pl.get_index_type()},
+        ),
+        check_row_order=False,
+    )
 
 
 def test_rolling_duplicates() -> None:

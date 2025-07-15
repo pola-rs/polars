@@ -1282,3 +1282,13 @@ def test_struct_cast_string_multiple_chunks_21650() -> None:
     result = df.select(pl.col("a").cast(pl.String))
     expected = pl.DataFrame({"a": ["{1,2}", "{1,2}"]})
     assert_frame_equal(result, expected)
+
+
+def test_struct_nulls_in_equality_23527() -> None:
+    df = pl.DataFrame({"a": [False, False, False, None, True, True]})
+    df_struct = df.with_columns(pl.struct(["a"]).alias("a"))
+    out = df_struct.with_columns(
+        (pl.col("a") == pl.col("a").shift(1)).fill_null(False).alias("a")
+    )
+    expected = pl.DataFrame({"a": [False, True, True, False, False, True]})
+    assert_frame_equal(out, expected)

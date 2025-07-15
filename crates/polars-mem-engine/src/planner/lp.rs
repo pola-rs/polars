@@ -231,8 +231,9 @@ fn create_physical_plan_impl(
     let logical_plan = if state.has_cache_parent
         || matches!(
             lp_arena.get(root),
-            IR::Scan { .. }
-                | IR::Sink {
+            IR::Scan { .. } // Needed for the streaming impl
+                | IR::Cache { .. } // Needed for plans branching from the same cache node
+                | IR::Sink { // Needed for the streaming impl
                     payload: SinkTypeIR::Partition(_),
                     ..
                 }
@@ -356,9 +357,33 @@ fn create_physical_plan_impl(
                     let builder = build_streaming_executor
                         .expect("invalid build. Missing feature new-streaming");
 
-                    Ok(Box::new(PartitionedSinkExecutor::new(
+                    let executor = Box::new(PartitionedSinkExecutor::new(
                         input, builder, root, lp_arena, expr_arena,
-                    )))
+                    ));
+
+                    let cache_id = UniqueId::default();
+
+                    // Use cache so that this runs during the cache pre-filling stage and not on the
+                    // thread pool, it could deadlock since the streaming engine uses the thread
+                    // pool internally.
+                    cache_nodes.insert(
+                        cache_id.clone(),
+                        Box::new(executors::CacheExec {
+                            input: Some(executor),
+                            id: cache_id.clone(),
+                            count: 0,
+                            is_new_streaming_scan: false,
+                        }),
+                    );
+
+                    Ok(Box::new(executors::CacheExec {
+                        id: cache_id,
+                        // Rest of the fields don't matter - the actual node was inserted into
+                        // `cache_nodes`.
+                        input: None,
+                        count: Default::default(),
+                        is_new_streaming_scan: false,
+                    }))
                 },
             }
         },
@@ -1060,4 +1085,47 @@ pub fn create_scan_predicate(
         hive_predicate,
         hive_predicate_is_full_predicate,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_multiple_physical_plans_reused_cache() {
+        // Check that reusing the same cache node doesn't panic.
+        // CSE creates duplicate cache nodes with the same ID, but cloud reuses them.
+
+        let mut ir = Arena::new();
+
+        let schema = Schema::from_iter([(PlSmallStr::from_static("x"), DataType::Float32)]);
+        let scan = ir.add(IR::DataFrameScan {
+            df: Arc::new(DataFrame::empty_with_schema(&schema)),
+            schema: Arc::new(schema),
+            output_schema: None,
+        });
+
+        let cache = ir.add(IR::Cache {
+            input: scan,
+            id: UniqueId::default(),
+            cache_hits: 1,
+        });
+
+        let left_sink = ir.add(IR::Sink {
+            input: cache,
+            payload: SinkTypeIR::Memory,
+        });
+        let right_sink = ir.add(IR::Sink {
+            input: cache,
+            payload: SinkTypeIR::Memory,
+        });
+
+        let _multiplan = create_multiple_physical_plans(
+            &[left_sink, right_sink],
+            &mut ir,
+            &mut Arena::new(),
+            None,
+        )
+        .unwrap();
+    }
 }
