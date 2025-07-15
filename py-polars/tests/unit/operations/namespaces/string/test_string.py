@@ -2089,3 +2089,18 @@ def test_replace_many_mapping_in_list() -> None:
         ),
         pl.Series([[1, 2]]),
     )
+
+
+def test_str_replace_n_zero_23570() -> None:
+    # more than 32 bytes
+    abc_long = "abc " * 20 + "abc"
+    df = pl.DataFrame(
+        {"a": [abc_long, "abc abc abc", "abc ghi"], "b": ["jkl", "pqr", "xyz"]}
+    )
+    expected = df
+
+    out = df.with_columns(pl.col("a").str.replace("abc", "XYZ", n=0))
+    assert_frame_equal(out, expected)
+
+    out = df.with_columns(pl.col("a").str.replace("abc", pl.col("b"), n=0))
+    assert_frame_equal(out, expected)
