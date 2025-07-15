@@ -116,7 +116,7 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.apply_kernel_cast::<Int8Type>(&f)
+        ca_local.physical().apply_kernel_cast::<Int8Type>(&f)
     }
 
     /// Extract ISO weekday from underlying NaiveDateTime representation.

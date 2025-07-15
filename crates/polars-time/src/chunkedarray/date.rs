@@ -56,7 +56,8 @@ pub trait DateMethods: AsDate {
     /// representation.
     fn days_in_month(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_days_in_month)
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&date_to_days_in_month)
     }
 
     /// Returns the ISO week number starting from 1.
