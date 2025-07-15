@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import warnings
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars._typing import AsofJoinStrategy, PolarsIntegerType
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import AsofJoinStrategy, PolarsIntegerType
 
 
 def test_asof_join_singular_right_11966() -> None:
