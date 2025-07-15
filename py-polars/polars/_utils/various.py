@@ -693,15 +693,11 @@ def display_dot_graph(
     else:
         if (cmd := os.environ.get("POLARS_DOT_SVG_VIEWER", None)) is not None:
             import tempfile
-            from uuid import uuid4
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                d = Path(tmpdir)
-                p = d / str(uuid4())
-
-                cmd = cmd.replace("%file%", str(p))
-                p.write_bytes(graph)
-                subprocess.check_output(["sh", "-c", cmd])
+            with tempfile.NamedTemporaryFile() as file:
+                file.write(graph)
+                file.flush()
+                subprocess.check_output([cmd, file.name])
             return None
 
         import_optional(
