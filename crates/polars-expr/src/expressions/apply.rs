@@ -166,11 +166,16 @@ impl ApplyExpr {
             let iter = lst.par_iter().map(f);
 
             if let Some(dtype) = dtype {
+                // @NOTE: Since the output type for scalars does an implicit explode, we need to
+                // patch up the type here to also be a list.
+                let out_dtype = if self.is_scalar() {
+                    DataType::List(Box::new(dtype))
+                } else {
+                    dtype
+                };
+
                 let out: ListChunked = POOL.install(|| {
-                    iter.collect_ca_with_dtype::<PolarsResult<_>>(
-                        PlSmallStr::EMPTY,
-                        DataType::List(Box::new(dtype)),
-                    )
+                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, out_dtype)
                 })?;
                 out
             } else {
