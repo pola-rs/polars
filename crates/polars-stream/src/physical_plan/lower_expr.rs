@@ -1000,6 +1000,8 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
             },
+
+            // Length-based expressions.
             AExpr::Len => {
                 let out_name = unique_column_name();
                 let expr_ir = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
@@ -1012,6 +1014,49 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(PhysStream::first(reduce_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
+
+            // pl.row_index() maps to this.
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
+                options: _,
+            } if {
+                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
+                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
+                    _ => false,
+                };
+                let stop_is_len = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Len);
+
+                dtype == DataType::IDX_DTYPE && start_is_zero && stop_is_len
+            } =>
+            {
+                let out_name = unique_column_name();
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let mut output_schema = (**input_schema).clone();
+                output_schema
+                    .insert_at_index(0, out_name.clone(), DataType::IDX_DTYPE)
+                    .unwrap();
+                let kind = PhysNodeKind::WithRowIndex {
+                    input,
+                    name: out_name.clone(),
+                    offset: None,
+                };
+                let with_row_idx_node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), kind));
+                let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+                let row_idx_col_expr_ir =
+                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name));
+                let row_idx_stream = build_select_stream_with_ctx(
+                    PhysStream::first(with_row_idx_node_key),
+                    &[row_idx_col_expr_ir],
+                    ctx,
+                )?;
+                input_streams.insert(row_idx_stream);
+                transformed_exprs.push(row_idx_col_aexpr);
+            },
+
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
             | AExpr::Slice { .. }

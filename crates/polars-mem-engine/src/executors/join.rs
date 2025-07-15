@@ -122,15 +122,15 @@ impl Executor for JoinExec {
                                     TimeUnit::Microseconds => duration.duration_us(),
                                     TimeUnit::Milliseconds => duration.duration_ms(),
                                 };
-                                options.tolerance = Some(AnyValue::from(tolerance))
+                                options.tolerance = Some(Scalar::from(tolerance))
                             }
                             Date => {
                                 let days = (duration.duration_ms() / MILLISECONDS_IN_DAY) as i32;
-                                options.tolerance = Some(AnyValue::from(days))
+                                options.tolerance = Some(Scalar::from(days))
                             }
                             Time => {
                                 let tolerance = duration.duration_ns();
-                                options.tolerance = Some(AnyValue::from(tolerance))
+                                options.tolerance = Some(Scalar::from(tolerance))
                             }
                             _ => {
                                 panic!("can only use timedelta string language with Date/Datetime/Duration/Time dtypes")
