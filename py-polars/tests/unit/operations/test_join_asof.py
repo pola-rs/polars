@@ -1327,3 +1327,35 @@ def test_join_asof_large_int_21276(
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_join_asof_slice_23583() -> None:
+    lhs = pl.LazyFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    rhs = pl.LazyFrame(
+        {
+            "index": [0, 1],
+            "constant": 0,
+            "date": [date(1970, 1, 1), date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    q = lhs.join_asof(rhs, on="date", by="constant", check_sortedness=False).head(1)
+
+    expect = pl.DataFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+            "index_right": [1],
+        },
+    )
+
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+    assert_frame_equal(q.collect(), expect)
