@@ -24,7 +24,7 @@ use crate::nodes::io_sources::multi_file_reader::extra_ops::apply_extra_columns_
 /// * Struct field re-ordering
 /// * Inserting missing struct fields
 /// * Dropping extra struct fields (we just don't select them)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ColumnSelector {
     // Note that we Box enum variants to keep `ColumnSelector` small (16 bytes).
     // This is an optimization that benefits cases where there are many `Position` selectors.
@@ -40,7 +40,32 @@ pub enum ColumnSelector {
     Transformed(Box<(ColumnSelector, ColumnTransform)>),
 }
 
-#[derive(Debug)]
+impl ColumnSelector {
+    #[recursive]
+    pub fn select_from_columns(
+        &self,
+        columns: &[Column],
+        output_height: usize,
+    ) -> PolarsResult<Column> {
+        use ColumnSelector as S;
+
+        Ok(match self {
+            S::Position(i) => columns[*i].clone(),
+
+            S::Constant(parts) => {
+                let (name, scalar) = parts.as_ref();
+                Column::new_scalar(name.clone(), scalar.clone(), output_height)
+            },
+
+            S::Transformed(transform) => {
+                let input: Column = transform.0.select_from_columns(columns, output_height)?;
+                transform.1.apply_transform(input)?
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ColumnTransform {
     /// Cast the column to a dtype.
     Cast {
@@ -64,205 +89,182 @@ impl ColumnTransform {
     pub fn into_selector(self, input_selector: ColumnSelector) -> ColumnSelector {
         ColumnSelector::Transformed(Box::new((input_selector, self)))
     }
-}
 
-impl ColumnSelector {
-    #[recursive]
-    pub fn select_from_columns(
-        &self,
-        columns: &[Column],
-        output_height: usize,
-    ) -> PolarsResult<Column> {
-        use ColumnSelector as S;
+    pub fn apply_transform(&self, input: Column) -> PolarsResult<Column> {
+        use ColumnTransform as TF;
 
-        Ok(match self {
-            S::Position(i) => columns[*i].clone(),
+        let out = match self {
+            TF::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
 
-            S::Constant(parts) => {
-                let (name, scalar) = parts.as_ref();
-                Column::new_scalar(name.clone(), scalar.clone(), output_height)
+            TF::Rename { .. } => {
+                // TODO
+                // Will be used for Iceberg column mapping.
+                unreachable!()
             },
 
-            S::Transformed(transform) => {
-                let input: Column = transform.0.select_from_columns(columns, output_height)?;
+            TF::StructFieldsMapping { field_selectors } => {
+                use polars_core::prelude::StructChunked;
 
-                use ColumnTransform as TF;
+                let struct_ca = input.struct_().unwrap();
+                let field_columns: Vec<Column> = struct_ca.fields_as_columns();
 
-                match &transform.1 {
-                    TF::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
+                let field_columns: Vec<Column> = field_selectors
+                    .iter()
+                    .map(|x| x.select_from_columns(&field_columns, struct_ca.len()))
+                    .collect::<PolarsResult<_>>()?;
 
-                    TF::Rename { .. } => {
-                        // TODO
-                        // Will be used for Iceberg column mapping.
+                StructChunked::from_columns(
+                    struct_ca.name().clone(),
+                    struct_ca.len(),
+                    &field_columns,
+                )?
+                .with_outer_validity(struct_ca.rechunk_validity())
+                .into_column()
+            },
+
+            TF::ListValuesMapping { values_selector } => {
+                use polars_core::prelude::{LargeListArray, ListChunked};
+
+                let list_ca = input.list().unwrap().clone();
+
+                let values_dtype = {
+                    let DataType::List(inner) = list_ca.dtype() else {
                         unreachable!()
-                    },
+                    };
+                    inner.as_ref()
+                };
 
-                    TF::StructFieldsMapping { field_selectors } => {
-                        use polars_core::prelude::StructChunked;
+                let mut values_output_dtype = None;
 
-                        let struct_ca = input.struct_().unwrap();
-                        let field_columns: Vec<Column> = struct_ca.fields_as_columns();
+                let mut out_chunks: Vec<Box<dyn Array>> =
+                    Vec::with_capacity(list_ca.chunks().len());
 
-                        let field_columns: Vec<Column> = field_selectors
-                            .iter()
-                            .map(|x| x.select_from_columns(&field_columns, struct_ca.len()))
-                            .collect::<PolarsResult<_>>()?;
+                for list_arr in list_ca.downcast_iter() {
+                    let values: Box<dyn Array> = list_arr.values().clone();
+                    let values: Column = unsafe {
+                        Series::from_chunks_and_dtype_unchecked(
+                            PlSmallStr::from_static("item"),
+                            vec![values],
+                            values_dtype,
+                        )
+                    }
+                    .into_column();
+                    let len = values.len();
 
-                        StructChunked::from_columns(
-                            struct_ca.name().clone(),
-                            struct_ca.len(),
-                            &field_columns,
-                        )?
-                        .with_outer_validity(struct_ca.rechunk_validity())
-                        .into_column()
-                    },
+                    let values: Column = values_selector.select_from_columns(&[values], len)?;
 
-                    TF::ListValuesMapping { values_selector } => {
-                        use polars_core::prelude::{LargeListArray, ListChunked};
+                    if values_output_dtype.is_none() {
+                        values_output_dtype = Some(values.dtype().clone());
+                    }
 
-                        let list_ca = input.list().unwrap().clone();
+                    let values: Box<dyn Array> = values
+                        .as_materialized_series()
+                        .rechunk()
+                        .into_chunks()
+                        .pop()
+                        .unwrap();
 
-                        let values_dtype = {
-                            let DataType::List(inner) = list_ca.dtype() else {
-                                unreachable!()
-                            };
-                            inner.as_ref()
-                        };
+                    let list_arr = LargeListArray::new(
+                        ArrowDataType::LargeList(Box::new(ArrowField::new(
+                            PlSmallStr::from_static("item"),
+                            values.dtype().clone(),
+                            true,
+                        ))),
+                        list_arr.offsets().clone(),
+                        values,
+                        list_arr.validity().cloned(),
+                    );
 
-                        let mut values_output_dtype = None;
-
-                        let mut out_chunks: Vec<Box<dyn Array>> =
-                            Vec::with_capacity(list_ca.chunks().len());
-
-                        for list_arr in list_ca.downcast_iter() {
-                            let values: Box<dyn Array> = list_arr.values().clone();
-                            let values: Column = unsafe {
-                                Series::from_chunks_and_dtype_unchecked(
-                                    PlSmallStr::from_static("item"),
-                                    vec![values],
-                                    values_dtype,
-                                )
-                            }
-                            .into_column();
-                            let len = values.len();
-
-                            let values: Column =
-                                values_selector.select_from_columns(&[values], len)?;
-
-                            if values_output_dtype.is_none() {
-                                values_output_dtype = Some(values.dtype().clone());
-                            }
-
-                            let values: Box<dyn Array> = values
-                                .as_materialized_series()
-                                .rechunk()
-                                .into_chunks()
-                                .pop()
-                                .unwrap();
-
-                            let list_arr = LargeListArray::new(
-                                ArrowDataType::LargeList(Box::new(ArrowField::new(
-                                    PlSmallStr::from_static("item"),
-                                    values.dtype().clone(),
-                                    true,
-                                ))),
-                                list_arr.offsets().clone(),
-                                values,
-                                list_arr.validity().cloned(),
-                            );
-
-                            out_chunks.push(list_arr.boxed())
-                        }
-
-                        let mut out =
-                            unsafe { ListChunked::from_chunks(list_ca.name().clone(), out_chunks) };
-
-                        // Ensure logical types are restored.
-                        out.set_inner_dtype(values_output_dtype.unwrap());
-
-                        // Casts on the values should not affect outer NULLs.
-                        out.retain_flags_from(
-                            input.list().unwrap(),
-                            StatisticsFlags::CAN_FAST_EXPLODE_LIST,
-                        );
-
-                        out.into_column()
-                    },
-
-                    #[cfg(feature = "dtype-array")]
-                    TF::FixedSizeListValuesMapping { values_selector } => {
-                        use arrow::array::FixedSizeListArray;
-                        use polars_core::prelude::ArrayChunked;
-
-                        let array_ca = input.array().unwrap().clone();
-
-                        let values_dtype = {
-                            let DataType::Array(inner, _) = array_ca.dtype() else {
-                                unreachable!()
-                            };
-                            inner.as_ref()
-                        };
-
-                        let mut values_output_dtype = None;
-
-                        let mut out_chunks: Vec<Box<dyn Array>> =
-                            Vec::with_capacity(array_ca.chunks().len());
-
-                        for fixed_size_list_arr in array_ca.downcast_iter() {
-                            let values: Box<dyn Array> = fixed_size_list_arr.values().clone();
-                            let values: Column = unsafe {
-                                Series::from_chunks_and_dtype_unchecked(
-                                    PlSmallStr::from_static("item"),
-                                    vec![values],
-                                    values_dtype,
-                                )
-                            }
-                            .into_column();
-                            let len = values.len();
-
-                            let values: Column =
-                                values_selector.select_from_columns(&[values], len)?;
-
-                            if values_output_dtype.is_none() {
-                                values_output_dtype = Some(values.dtype().clone());
-                            }
-
-                            let values: Box<dyn Array> = values
-                                .as_materialized_series()
-                                .rechunk()
-                                .into_chunks()
-                                .pop()
-                                .unwrap();
-
-                            let fixed_size_list_arr = FixedSizeListArray::new(
-                                ArrowDataType::FixedSizeList(
-                                    Box::new(ArrowField::new(
-                                        PlSmallStr::from_static("item"),
-                                        values.dtype().clone(),
-                                        true,
-                                    )),
-                                    fixed_size_list_arr.size(),
-                                ),
-                                fixed_size_list_arr.len(),
-                                values,
-                                fixed_size_list_arr.validity().cloned(),
-                            );
-
-                            out_chunks.push(fixed_size_list_arr.boxed())
-                        }
-
-                        let mut out = unsafe {
-                            ArrayChunked::from_chunks(array_ca.name().clone(), out_chunks)
-                        };
-
-                        // Ensure logical types are restored.
-                        out.set_inner_dtype(values_output_dtype.unwrap());
-
-                        out.into_column()
-                    },
+                    out_chunks.push(list_arr.boxed())
                 }
+
+                let mut out =
+                    unsafe { ListChunked::from_chunks(list_ca.name().clone(), out_chunks) };
+
+                // Ensure logical types are restored.
+                out.set_inner_dtype(values_output_dtype.unwrap());
+
+                // Casts on the values should not affect outer NULLs.
+                out.retain_flags_from(
+                    input.list().unwrap(),
+                    StatisticsFlags::CAN_FAST_EXPLODE_LIST,
+                );
+
+                out.into_column()
             },
-        })
+
+            #[cfg(feature = "dtype-array")]
+            TF::FixedSizeListValuesMapping { values_selector } => {
+                use arrow::array::FixedSizeListArray;
+                use polars_core::prelude::ArrayChunked;
+
+                let array_ca = input.array().unwrap().clone();
+
+                let values_dtype = {
+                    let DataType::Array(inner, _) = array_ca.dtype() else {
+                        unreachable!()
+                    };
+                    inner.as_ref()
+                };
+
+                let mut values_output_dtype = None;
+
+                let mut out_chunks: Vec<Box<dyn Array>> =
+                    Vec::with_capacity(array_ca.chunks().len());
+
+                for fixed_size_list_arr in array_ca.downcast_iter() {
+                    let values: Box<dyn Array> = fixed_size_list_arr.values().clone();
+                    let values: Column = unsafe {
+                        Series::from_chunks_and_dtype_unchecked(
+                            PlSmallStr::from_static("item"),
+                            vec![values],
+                            values_dtype,
+                        )
+                    }
+                    .into_column();
+                    let len = values.len();
+
+                    let values: Column = values_selector.select_from_columns(&[values], len)?;
+
+                    if values_output_dtype.is_none() {
+                        values_output_dtype = Some(values.dtype().clone());
+                    }
+
+                    let values: Box<dyn Array> = values
+                        .as_materialized_series()
+                        .rechunk()
+                        .into_chunks()
+                        .pop()
+                        .unwrap();
+
+                    let fixed_size_list_arr = FixedSizeListArray::new(
+                        ArrowDataType::FixedSizeList(
+                            Box::new(ArrowField::new(
+                                PlSmallStr::from_static("item"),
+                                values.dtype().clone(),
+                                true,
+                            )),
+                            fixed_size_list_arr.size(),
+                        ),
+                        fixed_size_list_arr.len(),
+                        values,
+                        fixed_size_list_arr.validity().cloned(),
+                    );
+
+                    out_chunks.push(fixed_size_list_arr.boxed())
+                }
+
+                let mut out =
+                    unsafe { ArrayChunked::from_chunks(array_ca.name().clone(), out_chunks) };
+
+                // Ensure logical types are restored.
+                out.set_inner_dtype(values_output_dtype.unwrap());
+
+                out.into_column()
+            },
+        };
+
+        Ok(out)
     }
 }
 
