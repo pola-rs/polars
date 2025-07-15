@@ -44,8 +44,11 @@ pub mod timeout;
 pub mod utils;
 
 use crate::conversion::Wrap;
-use crate::dataframe::PyDataFrame;
-use crate::expr::PyExpr;
-use crate::lazyframe::PyLazyFrame;
-use crate::lazygroupby::PyLazyGroupBy;
-use crate::series::PySeries;
+
+pub type PyDataType = Wrap<polars_core::datatypes::DataType>;
+pub type PySchema = Wrap<polars_core::schema::Schema>;
+pub use crate::dataframe::PyDataFrame;
+pub use crate::expr::PyExpr;
+pub use crate::lazyframe::PyLazyFrame;
+pub use crate::lazygroupby::PyLazyGroupBy;
+pub use crate::series::PySeries;

@@ -127,7 +127,7 @@ impl NodeTraverser {
     fn get_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
-        Wrap(&**schema).into_pyobject(py)
+        Wrap((**schema).clone()).into_pyobject(py)
     }
 
     /// Get expression dtype of expr_node, the schema used is that of the current root node

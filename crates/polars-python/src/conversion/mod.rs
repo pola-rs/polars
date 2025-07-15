@@ -619,7 +619,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
     }
 }
 
-impl<'py> IntoPyObject<'py> for Wrap<&Schema> {
+impl<'py> IntoPyObject<'py> for Wrap<Schema> {
     type Target = PyDict;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;

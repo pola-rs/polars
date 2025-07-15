@@ -26,5 +26,7 @@ quote = "1.0"
 syn = { version = "2", features = ["full", "extra-traits"] }
 
 [dev-dependencies]
+polars = { workspace = true, features = ["full"] }
+polars-python = { workspace = true }
 pyo3-polars = { workspace = true, features = ["derive"] }
 trybuild = { version = "1", features = ["diff"] }

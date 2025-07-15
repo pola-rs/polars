@@ -1,6 +1,6 @@
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
-use polars_plan::dsl::FieldsMapper;
+use polars_plan::plans::FieldsMapper;
 use pyo3_polars_derive::polars_expr;
 
 fn horizontal_product_output(input_fields: &[Field]) -> PolarsResult<Field> {

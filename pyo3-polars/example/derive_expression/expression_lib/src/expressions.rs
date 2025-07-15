@@ -56,7 +56,7 @@ fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
 
 /// This expression will run in parallel if the `context` allows it.
 #[polars_expr(output_type=String)]
-fn pig_latinnify_with_paralellism(
+fn pig_latinnify_with_parallelism(
     inputs: &[Series],
     context: CallerContext,
     kwargs: PigLatinKwargs,

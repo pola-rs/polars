@@ -381,6 +381,10 @@ docs-selection = [
   "parquet",
   "ipc",
   "ipc_streaming",
+  "array_arithmetic",
+  "binary_encoding",
+  "moment",
+  "bitwise",
   "dtype-full",
   "is_in",
   "rows",
@@ -445,7 +449,7 @@ bench = [
   "lazy",
 ]
 
-# All features expect python
+# All features except python
 full = ["docs-selection", "performant", "fmt"]
 
 [package.metadata.docs.rs]
