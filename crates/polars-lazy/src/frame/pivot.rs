@@ -15,7 +15,13 @@ use polars_ops::pivot::PivotAgg;
 use crate::physical_plan::exotic::{contains_column_refs, prepare_expression_for_context};
 use crate::prelude::*;
 
-struct PivotExpr(Expr);
+pub struct PivotExpr(pub Expr);
+
+impl PivotExpr {
+    pub fn from_expr(expr: Expr) -> Self {
+        PivotExpr(expr)
+    }
+}
 
 impl PhysicalAggExpr for PivotExpr {
     fn evaluate_on_groups(&self, df: &DataFrame, groups: &GroupPositions) -> PolarsResult<Series> {
