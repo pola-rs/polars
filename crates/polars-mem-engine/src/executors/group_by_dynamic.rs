@@ -6,7 +6,6 @@ pub(crate) struct GroupByDynamicExec {
     // we will use this later
     #[allow(dead_code)]
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) predicates: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_group_by")]
     pub(crate) options: DynamicGroupOptions,
@@ -74,7 +73,6 @@ impl GroupByDynamicExec {
             }
         }
 
-        let predicate_columns = evaluate_aggs(&df, &self.predicates, groups, state)?;
         let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
@@ -82,8 +80,7 @@ impl GroupByDynamicExec {
         columns.push(time_key);
         columns.extend(agg_columns);
 
-        let df = DataFrame::new(columns)?;
-        apply_predicates(df, predicate_columns)
+        DataFrame::new(columns)
     }
 }
 

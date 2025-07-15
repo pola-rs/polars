@@ -19,25 +19,10 @@ pub(super) fn evaluate_aggs(
     })
 }
 
-pub(super) fn apply_predicates(df: DataFrame, predicates: Vec<Column>) -> PolarsResult<DataFrame> {
-    // Filter the resulting data frame by the predicates if any are provided
-    if predicates.is_empty() {
-        Ok(df)
-    } else {
-        // NOTE: Since the number of predicates is typically small, we don't parallelize here.
-        let filter_predicate = predicates
-            .into_iter()
-            .reduce(|acc, col| acc.bitand(&col).unwrap())
-            .unwrap();
-        df.filter(filter_predicate.bool()?)
-    }
-}
-
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
     input: Box<dyn Executor>,
     keys: Vec<Arc<dyn PhysicalExpr>>,
-    predicates: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Arc<dyn PhysicalExpr>>,
     apply: Option<Arc<dyn DataFrameUdf>>,
     maintain_order: bool,
@@ -50,7 +35,6 @@ impl GroupByExec {
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
-        predicates: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Arc<dyn PhysicalExpr>>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
@@ -60,7 +44,6 @@ impl GroupByExec {
         Self {
             input,
             keys,
-            predicates,
             aggs,
             apply,
             maintain_order,
@@ -74,7 +57,6 @@ impl GroupByExec {
 pub(super) fn group_by_helper(
     mut df: DataFrame,
     keys: Vec<Column>,
-    predicates: &[Arc<dyn PhysicalExpr>],
     aggs: &[Arc<dyn PhysicalExpr>],
     apply: Option<Arc<dyn DataFrameUdf>>,
     state: &ExecutionState,
@@ -99,18 +81,16 @@ pub(super) fn group_by_helper(
         groups = sliced_groups.as_ref().unwrap();
     }
 
-    let (mut columns, (predicate_columns, agg_columns)) = POOL.install(|| {
+    let (mut columns, agg_columns) = POOL.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
-        let get_predicate = || evaluate_aggs(&df, predicates, groups, state);
         let get_agg = || evaluate_aggs(&df, aggs, groups, state);
 
-        rayon::join(get_columns, || rayon::join(get_predicate, get_agg))
+        rayon::join(get_columns, get_agg)
     });
 
     columns.extend(agg_columns?);
-    let df = DataFrame::new(columns)?;
-    apply_predicates(df, predicate_columns?)
+    DataFrame::new(columns)
 }
 
 impl GroupByExec {
@@ -123,7 +103,6 @@ impl GroupByExec {
         group_by_helper(
             df,
             keys,
-            &self.predicates,
             &self.aggs,
             self.apply.take(),
             state,

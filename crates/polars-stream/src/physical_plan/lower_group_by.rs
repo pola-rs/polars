@@ -29,7 +29,6 @@ use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 fn build_group_by_fallback(
     input: PhysStream,
     keys: &[ExprIR],
-    predicates: &[ExprIR],
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
@@ -46,7 +45,6 @@ fn build_group_by_fallback(
     let group_by_lp_node = lp_arena.add(IR::GroupBy {
         input: input_lp_node,
         keys: keys.to_vec(),
-        predicates: predicates.to_vec(),
         aggs: aggs.to_vec(),
         schema: output_schema.clone(),
         maintain_order,
@@ -346,7 +344,6 @@ fn try_lower_elementwise_scalar_agg_expr(
 fn try_build_streaming_group_by(
     input: PhysStream,
     keys: &[ExprIR],
-    predicates: &[ExprIR],
     aggs: &[ExprIR],
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
@@ -362,10 +359,6 @@ fn try_build_streaming_group_by(
 
     #[cfg(feature = "dynamic_group_by")]
     if options.dynamic.is_some() || options.rolling.is_some() {
-        return None; // TODO
-    }
-
-    if !predicates.is_empty() {
         return None; // TODO
     }
 
@@ -479,7 +472,6 @@ fn try_build_streaming_group_by(
 pub fn build_group_by_stream(
     input: PhysStream,
     keys: &[ExprIR],
-    predicates: &[ExprIR],
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
@@ -493,7 +485,6 @@ pub fn build_group_by_stream(
     let streaming = try_build_streaming_group_by(
         input,
         keys,
-        predicates,
         aggs,
         maintain_order,
         options.clone(),
@@ -513,7 +504,6 @@ pub fn build_group_by_stream(
                 0,
                 expr_arena,
                 keys,
-                predicates,
                 aggs,
                 apply.as_deref(),
                 maintain_order,
@@ -524,7 +514,6 @@ pub fn build_group_by_stream(
         build_group_by_fallback(
             input,
             keys,
-            predicates,
             aggs,
             output_schema,
             maintain_order,

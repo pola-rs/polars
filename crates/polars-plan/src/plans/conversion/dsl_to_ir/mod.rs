@@ -4,6 +4,7 @@ use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_utils::itertools::Itertools;
 use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 
@@ -400,11 +401,50 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             input,
             keys,
             predicates,
-            aggs,
+            mut aggs,
             apply,
             maintain_order,
             options,
         } => {
+            // If the group by contains any predicates, we update the plan by turning the
+            // predicates into aggregations and filtering on them. Then, we recursively call
+            // this function.
+            if !predicates.is_empty() {
+                let predicate_names = (0..predicates.len())
+                    .map(|i| PlSmallStr::from_string(format!("__POLARS_HAVING_{i}")))
+                    .collect::<Arc<[_]>>();
+                let predicates = predicates
+                    .into_iter()
+                    .zip(predicate_names.iter())
+                    .map(|(p, name)| p.alias(name.clone()))
+                    .collect_vec();
+                aggs.extend(predicates);
+
+                let lp = DslPlan::GroupBy {
+                    input,
+                    keys,
+                    predicates: vec![],
+                    aggs,
+                    apply,
+                    maintain_order,
+                    options,
+                };
+                let lp = DslBuilder::from(lp)
+                    .filter(
+                        all_horizontal(
+                            predicate_names.iter().map(|n| col(n.clone())).collect_vec(),
+                        )
+                        .unwrap(),
+                    )
+                    .drop(Selector::ByName {
+                        names: predicate_names,
+                        strict: true,
+                    })
+                    .build();
+                return to_alp_impl(lp, ctxt);
+            }
+
+            // NOTE: As we went into this branch, we know that no predicates are provided.
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(group_by)))?;
 
@@ -413,10 +453,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt.opt_flags.insert(OptFlags::PROJECTION_PUSHDOWN)
             }
 
-            let (keys, predicates, aggs, schema) = resolve_group_by(
+            let (keys, aggs, schema) = resolve_group_by(
                 input,
                 keys,
-                predicates,
                 aggs,
                 &options,
                 ctxt.lp_arena,
@@ -434,21 +473,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             ctxt.conversion_optimizer
                 .fill_scratch(&keys, ctxt.expr_arena);
             ctxt.conversion_optimizer
-                .fill_scratch(&predicates, ctxt.expr_arena);
-            ctxt.conversion_optimizer
                 .fill_scratch(&aggs, ctxt.expr_arena);
 
             let lp = IR::GroupBy {
                 input,
                 keys,
-                predicates,
                 aggs,
                 schema,
                 apply,
                 maintain_order,
                 options,
             };
-
             return run_conversion(lp, ctxt, "group_by")
                 .map_err(|e| e.context(failed_here!(group_by)));
         },
@@ -1097,17 +1132,15 @@ fn resolve_with_columns(
     Ok((eirs, Arc::new(output_schema)))
 }
 
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn resolve_group_by(
     input: Node,
     keys: Vec<Expr>,
-    predicates: Vec<Expr>,
     aggs: Vec<Expr>,
     _options: &GroupbyOptions,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     opt_flags: &mut OptFlags,
-) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
+) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let input_schema = input_schema.as_ref();
     let mut keys = rewrite_projections(keys, &PlHashSet::default(), input_schema, opt_flags)?;
@@ -1155,7 +1188,6 @@ fn resolve_group_by(
 
     let in_eager = opt_flags.contains(OptFlags::EAGER);
     let keys = to_expr_irs(keys, expr_arena, input_schema, in_eager)?;
-    let predicates = to_expr_irs(predicates, expr_arena, input_schema, in_eager)?;
     let aggs = to_expr_irs(aggs, expr_arena, input_schema, in_eager)?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
@@ -1169,8 +1201,9 @@ fn resolve_group_by(
         }
     }
 
-    Ok((keys, predicates, aggs, Arc::new(output_schema)))
+    Ok((keys, aggs, Arc::new(output_schema)))
 }
+
 fn stats_helper<F, E>(condition: F, expr: E, schema: &Schema) -> Vec<Expr>
 where
     F: Fn(&DataType) -> bool,

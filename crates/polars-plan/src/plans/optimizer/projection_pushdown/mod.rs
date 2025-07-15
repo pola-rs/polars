@@ -640,7 +640,6 @@ impl ProjectionPushDown {
             GroupBy {
                 input,
                 keys,
-                predicates,
                 aggs,
                 apply,
                 schema,
@@ -650,7 +649,6 @@ impl ProjectionPushDown {
                 self,
                 input,
                 keys,
-                predicates,
                 aggs,
                 apply,
                 schema,

@@ -123,7 +123,6 @@ impl Hash for HashableEqLP<'_> {
             IR::GroupBy {
                 input: _,
                 keys,
-                predicates,
                 aggs,
                 schema: _,
                 apply,
@@ -131,7 +130,6 @@ impl Hash for HashableEqLP<'_> {
                 options,
             } => {
                 hash_exprs(keys, self.expr_arena, state);
-                hash_exprs(predicates, self.expr_arena, state);
                 hash_exprs(aggs, self.expr_arena, state);
                 apply.is_none().hash(state);
                 maintain_order.hash(state);
@@ -340,7 +338,6 @@ impl HashableEqLP<'_> {
                 IR::GroupBy {
                     input: _,
                     keys: keys_l,
-                    predicates: predicates_l,
                     aggs: aggs_l,
                     schema: _,
                     apply: apply_l,
@@ -350,7 +347,6 @@ impl HashableEqLP<'_> {
                 IR::GroupBy {
                     input: _,
                     keys: keys_r,
-                    predicates: predicates_r,
                     aggs: aggs_r,
                     schema: _,
                     apply: apply_r,
@@ -363,7 +359,6 @@ impl HashableEqLP<'_> {
                     && ol == or
                     && maintain_l == maintain_r
                     && expr_irs_eq(keys_l, keys_r, self.expr_arena)
-                    && expr_irs_eq(predicates_l, predicates_r, self.expr_arena)
                     && expr_irs_eq(aggs_l, aggs_r, self.expr_arena)
             },
             (

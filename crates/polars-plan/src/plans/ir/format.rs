@@ -812,7 +812,6 @@ pub fn write_ir_non_recursive(
         IR::GroupBy {
             input: _,
             keys,
-            predicates,
             aggs,
             schema: _,
             maintain_order,
@@ -823,7 +822,6 @@ pub fn write_ir_non_recursive(
             indent,
             expr_arena,
             keys,
-            predicates,
             aggs,
             apply.as_deref(),
             *maintain_order,
@@ -915,13 +913,11 @@ pub fn write_ir_non_recursive(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn write_group_by(
     f: &mut dyn fmt::Write,
     indent: usize,
     expr_arena: &Arena<AExpr>,
     keys: &[ExprIR],
-    predicates: &[ExprIR],
     aggs: &[ExprIR],
     apply: Option<&dyn DataFrameUdf>,
     maintain_order: bool,
@@ -945,13 +941,6 @@ pub fn write_group_by(
             expr_arena,
         };
         write!(f, "\n{:sub_indent$}{aggs} BY {keys}", "")?;
-        if !predicates.is_empty() {
-            let predicates = ExprIRSliceDisplay {
-                exprs: predicates,
-                expr_arena,
-            };
-            write!(f, " HAVING {predicates}")?;
-        }
     }
 
     Ok(())

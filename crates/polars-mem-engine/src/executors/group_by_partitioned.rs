@@ -1,6 +1,5 @@
 use polars_core::series::IsSorted;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use super::*;
@@ -9,7 +8,6 @@ use super::*;
 pub struct PartitionGroupByExec {
     input: Box<dyn Executor>,
     phys_keys: Vec<Arc<dyn PhysicalExpr>>,
-    phys_predicates: Vec<Arc<dyn PhysicalExpr>>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
@@ -19,8 +17,6 @@ pub struct PartitionGroupByExec {
     #[allow(dead_code)]
     keys: Vec<Expr>,
     #[allow(dead_code)]
-    predicates: Vec<Expr>,
-    #[allow(dead_code)]
     aggs: Vec<Expr>,
 }
 
@@ -29,7 +25,6 @@ impl PartitionGroupByExec {
     pub(crate) fn new(
         input: Box<dyn Executor>,
         phys_keys: Vec<Arc<dyn PhysicalExpr>>,
-        phys_predicates: Vec<Arc<dyn PhysicalExpr>>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         maintain_order: bool,
         slice: Option<(i64, usize)>,
@@ -37,13 +32,11 @@ impl PartitionGroupByExec {
         output_schema: SchemaRef,
         from_partitioned_ds: bool,
         keys: Vec<Expr>,
-        predicates: Vec<Expr>,
         aggs: Vec<Expr>,
     ) -> Self {
         Self {
             input,
             phys_keys,
-            phys_predicates,
             phys_aggs,
             maintain_order,
             slice,
@@ -51,7 +44,6 @@ impl PartitionGroupByExec {
             output_schema,
             from_partitioned_ds,
             keys,
-            predicates,
             aggs,
         }
     }
@@ -74,21 +66,19 @@ fn compute_keys(
     Ok(df.take_columns())
 }
 
-#[allow(clippy::type_complexity)]
 fn run_partitions(
     df: &mut DataFrame,
     exec: &PartitionGroupByExec,
     state: &ExecutionState,
     n_threads: usize,
     maintain_order: bool,
-) -> PolarsResult<((Vec<DataFrame>, Vec<DataFrame>), Vec<Vec<Column>>)> {
+) -> PolarsResult<(Vec<DataFrame>, Vec<Vec<Column>>)> {
     // We do a partitioned group_by.
     // Meaning that we first do the group_by operation arbitrarily
     // split on several threads. Than the final result we apply the same group_by again.
     let dfs = split_df(df, n_threads, true);
 
     let phys_aggs = &exec.phys_aggs;
-    let phys_predicates = &exec.phys_predicates;
     let keys = &exec.phys_keys;
 
     let mut keys = DataFrame::from_iter(compute_keys(keys, df, state)?);
@@ -104,9 +94,8 @@ fn run_partitions(
                 let mut columns = gb.keys();
                 // don't naively call par_iter here, it will segfault in rayon
                 // if you do, throw it on the POOL threadpool.
-                let agg_and_predicate_columns = phys_aggs
+                let agg_columns = phys_aggs
                     .iter()
-                    .chain(phys_predicates.iter())
                     .map(|expr| {
                         let agg_expr = expr.as_partitioned_aggregator().unwrap();
                         let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
@@ -123,22 +112,10 @@ fn run_partitions(
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                columns.extend_from_slice(&agg_and_predicate_columns[..phys_aggs.len()]);
+                columns.extend_from_slice(&agg_columns);
 
                 let df = DataFrame::new(columns)?;
-                let predicate_df = DataFrame::new(
-                    agg_and_predicate_columns[phys_aggs.len()..]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, col)| {
-                            col.clone()
-                                .with_name(PlSmallStr::from_string(format!("{i}")))
-                        })
-                        .collect_vec(),
-                )?;
-                // NOTE: We do NOT apply predicates here as, otherwise, we might prematurely drop
-                //  groups.
-                Ok(((df, predicate_df), gb.keys()))
+                Ok((df, gb.keys()))
             })
             .collect()
     })
@@ -282,7 +259,7 @@ impl PartitionGroupByExec {
         state: &mut ExecutionState,
         mut original_df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let ((splitted_dfs, splitted_dfs_predicates), splitted_keys) = {
+        let (splitted_dfs, splitted_keys) = {
             // already get the keys. This is the very last minute decision which group_by method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
             // partitioned or go for the standard group_by. The partitioned is likely to be faster on a small number
@@ -293,7 +270,6 @@ impl PartitionGroupByExec {
                 return group_by_helper(
                     original_df,
                     keys,
-                    &self.phys_predicates,
                     &self.phys_aggs,
                     None,
                     state,
@@ -321,7 +297,6 @@ impl PartitionGroupByExec {
         // MERGE phase
 
         let df = accumulate_dataframes_vertical(splitted_dfs)?;
-        let df_predicates = accumulate_dataframes_vertical(splitted_dfs_predicates)?;
         let keys = splitted_keys
             .into_iter()
             .reduce(|mut acc, e| {
@@ -362,28 +337,15 @@ impl PartitionGroupByExec {
                     agg_expr.finalize(partitioned_s.clone(), groups, state)
                 })
                 .collect();
+
             out
         };
-        let get_predicate = || {
-            let out: PolarsResult<Vec<_>> = self
-                .phys_predicates
-                .par_iter()
-                .zip(df_predicates.get_columns())
-                .map(|(expr, partitioned_s)| {
-                    let predicate_expr = expr.as_partitioned_aggregator().unwrap();
-                    predicate_expr.finalize(partitioned_s.clone(), groups, state)
-                })
-                .collect();
-            out
-        };
-        let (mut columns, (agg_columns, predicate_columns)): (Vec<_>, _) =
-            POOL.join(get_columns, || POOL.join(get_agg, get_predicate));
+        let (mut columns, agg_columns): (Vec<_>, _) = POOL.join(get_columns, get_agg);
 
         columns.extend(agg_columns?);
         state.clear_schema_cache();
 
-        let df = DataFrame::new(columns)?;
-        apply_predicates(df, predicate_columns?)
+        Ok(DataFrame::new(columns).unwrap())
     }
 }
 

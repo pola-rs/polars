@@ -23,7 +23,6 @@ pub type StreamingExecutorBuilder =
 
 fn partitionable_gb(
     keys: &[ExprIR],
-    predicates: &[ExprIR],
     aggs: &[ExprIR],
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
@@ -50,7 +49,6 @@ fn partitionable_gb(
         }
 
         can_pre_agg_exprs(aggs, expr_arena, input_schema)
-            && can_pre_agg_exprs(predicates, expr_arena, input_schema)
     } else {
         false
     }
@@ -623,7 +621,6 @@ fn create_physical_plan_impl(
         GroupBy {
             input,
             keys,
-            predicates,
             aggs,
             apply,
             schema,
@@ -635,13 +632,6 @@ fn create_physical_plan_impl(
             let phys_keys = create_physical_expressions_from_irs(
                 &keys,
                 Context::Default,
-                expr_arena,
-                &input_schema,
-                &mut ExpressionConversionState::new(true),
-            )?;
-            let phys_predicates = create_physical_expressions_from_irs(
-                &predicates,
-                Context::Aggregation,
                 expr_arena,
                 &input_schema,
                 &mut ExpressionConversionState::new(true),
@@ -661,7 +651,6 @@ fn create_physical_plan_impl(
                 return Ok(Box::new(executors::GroupByDynamicExec {
                     input,
                     keys: phys_keys,
-                    predicates: phys_predicates,
                     aggs: phys_aggs,
                     options,
                     input_schema,
@@ -676,7 +665,6 @@ fn create_physical_plan_impl(
                 return Ok(Box::new(executors::GroupByRollingExec {
                     input,
                     keys: phys_keys,
-                    predicates: phys_predicates,
                     aggs: phys_aggs,
                     options,
                     input_schema,
@@ -686,8 +674,7 @@ fn create_physical_plan_impl(
             }
 
             // We first check if we can partition the group_by on the latest moment.
-            let partitionable =
-                partitionable_gb(&keys, &predicates, &aggs, &input_schema, expr_arena, &apply);
+            let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
             if partitionable {
                 let from_partitioned_ds = lp_arena.iter(input).any(|(_, lp)| {
                     if let Union { options, .. } = lp {
@@ -701,10 +688,6 @@ fn create_physical_plan_impl(
                     .iter()
                     .map(|e| e.to_expr(expr_arena))
                     .collect::<Vec<_>>();
-                let predicates = predicates
-                    .iter()
-                    .map(|e| e.to_expr(expr_arena))
-                    .collect::<Vec<_>>();
                 let aggs = aggs
                     .iter()
                     .map(|e| e.to_expr(expr_arena))
@@ -712,7 +695,6 @@ fn create_physical_plan_impl(
                 Ok(Box::new(executors::PartitionGroupByExec::new(
                     input,
                     phys_keys,
-                    phys_predicates,
                     phys_aggs,
                     maintain_order,
                     options.slice,
@@ -720,7 +702,6 @@ fn create_physical_plan_impl(
                     schema,
                     from_partitioned_ds,
                     keys,
-                    predicates,
                     aggs,
                 )))
             } else {
@@ -728,7 +709,6 @@ fn create_physical_plan_impl(
                 Ok(Box::new(executors::GroupByExec::new(
                     input,
                     phys_keys,
-                    phys_predicates,
                     phys_aggs,
                     apply,
                     maintain_order,

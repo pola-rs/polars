@@ -588,7 +588,6 @@ impl PredicatePushDown<'_> {
             GroupBy {
                 input,
                 keys,
-                predicates,
                 aggs,
                 schema,
                 apply,
@@ -600,7 +599,6 @@ impl PredicatePushDown<'_> {
                 expr_arena,
                 input,
                 keys,
-                predicates,
                 aggs,
                 schema,
                 maintain_order,
