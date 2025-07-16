@@ -989,6 +989,12 @@ fn replace_n<'a>(
             if n > 1 {
                 polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
             }
+
+            if n == 0 {
+                return Ok(ca.clone());
+            };
+
+            // from here on, we know that n == 1
             let mut pat = get_pat(pat)?.to_string();
             polars_ensure!(
                 len_val == ca.len(),
@@ -1006,18 +1012,13 @@ fn replace_n<'a>(
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
             let f = |s: &'a str, val: &'a str| {
-                if lit && (s.len() <= 32) {
-                    Cow::Owned(s.replacen(&pat, val, 1))
+                if literal {
+                    reg.replace(s, NoExpand(val))
                 } else {
-                    // According to the docs for replace
-                    // when literal = True then capture groups are ignored.
-                    if literal {
-                        reg.replace(s, NoExpand(val))
-                    } else {
-                        reg.replace(s, val)
-                    }
+                    reg.replace(s, val)
                 }
             };
+
             Ok(iter_and_replace(ca, val, f))
         },
         _ => polars_bail!(
