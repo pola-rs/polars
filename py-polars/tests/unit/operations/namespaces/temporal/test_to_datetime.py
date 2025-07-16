@@ -38,7 +38,7 @@ FRACTIONS = [
     # "%.f", # alternative which allows any number of digits
     "",
 ]
-TIMEZONES = ["%#z", ""]
+TIMEZONES = ["%z", "%:z", "%:::z", ""]
 DATETIME_PATTERNS = [
     date_format.format(separator, separator) + time_format + fraction + tz
     for separator in SEPARATORS
@@ -63,7 +63,9 @@ def test_to_datetime_inferable_formats(fmt: str) -> None:
         .replace("%.3f", ".123")
         .replace("%.6f", ".123456")
         .replace("%.9f", ".123456789")
-        .replace("%#z", "+0100")
+        .replace("%z", "+0100")
+        .replace("%:z", "+01:00")
+        .replace("%:::z", "+01")
     )
 
     pl.Series([time_string]).str.to_datetime(strict=True)
