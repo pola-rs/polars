@@ -34,7 +34,6 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
-use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -499,19 +498,6 @@ impl LazyFrame {
         } else {
             col(PlSmallStr::from_static("*")).cast(dtype)
         }])
-    }
-
-    /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
-    /// operation. This is a utility that helps debug a query on a smaller number of rows.
-    ///
-    /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
-    /// Filter, join operations and a lower number of rows available in the scanned file influence
-    /// the final number of rows.
-    pub fn fetch(self, n_rows: usize) -> PolarsResult<DataFrame> {
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
-        let res = self.collect();
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
-        res
     }
 
     pub fn optimize(

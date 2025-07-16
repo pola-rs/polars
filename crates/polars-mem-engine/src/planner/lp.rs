@@ -1,7 +1,6 @@
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
-use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
@@ -448,14 +447,6 @@ fn create_physical_plan_impl(
             mut unified_scan_args,
             id: scan_mem_id,
         } => {
-            unified_scan_args.pre_slice = if let Some(mut slice) = unified_scan_args.pre_slice {
-                *slice.len_mut() = _set_n_rows_for_scan(Some(slice.len())).unwrap();
-                Some(slice)
-            } else {
-                _set_n_rows_for_scan(None)
-                    .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len })
-            };
-
             let mut expr_conversion_state = ExpressionConversionState::new(true);
 
             let mut create_skip_batch_predicate = false;
