@@ -2414,9 +2414,23 @@ class DataFrame:
         if dtype in (UInt16, UInt32, UInt64):
             msg = f"PyTorch does not support u16, u32, or u64 dtypes; given {dtype}"
             raise ValueError(msg)
+
+        to_dtype = dtype or {UInt16: Int32, UInt32: Int64, UInt64: Int64}
+
+        if label is not None:
+            label_frame = self.select(label)
+            if not isinstance(label, pl.Expr):
+                label_frame = label_frame.cast(to_dtype)
+            features_frame = (
+                self.select(features)
+                if features is not None
+                else self.drop(*label_frame.columns)
+            ).cast(to_dtype)
+            frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
-            to_dtype = dtype or {UInt16: Int32, UInt32: Int64, UInt64: Int64}
-            frame = self.cast(to_dtype)  # type: ignore[arg-type]
+            frame = (self.select(features) if features is not None else self).cast(
+                to_dtype
+            )
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
@@ -2428,12 +2442,6 @@ class DataFrame:
         elif return_type == "dict":
             if label is not None:
                 # return a {"label": tensor(s), "features": tensor(s)} dict
-                label_frame = frame.select(label)
-                features_frame = (
-                    frame.select(features)
-                    if features is not None
-                    else frame.drop(*label_frame.columns)
-                )
                 return {
                     "label": label_frame.to_torch(),
                     "features": features_frame.to_torch(),
