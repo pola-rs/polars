@@ -98,7 +98,8 @@ where
                 };
             };
 
-            cat_str_scalar_equality_helper(lhs, s, null_eq, &eq_phys_scalar)
+            let is_eq = eq(Some(""), Some("")).unwrap();
+            cat_str_scalar_equality_helper(lhs, s, is_eq, null_eq.is_some(), &eq_phys_scalar)
         },
         (1, rhs_len) => {
             let Some(cat) = lhs.physical().get(0) else {
@@ -217,7 +218,8 @@ where
 fn cat_str_scalar_equality_helper<T: PolarsCategoricalType, EqPhysScalar>(
     lhs: &CategoricalChunked<T>,
     rhs: &str,
-    null_eq: Option<bool>,
+    is_eq: bool,
+    missing: bool,
     eq_phys_scalar: EqPhysScalar,
 ) -> BooleanChunked
 where
@@ -225,11 +227,16 @@ where
 {
     let mapping = lhs.get_mapping();
     let Some(cat) = mapping.get_cat(rhs) else {
-        return match null_eq {
-            Some(_) => BooleanChunked::full(lhs.name().clone(), false, lhs.len()),
-            None => unary_mut_values(lhs.physical(), |arr| {
-                BooleanArray::full(arr.len(), false, ArrowDataType::Boolean)
-            }),
+        return if missing {
+            if is_eq {
+                BooleanChunked::full(lhs.name().clone(), false, lhs.len())
+            } else {
+                BooleanChunked::full(lhs.name().clone(), true, lhs.len())
+            }
+        } else {
+            unary_mut_values(lhs.physical(), |arr| {
+                BooleanArray::full(arr.len(), !is_eq, ArrowDataType::Boolean)
+            })
         };
     };
 
@@ -423,19 +430,19 @@ where
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &str) -> Self::Item {
-        cat_str_scalar_equality_helper(self, rhs, None, |l, c| l.equal(c))
+        cat_str_scalar_equality_helper(self, rhs, true, false, |l, c| l.equal(c))
     }
 
     fn equal_missing(&self, rhs: &str) -> Self::Item {
-        cat_str_scalar_equality_helper(self, rhs, Some(true), |l, c| l.equal_missing(c))
+        cat_str_scalar_equality_helper(self, rhs, true, true, |l, c| l.equal_missing(c))
     }
 
     fn not_equal(&self, rhs: &str) -> Self::Item {
-        cat_str_scalar_equality_helper(self, rhs, None, |r, c| r.not_equal(c))
+        cat_str_scalar_equality_helper(self, rhs, false, false, |r, c| r.not_equal(c))
     }
 
     fn not_equal_missing(&self, rhs: &str) -> Self::Item {
-        cat_str_scalar_equality_helper(self, rhs, Some(false), |l, c| l.not_equal_missing(c))
+        cat_str_scalar_equality_helper(self, rhs, false, true, |l, c| l.not_equal_missing(c))
     }
 }
 
