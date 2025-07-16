@@ -2411,6 +2411,7 @@ class DataFrame:
 
         torch = import_optional("torch")
 
+        # Cast columns.
         if dtype in (UInt16, UInt32, UInt64):
             msg = f"PyTorch does not support u16, u32, or u64 dtypes; given {dtype}"
             raise ValueError(msg)
@@ -2419,18 +2420,19 @@ class DataFrame:
 
         if label is not None:
             label_frame = self.select(label)
+            # Avoid casting the label if it's an expression.
             if not isinstance(label, pl.Expr):
-                label_frame = label_frame.cast(to_dtype)
+                label_frame = label_frame.cast(to_dtype)  # type: ignore[arg-type]
             features_frame = (
                 self.select(features)
                 if features is not None
                 else self.drop(*label_frame.columns)
-            ).cast(to_dtype)
+            ).cast(to_dtype)  # type: ignore[arg-type]
             frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
             frame = (self.select(features) if features is not None else self).cast(
                 to_dtype
-            )
+            )  # type: ignore[arg-type]
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
