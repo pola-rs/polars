@@ -425,7 +425,7 @@
                     export PYO3_NO_REOCOMPILE=1
                     export PYO3_NO_RECOMPILE=1
 
-                    export POLARS_DOT_SVG_VIEWER="${pkgs.nomacs}"
+                    export POLARS_DOT_SVG_VIEWER="chromium --new-window --app=file://%file%"
                     export PYO3_PYTHON=$($VENV/bin/python -c "import sys,os; print(os.path.abspath(sys.executable))")
                     export PYTHON_SHARED_LIB=$($VENV/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 
