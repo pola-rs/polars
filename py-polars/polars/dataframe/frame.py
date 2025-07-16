@@ -2456,7 +2456,8 @@ class DataFrame:
             # return a torch Dataset object
             from polars.ml.torch import PolarsDataset
 
-            return PolarsDataset(frame, label=label, features=features)
+            pds_label = None if label is None else label_frame.columns
+            return PolarsDataset(frame, label=pds_label, features=features)
         else:
             valid_torch_types = ", ".join(get_args(TorchExportType))
             msg = f"invalid `return_type`: {return_type!r}\nExpected one of: {valid_torch_types}"
