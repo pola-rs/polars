@@ -53,23 +53,6 @@ macro_rules! to_temporal_unit {
             )) as ArrayRef
         }
     };
-
-    ($name: ident, $dt: ident, $expr: expr, $to_datetime_fn: expr,
-    $primitive_in: ty,
-    $primitive_out: ty,
-    $dtype_out:expr) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
-            Box::new(unary(
-                arr,
-                |value| {
-                    $to_datetime_fn(value)
-                        .map(|$dt| $expr as $primitive_out)
-                        .unwrap_or(value as $primitive_out)
-                },
-                $dtype_out,
-            )) as ArrayRef
-        }
-    };
 }
 
 macro_rules! to_boolean_temporal_unit {
@@ -89,6 +72,25 @@ macro_rules! to_boolean_temporal_unit {
                 values.into(),
                 arr.validity().cloned(),
             ))
+        }
+    };
+}
+
+macro_rules! to_calendar_value {
+    ($name: ident, $dt: ident, $expr: expr, $to_datetime_fn: expr,
+    $primitive_in: ty,
+    $primitive_out: ty,
+    $dtype_out:expr) => {
+        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
+            Box::new(unary(
+                arr,
+                |value| {
+                    $to_datetime_fn(value)
+                        .map(|$dt| $expr as $primitive_out)
+                        .unwrap_or(value as $primitive_out)
+                },
+                $dtype_out,
+            )) as ArrayRef
         }
     };
 }
@@ -157,7 +159,7 @@ to_temporal_unit!(
     ArrowDataType::Int16
 );
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
+to_calendar_value!(
     date_to_days_in_month,
     dt,
     days_in_month(dt.year(), dt.month() as u8),
@@ -289,7 +291,7 @@ to_boolean_temporal_unit!(
 );
 
 #[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
+to_calendar_value!(
     datetime_to_days_in_month_ns,
     dt,
     days_in_month(dt.year(), dt.month() as u8),
@@ -299,7 +301,7 @@ to_temporal_unit!(
     ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
+to_calendar_value!(
     datetime_to_days_in_month_us,
     dt,
     days_in_month(dt.year(), dt.month() as u8),
@@ -309,7 +311,7 @@ to_temporal_unit!(
     ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
+to_calendar_value!(
     datetime_to_days_in_month_ms,
     dt,
     days_in_month(dt.year(), dt.month() as u8),
