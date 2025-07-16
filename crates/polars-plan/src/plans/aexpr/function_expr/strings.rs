@@ -1005,28 +1005,6 @@ fn replace_n<'a>(
 
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
-            // (A) PRIOR, FIXED
-            let _f = |s: &'a str, val: &'a str| {
-                if lit && (s.len() <= 32) {
-                    Cow::Owned(s.replacen(&pat, val, n))
-                } else {
-                    match n {
-                        0 => Cow::Borrowed(s),
-                        1 => {
-                            // According to the docs for replace
-                            // when literal = True then capture groups are ignored.
-                            if literal {
-                                reg.replace(s, NoExpand(val))
-                            } else {
-                                reg.replace(s, val)
-                            }
-                        },
-                        _n => unreachable!(), // not supported, would be: reg.replacen(s, n, val)
-                    }
-                }
-            };
-
-            // (B) PROPOSED NEW, see https://github.com/pola-rs/polars/pull/6777
             let f = |s: &'a str, val: &'a str| {
                 match n {
                     0 => Cow::Borrowed(s),
