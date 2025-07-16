@@ -2431,8 +2431,8 @@ class DataFrame:
             frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
             frame = (self.select(features) if features is not None else self).cast(
-                to_dtype
-            )  # type: ignore[arg-type]
+                to_dtype  # type: ignore[arg-type]
+            )
 
         if return_type == "tensor":
             # note: torch tensors are not immutable, so we must consider them writable
