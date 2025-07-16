@@ -38,18 +38,6 @@ impl PhysicalAggExpr for PivotExpr {
             .map(|mut ac| ac.aggregated().take_materialized_series())
     }
 
-    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Column> {
-        let state = ExecutionState::new();
-        let dtype = df.get_columns()[0].dtype();
-        let phys_expr = prepare_expression_for_context(
-            PlSmallStr::EMPTY,
-            &self.0,
-            dtype,
-            Context::Aggregation,
-        )?;
-        phys_expr.evaluate(df, &state)
-    }
-
     fn root_name(&self) -> PolarsResult<&PlSmallStr> {
         Ok(PlSmallStr::EMPTY_REF)
     }

@@ -271,6 +271,7 @@ fn pivot_impl_single_column(
         for value_col_name in values {
             let value_col = pivot_df.column(value_col_name)?;
 
+            // Aggregate the expression on a value column
             let value_agg = unsafe {
                 match &agg_fn {
                     None => match value_col.len() > groups.len() {
@@ -297,13 +298,21 @@ fn pivot_impl_single_column(
 
             // For any combination of 'index' and 'on' for which there is no entry in the df,
             // the default value is defined as the result of the agg_fn on the empty column.
-            let empty_col = Column::new_empty(PlSmallStr::EMPTY, value_col.dtype());
-            let empty_df = empty_col.clone().into_frame();
-            let default_col = match &agg_fn {
-                None => empty_col.clone(),
-                Some(agg_fn) => agg_fn.0.evaluate(&empty_df)?,
+            let default_val = {
+                match &agg_fn {
+                    None => AnyValue::Null,
+                    Some(agg_fn) => {
+                        let empty_col = Column::new_empty(PlSmallStr::EMPTY, value_col.dtype());
+                        let empty_df = empty_col.clone().into_frame();
+                        let empty_group = GroupsIdx::new_empty();
+                        let groups_from_empty = GroupsType::from(empty_group).into_sliceable();
+                        let expr = agg_fn.0.clone();
+                        let agg_on_empty =
+                            Column::from(expr.evaluate_on_groups(&empty_df, &groups_from_empty)?);
+                        agg_on_empty.get(0).unwrap_or_default().into_static()
+                    },
+                }
             };
-            let default_val = default_col.get(0).unwrap_or_default();
 
             let headers = column_agg.unique_stable()?.cast(&DataType::String)?;
             let mut headers = headers.str().unwrap().clone();
@@ -321,6 +330,7 @@ fn pivot_impl_single_column(
             let mut cols = if value_agg_phys.dtype().is_primitive_numeric() {
                 macro_rules! dispatch {
                     ($ca:expr) => {{
+                        let default_val = default_val.extract();
                         positioning::position_aggregates_numeric(
                             n_rows,
                             n_cols,
@@ -329,7 +339,7 @@ fn pivot_impl_single_column(
                             $ca,
                             logical_type,
                             &headers,
-                            &default_val,
+                            default_val,
                         )
                     }};
                 }

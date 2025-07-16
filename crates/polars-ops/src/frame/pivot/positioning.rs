@@ -110,9 +110,8 @@ pub(super) fn position_aggregates_numeric<T: PolarsNumericType>(
     value_agg_phys: &ChunkedArray<T>,
     logical_type: &DataType,
     headers: &StringChunked,
-    default_val: &AnyValue,
+    default_val: Option<T::Native>,
 ) -> Vec<Column> {
-    let default_val = default_val.extract();
     let mut buf = vec![default_val; n_rows * n_cols];
     let start_ptr = buf.as_mut_ptr() as usize;
 
