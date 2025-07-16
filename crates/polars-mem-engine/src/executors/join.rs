@@ -56,12 +56,8 @@ impl Executor for JoinExec {
             state_right.branch_idx += 1;
 
             POOL.join(
-                move || {
-                    input_left.execute(&mut state_left)
-                },
-                move || {
-                    input_right.execute(&mut state_right)
-                },
+                move || input_left.execute(&mut state_left),
+                move || input_right.execute(&mut state_right),
             )
         } else {
             (input_left.execute(state), input_right.execute(state))
