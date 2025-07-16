@@ -387,34 +387,33 @@ pub(crate) fn py_object_to_any_value(
                 &DataType::Null,
             )))
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
-            const INFER_SCHEMA_LENGTH: usize = 25;
-
             let list = ob.downcast::<PySequence>()?;
 
-            let mut avs = Vec::with_capacity(INFER_SCHEMA_LENGTH);
-            let mut iter = list.try_iter()?;
-            let mut items = Vec::with_capacity(INFER_SCHEMA_LENGTH);
-            for item in (&mut iter).take(INFER_SCHEMA_LENGTH) {
-                items.push(item?);
-                let av = py_object_to_any_value(items.last().unwrap(), strict, true)?;
+            let length = list.len()?;
+            let iter = list.try_iter()?;
+            let mut avs = Vec::with_capacity(length);
+            let mut all_same_primitive_dtype = true;
+            let mut last_dtype = None;
+            for item in iter {
+                let av = py_object_to_any_value(&item?, strict, true)?;
+                // Check if we can go through a fast path to avoid merging dtypes.
+                // If we fail this check once we will stop checking.
+                if all_same_primitive_dtype {
+                    let dt = av.dtype();
+                    all_same_primitive_dtype &= dt.is_primitive();
+                    if let Some(ldt) = last_dtype {
+                        all_same_primitive_dtype &= ldt == dt;
+                    }
+                    last_dtype = Some(dt);
+                }
                 avs.push(av)
             }
-            let (dtype, n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
-                .map_err(|e| PyTypeError::new_err(e.to_string()))?;
 
-            // This path is only taken if there is no question about the data type.
-            if dtype.is_primitive() && n_dtypes == 1 {
+            if all_same_primitive_dtype {
                 get_list_with_constructor(ob, strict)
             } else {
-                // Push the rest.
-                let length = list.len()?;
-                avs.reserve(length);
-                let mut rest = Vec::with_capacity(length);
-                for item in iter {
-                    rest.push(item?);
-                    let av = py_object_to_any_value(rest.last().unwrap(), strict, true)?;
-                    avs.push(av)
-                }
+                let (dtype, _n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
+                    .map_err(|e| PyTypeError::new_err(e.to_string()))?;
 
                 let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
                     .map_err(|e| {
