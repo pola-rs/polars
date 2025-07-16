@@ -43,6 +43,10 @@ impl MorselSeq {
         Self(self.0 + offset.0)
     }
 
+    pub fn offset_by_u64(self, offset: u64) -> Self {
+        Self(self.0 + 2 * offset)
+    }
+
     pub fn to_u64(self) -> u64 {
         self.0
     }
