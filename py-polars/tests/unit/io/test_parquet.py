@@ -3501,3 +3501,15 @@ def test_roundtrip_int128() -> None:
     s.to_frame().write_parquet(f)
     f.seek(0)
     assert_series_equal(pl.read_parquet(f).to_series(), s)
+
+
+def test_write_nested_categoricals() -> None:
+    df = pl.select(
+        pl.lit(pl.Series("col", ["a", "b"], dtype=pl.Categorical)).implode().implode(),
+    )
+
+    f = io.BytesIO()
+    df.lazy().sink_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
