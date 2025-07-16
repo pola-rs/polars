@@ -12,6 +12,7 @@ mod predicate_queries;
 mod projection_queries;
 mod queries;
 mod schema;
+mod streaming_operations;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<IR>) {
     let expr_arena = Arena::with_capacity(16);
