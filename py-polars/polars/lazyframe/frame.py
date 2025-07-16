@@ -3496,7 +3496,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def fetch(
         self,
         n_rows: int = 500,
-        **kwargs: P.kwargs,
+        **kwargs: Any,
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.

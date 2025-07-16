@@ -980,11 +980,6 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn fetch(&self, py: Python<'_>, n_rows: usize) -> PyResult<PyDataFrame> {
-        let ldf = self.ldf.clone();
-        py.enter_polars_df(|| ldf.fetch(n_rows))
-    }
-
     fn filter(&mut self, predicate: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
