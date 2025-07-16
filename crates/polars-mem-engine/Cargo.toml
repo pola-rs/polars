@@ -52,6 +52,7 @@ object = ["polars-core/object"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "polars-expr/dynamic_group_by"]
 asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-ops/merge_sorted"]
+allow_unused = []
 
 [lints]
 workspace = true

@@ -3,7 +3,6 @@ use polars_expr::{ExpressionConversionState, create_physical_expr};
 
 use crate::prelude::*;
 
-#[cfg(feature = "pivot")]
 pub(crate) fn contains_column_refs(expr: &Expr) -> bool {
     for e in expr.into_iter() {
         match e {

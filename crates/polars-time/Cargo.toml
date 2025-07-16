@@ -53,6 +53,7 @@ temporal = ["polars-core/temporal"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
+allow_unused = []
 
 default = []
 

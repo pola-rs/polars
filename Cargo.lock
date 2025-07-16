@@ -3895,7 +3895,6 @@ dependencies = [
 name = "pyo3-polars-derive"
 version = "0.15.0"
 dependencies = [
- "polars",
  "polars-arrow",
  "polars-core",
  "polars-ffi",

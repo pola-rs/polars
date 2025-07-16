@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 polars = { workspace = true, features = ["full"] }
 polars-core = { workspace = true }
 polars-lazy = { workspace = true }
-polars-python = { workspace = true }
+polars-python = { workspace = true, features = ["full", "allow_unused"] }
 pyo3 = { workspace = true, features = ["extension-module"] }
 pyo3-polars = { workspace = true, features = ["lazy"] }
 rayon = { workspace = true }

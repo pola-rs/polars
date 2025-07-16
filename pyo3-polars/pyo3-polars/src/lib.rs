@@ -47,6 +47,5 @@ pub mod derive;
 pub mod error;
 #[cfg(feature = "derive")]
 pub mod export;
-mod ffi;
 
 pub use crate::alloc::PolarsAllocator;

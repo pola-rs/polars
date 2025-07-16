@@ -24,7 +24,7 @@ where
 }
 
 pub fn _update_last_error(err: PolarsError) {
-    let msg = format!("{}", err);
+    let msg = format!("{err}");
     let msg = CString::new(msg).unwrap();
     LAST_ERROR.with(|prev| *prev.borrow_mut() = msg)
 }
@@ -49,7 +49,7 @@ fn start_up_init() {
     std::panic::set_hook(Box::new(|info| {
         let show_message = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1";
         if show_message {
-            eprintln!("{}", info)
+            eprintln!("{info}")
         }
     }));
 }
