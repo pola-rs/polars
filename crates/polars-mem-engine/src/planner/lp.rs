@@ -444,7 +444,7 @@ fn create_physical_plan_impl(
             output_schema,
             scan_type,
             predicate,
-            mut unified_scan_args,
+            unified_scan_args,
             id: scan_mem_id,
         } => {
             let mut expr_conversion_state = ExpressionConversionState::new(true);
