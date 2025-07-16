@@ -1937,8 +1937,6 @@ impl LazyFrame {
     }
 
     /// Limit the DataFrame to the first `n` rows.
-    ///
-    /// Note if you don't want the rows to be scanned, use [`fetch`](LazyFrame::fetch).
     pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
