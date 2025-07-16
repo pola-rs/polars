@@ -171,6 +171,8 @@ def _patched_cloud(
 
                 if lazy:
                     return query  # type: ignore[return-value]
+
+                query.collect()
                 return None
 
             return _
