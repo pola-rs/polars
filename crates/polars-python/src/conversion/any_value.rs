@@ -389,40 +389,51 @@ pub(crate) fn py_object_to_any_value(
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
             let list = ob.downcast::<PySequence>()?;
 
+            // Try to find first non-null.
             let length = list.len()?;
-            let iter = list.try_iter()?;
-            let mut avs = Vec::with_capacity(length);
-            let mut all_same_primitive_dtype = true;
-            let mut last_dtype = None;
-            for item in iter {
+            let mut iter = list.try_iter()?;
+            let mut avs = Vec::new();
+            for item in &mut iter {
                 let av = py_object_to_any_value(&item?, strict, true)?;
-                // Check if we can go through a fast path to avoid merging dtypes.
-                // If we fail this check once we will stop checking.
-                if all_same_primitive_dtype {
-                    let dt = av.dtype();
-                    all_same_primitive_dtype &= dt.is_primitive();
-                    if let Some(ldt) = last_dtype {
-                        all_same_primitive_dtype &= ldt == dt;
-                    }
-                    last_dtype = Some(dt);
+                let is_null = av.is_null();
+                avs.push(av);
+                if is_null {
+                    break;
                 }
-                avs.push(av)
             }
 
-            if all_same_primitive_dtype {
-                get_list_with_constructor(ob, strict)
-            } else {
-                let (dtype, _n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
-                    .map_err(|e| PyTypeError::new_err(e.to_string()))?;
-
-                let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
-                    .map_err(|e| {
-                        PyTypeError::new_err(format!(
-                            "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-                        ))
-                    })?;
-                Ok(AnyValue::List(s))
+            // Try to use a faster converter.
+            if let Some(av) = avs.last()
+                && !av.is_null()
+                && av.dtype().is_primitive()
+            {
+                // Always use strict, we will filter the error if we're not
+                // strict and try again using a slower converter with supertype.
+                match get_list_with_constructor(ob, true) {
+                    Ok(ret) => return Ok(ret),
+                    Err(e) => {
+                        if strict {
+                            return Err(e);
+                        }
+                    },
+                }
             }
+
+            // Push the rest of the anyvalues and use slower converter.
+            avs.reserve(length);
+            for item in &mut iter {
+                avs.push(py_object_to_any_value(&item?, strict, true)?);
+            }
+
+            let (dtype, _n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
+                .map_err(|e| PyTypeError::new_err(e.to_string()))?;
+            let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
+                .map_err(|e| {
+                    PyTypeError::new_err(format!(
+                        "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+                    ))
+                })?;
+            Ok(AnyValue::List(s))
         } else {
             // range will take this branch
             get_list_with_constructor(ob, strict)
