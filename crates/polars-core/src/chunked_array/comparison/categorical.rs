@@ -1,3 +1,4 @@
+use crate::prelude::arity::unary_mut_values;
 use crate::prelude::*;
 
 fn str_to_cat_enum(map: &CategoricalMapping, s: &str) -> PolarsResult<CatSize> {
@@ -225,9 +226,10 @@ where
     let mapping = lhs.get_mapping();
     let Some(cat) = mapping.get_cat(rhs) else {
         return match null_eq {
-            Some(true) => lhs.physical().is_null(),
-            Some(false) => lhs.physical().is_not_null(),
-            None => BooleanChunked::full_null(lhs.name().clone(), lhs.len()),
+            Some(_) => BooleanChunked::full(lhs.name().clone(), false, lhs.len()),
+            None => unary_mut_values(lhs.physical(), |arr| {
+                BooleanArray::full(arr.len(), false, ArrowDataType::Boolean)
+            }),
         };
     };
 

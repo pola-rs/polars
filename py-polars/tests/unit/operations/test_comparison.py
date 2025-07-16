@@ -393,6 +393,18 @@ def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
+@pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
+def test_total_ordering_cat_series(lhs: str | None, rhs: str | None) -> None:
+    verify_total_ordering(lhs, rhs, "", pl.Categorical)
+    context: pytest.WarningsRecorder | ContextManager[None] = (
+        pytest.warns(UserWarning) if rhs is None else nullcontext()
+    )
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, "", pl.Categorical)
+
+
+@pytest.mark.slow
 @pytest.mark.parametrize("str_lhs", INTERESTING_STRING_VALUES)
 @pytest.mark.parametrize("str_rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) -> None:
