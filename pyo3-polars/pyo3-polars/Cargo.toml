@@ -28,7 +28,8 @@ thiserror = "1"
 [features]
 # Polars python is needed because all variants need to be activated of the DSL.
 lazy = ["polars/serde-lazy", "polars-plan", "polars-lazy/serde", "polars-utils", "polars-lazy/python"]
-derive = ["pyo3-polars-derive", "polars-plan", "polars-ffi", "serde-pickle", "serde"]
+# todo! see if we can remove lazy dependency
+derive = ["pyo3-polars-derive", "polars-lazy/python", "polars-plan/python", "polars-ffi", "serde-pickle", "serde"]
 dtype-full = ["polars/dtype-full", "dtype-decimal", "dtype-array", "dtype-struct", "dtype-categorical"]
 object = ["polars/object"]
 dtype-decimal = ["polars/dtype-decimal"]

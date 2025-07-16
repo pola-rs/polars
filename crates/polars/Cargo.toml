@@ -451,6 +451,7 @@ bench = [
 
 # All features except python
 full = ["docs-selection", "performant", "fmt"]
+allow_unused = ["polars-lazy?/allow_unused", "polars-core/allow_unused", "polars-time?/allow_unused"]
 
 [package.metadata.docs.rs]
 # all-features = true

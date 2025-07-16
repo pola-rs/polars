@@ -21,14 +21,13 @@ fn parallel_jaccard(pydf: PyDataFrame, col_a: &str, col_b: &str) -> PyResult<PyD
 #[pyfunction]
 fn debug(pydf: PyDataFrame) -> PyResult<PyDataFrame> {
     let df: DataFrame = pydf.into();
-    dbg!(&df);
+    eprintln!("{}", &df);
     Ok(PyDataFrame::from(df))
 }
 
 #[pyfunction]
 fn lazy_parallel_jaccard(pydf: PyLazyFrame, col_a: &str, col_b: &str) -> PyResult<PyLazyFrame> {
     let df: LazyFrame = pydf.into();
-    dbg!(&df.describe_plan());
     let df = parallel_jaccard_mod::parallel_jaccard(df.collect().unwrap(), col_a, col_b)
         .map_err(PyPolarsErr::from)?;
     Ok(PyLazyFrame::from(df.lazy()))
