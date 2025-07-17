@@ -204,18 +204,12 @@ def test_arr_var(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.var().name.suffix("_var"),
         pl.col("float").arr.var().name.suffix("_var"),
-        pl.col("duration").arr.var().name.suffix("_var"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_var", [2.5], dtype=pl.Float64),
             pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
         ]
     )
 

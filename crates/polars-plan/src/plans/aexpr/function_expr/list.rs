@@ -728,7 +728,7 @@ pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {
 }
 
 pub(super) fn var(s: &Column, ddof: u8) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_var(ddof).into())
+    Ok(s.list()?.lst_var(ddof)?.into())
 }
 
 pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {

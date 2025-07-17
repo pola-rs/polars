@@ -476,12 +476,13 @@ impl<'a> FieldsMapper<'a> {
     pub fn var_dtype(&self) -> PolarsResult<Field> {
         if self.fields[0].dtype().leaf_dtype().is_duration() {
             let map_inner = |dt: &DataType| match dt {
-                #[cfg(feature = "dtype-duration")]
-                DataType::Duration(_) => DataType::Duration(TimeUnit::Milliseconds),
-                dt => dt.clone(),
+                dt if dt.is_temporal() => {
+                    polars_bail!(InvalidOperation: "variance of type {dt} is not supported")
+                },
+                dt => Ok(dt.clone()),
             };
 
-            self.map_dtype(|dt| match dt {
+            self.try_map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-array")]
                 DataType::Array(inner, _) => map_inner(inner),
                 DataType::List(inner) => map_inner(inner),
