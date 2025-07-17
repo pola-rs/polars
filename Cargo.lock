@@ -3495,7 +3495,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "sha2",
  "strum_macros 0.27.1",
  "version_check",
 ]
