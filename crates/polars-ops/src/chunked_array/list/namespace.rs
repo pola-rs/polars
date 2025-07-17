@@ -229,7 +229,7 @@ pub trait ListNameSpaceImpl: AsList {
         dispersion::std_with_nulls(ca, ddof)
     }
 
-    fn lst_var(&self, ddof: u8) -> Series {
+    fn lst_var(&self, ddof: u8) -> PolarsResult<Series> {
         let ca = self.as_list();
         dispersion::var_with_nulls(ca, ddof)
     }
