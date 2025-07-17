@@ -7,7 +7,8 @@ available in Open Beta and is undergoing rapid development.
 ### System Requirements
 
 - NVIDIA Volta™ or higher GPU with [compute capability](https://developer.nvidia.com/cuda-gpus) 7.0+
-- CUDA 12 (CUDA 11 support ends with RAPIDS v25.06; see [RSN 48](https://docs.rapids.ai/notices/rsn0048/))
+- CUDA 12 (CUDA 11 support ends with RAPIDS v25.06; see
+  [RSN 48](https://docs.rapids.ai/notices/rsn0048/))
 - Linux or Windows Subsystem for Linux 2 (WSL2)
 
 See the [RAPIDS installation guide](https://docs.rapids.ai/install#system-req) for full details.
