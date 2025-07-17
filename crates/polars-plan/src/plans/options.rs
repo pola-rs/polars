@@ -132,7 +132,7 @@ impl FunctionFlags {
     pub fn is_elementwise(self) -> bool {
         self.contains(Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING)
     }
-    
+
     pub fn is_row_separable(self) -> bool {
         self.contains(Self::ROW_SEPARABLE)
     }
@@ -201,7 +201,7 @@ impl FunctionOptions {
     pub fn is_length_preserving(&self) -> bool {
         self.flags.contains(FunctionFlags::LENGTH_PRESERVING)
     }
-    
+
     pub fn is_row_separable(&self) -> bool {
         self.flags.is_row_separable()
     }

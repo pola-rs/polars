@@ -770,19 +770,25 @@ fn lower_exprs_with_ctx(
             },
 
             // Lower arbitrary row-separable functions.
-            ref node @ AExpr::Function { input: ref inner_exprs, ref function, options } if options.is_row_separable() && !is_fake_elementwise_function(node) => {
+            ref node @ AExpr::Function {
+                input: ref inner_exprs,
+                ref function,
+                options,
+            } if options.is_row_separable() && !is_fake_elementwise_function(node) => {
                 // While these functions are streamable, they are not elementwise, so we
                 // have to transform them to a select node.
                 let inner_nodes = inner_exprs.iter().map(|x| x.node()).collect_vec();
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
                 let out_name = unique_column_name();
                 let trans_inner = ctx.expr_arena.add(AExpr::Function {
-                    input: trans_exprs.iter().map(|node| ExprIR::from_node(*node, &ctx.expr_arena)).collect(),
+                    input: trans_exprs
+                        .iter()
+                        .map(|node| ExprIR::from_node(*node, ctx.expr_arena))
+                        .collect(),
                     function: function.clone(),
-                    options
+                    options,
                 });
-                let func_expr =
-                    ExprIR::new(trans_inner, OutputName::Alias(out_name.clone()));
+                let func_expr = ExprIR::new(trans_inner, OutputName::Alias(out_name.clone()));
                 let output_schema =
                     schema_for_select(trans_input, std::slice::from_ref(&func_expr), ctx)?;
                 let node_kind = PhysNodeKind::Select {
