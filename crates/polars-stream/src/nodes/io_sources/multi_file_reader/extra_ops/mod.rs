@@ -1,10 +1,10 @@
 //! Extra operations applied during reads.
 pub mod apply;
 pub mod cast_columns;
+pub mod column_selector;
 pub mod missing_columns;
-pub mod reorder_columns;
 
-use polars_core::schema::SchemaRef;
+use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
@@ -36,18 +36,30 @@ impl ExtraOperations {
 
 pub fn apply_extra_columns_policy(
     policy: &ExtraColumnsPolicy,
-    target_schema: SchemaRef,
-    incoming_schema: SchemaRef,
+    target_schema: &Schema,
+    incoming_schema: &Schema,
+) -> PolarsResult<()> {
+    apply_extra_columns_policy_impl(
+        policy,
+        &|x| target_schema.contains(x),
+        &mut incoming_schema.iter_names().map(|x| x.as_str()),
+    )
+}
+
+/// Contains the actual implementation. This is can be called directly in cases
+/// where there are no upfront constructed schemas.
+pub fn apply_extra_columns_policy_impl(
+    policy: &ExtraColumnsPolicy,
+    target_contains_name: &dyn Fn(&str) -> bool,
+    incoming_names: &mut dyn Iterator<Item = &str>,
 ) -> PolarsResult<()> {
     use ExtraColumnsPolicy::*;
     match policy {
         Ignore => {},
 
         Raise => {
-            if let Some(extra_col) = incoming_schema
-                .iter_names()
-                .find(|x| !target_schema.contains(x))
-            {
+            #[expect(clippy::filter_next)] // `find()` cannot be used on a trait object
+            if let Some(extra_col) = incoming_names.filter(|x| !target_contains_name(x)).next() {
                 polars_bail!(
                     SchemaMismatch:
                     "extra column in file outside of expected schema: {}, \
