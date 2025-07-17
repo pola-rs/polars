@@ -171,6 +171,9 @@ def _patched_cloud(
 
                 if lazy:
                     return query  # type: ignore[return-value]
+
+                # If the sink is not lazy, we are expected to collect it.
+                query.collect()
                 return None
 
             return _

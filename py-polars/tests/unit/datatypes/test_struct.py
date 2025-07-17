@@ -98,6 +98,7 @@ def test_struct_hashes() -> None:
     assert len({hash(tp) for tp in (dtypes)}) == 3
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct (map_elements)
 def test_struct_unnesting() -> None:
     df_base = pl.DataFrame({"a": [1, 2]})
     df = df_base.select(
@@ -257,6 +258,7 @@ def test_from_dicts_struct() -> None:
     ]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
@@ -924,6 +926,7 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
         ).collect()
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 def test_struct_chunked_gather_17603() -> None:
     df = pl.DataFrame(
         {
@@ -1044,12 +1047,14 @@ def test_struct_null_zip() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
 def test_zfs_construction(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))
     assert a.len() == size
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_unnest(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).struct.unnest()
@@ -1070,6 +1075,7 @@ def test_zfs_equality(size: int) -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 def test_zfs_nullable_when_otherwise() -> None:
     a = pl.Series("a", [{}, None, {}, {}, None], pl.Struct([]))
     b = pl.Series("b", [None, {}, None, {}, None], pl.Struct([]))
@@ -1087,6 +1093,7 @@ def test_zfs_nullable_when_otherwise() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 def test_zfs_struct_fns() -> None:
     a = pl.Series("a", [{}], pl.Struct([]))
 
@@ -1114,6 +1121,7 @@ def test_zfs_serialization_roundtrip(format: pl.SerializationFormat, size: int) 
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_row_encoding(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))
@@ -1126,6 +1134,7 @@ def test_zfs_row_encoding(size: int) -> None:
     assert_frame_equal(gb, df, check_row_order=False)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct_19208() -> None:
     df = pl.DataFrame(
@@ -1214,6 +1223,7 @@ def test_leaf_list_eq_19613(data: Any) -> None:
     assert not pl.DataFrame([data]).equals(pl.DataFrame([[data]]))
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_nested_object_raises_15237() -> None:
     obj = object()
     df = pl.DataFrame({"a": [obj]})
