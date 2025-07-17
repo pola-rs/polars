@@ -390,6 +390,11 @@ macro_rules! polars_err {
             InvalidOperation: "{} operation not supported for dtypes `{}`, `{}` and `{}`", $op, $arg1, $arg2, $arg3
         )
     };
+    (opidx = $op:expr, idx = $idx:expr, $arg:expr) => {
+        $crate::polars_err!(
+            InvalidOperation: "`{}` operation not supported for dtype `{}` as argument {}", $op, $arg, $idx
+        )
+    };
     (oos = $($tt:tt)+) => {
         $crate::polars_err!(ComputeError: "out-of-spec: {}", $($tt)+)
     };
