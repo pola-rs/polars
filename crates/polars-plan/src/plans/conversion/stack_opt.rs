@@ -84,6 +84,7 @@ impl ConversionOptimizer {
         expr_arena: &mut Arena<AExpr>,
         ir_arena: &mut Arena<IR>,
         current_ir_node: Node,
+        // Use the schema of `current_ir_node` instead of its input when resolving expr fields.
         use_current_node_schema: bool,
     ) -> PolarsResult<()> {
         // Different from the stack-opt in the optimizer phase, this does a single pass until fixed point per expression.
