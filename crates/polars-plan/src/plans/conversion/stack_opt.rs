@@ -145,10 +145,6 @@ impl ConversionOptimizer {
                 &self.schemas[schema_idx - 1]
             };
 
-            dbg!(&self.schemas);
-            dbg!(schema);
-            dbg!(schema_idx);
-
             if let Some(rule) = &mut self.simplify {
                 while let Some(x) =
                     rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
