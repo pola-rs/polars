@@ -225,6 +225,7 @@ pub enum PyTemporalFunction {
     IsoYear,
     Quarter,
     Month,
+    DaysInMonth,
     Week,
     WeekDay,
     Day,
@@ -970,6 +971,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     IRTemporalFunction::Nanosecond => {
                         (PyTemporalFunction::Nanosecond,).into_py_any(py)
+                    },
+                    IRTemporalFunction::DaysInMonth => {
+                        (PyTemporalFunction::DaysInMonth,).into_py_any(py)
                     },
                     IRTemporalFunction::TotalDays => {
                         (PyTemporalFunction::TotalDays,).into_py_any(py)
