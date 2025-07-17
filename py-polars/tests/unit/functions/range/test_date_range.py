@@ -742,3 +742,19 @@ def test_date_range_end_interval_samples_backward_1mo(
         eager=True,
     )
     assert_series_equal(result, pl.Series("literal", expected))
+
+
+def test_date_ranges_start_end_interval() -> None:
+    pass
+
+def test_date_ranges_start_end_samples() -> None:
+    pass
+
+def test_date_ranges_start_interval_samples() -> None:
+    pass
+
+def test_date_ranges_end_interval_samples() -> None:
+    pass
+
+def test_date_ranges_expr() -> None:
+    pass
