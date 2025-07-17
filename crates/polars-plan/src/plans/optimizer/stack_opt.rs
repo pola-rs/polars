@@ -25,6 +25,7 @@ impl StackOptimizer {
         let mut scratch = vec![];
 
         // Run loop until reaching fixed point.
+        #[allow(clippy::field_reassign_with_default)]
         while changed {
             // Recurse into sub plans and expressions and apply rules.
             changed = false;

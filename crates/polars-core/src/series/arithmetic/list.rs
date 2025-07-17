@@ -28,6 +28,7 @@ impl NumOpsDispatchInner for ListType {
     }
 }
 
+#[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
 #[derive(Clone)]
 pub struct NumericListOp(NumericOp);
 

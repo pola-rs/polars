@@ -207,6 +207,7 @@ find_many = ["polars-ops/find_many"]
 month_start = ["polars-time/month_start"]
 month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
+allow_unused = ["polars-io/allow_unused", "polars-ops/allow_unused", "polars-time?/allow_unused"]
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
 polars_cloud_client = ["serde"]

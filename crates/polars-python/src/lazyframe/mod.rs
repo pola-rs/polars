@@ -39,6 +39,12 @@ impl From<LazyFrame> for PyLazyFrame {
     }
 }
 
+impl From<PyLazyFrame> for LazyFrame {
+    fn from(pldf: PyLazyFrame) -> Self {
+        pldf.ldf
+    }
+}
+
 impl From<OptFlags> for PyOptFlags {
     fn from(inner: OptFlags) -> Self {
         PyOptFlags { inner }

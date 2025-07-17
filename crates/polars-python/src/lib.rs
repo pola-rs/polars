@@ -4,6 +4,11 @@
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 #![allow(clippy::disallowed_types)]
 #![allow(clippy::useless_conversion)] // Needed for now due to https://github.com/PyO3/pyo3/issues/4828.
+#![cfg_attr(
+    feature = "allow_unused",
+    allow(unused, dead_code, irrefutable_let_patterns)
+)] // Maybe be caused by some feature
+// combinations
 
 #[cfg(feature = "csv")]
 pub mod batched_csv;
@@ -44,8 +49,11 @@ pub mod timeout;
 pub mod utils;
 
 use crate::conversion::Wrap;
-use crate::dataframe::PyDataFrame;
-use crate::expr::PyExpr;
-use crate::lazyframe::PyLazyFrame;
-use crate::lazygroupby::PyLazyGroupBy;
-use crate::series::PySeries;
+
+pub type PyDataType = Wrap<polars_core::datatypes::DataType>;
+pub type PySchema = Wrap<polars_core::schema::Schema>;
+pub use crate::dataframe::PyDataFrame;
+pub use crate::expr::PyExpr;
+pub use crate::lazyframe::PyLazyFrame;
+pub use crate::lazygroupby::PyLazyGroupBy;
+pub use crate::series::PySeries;
