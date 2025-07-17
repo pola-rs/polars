@@ -36,7 +36,7 @@ pub fn eager_int_range(
 
     if !dtype.is_integer() {
         return Err(PyPolarsErr::from(
-            polars_err!(ComputeError: "non-integer `dtype` passed to `int_range`: '{}'", dtype),
+            polars_err!(SchemaMismatch: "non-integer `dtype` passed to `int_range`: '{}'", dtype),
         )
         .into());
     }
