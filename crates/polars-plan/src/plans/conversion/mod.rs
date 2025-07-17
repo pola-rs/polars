@@ -213,6 +213,7 @@ impl IR {
                 DslPlan::GroupBy {
                     input: Arc::new(i),
                     keys,
+                    predicates: vec![],
                     aggs,
                     apply: apply.map(|apply| (apply, schema)),
                     maintain_order,
