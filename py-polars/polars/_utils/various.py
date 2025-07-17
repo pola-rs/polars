@@ -698,7 +698,7 @@ def display_dot_graph(
                 file.write(graph)
                 file.flush()
                 cmd = cmd.replace("%file%", file.name)
-                subprocess.check_output(["sh", "-c", cmd])
+                subprocess.run(cmd, shell=True)
             return None
 
         import_optional(
