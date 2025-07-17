@@ -642,15 +642,18 @@ def test_datetime_range_with_nanoseconds_overflow_15735() -> None:
 
 
 # Helper function to generate output Series with expected dtype.
-def to_expected(values: list[date | datetime], dtype: PolarsDataType) -> pl.Series:
+def to_expected(
+    values: list[date] | list[datetime], dtype: PolarsDataType
+) -> pl.Series:
     if dtype == pl.Date:
         return pl.Series("literal", values, dtype=pl.Datetime("us"))
     else:
-        if dtype.time_zone is not None:
-            tu = dtype.time_unit
+        if (tz := dtype.time_zone) is not None:  # type: ignore[union-attr]
             return pl.Series(
-                "literal", values, dtype=pl.Datetime(tu)
-            ).dt.replace_time_zone(dtype.time_zone)
+                "literal",
+                values,
+                dtype=pl.Datetime(dtype.time_unit),  # type: ignore[union-attr]
+            ).dt.replace_time_zone(tz)
         else:
             return pl.Series("literal", values, dtype=dtype)
 
@@ -671,26 +674,55 @@ def to_expected(values: list[date | datetime], dtype: PolarsDataType) -> pl.Seri
 def test_datetime_range_start_end_interval_forwards(dtype: PolarsDataType) -> None:
     start = date(2025, 1, 1)
     end = date(2025, 1, 10)
-    args = {
-        "eager": True,
-        "time_unit": dtype.time_unit if dtype == pl.Datetime else None,
-        "time_zone": dtype.time_zone if dtype == pl.Datetime else None,
-    }
+    tu: TimeUnit = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[assignment, union-attr]
+    tz: str = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[assignment, union-attr]
 
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="3d", closed="left", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="3d",
+            closed="left",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([date(2025, 1, 1), date(2025, 1, 4), date(2025, 1, 7)], dtype),
     )
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="3d", closed="right", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="3d",
+            closed="right",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([date(2025, 1, 4), date(2025, 1, 7), date(2025, 1, 10)], dtype),
     )
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="3d", closed="none", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="3d",
+            closed="none",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([date(2025, 1, 4), date(2025, 1, 7)], dtype),
     )
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="3d", closed="both", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="3d",
+            closed="both",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected(
             [date(2025, 1, 1), date(2025, 1, 4), date(2025, 1, 7), date(2025, 1, 10)],
             dtype,
@@ -698,7 +730,14 @@ def test_datetime_range_start_end_interval_forwards(dtype: PolarsDataType) -> No
     )
     # test wrong direction is empty
     assert_series_equal(
-        pl.datetime_range(start=end, end=start, interval="3d", **args),
+        pl.datetime_range(
+            start=end,
+            end=start,
+            interval="3d",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([], dtype),
     )
 
@@ -718,26 +757,55 @@ def test_datetime_range_start_end_interval_forwards(dtype: PolarsDataType) -> No
 def test_datetime_range_start_end_interval_backwards(dtype: PolarsDataType) -> None:
     start = date(2025, 1, 10)
     end = date(2025, 1, 1)
-    args = {
-        "eager": True,
-        "time_unit": dtype.time_unit if dtype == pl.Datetime else None,
-        "time_zone": dtype.time_zone if dtype == pl.Datetime else None,
-    }
+    tu: TimeUnit = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[assignment, union-attr]
+    tz: str = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[assignment, union-attr]
 
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="-3d", closed="left", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="-3d",
+            closed="left",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([date(2025, 1, 10), date(2025, 1, 7), date(2025, 1, 4)], dtype),
     )
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="-3d", closed="right", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="-3d",
+            closed="right",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([date(2025, 1, 7), date(2025, 1, 4), date(2025, 1, 1)], dtype),
     )
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="-3d", closed="none", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="-3d",
+            closed="none",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([date(2025, 1, 7), date(2025, 1, 4)], dtype),
     )
     assert_series_equal(
-        pl.datetime_range(start=start, end=end, interval="-3d", closed="both", **args),
+        pl.datetime_range(
+            start=start,
+            end=end,
+            interval="-3d",
+            closed="both",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected(
             [date(2025, 1, 10), date(2025, 1, 7), date(2025, 1, 4), date(2025, 1, 1)],
             dtype,
@@ -745,7 +813,14 @@ def test_datetime_range_start_end_interval_backwards(dtype: PolarsDataType) -> N
     )
     # test wrong direction is empty
     assert_series_equal(
-        pl.datetime_range(start=end, end=start, interval="-3d", **args),
+        pl.datetime_range(
+            start=end,
+            end=start,
+            interval="-3d",
+            eager=True,
+            time_unit=tu,
+            time_zone=tz,
+        ),
         to_expected([], dtype=dtype),
     )
 
@@ -769,57 +844,67 @@ def test_datetime_range_expr_scalar(dtype: PolarsDataType) -> None:
             "interval": ["1d", "2d"],
         }
     )
-    args = {
-        "time_unit": dtype.time_unit if dtype == pl.Datetime else None,
-        "time_zone": dtype.time_zone if dtype == pl.Datetime else None,
-    }
+    tu: TimeUnit = dtype.time_unit if dtype == pl.Datetime else None  # type: ignore[assignment, union-attr]
+    tz: str = dtype.time_zone if dtype == pl.Datetime else None  # type: ignore[assignment, union-attr]
     result = df.select(
         forward_start_end_interval=pl.datetime_range(
-            start=pl.col("a").min(), end=pl.col("a").max(), interval="1d", **args
+            start=pl.col("a").min(),
+            end=pl.col("a").max(),
+            interval="1d",
+            time_unit=tu,
+            time_zone=tz,
         ),
         backward_start_end_interval=pl.datetime_range(
-            start=pl.col("a").max(), end=pl.col("a").min(), interval="-1d", **args
+            start=pl.col("a").max(),
+            end=pl.col("a").min(),
+            interval="-1d",
+            time_unit=tu,
+            time_zone=tz,
         ),
         forward_start_end_samples=pl.datetime_range(
             start=pl.col("a").min(),
             end=pl.col("a").max(),
             num_samples=3,
-            **args,
+            time_unit=tu,
+            time_zone=tz,
         ),
         backward_start_end_samples=pl.datetime_range(
             start=pl.col("a").max(),
             end=pl.col("a").min(),
             num_samples=3,
-            **args,
+            time_unit=tu,
+            time_zone=tz,
         ),
         forward_start_interval_samples=pl.datetime_range(
             start=pl.col("a").min(),
             interval="1d",
             num_samples=3,
-            **args,
+            time_unit=tu,
+            time_zone=tz,
         ),
         backward_start_interval_samples=pl.datetime_range(
             start=pl.col("a").max(),
             interval="-1d",
             num_samples=3,
-            **args,
+            time_unit=tu,
+            time_zone=tz,
         ),
         forward_end_interval_samples=pl.datetime_range(
             end=pl.col("a").max(),
             interval="1d",
             num_samples=3,
-            **args,
+            time_unit=tu,
+            time_zone=tz,
         ),
         backward_end_interval_samples=pl.datetime_range(
             end=pl.col("a").min(),
             interval="-1d",
             num_samples=3,
-            **args,
+            time_unit=tu,
+            time_zone=tz,
         ),
     )
-    forward = pl.Series(
-        [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)], dtype=dtype
-    )
+    forward = [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]
     backward = forward[-1::-1]
     expected = pl.DataFrame(
         {
@@ -873,19 +958,16 @@ def test_datetime_range_start_end_samples_forward(
     expected: list[datetime],
     dtype: PolarsDataType,
 ) -> None:
-    args = {
-        "eager": True,
-        "closed": closed,
-        "time_unit": dtype.time_unit if dtype == pl.Datetime else None,
-        "time_zone": dtype.time_zone if dtype == pl.Datetime else None,
-    }
-    start = date(2025, 1, 1)
-    end = date(2025, 1, 10)
-
-    assert_series_equal(
-        pl.datetime_range(start=start, end=end, num_samples=3, **args),
-        to_expected(expected, dtype),
+    result = pl.datetime_range(
+        start=date(2025, 1, 1),
+        end=date(2025, 1, 10),
+        num_samples=3,
+        eager=True,
+        closed=closed,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
+    assert_series_equal(result, to_expected(expected, dtype))
 
 
 @pytest.mark.parametrize(
@@ -924,19 +1006,16 @@ def test_datetime_range_start_end_samples_backward(
     expected: list[datetime],
     dtype: PolarsDataType,
 ) -> None:
-    args = {
-        "eager": True,
-        "closed": closed,
-        "time_unit": dtype.time_unit if dtype == pl.Datetime else None,
-        "time_zone": dtype.time_zone if dtype == pl.Datetime else None,
-    }
-    start = date(2025, 1, 10)
-    end = date(2025, 1, 1)
-
-    assert_series_equal(
-        pl.datetime_range(start=start, end=end, num_samples=3, **args),
-        to_expected(expected, dtype),
+    result = pl.datetime_range(
+        start=date(2025, 1, 10),
+        end=date(2025, 1, 1),
+        num_samples=3,
+        closed=closed,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        eager=True,
     )
+    assert_series_equal(result, to_expected(expected, dtype))
 
 
 # -- start/interval/samples
@@ -984,8 +1063,8 @@ def test_datetime_range_start_interval_samples_forward_1d(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
     assert_series_equal(result, to_expected(expected, dtype))
 
@@ -1042,8 +1121,8 @@ def test_datetime_range_start_interval_samples_backward_1d(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
     assert_series_equal(result, to_expected(expected, dtype))
 
@@ -1080,8 +1159,8 @@ def test_datetime_range_start_interval_samples_forward_1mo(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
     assert_series_equal(result, to_expected(expected, dtype))
 
@@ -1118,8 +1197,8 @@ def test_datetime_range_start_interval_samples_backward_1mo(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
     assert_series_equal(result, to_expected(expected, dtype))
 
@@ -1177,8 +1256,8 @@ def test_datetime_range_end_interval_samples_forward_1d(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
     assert_series_equal(result, to_expected(expected, dtype))
 
@@ -1227,8 +1306,8 @@ def test_datetime_range_end_interval_samples_backward_1d(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
     assert_series_equal(result, to_expected(expected, dtype))
 
@@ -1265,8 +1344,8 @@ def test_datetime_range_end_interval_samples_forward_1mo(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
     assert_series_equal(result, to_expected(expected, dtype))
 
@@ -1303,7 +1382,8 @@ def test_datetime_range_end_interval_samples_backward_1mo(
         num_samples=3,
         closed=closed,
         eager=True,
-        time_unit=dtype.time_unit if dtype == pl.Datetime else None,
-        time_zone=dtype.time_zone if dtype == pl.Datetime else None,
+        time_unit=dtype.time_unit if dtype == pl.Datetime else None,  # type: ignore[union-attr]
+        time_zone=dtype.time_zone if dtype == pl.Datetime else None,  # type: ignore[union-attr]
     )
-    assert_series_equal(result, to_expected(expected, dtype))
+    s_expected = to_expected(expected, dtype)
+    assert_series_equal(result, s_expected)

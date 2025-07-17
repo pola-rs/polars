@@ -38,6 +38,7 @@ def datetime_range(
     start: datetime | date | IntoExprColumn | None = None,
     end: datetime | date | IntoExprColumn | None = None,
     interval: str | timedelta | None = None,
+    num_samples: int | IntoExprColumn | None = None,
     *,
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,

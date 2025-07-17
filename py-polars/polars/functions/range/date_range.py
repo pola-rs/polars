@@ -40,7 +40,7 @@ def date_range(
     num_samples: int | None = None,
     *,
     closed: ClosedInterval = ...,
-    eager: Literal[True],
+    eager: Literal[True] = ...,
 ) -> Series: ...
 
 
