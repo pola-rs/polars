@@ -5,7 +5,12 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError, ShapeError, SchemaError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
