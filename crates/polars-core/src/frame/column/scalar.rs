@@ -48,6 +48,10 @@ impl ScalarColumn {
         }
     }
 
+    pub fn full_null(name: PlSmallStr, length: usize, dtype: DataType) -> Self {
+        Self::new(name, Scalar::null(dtype), length)
+    }
+
     pub fn name(&self) -> &PlSmallStr {
         &self.name
     }
