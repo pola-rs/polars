@@ -101,6 +101,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 .into()
             },
 
+            IRAggExpr::Mean(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::Mean(Arc::new(exp)).into()
+            },
             IRAggExpr::Median(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Median(Arc::new(exp)).into()
@@ -116,10 +120,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
-            },
-            IRAggExpr::Mean(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Mean(Arc::new(exp)).into()
             },
             IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -287,6 +287,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::NUnique => A::NUnique,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),
+                IA::Mean => A::Mean,
                 IA::Median => A::Median,
                 #[cfg(feature = "array_any_all")]
                 IA::Any => A::Any,

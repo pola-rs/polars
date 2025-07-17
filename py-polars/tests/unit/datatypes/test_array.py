@@ -240,6 +240,30 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
     assert_frame_equal(result, expected)
 
 
+def test_arr_mean(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.mean().name.suffix("_mean"),
+        pl.col("float").arr.mean().name.suffix("_mean"),
+        pl.col("duration").arr.mean().name.suffix("_mean"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_mean", [3.0], dtype=pl.Float64),
+            pl.Series("float_mean", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_mean",
+                [timedelta(microseconds=3000)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
 def test_arr_median(data_dispersion: pl.DataFrame) -> None:
     df = data_dispersion
 
