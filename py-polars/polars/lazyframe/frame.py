@@ -225,8 +225,9 @@ def _gpu_engine_callback(
         install_message=(
             "Please install using the command "
             "`pip install cudf-polars-cu12` "
-            "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
-            "if your system has a CUDA 11 driver)."
+            "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
+            "If your system has a CUDA 11 driver, install with "
+            "`pip install cudf-polars-cu11==25.06` "
         ),
     )
     if not is_config_obj:
