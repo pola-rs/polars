@@ -25,17 +25,13 @@ pub trait VecHash {
         &self,
         _random_state: PlSeedableRandomStateQuality,
         _buf: &mut Vec<u64>,
-    ) -> PolarsResult<()> {
-        polars_bail!(un_impl = vec_hash);
-    }
+    ) -> PolarsResult<()>;
 
     fn vec_hash_combine(
         &self,
         _random_state: PlSeedableRandomStateQuality,
         _hashes: &mut [u64],
-    ) -> PolarsResult<()> {
-        polars_bail!(un_impl = vec_hash_combine);
-    }
+    ) -> PolarsResult<()>;
 }
 
 pub(crate) fn get_null_hash_value(random_state: &PlSeedableRandomStateQuality) -> u64 {
