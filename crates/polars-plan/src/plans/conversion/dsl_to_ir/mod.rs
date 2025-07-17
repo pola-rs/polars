@@ -184,14 +184,57 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Filter { input, predicate } => {
             let mut input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(filter)))?;
-            let schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
-            let predicate = expand_filter(predicate, input, ctxt.lp_arena, ctxt.opt_flags)
-                .map_err(|e| e.context(failed_here!(filter)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
+            let mut out = Vec::with_capacity(1);
+            expr_expansion::expand_expression(
+                &predicate,
+                &PlHashSet::default(),
+                input_schema.as_ref().as_ref(),
+                &mut out,
+                &mut ctxt.opt_flags,
+            )?;
+
+            let predicate = match out.len() {
+                1 => {
+                    // all good
+                    out.pop().unwrap()
+                },
+                0 => {
+                    let msg = "The predicate expanded to zero expressions. \
+                            This may for example be caused by a regex not matching column names or \
+                            a column dtype match not hitting any dtypes in the DataFrame";
+                    polars_bail!(ComputeError: msg);
+                },
+                _ => {
+                    let mut expanded = String::new();
+                    for e in out.iter().take(5) {
+                        expanded.push_str(&format!("\t{e:?},\n"))
+                    }
+                    // pop latest comma
+                    expanded.pop();
+                    if out.len() > 5 {
+                        expanded.push_str("\t...\n")
+                    }
+
+                    let msg = if cfg!(feature = "python") {
+                        format!(
+                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                                This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
+                        )
+                    } else {
+                        format!(
+                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                                This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
+                        )
+                    };
+                    polars_bail!(ComputeError: msg)
+                },
+            };
             let predicate_ae = to_expr_ir(
                 predicate.clone(),
                 ctxt.expr_arena,
-                &schema,
+                &input_schema,
                 ctxt.opt_flags.contains(OptFlags::EAGER),
             )?;
 
@@ -988,71 +1031,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         },
     };
     Ok(ctxt.lp_arena.add(v))
-}
-
-fn expand_filter(
-    predicate: Expr,
-    input: Node,
-    lp_arena: &Arena<IR>,
-    opt_flags: &mut OptFlags,
-) -> PolarsResult<Expr> {
-    let schema = lp_arena.get(input).schema(lp_arena);
-    let predicate = if has_expr(&predicate, |e| match e {
-        Expr::Column(name) => is_regex_projection(name),
-        Expr::Selector(_) | Expr::RenameAlias { .. } => true,
-        #[cfg(feature = "dtype-struct")]
-        Expr::Field(_)
-        | Expr::Function {
-            function: FunctionExpr::StructExpr(StructFunction::SelectFields(_)),
-            ..
-        } => true,
-        _ => false,
-    }) {
-        let mut rewritten =
-            rewrite_projections(vec![predicate], &PlHashSet::default(), &schema, opt_flags)?;
-        match rewritten.len() {
-            1 => {
-                // all good
-                rewritten.pop().unwrap()
-            },
-            0 => {
-                let msg = "The predicate expanded to zero expressions. \
-                        This may for example be caused by a regex not matching column names or \
-                        a column dtype match not hitting any dtypes in the DataFrame";
-                polars_bail!(ComputeError: msg);
-            },
-            _ => {
-                let mut expanded = String::new();
-                for e in rewritten.iter().take(5) {
-                    expanded.push_str(&format!("\t{e:?},\n"))
-                }
-                // pop latest comma
-                expanded.pop();
-                if rewritten.len() > 5 {
-                    expanded.push_str("\t...\n")
-                }
-
-                let msg = if cfg!(feature = "python") {
-                    format!(
-                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
-                    )
-                } else {
-                    format!(
-                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
-                    )
-                };
-                polars_bail!(ComputeError: msg)
-            },
-        }
-    } else {
-        predicate
-    };
-    expr_to_leaf_column_names_iter(&predicate)
-        .try_for_each(|c| schema.try_index_of(&c).and(Ok(())))?;
-
-    Ok(predicate)
 }
 
 fn resolve_with_columns(
