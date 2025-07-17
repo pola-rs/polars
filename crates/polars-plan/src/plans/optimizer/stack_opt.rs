@@ -3,7 +3,7 @@ use polars_core::schema::Schema;
 
 use crate::plans::aexpr::AExpr;
 use crate::plans::ir::IR;
-use crate::plans::{get_input, get_schema};
+use crate::plans::{get_input, get_input_schema};
 use crate::prelude::{Arena, Node};
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion
@@ -54,7 +54,7 @@ impl StackOptimizer {
                     exprs.push(expr_ir.node());
                 }
 
-                let input_schema = get_schema(lp_arena, current_node);
+                let input_schema = get_input_schema(lp_arena, current_node);
                 let mut ctx = OptimizeExprContext::default();
                 #[cfg(feature = "python")]
                 {

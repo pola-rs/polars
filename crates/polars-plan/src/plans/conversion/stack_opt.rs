@@ -94,7 +94,7 @@ impl ConversionOptimizer {
         }
 
         // process the expressions on the stack and apply optimizations.
-        let schema = get_schema(ir_arena, current_ir_node);
+        let schema = ir_arena.get(current_ir_node).schema(&ir_arena);
         let plan = ir_arena.get(current_ir_node);
         let mut ctx = OptimizeExprContext {
             in_filter: matches!(plan, IR::Filter { .. }),
@@ -144,6 +144,10 @@ impl ConversionOptimizer {
             } else {
                 &self.schemas[schema_idx - 1]
             };
+
+            dbg!(&self.schemas);
+            dbg!(schema);
+            dbg!(schema_idx);
 
             if let Some(rule) = &mut self.simplify {
                 while let Some(x) =
