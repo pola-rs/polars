@@ -392,7 +392,7 @@ macro_rules! polars_err {
     };
     (opidx = $op:expr, idx = $idx:expr, $arg:expr) => {
         $crate::polars_err!(
-            InvalidOperation: "{} operation not supported for dtype `{}` as argument {}", $op, $arg, $idx
+            InvalidOperation: "`{}` operation not supported for dtype `{}` as argument {}", $op, $arg, $idx
         )
     };
     (oos = $($tt:tt)+) => {
