@@ -208,9 +208,7 @@ def test_linear_space_num_samples_expr() -> None:
 
 def test_linear_space_invalid_num_samples_expr() -> None:
     lf = pl.LazyFrame({"x": [1, 2, 3]})
-    with pytest.raises(
-        ComputeError, match="`num_samples` must contain exactly one value, got 3 values"
-    ):
+    with pytest.raises(ShapeError):
         lf.select(pl.linear_space(0, 1, pl.col("x"))).collect()
 
 

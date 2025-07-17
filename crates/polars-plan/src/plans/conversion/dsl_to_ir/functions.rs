@@ -583,15 +583,22 @@ pub(super) fn convert_functions(
         F::Range(range_function) => I::Range(match range_function {
             RangeFunction::IntRange { step, dtype } => {
                 let dtype = dtype.into_datatype(ctx.schema)?;
-                polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: '{dtype}'");
+                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `int_range`");
+                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar stop passed to `int_range`");
+                polars_ensure!(dtype.is_integer(), SchemaMismatch: "non-integer `dtype` passed to `int_range`: '{dtype}'");
                 IRRangeFunction::IntRange { step, dtype }
             },
             RangeFunction::IntRanges { dtype } => {
                 let dtype = dtype.into_datatype(ctx.schema)?;
-                polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_ranges`: '{dtype}'");
+                polars_ensure!(dtype.is_integer(), SchemaMismatch: "non-integer `dtype` passed to `int_ranges`: '{dtype}'");
                 IRRangeFunction::IntRanges { dtype }
             },
-            RangeFunction::LinearSpace { closed } => IRRangeFunction::LinearSpace { closed },
+            RangeFunction::LinearSpace { closed } => {
+                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `linear_space`");
+                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `linear_space`");
+                polars_ensure!(e[2].is_scalar(ctx.arena), ShapeMismatch: "non-scalar num_samples passed to `linear_space`");
+                IRRangeFunction::LinearSpace { closed }
+            },
             RangeFunction::LinearSpaces {
                 closed,
                 array_width,
@@ -601,6 +608,8 @@ pub(super) fn convert_functions(
             },
             #[cfg(feature = "dtype-date")]
             RangeFunction::DateRange { interval, closed } => {
+                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `date_range`");
+                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `date_range`");
                 IRRangeFunction::DateRange { interval, closed }
             },
             #[cfg(feature = "dtype-date")]
@@ -613,11 +622,15 @@ pub(super) fn convert_functions(
                 closed,
                 time_unit,
                 time_zone,
-            } => IRRangeFunction::DatetimeRange {
-                interval,
-                closed,
-                time_unit,
-                time_zone,
+            } => {
+                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `datetime_range`");
+                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `datetime_range`");
+                IRRangeFunction::DatetimeRange {
+                    interval,
+                    closed,
+                    time_unit,
+                    time_zone,
+                }
             },
             #[cfg(feature = "dtype-datetime")]
             RangeFunction::DatetimeRanges {
@@ -633,6 +646,8 @@ pub(super) fn convert_functions(
             },
             #[cfg(feature = "dtype-time")]
             RangeFunction::TimeRange { interval, closed } => {
+                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `time_range`");
+                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `time_range`");
                 IRRangeFunction::TimeRange { interval, closed }
             },
             #[cfg(feature = "dtype-time")]
