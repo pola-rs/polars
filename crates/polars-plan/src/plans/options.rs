@@ -133,6 +133,10 @@ impl FunctionFlags {
         self.contains(Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING)
     }
 
+    pub fn is_row_separable(self) -> bool {
+        self.contains(Self::ROW_SEPARABLE)
+    }
+
     pub fn is_length_preserving(self) -> bool {
         self.contains(Self::LENGTH_PRESERVING)
     }
@@ -196,6 +200,10 @@ impl FunctionOptions {
 
     pub fn is_length_preserving(&self) -> bool {
         self.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+    }
+
+    pub fn is_row_separable(&self) -> bool {
+        self.flags.is_row_separable()
     }
 
     pub fn returns_scalar(&self) -> bool {
