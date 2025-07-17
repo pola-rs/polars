@@ -3620,3 +3620,12 @@ def test_join_filter_pushdown_iejoin_cse_23469() -> None:
     assert_frame_equal(
         q.collect().sort(pl.all()), pl.DataFrame({"x": [1, 2, 3], "y": [1, 2, 3]})
     )
+
+
+def test_join_cast_type_coercion_23236() -> None:
+    lhs = pl.LazyFrame([{"name": "a"}]).rename({"name": "newname"})
+    rhs = pl.LazyFrame([{"name": "a"}])
+
+    q = lhs.join(rhs, left_on=pl.col("newname").cast(pl.String), right_on="name")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"newname": "a", "name": "a"}))
