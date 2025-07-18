@@ -138,7 +138,7 @@ impl Column {
     /// on it, however e.g. aggregations will return unspecified results.
     pub fn get_backing_series(&self) -> Series {
         match self {
-            Column::Series(s) => (&**s).clone(),
+            Column::Series(s) => (**s).clone(),
             Column::Partitioned(s) => s.partitions().clone(),
             Column::Scalar(s) => s.as_single_value_series(),
         }
