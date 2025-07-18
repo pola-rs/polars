@@ -18,6 +18,7 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
@@ -264,15 +265,15 @@ impl SampleState {
         mut recv: Receiver<Morsel>,
         morsels: &mut Vec<Morsel>,
         len: &mut usize,
-        this_final_len: Arc<AtomicUsize>,
-        other_final_len: Arc<AtomicUsize>,
+        this_final_len: Arc<RelaxedCell<usize>>,
+        other_final_len: Arc<RelaxedCell<usize>>,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
             if *len >= *JOIN_SAMPLE_LIMIT
                 || *len
                     >= other_final_len
-                        .load(Ordering::Relaxed)
+                        .load()
                         .saturating_mul(LOPSIDED_SAMPLE_FACTOR)
             {
                 morsel.source_token().stop();
@@ -281,7 +282,7 @@ impl SampleState {
             drop(morsel.take_consume_token());
             morsels.push(morsel);
         }
-        this_final_len.store(*len, Ordering::Relaxed);
+        this_final_len.store(*len);
         Ok(())
     }
 
@@ -1420,12 +1421,12 @@ impl ComputeNode for EquiJoinNode {
         match &mut self.state {
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                let left_final_len = Arc::new(AtomicUsize::new(if recv_ports[0].is_none() {
+                let left_final_len = Arc::new(RelaxedCell::from(if recv_ports[0].is_none() {
                     sample_state.left_len
                 } else {
                     usize::MAX
                 }));
-                let right_final_len = Arc::new(AtomicUsize::new(if recv_ports[1].is_none() {
+                let right_final_len = Arc::new(RelaxedCell::from(if recv_ports[1].is_none() {
                     sample_state.right_len
                 } else {
                     usize::MAX

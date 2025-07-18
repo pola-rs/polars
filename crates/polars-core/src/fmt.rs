@@ -25,6 +25,7 @@ use comfy_table::presets::*;
 use comfy_table::*;
 use num_traits::{Num, NumCast};
 use polars_error::feature_gated;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::config::*;
 use crate::prelude::*;
@@ -44,14 +45,14 @@ pub enum FloatFmt {
     Full,
 }
 static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
-static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
+static FLOAT_FMT: RelaxedCell<u8> = RelaxedCell::new_u8(FloatFmt::Mixed as u8);
 
-static THOUSANDS_SEPARATOR: AtomicU8 = AtomicU8::new(b'\0');
-static DECIMAL_SEPARATOR: AtomicU8 = AtomicU8::new(b'.');
+static THOUSANDS_SEPARATOR: RelaxedCell<u8> = RelaxedCell::new_u8(b'\0');
+static DECIMAL_SEPARATOR: RelaxedCell<u8> = RelaxedCell::new_u8(b'.');
 
 // Numeric formatting getters
 pub fn get_float_fmt() -> FloatFmt {
-    match FLOAT_FMT.load(Ordering::Relaxed) {
+    match FLOAT_FMT.load() {
         0 => FloatFmt::Mixed,
         1 => FloatFmt::Full,
         _ => panic!(),
@@ -61,10 +62,10 @@ pub fn get_float_precision() -> Option<usize> {
     *FLOAT_PRECISION.read().unwrap()
 }
 pub fn get_decimal_separator() -> char {
-    DECIMAL_SEPARATOR.load(Ordering::Relaxed) as char
+    DECIMAL_SEPARATOR.load() as char
 }
 pub fn get_thousands_separator() -> String {
-    let sep = THOUSANDS_SEPARATOR.load(Ordering::Relaxed) as char;
+    let sep = THOUSANDS_SEPARATOR.load() as char;
     if sep == '\0' {
         "".to_string()
     } else {
@@ -78,16 +79,16 @@ pub fn get_trim_decimal_zeros() -> bool {
 
 // Numeric formatting setters
 pub fn set_float_fmt(fmt: FloatFmt) {
-    FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
+    FLOAT_FMT.store(fmt as u8)
 }
 pub fn set_float_precision(precision: Option<usize>) {
     *FLOAT_PRECISION.write().unwrap() = precision;
 }
 pub fn set_decimal_separator(dec: Option<char>) {
-    DECIMAL_SEPARATOR.store(dec.unwrap_or('.') as u8, Ordering::Relaxed)
+    DECIMAL_SEPARATOR.store(dec.unwrap_or('.') as u8)
 }
 pub fn set_thousands_separator(sep: Option<char>) {
-    THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8, Ordering::Relaxed)
+    THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8)
 }
 #[cfg(feature = "dtype-decimal")]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {

@@ -18,6 +18,7 @@ use polars_parquet::write::{
 };
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::metrics::WriteMetrics;
 use super::{
@@ -44,7 +45,7 @@ pub struct ParquetSinkNode {
     column_options: Vec<ColumnWriteOptions>,
     cloud_options: Option<CloudOptions>,
 
-    file_size: Arc<AtomicU64>,
+    file_size: Arc<RelaxedCell<u64>>,
     metrics: Arc<Mutex<Option<WriteMetrics>>>,
 }
 
@@ -78,7 +79,7 @@ impl ParquetSinkNode {
             column_options,
             cloud_options,
 
-            file_size: Arc::new(AtomicU64::new(0)),
+            file_size: Arc::default(),
             metrics,
         })
     }
@@ -297,7 +298,7 @@ impl SinkNode for ParquetSinkNode {
             file.sync_on_close(sink_options.sync_on_close)?;
             file.close()?;
 
-            output_file_size.store(file_size, Ordering::Relaxed);
+            output_file_size.store(file_size);
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {
@@ -308,7 +309,7 @@ impl SinkNode for ParquetSinkNode {
     }
 
     fn get_metrics(&self) -> PolarsResult<Option<WriteMetrics>> {
-        let file_size = self.file_size.load(Ordering::Relaxed);
+        let file_size = self.file_size.load();
         let metrics = self.metrics.lock().unwrap().take();
 
         Ok(metrics.map(|mut m| {

@@ -1,8 +1,8 @@
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use polars_core::frame::DataFrame;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_primitives::wait_group::WaitToken;
 
@@ -57,22 +57,22 @@ impl MorselSeq {
 /// to stop with passing new morsels this execution phase.
 #[derive(Clone, Debug)]
 pub struct SourceToken {
-    stop: Arc<AtomicBool>,
+    stop: Arc<RelaxedCell<bool>>,
 }
 
 impl SourceToken {
     pub fn new() -> Self {
         Self {
-            stop: Arc::new(AtomicBool::new(false)),
+            stop: Arc::default(),
         }
     }
 
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true);
     }
 
     pub fn stop_requested(&self) -> bool {
-        self.stop.load(Ordering::Relaxed)
+        self.stop.load()
     }
 }
 

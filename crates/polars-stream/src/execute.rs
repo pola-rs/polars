@@ -1,11 +1,11 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 use polars_core::POOL;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
+use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::async_executor;
@@ -125,7 +125,7 @@ fn run_subgraph(
     graph: &mut Graph,
     nodes: &PlHashSet<GraphNodeKey>,
     pipes: &[LogicalPipeKey],
-    pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<AtomicU64>>,
+    pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
