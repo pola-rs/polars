@@ -88,6 +88,7 @@ def test_to_datetime_precision_with_time_unit(
     ("tz_string", "timedelta"),
     [("+01:00", timedelta(minutes=60)), ("-01:30", timedelta(hours=-1, minutes=-30))],
 )
+@pytest.mark.may_fail_cloud  # reason: to_datetime without dtype is eager construct
 def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
     times = pl.DataFrame(
         {
@@ -285,6 +286,7 @@ def test_to_datetime_patterns_single(time_string: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+@pytest.mark.may_fail_cloud  # reason: to_datetime without dtype is eager construct
 def test_infer_tz_aware_time_unit(time_unit: TimeUnit) -> None:
     result = pl.Series(["2020-01-02T04:00:00+02:00"]).str.to_datetime(
         time_unit=time_unit
@@ -294,6 +296,7 @@ def test_infer_tz_aware_time_unit(time_unit: TimeUnit) -> None:
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+@pytest.mark.may_fail_cloud  # reason: to_datetime without dtype is eager construct
 def test_infer_tz_aware_with_utc(time_unit: TimeUnit) -> None:
     result = pl.Series(["2020-01-02T04:00:00+02:00"]).str.to_datetime(
         time_unit=time_unit
@@ -542,6 +545,7 @@ def test_to_datetime_tz_aware_strptime(ts: str, fmt: str, expected: datetime) ->
     assert result == expected
 
 
+@pytest.mark.may_fail_cloud  # reason: to_datetime without dtype is eager construct
 @pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
 def test_crossing_dst(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]

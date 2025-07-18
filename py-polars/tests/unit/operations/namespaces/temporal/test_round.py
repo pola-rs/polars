@@ -24,6 +24,7 @@ def test_round_by_day_datetime(time_zone: str | None) -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: to_datetime without dtype is eager construct
 def test_round_ambiguous() -> None:
     t = (
         pl.datetime_range(
