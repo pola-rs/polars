@@ -54,7 +54,8 @@ impl<'a> IRBuilder<'a> {
     /// An escape hatch to add an `Expr`. Working with IR is preferred.
     pub fn add_expr(&mut self, expr: Expr) -> PolarsResult<ExprIR> {
         let schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        to_expr_ir(expr, self.expr_arena, &schema, false)
+        let mut ctx = ExprToIRContext::new(self.expr_arena, &schema);
+        to_expr_ir(expr, &mut ctx)
     }
 
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {

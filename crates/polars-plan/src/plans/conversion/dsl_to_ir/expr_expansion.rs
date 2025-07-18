@@ -291,10 +291,7 @@ fn expand_expression_rec(
                 |e| Expr::Alias(Arc::new(e), name.clone()),
             )?
         },
-        Expr::Column(name) => {
-            schema.try_index_of(name)?;
-            out.push(expr.clone());
-        },
+        Expr::Column(_) => out.push(expr.clone()),
         Expr::Selector(selector) => {
             let columns = selector.into_columns(schema, ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));

@@ -19,7 +19,7 @@ mod join;
 mod scans;
 mod utils;
 pub use expr_expansion::{is_regex_projection, prepare_projection};
-pub use expr_to_ir::to_expr_ir;
+pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
 use utils::DslConversionContext;
 
@@ -133,12 +133,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map_err(|e| e.context(failed_here!(vertical concat)))?;
 
             if args.diagonal {
-                inputs = concat::convert_diagonal_concat(
-                    inputs,
-                    ctxt.lp_arena,
-                    ctxt.expr_arena,
-                    ctxt.opt_flags,
-                )?;
+                inputs = concat::convert_diagonal_concat(inputs, ctxt.lp_arena, ctxt.expr_arena)?;
             }
 
             if args.to_supertypes {
@@ -233,9 +228,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
             let predicate_ae = to_expr_ir(
                 predicate.clone(),
-                ctxt.expr_arena,
-                &input_schema,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
             )?;
 
             if ctxt.opt_flags.predicate_pushdown() {
@@ -307,9 +304,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let eirs = to_expr_irs(
                 exprs,
-                ctxt.expr_arena,
-                &input_schema,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
             )?;
             ctxt.conversion_optimizer
                 .fill_scratch(&eirs, ctxt.expr_arena);
@@ -632,9 +631,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let exprs = to_expr_irs(
                 exprs,
-                ctxt.expr_arena,
-                &input_schema,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &input_schema,
+                    ctxt.opt_flags,
+                ),
             )?;
 
             ctxt.conversion_optimizer
@@ -796,9 +797,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     )?);
                     let eirs = to_expr_irs(
                         exprs,
-                        ctxt.expr_arena,
-                        &input_schema,
-                        ctxt.opt_flags.contains(OptFlags::EAGER),
+                        &mut ExprToIRContext::new_with_opt_eager(
+                            ctxt.expr_arena,
+                            &input_schema,
+                            ctxt.opt_flags,
+                        ),
                     )?;
 
                     ctxt.conversion_optimizer
@@ -861,9 +864,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     let expr = to_expr_irs(
                         expr,
-                        ctxt.expr_arena,
-                        &input_schema,
-                        ctxt.opt_flags.contains(OptFlags::EAGER),
+                        &mut ExprToIRContext::new_with_opt_eager(
+                            ctxt.expr_arena,
+                            &input_schema,
+                            ctxt.opt_flags,
+                        ),
                     )?;
                     ctxt.conversion_optimizer
                         .fill_scratch(&expr, ctxt.expr_arena);
@@ -932,9 +937,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         } => {
                             let eirs = to_expr_irs(
                                 key_exprs,
-                                ctxt.expr_arena,
-                                &input_schema,
-                                ctxt.opt_flags.contains(OptFlags::EAGER),
+                                &mut ExprToIRContext::new_with_opt_eager(
+                                    ctxt.expr_arena,
+                                    &input_schema,
+                                    ctxt.opt_flags,
+                                ),
                             )?;
                             ctxt.conversion_optimizer
                                 .fill_scratch(&eirs, ctxt.expr_arena);
@@ -950,9 +957,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         } => {
                             let eirs = to_expr_irs(
                                 key_exprs,
-                                ctxt.expr_arena,
-                                &input_schema,
-                                ctxt.opt_flags.contains(OptFlags::EAGER),
+                                &mut ExprToIRContext::new_with_opt_eager(
+                                    ctxt.expr_arena,
+                                    &input_schema,
+                                    ctxt.opt_flags,
+                                ),
                             )?;
                             ctxt.conversion_optimizer
                                 .fill_scratch(&eirs, ctxt.expr_arena);
@@ -972,9 +981,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 .map(|s| {
                                     let expr = to_expr_ir(
                                         s.expr,
-                                        ctxt.expr_arena,
-                                        &input_schema,
-                                        ctxt.opt_flags.contains(OptFlags::EAGER),
+                                        &mut ExprToIRContext::new_with_opt_eager(
+                                            ctxt.expr_arena,
+                                            &input_schema,
+                                            ctxt.opt_flags,
+                                        ),
                                     )?;
                                     ctxt.conversion_optimizer
                                         .push_scratch(expr.node(), ctxt.expr_arena);
@@ -1047,9 +1058,7 @@ fn resolve_with_columns(
 
     let eirs = to_expr_irs(
         exprs,
-        expr_arena,
-        &input_schema,
-        opt_flags.contains(OptFlags::EAGER),
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
     )?;
     for eir in eirs.iter() {
         let field = eir.field(&input_schema, Context::Default, expr_arena)?;
@@ -1124,9 +1133,14 @@ fn resolve_group_by(
     let aggs_schema = expressions_to_schema(&aggs, input_schema, Context::Aggregation)?;
     output_schema.merge(aggs_schema);
 
-    let in_eager = opt_flags.contains(OptFlags::EAGER);
-    let keys = to_expr_irs(keys, expr_arena, input_schema, in_eager)?;
-    let aggs = to_expr_irs(aggs, expr_arena, input_schema, in_eager)?;
+    let keys = to_expr_irs(
+        keys,
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
+    )?;
+    let aggs = to_expr_irs(
+        aggs,
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
+    )?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
 

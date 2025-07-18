@@ -11,7 +11,6 @@ pub(super) fn convert_diagonal_concat(
     mut inputs: Vec<Node>,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    opt_flags: &OptFlags,
 ) -> PolarsResult<Vec<Node>> {
     let schemas = nodes_to_schemas(&inputs, lp_arena);
 
@@ -37,23 +36,20 @@ pub(super) fn convert_diagonal_concat(
         if lf_schema.is_empty() {
             has_empty = true;
         }
-        let mut columns_to_add = vec![];
 
+        let mut columns_to_add = vec![];
         for (name, dtype) in total_schema.iter() {
             // If a name from Total Schema is not present - append
             if lf_schema.get_field(name).is_none() {
-                columns_to_add.push(NULL.lit().cast(dtype.clone()).alias(name.clone()))
+                columns_to_add.push(
+                    AExprBuilder::lit_scalar(Scalar::null(dtype.clone()), expr_arena)
+                        .expr_ir(name.clone()),
+                )
             }
         }
-        let expr = to_expr_irs(
-            columns_to_add,
-            expr_arena,
-            &Schema::default(),
-            opt_flags.contains(OptFlags::EAGER),
-        )?;
         *node = IRBuilder::new(*node, expr_arena, lp_arena)
             // Add the missing columns
-            .with_columns(expr, Default::default())
+            .with_columns(columns_to_add, Default::default())
             // Now, reorder to match schema.
             .project_simple(total_schema.iter_names().map(|v| v.as_str()))
             .unwrap()
@@ -104,9 +100,7 @@ pub(super) fn convert_st_union(
             if !exprs.is_empty() {
                 let expr = to_expr_irs(
                     exprs,
-                    expr_arena,
-                    &input_schema,
-                    opt_flags.contains(OptFlags::EAGER),
+                    &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
                 )?;
                 let lp = IRBuilder::new(*input, expr_arena, lp_arena)
                     .with_columns(expr, Default::default())

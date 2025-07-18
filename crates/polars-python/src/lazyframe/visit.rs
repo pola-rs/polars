@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use polars::prelude::PolarsError;
 use polars::prelude::python_dsl::PythonScanSource;
-use polars_plan::plans::{Context, IR, to_expr_ir};
+use polars_plan::plans::{Context, ExprToIRContext, IR, to_expr_ir};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
@@ -198,8 +198,10 @@ impl NodeTraverser {
             expressions
                 .into_iter()
                 .map(|e| {
+                    let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
+                    ctx.allow_unknown = true;
                     // NOTE: Probably throwing away the output names here is not okay?
-                    to_expr_ir(e.inner, &mut expr_arena, &schema, true)
+                    to_expr_ir(e.inner, &mut ctx)
                         .map_err(PyPolarsErr::from)
                         .map(|v| v.node().0)
                 })

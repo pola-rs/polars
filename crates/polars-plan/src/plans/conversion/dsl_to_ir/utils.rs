@@ -23,9 +23,7 @@ pub(super) fn expand_expressions(
     let exprs = rewrite_projections(exprs, &Default::default(), &schema, opt_flags)?;
     to_expr_irs(
         exprs,
-        expr_arena,
-        &schema,
-        opt_flags.contains(OptFlags::EAGER),
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, &schema, opt_flags),
     )
 }
 
