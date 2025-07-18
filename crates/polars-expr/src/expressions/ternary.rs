@@ -71,6 +71,7 @@ fn finish_as_iters<'a>(
     }
 
     ac_truthy.with_agg_state(AggState::AggregatedList(out));
+    ac_truthy.with_update_groups(UpdateGroups::WithSeriesLen);
 
     Ok(ac_truthy)
 }
