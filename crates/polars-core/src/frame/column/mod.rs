@@ -135,7 +135,7 @@ impl Column {
     /// # Note
     /// This method is safe to use. However, care must be taken when operating on the returned
     /// `Series` to ensure result correctness. E.g. It is suitable to perform elementwise operations
-    /// on it, however e.g. aggregations will return unspecified results.
+    /// on it, however e.g. aggregations may return unspecified results.
     pub fn get_backing_series(&self) -> Series {
         match self {
             Column::Series(s) => (**s).clone(),
