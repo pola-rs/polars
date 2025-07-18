@@ -126,7 +126,10 @@ pub(super) fn to_aexpr_impl(
             let output_name = lv.output_column_name().clone();
             (AExpr::Literal(lv), output_name)
         },
-        Expr::Column(name) => (AExpr::Column(name.clone()), name),
+        Expr::Column(name) => {
+            ctx.schema.try_index_of(&name)?;
+            (AExpr::Column(name.clone()), name)
+        },
         Expr::BinaryExpr { left, op, right } => {
             let (l, output_name) = recurse_arc!(left)?;
             let (r, _) = recurse_arc!(right)?;
@@ -424,6 +427,17 @@ pub(super) fn to_aexpr_impl(
                     .get(expr)
                     .to_dtype(ctx.schema, Context::Default, ctx.arena)?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
+
+            for e in evaluation.as_ref().into_iter() {
+                if let Expr::Column(name) = e {
+                    polars_ensure!(
+                        name.is_empty(),
+                        ComputeError:
+                        "named columns are not allowed in `eval` functions; consider using `element`"
+                    );
+                }
+            }
+
             let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: None,
@@ -434,17 +448,7 @@ pub(super) fn to_aexpr_impl(
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 
             match variant {
-                EvalVariant::List => {
-                    for (_, e) in ArenaExprIter::iter(ctx.arena, evaluation) {
-                        if let AExpr::Column(name) = e {
-                            polars_ensure!(
-                                name.is_empty(),
-                                ComputeError:
-                                "named columns are not allowed in `list.eval`; consider using `element` or `col(\"\")`"
-                            );
-                        }
-                    }
-                },
+                EvalVariant::List => {},
                 EvalVariant::Cumulative { .. } => {
                     polars_ensure!(
                         is_scalar_ae(evaluation, ctx.arena),

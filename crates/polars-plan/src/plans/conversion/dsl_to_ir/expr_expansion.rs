@@ -291,7 +291,10 @@ fn expand_expression_rec(
                 |e| Expr::Alias(Arc::new(e), name.clone()),
             )?
         },
-        Expr::Column(_) => out.push(expr.clone()),
+        Expr::Column(name) => {
+            schema.try_index_of(name)?;
+            out.push(expr.clone());
+        },
         Expr::Selector(selector) => {
             let columns = selector.into_columns(schema, ignored_selector_columns)?;
             out.extend(columns.into_iter().map(Expr::Column));
@@ -802,6 +805,17 @@ fn expand_expression_rec(
             let element_dtype = variant.element_dtype(&expr_dtype)?;
             let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let schemas = &[schema.clone(), evaluation_schema];
+
+            // Perform this before schema resolution so that we can better error messages.
+            for e in evaluation.as_ref().into_iter() {
+                if let Expr::Column(name) = e {
+                    polars_ensure!(
+                        name.is_empty(),
+                        ComputeError:
+                        "named columns are not allowed in `eval` functions; consider using `element`"
+                    );
+                }
+            }
 
             _ = expand_expression_by_combination_with_schemas(
                 &[expr.as_ref().clone(), evaluation.as_ref().clone()],
