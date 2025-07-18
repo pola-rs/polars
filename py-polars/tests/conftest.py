@@ -136,19 +136,19 @@ def _patched_cloud(
             def _(
                 src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
-                src = prepare_scan_sources(src)
+                src = prepare_scan_sources(src)  # type: ignore[assignment]
                 return prev_scan(src, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
 
-        def create_read(ext: str) -> Callable[..., pl.LazyFrame]:
+        def create_read(ext: str) -> Callable[..., pl.DataFrame]:
             prev_read = getattr(pl, f"read_{ext}")
             prev_read = cast("Callable[..., pl.DataFrame]", prev_read)
 
             def _(
                 src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.DataFrame:
-                src = prepare_scan_sources(src)
+                src = prepare_scan_sources(src)  # type: ignore[assignment]
                 return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
