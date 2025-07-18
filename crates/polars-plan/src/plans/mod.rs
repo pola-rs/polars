@@ -26,6 +26,7 @@ pub mod python;
 pub use python::*;
 pub mod prune;
 mod schema;
+mod seed;
 pub mod visitor;
 
 pub use aexpr::*;
@@ -40,6 +41,7 @@ pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
 pub use schema::*;
+pub use seed::*;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum Context {

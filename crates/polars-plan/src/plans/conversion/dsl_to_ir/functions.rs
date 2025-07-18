@@ -156,7 +156,7 @@ pub(super) fn convert_functions(
                     is_fraction,
                     with_replacement,
                     shuffle,
-                    seed,
+                    seed:  Seed::from_optional(seed),
                 },
                 L::Slice => IL::Slice,
                 L::Shift => IL::Shift,
@@ -901,7 +901,7 @@ pub(super) fn convert_functions(
                         shuffle,
                     },
                 },
-                seed,
+                seed: Seed::from_optional(seed),
             }
         },
         F::SetSortedFlag(is_sorted) => I::SetSortedFlag(is_sorted),

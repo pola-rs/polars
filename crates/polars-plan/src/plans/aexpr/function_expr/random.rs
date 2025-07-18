@@ -21,16 +21,23 @@ impl Hash for IRRandomMethod {
     }
 }
 
-pub(super) fn shuffle(s: &Column, seed: Option<u64>) -> PolarsResult<Column> {
+pub(super) fn shuffle(
+    s: &Column,
+    state: &UdfExecutionState,
+    seed: Seed,
+) -> PolarsResult<Column> {
+    let seed = seed.get(state.execution_seed);
     Ok(s.shuffle(seed))
 }
 
 pub(super) fn sample_frac(
     s: &[Column],
+    state: &UdfExecutionState,
     with_replacement: bool,
     shuffle: bool,
-    seed: Option<u64>,
+    seed: Seed,
 ) -> PolarsResult<Column> {
+    let seed = seed.get(state.execution_seed);
     let src = &s[0];
     let frac_s = &s[1];
 
@@ -50,10 +57,12 @@ pub(super) fn sample_frac(
 
 pub(super) fn sample_n(
     s: &[Column],
+    state: &UdfExecutionState,
     with_replacement: bool,
     shuffle: bool,
-    seed: Option<u64>,
+    seed: Seed,
 ) -> PolarsResult<Column> {
+    let seed = seed.get(state.execution_seed);
     let src = &s[0];
     let n_s = &s[1];
 

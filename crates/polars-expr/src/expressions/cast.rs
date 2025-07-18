@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 
@@ -11,7 +9,6 @@ pub struct CastExpr {
     pub(crate) dtype: DataType,
     pub(crate) expr: Expr,
     pub(crate) options: CastOptions,
-    pub(crate) inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl CastExpr {
@@ -28,18 +25,6 @@ impl PhysicalExpr for CastExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let column = self.input.evaluate(df, state)?;
         self.finish(&column)
-    }
-
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        self.inlined_eval
-            .get_or_init(|| {
-                let depth_limit = depth_limit.checked_sub(1)?;
-                self.input
-                    .evaluate_inline_impl(depth_limit)
-                    .filter(|x| x.len() == 1)
-                    .and_then(|x| self.finish(&x).ok())
-            })
-            .clone()
     }
 
     #[allow(clippy::ptr_arg)]
