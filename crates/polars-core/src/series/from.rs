@@ -20,6 +20,16 @@ use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
+    pub fn from_array<A: ParameterFreeDtypeStaticArray>(name: PlSmallStr, array: A) -> Self {
+        unsafe {
+            Self::from_chunks_and_dtype_unchecked(
+                name,
+                vec![Box::new(array)],
+                &DataType::from_arrow_dtype(&A::get_dtype()),
+            )
+        }
+    }
+
     pub fn from_chunk_and_dtype(
         name: PlSmallStr,
         chunk: ArrayRef,
