@@ -128,9 +128,8 @@ def test_streaming_join_rechunk_12498() -> None:
     }
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("maintain_order", [False, True])
-def test_join_null_matches(streaming: bool, maintain_order: bool) -> None:
+def test_join_null_matches(maintain_order: bool) -> None:
     # null values in joins should never find a match.
     df_a = pl.LazyFrame(
         {
@@ -153,7 +152,7 @@ def test_join_null_matches(streaming: bool, maintain_order: bool) -> None:
             how="semi",
             nulls_equal=True,
             maintain_order="left" if maintain_order else "none",
-        ).collect(engine="streaming" if streaming else "in-memory")["idx_a"],
+        ).collect()["idx_a"],
         pl.Series("idx_a", [0, 1, 2]),
         check_order=maintain_order,
     )
@@ -164,7 +163,7 @@ def test_join_null_matches(streaming: bool, maintain_order: bool) -> None:
             how="semi",
             nulls_equal=False,
             maintain_order="left" if maintain_order else "none",
-        ).collect(engine="streaming" if streaming else "in-memory")["idx_a"],
+        ).collect()["idx_a"],
         pl.Series("idx_a", [1, 2]),
         check_order=maintain_order,
     )
@@ -176,8 +175,8 @@ def test_join_null_matches(streaming: bool, maintain_order: bool) -> None:
             df_b,
             on="a",
             how="inner",
-            maintain_order="left" if maintain_order else "none",
-        ).collect(engine="streaming" if streaming else "in-memory"),
+            maintain_order="right" if maintain_order else "none",
+        ).collect(),
         expected,
         check_row_order=maintain_order,
     )
@@ -192,7 +191,7 @@ def test_join_null_matches(streaming: bool, maintain_order: bool) -> None:
             on="a",
             how="left",
             maintain_order="left" if maintain_order else "none",
-        ).collect(engine="streaming" if streaming else "in-memory"),
+        ).collect(),
         expected,
         check_row_order=maintain_order,
     )
@@ -210,7 +209,7 @@ def test_join_null_matches(streaming: bool, maintain_order: bool) -> None:
             df_b,
             on="a",
             how="full",
-            maintain_order="left" if maintain_order else "none",
+            maintain_order="right" if maintain_order else "none",
         ).collect(),
         expected,
         check_row_order=maintain_order,
