@@ -1,9 +1,9 @@
 use std::cmp::Reverse;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::connector::{Receiver, Sender, connector};
@@ -15,7 +15,7 @@ use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 pub struct PhysicalPipe {
     state: State,
-    seq_offset: Arc<AtomicU64>,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 
 enum State {
@@ -88,7 +88,7 @@ impl SendPort<'_> {
     pub fn serial(self) -> Sender<Morsel> {
         match core::mem::replace(&mut self.0.state, State::Invalid) {
             State::SerialReceiver { send, .. } => {
-                if self.0.seq_offset.load(Ordering::Relaxed) == 0 {
+                if self.0.seq_offset.load() == 0 {
                     self.0.state = State::Initialized;
                     send
                 } else {
@@ -126,7 +126,7 @@ impl SendPort<'_> {
                 senders
             },
             State::ParallelReceiver { senders } => {
-                if self.0.seq_offset.load(Ordering::Relaxed) == 0 {
+                if self.0.seq_offset.load() == 0 {
                     self.0.state = State::Initialized;
                     senders
                 } else {
@@ -147,7 +147,7 @@ impl SendPort<'_> {
 }
 
 impl PhysicalPipe {
-    pub fn new(num_pipelines: usize, seq_offset: Arc<AtomicU64>) -> Self {
+    pub fn new(num_pipelines: usize, seq_offset: Arc<RelaxedCell<u64>>) -> Self {
         Self {
             state: State::Uninit { num_pipelines },
             seq_offset,
@@ -201,7 +201,7 @@ impl PhysicalPipe {
                         maintain_order,
                     );
 
-                let seq_offset = self.seq_offset.load(Ordering::Relaxed);
+                let seq_offset = self.seq_offset.load();
                 handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Some(Priority(_, mut morsel)) = linearizer.get().await {
                         morsel.set_seq(morsel.seq().offset_by_u64(seq_offset));
@@ -241,7 +241,7 @@ impl PhysicalPipe {
 
                 let arc_seq_offset = self.seq_offset.clone();
                 handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    let mut seq_offset = arc_seq_offset.load(Ordering::Relaxed);
+                    let mut seq_offset = arc_seq_offset.load();
                     let mut prev_orig_seq = None;
 
                     while let Ok(mut morsel) = recv.recv().await {
@@ -262,7 +262,7 @@ impl PhysicalPipe {
                         }
                     }
 
-                    arc_seq_offset.store(seq_offset, Ordering::Relaxed);
+                    arc_seq_offset.store(seq_offset);
 
                     Ok(())
                 }));
@@ -284,7 +284,7 @@ impl PhysicalPipe {
             },
 
             State::NeedsOffset { senders, receivers } => {
-                let seq_offset = self.seq_offset.load(Ordering::Relaxed);
+                let seq_offset = self.seq_offset.load();
                 for (mut send, mut recv) in senders.into_iter().zip(receivers) {
                     handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(mut morsel) = recv.recv().await {

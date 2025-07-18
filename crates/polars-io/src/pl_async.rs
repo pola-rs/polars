@@ -2,10 +2,10 @@ use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 use polars_core::POOL;
 use polars_core::config::{self, verbose};
+use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
 
@@ -98,8 +98,8 @@ enum Optimization {
 struct SemaphoreTuner {
     previous_download_speed: u64,
     last_tune: std::time::Instant,
-    downloaded: AtomicU64,
-    download_time: AtomicU64,
+    downloaded: RelaxedCell<u64>,
+    download_time: RelaxedCell<u64>,
     opt_state: Optimization,
     increments: u32,
 }
@@ -109,8 +109,8 @@ impl SemaphoreTuner {
         Self {
             previous_download_speed: 0,
             last_tune: std::time::Instant::now(),
-            downloaded: AtomicU64::new(0),
-            download_time: AtomicU64::new(0),
+            downloaded: RelaxedCell::from(0),
+            download_time: RelaxedCell::from(0),
             opt_state: Optimization::Step,
             increments: 0,
         }
@@ -123,10 +123,8 @@ impl SemaphoreTuner {
     }
 
     fn add_stats(&self, downloaded_bytes: u64, download_time: u64) {
-        self.downloaded
-            .fetch_add(downloaded_bytes, Ordering::Relaxed);
-        self.download_time
-            .fetch_add(download_time, Ordering::Relaxed);
+        self.downloaded.fetch_add(downloaded_bytes);
+        self.download_time.fetch_add(download_time);
     }
 
     fn increment(&mut self, semaphore: &Semaphore) {
@@ -135,8 +133,8 @@ impl SemaphoreTuner {
     }
 
     fn tune(&mut self, semaphore: &'static Semaphore) -> bool {
-        let bytes_downloaded = self.downloaded.fetch_add(0, Ordering::Relaxed);
-        let time_elapsed = self.download_time.fetch_add(0, Ordering::Relaxed);
+        let bytes_downloaded = self.downloaded.load();
+        let time_elapsed = self.download_time.load();
         let download_speed = bytes_downloaded
             .checked_div(time_elapsed)
             .unwrap_or_default();
@@ -158,7 +156,7 @@ impl SemaphoreTuner {
                 // Decline the step
                 else {
                     self.opt_state = Optimization::Finished;
-                    FINISHED_TUNING.store(true, Ordering::Relaxed);
+                    FINISHED_TUNING.store(true);
                     if verbose() {
                         eprintln!(
                             "concurrency tuner finished after adding {} steps",
@@ -176,8 +174,8 @@ impl SemaphoreTuner {
         false
     }
 }
-static INCR: AtomicU8 = AtomicU8::new(0);
-static FINISHED_TUNING: AtomicBool = AtomicBool::new(false);
+static INCR: RelaxedCell<u64> = RelaxedCell::new_u64(0);
+static FINISHED_TUNING: RelaxedCell<bool> = RelaxedCell::new_bool(false);
 static PERMIT_STORE: std::sync::OnceLock<tokio::sync::RwLock<SemaphoreTuner>> =
     std::sync::OnceLock::new();
 
@@ -186,7 +184,7 @@ fn get_semaphore() -> &'static (Semaphore, u32) {
         let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
             .map(|s| {
                 let budget = s.parse::<usize>().expect("integer");
-                FINISHED_TUNING.store(true, Ordering::Relaxed);
+                FINISHED_TUNING.store(true);
                 budget
             })
             .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
@@ -216,7 +214,7 @@ where
     let now = std::time::Instant::now();
     let res = callable().await;
 
-    if FINISHED_TUNING.load(Ordering::Relaxed) || res.size() == 0 {
+    if FINISHED_TUNING.load() || res.size() == 0 {
         return res;
     }
 
@@ -237,7 +235,7 @@ where
     drop(tuner);
 
     // Reduce locking by letting only 1 in 5 tasks lock the tuner
-    if (INCR.fetch_add(1, Ordering::Relaxed) % 5) != 0 {
+    if (INCR.fetch_add(1) % 5) != 0 {
         return res;
     }
     // Never lock as we will deadlock. This can run under rayon

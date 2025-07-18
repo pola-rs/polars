@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
@@ -11,6 +10,7 @@ use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions}
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -122,7 +122,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
         let (mut retire_tx, retire_rxs) = distributor_channel(self.num_retire_tasks, 1);
 
         // Whether an error has been observed in the retire tasks.
-        let has_error_occurred = Arc::new(AtomicBool::new(false));
+        let has_error_occurred = Arc::new(RelaxedCell::from(false));
 
         // Main Task.
         //
@@ -152,7 +152,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 let mut recv_port = recv_port.serial();
                 'morsel_loop: while let Ok(mut morsel) = recv_port.recv().await {
                     while morsel.df().height() > 0 {
-                        if retire_error.load(Ordering::Relaxed) {
+                        if retire_error.load() {
                             return Ok(());
                         }
 
@@ -269,7 +269,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 while let Ok((mut join_handles, node)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
                         ret.inspect_err(|_| {
-                            has_error_occurred.store(true, Ordering::Relaxed);
+                            has_error_occurred.store(true);
                         })?;
                     }
                     if let Some(metrics) = node.get_metrics()? {

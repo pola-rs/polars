@@ -1,9 +1,8 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::error::*;
+use crate::relaxed_cell::RelaxedCell;
 
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
     (item as *const _ as usize - slice.as_ptr() as usize) / size_of::<T>()
@@ -32,7 +31,7 @@ impl Default for Node {
     }
 }
 
-static ARENA_VERSION: AtomicU32 = AtomicU32::new(0);
+static ARENA_VERSION: RelaxedCell<u32> = RelaxedCell::new_u32(0);
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -84,14 +83,14 @@ impl<T> Arena<T> {
     pub fn new() -> Self {
         Arena {
             items: vec![],
-            version: ARENA_VERSION.fetch_add(1, Ordering::Relaxed),
+            version: ARENA_VERSION.fetch_add(1),
         }
     }
 
     pub fn with_capacity(cap: usize) -> Self {
         Arena {
             items: Vec::with_capacity(cap),
-            version: ARENA_VERSION.fetch_add(1, Ordering::Relaxed),
+            version: ARENA_VERSION.fetch_add(1),
         }
     }
 
@@ -171,7 +170,7 @@ impl<T> Arena<T> {
 
     pub fn clear(&mut self) {
         self.items.clear();
-        self.version = ARENA_VERSION.fetch_add(1, Ordering::Relaxed);
+        self.version = ARENA_VERSION.fetch_add(1);
     }
 }
 

@@ -30,6 +30,7 @@ pub mod pl_str;
 pub mod plpath;
 pub mod priority;
 pub mod regex_cache;
+pub mod relaxed_cell;
 pub mod select;
 pub mod slice;
 pub mod slice_enum;

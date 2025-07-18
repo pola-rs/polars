@@ -18,11 +18,11 @@ use crate::pl_async::{
 mod inner {
     use std::future::Future;
     use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
 
     use object_store::ObjectStore;
     use polars_core::config;
     use polars_error::PolarsResult;
+    use polars_utils::relaxed_cell::RelaxedCell;
 
     use crate::cloud::PolarsObjectStoreBuilder;
 
@@ -33,24 +33,14 @@ mod inner {
     }
 
     /// Polars wrapper around [`ObjectStore`] functionality. This struct is cheaply cloneable.
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct PolarsObjectStore {
         inner: Arc<Inner>,
         /// Avoid contending the Mutex `lock()` until the first re-build.
         initial_store: std::sync::Arc<dyn ObjectStore>,
         /// Used for interior mutability. Doesn't need to be shared with other threads so it's not
         /// inside `Arc<>`.
-        rebuilt: AtomicBool,
-    }
-
-    impl Clone for PolarsObjectStore {
-        fn clone(&self) -> Self {
-            Self {
-                inner: self.inner.clone(),
-                initial_store: self.initial_store.clone(),
-                rebuilt: AtomicBool::new(self.rebuilt.load(std::sync::atomic::Ordering::Relaxed)),
-            }
-        }
+        rebuilt: RelaxedCell<bool>,
     }
 
     impl PolarsObjectStore {
@@ -65,13 +55,13 @@ mod inner {
                     builder,
                 }),
                 initial_store,
-                rebuilt: AtomicBool::new(false),
+                rebuilt: RelaxedCell::from(false),
             }
         }
 
         /// Gets the underlying [`ObjectStore`] implementation.
         pub async fn to_dyn_object_store(&self) -> Arc<dyn ObjectStore> {
-            if !self.rebuilt.load(std::sync::atomic::Ordering::Relaxed) {
+            if !self.rebuilt.load() {
                 self.initial_store.clone()
             } else {
                 self.inner.store.lock().await.clone()
@@ -84,8 +74,7 @@ mod inner {
         ) -> PolarsResult<Arc<dyn ObjectStore>> {
             let mut current_store = self.inner.store.lock().await;
 
-            self.rebuilt
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+            self.rebuilt.store(true);
 
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
