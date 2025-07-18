@@ -47,3 +47,6 @@ async fn main() {
 
 // --8<-- [start:write_parquet]
 // --8<-- [end:write_parquet]
+
+// --8<-- [start:write_file_object]
+// --8<-- [end:write_file_object]
