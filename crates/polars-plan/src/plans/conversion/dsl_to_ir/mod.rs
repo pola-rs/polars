@@ -88,7 +88,7 @@ pub fn to_alp(
 fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node, false)
         .map_err(|e| e.context(format!("'{name}' failed").into()))?;
 
     Ok(lp_node)
