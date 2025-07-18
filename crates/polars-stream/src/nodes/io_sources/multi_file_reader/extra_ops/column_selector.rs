@@ -5,7 +5,7 @@ use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
-use polars_core::series::Series;
+use polars_core::series::{IntoSeries, Series};
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_error::{PolarsResult, polars_bail};
 use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
@@ -105,7 +105,8 @@ impl ColumnTransform {
             TF::StructFieldsMapping { field_selectors } => {
                 use polars_core::prelude::StructChunked;
 
-                let struct_ca = input.struct_().unwrap();
+                let input_s = input.get_backing_series();
+                let struct_ca = input_s.struct_().unwrap();
                 let field_columns: Vec<Column> = struct_ca.fields_as_columns();
 
                 let field_columns: Vec<Column> = field_selectors
@@ -113,22 +114,24 @@ impl ColumnTransform {
                     .map(|x| x.select_from_columns(&field_columns, struct_ca.len()))
                     .collect::<PolarsResult<_>>()?;
 
-                StructChunked::from_columns(
-                    struct_ca.name().clone(),
-                    struct_ca.len(),
-                    &field_columns,
-                )?
-                .with_outer_validity(struct_ca.rechunk_validity())
-                .into_column()
+                input.to_new_from_backing(
+                    StructChunked::from_columns(
+                        struct_ca.name().clone(),
+                        struct_ca.len(),
+                        &field_columns,
+                    )?
+                    .with_outer_validity(struct_ca.rechunk_validity())
+                    .into_series(),
+                )
             },
 
             TF::ListValuesMapping { values_selector } => {
                 use polars_core::prelude::{LargeListArray, ListChunked};
 
-                let list_ca = input.list().unwrap().clone();
+                let input_list_ca = input.get_backing_series().list().unwrap().clone();
 
                 let values_dtype = {
-                    let DataType::List(inner) = list_ca.dtype() else {
+                    let DataType::List(inner) = input_list_ca.dtype() else {
                         unreachable!()
                     };
                     inner.as_ref()
@@ -137,9 +140,9 @@ impl ColumnTransform {
                 let mut values_output_dtype = None;
 
                 let mut out_chunks: Vec<Box<dyn Array>> =
-                    Vec::with_capacity(list_ca.chunks().len());
+                    Vec::with_capacity(input_list_ca.chunks().len());
 
-                for list_arr in list_ca.downcast_iter() {
+                for list_arr in input_list_ca.downcast_iter() {
                     let values: Box<dyn Array> = list_arr.values().clone();
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
@@ -179,18 +182,15 @@ impl ColumnTransform {
                 }
 
                 let mut out =
-                    unsafe { ListChunked::from_chunks(list_ca.name().clone(), out_chunks) };
+                    unsafe { ListChunked::from_chunks(input_list_ca.name().clone(), out_chunks) };
 
                 // Ensure logical types are restored.
                 out.set_inner_dtype(values_output_dtype.unwrap());
 
                 // Casts on the values should not affect outer NULLs.
-                out.retain_flags_from(
-                    input.list().unwrap(),
-                    StatisticsFlags::CAN_FAST_EXPLODE_LIST,
-                );
+                out.retain_flags_from(&input_list_ca, StatisticsFlags::CAN_FAST_EXPLODE_LIST);
 
-                out.into_column()
+                input.to_new_from_backing(out.into_series())
             },
 
             #[cfg(feature = "dtype-array")]
@@ -198,10 +198,10 @@ impl ColumnTransform {
                 use arrow::array::FixedSizeListArray;
                 use polars_core::prelude::ArrayChunked;
 
-                let array_ca = input.array().unwrap().clone();
+                let input_array_ca = input.get_backing_series().array().unwrap().clone();
 
                 let values_dtype = {
-                    let DataType::Array(inner, _) = array_ca.dtype() else {
+                    let DataType::Array(inner, _) = input_array_ca.dtype() else {
                         unreachable!()
                     };
                     inner.as_ref()
@@ -210,9 +210,9 @@ impl ColumnTransform {
                 let mut values_output_dtype = None;
 
                 let mut out_chunks: Vec<Box<dyn Array>> =
-                    Vec::with_capacity(array_ca.chunks().len());
+                    Vec::with_capacity(input_array_ca.chunks().len());
 
-                for fixed_size_list_arr in array_ca.downcast_iter() {
+                for fixed_size_list_arr in input_array_ca.downcast_iter() {
                     let values: Box<dyn Array> = fixed_size_list_arr.values().clone();
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
@@ -255,12 +255,12 @@ impl ColumnTransform {
                 }
 
                 let mut out =
-                    unsafe { ArrayChunked::from_chunks(array_ca.name().clone(), out_chunks) };
+                    unsafe { ArrayChunked::from_chunks(input_array_ca.name().clone(), out_chunks) };
 
                 // Ensure logical types are restored.
                 out.set_inner_dtype(values_output_dtype.unwrap());
 
-                out.into_column()
+                input.to_new_from_backing(out.into_series())
             },
         };
 

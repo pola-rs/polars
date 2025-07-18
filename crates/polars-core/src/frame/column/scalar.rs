@@ -144,7 +144,9 @@ impl ScalarColumn {
         sc
     }
 
-    /// Create a new [`ScalarColumn`] from a `length=1` Series and expand it `length`.
+    /// Create a new [`ScalarColumn`] from a `length<=1` Series and expand it `length`.
+    ///
+    /// If `series` is empty and `length` is non-zero, a full-NULL column of `length` will be returned.
     ///
     /// This will panic if the value cannot be made static.
     pub fn from_single_value_series(series: Series, length: usize) -> Self {
