@@ -127,7 +127,7 @@ pub fn resolve_join(
                 e,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
-                    &schema_left,
+                    &schema_right,
                     ctxt.opt_flags,
                 ),
             )
