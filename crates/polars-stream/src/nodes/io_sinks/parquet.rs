@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::{ArrowSchema, CompatLevel};

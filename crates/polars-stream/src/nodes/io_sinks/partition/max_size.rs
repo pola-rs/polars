@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
@@ -8,10 +7,10 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
-use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};

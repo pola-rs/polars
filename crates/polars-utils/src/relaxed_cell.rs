@@ -1,5 +1,5 @@
-use std::sync::atomic::*;
 use std::fmt;
+use std::sync::atomic::*;
 
 #[derive(Default)]
 #[repr(transparent)]
@@ -46,15 +46,14 @@ impl<T: AtomicNative> fmt::Debug for RelaxedCell<T> {
     }
 }
 
-pub trait AtomicNative : Sized + Default + fmt::Debug {
+pub trait AtomicNative: Sized + Default + fmt::Debug {
     type Atomic: From<Self>;
-    
+
     fn load(atomic: &Self::Atomic) -> Self;
     fn store(atomic: &Self::Atomic, val: Self);
     fn fetch_add(atomic: &Self::Atomic, val: Self) -> Self;
     fn get_mut(atomic: &mut Self::Atomic) -> &mut Self;
 }
-
 
 macro_rules! impl_relaxed_cell {
     ($T:ty, $new:ident, $A:ty) => {
@@ -95,7 +94,6 @@ impl_relaxed_cell!(u8, new_u8, AtomicU8);
 impl_relaxed_cell!(u32, new_u32, AtomicU32);
 impl_relaxed_cell!(u64, new_u64, AtomicU64);
 impl_relaxed_cell!(usize, new_usize, AtomicUsize);
-
 
 impl RelaxedCell<bool> {
     // Not part of the trait as it should be const.

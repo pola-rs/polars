@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, Location};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use std::time::Duration;
 
@@ -251,9 +251,7 @@ impl Executor {
                 if let Some(t) = last_block_start.take() {
                     if TRACK_WAIT_STATISTICS.load() {
                         let ns: u64 = t.elapsed().as_nanos().try_into().unwrap();
-                        task.metadata()
-                            .ns_spent_blocked
-                            .fetch_add(ns);
+                        task.metadata().ns_spent_blocked.fetch_add(ns);
                     }
                 }
                 worker.recruit_next();

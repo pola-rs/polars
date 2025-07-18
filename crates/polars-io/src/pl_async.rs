@@ -124,10 +124,8 @@ impl SemaphoreTuner {
     }
 
     fn add_stats(&self, downloaded_bytes: u64, download_time: u64) {
-        self.downloaded
-            .fetch_add(downloaded_bytes);
-        self.download_time
-            .fetch_add(download_time);
+        self.downloaded.fetch_add(downloaded_bytes);
+        self.download_time.fetch_add(download_time);
     }
 
     fn increment(&mut self, semaphore: &Semaphore) {

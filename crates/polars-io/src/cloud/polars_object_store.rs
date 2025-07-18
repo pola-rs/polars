@@ -74,8 +74,7 @@ mod inner {
         ) -> PolarsResult<Arc<dyn ObjectStore>> {
             let mut current_store = self.inner.store.lock().await;
 
-            self.rebuilt
-                .store(true);
+            self.rebuilt.store(true);
 
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {

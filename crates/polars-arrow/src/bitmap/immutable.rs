@@ -107,7 +107,11 @@ impl Bitmap {
             storage: SharedStorage::from_vec(bytes),
             length,
             offset: 0,
-            unset_bit_count_cache: RelaxedCell::from(if length == 0 { 0 } else { UNKNOWN_BIT_COUNT }),
+            unset_bit_count_cache: RelaxedCell::from(if length == 0 {
+                0
+            } else {
+                UNKNOWN_BIT_COUNT
+            }),
         })
     }
 
@@ -208,8 +212,7 @@ impl Bitmap {
     pub fn unset_bits(&self) -> usize {
         self.lazy_unset_bits().unwrap_or_else(|| {
             let zeros = count_zeros(&self.storage, self.offset, self.length);
-            self.unset_bit_count_cache
-                .store(zeros as u64);
+            self.unset_bit_count_cache.store(zeros as u64);
             zeros
         })
     }
@@ -230,8 +233,7 @@ impl Bitmap {
     pub unsafe fn update_bit_count(&mut self, bits_set: usize) {
         assert!(bits_set <= self.length);
         let zeros = self.length - bits_set;
-        self.unset_bit_count_cache
-            .store(zeros as u64);
+        self.unset_bit_count_cache.store(zeros as u64);
     }
 
     /// Slices `self`, offsetting by `offset` and truncating up to `length` bits.
