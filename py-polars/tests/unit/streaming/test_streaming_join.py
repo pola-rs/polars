@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -128,8 +128,8 @@ def test_streaming_join_rechunk_12498() -> None:
     }
 
 
-@pytest.mark.parametrize("streaming", [False, True])
-def test_join_null_matches(streaming: bool) -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_join_null_matches(maintain_order: bool) -> None:
     # null values in joins should never find a match.
     df_a = pl.LazyFrame(
         {
@@ -145,21 +145,40 @@ def test_join_null_matches(streaming: bool) -> None:
         }
     )
     # Semi
-    assert df_a.join(df_b, on="a", how="semi", nulls_equal=True).collect(
-        engine="streaming" if streaming else "in-memory"
-    )["idx_a"].to_list() == [0, 1, 2]
-    assert df_a.join(df_b, on="a", how="semi", nulls_equal=False).collect(
-        engine="streaming" if streaming else "in-memory"
-    )["idx_a"].to_list() == [1, 2]
+    assert_series_equal(
+        df_a.join(
+            df_b,
+            on="a",
+            how="semi",
+            nulls_equal=True,
+            maintain_order="left" if maintain_order else "none",
+        ).collect()["idx_a"],
+        pl.Series("idx_a", [0, 1, 2]),
+        check_order=maintain_order,
+    )
+    assert_series_equal(
+        df_a.join(
+            df_b,
+            on="a",
+            how="semi",
+            nulls_equal=False,
+            maintain_order="left" if maintain_order else "none",
+        ).collect()["idx_a"],
+        pl.Series("idx_a", [1, 2]),
+        check_order=maintain_order,
+    )
 
     # Inner
     expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="inner").collect(
-            engine="streaming" if streaming else "in-memory"
-        ),
+        df_a.join(
+            df_b,
+            on="a",
+            how="inner",
+            maintain_order="right" if maintain_order else "none",
+        ).collect(),
         expected,
-        check_row_order=False,
+        check_row_order=maintain_order,
     )
 
     # Left outer
@@ -167,11 +186,14 @@ def test_join_null_matches(streaming: bool) -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(
-            engine="streaming" if streaming else "in-memory"
-        ),
+        df_a.join(
+            df_b,
+            on="a",
+            how="left",
+            maintain_order="left" if maintain_order else "none",
+        ).collect(),
         expected,
-        check_row_order=False,
+        check_row_order=maintain_order,
     )
     # Full outer
     expected = pl.DataFrame(
@@ -183,7 +205,14 @@ def test_join_null_matches(streaming: bool) -> None:
         }
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="full").collect(), expected, check_row_order=False
+        df_a.join(
+            df_b,
+            on="a",
+            how="full",
+            maintain_order="right" if maintain_order else "none",
+        ).collect(),
+        expected,
+        check_row_order=maintain_order,
     )
 
 
