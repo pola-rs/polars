@@ -144,7 +144,8 @@ impl Column {
         }
     }
 
-    /// Constructs a new `Column` of the same variant as `self`.
+    /// Constructs a new `Column` of the same variant as `self` from a backing `Series` representing
+    /// the values.
     ///
     /// # Panics
     /// Panics if:
