@@ -284,6 +284,10 @@ impl PartitionedColumn {
         &self.ends
     }
 
+    pub fn partition_ends_ref(&self) -> &Arc<[IdxSize]> {
+        &self.ends
+    }
+
     pub fn or_reduce(&self) -> PolarsResult<Scalar> {
         self.values.or_reduce()
     }
