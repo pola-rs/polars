@@ -2,13 +2,13 @@ pub(super) mod batched;
 
 use std::fmt;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
+use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
@@ -372,7 +372,7 @@ impl<'a> CoreReader<'a> {
 
         let results = Arc::new(Mutex::new(vec![]));
         // We have to do this after parsing as there can be comments.
-        let total_line_count = &AtomicUsize::new(0);
+        let total_line_count = &RelaxedCell::new_usize(0);
 
         #[cfg(not(target_family = "wasm"))]
         let pool;
@@ -463,7 +463,7 @@ impl<'a> CoreReader<'a> {
                                 }
 
                                 if slf.n_rows.is_some() {
-                                    total_line_count.fetch_add(df.height(), Ordering::Relaxed);
+                                    total_line_count.fetch_add(df.height());
                                 }
 
                                 // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
@@ -492,7 +492,7 @@ impl<'a> CoreReader<'a> {
                     // Check just after we spawned a chunk. That mean we processed all data up until
                     // row count.
                     if self.n_rows.is_some()
-                        && total_line_count.load(Ordering::Relaxed) > self.n_rows.unwrap()
+                        && total_line_count.load() > self.n_rows.unwrap()
                     {
                         break;
                     }
