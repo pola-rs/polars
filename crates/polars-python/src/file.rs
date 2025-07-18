@@ -172,8 +172,26 @@ impl Read for PyFileLikeObject {
 
 impl Write for PyFileLikeObject {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        // Note: the .extract() method returns the number of chars in case of a PyString
+        // and the number of bytes in case of a PyBytes object.
+        let buf_len = buf.len();
+        let expects_str = self.expects_str;
+        let expects_str_and_is_ascii = expects_str && buf.is_ascii();
+
         Python::with_gil(|py| {
-            let number_bytes_written = if self.expects_str {
+            let char_or_bytes_written = if expects_str_and_is_ascii {
+                // tracks the number of chars written
+                // SAFETY: is_ascii verified
+                unsafe {
+                    self.inner.call_method(
+                        py,
+                        "write",
+                        (PyString::new(py, std::str::from_utf8_unchecked(buf)),),
+                        None,
+                    )
+                }
+            } else if expects_str {
+                // tracks the number of chars written
                 self.inner.call_method(
                     py,
                     "write",
@@ -184,14 +202,25 @@ impl Write for PyFileLikeObject {
                     None,
                 )
             } else {
+                // tracks the number of bytes written
                 self.inner
                     .call_method(py, "write", (PyBytes::new(py, buf),), None)
             }
             .map_err(pyerr_to_io_err)?;
 
-            let n = number_bytes_written.extract(py).map_err(pyerr_to_io_err)?;
-
-            Ok(n)
+            let n = char_or_bytes_written.extract(py).map_err(pyerr_to_io_err)?;
+            let n_bytes = if expects_str && !expects_str_and_is_ascii {
+                // substitute char count with buf len
+                let expected_chars = std::str::from_utf8(buf)
+                    .map_err(io::Error::other)?
+                    .chars()
+                    .count();
+                assert!(n == expected_chars);
+                buf_len
+            } else {
+                n
+            };
+            Ok(n_bytes)
         })
     }
 
