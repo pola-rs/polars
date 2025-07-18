@@ -192,7 +192,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 &PlHashSet::default(),
                 input_schema.as_ref().as_ref(),
                 &mut out,
-                &mut ctxt.opt_flags,
+                ctxt.opt_flags,
             )?;
 
             let predicate = match out.len() {
