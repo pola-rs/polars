@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
+from polars.datatypes import Int64
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Mapping
 
     from polars import Expr, Series
@@ -17,12 +19,19 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         PolarsDataType,
+        PolarsIntegerType,
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
+        UnicodeForm,
     )
     from polars._utils.various import NoDefault
     from polars.polars import PySeries
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 @expr_dispatch
@@ -270,6 +279,7 @@ class StringNameSpace:
         ]
         """
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
@@ -278,6 +288,9 @@ class StringNameSpace:
         Convert a String column into a Decimal column.
 
         This method infers the needed parameters `precision` and `scale`.
+
+        .. versionchanged:: 1.20.0
+            Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
@@ -528,7 +541,7 @@ class StringNameSpace:
         ]
         """
 
-    def ends_with(self, suffix: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr | None) -> Series:
         """
         Check if string values end with a substring.
 
@@ -679,10 +692,10 @@ class StringNameSpace:
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
-        Extract the first match of json string with provided JSONPath expression.
+        Extract the first match of JSON string with provided JSONPath expression.
 
-        Throw errors if encounter invalid json strings.
-        All return value will be casted to String regardless of the original value.
+        Throw errors if encounter invalid JSON strings.
+        All return values will be cast to String regardless of the original value.
 
         Documentation on JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
@@ -1284,7 +1297,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1319,7 +1332,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars_start(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -1353,7 +1366,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars_end(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove trailing characters.
 
@@ -1437,15 +1450,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_start(self, length: int, fill_char: str = " ") -> Series:
+    def pad_start(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1468,15 +1481,15 @@ class StringNameSpace:
         ]
         """
 
-    def pad_end(self, length: int, fill_char: str = " ") -> Series:
+    def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Series:
         """
         Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
         fill_char
             The character to pad the string with.
 
@@ -1502,14 +1515,14 @@ class StringNameSpace:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
-        A sign prefix (`-`) is handled by inserting the padding after the sign
-        character rather than before.
+        A sign prefix (`-`) is handled by inserting the padding after the sign character
+        rather than before.
 
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with length equal to
-            or greater than this value are returned as-is.
+            Pad the string until it reaches this length. Strings with length equal to or
+            greater than this value are returned as-is.
 
         See Also
         --------
@@ -1787,22 +1800,21 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_function(
-        'Use `.str.split("").explode()` instead.'
-        " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use when/then/otherwise"
-        " to handle the empty list before exploding.",
-        version="0.20.31",
+    @deprecated(
+        '`Series.str.explode` is deprecated; use `Series.str.split("").explode()` instead. '
+        "Note that empty strings will result in null instead of being preserved. To get "
+        "the exact same behavior, split first and then use a `pl.when...then...otherwise` "
+        "expression to handle the empty list before exploding. "
     )
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use `.str.split("").explode()` instead.
-            Note that empty strings will result in null instead of being preserved.
-            To get the exact same behavior, split first and then use when/then/otherwise
-            to handle the empty list before exploding.
+            Use the `.str.split("").explode()` method instead. Note that empty strings
+            will result in null instead of being preserved. To get the exact same
+            behavior, split first and then use a `pl.when...then...otherwise`
+            expression to handle the empty list before exploding.
 
         Returns
         -------
@@ -1825,9 +1837,15 @@ class StringNameSpace:
         ]
         """
 
-    def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
+    def to_integer(
+        self,
+        *,
+        base: int | IntoExprColumn = 10,
+        dtype: PolarsIntegerType = Int64,
+        strict: bool = True,
+    ) -> Series:
         """
-        Convert an String column into an Int64 column with base radix.
+        Convert an String column into a column of dtype with base radix.
 
         Parameters
         ----------
@@ -1835,6 +1853,9 @@ class StringNameSpace:
             Positive integer or expression which is the base of the string
             we are parsing.
             Default: 10.
+        dtype
+            Polars integer type to cast to.
+            Default: :class:`Int64`.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1842,14 +1863,14 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int64`.
+            Series of data.
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.to_integer(base=2, strict=False)
+        >>> s.str.to_integer(base=2, dtype=pl.Int32, strict=False)
         shape: (4,)
-        Series: 'bin' [i64]
+        Series: 'bin' [i32]
         [
                 6
                 5
@@ -2058,9 +2079,9 @@ class StringNameSpace:
         overlapping: bool = False,
     ) -> Series:
         """
-        Use the Aho-Corasick algorithm to find many matches.
+        Use the Aho-Corasick algorithm to find all matches.
 
-        The function will return the bytes offset of the start of each match.
+        The function returns the byte offset of the start of each match.
         The return type will be `List<UInt32>`
 
         Parameters
@@ -2119,7 +2140,6 @@ class StringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
-
         """
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
@@ -2157,10 +2177,9 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_function(
-        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
-        " is an empty string instead of a hyphen.",
-        version="1.0.0",
+    @deprecated(
+        "`Series.str.concat` is deprecated; use `Series.str.join` instead. Note also "
+        "that the default `delimiter` for `str.join` is an empty string, not a hyphen."
     )
     def concat(
         self, delimiter: str | None = None, *, ignore_nulls: bool = True
@@ -2223,3 +2242,33 @@ class StringNameSpace:
             "abc\(\\w\+\)"
         ]
         """
+
+    def normalize(self, form: UnicodeForm = "NFC") -> Series:
+        """
+        Returns the Unicode normal form of the string values.
+
+        This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        Parameters
+        ----------
+        form : {'NFC', 'NFKC', 'NFD', 'NFKD'}
+            Unicode form to use.
+
+        Examples
+        --------
+        >>> s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"])
+        >>> s.str.normalize("NFC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "01²"
+                "ＫＡＤＯＫＡＷＡ"
+        ]
+        >>> s.str.normalize("NFKC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "012"
+                "KADOKAWA"
+        ]
+        """  # noqa: RUF002

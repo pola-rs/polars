@@ -25,7 +25,13 @@ fn test_cast_join_14872() {
     let df2 = ParquetReader::new(buf).finish().unwrap();
 
     let out = df1
-        .join(&df2, ["ints"], ["ints"], JoinArgs::new(JoinType::Left))
+        .join(
+            &df2,
+            ["ints"],
+            ["ints"],
+            JoinArgs::new(JoinType::Left),
+            None,
+        )
         .unwrap();
 
     let expected = df![

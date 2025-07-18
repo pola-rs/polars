@@ -2,7 +2,7 @@ use std::ops::{Add, RangeInclusive, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{BitmapBuilder, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -175,7 +175,7 @@ where
         debug_assert_eq!(self.size(), other.size());
         match (&mut self.seen, &other.seen) {
             (Seen::Small(lhs), Seen::Small(rhs)) => *lhs |= rhs,
-            (Seen::Large(lhs), Seen::Large(ref rhs)) => {
+            (Seen::Large(lhs), Seen::Large(rhs)) => {
                 let mut lhs = lhs;
                 <&mut MutableBitmap as std::ops::BitOrAssign<&MutableBitmap>>::bitor_assign(
                     &mut lhs, rhs,
@@ -213,7 +213,7 @@ where
         }
 
         let validity = if has_null {
-            let mut validity = MutableBitmap::new();
+            let mut validity = BitmapBuilder::new();
             validity.extend_constant(values.len() - 1, true);
             validity.push(false);
             // The null has already been pushed.

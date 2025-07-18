@@ -10,9 +10,7 @@ pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     mut exprs: Vec<ExprIR>,
-    mut acc_projections: Vec<ColumnNode>,
-    mut projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    mut ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     // Whether is SimpleProjection.
@@ -24,60 +22,39 @@ pub(super) fn process_projection(
     // as there would be no projections and we would read
     // the whole file while we only want the count
     if exprs.len() == 1 && is_count(exprs[0].node(), expr_arena) {
-        let input_schema = lp_arena.get(input).schema(lp_arena);
-        let expr = if input_schema.is_empty() {
-            // If the input schema is empty, we should just project
-            // ourselves
-            exprs[0].node()
-        } else {
-            // Select the last column projection.
-            let (last_name, _) = input_schema.try_get_at_index(input_schema.len() - 1)?;
+        // Clear all accumulated projections since we only project a single column from this level.
+        ctx.acc_projections.clear();
+        ctx.projected_names.clear();
 
-            let name = match lp_arena.get(input) {
-                IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => (|| {
-                    for e in exprs {
-                        if !e.is_scalar(expr_arena) {
-                            return e.output_name();
-                        }
-                    }
+        let input_lp = lp_arena.get(input);
 
-                    last_name
-                })(),
-
-                IR::Scan {
-                    file_info,
-                    output_schema,
-                    ..
-                } => {
-                    let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
-                    // NOTE: the first can be the inserted index column, so that might not work
-                    let (last_name, _) = schema.try_get_at_index(schema.len() - 1)?;
-                    last_name
-                },
-
-                IR::DataFrameScan {
-                    schema,
-                    output_schema,
-                    ..
-                } => {
-                    // NOTE: the first can be the inserted index column, so that might not work
-                    let schema = output_schema.as_ref().unwrap_or(schema);
-                    let (last_name, _) = schema.try_get_at_index(schema.len() - 1)?;
-                    last_name
-                },
-
-                _ => last_name,
-            };
-
-            expr_arena.add(AExpr::Column(name.clone()))
+        // If the input node is not aware of `is_count_star` we must project a single column from
+        // this level, otherwise the upstream nodes may end up projecting everything.
+        let input_is_count_star_aware = match input_lp {
+            IR::DataFrameScan { .. } | IR::Scan { .. } => true,
+            #[cfg(feature = "python")]
+            IR::PythonScan { .. } => true,
+            _ => false,
         };
 
-        // Clear all accumulated projections since we only project a single column from this level.
-        acc_projections.clear();
-        projected_names.clear();
-        add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
+        if !input_is_count_star_aware {
+            if let Some(name) = input_lp
+                .schema(lp_arena)
+                .get_at_index(0)
+                .map(|(name, _)| name)
+            {
+                ctx.acc_projections
+                    .push(ColumnNode(expr_arena.add(AExpr::Column(name.clone()))));
+                ctx.projected_names.insert(name.clone());
+            }
+        }
+
         local_projection.push(exprs.pop().unwrap());
-        proj_pd.is_count_star = true;
+
+        if input_is_count_star_aware {
+            ctx.inner.is_count_star = true;
+            proj_pd.is_count_star = true;
+        }
     } else {
         // `remove_names` tracks projected names that need to be removed as they may be aliased
         // names that are created on this level.
@@ -117,7 +94,7 @@ pub(super) fn process_projection(
                     },
                 };
 
-                let project = acc_projections.is_empty() || projected_names.contains(name);
+                let project = ctx.acc_projections.is_empty() || ctx.projected_names.contains(name);
                 projection_has_non_scalar |= project & is_non_scalar;
                 project
             })
@@ -125,20 +102,21 @@ pub(super) fn process_projection(
 
         // Remove aliased before adding new ones.
         if !remove_names.is_empty() {
-            if !projected_names.is_empty() {
+            if !ctx.projected_names.is_empty() {
                 for name in remove_names.iter() {
-                    projected_names.remove(name);
+                    ctx.projected_names.remove(name);
                 }
             }
 
-            acc_projections.retain(|c| !remove_names.contains(column_node_to_name(*c, expr_arena)));
+            ctx.acc_projections
+                .retain(|c| !remove_names.contains(column_node_to_name(*c, expr_arena)));
         }
 
         for e in projected_exprs {
             add_expr_to_accumulated(
                 e.node(),
-                &mut acc_projections,
-                &mut projected_names,
+                &mut ctx.acc_projections,
+                &mut ctx.projected_names,
                 expr_arena,
             );
 
@@ -152,8 +130,8 @@ pub(super) fn process_projection(
             if let Some(non_scalar) = opt_non_scalar {
                 add_expr_to_accumulated(
                     non_scalar.node(),
-                    &mut acc_projections,
-                    &mut projected_names,
+                    &mut ctx.acc_projections,
+                    &mut ctx.projected_names,
                     expr_arena,
                 );
 
@@ -162,14 +140,8 @@ pub(super) fn process_projection(
         }
     }
 
-    proj_pd.pushdown_and_assign(
-        input,
-        acc_projections,
-        projected_names,
-        projections_seen + 1,
-        lp_arena,
-        expr_arena,
-    )?;
+    ctx.inner.projections_seen += 1;
+    proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 
     let builder = IRBuilder::new(input, expr_arena, lp_arena);
 

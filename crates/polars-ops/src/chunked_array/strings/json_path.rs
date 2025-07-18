@@ -141,6 +141,8 @@ impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
+
     use super::*;
 
     #[test]
@@ -215,18 +217,20 @@ mod tests {
             .iter(),
         )
         .unwrap()
-        .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))
+        .with_outer_validity(Some(Bitmap::from_iter([false, true, true, false])))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 
-        assert!(ca
-            .json_decode(None, None)
-            .unwrap()
-            .equals_missing(&expected_series));
-        assert!(ca
-            .json_decode(Some(expected_dtype), None)
-            .unwrap()
-            .equals_missing(&expected_series));
+        assert!(
+            ca.json_decode(None, None)
+                .unwrap()
+                .equals_missing(&expected_series)
+        );
+        assert!(
+            ca.json_decode(Some(expected_dtype), None)
+                .unwrap()
+                .equals_missing(&expected_series)
+        );
     }
 
     #[test]
@@ -242,11 +246,12 @@ mod tests {
         );
         let ca = s.str().unwrap();
 
-        assert!(ca
-            .json_path_select("$")
-            .unwrap()
-            .into_series()
-            .equals_missing(&s));
+        assert!(
+            ca.json_path_select("$")
+                .unwrap()
+                .into_series()
+                .equals_missing(&s)
+        );
 
         let b_series = Series::new(
             "json".into(),
@@ -257,21 +262,23 @@ mod tests {
                 None,
             ],
         );
-        assert!(ca
-            .json_path_select("$.b")
-            .unwrap()
-            .into_series()
-            .equals_missing(&b_series));
+        assert!(
+            ca.json_path_select("$.b")
+                .unwrap()
+                .into_series()
+                .equals_missing(&b_series)
+        );
 
         let c_series = Series::new(
             "json".into(),
             [None, Some(r#"[0,1]"#), Some(r#"[2,5]"#), None],
         );
-        assert!(ca
-            .json_path_select("$.b[:].c")
-            .unwrap()
-            .into_series()
-            .equals_missing(&c_series));
+        assert!(
+            ca.json_path_select("$.b[:].c")
+                .unwrap()
+                .into_series()
+                .equals_missing(&c_series)
+        );
     }
 
     #[test]
@@ -297,10 +304,11 @@ mod tests {
             ],
         );
 
-        assert!(ca
-            .json_path_extract("$.b[:].c", None, None)
-            .unwrap()
-            .into_series()
-            .equals_missing(&c_series));
+        assert!(
+            ca.json_path_extract("$.b[:].c", None, None)
+                .unwrap()
+                .into_series()
+                .equals_missing(&c_series)
+        );
     }
 }

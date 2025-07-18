@@ -241,7 +241,7 @@ The opt-in features are:
     - `mode` - Return the most frequently occurring value(s).
     - `cum_agg` - `cum_sum`, `cum_min`, and `cum_max`, aggregations.
     - `rolling_window` - rolling window functions, like `rolling_mean`.
-    - `interpolate` - Interpolate `None` values.
+    - `interpolate` - Interpolate intermediate `None` values.
     - `extract_jsonpath` - [Run `jsonpath` queries on `StringChunked`](https://goessner.net/articles/JsonPath/).
     - `list` - List utils:
       - `list_gather` - take sublist by multiple indices.

@@ -1,16 +1,18 @@
+use std::mem::{ManuallyDrop, MaybeUninit};
+
 use polars::prelude::*;
-use pyo3::ffi::Py_uintptr_t;
+use polars_ffi::version_0::SeriesExport;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use crate::py_modules::polars;
+use crate::py_modules::{pl_series, polars, polars_rs};
 use crate::series::PySeries;
 use crate::{PyExpr, Wrap};
 
 pub(crate) trait ToSeries {
     fn to_series(
         &self,
-        py: Python,
+        py: Python<'_>,
         py_polars_module: &Py<PyModule>,
         name: &str,
     ) -> PolarsResult<Series>;
@@ -19,7 +21,7 @@ pub(crate) trait ToSeries {
 impl ToSeries for PyObject {
     fn to_series(
         &self,
-        py: Python,
+        py: Python<'_>,
         py_polars_module: &Py<PyModule>,
         name: &str,
     ) -> PolarsResult<Series> {
@@ -47,37 +49,14 @@ impl ToSeries for PyObject {
             Ok(pyseries) => pyseries.series,
             // This happens if the executed Polars is not from this source.
             // Currently only happens in PC-workers
-            // For now use arrow to convert
-            // Eventually we must use Polars' Series Export as that can deal with
-            // multiple chunks
             Err(_) => {
-                use polars::export::arrow::ffi;
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("in_place", true).unwrap();
+                let mut export: MaybeUninit<SeriesExport> = MaybeUninit::uninit();
                 py_pyseries
-                    .call_method(py, "rechunk", (), Some(&kwargs))
-                    .map_err(|e| polars_err!(ComputeError: "could not rechunk: {e}"))?;
-
-                // Prepare a pointer to receive the Array struct.
-                let array = Box::new(ffi::ArrowArray::empty());
-                let schema = Box::new(ffi::ArrowSchema::empty());
-
-                let array_ptr = &*array as *const ffi::ArrowArray;
-                let schema_ptr = &*schema as *const ffi::ArrowSchema;
-                // SAFETY:
-                // this is unsafe as it write to the pointers we just prepared
-                py_pyseries
-                    .call_method1(
-                        py,
-                        "_export_arrow_to_c",
-                        (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
-                    )
-                    .map_err(|e| polars_err!(ComputeError: "{e}"))?;
-
+                    .call_method1(py, "_export", (&raw mut export as usize,))
+                    .unwrap();
                 unsafe {
-                    let field = ffi::import_field_from_c(schema.as_ref())?;
-                    let array = ffi::import_array_from_c(*array, field.dtype)?;
-                    Series::from_arrow(field.name, array)?
+                    let export = export.assume_init();
+                    polars_ffi::version_0::import_series(export)?
                 }
             },
         };
@@ -86,97 +65,68 @@ impl ToSeries for PyObject {
 }
 
 pub(crate) fn call_lambda_with_series(
-    py: Python,
-    s: Series,
+    py: Python<'_>,
+    s: &Series,
+    output_dtype: Option<Option<DataType>>,
     lambda: &PyObject,
 ) -> PyResult<PyObject> {
     let pypolars = polars(py).bind(py);
 
+    // Set return_dtype in kwargs
+    let mut dict = None;
+    if let Some(output_dtype) = output_dtype {
+        let d = PyDict::new(py);
+        let output_dtype = match output_dtype {
+            None => None,
+            Some(dt) => Some(Wrap(dt).into_pyobject(py)?),
+        };
+        d.set_item("return_dtype", output_dtype)?;
+        dict = Some(d);
+    }
+
     // create a PySeries struct/object for Python
-    let pyseries = PySeries::new(s);
+    let pyseries = PySeries::new(s.clone());
     // Wrap this PySeries object in the python side Series wrapper
-    let python_series_wrapper = pypolars
+    let mut python_series_wrapper = pypolars
         .getattr("wrap_s")
         .unwrap()
         .call1((pyseries,))
         .unwrap();
-    // call the lambda and get a python side Series wrapper
-    lambda.call1(py, (python_series_wrapper,))
-}
 
-/// A python lambda taking two Series
-pub(crate) fn binary_lambda(
-    lambda: &PyObject,
-    a: Series,
-    b: Series,
-) -> PolarsResult<Option<Series>> {
-    Python::with_gil(|py| {
-        // get the pypolars module
-        let pypolars = polars(py).bind(py);
-        // create a PySeries struct/object for Python
-        let pyseries_a = PySeries::new(a);
-        let pyseries_b = PySeries::new(b);
+    if !python_series_wrapper
+        .getattr("_s")
+        .unwrap()
+        .is_instance(polars_rs(py).getattr(py, "PySeries").unwrap().bind(py))
+        .unwrap()
+    {
+        let mut export = ManuallyDrop::new(polars_ffi::version_0::export_series(s));
+        let plseries = pl_series(py).bind(py);
 
-        // Wrap this PySeries object in the python side Series wrapper
-        let python_series_wrapper_a = pypolars
-            .getattr("wrap_s")
+        let s_location = &raw mut export;
+        python_series_wrapper = plseries
+            .getattr("_import")
             .unwrap()
-            .call1((pyseries_a,))
-            .unwrap();
-        let python_series_wrapper_b = pypolars
-            .getattr("wrap_s")
+            .call1((s_location as usize,))
             .unwrap()
-            .call1((pyseries_b,))
-            .unwrap();
+    }
 
-        // call the lambda and get a python side Series wrapper
-        let result_series_wrapper =
-            match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => polars_bail!(
-                    ComputeError: "custom python function failed: {}", e.value(py),
-                ),
-            };
-        let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
-            let pyexpr = expr.extract::<PyExpr>(py).unwrap();
-            let expr = pyexpr.inner;
-            let df = DataFrame::empty();
-            let out = df
-                .lazy()
-                .select([expr])
-                .with_predicate_pushdown(false)
-                .with_projection_pushdown(false)
-                .collect()?;
-
-            let s = out.select_at_idx(0).unwrap().clone();
-            PySeries::new(s.take_materialized_series())
-        } else {
-            return Some(result_series_wrapper.to_series(py, pypolars.as_unbound(), ""))
-                .transpose();
-        };
-
-        // Finally get the actual Series
-        Ok(Some(pyseries.series))
-    })
+    lambda.call(py, (python_series_wrapper,), dict.as_ref())
 }
 
 pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,
-    output_type: Option<Wrap<DataType>>,
-    agg_list: bool,
+    output_type: Option<DataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    let output_type = output_type.map(|wrap| wrap.0);
-
     let func =
-        python_udf::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
-    pyexpr.inner.clone().map_python(func, agg_list).into()
+        python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
+    pyexpr.inner.clone().map_python(func).into()
 }
 
 pub(crate) fn call_lambda_with_columns_slice(
-    py: Python,
+    py: Python<'_>,
     s: &[Column],
     lambda: &PyObject,
     pypolars: &Py<PyModule>,
@@ -188,9 +138,7 @@ pub(crate) fn call_lambda_with_columns_slice(
         let ps = PySeries::new(s.as_materialized_series().clone());
 
         // Wrap this PySeries object in the python side Series wrapper
-        let python_series_wrapper = pypolars.getattr("wrap_s").unwrap().call1((ps,)).unwrap();
-
-        python_series_wrapper
+        pypolars.getattr("wrap_s").unwrap().call1((ps,)).unwrap()
     });
     let wrapped_s = PyList::new(py, iter).unwrap();
 
@@ -203,7 +151,7 @@ pub(crate) fn call_lambda_with_columns_slice(
 
 pub fn map_mul(
     pyexpr: &[PyExpr],
-    py: Python,
+    py: Python<'_>,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
     map_groups: bool,

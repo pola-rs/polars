@@ -1,4 +1,5 @@
 pub(crate) mod any_value;
+mod categorical;
 pub(crate) mod chunked_array;
 mod datetime;
 
@@ -6,8 +7,8 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 
+pub use categorical::PyCategories;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
@@ -15,6 +16,7 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
+use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
@@ -22,7 +24,7 @@ use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::dsl::ScanSources;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -31,15 +33,18 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyList, PySequence, PyString};
+use pyo3::sync::GILOnceCell;
+use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
-use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
+use crate::expr::PyExpr;
+use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
 use crate::series::PySeries;
+use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame};
 
 /// # Safety
@@ -75,6 +80,7 @@ pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
     reinterpret_vec(buf)
 }
 
+#[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
 
@@ -108,21 +114,21 @@ pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     Ok(s.extract::<PySeries>()?.series)
 }
 
-pub(crate) fn to_series(py: Python, s: PySeries) -> PyResult<Bound<PyAny>> {
+pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny>> {
     let series = pl_series(py).bind(py);
     let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
     constructor.call1((s,))
 }
 
-impl<'a> FromPyObject<'a> for Wrap<PlSmallStr> {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<PlSmallStr> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(Wrap((&*ob.extract::<PyBackedStr>()?).into()))
     }
 }
 
 #[cfg(feature = "csv")]
-impl<'a> FromPyObject<'a> for Wrap<NullValues> {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<NullValues> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<PyBackedStr>() {
             Ok(Wrap(NullValues::AllColumnsSingle((&*s).into())))
         } else if let Ok(s) = ob.extract::<Vec<PyBackedStr>>() {
@@ -144,7 +150,7 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
-fn struct_dict<'py, 'a>(
+fn struct_dict<'a, 'py>(
     py: Python<'py>,
     vals: impl Iterator<Item = AnyValue<'a>>,
     flds: &[Field],
@@ -266,29 +272,34 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime"))?;
-                datetime_class.call1((tu.to_ascii(), tz.as_deref()))
+                datetime_class.call1((tu.to_ascii(), tz.as_deref().map(|x| x.as_str())))
             },
             DataType::Duration(tu) => {
                 let duration_class = pl.getattr(intern!(py, "Duration"))?;
                 duration_class.call1((tu.to_ascii(),))
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
-            DataType::Categorical(_, ordering) => {
-                let class = pl.getattr(intern!(py, "Categorical"))?;
-                class.call1((Wrap(*ordering),))
+            DataType::Categorical(cats, _) => {
+                let categories_class = pl.getattr(intern!(py, "Categories"))?;
+                let categorical_class = pl.getattr(intern!(py, "Categorical"))?;
+                let categories = categories_class
+                    .call_method1("_from_py_categories", (PyCategories::from(cats.clone()),))?;
+                let kwargs = [("categories", categories)];
+                categorical_class.call((), Some(&kwargs.into_py_dict(py)?))
             },
-            DataType::Enum(rev_map, _) => {
-                // we should always have an initialized rev_map coming from rust
-                let categories = rev_map.as_ref().unwrap().get_categories();
+            DataType::Enum(_, mapping) => {
+                let categories = unsafe {
+                    StringChunked::from_chunks(
+                        PlSmallStr::from_static("category"),
+                        vec![mapping.to_arrow(true)],
+                    )
+                };
                 let class = pl.getattr(intern!(py, "Enum"))?;
-                let s =
-                    Series::from_arrow(PlSmallStr::from_static("category"), categories.to_boxed())
-                        .map_err(PyPolarsErr::from)?;
-                let series = to_series(py, s.into())?;
+                let series = to_series(py, categories.into_series().into())?;
                 class.call1((series,))
             },
             DataType::Time => pl.getattr(intern!(py, "Time")),
@@ -362,8 +373,8 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Boolean" => DataType::Boolean,
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
-                    "Categorical" => DataType::Categorical(None, Default::default()),
-                    "Enum" => DataType::Enum(None, Default::default()),
+                    "Categorical" => DataType::from_categories(Categories::global()),
+                    "Enum" => DataType::from_frozen_categories(FrozenCategories::new([]).unwrap()),
                     "Date" => DataType::Date,
                     "Time" => DataType::Time,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
@@ -374,12 +385,12 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME, None),
+                    "Object" => DataType::Object(OBJECT_NAME),
                     "Unknown" => DataType::Unknown(Default::default()),
                     dt => {
                         return Err(PyTypeError::new_err(format!(
                             "'{dt}' is not a Polars data type",
-                        )))
+                        )));
                     },
                 }
             },
@@ -398,16 +409,20 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "String" => DataType::String,
             "Binary" => DataType::Binary,
             "Categorical" => {
-                let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
-                let ordering = ordering.extract::<Wrap<CategoricalOrdering>>()?.0;
-                DataType::Categorical(None, ordering)
+                let categories = ob.getattr(intern!(py, "categories")).unwrap();
+                let py_categories = categories.getattr(intern!(py, "_categories")).unwrap();
+                let py_categories = py_categories.extract::<PyCategories>()?;
+                DataType::from_categories(py_categories.categories().clone())
             },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
-                create_enum_dtype(categories)
+                assert!(!categories.has_nulls());
+                DataType::from_frozen_categories(
+                    FrozenCategories::new(categories.values_iter()).unwrap(),
+                )
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
@@ -416,7 +431,10 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract::<Option<PyBackedStr>>()?;
-                DataType::Datetime(time_unit, time_zone.as_deref().map(|x| x.into()))
+                DataType::Datetime(
+                    time_unit,
+                    TimeZone::opt_try_new(time_zone.as_deref()).map_err(to_py_err)?,
+                )
             },
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
@@ -451,16 +469,20 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]
-            "Object" => DataType::Object(OBJECT_NAME, None),
+            "Object" => DataType::Object(OBJECT_NAME),
             "Unknown" => DataType::Unknown(Default::default()),
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type",
-                )))
+                )));
             },
         };
         Ok(Wrap(dtype))
     }
+}
+
+enum CategoricalOrdering {
+    Lexical,
 }
 
 impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
@@ -469,11 +491,7 @@ impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
     type Error = Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        match self.0 {
-            CategoricalOrdering::Physical => "physical",
-            CategoricalOrdering::Lexical => "lexical",
-        }
-        .into_pyobject(py)
+        "lexical".into_pyobject(py)
     }
 }
 
@@ -488,8 +506,8 @@ impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
 }
 
 #[cfg(feature = "parquet")]
-impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<StatisticsOptions> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let mut statistics = StatisticsOptions::empty();
 
         let dict = ob.downcast::<PyDict>()?;
@@ -505,7 +523,7 @@ impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
                 _ => {
                     return Err(PyTypeError::new_err(format!(
                         "'{key}' is not a valid statistic option",
-                    )))
+                    )));
                 },
             }
         }
@@ -514,9 +532,9 @@ impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
     }
 }
 
-impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
-        let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+impl<'py> FromPyObject<'py> for Wrap<Row<'static>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let vals = ob.extract::<Vec<Wrap<AnyValue<'static>>>>()?;
         let vals = reinterpret_vec(vals);
         Ok(Wrap(Row(vals)))
     }
@@ -548,7 +566,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Paths(Vec<PathBuf>),
+            Paths(Vec<PlPath>),
             Files(Vec<File>),
             Buffers(Vec<MemSlice>),
         }
@@ -570,7 +588,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
             },
             PythonScanSourceInput::File(file) => {
                 let mut sources = Vec::with_capacity(num_items);
-                sources.push(file);
+                sources.push(file.into());
                 MutableSources::Files(sources)
             },
             PythonScanSourceInput::Buffer(buffer) => {
@@ -583,12 +601,12 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         for source in iter {
             match (&mut sources, source?) {
                 (MutableSources::Paths(v), PythonScanSourceInput::Path(p)) => v.push(p),
-                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f),
+                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f.into()),
                 (MutableSources::Buffers(v), PythonScanSourceInput::Buffer(f)) => v.push(f),
                 _ => {
                     return Err(PyTypeError::new_err(
                         "Cannot combine in-memory bytes, paths and files for scan sources",
-                    ))
+                    ));
                 },
             }
         }
@@ -601,7 +619,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
     }
 }
 
-impl<'py> IntoPyObject<'py> for Wrap<&Schema> {
+impl<'py> IntoPyObject<'py> for Wrap<Schema> {
     type Target = PyDict;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
@@ -687,8 +705,8 @@ impl From<PyObject> for ObjectValue {
     }
 }
 
-impl<'a> FromPyObject<'a> for ObjectValue {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for ObjectValue {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(ObjectValue {
             inner: ob.to_owned().unbind(),
         })
@@ -721,8 +739,8 @@ impl Default for ObjectValue {
     }
 }
 
-impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
-    fn extract_bound(obj: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py, T: NativeType + FromPyObject<'py>> FromPyObject<'py> for Wrap<Vec<T>> {
+    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
         let seq = obj.downcast::<PySequence>()?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.try_iter()? {
@@ -742,7 +760,7 @@ impl<'py> FromPyObject<'py> for Wrap<AsofStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "asof `strategy` must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -757,7 +775,7 @@ impl<'py> FromPyObject<'py> for Wrap<InterpolationMethod> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "interpolation `method` must be one of {{'linear', 'nearest'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -773,8 +791,8 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
             "deflate" => Some(AvroCompression::Deflate),
             v => {
                 return Err(PyValueError::new_err(format!(
-                "avro `compression` must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
-            )))
+                    "avro `compression` must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -784,12 +802,18 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
 impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "physical" => CategoricalOrdering::Physical,
             "lexical" => CategoricalOrdering::Lexical,
+            "physical" => {
+                polars_warn!(
+                    Deprecation,
+                    "physical ordering is deprecated, will use lexical ordering instead"
+                );
+                CategoricalOrdering::Lexical
+            },
             v => {
                 return Err(PyValueError::new_err(format!(
                     "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -811,8 +835,8 @@ impl<'py> FromPyObject<'py> for Wrap<StartBy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`start_by` must be one of {{'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -828,7 +852,22 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedWindow> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`closed` must be one of {{'left', 'right', 'both', 'none'}}, got {v}",
-                )))
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<RoundMode> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "half_to_even" => RoundMode::HalfToEven,
+            "half_away_from_zero" => RoundMode::HalfAwayFromZero,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`mode` must be one of {{'half_to_even', 'half_away_from_zero'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -844,7 +883,7 @@ impl<'py> FromPyObject<'py> for Wrap<CsvEncoding> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "csv `encoding` must be one of {{'utf8', 'utf8-lossy'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -861,7 +900,7 @@ impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "ipc `compression` must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -881,8 +920,8 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
             "cross" => JoinType::Cross,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`how` must be one of {{'inner', 'left', 'full', 'semi', 'anti', 'cross'}}, got {v}",
-            )))
+                    "`how` must be one of {{'inner', 'left', 'full', 'semi', 'anti', 'cross'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -898,7 +937,7 @@ impl<'py> FromPyObject<'py> for Wrap<Label> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`label` must be one of {{'left', 'right', 'datapoint'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -913,7 +952,7 @@ impl<'py> FromPyObject<'py> for Wrap<ListToStructWidthStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -928,7 +967,7 @@ impl<'py> FromPyObject<'py> for Wrap<NonExistent> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -943,7 +982,7 @@ impl<'py> FromPyObject<'py> for Wrap<NullBehavior> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`null_behavior` must be one of {{'drop', 'ignore'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -958,7 +997,7 @@ impl<'py> FromPyObject<'py> for Wrap<NullStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`null_strategy` must be one of {{'ignore', 'propagate'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -976,8 +1015,8 @@ impl<'py> FromPyObject<'py> for Wrap<ParallelStrategy> {
             "none" => ParallelStrategy::None,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'prefiltered', 'none'}}, got {v}",
-            )))
+                    "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'prefiltered', 'none'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -992,7 +1031,7 @@ impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`order` must be one of {{'fortran', 'c'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1011,8 +1050,8 @@ impl<'py> FromPyObject<'py> for Wrap<QuantileMethod> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint', 'equiprobable'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1030,8 +1069,8 @@ impl<'py> FromPyObject<'py> for Wrap<RankMethod> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "rank `method` must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1046,7 +1085,7 @@ impl<'py> FromPyObject<'py> for Wrap<Roll> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`roll` must be one of {{'raise', 'forward', 'backward'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1062,7 +1101,7 @@ impl<'py> FromPyObject<'py> for Wrap<TimeUnit> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1079,23 +1118,7 @@ impl<'py> FromPyObject<'py> for Wrap<UniqueKeepStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`keep` must be one of {{'first', 'last', 'any', 'none'}}, got {v}",
-                )))
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-#[cfg(feature = "ipc")]
-impl<'py> FromPyObject<'py> for Wrap<IpcCompression> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "zstd" => IpcCompression::ZSTD,
-            "lz4" => IpcCompression::LZ4,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "ipc `compression` must be one of {{'zstd', 'lz4'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1112,7 +1135,7 @@ impl<'py> FromPyObject<'py> for Wrap<SearchSortedSide> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "sorted `side` must be one of {{'any', 'left', 'right'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1129,7 +1152,7 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedInterval> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`closed` must be one of {{'both', 'left', 'right', 'none'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1144,8 +1167,8 @@ impl<'py> FromPyObject<'py> for Wrap<WindowMapping> {
             "explode" => WindowMapping::Explode,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`mapping_strategy` must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
-            )))
+                    "`mapping_strategy` must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1162,7 +1185,7 @@ impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`validate` must be one of {{'m:m', 'm:1', '1:m', '1:1'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1180,7 +1203,7 @@ impl<'py> FromPyObject<'py> for Wrap<MaintainOrderJoin> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`maintain_order` must be one of {{'none', 'left', 'right', 'left_right', 'right_left'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1198,7 +1221,7 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`quote_style` must be one of {{'always', 'necessary', 'non_numeric', 'never'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1206,8 +1229,12 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(uri: &str, kv: Vec<(String, String)>) -> PyResult<CloudOptions> {
-    let out = CloudOptions::from_untyped_config(uri, kv).map_err(PyPolarsErr::from)?;
+pub(crate) fn parse_cloud_options(
+    uri: &str,
+    kv: impl IntoIterator<Item = (String, String)>,
+) -> PyResult<CloudOptions> {
+    let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
+    let out = CloudOptions::from_untyped_config(uri, iter).map_err(PyPolarsErr::from)?;
     Ok(out)
 }
 
@@ -1222,10 +1249,150 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "set operation must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+// Conversion from ScanCastOptions class from the Python side.
+impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if ob.is_none() {
+            // Initialize the default ScanCastOptions from Python.
+            static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
+
+            let out = DEFAULT.get_or_try_init(ob.py(), || {
+                let ob = PyModule::import(ob.py(), "polars.io.scan_options.cast_options")
+                    .unwrap()
+                    .getattr("ScanCastOptions")
+                    .unwrap()
+                    .call_method0("_default")
+                    .unwrap();
+
+                let out = Self::extract_bound(&ob)?;
+
+                // The default policy should match ERROR_ON_MISMATCH (but this can change).
+                debug_assert_eq!(&out.0, &CastColumnsPolicy::ERROR_ON_MISMATCH);
+
+                PyResult::Ok(out)
+            })?;
+
+            return Ok(out.clone());
+        }
+
+        let py = ob.py();
+
+        let integer_upcast = match &*ob
+            .getattr(intern!(py, "integer_cast"))?
+            .extract::<PyBackedStr>()?
+        {
+            "upcast" => true,
+            "forbid" => false,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for integer_cast: {v}"
+                )));
+            },
+        };
+
+        let mut float_upcast = false;
+        let mut float_downcast = false;
+
+        let float_cast_object = ob.getattr(intern!(py, "float_cast"))?;
+
+        parse_multiple_options("float_cast", float_cast_object, |v| {
+            match v {
+                "forbid" => {},
+                "upcast" => float_upcast = true,
+                "downcast" => float_downcast = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for float_cast: {v}"
+                    )));
+                },
+            }
+
+            Ok(())
+        })?;
+
+        let mut datetime_nanoseconds_downcast = false;
+        let mut datetime_convert_timezone = false;
+
+        let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
+
+        parse_multiple_options("datetime_cast", datetime_cast_object, |v| {
+            match v {
+                "forbid" => {},
+                "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
+                "convert-timezone" => datetime_convert_timezone = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for datetime_cast: {v}"
+                    )));
+                },
+            };
+
+            Ok(())
+        })?;
+
+        let missing_struct_fields = match &*ob
+            .getattr(intern!(py, "missing_struct_fields"))?
+            .extract::<PyBackedStr>()?
+        {
+            "insert" => MissingColumnsPolicy::Insert,
+            "raise" => MissingColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for missing_struct_fields: {v}"
+                )));
+            },
+        };
+
+        let extra_struct_fields = match &*ob
+            .getattr(intern!(py, "extra_struct_fields"))?
+            .extract::<PyBackedStr>()?
+        {
+            "ignore" => ExtraColumnsPolicy::Ignore,
+            "raise" => ExtraColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for extra_struct_fields: {v}"
+                )));
+            },
+        };
+
+        return Ok(Wrap(CastColumnsPolicy {
+            integer_upcast,
+            float_upcast,
+            float_downcast,
+            datetime_nanoseconds_downcast,
+            datetime_microseconds_downcast: false,
+            datetime_convert_timezone,
+            missing_struct_fields,
+            extra_struct_fields,
+        }));
+
+        fn parse_multiple_options(
+            parameter_name: &'static str,
+            py_object: Bound<'_, PyAny>,
+            mut parser_func: impl FnMut(&str) -> PyResult<()>,
+        ) -> PyResult<()> {
+            if let Ok(v) = py_object.extract::<PyBackedStr>() {
+                parser_func(&v)?;
+            } else if let Ok(v) = py_object.try_iter() {
+                for v in v {
+                    parser_func(&v?.extract::<PyBackedStr>()?)?;
+                }
+            } else {
+                return Err(PyValueError::new_err(format!(
+                    "unknown type for {parameter_name}: {py_object}"
+                )));
+            }
+
+            Ok(())
+        }
     }
 }
 
@@ -1244,8 +1411,8 @@ pub(crate) fn parse_fill_null_strategy(
         e => {
             return Err(PyValueError::new_err(format!(
                 "`strategy` must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {e}",
-            )))
-        }
+            )));
+        },
     };
     Ok(parsed)
 }
@@ -1279,16 +1446,15 @@ pub(crate) fn parse_parquet_compression(
         "zstd" => ParquetCompression::Zstd(
             compression_level
                 .map(|lvl| {
-                    ZstdLevel::try_new(lvl)
-                        .map_err(|e| PyValueError::new_err(format!("{e:?}")))
+                    ZstdLevel::try_new(lvl).map_err(|e| PyValueError::new_err(format!("{e:?}")))
                 })
                 .transpose()?,
         ),
         e => {
             return Err(PyValueError::new_err(format!(
                 "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
-            )))
-        }
+            )));
+        },
     };
     Ok(parsed)
 }
@@ -1307,8 +1473,8 @@ where
 #[derive(Debug, Copy, Clone)]
 pub struct PyCompatLevel(pub CompatLevel);
 
-impl<'a> FromPyObject<'a> for PyCompatLevel {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for PyCompatLevel {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(PyCompatLevel(if let Ok(level) = ob.extract::<u16>() {
             if let Ok(compat_level) = CompatLevel::with_level(level) {
                 compat_level
@@ -1326,5 +1492,184 @@ impl<'a> FromPyObject<'a> for PyCompatLevel {
                 "'compat_level' argument accepts int or bool",
             ));
         }))
+    }
+}
+
+#[cfg(feature = "string_normalize")]
+impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "NFC" => UnicodeForm::NFC,
+            "NFKC" => UnicodeForm::NFKC,
+            "NFD" => UnicodeForm::NFD,
+            "NFKD" => UnicodeForm::NFKD,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`form` must be one of {{'NFC', 'NFKC', 'NFD', 'NFKD'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl<'py> FromPyObject<'py> for Wrap<Option<KeyValueMetadata>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Metadata {
+            Static(Vec<(String, String)>),
+            Dynamic(PyObject),
+        }
+
+        let metadata = Option::<Metadata>::extract_bound(ob)?;
+        let key_value_metadata = metadata.map(|x| match x {
+            Metadata::Static(kv) => KeyValueMetadata::from_static(kv),
+            Metadata::Dynamic(func) => KeyValueMetadata::from_py_function(func),
+        });
+        Ok(Wrap(key_value_metadata))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<Option<TimeZone>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let tz = Option::<Wrap<PlSmallStr>>::extract_bound(ob)?;
+
+        let tz = tz.map(|x| x.0);
+
+        Ok(Wrap(TimeZone::opt_try_new(tz).map_err(to_py_err)?))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<UpcastOrForbid> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "upcast" => UpcastOrForbid::Upcast,
+            "forbid" => UpcastOrForbid::Forbid,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "cast parameter must be one of {{'upcast', 'forbid'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ExtraColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "ignore" => ExtraColumnsPolicy::Ignore,
+            "raise" => ExtraColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "extra column/field parameter must be one of {{'ignore', 'raise'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "insert" => MissingColumnsPolicy::Insert,
+            "raise" => MissingColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "missing column/field parameter must be one of {{'insert', 'raise'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(pyexpr) = ob.extract::<PyExpr>() {
+            return Ok(Wrap(MissingColumnsPolicyOrExpr::InsertWith(pyexpr.inner)));
+        }
+
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "insert" => MissingColumnsPolicyOrExpr::Insert,
+            "raise" => MissingColumnsPolicyOrExpr::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "missing column/field parameter must be one of {{'insert', 'raise', expression}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (deletion_file_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*deletion_file_type {
+            "iceberg-position-delete" => {
+                let dict: Bound<'_, PyDict> = ob.extract()?;
+
+                let mut out = PlIndexMap::new();
+
+                for (k, v) in dict
+                    .try_iter()?
+                    .zip(dict.call_method0("values")?.try_iter()?)
+                {
+                    let k: usize = k?.extract()?;
+                    let v: Bound<'_, PyAny> = v?.extract()?;
+
+                    let files = v
+                        .try_iter()?
+                        .map(|x| {
+                            x.and_then(|x| {
+                                let x: String = x.extract()?;
+                                Ok(x)
+                            })
+                        })
+                        .collect::<PyResult<Arc<[String]>>>()?;
+
+                    if !files.is_empty() {
+                        out.insert(k, files);
+                    }
+                }
+
+                DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown deletion file type: {v}"
+                )));
+            },
+        }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<PlPath> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(path) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(PlPath::new(&path)))
+        } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
+            Ok(Wrap(PlPath::Local(path.into())))
+        } else {
+            Err(
+                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
+                    .into(),
+            )
+        }
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0.to_str().into_pyobject(py)
     }
 }

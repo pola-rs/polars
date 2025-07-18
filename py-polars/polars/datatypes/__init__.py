@@ -1,9 +1,14 @@
-from polars.datatypes._parse import parse_into_dtype, try_parse_into_dtype
+from polars.datatypes._parse import (
+    parse_into_datatype_expr,
+    parse_into_dtype,
+    try_parse_into_dtype,
+)
 from polars.datatypes.classes import (
     Array,
     Binary,
     Boolean,
     Categorical,
+    Categories,
     DataType,
     DataTypeClass,
     Date,
@@ -61,6 +66,7 @@ __all__ = [
     "Binary",
     "Boolean",
     "Categorical",
+    "Categories",
     "DataType",
     "DataTypeClass",
     "Date",
@@ -109,5 +115,6 @@ __all__ = [
     "unpack_dtypes",
     # _parse
     "parse_into_dtype",
+    "parse_into_datatype_expr",
     "try_parse_into_dtype",
 ]

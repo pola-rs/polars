@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import FLOAT_DTYPES, SIGNED_INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -47,9 +48,7 @@ def test_builtin_abs() -> None:
     assert abs(s).to_list() == [1, 0, 1, None]
 
 
-@pytest.mark.parametrize(
-    "dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64]
-)
+@pytest.mark.parametrize("dtype", [*FLOAT_DTYPES, *SIGNED_INTEGER_DTYPES])
 def test_abs_builtin(dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"a": [-1, 0, 1, None]}, schema={"a": dtype})
     result = lf.select(abs(pl.col("a")))

@@ -1,12 +1,13 @@
 use super::CowBuffer;
 use crate::parquet::compression::Compression;
-use crate::parquet::encoding::{get_length, Encoding};
+use crate::parquet::encoding::{Encoding, get_length};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::Descriptor;
 pub use crate::parquet::parquet_bridge::{DataPageHeaderExt, PageType};
 use crate::parquet::statistics::Statistics;
 pub use crate::parquet::thrift_format::{
-    DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
+    DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, Encoding as FormatEncoding,
+    PageHeader as ParquetPageHeader,
 };
 
 pub enum PageResult {
@@ -129,6 +130,17 @@ impl DataPageHeader {
             DataPageHeader::V1(_) => None,
             DataPageHeader::V2(d) => Some(d.num_nulls as usize),
         }
+    }
+
+    pub fn encoding(&self) -> FormatEncoding {
+        match self {
+            DataPageHeader::V1(d) => d.encoding,
+            DataPageHeader::V2(d) => d.encoding,
+        }
+    }
+
+    pub fn is_dictionary_encoded(&self) -> bool {
+        matches!(self.encoding(), FormatEncoding::RLE_DICTIONARY)
     }
 }
 
@@ -364,7 +376,7 @@ pub fn split_buffer_v1(
     buffer: &[u8],
     has_rep: bool,
     has_def: bool,
-) -> ParquetResult<EncodedSplitBuffer> {
+) -> ParquetResult<EncodedSplitBuffer<'_>> {
     let (rep, buffer) = if has_rep {
         let level_buffer_length = get_length(buffer).ok_or_else(|| {
             ParquetError::oos(
@@ -413,7 +425,7 @@ pub fn split_buffer_v2(
     buffer: &[u8],
     rep_level_buffer_length: usize,
     def_level_buffer_length: usize,
-) -> ParquetResult<EncodedSplitBuffer> {
+) -> ParquetResult<EncodedSplitBuffer<'_>> {
     let (rep, buffer) = buffer.split_at(rep_level_buffer_length);
     let (def, values) = buffer.split_at(def_level_buffer_length);
 
@@ -421,7 +433,7 @@ pub fn split_buffer_v2(
 }
 
 /// Splits the page buffer into 3 slices corresponding to (encoded rep levels, encoded def levels, encoded values).
-pub fn split_buffer(page: &DataPage) -> ParquetResult<EncodedSplitBuffer> {
+pub fn split_buffer(page: &DataPage) -> ParquetResult<EncodedSplitBuffer<'_>> {
     match page.header() {
         DataPageHeader::V1(_) => split_buffer_v1(
             page.buffer(),

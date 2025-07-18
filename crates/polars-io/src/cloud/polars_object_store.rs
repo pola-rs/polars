@@ -2,21 +2,23 @@ use std::ops::Range;
 
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
+use hashbrown::hash_map::RawEntryMut;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
-use polars_error::{to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult};
+use polars_utils::mmap::MemSlice;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::pl_async::{
-    self, get_concurrency_limit, get_download_chunk_size, tune_with_concurrency_budget,
-    with_concurrency_budget, MAX_BUDGET_PER_REQUEST,
+    self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
+    tune_with_concurrency_budget, with_concurrency_budget,
 };
 
 mod inner {
     use std::future::Future;
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use object_store::ObjectStore;
     use polars_core::config;
@@ -88,7 +90,7 @@ mod inner {
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
                 *current_store = self.inner.builder.clone().build_impl().await.map_err(|e| {
-                    e.wrap_msg(|e| format!("attempt to rebuild object store failed: {}", e))
+                    e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
                 })?;
             }
 
@@ -119,9 +121,26 @@ mod inner {
             let store = self
                 .rebuild_inner(&store)
                 .await
-                .map_err(|e| e.wrap_msg(|e| format!("{}; original error: {}", e, orig_err)))?;
+                .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
 
-            func(&store).await
+            func(&store).await.map_err(|e| {
+                if self.inner.builder.is_azure()
+                    && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
+                        != Ok("1")
+                {
+                    // Note: This error is intended for Python audiences. The logic for retrieving
+                    // these keys exist only on the Python side.
+                    e.wrap_msg(|e| {
+                        format!(
+                            "{e}; note: if you are using Python, consider setting \
+POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY=1 if you would like polars to try to retrieve \
+and use the storage account keys from Azure CLI to authenticate"
+                        )
+                    })
+                } else {
+                    e
+                }
+            })
         }
     }
 }
@@ -137,12 +156,14 @@ impl PolarsObjectStore {
         path: &'a Path,
         ranges: T,
     ) -> impl StreamExt<Item = PolarsResult<Bytes>>
-           + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
-           + use<'a, T> {
-        futures::stream::iter(
-            ranges
-                .map(|range| async { store.get_range(path, range).await.map_err(to_compute_err) }),
-        )
+    + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
+    + use<'a, T> {
+        futures::stream::iter(ranges.map(move |range| async move {
+            let out = store
+                .get_range(path, range.start as u64..range.end as u64)
+                .await?;
+            Ok(out)
+        }))
         // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
         .buffered(get_concurrency_limit() as usize)
     }
@@ -152,14 +173,19 @@ impl PolarsObjectStore {
             let range = range.clone();
             let st = store.clone();
 
-            async {
+            async move {
                 let store = st;
                 let parts = split_range(range.clone());
 
                 if parts.len() == 1 {
-                    tune_with_concurrency_budget(1, || async { store.get_range(path, range).await })
-                        .await
-                        .map_err(to_compute_err)
+                    let out = tune_with_concurrency_budget(1, move || async move {
+                        store
+                            .get_range(path, range.start as u64..range.end as u64)
+                            .await
+                    })
+                    .await?;
+
+                    Ok(out)
                 } else {
                     let parts = tune_with_concurrency_budget(
                         parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
@@ -190,14 +216,11 @@ impl PolarsObjectStore {
     ///
     /// # Panics
     /// Panics if the same range start is used by more than 1 range.
-    pub async fn get_ranges_sort<
-        K: TryFrom<usize, Error = impl std::fmt::Debug> + std::hash::Hash + Eq,
-        T: From<Bytes>,
-    >(
+    pub async fn get_ranges_sort(
         &self,
         path: &Path,
         ranges: &mut [Range<usize>],
-    ) -> PolarsResult<PlHashMap<K, T>> {
+    ) -> PolarsResult<PlHashMap<usize, MemSlice>> {
         if ranges.is_empty() {
             return Ok(Default::default());
         }
@@ -256,16 +279,23 @@ impl PolarsObjectStore {
 
                             assert_eq!(bytes.len(), full_range.len());
 
+                            let bytes = MemSlice::from_bytes(bytes);
+
                             for range in &ranges[current_offset..end] {
-                                let v = out.insert(
-                                    K::try_from(range.start).unwrap(),
-                                    T::from(bytes.slice(
-                                        range.start - full_range.start
-                                            ..range.end - full_range.start,
-                                    )),
+                                let mem_slice = bytes.slice(
+                                    range.start - full_range.start..range.end - full_range.start,
                                 );
 
-                                assert!(v.is_none()); // duplicate range start
+                                match out.raw_entry_mut().from_key(&range.start) {
+                                    RawEntryMut::Vacant(slot) => {
+                                        slot.insert(range.start, mem_slice);
+                                    },
+                                    RawEntryMut::Occupied(mut slot) => {
+                                        if slot.get_mut().len() < mem_slice.len() {
+                                            *slot.get_mut() = mem_slice;
+                                        }
+                                    },
+                                }
                             }
 
                             current_offset = end;
@@ -299,7 +329,9 @@ impl PolarsObjectStore {
                 file.set_len(initial_pos).await?; // Reset if this function was called again.
 
                 let store = st;
-                let parts = opt_size.map(|x| split_range(0..x)).filter(|x| x.len() > 1);
+                let parts = opt_size
+                    .map(|x| split_range(0..x as usize))
+                    .filter(|x| x.len() > 1);
 
                 if let Some(parts) = parts {
                     tune_with_concurrency_budget(
@@ -309,10 +341,10 @@ impl PolarsObjectStore {
                             let mut len = 0;
                             while let Some(bytes) = stream.try_next().await? {
                                 len += bytes.len();
-                                file.write_all(&bytes).await.map_err(to_compute_err)?;
+                                file.write_all(&bytes).await?;
                             }
 
-                            assert_eq!(len, opt_size.unwrap());
+                            assert_eq!(len, opt_size.unwrap() as usize);
 
                             PolarsResult::Ok(pl_async::Size::from(len as u64))
                         },
@@ -320,13 +352,12 @@ impl PolarsObjectStore {
                     .await?
                 } else {
                     tune_with_concurrency_budget(1, || async {
-                        let mut stream =
-                            store.get(path).await.map_err(to_compute_err)?.into_stream();
+                        let mut stream = store.get(path).await?.into_stream();
 
                         let mut len = 0;
                         while let Some(bytes) = stream.try_next().await? {
                             len += bytes.len();
-                            file.write_all(&bytes).await.map_err(to_compute_err)?;
+                            file.write_all(&bytes).await?;
                         }
 
                         PolarsResult::Ok(pl_async::Size::from(len as u64))
@@ -372,10 +403,11 @@ impl PolarsObjectStore {
                         }
                     }
 
-                    head_result
+                    let out = head_result?;
+
+                    Ok(out)
                 })
                 .await
-                .map_err(to_compute_err)
             }
         })
         .await

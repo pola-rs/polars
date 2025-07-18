@@ -49,6 +49,16 @@ def test_list_eval_categorical() -> None:
     )
 
 
+def test_list_eval_cast_categorical() -> None:
+    df = pl.DataFrame({"test": [["a", None], ["c"], [], ["a", "b", "c"]]})
+    expected = pl.DataFrame(
+        {"test": [["a", None], ["c"], [], ["a", "b", "c"]]},
+        schema={"test": pl.List(pl.Categorical)},
+    )
+    result = df.select(pl.col("test").list.eval(pl.element().cast(pl.Categorical)))
+    assert_frame_equal(result, expected)
+
+
 def test_list_eval_type_coercion() -> None:
     last_non_null_value = pl.element().fill_null(3).last()
     df = pl.DataFrame({"array_cols": [[1, None]]})
@@ -79,7 +89,7 @@ def test_empty_eval_dtype_5546() -> None:
     assert (
         df.limit(0).with_columns(
             pl.col("a")
-            .list.eval(pl.element().filter(pl.first().struct.field("name") == 1))
+            .list.eval(pl.element().filter(pl.element().struct.field("name") == 1))
             .alias("a_filtered")
         )
     ).dtypes == [dtype, dtype]
@@ -130,3 +140,19 @@ def test_list_eval_list_output_18510(data: dict[str, Any], expr: pl.Expr) -> Non
     df = pl.DataFrame(data)
     result = df.select(pl.col("a").list.eval(pl.lit("")))
     assert result.to_series().dtype == pl.List(pl.String)
+
+
+def test_list_eval_when_then_23089() -> None:
+    assert_series_equal(
+        pl.Series([[1, 2]]).list.eval(pl.when(pl.int_range(pl.len()) > 0).then(42)),
+        pl.Series([[None, 42]]),
+        check_dtypes=False,
+    )
+
+
+def test_list_eval_selectors_23187() -> None:
+    df = pl.DataFrame({"x": [[{"id": "foo"}]]})
+    assert_frame_equal(
+        df.with_columns(pl.col("x").list.eval(pl.element().struct[0])),
+        pl.DataFrame({"x": [["foo"]]}),
+    )

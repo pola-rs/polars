@@ -10,7 +10,6 @@ use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
 pub struct IRDotDisplay<'a> {
-    is_streaming: bool,
     lp: IRPlanRef<'a>,
 }
 
@@ -50,26 +49,11 @@ fn write_label<'a, 'b>(
 
 impl<'a> IRDotDisplay<'a> {
     pub fn new(lp: IRPlanRef<'a>) -> Self {
-        if let Some(streaming_lp) = lp.extract_streaming_plan() {
-            return Self::new_streaming(streaming_lp);
-        }
-
-        Self {
-            is_streaming: false,
-            lp,
-        }
-    }
-
-    fn new_streaming(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            is_streaming: true,
-            lp,
-        }
+        Self { lp }
     }
 
     fn with_root(&self, root: Node) -> Self {
         Self {
-            is_streaming: false,
             lp: self.lp.with_root(root),
         }
     }
@@ -94,23 +78,8 @@ impl<'a> IRDotDisplay<'a> {
         use fmt::Write;
 
         let root = self.lp.root();
-
-        let mut parent = parent;
-        if self.is_streaming {
-            *last += 1;
-            let streaming_node = DotNode::Plain(*last);
-
-            if let Some(parent) = parent {
-                writeln!(f, "{INDENT}{parent} -- {streaming_node}")?;
-                write_label(f, streaming_node, |f| f.write_str("STREAMING"))?;
-            }
-
-            parent = Some(streaming_node);
-        }
-        let parent = parent;
-
         let id = if let IR::Cache { id, .. } = root {
-            DotNode::Cache(*id)
+            DotNode::Cache(id.to_usize())
         } else {
             *last += 1;
             DotNode::Plain(*last)
@@ -229,16 +198,13 @@ impl<'a> IRDotDisplay<'a> {
             DataFrameScan {
                 schema,
                 output_schema,
-                filter: selection,
                 ..
             } => {
                 let num_columns = NumColumnsSchema(output_schema.as_ref().map(|p| p.as_ref()));
-                let selection = selection.as_ref().map(|e| self.display_expr(e));
-                let selection = OptionExprIRDisplay(selection);
                 let total_columns = schema.len();
 
                 write_label(f, id, |f| {
-                    write!(f, "TABLE\nπ {num_columns}/{total_columns};\nσ {selection}")
+                    write!(f, "TABLE\nπ {num_columns}/{total_columns}")
                 })?;
             },
             Scan {
@@ -247,15 +213,19 @@ impl<'a> IRDotDisplay<'a> {
                 hive_parts: _,
                 predicate,
                 scan_type,
-                file_options: options,
+                unified_scan_args,
                 output_schema: _,
+                id: _,
             } => {
-                let name: &str = scan_type.into();
+                let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);
-                let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
+                let with_columns = unified_scan_args
+                    .projection
+                    .as_ref()
+                    .map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
                 let total_columns =
-                    file_info.schema.len() - usize::from(options.row_index.is_some());
+                    file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
 
                 write_label(f, id, |f| {
                     write!(f, "{name} SCAN {path}\nπ {with_columns}/{total_columns};",)?;
@@ -264,7 +234,7 @@ impl<'a> IRDotDisplay<'a> {
                         write!(f, "\nσ {}", self.display_expr(predicate))?;
                     }
 
-                    if let Some(row_index) = options.row_index.as_ref() {
+                    if let Some(row_index) = unified_scan_args.row_index.as_ref() {
                         write!(f, "\nrow index: {} (+{})", row_index.name, row_index.offset)?;
                     }
 
@@ -282,26 +252,22 @@ impl<'a> IRDotDisplay<'a> {
                 self.with_root(*input_left)._format(f, Some(id), last)?;
                 self.with_root(*input_right)._format(f, Some(id), last)?;
 
-                let left_on = self.display_exprs(left_on);
-                let right_on = self.display_exprs(right_on);
-
                 write_label(f, id, |f| {
-                    write!(
-                        f,
-                        "JOIN {}\nleft: {left_on};\nright: {right_on}",
-                        options.args.how
-                    )
+                    write!(f, "JOIN {}", options.args.how)?;
+
+                    if !left_on.is_empty() {
+                        let left_on = self.display_exprs(left_on);
+                        let right_on = self.display_exprs(right_on);
+                        write!(f, "\nleft: {left_on};\nright: {right_on}")?
+                    }
+                    Ok(())
                 })?;
             },
             MapFunction {
                 input, function, ..
             } => {
-                if let Some(streaming_lp) = function.to_streaming_lp() {
-                    Self::new_streaming(streaming_lp)._format(f, Some(id), last)?;
-                } else {
-                    self.with_root(*input)._format(f, Some(id), last)?;
-                    write_label(f, id, |f| write!(f, "{function}"))?;
-                }
+                self.with_root(*input)._format(f, Some(id), last)?;
+                write_label(f, id, |f| write!(f, "{function}"))?;
             },
             ExtContext { input, .. } => {
                 self.with_root(*input)._format(f, Some(id), last)?;
@@ -312,10 +278,18 @@ impl<'a> IRDotDisplay<'a> {
 
                 write_label(f, id, |f| {
                     f.write_str(match payload {
-                        SinkType::Memory => "SINK (MEMORY)",
-                        SinkType::File { .. } => "SINK (FILE)",
+                        SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::File { .. } => "SINK (FILE)",
+                        SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
                     })
                 })?;
+            },
+            SinkMultiple { inputs } => {
+                for input in inputs {
+                    self.with_root(*input)._format(f, Some(id), last)?;
+                }
+
+                write_label(f, id, |f| f.write_str("SINK MULTIPLE"))?;
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
@@ -326,6 +300,17 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| {
                     write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]")
                 })?;
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                self.with_root(*input_left)._format(f, Some(id), last)?;
+                self.with_root(*input_right)._format(f, Some(id), last)?;
+
+                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
@@ -339,12 +324,11 @@ pub struct PathsDisplay<'a>(pub &'a [PathBuf]);
 pub struct ScanSourcesDisplay<'a>(pub &'a ScanSources);
 struct NumColumns<'a>(Option<&'a [PlSmallStr]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
-struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 
 impl fmt::Display for ScanSourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScanSourceRef::Path(path) => path.display().fmt(f),
+            ScanSourceRef::Path(addr) => addr.display().fmt(f),
             ScanSourceRef::File(_) => f.write_str("open-file"),
             ScanSourceRef::Buffer(buff) => write!(f, "{} in-mem bytes", buff.len()),
         }
@@ -397,15 +381,6 @@ impl fmt::Display for NumColumnsSchema<'_> {
         match self.0 {
             None => f.write_str("*"),
             Some(columns) => columns.len().fmt(f),
-        }
-    }
-}
-
-impl fmt::Display for OptionExprIRDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            None => f.write_str("None"),
-            Some(expr) => expr.fmt(f),
         }
     }
 }

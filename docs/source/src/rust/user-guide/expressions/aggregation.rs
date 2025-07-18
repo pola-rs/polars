@@ -5,39 +5,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use polars::prelude::*;
     use reqwest::blocking::Client;
 
-    let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
+    let url = "https://huggingface.co/datasets/nameexhaustion/polars-docs/resolve/main/legislators-historical.csv";
 
     let mut schema = Schema::default();
     schema.with_column(
         "first_name".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "gender".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "type".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "state".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column(
         "party".into(),
-        DataType::Categorical(None, Default::default()),
+        DataType::from_categories(Categories::global()),
     );
     schema.with_column("birthday".into(), DataType::Date);
 
-    let data: Vec<u8> = Client::new().get(url).send()?.text()?.bytes().collect();
+    let data = Client::new().get(url).send()?.bytes()?;
 
     let dataset = CsvReadOptions::default()
         .with_has_header(true)
         .with_schema_overwrite(Some(Arc::new(schema)))
         .map_parse_options(|parse_options| parse_options.with_try_parse_dates(true))
         .into_reader_with_file_handle(Cursor::new(data))
-        .finish()?;
+        .finish()?
+        .lazy()
+        .with_columns([
+            col("first").name().suffix("_name"),
+            col("middle").name().suffix("_name"),
+            col("last").name().suffix("_name"),
+        ])
+        .collect()?;
 
     println!("{}", &dataset);
     // --8<-- [end:dataframe]
@@ -57,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:basic]
 
     // --8<-- [start:conditional]
@@ -80,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:conditional]
 
     // --8<-- [start:nested]
@@ -103,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:nested]
 
     // --8<-- [start:filter]
@@ -115,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         compute_age()
             .filter(col("gender").eq(lit(gender)))
             .mean()
-            .alias(format!("avg {} birthday", gender))
+            .alias(format!("avg {gender} birthday"))
     }
 
     let df = dataset
@@ -131,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:filter]
 
     // --8<-- [start:filter-nested]
@@ -149,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:filter-nested]
 
     // --8<-- [start:sort]
@@ -174,7 +181,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort]
 
     // --8<-- [start:sort2]
@@ -199,7 +206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort2]
 
     // --8<-- [start:sort3]
@@ -228,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .limit(5)
         .collect()?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:sort3]
 
     Ok(())

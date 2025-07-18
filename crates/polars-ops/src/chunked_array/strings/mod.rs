@@ -12,14 +12,14 @@ mod find_many;
 mod json_path;
 #[cfg(feature = "strings")]
 mod namespace;
+#[cfg(feature = "string_normalize")]
+mod normalize;
 #[cfg(feature = "string_pad")]
 mod pad;
 #[cfg(feature = "string_reverse")]
 mod reverse;
 #[cfg(feature = "strings")]
 mod split;
-#[cfg(feature = "strings")]
-mod starts_with;
 #[cfg(feature = "strings")]
 mod strip;
 #[cfg(feature = "strings")]
@@ -37,11 +37,15 @@ pub use find_many::*;
 pub use json_path::*;
 #[cfg(feature = "strings")]
 pub use namespace::*;
+#[cfg(feature = "string_normalize")]
+pub use normalize::*;
 use polars_core::prelude::*;
 #[cfg(feature = "strings")]
 pub use split::*;
 #[cfg(feature = "strings")]
 pub use strip::*;
+#[cfg(feature = "strings")]
+pub use substring::{substring_ternary_offsets_value, update_view};
 
 pub trait AsString {
     fn as_string(&self) -> &StringChunked;

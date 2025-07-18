@@ -2,7 +2,7 @@ use std::vec::IntoIter;
 
 use polars_utils::idx_vec::UnitVec;
 
-use super::{get_page_iterator, MemReader, PageReader};
+use super::{MemReader, PageReader, get_page_iterator};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, RowGroupMetadata};
 use crate::parquet::page::CompressedPage;

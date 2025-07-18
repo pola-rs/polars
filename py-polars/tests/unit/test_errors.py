@@ -137,15 +137,21 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'LazyFrame'.* not 'pandas.core.frame.DataFrame'",
+    ):
+        df_left.lazy().join_asof(df_right.to_pandas(), on="Id")  # type: ignore[arg-type]
 
 
 def test_projection_update_schema_missing_column() -> None:
@@ -233,7 +239,7 @@ def test_error_on_double_agg() -> None:
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
-        ComputeError, match="filter predicate must be of type `Boolean`, got"
+        InvalidOperationError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
 
@@ -248,7 +254,7 @@ def test_window_expression_different_group_length() -> None:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
             pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")
         )
-    except ComputeError as exc:
+    except ShapeError as exc:
         msg = str(exc)
         assert (
             "the length of the window expression did not match that of the group" in msg
@@ -268,7 +274,7 @@ def test_invalid_concat_type_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
+        match="DataFrame `how` must be one of {'vertical', '.+', 'align_right'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
 
@@ -337,9 +343,7 @@ def test_invalid_dtype() -> None:
 def test_arr_eval_named_cols() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
 
-    with pytest.raises(
-        ComputeError,
-    ):
+    with pytest.raises(ComputeError):
         df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 
@@ -419,21 +423,6 @@ def test_date_string_comparison(e: pl.Expr) -> None:
         match=r"cannot compare 'date/datetime/time' to a string value",
     ):
         df.select(e)
-
-
-def test_err_on_multiple_column_expansion() -> None:
-    # this would be a great feature :)
-    with pytest.raises(
-        ComputeError, match=r"expanding more than one `col` is not allowed"
-    ):
-        pl.DataFrame(
-            {
-                "a": [1],
-                "b": [2],
-                "c": [3],
-                "d": [4],
-            }
-        ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])])
 
 
 def test_compare_different_len() -> None:
@@ -733,5 +722,7 @@ def test_raise_on_different_results_20104() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError):
         df.rolling("x", period="3i").agg(
-            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+            result=pl.col("x")
+            .gather_every(2, offset=1)
+            .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )

@@ -1,23 +1,35 @@
-use polars_core::error::{polars_err, PolarsResult};
-use polars_io::path_utils::is_cloud_url;
+use polars_core::error::{PolarsResult, polars_err};
 
-use crate::plans::{DslPlan, FileScan, ScanSources};
+use crate::constants::POLARS_PLACEHOLDER;
+use crate::dsl::{DslPlan, FileScanDsl, ScanSources, SinkType};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     if std::env::var("POLARS_SKIP_CLIENT_CHECK").as_deref() == Ok("1") {
         return Ok(());
     }
+
+    // Check that the plan ends with a sink.
+    if !matches!(dsl, DslPlan::Sink { .. }) {
+        return ineligible_error("does not contain a sink");
+    }
+
     for plan_node in dsl.into_iter() {
         match plan_node {
             #[cfg(feature = "python")]
-            DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
+            DslPlan::PythonScan { .. } => (),
+            DslPlan::GroupBy { apply, .. } if apply.is_some() => {
+                return ineligible_error("contains map groups");
+            },
             DslPlan::Scan {
                 sources, scan_type, ..
             } => {
                 match sources {
-                    ScanSources::Paths(paths) => {
-                        if paths.iter().any(|p| !is_cloud_url(p)) {
+                    ScanSources::Paths(addrs) => {
+                        if addrs
+                            .iter()
+                            .any(|p| !p.is_cloud_url() && p.to_str() != POLARS_PLACEHOLDER)
+                        {
                             return ineligible_error("contains scan of local file system");
                         }
                     },
@@ -29,14 +41,26 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     },
                 }
 
-                if matches!(scan_type, FileScan::Anonymous { .. }) {
+                if matches!(&**scan_type, FileScanDsl::Anonymous { .. }) {
                     return ineligible_error("contains anonymous scan");
                 }
             },
             DslPlan::Sink { payload, .. } => {
-                if !payload.is_cloud_destination() {
-                    return ineligible_error("contains sink to non-cloud location");
+                match payload {
+                    SinkType::Memory => {
+                        return ineligible_error("contains memory sink");
+                    },
+                    SinkType::File(_) => {
+                        // The sink destination is passed around separately, can't check the
+                        // eligibility here.
+                    },
+                    SinkType::Partition(_) => {
+                        return ineligible_error("contains partition sink");
+                    },
                 }
+            },
+            DslPlan::SinkMultiple { .. } => {
+                return ineligible_error("contains sink multiple");
             },
             _ => (),
         }
@@ -62,10 +86,13 @@ impl DslPlan {
             | Sort { input, .. }
             | Slice { input, .. }
             | HStack { input, .. }
+            | MatchToSchema { input, .. }
             | MapFunction { input, .. }
             | Sink { input, .. }
             | Cache { input, .. } => scratch.push(input),
-            Union { inputs, .. } | HConcat { inputs, .. } => scratch.extend(inputs),
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
+                scratch.extend(inputs)
+            },
             Join {
                 input_left,
                 input_right,
@@ -82,6 +109,15 @@ impl DslPlan {
             Scan { .. } | DataFrameScan { .. } => (),
             #[cfg(feature = "python")]
             PythonScan { .. } => (),
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => {
+                scratch.push(input_left);
+                scratch.push(input_right);
+            },
         }
     }
 }

@@ -6,6 +6,8 @@ Miscellaneous
 .. autosummary::
    :toctree: api/
 
+    QueryOptFlags
+
     LazyFrame.cache
     LazyFrame.collect
     LazyFrame.collect_async
@@ -14,6 +16,7 @@ Miscellaneous
     LazyFrame.map_batches
     LazyFrame.pipe
     LazyFrame.profile
+    LazyFrame.remote
 
 Serialization
 -------------

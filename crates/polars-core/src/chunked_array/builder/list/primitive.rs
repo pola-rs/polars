@@ -20,9 +20,8 @@ where
         inner_type: DataType,
     ) -> Self {
         debug_assert!(
-            inner_type.to_physical().is_numeric(),
-            "inner type must be primitive, got {}",
-            inner_type
+            inner_type.to_physical().is_primitive_numeric(),
+            "inner type must be primitive, got {inner_type}"
         );
         let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
         let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);

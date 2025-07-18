@@ -1,16 +1,25 @@
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    # ensure the object constructor is known by polars
-    # we set this once on import
-
-    # This must be done before importing the Polars Rust bindings.
+    # This must be done before importing the Polars Rust bindings, otherwise we
+    # might execute illegal instructions.
     import polars._cpu_check
 
     polars._cpu_check.check_cpu_flags()
 
-    # we also set other function pointers needed
-    # on the rust side. This function is highly
+    # We also configure the allocator before importing the Polars Rust bindings.
+    # See https://github.com/pola-rs/polars/issues/18088,
+    # https://github.com/pola-rs/polars/pull/21829.
+    import os
+
+    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
+    if os.environ.get("POLARS_THP") == "1":
+        jemalloc_conf += ",thp:always,metadata_thp:always"
+    if override := os.environ.get("_RJEM_MALLOC_CONF"):
+        jemalloc_conf += "," + override
+    os.environ["_RJEM_MALLOC_CONF"] = jemalloc_conf
+
+    # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
     from polars.polars import __register_startup_deps
 
@@ -23,6 +32,7 @@ from polars._utils.polars_version import get_polars_version as _get_polars_versi
 
 # TODO: remove need for importing wrap utils at top level
 from polars._utils.wrap import wrap_df, wrap_s  # noqa: F401
+from polars.catalog.unity import Catalog
 from polars.config import Config
 from polars.convert import (
     from_arrow,
@@ -33,14 +43,17 @@ from polars.convert import (
     from_pandas,
     from_records,
     from_repr,
+    from_torch,
     json_normalize,
 )
 from polars.dataframe import DataFrame
+from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import (
     Array,
     Binary,
     Boolean,
     Categorical,
+    Categories,
     DataType,
     Date,
     Datetime,
@@ -104,10 +117,12 @@ from polars.functions import (
     datetime,
     datetime_range,
     datetime_ranges,
+    dtype_of,
     duration,
     element,
     escape_regex,
     exclude,
+    explain_all,
     field,
     first,
     fold,
@@ -120,6 +135,8 @@ from polars.functions import (
     int_ranges,
     last,
     len,
+    linear_space,
+    linear_spaces,
     lit,
     map_batches,
     map_groups,
@@ -138,7 +155,9 @@ from polars.functions import (
     repeat,
     rolling_corr,
     rolling_cov,
+    row_index,
     select,
+    self_dtype,
     set_random_seed,
     sql_expr,
     std,
@@ -155,6 +174,14 @@ from polars.functions import (
 )
 from polars.interchange import CompatLevel
 from polars.io import (
+    BasePartitionContext,
+    KeyedPartition,
+    KeyedPartitionContext,
+    PartitionByKey,
+    PartitionMaxSize,
+    PartitionParted,
+    ScanCastOptions,
+    defer,
     read_avro,
     read_clipboard,
     read_csv,
@@ -170,6 +197,7 @@ from polars.io import (
     read_ndjson,
     read_ods,
     read_parquet,
+    read_parquet_metadata,
     read_parquet_schema,
     scan_csv,
     scan_delta,
@@ -187,7 +215,7 @@ from polars.io.cloud import (
     CredentialProviderFunctionReturn,
     CredentialProviderGCP,
 )
-from polars.lazyframe import GPUEngine, LazyFrame
+from polars.lazyframe import GPUEngine, LazyFrame, QueryOptFlags
 from polars.meta import (
     build_info,
     get_index_type,
@@ -223,11 +251,14 @@ __all__ = [
     "GPUEngine",
     # schema
     "Schema",
+    # datatype_expr
+    "DataTypeExpr",
     # datatypes
     "Array",
     "Binary",
     "Boolean",
     "Categorical",
+    "Categories",
     "DataType",
     "Date",
     "Datetime",
@@ -255,6 +286,14 @@ __all__ = [
     "Unknown",
     "Utf8",
     # polars.io
+    "defer",
+    "KeyedPartition",
+    "BasePartitionContext",
+    "KeyedPartitionContext",
+    "PartitionByKey",
+    "PartitionMaxSize",
+    "PartitionParted",
+    "ScanCastOptions",
     "read_avro",
     "read_clipboard",
     "read_csv",
@@ -270,6 +309,7 @@ __all__ = [
     "read_ndjson",
     "read_ods",
     "read_parquet",
+    "read_parquet_metadata",
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",
@@ -278,6 +318,7 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "Catalog",
     # polars.io.cloud
     "CredentialProvider",
     "CredentialProviderAWS",
@@ -299,6 +340,7 @@ __all__ = [
     "arg_where",
     "business_day_count",
     "concat",
+    "dtype_of",
     "date_range",
     "date_ranges",
     "datetime_range",
@@ -306,6 +348,7 @@ __all__ = [
     "element",
     "ones",
     "repeat",
+    "self_dtype",
     "time_range",
     "time_ranges",
     "zeros",
@@ -347,6 +390,7 @@ __all__ = [
     "datetime",
     "duration",
     "exclude",
+    "explain_all",
     "field",
     "first",
     "fold",
@@ -358,6 +402,8 @@ __all__ = [
     "int_range",
     "int_ranges",
     "last",
+    "linear_space",
+    "linear_spaces",
     "lit",
     "map_batches",
     "map_groups",
@@ -369,6 +415,7 @@ __all__ = [
     "reduce",
     "rolling_corr",
     "rolling_cov",
+    "row_index",
     "select",
     "std",
     "struct",
@@ -388,6 +435,7 @@ __all__ = [
     "from_pandas",
     "from_records",
     "from_repr",
+    "from_torch",
     "json_normalize",
     # polars.meta
     "build_info",
@@ -400,6 +448,8 @@ __all__ = [
     "sql",
     "sql_expr",
     "CompatLevel",
+    # optimization
+    "QueryOptFlags",
 ]
 
 
@@ -410,11 +460,10 @@ def __getattr__(name: str) -> Any:
 
         issue_deprecation_warning(
             message=(
-                f"Accessing `{name}` from the top-level `polars` module is deprecated."
-                " Import it directly from the `polars.exceptions` module instead:"
-                f" from polars.exceptions import {name}"
+                f"accessing `{name}` from the top-level `polars` module was deprecated "
+                "in version 1.0.0. Import it directly from the `polars.exceptions` module "
+                f"instead, e.g.: `from polars.exceptions import {name}`"
             ),
-            version="1.0.0",
         )
         return getattr(exceptions, name)
 
@@ -426,10 +475,9 @@ def __getattr__(name: str) -> Any:
 
         issue_deprecation_warning(
             message=(
-                f"`{name}` is deprecated. Define your own data type groups or use the"
-                " `polars.selectors` module for selecting columns of a certain data type."
+                f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
+                "use the `polars.selectors` module for selecting columns of a certain data type."
             ),
-            version="1.0.0",
         )
         return getattr(dtgroup, name)
 

@@ -1,10 +1,14 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 use crate::prelude::visitor::IRNode;
 
 mod identifier_impl {
-    use polars_core::hashing::_boost_hash_combine;
+    use polars_utils::aliases::PlFixedStateQuality;
+    use polars_utils::hashing::_boost_hash_combine;
 
     use super::*;
     /// Identifier that shows the sub-expression path.
@@ -16,7 +20,7 @@ mod identifier_impl {
     pub(super) struct Identifier {
         inner: Option<u64>,
         last_node: Option<IRNode>,
-        hb: PlRandomState,
+        hb: PlFixedStateQuality,
     }
 
     impl Identifier {
@@ -47,7 +51,7 @@ mod identifier_impl {
             Self {
                 inner: None,
                 last_node: None,
-                hb: PlRandomState::with_seed(0),
+                hb: PlFixedStateQuality::with_seed(0),
             }
         }
 
@@ -79,7 +83,7 @@ mod identifier_impl {
             Self {
                 inner,
                 last_node: Some(*alp),
-                hb: self.hb.clone(),
+                hb: self.hb,
             }
         }
     }
@@ -234,7 +238,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
     }
 }
 
-pub(super) type CacheId2Caches = PlHashMap<usize, (u32, Vec<Node>)>;
+pub(super) type CacheId2Caches = PlHashMap<UniqueId, (u32, Vec<Node>)>;
 
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
@@ -246,7 +250,7 @@ struct CommonSubPlanRewriter<'a> {
     visited_idx: usize,
     /// Indicates if this expression is rewritten.
     rewritten: bool,
-    cache_id: IdentifierMap<usize>,
+    cache_id: IdentifierMap<UniqueId>,
     // Maps cache_id : (cache_count and cache_nodes)
     cache_id_to_caches: CacheId2Caches,
 }
@@ -328,15 +332,15 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let cache_id = self.cache_id.inner.len();
-        let cache_id = *self
+        let cache_id = self
             .cache_id
-            .entry(id.clone(), || cache_id, &arena.0, &arena.1);
+            .entry(id.clone(), UniqueId::default, &arena.0, &arena.1)
+            .clone();
         let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
 
         let cache_node = IR::Cache {
             input: node.node(),
-            id: cache_id,
+            id: cache_id.clone(),
             cache_hits: cache_count - 1,
         };
         node.assign(cache_node, &mut arena.0);
@@ -359,11 +363,12 @@ pub(crate) fn elim_cmn_subplans(
     let mut id_array = Default::default();
 
     with_ir_arena(lp_arena, expr_arena, |arena| {
-        let lp_node = IRNode::new(root);
+        let lp_node = IRNode::new_mutate(root);
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
 
+        let lp_node = IRNode::new_mutate(root);
         let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
         lp_node.rewrite(&mut rewriter, arena).unwrap();
 

@@ -51,9 +51,10 @@ fn test_lazy_unpivot() {
     let df = get_df();
 
     let args = UnpivotArgsDSL {
-        on: vec!["sepal_length".into(), "sepal_width".into()],
-        index: vec!["petal_width".into(), "petal_length".into()],
-        ..Default::default()
+        on: by_name(["sepal_length", "sepal_width"], true),
+        index: by_name(["petal_width", "petal_length"], true),
+        variable_name: None,
+        value_name: None,
     };
 
     let out = df
@@ -289,7 +290,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
                 )
                 .alias("diff_cases"),
         ])
-        .explode([col("day"), col("diff_cases")])
+        .explode(by_name(["day", "diff_cases"], true))
         .join(
             base_df,
             [col("uid"), col("day")],
@@ -355,7 +356,7 @@ fn test_lazy_query_8() -> PolarsResult<()> {
     let mut selection = vec![];
 
     for &c in &["A", "B", "C", "D", "E"] {
-        let e = when(col(c).is_in(col("E")))
+        let e = when(col(c).is_in(col("E"), false))
             .then(col("A"))
             .otherwise(Null {}.lit())
             .alias(c);
@@ -419,7 +420,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
     feature = "dtype-duration"
 ))]
 fn test_lazy_query_10() {
-    use polars_core::export::chrono::Duration as ChronoDuration;
+    use chrono::Duration as ChronoDuration;
     let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
     let x = DatetimeChunked::from_naive_datetime(
         "x".into(),
@@ -484,10 +485,11 @@ fn test_lazy_query_10() {
         .select(&[(col("x") - col("y")).alias("z")])
         .collect()
         .unwrap();
-    assert!(out
-        .column("z")
-        .unwrap()
-        .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
+    assert!(
+        out.column("z")
+            .unwrap()
+            .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap())
+    );
 }
 
 #[test]
@@ -586,7 +588,7 @@ fn test_simplify_expr() {
     .unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
-        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float(2.0))))
+        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(2.0)))))
     );
 }
 
@@ -611,13 +613,14 @@ fn test_lazy_wildcard() {
 #[test]
 fn test_lazy_reverse() {
     let df = load_df();
-    assert!(df
-        .clone()
-        .lazy()
-        .reverse()
-        .collect()
-        .unwrap()
-        .equals_missing(&df.reverse()))
+    assert!(
+        df.clone()
+            .lazy()
+            .reverse()
+            .collect()
+            .unwrap()
+            .equals_missing(&df.reverse())
+    )
 }
 
 #[test]
@@ -1039,7 +1042,7 @@ fn test_group_by_cum_sum() -> PolarsResult<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.column("vals")?.explode()?.i32()?),
+        Vec::from(out.column("vals")?.explode(false)?.i32()?),
         [1, 5, 11, 3, 12, 20]
             .iter()
             .copied()
@@ -1100,7 +1103,7 @@ fn test_multiple_explode() -> PolarsResult<()> {
         .lazy()
         .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
-        .explode([col("c_list"), col("b_list")])
+        .explode(by_name(["c_list", "b_list"], true))
         .collect()?;
     assert_eq!(out.shape(), (5, 3));
 
@@ -1123,8 +1126,6 @@ fn test_filter_and_alias() -> PolarsResult<()> {
         "a" => [2, 2],
         "a_squared" => [4.0, 4.0]
     ]?;
-    println!("{:?}", out);
-    println!("{:?}", expected);
     assert!(out.equals(&expected));
     Ok(())
 }
@@ -1171,11 +1172,9 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).over_with_options(
-            [col("a")],
-            None,
-            WindowMapping::Join,
-        )])
+        .select([col("b")
+            .fill_null_with_strategy(FillNullStrategy::Forward(FillNullLimit::None))
+            .over_with_options(Some([col("a")]), None, WindowMapping::Join)?])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1253,7 +1252,10 @@ fn test_exclude() -> PolarsResult<()> {
     "c" => [1, 2, 3]
     ]?;
 
-    let out = df.lazy().select([col("*").exclude(["b"])]).collect()?;
+    let out = df
+        .lazy()
+        .select([all().exclude_cols(["b"]).as_expr()])
+        .collect()?;
 
     assert_eq!(out.get_column_names(), &["a", "c"]);
     Ok(())
@@ -1302,7 +1304,7 @@ fn test_sort_by() -> PolarsResult<()> {
         .group_by_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
-    let a = out.column("a")?.explode()?;
+    let a = out.column("a")?.explode(false)?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1315,7 +1317,7 @@ fn test_sort_by() -> PolarsResult<()> {
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
-    let a = out.column("a")?.explode()?;
+    let a = out.column("a")?.explode(false)?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1335,7 +1337,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             col("B")
                 .shift(lit(1))
                 .filter(col("B").shift(lit(1)).gt(lit(4)))
-                .over_with_options([col("fruits")], None, WindowMapping::Join)
+                .over_with_options(Some([col("fruits")]), None, WindowMapping::Join)?
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1403,8 +1405,8 @@ fn test_categorical_addition() -> PolarsResult<()> {
     let out = df
         .lazy()
         .select([
-            col("fruits").cast(DataType::Categorical(None, Default::default())),
-            col("cars").cast(DataType::Categorical(None, Default::default())),
+            col("fruits").cast(DataType::from_categories(Categories::global())),
+            col("cars").cast(DataType::from_categories(Categories::global())),
         ])
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;
@@ -1511,7 +1513,7 @@ fn test_round_after_agg() -> PolarsResult<()> {
         .agg([col("A")
             .cast(DataType::Float32)
             .mean()
-            .round(2)
+            .round(2, polars_ops::series::RoundMode::default())
             .alias("foo")])
         .collect()?;
 
@@ -1545,7 +1547,7 @@ fn test_round_after_agg() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("groups")])
         .agg([((col("b") * col("c")).sum() / col("b").sum())
-            .round(2)
+            .round(2, polars_ops::series::RoundMode::default())
             .alias("foo")])
         .collect()?;
 
@@ -1580,7 +1582,7 @@ fn test_exclude_regex() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .select([col("*").exclude(["^(fruits|cars)$"])])
+        .select([(all() - Selector::Matches("^(fruits|cars)$".into())).as_expr()])
         .collect()?;
 
     assert_eq!(out.get_column_names(), &["A", "B"]);
@@ -1621,7 +1623,9 @@ pub fn test_select_by_dtypes() -> PolarsResult<()> {
     ]?;
     let out = df
         .lazy()
-        .select([dtype_cols([DataType::Float32, DataType::String])])
+        .select([dtype_cols([DataType::Float32, DataType::String])
+            .as_selector()
+            .as_expr()])
         .collect()?;
     assert_eq!(out.dtypes(), &[DataType::String, DataType::Float32]);
 
@@ -1660,15 +1664,7 @@ fn test_single_group_result() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("a")
-            .arg_sort(SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .over([col("a")])])
+        .select([col("a").arg_sort(false, false).over([col("a")])])
         .collect()?;
 
     let a = out.column("a")?.idx()?;
@@ -1695,10 +1691,10 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .over_with_options([col("group")], None, WindowMapping::Join)])
+            .over_with_options(Some([col("group")]), None, WindowMapping::Join)?])
         .collect()?;
 
-    let out = out.column("value")?.explode()?;
+    let out = out.column("value")?.explode(false)?;
     let out = out.f64()?;
     assert_eq!(
         Vec::from(out),
@@ -1721,7 +1717,7 @@ fn empty_df() -> PolarsResult<()> {
             col("A").shift_and_fill(lit(-1), lit(1)).alias("3"),
             col("A").fill_null(lit(1)).alias("4"),
             col("A").cum_count(false).alias("5"),
-            col("A").diff(1, NullBehavior::Ignore).alias("6"),
+            col("A").diff(lit(1), NullBehavior::Ignore).alias("6"),
             col("A").cum_max(false).alias("7"),
             col("A").cum_min(false).alias("8"),
         ])
@@ -1761,10 +1757,13 @@ fn test_is_in() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))))])
+        .agg([col("cars").is_in(
+            col("cars").filter(col("cars").eq(lit("beetle"))).implode(),
+            false,
+        )])
         .collect()?;
     let out = out.column("cars").unwrap();
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),
@@ -1775,11 +1774,14 @@ fn test_is_in() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(lit(Series::new("a".into(), ["beetle", "vw"])))])
+        .agg([col("cars").is_in(
+            lit(Series::new("a".into(), ["beetle", "vw"])).implode(),
+            false,
+        )])
         .collect()?;
 
     let out = out.column("cars").unwrap();
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),
@@ -1941,10 +1943,33 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
         )
         .slice(0, 3)
         .collect()?;
-    println!("{:?}", res);
     assert!(res.equals(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
     ]?));
+    Ok(())
+}
+
+#[test]
+fn test_over_with_options_empty_join() -> PolarsResult<()> {
+    let empty_df = DataFrame::new(vec![
+        Series::new_empty("a".into(), &DataType::Int32).into(),
+        Series::new_empty("b".into(), &DataType::Int32).into(),
+    ])?;
+
+    let empty_df_out = empty_df
+        .lazy()
+        .select([col("b").over_with_options(
+            Some([col("a")]),
+            Option::None,
+            WindowMapping::Join,
+        )?])
+        .collect()?;
+
+    let f1: Field = Field::new("b".into(), DataType::List(Box::new(DataType::Int32)));
+    let sc: Schema = Schema::from_iter(vec![f1]);
+
+    assert_eq!(&**empty_df_out.schema(), &sc);
+
     Ok(())
 }

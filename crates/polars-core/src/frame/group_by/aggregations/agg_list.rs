@@ -8,19 +8,15 @@ pub trait AggList {
     /// # Safety
     ///
     /// groups should be in bounds
-    unsafe fn agg_list(&self, _groups: &GroupsProxy) -> Series;
+    unsafe fn agg_list(&self, _groups: &GroupsType) -> Series;
 }
 
-impl<T> AggList for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         let ca = self.rechunk();
 
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let mut can_fast_explode = true;
 
                 let arr = ca.downcast_iter().next().unwrap();
@@ -70,12 +66,12 @@ where
                 };
 
                 let array = PrimitiveArray::new(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                     list_values.into(),
                     validity,
                 );
                 let dtype = ListArray::<i64>::default_datatype(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 );
                 // SAFETY:
                 // offsets are monotonically increasing
@@ -92,7 +88,7 @@ where
                 }
                 ca.into()
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let mut can_fast_explode = true;
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values();
@@ -135,12 +131,12 @@ where
                 };
 
                 let array = PrimitiveArray::new(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                     list_values.into(),
                     validity,
                 );
                 let dtype = ListArray::<i64>::default_datatype(
-                    T::get_dtype().to_arrow(CompatLevel::newest()),
+                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 );
                 let arr = ListArray::<i64>::new(
                     dtype,
@@ -159,16 +155,16 @@ where
 }
 
 impl AggList for NullChunked {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let mut builder = ListNullChunkedBuilder::new(self.name().clone(), groups.len());
                 for idx in groups.all().iter() {
                     builder.append_with_len(idx.len());
                 }
                 builder.finish().into_series()
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let mut builder = ListNullChunkedBuilder::new(self.name().clone(), groups.len());
                 for [_, len] in groups {
                     builder.append_with_len(*len as usize);
@@ -180,39 +176,39 @@ impl AggList for NullChunked {
 }
 
 impl AggList for BooleanChunked {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 impl AggList for StringChunked {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 impl AggList for BinaryChunked {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 impl AggList for ListChunked {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 #[cfg(feature = "dtype-array")]
 impl AggList for ArrayChunked {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         agg_list_by_gather_and_offsets(self, groups)
     }
 }
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> AggList for ObjectChunked<T> {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         let mut can_fast_explode = true;
         let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
         let mut length_so_far = 0i64;
@@ -279,7 +275,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 
 #[cfg(feature = "dtype-struct")]
 impl AggList for StructChunked {
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         let ca = self.clone();
         let (gather, offsets, can_fast_explode) = groups.prepare_list_agg(self.len());
 
@@ -287,7 +283,7 @@ impl AggList for StructChunked {
             let out = ca.into_series().take_unchecked(&gather);
             out.struct_().unwrap().clone()
         } else {
-            ca.rechunk()
+            ca.rechunk().into_owned()
         };
 
         let arr = gathered.chunks()[0].clone();
@@ -308,7 +304,7 @@ impl AggList for StructChunked {
 
 unsafe fn agg_list_by_gather_and_offsets<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
 ) -> Series
 where
     ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,

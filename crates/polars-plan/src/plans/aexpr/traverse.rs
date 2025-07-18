@@ -1,8 +1,9 @@
 use super::*;
 
 impl AExpr {
-    /// Push nodes at this level to a pre-allocated stack.
-    pub(crate) fn nodes<E>(&self, container: &mut E)
+    /// Push the inputs of this node to the given container, in reverse order.
+    /// This ensures the primary node responsible for the name is pushed last.
+    pub fn inputs_rev<E>(&self, container: &mut E)
     where
         E: Extend<Node>,
     {
@@ -10,9 +11,7 @@ impl AExpr {
 
         match self {
             Column(_) | Literal(_) | Len => {},
-            Alias(e, _) => container.extend([*e]),
             BinaryExpr { left, op: _, right } => {
-                // reverse order so that left is popped first
                 container.extend([*right, *left]);
             },
             Cast { expr, .. } => container.extend([*expr]),
@@ -21,8 +20,7 @@ impl AExpr {
                 container.extend([*idx, *expr]);
             },
             SortBy { expr, by, .. } => {
-                container.extend(by.iter().cloned());
-                // latest, so that it is popped first
+                container.extend(by.iter().cloned().rev());
                 container.extend([*expr]);
             },
             Filter { input, by } => {
@@ -30,7 +28,7 @@ impl AExpr {
             },
             Agg(agg_e) => match agg_e.get_input() {
                 NodeInputs::Single(node) => container.extend([node]),
-                NodeInputs::Many(nodes) => container.extend(nodes),
+                NodeInputs::Many(nodes) => container.extend(nodes.into_iter().rev()),
                 NodeInputs::Leaf => {},
             },
             Ternary {
@@ -40,13 +38,10 @@ impl AExpr {
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
-            AnonymousFunction { input, .. } | Function { input, .. } =>
-            // we iterate in reverse order, so that the lhs is popped first and will be found
-            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
-            {
+            AnonymousFunction { input, .. } | Function { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
-            Explode(e) => container.extend([*e]),
+            Explode { expr: e, .. } => container.extend([*e]),
             Window {
                 function,
                 partition_by,
@@ -56,11 +51,17 @@ impl AExpr {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
                 }
-
                 container.extend(partition_by.iter().rev().cloned());
-
-                // latest so that it is popped first
                 container.extend([*function]);
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                // We don't use the evaluation here because it does not contain inputs.
+                _ = evaluation;
+                container.extend([*expr]);
             },
             Slice {
                 input,
@@ -76,29 +77,28 @@ impl AExpr {
         use AExpr::*;
         let input = match &mut self {
             Column(_) | Literal(_) | Len => return self,
-            Alias(input, _) => input,
             Cast { expr, .. } => expr,
-            Explode(input) => input,
+            Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
-                *right = inputs[0];
-                *left = inputs[1];
+                *left = inputs[0];
+                *right = inputs[1];
                 return self;
             },
             Gather { expr, idx, .. } => {
-                *idx = inputs[0];
-                *expr = inputs[1];
+                *expr = inputs[0];
+                *idx = inputs[1];
                 return self;
             },
             Sort { expr, .. } => expr,
             SortBy { expr, by, .. } => {
-                *expr = *inputs.last().unwrap();
+                *expr = inputs[0];
                 by.clear();
-                by.extend_from_slice(&inputs[..inputs.len() - 1]);
+                by.extend_from_slice(&inputs[1..]);
                 return self;
             },
             Filter { input, by, .. } => {
-                *by = inputs[0];
-                *input = inputs[1];
+                *input = inputs[0];
+                *by = inputs[1];
                 return self;
             },
             Agg(a) => {
@@ -118,18 +118,25 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                *predicate = inputs[0];
+                *truthy = inputs[0];
                 *falsy = inputs[1];
-                *truthy = inputs[2];
+                *predicate = inputs[2];
                 return self;
             },
             AnonymousFunction { input, .. } | Function { input, .. } => {
-                debug_assert_eq!(input.len(), inputs.len());
-
-                // Assign in reverse order as that was the order in which nodes were extracted.
-                for (e, node) in input.iter_mut().zip(inputs.iter().rev()) {
+                assert_eq!(input.len(), inputs.len());
+                for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
                 }
+                return self;
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                *expr = inputs[0];
+                _ = evaluation; // Intentional.
                 return self;
             },
             Slice {
@@ -137,9 +144,9 @@ impl AExpr {
                 offset,
                 length,
             } => {
-                *length = inputs[0];
+                *input = inputs[0];
                 *offset = inputs[1];
-                *input = inputs[2];
+                *length = inputs[2];
                 return self;
             },
             Window {
@@ -149,14 +156,12 @@ impl AExpr {
                 ..
             } => {
                 let offset = order_by.is_some() as usize;
-                *function = *inputs.last().unwrap();
+                *function = inputs[0];
                 partition_by.clear();
-                partition_by.extend_from_slice(&inputs[offset..inputs.len() - 1]);
-
+                partition_by.extend_from_slice(&inputs[1..inputs.len() - offset]);
                 if let Some((_, options)) = order_by {
-                    *order_by = Some((inputs[0], *options));
+                    *order_by = Some((*inputs.last().unwrap(), *options));
                 }
-
                 return self;
             },
         };

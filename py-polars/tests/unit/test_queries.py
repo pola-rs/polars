@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
 def test_sort_by_bools() -> None:
@@ -112,21 +113,31 @@ def test_maintain_order_after_sampling() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_sorted_group_by_optimization() -> None:
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_group_by_optimization(
+    descending: bool, nulls_last: bool, maintain_order: bool
+) -> None:
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
     # the sorted optimization should not randomize the
     # groups, so this is tests that we hit the sorted optimization
-    for descending in [True, False]:
-        sorted_implicit = (
-            df.with_columns(pl.col("a").sort(descending=descending))
-            .group_by("a")
-            .agg(pl.len())
-        )
-        sorted_explicit = (
-            df.group_by("a").agg(pl.len()).sort("a", descending=descending)
-        )
-        assert_frame_equal(sorted_explicit, sorted_implicit)
+    sorted_implicit = (
+        df.with_columns(pl.col("a").sort(descending=descending, nulls_last=nulls_last))
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len())
+    )
+    sorted_explicit = (
+        df.group_by("a", maintain_order=maintain_order)
+        .agg(pl.len())
+        .sort("a", descending=descending, nulls_last=nulls_last)
+    )
+    assert_frame_equal(
+        sorted_explicit,
+        sorted_implicit,
+        check_row_order=maintain_order,
+    )
 
 
 def test_median_on_shifted_col_3522() -> None:
@@ -171,19 +182,33 @@ def test_group_by_agg_equals_zero_3535() -> None:
     }
 
 
+def test_group_by_followed_by_limit() -> None:
+    lf = pl.LazyFrame(
+        {
+            "key": ["xx", "yy", "zz", "xx", "zz", "zz"],
+            "val1": [15, 25, 10, 20, 20, 20],
+            "val2": [-33, 20, 44, -2, 16, 71],
+        }
+    )
+    grp = lf.group_by("key", maintain_order=True).agg(pl.col("val1", "val2").sum())
+    assert sorted(grp.collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+        ("zz", 50, 131),
+    ]
+    assert sorted(grp.head(2).collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+    ]
+    assert sorted(grp.head(10).collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+        ("zz", 50, 131),
+    ]
+
+
 def test_dtype_concat_3735() -> None:
-    for dt in [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Float32,
-        pl.Float64,
-    ]:
+    for dt in NUMERIC_DTYPES:
         d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])
 
     d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])
@@ -210,7 +235,8 @@ def test_opaque_filter_on_lists_3784() -> None:
             pl.col("str_list").map_elements(
                 lambda variant: pre in variant
                 and succ in variant
-                and variant.to_list().index(pre) < variant.to_list().index(succ)
+                and variant.to_list().index(pre) < variant.to_list().index(succ),
+                return_dtype=pl.Boolean,
             )
         )
     ).collect().to_dict(as_series=False) == {

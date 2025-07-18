@@ -29,7 +29,7 @@ fn decimal_to_decimal_impl<F: Fn(i128) -> Option<i128>>(
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn decimal_to_decimal(
     from: &PrimitiveArray<i128>,
     to_precision: usize,
@@ -79,7 +79,7 @@ pub(super) fn decimal_to_decimal_dyn(
     Ok(Box::new(decimal_to_decimal(from, to_precision, to_scale)))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn decimal_to_float<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
 where
     T: NativeType + Float,
@@ -110,7 +110,7 @@ where
     Ok(Box::new(decimal_to_float::<T>(from)))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn decimal_to_integer<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
 where
     T: NativeType + NumCast,
@@ -138,6 +138,8 @@ where
 /// Returns a [`Utf8Array`] where every element is the utf8 representation of the decimal.
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray {
+    use arrow::compute::decimal::DecimalFmtBuffer;
+
     let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
         (*p, *s)
     } else {
@@ -145,10 +147,9 @@ pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray 
     };
 
     let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
-
+    let mut fmt_buf = DecimalFmtBuffer::new();
     for &x in from.values().iter() {
-        let buf = arrow::compute::decimal::format_decimal(x, from_scale, false);
-        mutable.push_value_ignore_validity(buf.as_str())
+        mutable.push_value_ignore_validity(fmt_buf.format(x, from_scale, false))
     }
 
     mutable.freeze().with_validity(from.validity().cloned())

@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_cross_join_predicate_pushdown_block_16956() -> None:
@@ -23,7 +24,9 @@ def test_cross_join_predicate_pushdown_block_16956() -> None:
             )
         )
         .select("start_datetime", "end_datetime_right")
-    ).collect(predicate_pushdown=True).to_dict(as_series=False) == {
+    ).collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)).to_dict(
+        as_series=False
+    ) == {
         "start_datetime": [
             datetime(2024, 6, 11, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
             datetime(2024, 6, 11, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
@@ -44,3 +47,47 @@ def test_cross_join_raise_on_keys() -> None:
 
     with pytest.raises(ValueError):
         df.join(df, how="cross", left_on="a", right_on="b")
+
+
+def test_nested_loop_join() -> None:
+    left = pl.LazyFrame(
+        {
+            "a": [1, 2, 1, 3],
+            "b": [1, 2, 3, 4],
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "c": [4, 1, 2],
+            "d": [1, 2, 3],
+        }
+    )
+
+    actual = left.join_where(right, pl.col("a") != pl.col("c"))
+    plan = actual.explain()
+    assert "NESTED LOOP JOIN" in plan
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 1, 1, 3, 3, 3],
+            "b": [1, 1, 2, 2, 3, 3, 4, 4, 4],
+            "c": [4, 2, 4, 1, 4, 2, 4, 1, 2],
+            "d": [1, 3, 1, 2, 1, 3, 1, 2, 3],
+        }
+    )
+    assert_frame_equal(
+        actual.collect(), expected, check_row_order=False, check_exact=True
+    )
+
+
+def test_cross_join_chunking_panic_22793() -> None:
+    N = int(pl.thread_pool_size() ** 0.5) * 2
+    df = pl.DataFrame(
+        [pl.concat([pl.Series("a", [0]) for _ in range(N)]), pl.Series("b", [0] * N)],
+    )
+    assert_frame_equal(
+        df.lazy()
+        .join(pl.DataFrame().lazy(), how="cross")
+        .filter(pl.col("a") == pl.col("a"))
+        .collect(),
+        df.schema.to_frame(),
+    )

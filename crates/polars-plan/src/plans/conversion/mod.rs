@@ -1,30 +1,22 @@
 mod convert_utils;
 mod dsl_to_ir;
-mod expr_expansion;
-mod expr_to_ir;
 mod ir_to_dsl;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "json"
-))]
-mod scans;
 mod stack_opt;
 
 use std::sync::{Arc, Mutex};
 
 pub use dsl_to_ir::*;
-pub use expr_to_ir::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
-mod functions;
-mod join;
+pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
-pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
+pub use dsl_to_ir::{is_regex_projection, prepare_projection};
+pub(crate) use stack_opt::ConversionOptimizer;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -51,28 +43,67 @@ impl IR {
         match lp {
             ir @ IR::Scan { .. } => {
                 let IR::Scan {
-                    sources,
-                    file_info,
+                    ref sources,
+                    ref file_info,
                     hive_parts: _,
                     predicate: _,
-                    scan_type,
+                    ref scan_type,
                     output_schema: _,
-                    file_options,
-                } = ir.clone()
+                    ref unified_scan_args,
+                    id: _,
+                } = ir
                 else {
                     unreachable!()
                 };
 
+                let scan_type = Box::new(match &**scan_type {
+                    #[cfg(feature = "csv")]
+                    FileScanIR::Csv { options } => FileScanDsl::Csv {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "json")]
+                    FileScanIR::NDJson { options } => FileScanDsl::NDJson {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "parquet")]
+                    FileScanIR::Parquet {
+                        options,
+                        metadata: _,
+                    } => FileScanDsl::Parquet {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "ipc")]
+                    FileScanIR::Ipc {
+                        options,
+                        metadata: _,
+                    } => FileScanDsl::Ipc {
+                        options: options.clone(),
+                    },
+                    #[cfg(feature = "python")]
+                    FileScanIR::PythonDataset {
+                        dataset_object,
+                        cached_ir: _,
+                    } => FileScanDsl::PythonDataset {
+                        dataset_object: dataset_object.clone(),
+                    },
+                    FileScanIR::Anonymous { options, function } => FileScanDsl::Anonymous {
+                        options: options.clone(),
+                        function: function.clone(),
+                        file_info: file_info.clone(),
+                    },
+                });
+
                 DslPlan::Scan {
                     sources: sources.clone(),
-                    file_info: Some(file_info.clone()),
-                    scan_type: scan_type.clone(),
-                    file_options: file_options.clone(),
+                    scan_type,
+                    unified_scan_args: unified_scan_args.clone(),
                     cached_ir: Arc::new(Mutex::new(Some(ir))),
                 }
             },
             #[cfg(feature = "python")]
-            IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
+            IR::PythonScan { .. } => DslPlan::PythonScan {
+                options: Default::default(),
+            },
             IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()
@@ -114,7 +145,6 @@ impl IR {
                 df,
                 schema,
                 output_schema: _,
-                filter: _,
             } => DslPlan::DataFrameScan { df, schema },
             IR::Select {
                 expr,
@@ -162,8 +192,10 @@ impl IR {
                 id,
                 cache_hits: _,
             } => {
-                let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache { input, id }
+                let input: Arc<DslPlan> = id
+                    .downcast_arc()
+                    .unwrap_or_else(|| Arc::new(convert_to_lp(input, lp_arena)));
+                DslPlan::Cache { input }
             },
             IR::GroupBy {
                 input,
@@ -207,7 +239,7 @@ impl IR {
                     predicates: Default::default(),
                     left_on,
                     right_on,
-                    options,
+                    options: Arc::new(JoinOptions::from(Arc::unwrap_or_clone(options))),
                 }
             },
             IR::HStack {
@@ -228,10 +260,9 @@ impl IR {
             IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
                 let options = DistinctOptionsDSL {
-                    subset: options.subset.map(|s| {
-                        s.iter()
-                            .map(|name| Expr::Column(name.clone()).into())
-                            .collect()
+                    subset: options.subset.map(|names| Selector::ByName {
+                        names,
+                        strict: true,
                     }),
                     maintain_order: options.maintain_order,
                     keep_strategy: options.keep_strategy,
@@ -260,7 +291,70 @@ impl IR {
             },
             IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
+                let payload = match payload {
+                    SinkTypeIR::Memory => SinkType::Memory,
+                    SinkTypeIR::File(f) => SinkType::File(f),
+                    SinkTypeIR::Partition(f) => SinkType::Partition(PartitionSinkType {
+                        base_path: f.base_path,
+                        file_path_cb: f.file_path_cb,
+                        file_type: f.file_type,
+                        sink_options: f.sink_options,
+                        variant: match f.variant {
+                            PartitionVariantIR::MaxSize(max_size) => {
+                                PartitionVariant::MaxSize(max_size)
+                            },
+                            PartitionVariantIR::Parted {
+                                key_exprs,
+                                include_key,
+                            } => PartitionVariant::Parted {
+                                key_exprs: expr_irs_to_exprs(key_exprs, expr_arena),
+                                include_key,
+                            },
+                            PartitionVariantIR::ByKey {
+                                key_exprs,
+                                include_key,
+                            } => PartitionVariant::ByKey {
+                                key_exprs: expr_irs_to_exprs(key_exprs, expr_arena),
+                                include_key,
+                            },
+                        },
+                        cloud_options: f.cloud_options,
+                        per_partition_sort_by: f.per_partition_sort_by.map(|sort_by| {
+                            sort_by
+                                .into_iter()
+                                .map(|s| SortColumn {
+                                    expr: s.expr.to_expr(expr_arena),
+                                    descending: s.descending,
+                                    nulls_last: s.descending,
+                                })
+                                .collect()
+                        }),
+                        finish_callback: f.finish_callback,
+                    }),
+                };
                 DslPlan::Sink { input, payload }
+            },
+            IR::SinkMultiple { inputs } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(|node| convert_to_lp(node, lp_arena))
+                    .collect();
+                DslPlan::SinkMultiple { inputs }
+            },
+            #[cfg(feature = "merge_sorted")]
+            IR::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                let input_left = Arc::new(convert_to_lp(input_left, lp_arena));
+                let input_right = Arc::new(convert_to_lp(input_right, lp_arena));
+
+                DslPlan::MergeSorted {
+                    input_left,
+                    input_right,
+                    key,
+                }
             },
             IR::Invalid => unreachable!(),
         }

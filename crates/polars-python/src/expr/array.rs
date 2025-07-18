@@ -1,8 +1,6 @@
 use polars::prelude::*;
-use polars_ops::prelude::array::ArrToStructNameGenerator;
-use polars_utils::pl_str::PlSmallStr;
+use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
 use pyo3::pymethods;
 
 use crate::error::PyPolarsErr;
@@ -10,6 +8,10 @@ use crate::expr::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    fn arr_len(&self) -> Self {
+        self.inner.clone().arr().len().into()
+    }
+
     fn arr_max(&self) -> Self {
         self.inner.clone().arr().max().into()
     }
@@ -28,6 +30,10 @@ impl PyExpr {
 
     fn arr_var(&self, ddof: u8) -> Self {
         self.inner.clone().arr().var(ddof).into()
+    }
+
+    fn arr_mean(&self) -> Self {
+        self.inner.clone().arr().mean().into()
     }
 
     fn arr_median(&self) -> Self {
@@ -99,8 +105,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn arr_contains(&self, other: PyExpr) -> Self {
-        self.inner.clone().arr().contains(other.inner).into()
+    fn arr_contains(&self, other: PyExpr, nulls_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .contains(other.inner, nulls_equal)
+            .into()
     }
 
     #[cfg(feature = "array_count")]
@@ -109,22 +119,31 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (name_gen))]
-    fn arr_to_struct(&self, name_gen: Option<PyObject>) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| {
-            Arc::new(move |idx: usize| {
-                Python::with_gil(|py| {
-                    let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: PlSmallStr = (&*out.extract::<PyBackedStr>(py).unwrap()).into();
-                    out
-                })
-            }) as ArrToStructNameGenerator
-        });
+    fn arr_to_struct(&self, name_gen: Option<PyObject>) -> Self {
+        let name_gen = name_gen.map(|o| PlanCallback::new_python(PythonObject(o)));
+        self.inner.clone().arr().to_struct(name_gen).into()
+    }
 
+    fn arr_slice(&self, offset: PyExpr, length: Option<PyExpr>, as_array: bool) -> PyResult<Self> {
+        let length = match length {
+            Some(i) => i.inner,
+            None => lit(i64::MAX),
+        };
         Ok(self
             .inner
             .clone()
             .arr()
-            .to_struct(name_gen)
+            .slice(offset.inner, length, as_array)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
+    fn arr_tail(&self, n: PyExpr, as_array: bool) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .tail(n.inner, as_array)
             .map_err(PyPolarsErr::from)?
             .into())
     }

@@ -1,15 +1,27 @@
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 
 use crate::prelude::*;
 
-#[cfg(feature = "pivot")]
-pub(crate) fn prepare_eval_expr(expr: Expr) -> Expr {
-    expr.map_expr(|e| match e {
-        Expr::Column(_) => Expr::Column(PlSmallStr::EMPTY),
-        Expr::Nth(_) => Expr::Column(PlSmallStr::EMPTY),
-        e => e,
-    })
+pub(crate) fn contains_column_refs(expr: &Expr) -> bool {
+    for e in expr.into_iter() {
+        match e {
+            Expr::Column(c) if !c.eq(&PlSmallStr::EMPTY) => return true,
+            Expr::Selector(_) => return true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(_) => return true,
+            #[cfg(feature = "dtype-struct")]
+            Expr::Function {
+                function:
+                    FunctionExpr::StructExpr(
+                        StructFunction::FieldByName(_) | StructFunction::SelectFields(_),
+                    ),
+                ..
+            } => return true,
+            _ => {},
+        }
+    }
+    false
 }
 
 pub(crate) fn prepare_expression_for_context(
@@ -25,7 +37,7 @@ pub(crate) fn prepare_expression_for_context(
     // type coercion and simplify expression optimizations run.
     let column = Series::full_null(name, 0, dtype);
     let df = column.into_frame();
-    let input_schema = Arc::new(df.schema());
+    let input_schema = df.schema().clone();
     let lf = df
         .lazy()
         .without_optimizations()
@@ -43,6 +55,6 @@ pub(crate) fn prepare_expression_for_context(
         ctxt,
         &expr_arena,
         &input_schema,
-        &mut ExpressionConversionState::new(true, 0),
+        &mut ExpressionConversionState::new(true),
     )
 }

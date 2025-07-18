@@ -46,12 +46,10 @@ all the data has to fit into your available memory at the point of peak memory u
 ### Execution on larger-than-memory data
 
 If your data requires more memory than you have available Polars may be able to process the data in
-batches using _streaming_ mode. To use streaming mode you simply pass the `streaming=True` argument
-to `collect`
+batches using _streaming_ mode. To use streaming mode you simply pass the `engine="streaming"`
+argument to `collect`
 
 {{code_block('user-guide/lazy/execution','stream',['scan_csv','collect'])}}
-
-We look at [streaming in more detail here](streaming.md).
 
 ### Execution on a partial dataset
 
@@ -73,4 +71,20 @@ shape: (1, 6)
 ╞═════╪═════════════════════════╪═════════════╪════════════╪═══════════════╪════════════╡
 │ 6   ┆ TAOJIANLONG_JASONBROKEN ┆ 1397113510  ┆ 1536527864 ┆ 4             ┆ 0          │
 └─────┴─────────────────────────┴─────────────┴────────────┴───────────────┴────────────┘
+```
+
+## Diverging queries
+
+It is very common that a query diverges at one point. In these cases it is recommended to use
+`collect_all` as they will ensure that diverging queries execute only once.
+
+```python
+# Some expensive LazyFrame
+lf: LazyFrame
+
+lf_1 = LazyFrame.select(pl.all().sum())
+
+lf_2 = lf.some_other_computation()
+
+pl.collect_all([lf_1, lf_2]) # this will execute lf only once!
 ```

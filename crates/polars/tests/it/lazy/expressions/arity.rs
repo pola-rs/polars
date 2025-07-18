@@ -65,7 +65,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
             .then(lit("unexpected"))
             .when(col("a").eq(lit("a1".to_string())))
             .then(lit("good hit"))
-            .otherwise(Expr::Literal(LiteralValue::Null))
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()))
             .alias("b"),
         )
         .collect()?;
@@ -99,7 +99,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
             .then(lit("ok2"))
             .when(lit(true))
             .then(lit("ft"))
-            .otherwise(Expr::Literal(LiteralValue::Null))
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()))
             .alias("c"),
         )
         .collect()?;
@@ -116,8 +116,6 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "dtype-categorical")]
 fn test_when_then_otherwise_cats() -> PolarsResult<()> {
-    polars::enable_string_cache();
-
     let lf = df!["book" => [Some("bookA"),
         None,
         Some("bookB"),
@@ -130,8 +128,8 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
     ]?.lazy();
 
     let out = lf
-        .with_column(col("book").cast(DataType::Categorical(None, Default::default())))
-        .with_column(col("user").cast(DataType::Categorical(None, Default::default())))
+        .with_column(col("book").cast(DataType::from_categories(Categories::global())))
+        .with_column(col("user").cast(DataType::from_categories(Categories::global())))
         .with_column(
             when(col("book").is_null())
                 .then(col("user"))
@@ -142,11 +140,13 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
 
     assert_eq!(
         out.column("a")?
-            .categorical()?
+            .cat32()?
             .iter_str()
             .flatten()
             .collect::<Vec<_>>(),
-        &["bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"]
+        &[
+            "bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"
+        ]
     );
 
     Ok(())
@@ -215,9 +215,11 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
     let q = df
         .lazy()
         .group_by([col("groups")])
-        .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
-            .then(all().exclude(["groups"]).sum())
-            .otherwise(lit(NULL))])
+        .agg([
+            when(all().exclude_cols(["groups"]).as_expr().sum().eq(lit(1)))
+                .then(all().exclude_cols(["groups"]).as_expr().sum())
+                .otherwise(lit(LiteralValue::untyped_null())),
+        ])
         .sort(["groups"], Default::default());
 
     let expected = df![
@@ -356,7 +358,7 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
 
     assert_eq!(out.dtype(), &DataType::List(Box::new(DataType::String)));
     assert_eq!(
-        out.explode()?
+        out.explode(false)?
             .str()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),

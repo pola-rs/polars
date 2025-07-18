@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_plan::prelude::*;
 
 use super::*;
@@ -67,10 +67,12 @@ fn finish_as_iters<'a>(
         // Exploded list should be equal to groups length.
         list_vals_len == ac_truthy.groups.len()
     {
-        out = out.explode()?
+        out = out.explode(false)?
     }
 
-    ac_truthy.with_values(out, true, None)?;
+    ac_truthy.with_agg_state(AggState::AggregatedList(out));
+    ac_truthy.with_update_groups(UpdateGroups::WithSeriesLen);
+
     Ok(ac_truthy)
 }
 
@@ -107,7 +109,7 @@ impl PhysicalExpr for TernaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
@@ -219,7 +221,9 @@ impl PhysicalExpr for TernaryExpr {
                 // list of the same length as the corresponding AggregatedList
                 // row.
                 if state.verbose() {
-                    eprintln!("ternary agg: finish as iters due to mix of AggregatedScalar and AggregatedList")
+                    eprintln!(
+                        "ternary agg: finish as iters due to mix of AggregatedScalar and AggregatedList"
+                    )
                 }
                 return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
             }
@@ -328,12 +332,6 @@ impl PhysicalExpr for TernaryExpr {
         Some(self)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.predicate.collect_live_columns(lv);
-        self.truthy.collect_live_columns(lv);
-        self.falsy.collect_live_columns(lv);
-    }
-
     fn is_scalar(&self) -> bool {
         self.returns_scalar
     }
@@ -343,7 +341,7 @@ impl PartitionedAggregation for TernaryExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let truthy = self.truthy.as_partitioned_aggregator().unwrap();
@@ -361,7 +359,7 @@ impl PartitionedAggregation for TernaryExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

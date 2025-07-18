@@ -1,22 +1,23 @@
 use std::sync::Arc;
 
-use arrow::io::ipc::read::{get_row_count, FileMetadata, OutOfSpecKind};
-use object_store::path::Path;
+use arrow::io::ipc::read::{FileMetadata, OutOfSpecKind, get_row_count};
 use object_store::ObjectMeta;
+use object_store::path::Path;
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
+use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::cloud::{
-    build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
-};
-use crate::file_cache::{init_entries_from_uri_list, FileCacheEntry};
-use crate::predicates::PhysicalIoExpr;
-use crate::prelude::{materialize_projection, IpcReader};
-use crate::shared::SerReader;
 use crate::RowIndex;
+use crate::cloud::{
+    CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
+};
+use crate::file_cache::{FileCacheEntry, init_entries_from_uri_list};
+use crate::predicates::PhysicalIoExpr;
+use crate::prelude::{IpcReader, materialize_projection};
+use crate::shared::SerReader;
 
 /// An Arrow IPC reader implemented on top of PolarsObjectStore.
 pub struct IpcReaderAsync {
@@ -85,7 +86,7 @@ impl IpcReaderAsync {
     }
 
     async fn file_size(&self) -> PolarsResult<usize> {
-        Ok(self.object_metadata().await?.size)
+        Ok(self.object_metadata().await?.size as usize)
     }
 
     pub async fn metadata(&self) -> PolarsResult<FileMetadata> {
@@ -136,7 +137,7 @@ impl IpcReaderAsync {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
         let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
-        let bytes = unsafe { memmap::Mmap::map(&file) }.unwrap();
+        let bytes = MMapSemaphore::new_from_file(&file).unwrap();
 
         let projection = match options.projection.as_deref() {
             Some(projection) => {
@@ -185,7 +186,7 @@ impl IpcReaderAsync {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
         let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
-        let bytes = unsafe { memmap::Mmap::map(&file) }.unwrap();
+        let bytes = MMapSemaphore::new_from_file(&file).unwrap();
         get_row_count(&mut std::io::Cursor::new(bytes.as_ref()))
     }
 }

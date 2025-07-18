@@ -8,8 +8,9 @@ from typing import Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import InvalidOperationError, ShapeError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_when_then() -> None:
@@ -251,7 +252,7 @@ def test_comp_incompatible_enum_dtype() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="conversion from `str` to `enum` failed in column 'literal'",
+        match="conversion from `str` to `enum` failed in column 'scalar'",
     ):
         df.with_columns(
             pl.when(pl.col("a") == "a").then(pl.col("a")).otherwise(pl.lit("c"))
@@ -334,7 +335,7 @@ def test_single_element_broadcast(
         .drop("key")
     )
     if expected.height > 1:
-        result = result.explode(pl.all())
+        result = result.explode(cs.all())
     assert_frame_equal(result, expected)
 
 
@@ -377,7 +378,7 @@ def test_when_then_output_name_12380() -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(pl.all())
+            .explode(cs.all())
         )
         assert_frame_equal(
             expect,
@@ -404,7 +405,7 @@ def test_when_then_output_name_12380() -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(pl.all())
+            .explode(cs.all())
         )
         assert_frame_equal(
             expect,
@@ -736,3 +737,91 @@ def test_struct_when_then_broadcasting_combinations_19122(
             pl.when(pl.col.a.struct.field("x") != 0).then(rv).otherwise(None).alias("a")
         ),
     )
+
+
+def test_when_then_to_decimal_18375() -> None:
+    df = pl.DataFrame({"a": ["1.23", "4.56"]})
+
+    result = df.with_columns(
+        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal()),
+        c=pl.when(True).then(pl.col("a").str.to_decimal()),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": ["1.23", "4.56"],
+            "b": ["1.23", "4.56"],
+            "c": ["1.23", "4.56"],
+        },
+        schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_when_then_chunked_fill_null_22794() -> None:
+    df = pl.DataFrame(
+        {
+            "node": [{"x": "a", "y": "a"}, {"x": "b", "y": "b"}, {"x": "c", "y": "c"}],
+            "level": [0, 1, 2],
+        }
+    )
+
+    out = pl.concat([df.slice(0, 1), df.slice(1, 1), df.slice(2, 1)]).with_columns(
+        pl.when(level=1).then("node").forward_fill()
+    )
+    expected = pl.DataFrame(
+        {
+            "node": [None, {"x": "b", "y": "b"}, {"x": "b", "y": "b"}],
+            "level": [0, 1, 2],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_when_then_complex_conditional_22959() -> None:
+    df = pl.DataFrame(
+        {"B": [None, "T1", "T2"], "C": [None, None, [1.0]], "E": [None, 2.0, None]}
+    )
+
+    res = df.with_columns(
+        Result=(
+            pl.when(B="T1")
+            .then(pl.struct(X="C", Y="C"))
+            .when(B="T2")
+            .then(pl.struct(X=pl.concat_list([3.0, "E"])))
+        )
+    )
+
+    assert_series_equal(
+        res["Result"],
+        pl.Series(
+            "Result",
+            [None, {"X": None, "Y": None}, {"X": [3.0, None], "Y": None}],
+            pl.Struct({"X": pl.List(pl.Float64), "Y": pl.List(pl.Float64)}),
+        ),
+    )
+
+
+def test_when_then_simplification() -> None:
+    lf = pl.LazyFrame({"a": [12]})
+    assert (
+        """[col("a")]"""
+        in (
+            lf.select(pl.when(True).then(pl.col("a")).otherwise(pl.col("a") * 2))
+        ).explain()
+    )
+    assert (
+        """(col("a")) * (2)"""
+        in (
+            lf.select(pl.when(False).then(pl.col("a")).otherwise(pl.col("a") * 2))
+        ).explain()
+    )
+
+
+def test_when_then_in_group_by_aggregated_22922() -> None:
+    df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
+    out = df.group_by("group", maintain_order=True).agg(
+        expr=pl.when(group="x").then(pl.col.value.max()).first()
+    )
+    expected = pl.DataFrame({"group": ["x", "y"], "expr": [3, None]})
+    assert_frame_equal(out, expected)

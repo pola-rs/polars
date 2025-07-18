@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn evaluate_aggs(
     df: &DataFrame,
     aggs: &[Arc<dyn PhysicalExpr>],
-    groups: &GroupsProxy,
+    groups: &GroupPositions,
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
     POOL.install(|| {
@@ -78,7 +78,7 @@ pub(super) fn group_by_helper(
 
     if let Some((offset, len)) = slice {
         sliced_groups = Some(groups.slice(offset, len));
-        groups = sliced_groups.as_deref().unwrap();
+        groups = sliced_groups.as_ref().unwrap();
     }
 
     let (mut columns, agg_columns) = POOL.install(|| {
@@ -89,7 +89,7 @@ pub(super) fn group_by_helper(
         rayon::join(get_columns, get_agg)
     });
 
-    columns.extend(agg_columns?.into_iter().map(Column::from));
+    columns.extend(agg_columns?);
     DataFrame::new(columns)
 }
 
@@ -98,7 +98,7 @@ impl GroupByExec {
         let keys = self
             .keys
             .iter()
-            .map(|e| e.evaluate(&df, state).map(Column::from))
+            .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<_>>()?;
         group_by_helper(
             df,

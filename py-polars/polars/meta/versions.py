@@ -30,13 +30,12 @@ def show_versions() -> None:
     fsspec:               2023.12.2
     gevent:               24.2.1
     matplotlib:           3.8.4
-    nest_asyncio:         1.6.0
     numpy:                1.26.4
     openpyxl:             3.1.2
     pandas:               2.2.2
     pyarrow:              16.0.0
     pydantic:             2.7.1
-    pyiceberg:            0.6.0
+    pyiceberg:            0.7.1
     sqlalchemy:           2.0.29
     torch:                2.2.2
     xlsx2csv:             0.8.2
@@ -48,7 +47,7 @@ def show_versions() -> None:
 
     deps = _get_dependency_list()
     core_properties = ("Polars", "Index type", "Platform", "Python", "LTS CPU")
-    keylen = max(len(x) for x in [*core_properties, *deps]) + 1
+    keylen = max(len(x) for x in [*core_properties, "Azure CLI", *deps]) + 1
 
     print("--------Version info---------")
     print(f"{'Polars:':{keylen}s} {get_polars_version()}")
@@ -58,6 +57,12 @@ def show_versions() -> None:
     print(f"{'LTS CPU:':{keylen}s} {get_lts_cpu()}")
 
     print("\n----Optional dependencies----")
+
+    from polars.io.cloud.credential_provider import CredentialProviderAzure
+
+    print(f"{'Azure CLI':{keylen}s} ", end="", flush=True)
+    print(CredentialProviderAzure._azcli_version() or "<not installed>")
+
     for name in deps:
         print(f"{name:{keylen}s} ", end="", flush=True)
         print(_get_dependency_version(name))
@@ -79,10 +84,10 @@ def _get_dependency_list() -> list[str]:
         "google.auth",
         "great_tables",
         "matplotlib",
-        "nest_asyncio",
         "numpy",
         "openpyxl",
         "pandas",
+        "polars_cloud",
         "pyarrow",
         "pydantic",
         "pyiceberg",

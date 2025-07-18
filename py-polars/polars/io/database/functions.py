@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from polars._utils.various import qualified_type_name
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional
 from polars.io.database._cursor_proxies import ODBCCursorProxy
@@ -209,18 +210,19 @@ def read_database(
     ...     connection=async_engine,
     ... )  # doctest: +SKIP
 
-    Load data from an asynchronous SurrealDB client connection object; note that
-    both the WS (`Surreal`) and HTTP (`SurrealHTTP`) clients are supported:
+    Load data from an `AsyncSurrealDB` client connection object; note that both the "ws"
+    and "http" protocols are supported, as is the synchronous `SurrealDB` client. The
+    async loop can be run with standard `asyncio` or with `uvloop`:
 
-    >>> import asyncio
+    >>> import asyncio  # (or uvloop)
     >>> async def surreal_query_to_frame(query: str, url: str):
-    ...     async with Surreal(url) as client:
+    ...     async with AsyncSurrealDB(url) as client:
     ...         await client.use(namespace="test", database="test")
     ...         return pl.read_database(query=query, connection=client)
     >>> df = asyncio.run(
     ...     surreal_query_to_frame(
-    ...         query="SELECT * FROM test_data",
-    ...         url="ws://localhost:8000/rpc",
+    ...         query="SELECT * FROM test",
+    ...         url="http://localhost:8000",
     ...     )
     ... )  # doctest: +SKIP
 
@@ -236,7 +238,7 @@ def read_database(
             connection = ODBCCursorProxy(connection)
         elif "://" in connection:
             # otherwise looks like a mistaken call to read_database_uri
-            msg = "use of string URI is invalid here; call `read_database_uri` instead"
+            msg = "string URI is invalid here; call `read_database_uri` instead"
             raise ValueError(msg)
         else:
             msg = "unable to identify string connection as valid ODBC (no driver)"
@@ -421,7 +423,7 @@ def read_database_uri(
     from polars.io.database._utils import _read_sql_adbc, _read_sql_connectorx
 
     if not isinstance(uri, str):
-        msg = f"expected connection to be a URI string; found {type(uri).__name__!r}"
+        msg = f"expected connection to be a URI string; found {qualified_type_name(uri)!r}"
         raise TypeError(msg)
     elif engine is None:
         engine = "connectorx"

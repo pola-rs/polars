@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::ptr;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ArrowSchema;
 use crate::datatypes::{
-    ArrowDataType, Extension, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode,
+    ArrowDataType, Extension, ExtensionType, Field, IntegerType, IntervalUnit, Metadata, TimeUnit,
+    UnionMode, UnionType,
 };
 
 #[allow(dead_code)]
@@ -50,11 +51,16 @@ fn schema_children(dtype: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSch
             *flags += (*is_sorted as i64) * 4;
             Box::new([Box::into_raw(Box::new(ArrowSchema::new(field.as_ref())))])
         },
-        ArrowDataType::Struct(fields) | ArrowDataType::Union(fields, _, _) => fields
+        ArrowDataType::Struct(fields) => fields
             .iter()
             .map(|field| Box::into_raw(Box::new(ArrowSchema::new(field))))
             .collect::<Box<[_]>>(),
-        ArrowDataType::Extension(_, inner, _) => schema_children(inner, flags),
+        ArrowDataType::Union(u) => u
+            .fields
+            .iter()
+            .map(|field| Box::into_raw(Box::new(ArrowSchema::new(field))))
+            .collect::<Box<[_]>>(),
+        ArrowDataType::Extension(ext) => schema_children(&ext.inner, flags),
         _ => Box::new([]),
     }
 }
@@ -86,13 +92,12 @@ impl ArrowSchema {
             .map(|inner| (**inner).clone())
             .unwrap_or_default();
 
-        let metadata = if let ArrowDataType::Extension(name, _, extension_metadata) = field.dtype()
-        {
+        let metadata = if let ArrowDataType::Extension(ext) = field.dtype() {
             // append extension information.
             let mut metadata = metadata.clone();
 
             // metadata
-            if let Some(extension_metadata) = extension_metadata {
+            if let Some(extension_metadata) = &ext.metadata {
                 metadata.insert(
                     PlSmallStr::from_static("ARROW:extension:metadata"),
                     extension_metadata.clone(),
@@ -101,7 +106,7 @@ impl ArrowSchema {
 
             metadata.insert(
                 PlSmallStr::from_static("ARROW:extension:name"),
-                name.clone(),
+                ext.name.clone(),
             );
 
             Some(metadata_to_bytes(&metadata))
@@ -218,7 +223,11 @@ pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> PolarsResult<Field> {
     let (metadata, extension) = unsafe { metadata_from_bytes(schema.metadata) };
 
     let dtype = if let Some((name, extension_metadata)) = extension {
-        ArrowDataType::Extension(name, Box::new(dtype), extension_metadata)
+        ArrowDataType::Extension(Box::new(ExtensionType {
+            name,
+            inner: dtype,
+            metadata: extension_metadata,
+        }))
     } else {
         dtype
     };
@@ -263,6 +272,7 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "I" => ArrowDataType::UInt32,
         "l" => ArrowDataType::Int64,
         "L" => ArrowDataType::UInt64,
+        "_pli128" => ArrowDataType::Int128,
         "e" => ArrowDataType::Float16,
         "f" => ArrowDataType::Float32,
         "g" => ArrowDataType::Float64,
@@ -354,15 +364,32 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
                             let bit_width = width_raw.parse::<usize>().map_err(|_| {
                                 polars_err!(ComputeError: "Decimal bit width is not a valid integer")
                             })?;
-                            if bit_width == 256 {
-                                return Ok(ArrowDataType::Decimal256(
+                            match bit_width {
+                                32 => return Ok(ArrowDataType::Decimal32(
                                     precision_raw.parse::<usize>().map_err(|_| {
                                         polars_err!(ComputeError: "Decimal precision is not a valid integer")
                                     })?,
                                     scale_raw.parse::<usize>().map_err(|_| {
                                         polars_err!(ComputeError: "Decimal scale is not a valid integer")
                                     })?,
-                                ));
+                                )),
+                                64 => return Ok(ArrowDataType::Decimal64(
+                                    precision_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal precision is not a valid integer")
+                                    })?,
+                                    scale_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal scale is not a valid integer")
+                                    })?,
+                                )),
+                                256 => return Ok(ArrowDataType::Decimal256(
+                                    precision_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal precision is not a valid integer")
+                                    })?,
+                                    scale_raw.parse::<usize>().map_err(|_| {
+                                        polars_err!(ComputeError: "Decimal scale is not a valid integer")
+                                    })?,
+                                )),
+                                _ => {},
                             }
                             (precision_raw, scale_raw)
                         },
@@ -404,7 +431,11 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
                     let fields = (0..schema.n_children as usize)
                         .map(|x| to_field(schema.child(x)))
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    ArrowDataType::Union(fields, Some(type_ids), mode)
+                    ArrowDataType::Union(Box::new(UnionType {
+                        fields,
+                        ids: Some(type_ids),
+                        mode,
+                    }))
                 },
                 _ => {
                     polars_bail!(ComputeError:
@@ -475,20 +506,22 @@ fn to_format(dtype: &ArrowDataType) -> String {
         ArrowDataType::Utf8View => "vu".to_string(),
         ArrowDataType::BinaryView => "vz".to_string(),
         ArrowDataType::Decimal(precision, scale) => format!("d:{precision},{scale}"),
+        ArrowDataType::Decimal32(precision, scale) => format!("d:{precision},{scale},32"),
+        ArrowDataType::Decimal64(precision, scale) => format!("d:{precision},{scale},64"),
         ArrowDataType::Decimal256(precision, scale) => format!("d:{precision},{scale},256"),
         ArrowDataType::List(_) => "+l".to_string(),
         ArrowDataType::LargeList(_) => "+L".to_string(),
         ArrowDataType::Struct(_) => "+s".to_string(),
         ArrowDataType::FixedSizeBinary(size) => format!("w:{size}"),
         ArrowDataType::FixedSizeList(_, size) => format!("+w:{size}"),
-        ArrowDataType::Union(f, ids, mode) => {
-            let sparsness = if mode.is_sparse() { 's' } else { 'd' };
+        ArrowDataType::Union(u) => {
+            let sparsness = if u.mode.is_sparse() { 's' } else { 'd' };
             let mut r = format!("+u{sparsness}:");
-            let ids = if let Some(ids) = ids {
+            let ids = if let Some(ids) = &u.ids {
                 ids.iter()
                     .fold(String::new(), |a, b| a + b.to_string().as_str() + ",")
             } else {
-                (0..f.len()).fold(String::new(), |a, b| a + b.to_string().as_str() + ",")
+                (0..u.fields.len()).fold(String::new(), |a, b| a + b.to_string().as_str() + ",")
             };
             let ids = &ids[..ids.len() - 1]; // take away last ","
             r.push_str(ids);
@@ -496,7 +529,7 @@ fn to_format(dtype: &ArrowDataType) -> String {
         },
         ArrowDataType::Map(_, _) => "+m".to_string(),
         ArrowDataType::Dictionary(index, _, _) => to_format(&(*index).into()),
-        ArrowDataType::Extension(_, inner, _) => to_format(inner.as_ref()),
+        ArrowDataType::Extension(ext) => to_format(&ext.inner),
         ArrowDataType::Unknown => unimplemented!(),
     }
 }
@@ -508,8 +541,8 @@ pub(super) fn get_child(dtype: &ArrowDataType, index: usize) -> PolarsResult<Arr
         (0, ArrowDataType::LargeList(field)) => Ok(field.dtype().clone()),
         (0, ArrowDataType::Map(field, _)) => Ok(field.dtype().clone()),
         (index, ArrowDataType::Struct(fields)) => Ok(fields[index].dtype().clone()),
-        (index, ArrowDataType::Union(fields, _, _)) => Ok(fields[index].dtype().clone()),
-        (index, ArrowDataType::Extension(_, subtype, _)) => get_child(subtype, index),
+        (index, ArrowDataType::Union(u)) => Ok(u.fields[index].dtype().clone()),
+        (index, ArrowDataType::Extension(ext)) => get_child(&ext.inner, index),
         (child, dtype) => polars_bail!(ComputeError:
             "Requested child {child} to type {dtype:?} that has no such child",
         ),
@@ -642,8 +675,8 @@ mod tests {
                 )),
                 true,
             ),
-            ArrowDataType::Union(
-                vec![
+            ArrowDataType::Union(Box::new(UnionType {
+                fields: vec![
                     Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
                         PlSmallStr::from_static("b"),
@@ -655,11 +688,11 @@ mod tests {
                         true,
                     ),
                 ],
-                Some(vec![1, 2]),
-                UnionMode::Dense,
-            ),
-            ArrowDataType::Union(
-                vec![
+                ids: Some(vec![1, 2]),
+                mode: UnionMode::Dense,
+            })),
+            ArrowDataType::Union(Box::new(UnionType {
+                fields: vec![
                     Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
                         PlSmallStr::from_static("b"),
@@ -671,9 +704,9 @@ mod tests {
                         true,
                     ),
                 ],
-                Some(vec![0, 1]),
-                UnionMode::Sparse,
-            ),
+                ids: Some(vec![0, 1]),
+                mode: UnionMode::Sparse,
+            })),
         ];
         for time_unit in [
             TimeUnit::Second,

@@ -1,4 +1,4 @@
-Temporal
+Bitwise
 ========
 
 .. list-table::

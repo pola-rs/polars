@@ -1,4 +1,4 @@
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
@@ -15,7 +15,7 @@ const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 }
 
 pub(crate) fn build_tables<T, I>(
     keys: Vec<I>,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> Vec<PlHashMap<<T as ToTotalOrd>::TotalOrdItem, IdxVec>>
 where
     T: TotalHash + TotalEq + ToTotalOrd,
@@ -38,7 +38,7 @@ where
         for it in keys {
             for k in it {
                 let k = k.to_total_ord();
-                if !k.is_null() || join_nulls {
+                if !k.is_null() || nulls_equal {
                     hm.entry(k).or_default().push(offset);
                 }
                 offset += 1;
@@ -144,7 +144,7 @@ where
 
                         let key = *scatter_keys.get_unchecked(i);
 
-                        if !key.is_null() || join_nulls {
+                        if !key.is_null() || nulls_equal {
                             let idx = *scatter_idxs.get_unchecked(i);
                             match hm.entry(key) {
                                 Entry::Occupied(mut o) => {

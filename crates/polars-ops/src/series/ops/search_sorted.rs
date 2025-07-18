@@ -1,4 +1,5 @@
-use polars_core::chunked_array::ops::search_sorted::{binary_search_ca, SearchSortedSide};
+use polars_core::chunked_array::ops::search_sorted::{SearchSortedSide, binary_search_ca};
+use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -11,6 +12,7 @@ pub fn search_sorted(
     let original_dtype = s.dtype();
 
     if s.dtype().is_categorical() {
+        // See https://github.com/pola-rs/polars/issues/20171
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
 
@@ -65,7 +67,13 @@ pub fn search_sorted(
 
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
-        dt if dt.is_numeric() => {
+        DataType::BinaryOffset => {
+            let ca = s.binary_offset().unwrap();
+            let search_values = search_values.binary_offset().unwrap();
+            let idx = binary_search_ca(ca, search_values.iter(), side, descending);
+            Ok(IdxCa::new_vec(s.name().clone(), idx))
+        },
+        dt if dt.is_primitive_numeric() => {
             let search_values = search_values.to_physical_repr();
 
             let idx = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -73,6 +81,22 @@ pub fn search_sorted(
                 let search_values: &ChunkedArray<$T> = search_values.as_ref().as_ref().as_ref();
                 binary_search_ca(ca, search_values.iter(), side, descending)
             });
+            Ok(IdxCa::new_vec(s.name().clone(), idx))
+        },
+        dt if dt.is_nested() => {
+            let ca = _get_rows_encoded_ca(
+                "".into(),
+                &[s.as_ref().clone().into_column()],
+                &[descending],
+                &[false],
+            )?;
+            let search_values = _get_rows_encoded_ca(
+                "".into(),
+                &[search_values.clone().into_column()],
+                &[descending],
+                &[false],
+            )?;
+            let idx = binary_search_ca(&ca, search_values.iter(), side, false);
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         _ => polars_bail!(opq = search_sorted, original_dtype),

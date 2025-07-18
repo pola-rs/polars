@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 
 @pytest.mark.parametrize("op", ["and_", "or_"])
@@ -80,20 +81,7 @@ def trailing_ones(v: int | None) -> int | None:
         None,
     ],
 )
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Boolean,
-    ],
-)
+@pytest.mark.parametrize("dtype", [*INTEGER_DTYPES, pl.Boolean])
 @pytest.mark.skipif(sys.version_info < (3, 10), reason="bit_count introduced in 3.10")
 @typing.no_type_check
 def test_bit_counts(value: int, dtype: pl.DataType) -> None:
@@ -106,6 +94,8 @@ def test_bit_counts(value: int, dtype: pl.DataType) -> None:
         bitsize = 32
     elif "64" in str(dtype):
         bitsize = 64
+    elif "128" in str(dtype):
+        bitsize = 128
 
     if bitsize == 1 and value is not None:
         value = value & 1 != 0
@@ -150,10 +140,7 @@ def test_bit_counts(value: int, dtype: pl.DataType) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
-)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bit_aggregations(dtype: pl.DataType) -> None:
     s = pl.Series("a", [0x74, 0x1C, 0x05], dtype)
 
@@ -175,10 +162,72 @@ def test_bit_aggregations(dtype: pl.DataType) -> None:
     )
 
 
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_bit_aggregations_lazy_no_nulls(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [0x74, 0x1C, 0x05], dtype)
+
+    lf = s.to_frame().lazy()
+
+    out = lf.select(
+        AND=pl.col.a.bitwise_and(),
+        OR=pl.col.a.bitwise_or(),
+        XOR=pl.col.a.bitwise_xor(),
+    ).collect()
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            [
+                pl.Series("AND", [0x04], dtype),
+                pl.Series("OR", [0x7D], dtype),
+                pl.Series("XOR", [0x6D], dtype),
+            ]
+        ),
+    )
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_bit_aggregations_lazy_some_nulls(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [0x74, None, 0x1C, None, 0x05], dtype)
+    out = (
+        s.to_frame()
+        .lazy()
+        .select(
+            AND=pl.col.a.bitwise_and(),
+            OR=pl.col.a.bitwise_or(),
+            XOR=pl.col.a.bitwise_xor(),
+        )
+        .collect()
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            [
+                pl.Series("AND", [0x04], dtype),
+                pl.Series("OR", [0x7D], dtype),
+                pl.Series("XOR", [0x6D], dtype),
+            ]
+        ),
+    )
+
+
 @pytest.mark.parametrize(
-    "dtype",
-    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
+    "expr",
+    [pl.col("a").bitwise_and(), pl.col("a").bitwise_or(), pl.col("a").bitwise_xor()],
 )
+def test_bit_aggregations_lazy_all_nulls(expr: pl.Expr) -> None:
+    dtype = pl.Int64
+    s = pl.Series("a", [None, None, None], dtype)
+    out = s.to_frame().lazy().select(OUT=expr).collect()
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame([pl.Series("OUT", [None], dtype)]),
+    )
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bit_group_by(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [
@@ -218,3 +267,98 @@ def test_scalar_bitwise_xor() -> None:
         pl.Series("x", [None, 0x80, 0x00, 0x80, 0x00], pl.UInt8),
         check_names=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("expr", "result"),
+    [
+        (pl.all().bitwise_and(), [True, False, False, True, False, None]),
+        (pl.all().bitwise_or(), [True, True, False, True, False, None]),
+        (pl.all().bitwise_xor(), [False, True, False, True, False, None]),
+    ],
+)
+def test_bool_bitwise_with_nulls_23314(expr: pl.Expr, result: list[bool]) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [True, True, None],
+            "b": [True, False, None],
+            "c": [False, False, None],
+            "d": [True, None, None],
+            "e": [False, None, None],
+            "f": [None, None, None],
+        },
+        schema_overrides={"f": pl.Boolean},
+    )
+    columns = ["a", "b", "c", "d", "e", "f"]
+    out = df.select(expr)
+    expected = pl.DataFrame(
+        [result], orient="row", schema=columns, schema_overrides={"f": pl.Boolean}
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("expr", "result"),
+    [
+        (pl.all().bitwise_and(), [True, False, False, False, False, None]),
+        (pl.all().bitwise_or(), [True, True, True, False, True, None]),
+        (pl.all().bitwise_xor(), [True, False, True, False, True, None]),
+    ],
+)
+def test_bitwise_boolean(expr: pl.Expr, result: list[bool]) -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [True, True, True],
+            "b": [True, False, True],
+            "c": [False, True, False],
+            "d": [False, False, False],
+            "x": [True, False, None],
+            "z": [None, None, None],
+        },
+        schema_overrides={"z": pl.Boolean},
+    )
+
+    columns = ["a", "b", "c", "d", "x", "z"]
+    expected = pl.DataFrame(
+        [result], orient="row", schema=columns, schema_overrides={"z": pl.Boolean}
+    )
+    out = lf.select(expr).collect()
+    assert_frame_equal(out, expected)
+
+
+# Although there is no way to deterministically trigger the `evict` path
+# in the code, the below test will do so with high likelihood
+# POLARS_MAX_THREADS is only honored when tested in isolation, see issue #22070
+def test_bitwise_boolean_evict_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    monkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    n_groups = 100
+    group_size_pairs = 10
+    group_size = group_size_pairs * 2
+
+    col_a = list(range(group_size)) * n_groups
+    col_b = [True, False] * group_size_pairs * n_groups
+    df = pl.DataFrame({"a": pl.Series(col_a), "b": pl.Series(col_b)}).sort("a")
+
+    out = (
+        df.lazy()
+        .group_by("a")
+        .agg(
+            [
+                pl.col("b").bitwise_and().alias("bitwise_and"),
+                pl.col("b").bitwise_or().alias("bitwise_or"),
+                pl.col("b").bitwise_xor().alias("bitwise_xor"),
+            ]
+        )
+        .sort("a")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "a": list(range(group_size)),
+            "bitwise_and": [True, False] * group_size_pairs,
+            "bitwise_or": [True, False] * group_size_pairs,
+            "bitwise_xor": [n_groups % 2 == 1, False] * group_size_pairs,
+        }
+    )
+    assert_frame_equal(out, expected)

@@ -2,7 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use self::compare_inner::TotalOrdInner;
-use super::{BitRepr, StatisticsFlags};
+use super::{BitRepr, StatisticsFlags, *};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
@@ -33,7 +33,7 @@ where
         self.0.compute_len()
     }
 
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
 
@@ -47,7 +47,7 @@ where
     fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
@@ -58,14 +58,18 @@ where
         invalid_operation_panic!(into_total_ord_inner, self)
     }
 
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(
         &self,
-        build_hasher: PlRandomState,
+        build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
@@ -73,8 +77,8 @@ where
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
@@ -91,7 +95,7 @@ where
         ObjectChunked::rename(&mut self.0, name)
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         ObjectChunked::chunk_lengths(&self.0)
     }
 
@@ -120,11 +124,12 @@ where
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.dtype() != other.dtype() {
-            polars_bail!(append);
-        }
-        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())?;
-        Ok(())
+        polars_ensure!(self.dtype() == other.dtype(), append);
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.dtype() == other.dtype(), append);
+        ObjectChunked::append_owned(&mut self.0, other.take_inner())
     }
 
     fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
@@ -167,7 +172,7 @@ where
     }
 
     fn cast(&self, dtype: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
-        if matches!(dtype, DataType::Object(_, None)) {
+        if matches!(dtype, DataType::Object(_)) {
             Ok(self.0.clone().into_series())
         } else {
             Err(PolarsError::ComputeError(
@@ -176,10 +181,10 @@ where
         }
     }
 
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         ObjectChunked::get_any_value(&self.0, index)
     }
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         ObjectChunked::get_any_value_unchecked(&self.0, index)
     }
     fn null_count(&self) -> usize {
@@ -234,8 +239,24 @@ where
         ObjectChunked::<T>::get_object_chunked_unchecked(&self.0, chunk, index)
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

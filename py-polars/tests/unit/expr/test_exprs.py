@@ -234,7 +234,7 @@ def test_list_eval_expression() -> None:
     for parallel in [True, False]:
         assert df.with_columns(
             pl.concat_list(["a", "b"])
-            .list.eval(pl.first().rank(), parallel=parallel)
+            .list.eval(pl.element().rank(), parallel=parallel)
             .alias("rank")
         ).to_dict(as_series=False) == {
             "a": [1, 8, 3],
@@ -243,7 +243,7 @@ def test_list_eval_expression() -> None:
         }
 
         assert df["a"].reshape((1, -1)).arr.to_list().list.eval(
-            pl.first(), parallel=parallel
+            pl.element(), parallel=parallel
         ).to_list() == [[1, 8, 3]]
 
 
@@ -286,6 +286,7 @@ def test_power_by_expression() -> None:
     assert out["pow_op_left"].to_list() == [2.0, 4.0, None, 16.0, None, 64.0]
 
 
+@pytest.mark.may_fail_cloud  # reason: chunking
 @pytest.mark.may_fail_auto_streaming
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
@@ -585,7 +586,7 @@ def test_repr_short_expression() -> None:
     # memory location which will vary between runs
     result = repr(expr).split("0x")[0]
 
-    expected = "<Expr ['.rename_alias(*.count())'] at "
+    expected = "<Expr ['cs.all().count().prefix(length…'] at "
     assert result == expected
 
 
@@ -597,7 +598,7 @@ def test_repr_long_expression() -> None:
     result = repr(expr).split("0x")[0]
 
     # note the … denoting that there was truncated text
-    expected = "<Expr ['dtype_columns([String]).str.co…'] at "
+    expected = "<Expr ['cs.string().str.count_matches(…'] at "
     assert result == expected
     assert repr(expr).endswith(">")
 
@@ -644,9 +645,17 @@ def test_slice() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
     assert_frame_equal(
         pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
         pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
     )
+
+
+def test_concat_deprecation() -> None:
+    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+        pl.Series(["foo"]).str.concat()
+    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+        pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())

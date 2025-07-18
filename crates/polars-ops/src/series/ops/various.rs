@@ -5,6 +5,8 @@ use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
+#[cfg(feature = "hash")]
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::total_ord::TotalOrd;
 
 use crate::series::ops::SeriesSealed;
@@ -27,7 +29,9 @@ pub trait SeriesMethods: SeriesSealed {
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
-        let values = unsafe { s.agg_first(&groups) }.into();
+        let values = unsafe { s.agg_first(&groups) }
+            .with_name(s.name().clone())
+            .into();
         let counts = groups.group_count().with_name(name.clone());
 
         let counts = if normalize {
@@ -55,7 +59,7 @@ pub trait SeriesMethods: SeriesSealed {
     }
 
     #[cfg(feature = "hash")]
-    fn hash(&self, build_hasher: PlRandomState) -> UInt64Chunked {
+    fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::List(_) => {
@@ -123,7 +127,7 @@ pub trait SeriesMethods: SeriesSealed {
             }
         }
 
-        if s.dtype().is_numeric() {
+        if s.dtype().is_primitive_numeric() {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 return Ok(is_sorted_ca_num::<$T>(ca, options))
@@ -131,8 +135,8 @@ pub trait SeriesMethods: SeriesSealed {
         }
 
         let cmp_len = s_len - null_count - 1; // Number of comparisons we might have to do
-                                              // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
-                                              // Compare adjacent elements with no-copy slices that don't include any nulls
+        // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
+        // Compare adjacent elements with no-copy slices that don't include any nulls
         let offset = !options.nulls_last as i64 * null_count as i64;
         let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
         let cmp_op = if options.descending {

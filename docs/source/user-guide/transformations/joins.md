@@ -240,12 +240,8 @@ player could be interested in buying. We use the function `join_where` to comput
 --8<-- "python/user-guide/transformations/joins.py:non-equi"
 ```
 
-You can provide multiple expressions as predicates but they all must use comparison operators that
-evaluate to a Boolean result and must refer to columns from both dataframes.
-
-!!! note
-
-    `join_where` is still experimental and doesn't yet support arbitrary Boolean expressions as predicates.
+You can provide multiple expressions as predicates, in that case they will be AND combined. You can
+also combine expressions in a single expression if you need other combinations like OR or XOR.
 
 ## Asof join
 

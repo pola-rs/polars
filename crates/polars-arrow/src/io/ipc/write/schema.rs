@@ -89,10 +89,10 @@ fn write_extension(
 pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_format::ipc::Field {
     // custom metadata.
     let mut kv_vec = vec![];
-    if let ArrowDataType::Extension(name, _, metadata) = field.dtype() {
+    if let ArrowDataType::Extension(ext) = field.dtype() {
         write_extension(
-            name.as_str(),
-            metadata.as_ref().map(|x| x.as_str()),
+            &ext.name,
+            ext.metadata.as_ref().map(|x| x.as_str()),
             &mut kv_vec,
         );
     }
@@ -102,10 +102,10 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
 
     let dictionary = if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = field.dtype()
     {
-        if let ArrowDataType::Extension(name, _, metadata) = inner.as_ref() {
+        if let ArrowDataType::Extension(ext) = inner.as_ref() {
             write_extension(
-                name.as_str(),
-                metadata.as_ref().map(|x| x.as_str()),
+                ext.name.as_str(),
+                ext.metadata.as_ref().map(|x| x.as_str()),
                 &mut kv_vec,
             );
         }
@@ -150,8 +150,8 @@ fn serialize_time_unit(unit: &TimeUnit) -> arrow_format::ipc::TimeUnit {
 }
 
 fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
-    use arrow_format::ipc;
     use ArrowDataType::*;
+    use arrow_format::ipc;
     match dtype {
         Null => ipc::Type::Null(Box::new(ipc::Null {})),
         Boolean => ipc::Type::Bool(Box::new(ipc::Bool {})),
@@ -205,6 +205,16 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
             scale: *scale as i32,
             bit_width: 128,
         })),
+        Decimal32(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
+            precision: *precision as i32,
+            scale: *scale as i32,
+            bit_width: 32,
+        })),
+        Decimal64(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
+            precision: *precision as i32,
+            scale: *scale as i32,
+            bit_width: 64,
+        })),
         Decimal256(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
             precision: *precision as i32,
             scale: *scale as i32,
@@ -250,19 +260,19 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
         FixedSizeList(_, size) => ipc::Type::FixedSizeList(Box::new(ipc::FixedSizeList {
             list_size: *size as i32,
         })),
-        Union(_, type_ids, mode) => ipc::Type::Union(Box::new(ipc::Union {
-            mode: match mode {
+        Union(u) => ipc::Type::Union(Box::new(ipc::Union {
+            mode: match u.mode {
                 UnionMode::Dense => ipc::UnionMode::Dense,
                 UnionMode::Sparse => ipc::UnionMode::Sparse,
             },
-            type_ids: type_ids.clone(),
+            type_ids: u.ids.clone(),
         })),
         Map(_, keys_sorted) => ipc::Type::Map(Box::new(ipc::Map {
             keys_sorted: *keys_sorted,
         })),
         Struct(_) => ipc::Type::Struct(Box::new(ipc::Struct {})),
         Dictionary(_, v, _) => serialize_type(v),
-        Extension(_, v, _) => serialize_type(v),
+        Extension(ext) => serialize_type(&ext.inner),
         Utf8View => ipc::Type::Utf8View(Box::new(ipc::Utf8View {})),
         BinaryView => ipc::Type::BinaryView(Box::new(ipc::BinaryView {})),
         Unknown => unimplemented!(),
@@ -301,20 +311,28 @@ fn serialize_children(
         | LargeBinary
         | Utf8
         | LargeUtf8
-        | Decimal(_, _)
         | Utf8View
         | BinaryView
+        | Decimal(_, _)
+        | Decimal32(_, _)
+        | Decimal64(_, _)
         | Decimal256(_, _) => vec![],
         FixedSizeList(inner, _) | LargeList(inner) | List(inner) | Map(inner, _) => {
             vec![serialize_field(inner, &ipc_field.fields[0])]
         },
-        Union(fields, _, _) | Struct(fields) => fields
+        Struct(fields) => fields
+            .iter()
+            .zip(ipc_field.fields.iter())
+            .map(|(field, ipc)| serialize_field(field, ipc))
+            .collect(),
+        Union(u) => u
+            .fields
             .iter()
             .zip(ipc_field.fields.iter())
             .map(|(field, ipc)| serialize_field(field, ipc))
             .collect(),
         Dictionary(_, inner, _) => serialize_children(inner, ipc_field),
-        Extension(_, inner, _) => serialize_children(inner, ipc_field),
+        Extension(ext) => serialize_children(&ext.inner, ipc_field),
         Unknown => unimplemented!(),
     }
 }
@@ -327,7 +345,7 @@ pub(crate) fn serialize_dictionary(
 ) -> arrow_format::ipc::DictionaryEncoding {
     use IntegerType::*;
     let is_signed = match index_type {
-        Int8 | Int16 | Int32 | Int64 => true,
+        Int8 | Int16 | Int32 | Int64 | Int128 => true,
         UInt8 | UInt16 | UInt32 | UInt64 => false,
     };
 
@@ -336,6 +354,7 @@ pub(crate) fn serialize_dictionary(
         Int16 | UInt16 => 16,
         Int32 | UInt32 => 32,
         Int64 | UInt64 => 64,
+        Int128 => 128,
     };
 
     let index_type = arrow_format::ipc::Int {

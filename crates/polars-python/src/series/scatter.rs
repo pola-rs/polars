@@ -1,40 +1,61 @@
-use polars::export::arrow::array::Array;
+use arrow::array::Array;
 use polars::prelude::*;
 use pyo3::prelude::*;
 
 use super::PySeries;
-use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
-    fn scatter(&mut self, py: Python, idx: PySeries, values: PySeries) -> PyResult<()> {
+    fn scatter(&mut self, py: Python<'_>, idx: PySeries, values: PySeries) -> PyResult<()> {
         // we take the value because we want a ref count of 1 so that we can
         // have mutable access cheaply via _get_inner_mut().
         let s = std::mem::take(&mut self.series);
-        let result = py.allow_threads(|| scatter(s, &idx.series, &values.series));
-        match result {
-            Ok(out) => {
-                self.series = out;
-                Ok(())
-            },
-            Err((s, e)) => {
-                // Restore original series:
-                self.series = s;
-                Err(PyErr::from(PyPolarsErr::from(e)))
-            },
-        }
+        py.enter_polars(|| {
+            let result = scatter(s, &idx.series, &values.series);
+            match result {
+                Ok(out) => {
+                    self.series = out;
+                    Ok(())
+                },
+                Err((s, e)) => {
+                    // Restore original series:
+                    self.series = s;
+                    Err(e)
+                },
+            }
+        })
     }
 }
 
 fn scatter(mut s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, PolarsError)> {
     let logical_dtype = s.dtype().clone();
 
+    let values = if logical_dtype.is_categorical() || logical_dtype.is_enum() {
+        if matches!(
+            values.dtype(),
+            DataType::Categorical(_, _) | DataType::Enum(_, _) | DataType::String
+        ) {
+            match values.strict_cast(&logical_dtype) {
+                Ok(values) => values,
+                Err(err) => return Err((s, err)),
+            }
+        } else {
+            return Err((
+                s,
+                polars_err!(InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype),
+            ));
+        }
+    } else {
+        values.clone()
+    };
+
     let idx = match polars_ops::prelude::convert_to_unsigned_index(idx, s.len()) {
         Ok(idx) => idx,
         Err(err) => return Err((s, err)),
     };
     let idx = idx.rechunk();
-    let idx = idx.downcast_iter().next().unwrap();
+    let idx = idx.downcast_as_array();
 
     if idx.null_count() > 0 {
         return Err((

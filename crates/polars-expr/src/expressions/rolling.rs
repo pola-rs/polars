@@ -13,7 +13,6 @@ pub(crate) struct RollingExpr {
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
-    pub(crate) out_name: Option<PlSmallStr>,
     pub(crate) options: RollingGroupOptions,
     pub(crate) expr: Expr,
 }
@@ -22,45 +21,38 @@ impl PhysicalExpr for RollingExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let groups_key = format!("{:?}", &self.options);
 
-        let groups_map = state.group_tuples.read().unwrap();
-        // Groups must be set by expression runner.
-        let groups = groups_map.get(&groups_key);
+        let groups = {
+            // Groups must be set by expression runner.
+            state.window_cache.get_groups(&groups_key).clone()
+        };
 
         // There can be multiple rolling expressions in a single expr.
         // E.g. `min().rolling() + max().rolling()`
         // So if we hit that we will compute them here.
         let groups = match groups {
-            Some(groups) => Cow::Borrowed(groups),
+            Some(groups) => groups,
             None => {
-                // We cannot cache those as mutexes under rayon can deadlock.
-                // TODO! precompute all groups up front.
-                let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
-                Cow::Owned(groups)
+                let (_time_key, groups) = df.rolling(None, &self.options)?;
+                state.window_cache.insert_groups(groups_key, groups.clone());
+                groups
             },
         };
 
-        let mut out = self
+        let out = self
             .phys_function
             .evaluate_on_groups(df, &groups, state)?
             .finalize();
         polars_ensure!(out.len() == groups.len(), agg_len = out.len(), groups.len());
-        if let Some(name) = &self.out_name {
-            out.rename(name.clone());
-        }
         Ok(out.into_column())
     }
 
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupsProxy,
+        _groups: &'a GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "rolling expression not allowed in aggregation");
-    }
-
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.phys_function.collect_live_columns(lv);
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

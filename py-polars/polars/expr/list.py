@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import warnings
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
@@ -12,8 +12,6 @@ from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time
-
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,
@@ -37,6 +35,10 @@ class ExprListNameSpace:
     def all(self) -> Expr:
         """
         Evaluate whether all boolean values in a list are true.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
@@ -63,6 +65,10 @@ class ExprListNameSpace:
     def any(self) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -173,7 +179,7 @@ class ExprListNameSpace:
         │ ---       ┆ --- ┆ ---       │
         │ list[i64] ┆ i64 ┆ list[i64] │
         ╞═══════════╪═════╪═══════════╡
-        │ [1, 2, 3] ┆ 2   ┆ [2, 1]    │
+        │ [1, 2, 3] ┆ 2   ┆ [2, 3]    │
         │ [4, 5]    ┆ 1   ┆ [5]       │
         └───────────┴─────┴───────────┘
         """
@@ -197,6 +203,10 @@ class ExprListNameSpace:
     def sum(self) -> Expr:
         """
         Sum all the lists in the array.
+
+        Notes
+        -----
+        If there are no non-null elements in a row, the output is `0`.
 
         Examples
         --------
@@ -523,8 +533,9 @@ class ExprListNameSpace:
             Index to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
+
+            * True -> set as null
+            * False -> raise an error
 
         Examples
         --------
@@ -581,8 +592,6 @@ class ExprListNameSpace:
         │ [1, 2, … 5] ┆ [1, 5]       │
         └─────────────┴──────────────┘
         """
-        if isinstance(indices, list):
-            indices = pl.Series(indices)
         indices = parse_into_expression(indices)
         return wrap_expr(self._pyexpr.list_gather(indices, null_on_oob))
 
@@ -672,9 +681,7 @@ class ExprListNameSpace:
         """
         return self.get(-1, null_on_oob=True)
 
-    def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
-    ) -> Expr:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
         Check if sublists contain the given item.
 
@@ -682,6 +689,8 @@ class ExprListNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -704,7 +713,7 @@ class ExprListNameSpace:
         └───────────┴──────────┘
         """
         item = parse_into_expression(item, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_contains(item))
+        return wrap_expr(self._pyexpr.list_contains(item, nulls_equal))
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
@@ -1096,7 +1105,7 @@ class ExprListNameSpace:
         self,
         n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
-        upper_bound: int = 0,
+        upper_bound: int | None = None,
         *,
         _eager: bool = False,
     ) -> Expr:
@@ -1235,7 +1244,37 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
-    def set_union(self, other: IntoExpr) -> Expr:
+    def filter(self, predicate: Expr) -> Expr:
+        """
+        Filter elements in each list by a boolean expression.
+
+        Parameters
+        ----------
+        predicate
+            A boolean expression that is evaluated per list element.
+            You can refer to the current element with `pl.element()`.
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_columns(
+        ...     evens=pl.concat_list("a", "b").list.filter(pl.element() % 2 == 0)
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ evens     │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ list[i64] │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 4   ┆ [4]       │
+        │ 8   ┆ 5   ┆ [8]       │
+        │ 3   ┆ 2   ┆ [2]       │
+        └─────┴─────┴───────────┘
+        """
+        return wrap_expr(self._pyexpr.list_filter(predicate._pyexpr))
+
+    def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
 
@@ -1267,10 +1306,15 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [5, 6, 7, 8]  │
         └───────────┴──────────────┴───────────────┘
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
 
-    def set_difference(self, other: IntoExpr) -> Expr:
+    def set_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
@@ -1304,10 +1348,15 @@ class ExprListNameSpace:
         --------
         polars.Expr.list.diff: Calculates the n-th discrete difference of every sublist.
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
 
-    def set_intersection(self, other: IntoExpr) -> Expr:
+    def set_intersection(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
@@ -1337,10 +1386,15 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [6]          │
         └───────────┴──────────────┴──────────────┘
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
 
-    def set_symmetric_difference(self, other: IntoExpr) -> Expr:
+    def set_symmetric_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
@@ -1370,5 +1424,10 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [8, 5, 7] │
         └───────────┴──────────────┴───────────┘
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))

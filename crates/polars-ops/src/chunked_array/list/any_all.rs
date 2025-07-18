@@ -1,5 +1,5 @@
 use arrow::array::{BooleanArray, ListArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::Bitmap;
 
 use super::*;
 
@@ -19,9 +19,8 @@ where
     if is_all {
         let all_set = arrow::compute::boolean::all(values);
         if all_set {
-            let mut bits = MutableBitmap::with_capacity(arr.len());
-            bits.extend_constant(arr.len(), true);
-            return Ok(BooleanArray::from_data_default(bits.into(), None).with_validity(validity));
+            let bits = Bitmap::new_with_value(true, arr.len());
+            return Ok(BooleanArray::from_data_default(bits, None).with_validity(validity));
         }
     }
 

@@ -3,7 +3,6 @@ use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::*;
 
-pub use super::options::AnonymousScanOptions;
 use crate::dsl::Expr;
 
 pub struct AnonymousScanArgs {

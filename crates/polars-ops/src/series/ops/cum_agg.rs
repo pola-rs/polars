@@ -1,23 +1,23 @@
-use std::ops::{Add, AddAssign, Mul};
+use std::ops::{AddAssign, Mul};
 
 use arity::unary_elementwise_values;
 use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float::IsFloat;
+use polars_utils::min_max::MinMax;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+    T: Copy + MinMax,
 {
     match v {
         Some(v) => {
-            if v > *state {
-                *state = v
-            }
+            *state = MinMax::max_ignore_nan(*state, v);
             Some(Some(*state))
         },
         None => Some(None),
@@ -26,13 +26,11 @@ where
 
 fn det_min<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+    T: Copy + MinMax,
 {
     match v {
         Some(v) => {
-            if v < *state {
-                *state = v
-            }
+            *state = MinMax::min_ignore_nan(*state, v);
             Some(Some(*state))
         },
         None => Some(None),
@@ -41,7 +39,7 @@ where
 
 fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+    T: Copy + AddAssign,
 {
     match v {
         Some(v) => {
@@ -54,7 +52,7 @@ where
 
 fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + Mul<Output = T>,
+    T: Copy + Mul<Output = T>,
 {
     match v {
         Some(v) => {
@@ -65,31 +63,50 @@ where
     }
 }
 
-fn cum_max_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+fn cum_scan_numeric<T, F>(
+    ca: &ChunkedArray<T>,
+    reverse: bool,
+    init: T::Native,
+    update: F,
+) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
+    F: Fn(&mut T::Native, Option<T::Native>) -> Option<Option<T::Native>>,
 {
-    let init = Bounded::min_value();
-
     let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_max).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_max).collect_reversed(),
+        false => ca.iter().scan(init, update).collect_trusted(),
+        true => ca.iter().rev().scan(init, update).collect_reversed(),
     };
     out.with_name(ca.name().clone())
+}
+
+fn cum_max_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: MinMax + Bounded,
+    ChunkedArray<T>: FromIterator<Option<T::Native>>,
+{
+    let init = if T::Native::is_float() {
+        T::Native::nan_value()
+    } else {
+        Bounded::min_value()
+    };
+    cum_scan_numeric(ca, reverse, init, det_max)
 }
 
 fn cum_min_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = Bounded::max_value();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_min).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_min).collect_reversed(),
+    let init = if T::Native::is_float() {
+        T::Native::nan_value()
+    } else {
+        Bounded::max_value()
     };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_min)
 }
 
 fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
@@ -103,7 +120,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(first_true_idx) = ca.iter().position(|x| x == Some(true)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(first_true_idx, false);
         out.extend_constant(ca.len() - first_true_idx, true);
     } else {
@@ -111,7 +128,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(last_true_idx) = ca.iter().rposition(|x| x == Some(true)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(last_true_idx + 1, true);
         out.extend_constant(ca.len() - 1 - last_true_idx, false);
     }
@@ -131,7 +148,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(first_false_idx) = ca.iter().position(|x| x == Some(false)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(first_false_idx, true);
         out.extend_constant(ca.len() - first_false_idx, false);
     } else {
@@ -139,7 +156,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(last_false_idx) = ca.iter().rposition(|x| x == Some(false)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(last_false_idx + 1, false);
         out.extend_constant(ca.len() - 1 - last_false_idx, true);
     }
@@ -154,11 +171,7 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     let init = T::Native::zero();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_sum).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_sum).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_sum)
 }
 
 fn cum_prod_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
@@ -167,11 +180,7 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     let init = T::Native::one();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_prod).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_prod).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_prod)
 }
 
 /// Get an array with the cumulative product computed at every element.
@@ -187,6 +196,8 @@ pub fn cum_prod(s: &Series, reverse: bool) -> PolarsResult<Series> {
         },
         Int64 => cum_prod_numeric(s.i64()?, reverse).into_series(),
         UInt64 => cum_prod_numeric(s.u64()?, reverse).into_series(),
+        #[cfg(feature = "dtype-i128")]
+        Int128 => cum_prod_numeric(s.i128()?, reverse).into_series(),
         Float32 => cum_prod_numeric(s.f32()?, reverse).into_series(),
         Float64 => cum_prod_numeric(s.f64()?, reverse).into_series(),
         dt => polars_bail!(opq = cum_prod, dt),
@@ -213,8 +224,17 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
         UInt32 => cum_sum_numeric(s.u32()?, reverse).into_series(),
         Int64 => cum_sum_numeric(s.i64()?, reverse).into_series(),
         UInt64 => cum_sum_numeric(s.u64()?, reverse).into_series(),
+        #[cfg(feature = "dtype-i128")]
+        Int128 => cum_sum_numeric(s.i128()?, reverse).into_series(),
         Float32 => cum_sum_numeric(s.f32()?, reverse).into_series(),
         Float64 => cum_sum_numeric(s.f64()?, reverse).into_series(),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(precision, scale) => {
+            let ca = s.decimal().unwrap().physical();
+            cum_sum_numeric(ca, reverse)
+                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_series()
+        },
         #[cfg(feature = "dtype-duration")]
         Duration(tu) => {
             let s = s.to_physical_repr();
@@ -228,16 +248,23 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
 
 /// Get an array with the cumulative min computed at every element.
 pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    let original_type = s.dtype();
-    let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_min_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_numeric() => {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            let ca = s.decimal().unwrap().physical();
+            let out = cum_min_numeric(ca, reverse)
+                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_series();
+            Ok(out)
+        },
+        dt if dt.to_physical().is_primitive_numeric() => {
+            let s = s.to_physical_repr();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_min_numeric(ca, reverse).into_series();
-                if original_type.is_logical() {
-                    out.cast(original_type)
+                if dt.is_logical() {
+                    out.cast(dt)
                 } else {
                     Ok(out)
                 }
@@ -249,16 +276,23 @@ pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
 
 /// Get an array with the cumulative max computed at every element.
 pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    let original_type = s.dtype();
-    let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_max_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_numeric() => {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            let ca = s.decimal().unwrap().physical();
+            let out = cum_max_numeric(ca, reverse)
+                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_series();
+            Ok(out)
+        },
+        dt if dt.to_physical().is_primitive_numeric() => {
+            let s = s.to_physical_repr();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_max_numeric(ca, reverse).into_series();
-                if original_type.is_logical() {
-                    out.cast(original_type)
+                if dt.is_logical() {
+                    out.cast(dt)
                 } else {
                     Ok(out)
                 }

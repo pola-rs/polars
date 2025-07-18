@@ -2,12 +2,13 @@ use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
 
 use indexmap::map::MutableKeys;
-use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Schema<D> {
     fields: PlIndexMap<PlSmallStr, D>,
 }
@@ -98,6 +99,11 @@ impl<D> Schema<D> {
     /// Get a reference to the dtype of the field named `name`, or `None` if the field doesn't exist.
     pub fn get(&self, name: &str) -> Option<&D> {
         self.fields.get(name)
+    }
+
+    /// Get a mutable reference to the dtype of the field named `name`, or `None` if the field doesn't exist.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut D> {
+        self.fields.get_mut(name)
     }
 
     /// Get a reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist.
@@ -209,20 +215,51 @@ impl<D> Schema<D> {
         Some(std::mem::replace(old_dtype, dtype))
     }
 
-    /// Insert a new column in the [`Schema`].
+    /// Insert a column into the [`Schema`].
     ///
-    /// If an equivalent name already exists in the schema: the name remains and
-    /// retains in its place in the order, its corresponding value is updated
-    /// with [`D`] and the older dtype is returned inside `Some(_)`.
-    ///
-    /// If no equivalent key existed in the map: the new name-dtype pair is
-    /// inserted, last in order, and `None` is returned.
+    /// If the schema already has this column, this instead updates it with the new value and
+    /// returns the old one. Otherwise, the column is inserted at the end.
     ///
     /// To enforce the index of the resulting field, use [`insert_at_index`][Self::insert_at_index].
-    ///
-    /// Computes in **O(1)** time (amortized average).
     pub fn with_column(&mut self, name: PlSmallStr, dtype: D) -> Option<D> {
         self.fields.insert(name, dtype)
+    }
+
+    /// Raises DuplicateError if this column already exists in the schema.
+    pub fn try_insert(&mut self, name: PlSmallStr, value: D) -> PolarsResult<()> {
+        if self.fields.contains_key(&name) {
+            polars_bail!(Duplicate: "column '{}' is duplicate", name)
+        }
+
+        self.fields.insert(name, value);
+
+        Ok(())
+    }
+
+    /// Performs [`Schema::try_insert`] for every column.
+    ///
+    /// Raises DuplicateError if a column already exists in the schema.
+    pub fn hstack_mut(
+        &mut self,
+        columns: impl IntoIterator<Item = impl Into<(PlSmallStr, D)>>,
+    ) -> PolarsResult<()> {
+        for v in columns {
+            let (k, v) = v.into();
+            self.try_insert(k, v)?;
+        }
+
+        Ok(())
+    }
+
+    /// Performs [`Schema::try_insert`] for every column.
+    ///
+    /// Raises DuplicateError if a column already exists in the schema.
+    pub fn hstack(
+        mut self,
+        columns: impl IntoIterator<Item = impl Into<(PlSmallStr, D)>>,
+    ) -> PolarsResult<Self> {
+        self.hstack_mut(columns)?;
+        Ok(self)
     }
 
     /// Merge `other` into `self`.
@@ -419,20 +456,43 @@ where
 
         Self { fields }
     }
+
+    pub fn from_iter_check_duplicates<I, F>(iter: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = F>,
+        F: Into<(PlSmallStr, D)>,
+    {
+        let iter = iter.into_iter();
+        let mut slf = Self::with_capacity(iter.size_hint().1.unwrap_or(0));
+
+        for v in iter {
+            let (name, d) = v.into();
+
+            if slf.contains(&name) {
+                return Err(err_msg(&name));
+
+                fn err_msg(name: &str) -> PolarsError {
+                    polars_err!(Duplicate: "duplicate name when building schema '{}'", &name)
+                }
+            }
+
+            slf.fields.insert(name, d);
+        }
+
+        Ok(slf)
+    }
 }
 
-pub fn debug_ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
-    if cfg!(debug_assertions) {
-        let lhs = lhs.iter_names().collect::<Vec<_>>();
-        let rhs = rhs.iter_names().collect::<Vec<_>>();
+pub fn ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
+    let lhs_names = lhs.iter_names();
+    let rhs_names = rhs.iter_names();
 
-        if lhs != rhs {
-            polars_bail!(
-                SchemaMismatch:
-                "lhs: {:?} rhs: {:?}",
-                lhs, rhs
-            )
-        }
+    if !(lhs_names.len() == rhs_names.len() && lhs_names.zip(rhs_names).all(|(l, r)| l == r)) {
+        polars_bail!(
+            SchemaMismatch:
+            "lhs: {:?} rhs: {:?}",
+            lhs.iter_names().collect::<Vec<_>>(), rhs.iter_names().collect::<Vec<_>>()
+        )
     }
 
     Ok(())

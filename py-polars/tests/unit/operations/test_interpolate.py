@@ -7,9 +7,10 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType, PolarsTemporalType
+    from polars._typing import InterpolationMethod, PolarsDataType, PolarsTemporalType
 
 from zoneinfo import ZoneInfo
 
@@ -21,6 +22,7 @@ from zoneinfo import ZoneInfo
         (pl.Int16, pl.Float64),
         (pl.Int32, pl.Float64),
         (pl.Int64, pl.Float64),
+        (pl.Int128, pl.Float64),
         (pl.UInt8, pl.Float64),
         (pl.UInt16, pl.Float64),
         (pl.UInt32, pl.Float64),
@@ -85,21 +87,7 @@ def test_interpolate_temporal_linear(
     assert_frame_equal(result.collect(), expected)
 
 
-@pytest.mark.parametrize(
-    "input_dtype",
-    [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Float32,
-        pl.Float64,
-    ],
-)
+@pytest.mark.parametrize("input_dtype", NUMERIC_DTYPES)
 def test_interpolate_nearest(input_dtype: PolarsDataType) -> None:
     df = pl.LazyFrame({"a": [1, None, 2, None, 3]}, schema={"a": input_dtype})
     result = df.with_columns(pl.all().interpolate(method="nearest"))
@@ -150,3 +138,25 @@ def test_interpolate_temporal_nearest(
     assert result.collect_schema()["a"] == input_dtype
     expected = pl.DataFrame({"a": output}, schema={"a": input_dtype})
     assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("input", "scale", "method", "output"),
+    # note the lack of rounding (1.66 vs 1.67)
+    [
+        ([1.0, None, 3.0], 2, "linear", [1.0, 2.0, 3.0]),
+        ([1.0, None, None, 2.0], 2, "linear", [1.0, 1.33, 1.66, 2.0]),
+        ([1.0, None, 3.0], 2, "nearest", [1.0, 3.0, 3.0]),
+        ([1.0, None, None, 2.0], 2, "nearest", [1.0, 1.0, 2.0, 2.0]),
+    ],
+)
+def test_interpolate_decimal_22475(
+    input: list[Any], scale: int, method: InterpolationMethod, output: list[Any]
+) -> None:
+    df = pl.DataFrame({"data": input})
+    df_decimal = df.with_columns(pl.col("data").cast(pl.Decimal(scale=scale)))
+    out = df_decimal.with_columns(pl.col("data").interpolate(method=method))
+    expected = pl.DataFrame({"data": output}).with_columns(
+        pl.col("data").cast(pl.Decimal(scale=2))
+    )
+    assert_frame_equal(out, expected)

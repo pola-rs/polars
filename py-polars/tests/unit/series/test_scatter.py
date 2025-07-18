@@ -77,7 +77,7 @@ def test_object_dtype_16905() -> None:
     with pytest.raises(InvalidOperationError):
         s[0] = 5
     # The error doesn't trash the series, as it used to:
-    assert s.dtype == pl.Object
+    assert s.dtype.is_object()
     assert s.name == "s"
     assert s.to_list() == [obj, 27]
 
@@ -94,3 +94,31 @@ def test_scatter_logical_all_null() -> None:
     result = s.scatter(0, date(2022, 2, 2))
     expected = pl.Series("dt", [date(2022, 2, 2), None])
     assert_series_equal(result, expected)
+
+
+def test_scatter_categorical_21175() -> None:
+    s = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+    assert_series_equal(
+        s.scatter(0, "b"), pl.Series(["b", "b", "c"], dtype=pl.Categorical)
+    )
+    v = pl.Series(["v"], dtype=pl.Categorical)
+    assert_series_equal(
+        s.scatter([0, 2], v), pl.Series(["v", "b", "v"], dtype=pl.Categorical)
+    )
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, 2)
+
+
+def test_scatter_enum() -> None:
+    e = pl.Enum(["a", "b", "c", "v"])
+    s = pl.Series(["a", "b", "c"], dtype=e)
+    assert_series_equal(s.scatter(0, "b"), pl.Series(["b", "b", "c"], dtype=e))
+    v = pl.Series(["v"], dtype=pl.Categorical)
+    assert_series_equal(s.scatter([0, 2], v), pl.Series(["v", "b", "v"], dtype=e))
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, "d")
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, 2)

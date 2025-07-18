@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -12,17 +13,6 @@ from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def test_meta_pop_and_cmp() -> None:
-    e = pl.col("foo").alias("bar")
-
-    first = e.meta.pop()[0]
-    assert first.meta == pl.col("foo")
-    assert first.meta != pl.col("bar")
-
-    assert first.meta.eq(pl.col("foo"))
-    assert first.meta.ne(pl.col("bar"))
 
 
 def test_root_and_output_names() -> None:
@@ -47,7 +37,9 @@ def test_root_and_output_names() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="cannot determine output column without a context for this expression",
+        match=re.escape(
+            "unable to find root column name for expr 'cs.all()' when calling 'output_name'"
+        ),
     ):
         pl.all().name.suffix("_").meta.output_name()
 

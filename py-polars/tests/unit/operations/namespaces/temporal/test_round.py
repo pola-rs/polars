@@ -232,3 +232,50 @@ def test_round_positive_away_from_epoch_18239(
         .item()
     )
     assert result == expected
+
+
+@pytest.mark.parametrize("as_date", [False, True])
+def test_round_unequal_length_22018(as_date: bool) -> None:
+    start = datetime(2001, 1, 1)
+    stop = datetime(2001, 1, 1, 1)
+    s = pl.datetime_range(start, stop, "10m", eager=True).alias("datetime")
+    if as_date:
+        s = s.dt.date()
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.dt.round(pl.Series(["30m", "20m"]))
+
+
+def test_round_small() -> None:
+    small = 1.234e-320
+    small_s = pl.Series([small])
+    assert small_s.round().item() == 0.0
+    assert small_s.round(320).item() == 1e-320
+    assert small_s.round(321).item() == 1.2e-320
+    assert small_s.round(322).item() == 1.23e-320
+    assert small_s.round(323).item() == 1.234e-320
+    assert small_s.round(324).item() == small
+    assert small_s.round(1000).item() == small
+
+    assert small_s.round_sig_figs(1).item() == 1e-320
+    assert small_s.round_sig_figs(2).item() == 1.2e-320
+    assert small_s.round_sig_figs(3).item() == 1.23e-320
+    assert small_s.round_sig_figs(4).item() == 1.234e-320
+    assert small_s.round_sig_figs(5).item() == small
+    assert small_s.round_sig_figs(1000).item() == small
+
+
+def test_round_big() -> None:
+    big = 1.234e308
+    max_err = big / 10**10
+    big_s = pl.Series([big])
+    assert big_s.round().item() == big
+    assert big_s.round(1).item() == big
+    assert big_s.round(100).item() == big
+
+    assert abs(big_s.round_sig_figs(1).item() - 1e308) <= max_err
+    assert abs(big_s.round_sig_figs(2).item() - 1.2e308) <= max_err
+    assert abs(big_s.round_sig_figs(3).item() - 1.23e308) <= max_err
+    assert abs(big_s.round_sig_figs(4).item() - 1.234e308) <= max_err
+    assert abs(big_s.round_sig_figs(4).item() - big) <= max_err
+    assert big_s.round_sig_figs(100).item() == big

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Memory maps regions defined on the IPC format into [`Array`].
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -6,22 +7,22 @@ mod array;
 
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, DictionaryBatchRef, MessageRef, RecordBatchRef};
-use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::array::Array;
 use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
 use crate::io::ipc::read::file::{get_dictionary_batch, get_record_batch};
 use crate::io::ipc::read::{
-    first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,
+    Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind, first_dict_field,
 };
-use crate::io::ipc::{IpcField, CONTINUATION_MARKER};
+use crate::io::ipc::{CONTINUATION_MARKER, IpcField};
 use crate::record_batch::RecordBatchT;
 
 fn read_message(
     mut bytes: &[u8],
     block: arrow_format::ipc::Block,
-) -> PolarsResult<(MessageRef, usize)> {
+) -> PolarsResult<(MessageRef<'_>, usize)> {
     let offset: usize = block.offset.try_into().map_err(
         |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
     )?;
@@ -194,7 +195,7 @@ pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
 
     let chunk = mmap_record(
         &std::iter::once((field.name.clone(), field)).collect(),
-        &[first_ipc_field.clone()],
+        std::slice::from_ref(first_ipc_field),
         data.clone(),
         batch,
         offset,

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use crate::trusted_len::TrustedLen;
 
 pub trait TrustedLenPush<T> {
@@ -60,7 +61,7 @@ pub trait TrustedLenPush<T> {
 }
 
 impl<T> TrustedLenPush<T> for Vec<T> {
-    #[inline]
+    #[inline(always)]
     unsafe fn push_unchecked(&mut self, value: T) {
         debug_assert!(self.capacity() > self.len());
         let end = self.as_mut_ptr().add(self.len());

@@ -99,7 +99,7 @@ rustup toolchain install nightly --component miri
 ```
 
 Next, install Python, for example using [pyenv](https://github.com/pyenv/pyenv#installation). We
-recommend using the latest Python version (`3.12`). Make sure you deactivate any active virtual
+recommend using the latest Python version (`3.13`). Make sure you deactivate any active virtual
 environments (command: `deactivate`) or conda environments (command: `conda deactivate`), as the
 steps below will create a new [virtual environment](https://docs.python.org/3/tutorial/venv.html)
 for Polars. You will need Python even if you intend to work on the Rust code only, as we rely on the
@@ -234,8 +234,9 @@ your solution, feel free to open a draft pull request and ask for help.
 ## Contributing to documentation
 
 The most important components of Polars documentation are the
-[user guide](https://docs.pola.rs/user-guide/), the [API references](https://docs.pola.rs/api/), and
-the database of questions on [StackOverflow](https://stackoverflow.com/).
+[user guide](https://docs.pola.rs/user-guide/), the
+[API references](https://docs.pola.rs/api/python/stable/reference/index.html), and the database of
+questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 

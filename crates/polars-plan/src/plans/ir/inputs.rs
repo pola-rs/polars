@@ -80,7 +80,7 @@ impl IR {
             },
             Cache { id, cache_hits, .. } => Cache {
                 input: inputs[0],
-                id: *id,
+                id: id.clone(),
                 cache_hits: *cache_hits,
             },
             Distinct { options, .. } => Distinct {
@@ -101,40 +101,34 @@ impl IR {
                 hive_parts,
                 output_schema,
                 predicate,
-                file_options: options,
+                unified_scan_args,
                 scan_type,
+                id: _,
             } => {
                 let mut new_predicate = None;
                 if predicate.is_some() {
                     new_predicate = exprs.pop()
                 }
+
                 Scan {
                     sources: sources.clone(),
                     file_info: file_info.clone(),
                     hive_parts: hive_parts.clone(),
                     output_schema: output_schema.clone(),
-                    file_options: options.clone(),
+                    unified_scan_args: unified_scan_args.clone(),
                     predicate: new_predicate,
                     scan_type: scan_type.clone(),
+                    id: Default::default(),
                 }
             },
             DataFrameScan {
                 df,
                 schema,
                 output_schema,
-                filter: selection,
-            } => {
-                let mut new_selection = None;
-                if selection.is_some() {
-                    new_selection = exprs.pop()
-                }
-
-                DataFrameScan {
-                    df: df.clone(),
-                    schema: schema.clone(),
-                    output_schema: output_schema.clone(),
-                    filter: new_selection,
-                }
+            } => DataFrameScan {
+                df: df.clone(),
+                schema: schema.clone(),
+                output_schema: output_schema.clone(),
             },
             MapFunction { function, .. } => MapFunction {
                 input: inputs[0],
@@ -145,13 +139,44 @@ impl IR {
                 contexts: inputs,
                 schema: schema.clone(),
             },
-            Sink { payload, .. } => Sink {
-                input: inputs.pop().unwrap(),
-                payload: payload.clone(),
+            Sink { payload, .. } => {
+                let mut payload = payload.clone();
+                if let SinkTypeIR::Partition(p) = &mut payload {
+                    if let Some(sort_by) = &mut p.per_partition_sort_by {
+                        assert!(exprs.len() >= sort_by.len());
+                        let exprs = exprs.drain(exprs.len() - sort_by.len()..);
+                        for (s, expr) in sort_by.iter_mut().zip(exprs) {
+                            s.expr = expr;
+                        }
+                    }
+                    match &mut p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => {
+                            assert_eq!(key_exprs.len(), exprs.len());
+                            *key_exprs = exprs;
+                        },
+                        _ => (),
+                    }
+                }
+                Sink {
+                    input: inputs.pop().unwrap(),
+                    payload,
+                }
             },
+            SinkMultiple { .. } => SinkMultiple { inputs },
             SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left: _,
+                input_right: _,
+                key,
+            } => MergeSorted {
+                input_left: inputs[0],
+                input_right: inputs[1],
+                key: key.clone(),
             },
             Invalid => unreachable!(),
         }
@@ -161,7 +186,12 @@ impl IR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use IR::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | SinkMultiple { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
             Select { expr, .. } => container.extend_from_slice(expr),
@@ -181,17 +211,27 @@ impl IR {
                     container.push(pred.clone())
                 }
             },
-            DataFrameScan {
-                filter: selection, ..
-            } => {
-                if let Some(expr) = selection {
-                    container.push(expr.clone())
-                }
-            },
+            DataFrameScan { .. } => {},
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
+            Sink { payload, .. } => {
+                if let SinkTypeIR::Partition(p) = payload {
+                    match &p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => {
+                            container.extend_from_slice(key_exprs);
+                        },
+                        _ => (),
+                    }
+                    if let Some(sort_by) = &p.per_partition_sort_by {
+                        container.extend(sort_by.iter().map(|s| s.expr.clone()));
+                    }
+                }
+            },
             HConcat { .. } => {},
-            ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            ExtContext { .. } | SimpleProjection { .. } => {},
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => {},
             Invalid => unreachable!(),
         }
     }
@@ -212,11 +252,7 @@ impl IR {
     {
         use IR::*;
         let input = match self {
-            Union { inputs, .. } => {
-                container.extend(inputs.iter().cloned());
-                return;
-            },
-            HConcat { inputs, .. } => {
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
                 container.extend(inputs.iter().cloned());
                 return;
             },
@@ -249,6 +285,15 @@ impl IR {
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => {
+                container.extend([*input_left, *input_right]);
+                return;
+            },
             Invalid => unreachable!(),
         };
         container.extend([input])

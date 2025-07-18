@@ -1,4 +1,4 @@
-use polars::export::arrow;
+#![allow(unsafe_op_in_unsafe_fn)]
 use polars::prelude::*;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;

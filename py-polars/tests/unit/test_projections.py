@@ -37,7 +37,7 @@ def test_unpivot_projection_pd_block_4997() -> None:
 
 def test_double_projection_pushdown() -> None:
     assert (
-        "PROJECT 2/3 COLUMNS"
+        "2/3 COLUMNS"
         in (
             pl.DataFrame({"c0": [], "c1": [], "c2": []})
             .lazy()
@@ -49,7 +49,7 @@ def test_double_projection_pushdown() -> None:
 
 def test_group_by_projection_pushdown() -> None:
     assert (
-        "PROJECT 2/3 COLUMNS"
+        "2/3 COLUMNS"
         in (
             pl.DataFrame({"c0": [], "c1": [], "c2": []})
             .lazy()
@@ -100,7 +100,7 @@ def test_hconcat_projection_pushdown() -> None:
     query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
 
     explanation = query.explain()
-    assert explanation.count("PROJECT 1/2 COLUMNS") == 2
+    assert explanation.count("1/2 COLUMNS") == 2
 
     out = query.collect()
     expected = pl.DataFrame({"a": [0, 1, 2], "d": [9, 10, 11]})
@@ -115,7 +115,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
 
     explanation = query.explain()
-    assert "PROJECT 1/2 COLUMNS" in explanation
+    assert "1/2 COLUMNS" in explanation
 
     out = query.collect()
     expected = pl.DataFrame({"a": [0, 1, None, None]})
@@ -123,6 +123,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud
 def test_unnest_columns_available() -> None:
     df = pl.DataFrame(
         {
@@ -321,7 +322,12 @@ def test_join_suffix_collision_9562() -> None:
     )
     df.join(other_df, on="ham")
     assert df.lazy().join(
-        other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
+        other_df.lazy(),
+        how="inner",
+        left_on="ham",
+        right_on="ham",
+        suffix="m",
+        maintain_order="right",
     ).select("ham").collect().to_dict(as_series=False) == {"ham": ["a", "b"]}
 
 
@@ -351,7 +357,7 @@ def test_projection_join_names_9955() -> None:
         how="inner",
     )
 
-    q = q.select(batting.collect_schema())
+    q = q.select(*batting.collect_schema().keys())
 
     assert q.collect().schema == {
         "playerID": pl.String,
@@ -389,6 +395,7 @@ def test_schema_full_outer_join_projection_pd_13287() -> None:
         how="full",
         left_on="a",
         right_on="c",
+        maintain_order="right_left",
     ).with_columns(
         pl.col("a").fill_null(pl.col("c")),
     ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
@@ -398,16 +405,19 @@ def test_projection_pushdown_full_outer_join_duplicates() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     assert (
-        df1.join(df2, on="a", how="full").with_columns(c=0).select("a", "c").collect()
+        df1.join(df2, on="a", how="full", maintain_order="right")
+        .with_columns(c=0)
+        .select("a", "c")
+        .collect()
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
 
 
 def test_rolling_key_projected_13617() -> None:
     df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
     ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
-    plan = ldf.explain(projection_pushdown=True)
-    assert r'DF ["idx", "value"]; PROJECT 2/2 COLUMNS' in plan
-    out = ldf.collect(projection_pushdown=True)
+    plan = ldf.explain(optimizations=pl.QueryOptFlags(projection_pushdown=True))
+    assert r"2/2 COLUMNS" in plan
+    out = ldf.collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
 
 
@@ -435,7 +445,9 @@ def test_cached_schema_15651() -> None:
     q = q.with_row_index()
     q = q.filter(~pl.col("col1").is_null())
     # create a subplan diverging from q
-    _ = q.select(pl.len()).collect(projection_pushdown=True)
+    _ = q.select(pl.len()).collect(
+        optimizations=pl.QueryOptFlags(projection_pushdown=True)
+    )
 
     # ensure that q's "cached" columns are still correct
     assert q.collect_schema().names() == q.collect().columns
@@ -447,7 +459,7 @@ def test_double_projection_pushdown_15895() -> None:
         .select(C="A", A="B")
         .group_by(1)
         .all()
-        .collect(projection_pushdown=True)
+        .collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     )
     assert df.to_dict(as_series=False) == {
         "literal": [1],
@@ -526,7 +538,7 @@ def test_projection_pushdown_semi_anti_no_selection(
 
     q_b = pl.LazyFrame({"b": [1, 2, 3], "c": [1, 2, 3]})
 
-    assert "PROJECT 1/2" in (
+    assert "1/2 COLUMNS" in (
         q_a.join(q_b, left_on="a", right_on="b", how=how).explain()
     )
 
@@ -536,7 +548,7 @@ def test_projection_empty_frame_len_16904() -> None:
 
     q = df.select(pl.len())
 
-    assert "PROJECT */0" in q.explain()
+    assert "0/0 COLUMNS" in q.explain()
 
     expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
     assert_frame_equal(q.collect(), expect)
@@ -612,7 +624,7 @@ a,b,c,d,e
     assert plan.startswith("WITH_COLUMNS:")
     # [dyn int: 1.alias("x"), dyn int: 1.alias("y")]
     # Csv SCAN [20 in-mem bytes]
-    assert plan.endswith("PROJECT 1/6 COLUMNS")
+    assert plan.endswith("1/6 COLUMNS")
 
 
 def test_projection_pushdown_height_20221() -> None:
@@ -630,3 +642,32 @@ def test_select_len_20337() -> None:
 
     q = q.with_row_index("foo")
     assert q.select(pl.len()).collect().item() == 3
+
+
+def test_filter_count_projection_20902() -> None:
+    lineitem_ldf = pl.LazyFrame(
+        {
+            "l_partkey": [1],
+            "l_quantity": [1],
+            "l_extendedprice": [1],
+        }
+    )
+    assert (
+        "1/3 COLUMNS"
+        in lineitem_ldf.filter(pl.col("l_partkey").is_between(10, 20))
+        .select(pl.len())
+        .explain()
+    )
+
+
+def test_projection_count_21154() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+
+    assert lf.unique("a").select(pl.len()).collect().to_dict(as_series=False) == {
+        "len": [3]
+    }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-import os
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -28,21 +28,6 @@ def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
     """Modifies the provided monkeypatch context."""
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-
-
-def _assert_force_async(capfd: Any, data_file_extension: str) -> None:
-    if (
-        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
-        == "1"
-    ):
-        return
-
-    """Calls `capfd.readouterr`, consuming the captured output so far."""
-    if data_file_extension == ".ndjson":
-        return
-
-    captured = capfd.readouterr().err
-    assert captured.count("ASYNC READING FORCED") == 1
 
 
 def _scan(
@@ -208,9 +193,6 @@ def test_scan(
 
     df = _scan(data_file.path, data_file.df.schema).collect()
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(df, data_file.df)
 
 
@@ -222,9 +204,6 @@ def test_scan_with_limit(
         _enable_force_async(monkeypatch)
 
     df = _scan(data_file.path, data_file.df.schema).limit(4483).collect()
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -248,9 +227,6 @@ def test_scan_with_filter(
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -276,9 +252,6 @@ def test_scan_with_filter_and_limit(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -303,9 +276,6 @@ def test_scan_with_limit_and_filter(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -328,9 +298,6 @@ def test_scan_with_row_index_and_limit(
         .limit(4483)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -357,9 +324,6 @@ def test_scan_with_row_index_and_filter(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -385,9 +349,6 @@ def test_scan_with_row_index_limit_and_filter(
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -418,9 +379,6 @@ def test_scan_with_row_index_projected_out(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(df, data_file.df.select(subset))
 
 
@@ -440,9 +398,6 @@ def test_scan_with_row_index_filter_and_limit(
         .limit(4483)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -480,7 +435,12 @@ def test_scan_limit_0_does_not_panic(
     path = tmp_path / "data.bin"
     df = pl.DataFrame({"x": 1})
     write_func(df, path)
-    assert_frame_equal(scan_func(path).head(0).collect(streaming=streaming), df.clear())
+    assert_frame_equal(
+        scan_func(path)
+        .head(0)
+        .collect(engine="streaming" if streaming else "in-memory"),
+        df.clear(),
+    )
 
 
 @pytest.mark.write_disk
@@ -653,7 +613,7 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
-def test_scan_include_file_name(
+def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
@@ -674,32 +634,46 @@ def test_scan_include_file_name(
         pl.exceptions.DuplicateError,
         match=r'column name for file paths "x" conflicts with column name from file',
     ):
-        scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)
+        scan_func(tmp_path, include_file_paths="x").collect(
+            engine="streaming" if streaming else "in-memory"
+        )
 
     f = scan_func
     if scan_func in [pl.scan_csv, pl.scan_ndjson]:
         f = partial(f, schema=df.drop("path").schema)
 
     lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
-    assert_frame_equal(lf.collect(streaming=streaming), df)
+    assert_frame_equal(lf.collect(engine="streaming" if streaming else "in-memory"), df)
 
-    # TODO: Support this with CSV
-    if scan_func not in [pl.scan_csv, pl.scan_ndjson]:
-        # Test projecting only the path column
-        assert_frame_equal(
-            lf.select("path").collect(streaming=streaming),
-            df.select("path"),
-        )
+    # Test projecting only the path column
+    q = lf.select("path")
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(engine="streaming" if streaming else "in-memory"),
+        df.select("path"),
+    )
+
+    q = q.select("path").head(3)
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(engine="streaming" if streaming else "in-memory"),
+        df.select("path").head(3),
+    )
 
     # Test predicates
     for predicate in [pl.col("path") != pl.col("x"), pl.col("path") != ""]:
         assert_frame_equal(
-            lf.filter(predicate).collect(streaming=streaming),
+            lf.filter(predicate).collect(
+                engine="streaming" if streaming else "in-memory"
+            ),
             df,
         )
 
     # Test codepaths that materialize empty DataFrames
-    assert_frame_equal(lf.head(0).collect(streaming=streaming), df.head(0))
+    assert_frame_equal(
+        lf.head(0).collect(engine="streaming" if streaming else "in-memory"),
+        df.head(0),
+    )
 
 
 @pytest.mark.write_disk
@@ -840,7 +814,7 @@ def test_streaming_scan_csv_include_file_paths_18257(io_files_path: Path) -> Non
         include_file_paths="path",
     ).select("category", "path")
 
-    assert lf.collect(streaming=True).columns == ["category", "path"]
+    assert lf.collect(engine="streaming").columns == ["category", "path"]
 
 
 def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
@@ -852,7 +826,7 @@ def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
     )
 
     assert_frame_equal(
-        lf.collect(streaming=True),
+        lf.collect(engine="streaming"),
         pl.DataFrame(
             {"calories": "45", "index": 0},
             schema={"calories": pl.String, "index": pl.UInt32},
@@ -898,6 +872,7 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
     assert_frame_equal(q.collect(), expect)
 
     q = lf.sql("select * from self where date < '2024-01-02'")
+    print(q.explain())
     assert_frame_equal(q.collect(), expect)
 
 
@@ -914,7 +889,7 @@ def test_predicate_stats_eval_nested_binary() -> None:
         (
             pl.scan_parquet(bufs)
             .filter(pl.col("x") % 2 == 0)
-            .collect(no_optimization=True)
+            .collect(optimizations=pl.QueryOptFlags.none())
         ),
         pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
     )
@@ -929,3 +904,199 @@ def test_predicate_stats_eval_nested_binary() -> None:
         ),
         pl.DataFrame({"x": [2]}),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("streaming", [True, False])
+def test_scan_csv_bytesio_memory_usage(
+    streaming: bool,
+    # memory_usage_without_pyarrow: MemoryUsage,
+) -> None:
+    # memory_usage = memory_usage_without_pyarrow
+
+    # Create CSV that is ~6-7 MB in size:
+    f = io.BytesIO()
+    df = pl.DataFrame({"mydata": pl.int_range(0, 1_000_000, eager=True)})
+    df.write_csv(f)
+    # assert 6_000_000 < f.tell() < 7_000_000
+    f.seek(0, 0)
+
+    # A lazy scan shouldn't make a full copy of the data:
+    # starting_memory = memory_usage.get_current()
+    assert (
+        pl.scan_csv(f)
+        .filter(pl.col("mydata") == 999_999)
+        .collect(engine="streaming" if streaming else "in-memory")
+        .item()
+        == 999_999
+    )
+    # assert memory_usage.get_peak() - starting_memory < 1_000_000
+
+
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_only_project_row_index(scan_type: tuple[Any, Any]) -> None:
+    write, scan = scan_type
+
+    f = io.BytesIO()
+    df = pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)])
+    write(df, f)
+
+    f.seek(0)
+    s = scan(f, row_index_name="row_index", row_index_offset=42)
+
+    assert_frame_equal(
+        s.select("row_index").collect(),
+        pl.DataFrame({"row_index": [42, 43, 44]}),
+        check_dtypes=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
+    write, scan = scan_type
+
+    f = io.BytesIO()
+    df = pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)])
+    write(df, f)
+
+    f.seek(0)
+    s = scan(f, include_file_paths="file_path")
+
+    # The exact value for in-memory buffers is undefined
+    c = s.select("file_path").collect()
+    assert c.height == 3
+    assert c.columns == ["file_path"]
+
+
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        pytest.param(
+            (pl.DataFrame.write_ipc, pl.scan_ipc),
+            marks=pytest.mark.xfail(
+                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+            ),
+        ),
+        pytest.param(
+            (pl.DataFrame.write_csv, pl.scan_csv),
+            marks=pytest.mark.xfail(
+                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+            ),
+        ),
+        pytest.param(
+            (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+            marks=pytest.mark.xfail(
+                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+            ),
+        ),
+    ],
+)
+def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
+    write, scan = scan_type
+
+    f = io.BytesIO()
+    g = io.BytesIO()
+    write(
+        pl.DataFrame(
+            [pl.Series("a", [], pl.UInt32), pl.Series("missing", [], pl.Int32)]
+        ),
+        f,
+    )
+    write(pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)]), g)
+
+    f.seek(0)
+    g.seek(0)
+    s = scan([f, g], missing_columns="insert")
+
+    assert_frame_equal(
+        s.select("missing").collect(),
+        pl.DataFrame([pl.Series("missing", [None, None, None], pl.Int32)]),
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="windows paths are a mess")
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_async_read_21945(tmp_path: Path, scan_type: tuple[Any, Any]) -> None:
+    f1 = tmp_path / "f1"
+    f2 = tmp_path / "f2"
+
+    pl.DataFrame({"value": [1, 2]}).write_parquet(f1)
+    pl.DataFrame({"value": [3]}).write_parquet(f2)
+
+    df = (
+        pl.scan_parquet(["file://" + str(f1), str(f2)], include_file_paths="foo")
+        .filter(value=1)
+        .collect()
+    )
+
+    assert_frame_equal(
+        df, pl.DataFrame({"value": [1], "foo": ["file://" + f1.as_posix()]})
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("with_str_contains", [False, True])
+def test_hive_pruning_str_contains_21706(
+    tmp_path: Path, capfd: Any, monkeypatch: Any, with_str_contains: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "pdate": [20250301, 20250301, 20250302, 20250302, 20250303, 20250303],
+            "prod_id": ["A1", "A2", "B1", "B2", "C1", "C2"],
+            "price": [11, 22, 33, 44, 55, 66],
+        }
+    )
+
+    df.write_parquet(tmp_path, partition_by=["pdate"])
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    f = pl.col("pdate") == 20250303
+    if with_str_contains:
+        f = f & pl.col("prod_id").str.contains("1")
+
+    df = pl.scan_parquet(tmp_path, hive_partitioning=True).filter(f).collect()
+
+    captured = capfd.readouterr().err
+    assert "allows skipping 2 / 3" in captured
+
+    assert_frame_equal(
+        df,
+        pl.scan_parquet(tmp_path, hive_partitioning=True).collect().filter(f),
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="paths not valid on Windows")
+def test_scan_no_glob_special_chars_23292(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    path = tmp_path / "%?.parquet"
+    df = pl.DataFrame({"a": 1})
+    df.write_parquet(path)
+
+    assert_frame_equal(pl.scan_parquet(f"file://{path}", glob=False).collect(), df)

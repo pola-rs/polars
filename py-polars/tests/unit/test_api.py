@@ -141,9 +141,9 @@ def test_class_namespaces_are_registered(pcls: Any) -> None:
 
                 if obj.__class__.__name__.endswith("NameSpace"):
                     ns = obj._accessor
-                    assert (
-                        ns in namespaces
-                    ), f"{ns!r} should be registered in {pcls.__name__}._accessors"
+                    assert ns in namespaces, (
+                        f"{ns!r} should be registered in {pcls.__name__}._accessors"
+                    )
 
 
 def test_namespace_cannot_override_builtin() -> None:

@@ -28,15 +28,13 @@ impl PhysicalExpr for CountExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let ca = groups.group_count().with_name(PlSmallStr::from_static(LEN));
         let c = ca.into_column();
         Ok(AggregationContext::new(c, Cow::Borrowed(groups), true))
     }
-
-    fn collect_live_columns(&self, _lv: &mut PlIndexSet<PlSmallStr>) {}
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
@@ -56,7 +54,7 @@ impl PartitionedAggregation for CountExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         self.evaluate_on_groups(df, groups, state)
@@ -68,7 +66,7 @@ impl PartitionedAggregation for CountExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         // SAFETY: groups are in bounds.

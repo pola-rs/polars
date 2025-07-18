@@ -1,6 +1,5 @@
 use arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
-use polars_core::export::chrono::{Datelike, NaiveDate};
-use polars_core::utils::CustomIterTools;
+use chrono::{Datelike, NaiveDate};
 
 use super::*;
 
@@ -19,20 +18,22 @@ pub trait DateMethods: AsDate {
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int32Type>(&date_to_year)
+        ca.physical().apply_kernel_cast::<Int32Type>(&date_to_year)
     }
 
     /// Extract year from underlying NaiveDate representation.
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
+        ca.physical()
+            .apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
     }
 
     /// This year number might not match the calendar year number.
     fn iso_year(&self) -> Int32Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int32Type>(&date_to_iso_year)
+        ca.physical()
+            .apply_kernel_cast::<Int32Type>(&date_to_iso_year)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
@@ -48,14 +49,15 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_month)
+        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_month)
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_iso_week)
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&date_to_iso_week)
     }
 
     /// Extract day from underlying NaiveDate representation.
@@ -64,7 +66,7 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_day)
+        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_day)
     }
 
     /// Returns the day of year starting from 1.
@@ -72,7 +74,8 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> Int16Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int16Type>(&date_to_ordinal)
+        ca.physical()
+            .apply_kernel_cast::<Int16Type>(&date_to_ordinal)
     }
 
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;
@@ -84,20 +87,23 @@ pub trait DateMethods: AsDate {
         day: &Int8Chunked,
         name: PlSmallStr,
     ) -> PolarsResult<DateChunked> {
-        let mut ca: Int32Chunked = year
+        let ca: Int32Chunked = year
             .into_iter()
             .zip(month)
             .zip(day)
             .map(|((y, m), d)| {
                 if let (Some(y), Some(m), Some(d)) = (y, m, d) {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32)
-                        .map(|t| t.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                        // We have an invalid date.
+                        || Err(polars_err!(ComputeError: format!("Invalid date components ({}, {}, {}) supplied", y, m, d))),
+                        // We have a valid date.
+                        |date| Ok(Some(date.num_days_from_ce() - EPOCH_DAYS_FROM_CE)),
+                    )
                 } else {
-                    None
+                    Ok(None)
                 }
             })
-            .collect_trusted();
-        ca.rename(name);
+            .try_collect_ca_with_dtype(name, DataType::Int32)?;
         Ok(ca.into_date())
     }
 }
@@ -113,7 +119,7 @@ impl DateMethods for DateChunked {
                     .map(|v| naive_date_to_date(*v))
             }),
         )
-        .into()
+        .into_date()
     }
 }
 

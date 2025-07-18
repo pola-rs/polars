@@ -1,16 +1,15 @@
 use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::ArrowDataType;
+use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 
-use super::{utils, BasicDecompressor, Filter};
+use super::utils::PageDecoder;
+use super::{Filter, utils};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::page::{DataPage, split_buffer};
 use crate::parquet::read::levels::get_bit_width;
 
-#[derive(Debug)]
 pub struct Nested {
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     length: usize,
     content: NestedContent,
 
@@ -35,7 +34,7 @@ impl Nested {
         // This is because primitive does not keep track of the validity here. It keeps track in
         // the decoder. We do still want to put something so that we can check for nullability by
         // looking at the option.
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(0));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(0));
 
         Self {
             validity,
@@ -49,7 +48,7 @@ impl Nested {
 
     fn list_with_capacity(is_nullable: bool, capacity: usize) -> Self {
         let offsets = Vec::with_capacity(capacity);
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -61,7 +60,7 @@ impl Nested {
     }
 
     fn fixedlist_with_capacity(is_nullable: bool, width: usize, capacity: usize) -> Self {
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -73,7 +72,7 @@ impl Nested {
     }
 
     fn struct_with_capacity(is_nullable: bool, capacity: usize) -> Self {
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -84,17 +83,18 @@ impl Nested {
         }
     }
 
-    fn take(mut self) -> (usize, Vec<i64>, Option<MutableBitmap>) {
+    fn take(mut self) -> (usize, Vec<i64>, Option<BitmapBuilder>) {
         if !matches!(self.content, NestedContent::Primitive) {
             if let Some(validity) = self.validity.as_mut() {
                 validity.extend_constant(self.num_valids, true);
                 validity.extend_constant(self.num_invalids, false);
             }
 
-            debug_assert!(self
-                .validity
-                .as_ref()
-                .is_none_or(|v| v.len() == self.length));
+            debug_assert!(
+                self.validity
+                    .as_ref()
+                    .is_none_or(|v| v.len() == self.length)
+            );
         }
 
         self.num_valids = 0;
@@ -316,7 +316,7 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
 }
 
 /// The state of nested data types.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct NestedState {
     /// The nesteds composing `NestedState`.
     nested: Vec<Nested>,
@@ -328,7 +328,7 @@ impl NestedState {
         Self { nested }
     }
 
-    pub fn pop(&mut self) -> Option<(usize, Vec<i64>, Option<MutableBitmap>)> {
+    pub fn pop(&mut self) -> Option<(usize, Vec<i64>, Option<BitmapBuilder>)> {
         Some(self.nested.pop()?.take())
     }
 
@@ -558,16 +558,8 @@ fn decode_nested(
     Ok(())
 }
 
-pub struct PageNestedDecoder<D: utils::Decoder> {
-    pub iter: BasicDecompressor,
-    pub dtype: ArrowDataType,
-    pub dict: Option<D::Dict>,
-    pub decoder: D,
-    pub init: Vec<InitNested>,
-}
-
 /// Return the definition and repetition level iterators for this page.
-fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDecoder)> {
+fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder<'_>, HybridRleDecoder<'_>)> {
     let split = split_buffer(page)?;
     let def = split.def;
     let rep = split.rep;
@@ -581,30 +573,17 @@ fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDec
     Ok((def_iter, rep_iter))
 }
 
-impl<D: utils::Decoder> PageNestedDecoder<D> {
-    pub fn new(
-        mut iter: BasicDecompressor,
-        dtype: ArrowDataType,
-        mut decoder: D,
-        init: Vec<InitNested>,
-    ) -> ParquetResult<Self> {
-        let dict_page = iter.read_dict_page()?;
-        let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
+impl<D: utils::Decoder> PageDecoder<D> {
+    pub fn collect_nested(
+        mut self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
+        let init = self.init_nested.as_mut().unwrap();
 
-        Ok(Self {
-            iter,
-            dtype,
-            dict,
-            decoder,
-            init,
-        })
-    }
-
-    pub fn collect_n(mut self, filter: Option<Filter>) -> ParquetResult<(NestedState, D::Output)> {
         // @TODO: We should probably count the filter so that we don't overallocate
         let mut target = self.decoder.with_capacity(self.iter.total_num_values());
         // @TODO: Self capacity
-        let mut nested_state = init_nested(&self.init, 0);
+        let mut nested_state = init_nested(init, 0);
 
         if let Some(dict) = self.dict.as_ref() {
             self.decoder.apply_dictionary(&mut target, dict)?;
@@ -638,6 +617,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
                 },
                 mask,
             ),
+            Some(Filter::Predicate(_)) => todo!(),
         };
 
         let mut top_level_filter = top_level_filter.iter();
@@ -698,6 +678,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
             state.decode(
                 &mut self.decoder,
                 &mut target,
+                &mut BitmapBuilder::new(), // This will not get used or filled
                 Some(Filter::Mask(leaf_filter)),
             )?;
 
@@ -713,6 +694,6 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
 
         let array = self.decoder.finalize(self.dtype, self.dict, target)?;
 
-        Ok((nested_state, array))
+        Ok((nested_state, array, Bitmap::new()))
     }
 }

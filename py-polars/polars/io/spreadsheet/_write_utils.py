@@ -2,18 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from io import BytesIO
+from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
+from polars._utils.various import qualified_type_name
 from polars.datatypes import (
     Date,
     Datetime,
     Float64,
     Int64,
-    List,
-    Object,
-    Struct,
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
@@ -189,13 +188,13 @@ def _xl_column_range(
     include_header: bool,
     as_range: bool = True,
 ) -> tuple[int, int, int, int] | str:
-    """Return the excel sheet range of a named column, accounting for all offsets."""
+    """Return the Excel sheet range of a named column, accounting for all offsets."""
     col_start = (
         table_start[0] + int(include_header),
         table_start[1] + (df.get_column_index(col) if isinstance(col, str) else col[0]),
     )
     col_finish = (
-        col_start[0] + len(df) - 1,
+        col_start[0] + df.height - 1,
         col_start[1] + (0 if isinstance(col, str) else (col[1] - col[0])),
     )
     if as_range:
@@ -319,7 +318,7 @@ def _xl_inject_sparklines(
         if "negative_points" not in options:
             options["negative_points"] = options.get("type") in ("column", "win_loss")
 
-    for _ in range(len(df)):
+    for _ in range(df.height):
         data_start = xl_rowcol_to_cell(spk_row, data_start_col)
         data_end = xl_rowcol_to_cell(spk_row, data_end_col)
         options["range"] = f"{data_start}:{data_end}"
@@ -352,12 +351,14 @@ def _xl_setup_table_columns(
 
     # no excel support for compound types; cast to their simple string representation
     def _map_str(s: Series) -> Series:
-        return s.__class__(s.name, [str(v) for v in s.to_list()])
+        return s.__class__(
+            s.name, [(None if v is None else str(v)) for v in s.to_list()]
+        )
 
     cast_cols = [
         F.col(col).map_batches(_map_str).alias(col)
         for col, tp in df.schema.items()
-        if tp in (List, Struct, Object)
+        if tp.is_nested() or tp.is_object()
     ]
     if cast_cols:
         df = df.with_columns(cast_cols)
@@ -390,7 +391,7 @@ def _xl_setup_table_columns(
                 )
             )
             n_ucase = sum((c[0] if c else "").isupper() for c in df.columns)
-            total = f"{'T' if (n_ucase > len(df.columns) // 2) else 't'}otal"
+            total = f"{'T' if (n_ucase > df.width // 2) else 't'}otal"
             row_total_funcs = {total: _xl_table_formula(df, sum_cols, "sum")}
             row_totals = [total]
         else:
@@ -445,7 +446,7 @@ def _xl_setup_table_columns(
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
     for fmt in dtype_formats.values():
         if not isinstance(fmt, str):
-            msg = f"invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt).__name__!r})"
+            msg = f"invalid dtype_format value: {fmt!r} (expected format string, got {qualified_type_name(fmt)!r})"
             raise TypeError(msg)
 
     # inject sparkline/row-total placeholder(s)
@@ -568,7 +569,7 @@ def _xl_setup_workbook(
     workbook: Workbook | BytesIO | Path | str | None,
     worksheet: str | Worksheet | None = None,
 ) -> tuple[Workbook, Worksheet, bool]:
-    """Establish the target excel workbook and worksheet."""
+    """Establish the target Excel workbook and worksheet."""
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
@@ -594,13 +595,20 @@ def _xl_setup_workbook(
         if isinstance(workbook, BytesIO):
             wb, ws, can_close = Workbook(workbook, workbook_options), None, True
         else:
-            file = Path("dataframe.xlsx" if workbook is None else workbook)
-            wb = Workbook(
-                (file if file.suffix else file.with_suffix(".xlsx"))
-                .expanduser()
-                .resolve(strict=False),
-                workbook_options,
-            )
+            if workbook is None:
+                file = Path("dataframe.xlsx")
+            elif isinstance(workbook, str):
+                file = Path(workbook)
+            else:
+                file = workbook
+
+            if isinstance(file, PathLike):
+                file = (
+                    (file if file.suffix else file.with_suffix(".xlsx"))
+                    .expanduser()
+                    .resolve(strict=False)
+                )
+            wb = Workbook(file, workbook_options)
             ws, can_close = None, True
 
     if ws is None:

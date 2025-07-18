@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from polars.dependencies import import_optional
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
@@ -71,21 +72,33 @@ class ODBCCursorProxy:
 
 
 class SurrealDBCursorProxy:
-    """Cursor proxy for SurrealDB connections (requires `surrealdb`)."""
+    """Cursor proxy for both SurrealDB and AsyncSurrealDB connections."""
 
     _cached_result: list[dict[str, Any]] | None = None
 
     def __init__(self, client: Any) -> None:
-        self.client = client
+        surrealdb = import_optional("surrealdb")
+        self.is_async = isinstance(client, surrealdb.AsyncSurrealDB)
         self.execute_options: dict[str, Any] = {}
+        self.client = client
         self.query: str = None  # type: ignore[assignment]
 
     @staticmethod
-    async def _unpack_result(
+    async def _unpack_result_async(
         result: Coroutine[Any, Any, list[dict[str, Any]]],
     ) -> Coroutine[Any, Any, list[dict[str, Any]]]:
         """Unpack the async query result."""
         response = (await result)[0]
+        if response["status"] != "OK":
+            raise RuntimeError(response["result"])
+        return response["result"]
+
+    @staticmethod
+    def _unpack_result(
+        result: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Unpack the query result."""
+        response = result[0]
         if response["status"] != "OK":
             raise RuntimeError(response["result"])
         return response["result"]
@@ -103,23 +116,32 @@ class SurrealDBCursorProxy:
 
     def fetchall(self) -> list[dict[str, Any]]:
         """Fetch all results (as a list of dictionaries)."""
-        return _run_async(
-            self._unpack_result(
+        return (
+            _run_async(
+                self._unpack_result_async(
+                    result=self.client.query(
+                        query=self.query,
+                        variables=(self.execute_options or None),
+                    ),
+                )
+            )
+            if self.is_async
+            else self._unpack_result(
                 result=self.client.query(
-                    sql=self.query,
-                    vars=(self.execute_options or None),
+                    query=self.query,
+                    variables=(self.execute_options or None),
                 ),
             )
         )
 
     def fetchmany(self, size: int) -> list[dict[str, Any]]:
         """Fetch results in batches (simulated)."""
-        # first 'fetchmany' call acquires/caches the result
+        # first 'fetchmany' call acquires/caches the result object
         if self._cached_result is None:
             self._cached_result = self.fetchall()
 
-        # return batches of the cached result; remove from the cache as
-        # we go, so as not to hold on to additional copies when done
+        # return batches from the result, actively removing from the cache
+        # as we go, so as not to hold on to additional copies when done
         result = self._cached_result[:size]
         del self._cached_result[:size]
         return result

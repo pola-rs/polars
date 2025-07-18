@@ -16,11 +16,7 @@ if TYPE_CHECKING:
 
 def test_series_mixed_dtypes_list() -> None:
     values = [[0.1, 1]]
-
-    with pytest.raises(TypeError, match="unexpected value"):
-        pl.Series(values)
-
-    s = pl.Series(values, strict=False)
+    s = pl.Series(values, strict=True)
     assert s.dtype == pl.List(pl.Float64)
     assert s.to_list() == [[0.1, 1.0]]
 
@@ -44,7 +40,7 @@ def test_series_mixed_dtypes_object() -> None:
         pl.Series(values)
 
     s = pl.Series(values, strict=False)
-    assert s.dtype == pl.Object
+    assert s.dtype.is_object()
     assert s.to_list() == values
     assert s[1] == b"foo"
 
@@ -158,6 +154,14 @@ def test_series_init_np_2d_zero_zero_shape() -> None:
     assert_series_equal(
         pl.Series("a", arr),
         pl.Series("a", [], pl.Array(pl.Float64, 0)),
+    )
+
+
+def test_series_init_np_2d_empty() -> None:
+    arr = np.array([]).reshape(0, 2)
+    assert_series_equal(
+        pl.Series("a", arr),
+        pl.Series("a", [], pl.Array(pl.Float64, 2)),
     )
 
 

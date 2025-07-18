@@ -82,7 +82,7 @@ impl Series {
         let dtype = self.dtype();
         #[cfg(feature = "object")]
         assert!(
-            !matches!(dtype, DataType::Object(_, _)),
+            !matches!(dtype, DataType::Object(_)),
             "object dtype not supported in Series.iter"
         );
         assert_eq!(self.chunks().len(), 1, "impl error");
@@ -104,12 +104,12 @@ impl Series {
         assert_eq!(self.chunks().len(), 1, "impl error");
         #[cfg(feature = "object")]
         assert!(
-            !matches!(dtype, DataType::Object(_, _)),
+            !matches!(dtype, DataType::Object(_)),
             "object dtype not supported in Series.iter"
         );
         let arr = &*self.chunks()[0];
 
-        if phys_dtype.is_numeric() {
+        if phys_dtype.is_primitive_numeric() {
             if arr.null_count() == 0 {
                 with_match_physical_numeric_type!(phys_dtype, |$T| {
                         let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();

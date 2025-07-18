@@ -158,3 +158,10 @@ def test_empty_input_expansion() -> None:
                 pl.col("B").sort_by(pl.struct(pl.exclude("A", "B")))
             )
         )
+
+
+def test_empty_list_15523() -> None:
+    s = pl.Series("", [["a"], []], dtype=pl.List)
+    assert s.dtype == pl.List(pl.String)
+    s = pl.Series("", [[], ["a"]], dtype=pl.List)
+    assert s.dtype == pl.List(pl.String)

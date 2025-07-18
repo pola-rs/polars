@@ -1,11 +1,11 @@
-use polars_core::export::chrono::NaiveTime;
+use chrono::NaiveTime;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};
-use pyo3::{intern, BoundObject};
+use pyo3::{BoundObject, intern};
 
 use super::datetime::{
-    elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
+    datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
 use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
@@ -66,6 +66,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DurationChunked> {
         let time_unit = self.0.time_unit();
         let iter = self
             .0
+            .physical()
             .iter()
             .map(|opt_v| opt_v.map(|v| elapsed_offset_to_timedelta(v, time_unit)));
         PyList::new(py, iter)
@@ -78,27 +79,12 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DatetimeChunked> {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let time_zone = self.0.time_zone();
-        if time_zone.is_some() {
-            // Switch to more efficient code path in
-            // https://github.com/pola-rs/polars/issues/16199
-            let utils = pl_utils(py).bind(py);
-            let convert = utils.getattr(intern!(py, "to_py_datetime"))?;
-            let time_unit = self.0.time_unit().to_ascii();
-            let time_zone = time_zone.as_deref().into_pyobject(py)?;
-            let iter = self
-                .0
-                .iter()
-                .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
-            PyList::new(py, iter)
-        } else {
-            let time_unit = self.0.time_unit();
-            let iter = self
-                .0
-                .iter()
-                .map(|opt_v| opt_v.map(|v| timestamp_to_naive_datetime(v, time_unit)));
-            PyList::new(py, iter)
-        }
+        let time_zone = self.0.time_zone().as_ref();
+        let time_unit = self.0.time_unit();
+        let iter = self.0.physical().iter().map(|opt_v| {
+            opt_v.map(|v| datetime_to_py_object(py, v, time_unit, time_zone).unwrap())
+        });
+        PyList::new(py, iter)
     }
 }
 
@@ -116,7 +102,8 @@ impl<'py> IntoPyObject<'py> for &Wrap<&TimeChunked> {
 pub(crate) fn time_to_pyobject_iter(
     ca: &TimeChunked,
 ) -> impl '_ + ExactSizeIterator<Item = Option<NaiveTime>> {
-    ca.0.iter()
+    ca.phys
+        .iter()
         .map(move |opt_v| opt_v.map(nanos_since_midnight_to_naivetime))
 }
 
@@ -126,7 +113,11 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let iter = self.0.into_iter().map(|opt_v| opt_v.map(date32_to_date));
+        let iter = self
+            .0
+            .physical()
+            .into_iter()
+            .map(|opt_v| opt_v.map(date32_to_date));
         PyList::new(py, iter)
     }
 }
@@ -150,7 +141,7 @@ pub(crate) fn decimal_to_pyobject_iter<'py, 'a>(
     let py_scale = (-(ca.scale() as i32)).into_pyobject(py)?;
     // if we don't know precision, the only safe bet is to set it to 39
     let py_precision = ca.precision().unwrap_or(39).into_pyobject(py)?;
-    Ok(ca.iter().map(move |opt_v| {
+    Ok(ca.physical().iter().map(move |opt_v| {
         opt_v.map(|v| {
             // TODO! use AnyValue so that we have a single impl.
             const N: usize = 3;

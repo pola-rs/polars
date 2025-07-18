@@ -1,25 +1,24 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
-use once_cell::sync::Lazy;
-use polars_core::config;
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use object_store::local::LocalFileSystem;
+use polars_core::config::{self, verbose_print_sensitive};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 use url::Url;
 
-use super::{parse_url, CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
+use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore, parse_url};
 use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
 /// Other reasons are connection pools that must be shared between as much as possible.
 #[allow(clippy::type_complexity)]
-static OBJECT_STORE_CACHE: Lazy<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
-    Lazy::new(Default::default);
+static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
+    LazyLock::new(Default::default);
 
 #[allow(dead_code)]
 fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn ObjectStore>> {
@@ -31,24 +30,6 @@ fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn Obje
 
 /// Get the key of a url for object store registration.
 fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
-    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-    struct C {
-        max_retries: usize,
-        #[cfg(feature = "file_cache")]
-        file_cache_ttl: u64,
-        config: Option<CloudConfig>,
-        #[cfg(feature = "cloud")]
-        credential_provider: usize,
-    }
-
-    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-    struct S {
-        url_base: PlSmallStr,
-        cloud_options: Option<C>,
-    }
-
     // We include credentials as they can expire, so users will send new credentials for the same url.
     let cloud_options = options.map(
         |CloudOptions {
@@ -60,7 +41,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
              #[cfg(feature = "cloud")]
              credential_provider,
          }| {
-            C {
+            CloudOptions2 {
                 max_retries: *max_retries,
                 #[cfg(feature = "file_cache")]
                 file_cache_ttl: *file_cache_ttl,
@@ -71,7 +52,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
         },
     );
 
-    let cache_key = S {
+    let cache_key = CacheKey {
         url_base: format_pl_smallstr!(
             "{}",
             &url[url::Position::BeforeScheme..url::Position::AfterPort]
@@ -79,11 +60,29 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
         cloud_options,
     };
 
-    if config::verbose() {
-        eprintln!("object store cache key: {} {:?}", url, &cache_key);
+    verbose_print_sensitive(|| format!("object store cache key: {} {:?}", url, &cache_key));
+
+    return pl_serialize::serialize_to_bytes::<_, false>(&cache_key).unwrap();
+
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct CacheKey {
+        url_base: PlSmallStr,
+        cloud_options: Option<CloudOptions2>,
     }
 
-    pl_serialize::serialize_to_bytes(&cache_key).unwrap()
+    /// Variant of CloudOptions for serializing to a cache key. The credential
+    /// provider is replaced by the function address.
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct CloudOptions2 {
+        max_retries: usize,
+        #[cfg(feature = "file_cache")]
+        file_cache_ttl: u64,
+        config: Option<CloudConfig>,
+        #[cfg(feature = "cloud")]
+        credential_provider: usize,
+    }
 }
 
 /// Construct an object_store `Path` from a string without any encoding/decoding.
@@ -208,6 +207,10 @@ impl PolarsObjectStoreBuilder {
         }
 
         Ok(store)
+    }
+
+    pub(crate) fn is_azure(&self) -> bool {
+        matches!(&self.cloud_type, CloudType::Azure)
     }
 }
 

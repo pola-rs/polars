@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def series_of_int_dates() -> pl.Series:
-    return pl.Series([10000, 20000, 30000], dtype=pl.Date)
+    return pl.Series([8401, 10000, 20000, 30000], dtype=pl.Date)
 
 
 @pytest.fixture
@@ -29,7 +29,9 @@ def series_of_str_dates() -> pl.Series:
 
 
 def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
-    expected_str_dates = pl.Series(["1997-05-19", "2024-10-04", "2052-02-20"])
+    expected_str_dates = pl.Series(
+        ["1993-01-01", "1997-05-19", "2024-10-04", "2052-02-20"]
+    )
 
     assert series_of_int_dates.dtype == pl.Date
     assert_series_equal(series_of_int_dates.dt.to_string("%F"), expected_str_dates)
@@ -41,24 +43,33 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
-        ("millennium", pl.Series(values=[2, 3, 3], dtype=pl.Int32)),
-        ("century", pl.Series(values=[20, 21, 21], dtype=pl.Int32)),
-        ("year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
-        ("iso_year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
-        ("quarter", pl.Series(values=[2, 4, 1], dtype=pl.Int8)),
-        ("month", pl.Series(values=[5, 10, 2], dtype=pl.Int8)),
-        ("week", pl.Series(values=[21, 40, 8], dtype=pl.Int8)),
-        ("day", pl.Series(values=[19, 4, 20], dtype=pl.Int8)),
-        ("weekday", pl.Series(values=[1, 5, 2], dtype=pl.Int8)),
-        ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.Int16)),
+        ("millennium", pl.Series(values=[2, 2, 3, 3], dtype=pl.Int32)),
+        ("century", pl.Series(values=[20, 20, 21, 21], dtype=pl.Int32)),
+        ("year", pl.Series(values=[1993, 1997, 2024, 2052], dtype=pl.Int32)),
+        ("iso_year", pl.Series(values=[1992, 1997, 2024, 2052], dtype=pl.Int32)),
+        ("quarter", pl.Series(values=[1, 2, 4, 1], dtype=pl.Int8)),
+        ("month", pl.Series(values=[1, 5, 10, 2], dtype=pl.Int8)),
+        ("week", pl.Series(values=[53, 21, 40, 8], dtype=pl.Int8)),
+        ("day", pl.Series(values=[1, 19, 4, 20], dtype=pl.Int8)),
+        ("weekday", pl.Series(values=[5, 1, 5, 2], dtype=pl.Int8)),
+        ("ordinal_day", pl.Series(values=[1, 139, 278, 51], dtype=pl.Int16)),
     ],
 )
+@pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
 def test_dt_extract_datetime_component(
     unit_attr: str,
     expected: pl.Series,
     series_of_int_dates: pl.Series,
+    time_zone: str | None,
 ) -> None:
     assert_series_equal(getattr(series_of_int_dates.dt, unit_attr)(), expected)
+    assert_series_equal(
+        getattr(
+            series_of_int_dates.cast(pl.Datetime).dt.replace_time_zone(time_zone).dt,
+            unit_attr,
+        )(),
+        expected,
+    )
 
 
 @pytest.mark.parametrize(
@@ -201,6 +212,41 @@ def test_offset_by_sortedness(
     result = s.dt.offset_by(offset)
     assert result.flags["SORTED_ASC"] == expected
     assert not result.flags["SORTED_DESC"]
+
+
+def test_offset_by_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("P")
+
+
+def test_offset_by_missing_unit() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '1'",
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '1mo23d4'",
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1mo23d4")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '-2d1'",
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("-2d1")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '1d2'",
+    ):
+        pl.DataFrame(
+            {"a": [datetime(2022, 3, 20, 5, 7)] * 2, "b": ["1d", "1d2"]}
+        ).select(pl.col("a").dt.offset_by(pl.col("b")))
 
 
 def test_dt_datetime_date_time_invalid() -> None:
@@ -619,6 +665,13 @@ def test_round_negative() -> None:
         pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
 
 
+def test_round_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.round("P")
+
+
 @pytest.mark.parametrize(
     ("time_unit", "date_in_that_unit"),
     [
@@ -648,293 +701,6 @@ def test_epoch_matches_timestamp() -> None:
         dates.dt.epoch("d"),
         (dates.dt.timestamp("ms") // (1000 * 3600 * 24)).cast(pl.Int32),
     )
-
-
-def test_replace_expr_datetime() -> None:
-    df = pl.DataFrame(
-        {
-            "dates": [
-                datetime(2088, 8, 8, 8, 8, 8, 8),
-                datetime(2088, 8, 8, 8, 8, 8, 8),
-                datetime(2088, 8, 8, 8, 8, 8, 8),
-                datetime(2088, 8, 8, 8, 8, 8, 8),
-                datetime(2088, 8, 8, 8, 8, 8, 8),
-                datetime(2088, 8, 8, 8, 8, 8, 8),
-                datetime(2088, 8, 8, 8, 8, 8, 8),
-                None,
-            ],
-            "year": [None, 2, 3, 4, 5, 6, 7, 8],
-            "month": [1, None, 3, 4, 5, 6, 7, 8],
-            "day": [1, 2, None, 4, 5, 6, 7, 8],
-            "hour": [1, 2, 3, None, 5, 6, 7, 8],
-            "minute": [1, 2, 3, 4, None, 6, 7, 8],
-            "second": [1, 2, 3, 4, 5, None, 7, 8],
-            "microsecond": [1, 2, 3, 4, 5, 6, None, 8],
-        }
-    )
-
-    result = df.select(
-        pl.col("dates").dt.replace(
-            year="year",
-            month="month",
-            day="day",
-            hour="hour",
-            minute="minute",
-            second="second",
-            microsecond="microsecond",
-        )
-    )
-
-    expected = pl.DataFrame(
-        {
-            "dates": [
-                datetime(2088, 1, 1, 1, 1, 1, 1),
-                datetime(2, 8, 2, 2, 2, 2, 2),
-                datetime(3, 3, 8, 3, 3, 3, 3),
-                datetime(4, 4, 4, 8, 4, 4, 4),
-                datetime(5, 5, 5, 5, 8, 5, 5),
-                datetime(6, 6, 6, 6, 6, 8, 6),
-                datetime(7, 7, 7, 7, 7, 7, 8),
-                None,
-            ]
-        }
-    )
-
-    assert_frame_equal(result, expected)
-
-
-def test_replace_expr_date() -> None:
-    df = pl.DataFrame(
-        {
-            "dates": [date(2088, 8, 8), date(2088, 8, 8), date(2088, 8, 8), None],
-            "year": [None, 2, 3, 4],
-            "month": [1, None, 3, 4],
-            "day": [1, 2, None, 4],
-        }
-    )
-
-    result = df.select(
-        pl.col("dates").dt.replace(year="year", month="month", day="day")
-    )
-
-    expected = pl.DataFrame(
-        {"dates": [date(2088, 1, 1), date(2, 8, 2), date(3, 3, 8), None]}
-    )
-
-    assert_frame_equal(result, expected)
-
-
-def test_replace_int_datetime() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [
-                datetime(1, 1, 1, 1, 1, 1, 1),
-                datetime(2, 2, 2, 2, 2, 2, 2),
-                datetime(3, 3, 3, 3, 3, 3, 3),
-                None,
-            ]
-        }
-    )
-    result = df.select(
-        pl.col("a").dt.replace().alias("no_change"),
-        pl.col("a").dt.replace(year=9).alias("year"),
-        pl.col("a").dt.replace(month=9).alias("month"),
-        pl.col("a").dt.replace(day=9).alias("day"),
-        pl.col("a").dt.replace(hour=9).alias("hour"),
-        pl.col("a").dt.replace(minute=9).alias("minute"),
-        pl.col("a").dt.replace(second=9).alias("second"),
-        pl.col("a").dt.replace(microsecond=9).alias("microsecond"),
-    )
-    expected = pl.DataFrame(
-        {
-            "no_change": [
-                datetime(1, 1, 1, 1, 1, 1, 1),
-                datetime(2, 2, 2, 2, 2, 2, 2),
-                datetime(3, 3, 3, 3, 3, 3, 3),
-                None,
-            ],
-            "year": [
-                datetime(9, 1, 1, 1, 1, 1, 1),
-                datetime(9, 2, 2, 2, 2, 2, 2),
-                datetime(9, 3, 3, 3, 3, 3, 3),
-                None,
-            ],
-            "month": [
-                datetime(1, 9, 1, 1, 1, 1, 1),
-                datetime(2, 9, 2, 2, 2, 2, 2),
-                datetime(3, 9, 3, 3, 3, 3, 3),
-                None,
-            ],
-            "day": [
-                datetime(1, 1, 9, 1, 1, 1, 1),
-                datetime(2, 2, 9, 2, 2, 2, 2),
-                datetime(3, 3, 9, 3, 3, 3, 3),
-                None,
-            ],
-            "hour": [
-                datetime(1, 1, 1, 9, 1, 1, 1),
-                datetime(2, 2, 2, 9, 2, 2, 2),
-                datetime(3, 3, 3, 9, 3, 3, 3),
-                None,
-            ],
-            "minute": [
-                datetime(1, 1, 1, 1, 9, 1, 1),
-                datetime(2, 2, 2, 2, 9, 2, 2),
-                datetime(3, 3, 3, 3, 9, 3, 3),
-                None,
-            ],
-            "second": [
-                datetime(1, 1, 1, 1, 1, 9, 1),
-                datetime(2, 2, 2, 2, 2, 9, 2),
-                datetime(3, 3, 3, 3, 3, 9, 3),
-                None,
-            ],
-            "microsecond": [
-                datetime(1, 1, 1, 1, 1, 1, 9),
-                datetime(2, 2, 2, 2, 2, 2, 9),
-                datetime(3, 3, 3, 3, 3, 3, 9),
-                None,
-            ],
-        }
-    )
-    assert_frame_equal(result, expected)
-
-
-def test_replace_int_date() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [
-                date(1, 1, 1),
-                date(2, 2, 2),
-                date(3, 3, 3),
-                None,
-            ]
-        }
-    )
-    result = df.select(
-        pl.col("a").dt.replace().alias("no_change"),
-        pl.col("a").dt.replace(year=9).alias("year"),
-        pl.col("a").dt.replace(month=9).alias("month"),
-        pl.col("a").dt.replace(day=9).alias("day"),
-    )
-    expected = pl.DataFrame(
-        {
-            "no_change": [
-                date(1, 1, 1),
-                date(2, 2, 2),
-                date(3, 3, 3),
-                None,
-            ],
-            "year": [
-                date(9, 1, 1),
-                date(9, 2, 2),
-                date(9, 3, 3),
-                None,
-            ],
-            "month": [
-                date(1, 9, 1),
-                date(2, 9, 2),
-                date(3, 9, 3),
-                None,
-            ],
-            "day": [
-                date(1, 1, 9),
-                date(2, 2, 9),
-                date(3, 3, 9),
-                None,
-            ],
-        }
-    )
-    assert_frame_equal(result, expected)
-
-
-def test_replace_ambiguous() -> None:
-    # Value to be replaced by an ambiguous hour.
-    value = pl.select(
-        pl.datetime(2020, 10, 25, 5, time_zone="Europe/London")
-    ).to_series()
-
-    input = [2020, 10, 25, 1]
-    tz = "Europe/London"
-
-    # earliest
-    expected = pl.select(
-        pl.datetime(*input, time_zone=tz, ambiguous="earliest")
-    ).to_series()
-    result = value.dt.replace(hour=1, ambiguous="earliest")
-    assert_series_equal(result, expected)
-
-    # latest
-    expected = pl.select(
-        pl.datetime(*input, time_zone=tz, ambiguous="latest")
-    ).to_series()
-    result = value.dt.replace(hour=1, ambiguous="latest")
-    assert_series_equal(result, expected)
-
-    # null
-    expected = pl.select(
-        pl.datetime(*input, time_zone=tz, ambiguous="null")
-    ).to_series()
-    result = value.dt.replace(hour=1, ambiguous="null")
-    assert_series_equal(result, expected)
-
-    # raise
-    with pytest.raises(
-        ComputeError,
-        match=(
-            "datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'. "
-            "Please use `ambiguous` to tell how it should be localized."
-        ),
-    ):
-        value.dt.replace(hour=1, ambiguous="raise")
-
-
-def test_replace_datetime_preserve_ns() -> None:
-    df = pl.DataFrame(
-        {
-            "a": pl.Series(["2020-01-01T00:00:00.123456789"] * 2).cast(
-                pl.Datetime("ns")
-            ),
-            "year": [2021, None],
-            "microsecond": [50, None],
-        }
-    )
-
-    result = df.select(
-        year=pl.col("a").dt.replace(year="year"),
-        us=pl.col("a").dt.replace(microsecond="microsecond"),
-    )
-
-    expected = pl.DataFrame(
-        {
-            "year": pl.Series(
-                [
-                    "2021-01-01T00:00:00.123456789",
-                    "2020-01-01T00:00:00.123456789",
-                ]
-            ).cast(pl.Datetime("ns")),
-            "us": pl.Series(
-                [
-                    "2020-01-01T00:00:00.000050",
-                    "2020-01-01T00:00:00.123456789",
-                ]
-            ).cast(pl.Datetime("ns")),
-        }
-    )
-
-    assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
-@pytest.mark.parametrize("tzinfo", [None, "Africa/Nairobi", "America/New_York"])
-def test_replace_preserve_tu_and_tz(tu: TimeUnit, tzinfo: str) -> None:
-    s = pl.Series(
-        [datetime(2024, 1, 1), datetime(2024, 1, 2)],
-        dtype=pl.Datetime(time_unit=tu, time_zone=tzinfo),
-    )
-    result = s.dt.replace(year=2000)
-    assert result.dtype.time_unit == tu  # type: ignore[attr-defined]
-    assert result.dtype.time_zone == tzinfo  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(
@@ -1023,9 +789,59 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
     assert result.collect_schema().dtypes() == expected_dtypes
 
 
-def test_is_leap_year() -> None:
-    assert pl.datetime_range(
-        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y", eager=True
+@pytest.mark.parametrize(
+    ("range_fn", "value_type", "kwargs"),
+    [
+        (pl.datetime_range, datetime, {"time_unit": "ns"}),
+        (pl.datetime_range, datetime, {"time_unit": "ns", "time_zone": "CET"}),
+        (pl.datetime_range, datetime, {"time_unit": "us"}),
+        (pl.datetime_range, datetime, {"time_unit": "us", "time_zone": "CET"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms", "time_zone": "CET"}),
+        (pl.date_range, date, {}),
+    ],
+)
+def test_iso_year(
+    range_fn: Callable[..., pl.Series], value_type: type, kwargs: dict[str, str]
+) -> None:
+    assert range_fn(
+        value_type(1990, 1, 1), value_type(2004, 1, 1), "1y", **kwargs, eager=True
+    ).dt.iso_year().to_list() == [
+        1990,
+        1991,
+        1992,
+        1992,
+        1993,
+        1994,
+        1996,
+        1997,
+        1998,
+        1998,
+        1999,
+        2001,
+        2002,
+        2003,
+        2004,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("range_fn", "value_type", "kwargs"),
+    [
+        (pl.datetime_range, datetime, {"time_unit": "ns"}),
+        (pl.datetime_range, datetime, {"time_unit": "ns", "time_zone": "CET"}),
+        (pl.datetime_range, datetime, {"time_unit": "us"}),
+        (pl.datetime_range, datetime, {"time_unit": "us", "time_zone": "CET"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms"}),
+        (pl.datetime_range, datetime, {"time_unit": "ms", "time_zone": "CET"}),
+        (pl.date_range, date, {}),
+    ],
+)
+def test_is_leap_year(
+    range_fn: Callable[..., pl.Series], value_type: type, kwargs: dict[str, str]
+) -> None:
+    assert range_fn(
+        value_type(1990, 1, 1), value_type(2004, 1, 1), "1y", **kwargs, eager=True
     ).dt.is_leap_year().to_list() == [
         False,
         False,
@@ -1223,7 +1039,7 @@ def test_offset_by_expressions() -> None:
     }
 
     # Check single-row cases
-    for i in range(len(df)):
+    for i in range(df.height):
         df_slice = df[i : i + 1]
         result = df_slice.select(
             c=pl.col("a").dt.offset_by(pl.col("b")),

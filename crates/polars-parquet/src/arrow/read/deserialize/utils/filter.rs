@@ -3,10 +3,19 @@ use std::ops::Range;
 use arrow::array::Splitable;
 use arrow::bitmap::Bitmap;
 
-#[derive(Debug, Clone)]
+use crate::read::expr::ParquetColumnExprRef;
+
+#[derive(Clone)]
+pub struct PredicateFilter {
+    pub predicate: ParquetColumnExprRef,
+    pub include_values: bool,
+}
+
+#[derive(Clone)]
 pub enum Filter {
     Range(Range<usize>),
     Mask(Bitmap),
+    Predicate(PredicateFilter),
 }
 
 impl Filter {
@@ -22,53 +31,45 @@ impl Filter {
         Filter::Mask(mask)
     }
 
-    pub fn do_include_at(&self, at: usize) -> bool {
+    pub fn num_rows(&self, total_num_rows: usize) -> usize {
         match self {
-            Filter::Range(range) => range.contains(&at),
-            Filter::Mask(bitmap) => bitmap.get_bit(at),
+            Self::Range(range) => range.len(),
+            Self::Mask(bitmap) => bitmap.set_bits(),
+            Self::Predicate { .. } => total_num_rows,
         }
     }
 
-    pub fn num_rows(&self) -> usize {
+    pub fn max_offset(&self, total_num_rows: usize) -> usize {
         match self {
-            Filter::Range(range) => range.len(),
-            Filter::Mask(bitmap) => bitmap.set_bits(),
+            Self::Range(range) => range.end,
+            Self::Mask(bitmap) => bitmap.len(),
+            Self::Predicate { .. } => total_num_rows,
         }
     }
 
-    pub fn max_offset(&self) -> usize {
+    pub(crate) fn split_at(&self, at: usize) -> (Self, Self) {
         match self {
-            Filter::Range(range) => range.end,
-            Filter::Mask(bitmap) => bitmap.len(),
-        }
-    }
-
-    pub(crate) fn split_at(&self, at: usize) -> (Filter, Filter) {
-        use Filter as F;
-        match self {
-            F::Range(range) => {
+            Self::Range(range) => {
                 let start = range.start;
                 let end = range.end;
 
                 if at <= start {
-                    (F::Range(0..0), F::Range(start - at..end - at))
+                    (Self::Range(0..0), Self::Range(start - at..end - at))
                 } else if at > end {
-                    (F::Range(start..end), F::Range(0..0))
+                    (Self::Range(start..end), Self::Range(0..0))
                 } else {
-                    (F::Range(start..at), F::Range(0..end - at))
+                    (Self::Range(start..at), Self::Range(0..end - at))
                 }
             },
-            F::Mask(bitmap) => {
+            Self::Mask(bitmap) => {
                 let (lhs, rhs) = bitmap.split_at(at);
-                (F::Mask(lhs), F::Mask(rhs))
+                (Self::Mask(lhs), Self::Mask(rhs))
             },
+            Self::Predicate(e) => (Self::Predicate(e.clone()), Self::Predicate(e.clone())),
         }
     }
 
-    pub(crate) fn opt_split_at(
-        filter: &Option<Self>,
-        at: usize,
-    ) -> (Option<Filter>, Option<Filter>) {
+    pub(crate) fn opt_split_at(filter: &Option<Self>, at: usize) -> (Option<Self>, Option<Self>) {
         let Some(filter) = filter else {
             return (None, None);
         };
@@ -79,7 +80,7 @@ impl Filter {
 
     pub(crate) fn opt_num_rows(filter: &Option<Self>, total_num_rows: usize) -> usize {
         match filter {
-            Some(filter) => usize::min(filter.num_rows(), total_num_rows),
+            Some(filter) => usize::min(filter.num_rows(total_num_rows), total_num_rows),
             None => total_num_rows,
         }
     }

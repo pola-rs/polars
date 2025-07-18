@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 import polars.functions as F
+from polars._utils.various import qualified_type_name
 from polars.datatypes import Boolean, Enum, Int64, String, UInt8, UInt32
 from polars.exceptions import InvalidOperationError
 from polars.interchange.dataframe import PolarsDataFrame
@@ -40,7 +41,7 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
         return df._df
 
     if not hasattr(df, "__dataframe__"):
-        msg = f"`df` of type {type(df).__name__!r} does not support the dataframe interchange protocol"
+        msg = f"`df` of type {qualified_type_name(df)!r} does not support the dataframe interchange protocol"
         raise TypeError(msg)
 
     return _from_dataframe(

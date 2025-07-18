@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::Bitmap;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
@@ -21,15 +21,17 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(CompatLevel::newest()), length);
+        let arr = PrimitiveArray::new_null(
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
+            length,
+        );
         ChunkedArray::with_chunk(name, arr)
     }
 }
 impl ChunkFull<bool> for BooleanChunked {
     fn full(name: PlSmallStr, value: bool, length: usize) -> Self {
-        let mut bits = MutableBitmap::with_capacity(length);
-        bits.extend_constant(length, value);
-        let arr = BooleanArray::from_data_default(bits.into(), None);
+        let bits = Bitmap::new_with_value(value, length);
+        let arr = BooleanArray::from_data_default(bits, None);
         let mut out = BooleanChunked::with_chunk(name, arr);
         out.set_sorted_flag(IsSorted::Ascending);
         out
@@ -81,7 +83,7 @@ impl ChunkFullNull for BinaryChunked {
 impl<'a> ChunkFull<&'a [u8]> for BinaryOffsetChunked {
     fn full(name: PlSmallStr, value: &'a [u8], length: usize) -> Self {
         let mut mutable = MutableBinaryArray::with_capacities(length, length * value.len());
-        mutable.extend_values(std::iter::repeat(value).take(length));
+        mutable.extend_values(std::iter::repeat_n(value, length));
         let arr: BinaryArray<i64> = mutable.into();
         let mut out = ChunkedArray::with_chunk(name, arr);
         out.set_sorted_flag(IsSorted::Ascending);

@@ -36,7 +36,8 @@ impl From<&AnyValue<'_>> for NaiveTime {
 
 // Used by lazy for literal conversion
 pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
-    v.and_utc().timestamp_nanos_opt().unwrap()
+    let us = v.and_utc().timestamp() * 1_000_000_000; //nanos
+    us + v.and_utc().timestamp_subsec_nanos() as i64
 }
 
 pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
@@ -64,12 +65,12 @@ pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> PolarsResult<String> 
             match dtype {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, tz) => match (tu, tz.is_some()) {
-                    (TimeUnit::Milliseconds, true) => format!("%F{}%T%.3f%:z", sep),
-                    (TimeUnit::Milliseconds, false) => format!("%F{}%T%.3f", sep),
-                    (TimeUnit::Microseconds, true) => format!("%F{}%T%.6f%:z", sep),
-                    (TimeUnit::Microseconds, false) => format!("%F{}%T%.6f", sep),
-                    (TimeUnit::Nanoseconds, true) => format!("%F{}%T%.9f%:z", sep),
-                    (TimeUnit::Nanoseconds, false) => format!("%F{}%T%.9f", sep),
+                    (TimeUnit::Milliseconds, true) => format!("%F{sep}%T%.3f%:z"),
+                    (TimeUnit::Milliseconds, false) => format!("%F{sep}%T%.3f"),
+                    (TimeUnit::Microseconds, true) => format!("%F{sep}%T%.6f%:z"),
+                    (TimeUnit::Microseconds, false) => format!("%F{sep}%T%.6f"),
+                    (TimeUnit::Nanoseconds, true) => format!("%F{sep}%T%.9f%:z"),
+                    (TimeUnit::Nanoseconds, false) => format!("%F{sep}%T%.9f"),
                 },
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => "%F".to_string(),
@@ -77,8 +78,7 @@ pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> PolarsResult<String> 
                 DataType::Time => "%T%.f".to_string(),
                 _ => {
                     let err = format!(
-                        "invalid call to `get_strftime_format`; fmt={:?}, dtype={}",
-                        fmt, dtype
+                        "invalid call to `get_strftime_format`; fmt={fmt:?}, dtype={dtype}"
                     );
                     unimplemented!("{}", err)
                 },

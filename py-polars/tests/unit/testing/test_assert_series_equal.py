@@ -10,6 +10,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal, assert_series_not_equal
 from polars.testing.parametric import dtypes, series
 
@@ -69,12 +70,13 @@ def test_assert_series_equal_check_order() -> None:
 
 
 def test_assert_series_equal_check_order_unsortable_type() -> None:
-    s = pl.Series([object(), object()])
+    s1 = pl.Series([object(), object()])
+    s2 = pl.Series([object(), object()])
     with pytest.raises(
-        TypeError,
-        match="cannot set `check_order=False` on Series with unsortable data type",
+        InvalidOperationError,
+        match="`sort_with` operation not supported for dtype `object`",
     ):
-        assert_series_equal(s, s, check_order=False)
+        assert_series_equal(s1, s2, check_order=False)
 
 
 def test_compare_series_nans_assert_equal() -> None:
@@ -550,12 +552,9 @@ def test_assert_series_equal_incompatible_data_types() -> None:
 def test_assert_series_equal_full_series() -> None:
     s1 = pl.Series([1, 2, 3])
     s2 = pl.Series([1, 2, 4])
-    msg = (
-        r"Series are different \(exact value mismatch\)\n"
-        r"\[left\]:  \[1, 2, 3\]\n"
-        r"\[right\]: \[1, 2, 4\]"
-    )
-    with pytest.raises(AssertionError, match=msg):
+    with pytest.raises(
+        AssertionError, match=r"Series are different \(exact value mismatch\)"
+    ):
         assert_series_equal(s1, s2)
 
 
@@ -732,22 +731,20 @@ def test_assert_series_equal_check_dtype_deprecated() -> None:
         assert_series_not_equal(s1, s3, check_dtype=False)  # type: ignore[call-arg]
 
 
-def test_assert_series_equal_nested_categorical_as_str_global() -> None:
+def test_assert_series_equal_nested_categorical_as_str_independently_constructed() -> (
+    None
+):
     # https://github.com/pola-rs/polars/issues/16196
-
-    # Global
-    with pl.StringCache():
-        s1 = pl.Series(["c0"], dtype=pl.Categorical)
-        s2 = pl.Series(["c1"], dtype=pl.Categorical)
-        s_global = pl.DataFrame([s1, s2]).to_struct("col0")
-
-    # Local
     s1 = pl.Series(["c0"], dtype=pl.Categorical)
     s2 = pl.Series(["c1"], dtype=pl.Categorical)
-    s_local = pl.DataFrame([s1, s2]).to_struct("col0")
+    a = pl.DataFrame([s1, s2]).to_struct("col0")
 
-    assert_series_equal(s_global, s_local, categorical_as_str=True)
-    assert_series_not_equal(s_global, s_local, categorical_as_str=False)
+    s1 = pl.Series(["c0"], dtype=pl.Categorical)
+    s2 = pl.Series(["c1"], dtype=pl.Categorical)
+    b = pl.DataFrame([s1, s2]).to_struct("col0")
+
+    assert_series_equal(a, b, categorical_as_str=True)
+    assert_series_equal(a, b, categorical_as_str=False)
 
 
 @pytest.mark.parametrize(
@@ -823,11 +820,6 @@ def test_series_data_type_fail():
 
     assert "def assert_series_equal" not in stdout
     assert "def assert_series_not_equal" not in stdout
-    assert "def _assert_series_values_equal" not in stdout
-    assert "def _assert_series_nested_values_equal" not in stdout
-    assert "def _assert_series_null_values_match" not in stdout
-    assert "def _assert_series_nan_values_match" not in stdout
-    assert "def _assert_series_values_within_tolerance" not in stdout
 
     # Make sure the tests are failing for the expected reason (e.g. not because
     # an import is missing or something like that):
@@ -837,3 +829,29 @@ def test_series_data_type_fail():
     assert "AssertionError: Series are different (nan value mismatch)" in stdout
     assert "AssertionError: Series are different (dtype mismatch)" in stdout
     assert "AssertionError: inputs are different (unexpected input types)" in stdout
+
+
+def test_assert_series_equal_inf() -> None:
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, float("inf")])
+    assert_series_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("-inf")])
+    s2 = pl.Series([1.0, float("-inf")])
+    assert_series_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([float("inf"), 1.0])
+    assert_series_not_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, float("-inf")])
+    assert_series_not_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, 2.0])
+    assert_series_not_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, float("nan")])
+    assert_series_not_equal(s1, s2)

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import sys
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, get_type_hints
 
 from polars.dependencies import _check_for_pydantic, pydantic
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     import pandas as pd
 
 PANDAS_SIMPLE_NUMPY_DTYPES = {
@@ -36,25 +34,20 @@ def _get_annotations(obj: type) -> dict[str, Any]:
     return getattr(obj, "__annotations__", {})
 
 
-if sys.version_info >= (3, 10):
-
-    def try_get_type_hints(obj: type) -> dict[str, Any]:
-        try:
-            # often the same as obj.__annotations__, but handles forward references
-            # encoded as string literals, adds Optional[t] if a default value equal
-            # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
-            return get_type_hints(obj)
-        except TypeError:
-            # fallback on edge-cases (eg: InitVar inference on python 3.10).
-            return _get_annotations(obj)
-
-else:
-    try_get_type_hints = _get_annotations
+def try_get_type_hints(obj: type) -> dict[str, Any]:
+    try:
+        # often the same as obj.__annotations__, but handles forward references
+        # encoded as string literals, adds Optional[t] if a default value equal
+        # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
+        return get_type_hints(obj)
+    except TypeError:
+        # fallback on edge-cases (eg: InitVar inference on python 3.10).
+        return _get_annotations(obj)
 
 
 @lru_cache(64)
 def is_namedtuple(cls: Any, *, annotated: bool = False) -> bool:
-    """Check whether given class derives from NamedTuple."""
+    """Check if given class derives from NamedTuple."""
     if all(hasattr(cls, attr) for attr in ("_fields", "_field_defaults", "_replace")):
         if not isinstance(cls._fields, property):
             if not annotated or len(cls.__annotations__) == len(cls._fields):
@@ -63,13 +56,15 @@ def is_namedtuple(cls: Any, *, annotated: bool = False) -> bool:
 
 
 def is_pydantic_model(value: Any) -> bool:
-    """Check whether value derives from a pydantic.BaseModel."""
+    """Check if value derives from a pydantic.BaseModel."""
     return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
 
 
-def is_sqlalchemy(value: Any) -> bool:
-    """Check whether value is an instance of a SQLAlchemy object."""
-    return getattr(value, "__module__", "").startswith("sqlalchemy.")
+def is_sqlalchemy_row(value: Any) -> bool:
+    """Check if value is an instance of a SQLAlchemy sequence or mapping object."""
+    return getattr(value, "__module__", "").startswith("sqlalchemy.") and isinstance(
+        value, Sequence
+    )
 
 
 def get_first_non_none(values: Sequence[Any | None]) -> Any:

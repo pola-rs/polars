@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use num_traits::AsPrimitive;
-use polars_compute::var_cov::VarState;
+use polars_compute::moment::VarState;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
@@ -11,7 +11,7 @@ pub fn new_var_std_reduction(dtype: DataType, is_std: bool, ddof: u8) -> Box<dyn
     use VecGroupedReduction as VGR;
     match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolVarStdReducer { is_std, ddof })),
-        _ if dtype.is_numeric() => {
+        _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VGR::new(dtype, VarStdReducer::<$T> {
                     is_std,
@@ -75,15 +75,15 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
     }
 
     #[inline(always)]
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, _seq_id: u64) {
         if let Some(x) = b {
-            a.add_one(x.as_());
+            a.insert_one(x.as_());
         }
     }
 
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         for arr in ca.downcast_iter() {
-            v.combine(&polars_compute::var_cov::var(arr))
+            v.combine(&polars_compute::moment::var(arr))
         }
     }
 
@@ -98,11 +98,7 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
             .into_iter()
             .map(|s| {
                 let var = s.finalize(self.ddof);
-                if self.is_std {
-                    var.map(f64::sqrt)
-                } else {
-                    var
-                }
+                if self.is_std { var.map(f64::sqrt) } else { var }
             })
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
@@ -129,12 +125,12 @@ impl Reducer for BoolVarStdReducer {
     }
 
     #[inline(always)]
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, _seq_id: u64) {
         a.0 += b.unwrap_or(false) as usize;
         a.1 += b.is_some() as usize;
     }
 
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         v.0 += ca.sum().unwrap_or(0) as usize;
         v.1 += ca.len() - ca.null_count();
     }

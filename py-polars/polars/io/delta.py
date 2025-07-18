@@ -4,29 +4,34 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
+from polars.io.cloud._utils import _get_path_scheme
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
+from polars.io.scan_options.cast_options import ScanCastOptions
 from polars.schema import Schema
 
 if TYPE_CHECKING:
+    from typing import Literal
+
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, LazyFrame
+    from polars.io.cloud import CredentialProviderFunction
 
 
 def read_delta(
-    source: str | DeltaTable,
+    source: str | Path | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
     rechunk: bool | None = None,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
@@ -57,6 +62,14 @@ def read_delta(
 
         More info is available `here
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     use_pyarrow
@@ -138,6 +151,7 @@ def read_delta(
         source=source,
         version=version,
         storage_options=storage_options,
+        credential_provider=credential_provider,
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
@@ -150,10 +164,11 @@ def read_delta(
 
 
 def scan_delta(
-    source: str | DeltaTable,
+    source: str | Path | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
@@ -180,6 +195,14 @@ def scan_delta(
 
         More info is available `here
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     use_pyarrow
@@ -268,10 +291,48 @@ def scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
+    _check_if_delta_available()
+
+    credential_provider_creds = {}
+
+    from deltalake import DeltaTable
+
+    from polars.io.cloud.credential_provider._builder import (
+        _init_credential_provider_builder,
+    )
+    from polars.io.cloud.credential_provider._providers import (
+        _get_credentials_from_provider_expiry_aware,
+    )
+
+    if isinstance(source, DeltaTable) and storage_options is None:
+        storage_options = source._storage_options
+    if not isinstance(source, DeltaTable):
+        credential_provider_builder = _init_credential_provider_builder(
+            credential_provider, source, storage_options, "scan_delta"
+        )
+    elif credential_provider is not None and credential_provider != "auto":
+        msg = "cannot use credential_provider when passing a DeltaTable object"
+        raise ValueError(msg)
+    else:
+        credential_provider_builder = None
+
+    del credential_provider
+
+    if credential_provider_builder and (
+        provider := credential_provider_builder.build_credential_provider()
+    ):
+        credential_provider_creds = (
+            _get_credentials_from_provider_expiry_aware(provider) or {}
+        )
+
     dl_tbl = _get_delta_lake_table(
         table_path=source,
         version=version,
-        storage_options=storage_options,
+        storage_options=(
+            {**(storage_options or {}), **credential_provider_creds}
+            if storage_options is not None or credential_provider_builder is not None
+            else None
+        ),
         delta_table_options=delta_table_options,
     )
 
@@ -284,7 +345,6 @@ def scan_delta(
         msg = "To make use of pyarrow_options, set use_pyarrow to True"
         raise ValueError(msg)
 
-    import pyarrow as pa
     from deltalake.exceptions import DeltaProtocolError
     from deltalake.table import (
         MAX_SUPPORTED_READER_VERSION,
@@ -313,10 +373,8 @@ def scan_delta(
             msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
             raise DeltaProtocolError(msg)
 
-    # Requires conversion through pyarrow table because there is no direct way yet to
-    # convert a delta schema into a polars schema
-    delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    polars_schema = from_arrow(pa.Table.from_pylist([], delta_schema)).schema  # type: ignore[union-attr]
+    delta_schema = dl_tbl.schema().to_arrow()
+    polars_schema = from_arrow(delta_schema.empty_table()).schema  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(
@@ -338,23 +396,31 @@ def scan_delta(
     # Required because main_schema cannot contain hive columns currently
     main_schema, hive_schema = _split_schema(polars_schema, partition_columns)
 
+    file_uris = dl_tbl.file_uris()
+
+    # LakeFS has an S3 compatible API, for reading therefore it's safe to do this.
+    # Deltalake internally has an integration for writing commits
+    if dl_tbl.table_uri.startswith("lakefs://"):
+        file_uris = [file_uri.replace("lakefs://", "s3://") for file_uri in file_uris]
+
     return scan_parquet(
-        dl_tbl.file_uris(),
+        file_uris,
         schema=main_schema,
         hive_schema=hive_schema if len(partition_columns) > 0 else None,
-        allow_missing_columns=True,
+        cast_options=ScanCastOptions._default_iceberg(),
+        missing_columns="insert",
+        extra_columns="ignore",
         hive_partitioning=len(partition_columns) > 0,
         storage_options=storage_options,
+        credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         rechunk=rechunk or False,
     )
 
 
-def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
-    parsed_result = urlparse(table_uri)
-
+def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
     resolved_uri = str(
         Path(table_uri).expanduser().resolve(strict)
-        if parsed_result.scheme == ""
+        if _get_path_scheme(table_uri) is None
         else table_uri
     )
 
@@ -362,7 +428,7 @@ def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
 
 
 def _get_delta_lake_table(
-    table_path: str | DeltaTable,
+    table_path: str | Path | DeltaTable,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,

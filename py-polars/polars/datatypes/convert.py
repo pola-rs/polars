@@ -28,6 +28,7 @@ from polars.datatypes.classes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Null,
     Object,
@@ -149,6 +150,7 @@ class _DataTypeMappings:
             Duration: "duration",
             Float32: "f32",
             Float64: "f64",
+            Int128: "i128",
             Int16: "i16",
             Int32: "i32",
             Int64: "i64",
@@ -177,6 +179,7 @@ class _DataTypeMappings:
             Duration: timedelta,
             Float32: float,
             Float64: float,
+            Int128: int,
             Int16: int,
             Int32: int,
             Int64: int,
@@ -203,6 +206,7 @@ class _DataTypeMappings:
             # (np.dtype().kind, np.dtype().itemsize)
             ("M", 8): Datetime,
             ("b", 1): Boolean,
+            ("f", 2): Float32,
             ("f", 4): Float32,
             ("f", 8): Float64,
             ("i", 1): Int8,
@@ -284,6 +288,7 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
     """Map a PolarsDataType short repr (eg: 'i64', 'list[str]') back into a dtype."""
     if dtype_string is None:
         return None
+
     m = re.match(r"^(\w+)(?:\[(.+)\])?$", dtype_string)
     if m is None:
         return None
@@ -351,6 +356,8 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
         try:
             el = py_type(el)  # type: ignore[call-arg]
         except Exception:
-            msg = f"cannot convert Python type {type(el).__name__!r} to {dtype!r}"
+            from polars._utils.various import qualified_type_name
+
+            msg = f"cannot convert Python type {qualified_type_name(el)!r} to {dtype!r}"
             raise TypeError(msg) from None
     return el

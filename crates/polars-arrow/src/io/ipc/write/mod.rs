@@ -6,8 +6,9 @@ mod stream;
 pub(crate) mod writer;
 
 pub use common::{
-    dictionaries_to_encode, encode_dictionary, encode_new_dictionaries, encode_record_batch,
-    Compression, DictionaryTracker, EncodedData, Record, WriteOptions,
+    Compression, DictionaryTracker, EncodedData, Record, WriteOptions, commit_encoded_arrays,
+    dictionaries_to_encode, encode_array, encode_dictionary, encode_new_dictionaries,
+    encode_record_batch,
 };
 pub use schema::schema_to_bytes;
 pub use serialize::write;
@@ -29,8 +30,17 @@ fn default_ipc_field(dtype: &ArrowDataType, current_id: &mut i64) -> IpcField {
             dictionary_id: None,
         },
         // multiple children => recurse
-        Union(fields, ..) | Struct(fields) => IpcField {
+        Struct(fields) => IpcField {
             fields: fields
+                .iter()
+                .map(|f| default_ipc_field(f.dtype(), current_id))
+                .collect(),
+            dictionary_id: None,
+        },
+        // multiple children => recurse
+        Union(u) => IpcField {
+            fields: u
+                .fields
                 .iter()
                 .map(|f| default_ipc_field(f.dtype(), current_id))
                 .collect(),

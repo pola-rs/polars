@@ -46,7 +46,9 @@ Computation
     Series.first
     Series.hash
     Series.hist
+    Series.index_of
     Series.is_between
+    Series.is_close
     Series.kurtosis
     Series.last
     Series.log
@@ -58,6 +60,7 @@ Computation
     Series.rank
     Series.replace
     Series.replace_strict
+    Series.rolling_kurtosis
     Series.rolling_map
     Series.rolling_max
     Series.rolling_mean

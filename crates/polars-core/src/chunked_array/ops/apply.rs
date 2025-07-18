@@ -1,4 +1,5 @@
 //! Implementations of the ChunkApply Trait.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
 use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};
@@ -132,7 +133,11 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow(CompatLevel::newest()))
+            arrow::compute::arity::unary(
+                arr,
+                f,
+                S::get_static_dtype().to_arrow(CompatLevel::newest()),
+            )
         };
 
         if owned_arr.values().is_sliced() {
@@ -161,12 +166,12 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         S: PolarsNumericType,
     {
         // if we cast, we create a new arrow buffer
-        // then we clone the arrays and drop the casted arrays
+        // then we clone the arrays and drop the cast arrays
         // this will ensure we have a single ref count
         // and we can mutate in place
         let chunks = {
             let s = self
-                .cast_with_options(&S::get_dtype(), CastOptions::Overflowing)
+                .cast_with_options(&S::get_static_dtype(), CastOptions::Overflowing)
                 .unwrap();
             s.chunks().clone()
         };

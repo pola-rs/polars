@@ -1,10 +1,11 @@
+use pyo3::Python;
 use pyo3::prelude::*;
 use pyo3::types::PyCFunction;
-use pyo3::Python;
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
-use crate::map::series::{call_lambda_and_extract, ApplyLambda};
+use crate::map::check_nested_object;
+use crate::map::series::{ApplyLambda, call_lambda_and_extract};
 use crate::prelude::*;
 use crate::py_modules::pl_series;
 use crate::{apply_method_all_arrow_series2, raise_err};
@@ -24,7 +25,8 @@ impl PySeries {
             polars_warn!(
                 MapWithoutReturnDtypeWarning,
                 "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
-                Specify `return_dtype` to silence this warning.")
+                Specify `return_dtype` to silence this warning."
+            )
         }
 
         if skip_nulls && (series.null_count() == series.len()) {
@@ -45,7 +47,7 @@ impl PySeries {
             ($self:expr, $method:ident, $($args:expr),*) => {
                 match $self.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_, _) => {
+                    DataType::Object(_) => {
                         let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
                         ca.$method($($args),*)
                     },
@@ -73,21 +75,33 @@ impl PySeries {
                     | DataType::Binary
                     | DataType::Array(_, _)
                     | DataType::Time
+                    | DataType::Decimal(_, _)
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
                 let s = self.series.rechunk();
-                let iter = s.iter().map(|av| match (skip_nulls, av) {
-                    (true, AnyValue::Null) => AnyValue::Null,
-                    (_, av) => {
-                        let input = Wrap(av);
-                        call_lambda_and_extract::<_, Wrap<AnyValue>>(py, function, input)
-                            .unwrap()
-                            .0
-                    },
-                });
-                avs.extend(iter);
-                return Ok(Series::new(self.series.name().clone(), &avs).into());
+
+                for av in s.iter() {
+                    let out = match (skip_nulls, av) {
+                        (true, AnyValue::Null) => AnyValue::Null,
+                        (_, av) => {
+                            let av: Option<Wrap<AnyValue>> =
+                                call_lambda_and_extract(py, function, Wrap(av))?;
+                            match av {
+                                None => AnyValue::Null,
+                                Some(av) => av.0,
+                            }
+                        },
+                    };
+                    avs.push(out)
+                }
+                let out = Series::new(self.series.name().clone(), &avs);
+                let dtype = out.dtype();
+                if dtype.is_nested() {
+                    check_nested_object(dtype)?;
+                }
+
+                return Ok(out.into());
             }
 
             let out = match return_dtype {
@@ -126,6 +140,17 @@ impl PySeries {
                 },
                 Some(DataType::Int64) => {
                     let ca: Int64Chunked = dispatch_apply!(
+                        series,
+                        apply_lambda_with_primitive_out_type,
+                        py,
+                        function,
+                        0,
+                        None
+                    )?;
+                    ca.into_series()
+                },
+                Some(DataType::Int128) => {
+                    let ca: Int128Chunked = dispatch_apply!(
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
@@ -225,6 +250,7 @@ impl PySeries {
                     ca.into_series()
                 },
                 Some(DataType::List(inner)) => {
+                    check_nested_object(&inner)?;
                     // Make sure the function returns a Series of the correct data type.
                     let function_owned = function.clone().unbind();
                     let dtype_py = Wrap((*inner).clone());
@@ -251,7 +277,7 @@ impl PySeries {
                     ca.into_series()
                 },
                 #[cfg(feature = "object")]
-                Some(DataType::Object(_, _)) => {
+                Some(DataType::Object(_)) => {
                     let ca = dispatch_apply!(
                         series,
                         apply_lambda_with_object_out_type,

@@ -65,7 +65,7 @@ impl StackExec {
                 // new, unique column names. It is immediately
                 // followed by a projection which pulls out the
                 // possibly mismatching column lengths.
-                unsafe { df.column_extend_unchecked(res.into_iter().map(Column::from)) };
+                unsafe { df.column_extend_unchecked(res) };
             } else {
                 let (df_height, df_width) = df.shape();
 
@@ -85,7 +85,7 @@ impl StackExec {
                             && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
                         {
                             let identifier = match self.exprs[i].as_expression() {
-                                Some(e) => format!("expression: {}", e),
+                                Some(e) => format!("expression: {e}"),
                                 None => "this Series".to_string(),
                             };
                             polars_bail!(InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\

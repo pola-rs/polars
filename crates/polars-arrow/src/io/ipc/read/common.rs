@@ -2,12 +2,12 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::deserialize::{read, skip};
 use super::Dictionaries;
+use super::deserialize::{read, skip};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
 use crate::io::ipc::read::OutOfSpecKind;
@@ -216,8 +216,16 @@ fn find_first_dict_field_d<'a>(
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
         },
-        Union(fields, ..) | Struct(fields) => {
+        Struct(fields) => {
             for (field, ipc_field) in fields.iter().zip(ipc_field.fields.iter()) {
+                if let Some(f) = find_first_dict_field(id, field, ipc_field) {
+                    return Some(f);
+                }
+            }
+            None
+        },
+        Union(u) => {
+            for (field, ipc_field) in u.fields.iter().zip(ipc_field.fields.iter()) {
                 if let Some(f) = find_first_dict_field(id, field, ipc_field) {
                     return Some(f);
                 }

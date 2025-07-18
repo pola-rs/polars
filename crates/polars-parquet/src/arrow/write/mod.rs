@@ -23,13 +23,11 @@ mod pages;
 mod primitive;
 mod row_group;
 mod schema;
-#[cfg(feature = "async")]
-mod sink;
 mod utils;
 
 use arrow::array::*;
 use arrow::datatypes::*;
-use arrow::types::{days_ms, i256, NativeType};
+use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
 use polars_utils::pl_str::PlSmallStr;
@@ -41,19 +39,21 @@ pub use crate::parquet::metadata::{
     Descriptor, FileMetadata, KeyValue, SchemaDescriptor, ThriftFileMetadata,
 };
 pub use crate::parquet::page::{CompressedDataPage, CompressedPage, Page};
+use crate::parquet::schema::Repetition;
 use crate::parquet::schema::types::PrimitiveType as ParquetPrimitiveType;
 pub use crate::parquet::schema::types::{
     FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType,
 };
 pub use crate::parquet::write::{
-    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator,
-    RowGroupIterColumns, Version,
+    Compressor, DynIter, DynStreamingIterator, RowGroupIterColumns, Version, compress,
+    write_metadata_sidecar,
 };
-pub use crate::parquet::{fallible_streaming_iterator, FallibleStreamingIterator};
+pub use crate::parquet::{FallibleStreamingIterator, fallible_streaming_iterator};
 
 /// The statistics to write
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct StatisticsOptions {
     pub min_value: bool,
     pub max_value: bool,
@@ -92,15 +92,78 @@ pub struct WriteOptions {
     pub data_page_size: Option<usize>,
 }
 
+#[derive(Clone)]
+pub struct ColumnWriteOptions {
+    pub field_id: Option<i32>,
+    pub metadata: Vec<KeyValue>,
+    pub required: Option<bool>,
+    pub children: ChildWriteOptions,
+}
+
+#[derive(Clone)]
+pub enum ChildWriteOptions {
+    Leaf(FieldWriteOptions),
+    ListLike(Box<ListLikeFieldWriteOptions>),
+    Struct(Box<StructFieldWriteOptions>),
+}
+
+impl ColumnWriteOptions {
+    pub fn to_leaves<'a>(&'a self, out: &mut Vec<&'a FieldWriteOptions>) {
+        match &self.children {
+            ChildWriteOptions::Leaf(o) => out.push(o),
+            ChildWriteOptions::ListLike(o) => o.child.to_leaves(out),
+            ChildWriteOptions::Struct(o) => {
+                for o in &o.children {
+                    o.to_leaves(out);
+                }
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct FieldWriteOptions {
+    pub encoding: Encoding,
+}
+
+impl ColumnWriteOptions {
+    pub fn default_with(children: ChildWriteOptions) -> Self {
+        Self {
+            field_id: None,
+            metadata: Vec::new(),
+            required: None,
+            children,
+        }
+    }
+}
+
+impl FieldWriteOptions {
+    pub fn default_with_encoding(encoding: Encoding) -> Self {
+        Self { encoding }
+    }
+
+    pub fn into_default_column_write_options(self) -> ColumnWriteOptions {
+        ColumnWriteOptions::default_with(ChildWriteOptions::Leaf(self))
+    }
+}
+
+#[derive(Clone)]
+pub struct ListLikeFieldWriteOptions {
+    pub child: ColumnWriteOptions,
+}
+
+#[derive(Clone)]
+pub struct StructFieldWriteOptions {
+    pub children: Vec<ColumnWriteOptions>,
+}
+
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
-pub use pages::{array_to_columns, arrays_to_columns, Nested};
-use polars_error::{polars_bail, PolarsResult};
-pub use row_group::{row_group_iter, RowGroupIterator};
-pub use schema::to_parquet_type;
-#[cfg(feature = "async")]
-pub use sink::FileSink;
+pub use pages::{Nested, array_to_columns, arrays_to_columns};
+use polars_error::{PolarsResult, polars_bail};
+pub use row_group::{RowGroupIterator, row_group_iter};
+pub use schema::{schema_to_metadata_key, to_parquet_type};
 
 use self::pages::{FixedSizeListNested, PrimitiveNested, StructNested};
 use crate::write::dictionary::encode_as_dictionary_optional;
@@ -190,10 +253,14 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 }
 
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
-pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
+pub fn to_parquet_schema(
+    schema: &ArrowSchema,
+    column_options: &[ColumnWriteOptions],
+) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
         .iter_values()
-        .map(to_parquet_type)
+        .zip(column_options)
+        .map(|(field, options)| to_parquet_type(field, options))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new(
         PlSmallStr::from_static("root"),
@@ -285,8 +352,9 @@ pub fn array_to_pages(
     type_: ParquetPrimitiveType,
     nested: &[Nested],
     options: WriteOptions,
-    mut encoding: Encoding,
+    field_options: &FieldWriteOptions,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+    let mut encoding = field_options.encoding;
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
@@ -383,6 +451,10 @@ pub fn array_to_page_simple(
 ) -> PolarsResult<Page> {
     let dtype = array.dtype();
 
+    if type_.field_info.repetition == Repetition::Required && array.null_count() > 0 {
+        polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
+    }
+
     match dtype.to_logical_type() {
         ArrowDataType::Boolean => boolean::array_to_page(
             array.as_any().downcast_ref().unwrap(),
@@ -397,7 +469,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::UInt16 => {
             return primitive::array_to_page_integer::<u16, i32>(
@@ -405,7 +477,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::UInt32 => {
             return primitive::array_to_page_integer::<u32, i32>(
@@ -413,7 +485,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::UInt64 => {
             return primitive::array_to_page_integer::<u64, i64>(
@@ -421,7 +493,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int8 => {
             return primitive::array_to_page_integer::<i8, i32>(
@@ -429,7 +501,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int16 => {
             return primitive::array_to_page_integer::<i16, i32>(
@@ -437,7 +509,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int32 | ArrowDataType::Date32 | ArrowDataType::Time32(_) => {
             return primitive::array_to_page_integer::<i32, i32>(
@@ -445,7 +517,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int64
         | ArrowDataType::Date64
@@ -457,7 +529,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Float32 => primitive::array_to_page_plain::<f32, f32>(
             array.as_any().downcast_ref().unwrap(),
@@ -486,7 +558,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::BinaryView => {
             return binview::array_to_page(
@@ -494,7 +566,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Utf8View => {
             let array =
@@ -739,6 +811,26 @@ pub fn array_to_page_simple(
                 fixed_size_binary::array_to_page(&array, options, type_, statistics)
             }
         },
+        ArrowDataType::Int128 => {
+            let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
+            let statistics = if options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    16,
+                    &options.statistics,
+                );
+                Some(stats)
+            } else {
+                None
+            };
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(16),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::array_to_page(&array, options, type_, statistics)
+        },
         other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
     }
     .map(Page::Data)
@@ -751,6 +843,12 @@ fn array_to_page_nested(
     options: WriteOptions,
     _encoding: Encoding,
 ) -> PolarsResult<Page> {
+    if type_.field_info.repetition == Repetition::Required
+        && array.validity().is_some_and(|v| v.unset_bits() > 0)
+    {
+        polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
+    }
+
     use ArrowDataType::*;
     match array.dtype().to_logical_type() {
         Null => {
@@ -971,6 +1069,26 @@ fn array_to_page_nested(
 
                 fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
             }
+        },
+        Int128 => {
+            let array: &PrimitiveArray<i128> = array.as_any().downcast_ref().unwrap();
+            let statistics = if options.has_statistics() {
+                let stats = fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    16,
+                    &options.statistics,
+                );
+                Some(stats)
+            } else {
+                None
+            };
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(16),
+                array.values().clone().try_transmute().unwrap(),
+                array.validity().cloned(),
+            );
+            fixed_size_binary::nested_array_to_page(&array, options, type_, nested, statistics)
         },
         other => polars_bail!(nyi = "Writing nested parquet pages for data type {other:?}"),
     }

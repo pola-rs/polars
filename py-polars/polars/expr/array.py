@@ -7,8 +7,6 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time
-
     from polars import Expr
     from polars._typing import IntoExpr, IntoExprColumn
 
@@ -20,6 +18,176 @@ class ExprArrayNameSpace:
 
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
+
+    def len(self) -> Expr:
+        """
+        Return the number of elements in each array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.len())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        │ 2   │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_len())
+
+    def slice(
+        self,
+        offset: int | str | Expr,
+        length: int | str | Expr | None = None,
+        *,
+        as_array: bool = False,
+    ) -> Expr:
+        """
+        Slice every subarray.
+
+        Parameters
+        ----------
+        offset
+            Start index. Negative indexing is supported.
+        length
+            Length of the slice. If set to `None` (default), the slice is taken to the
+            end of the list.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `length` and `offset` must be constant values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.slice(0, 1))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1]       │
+        │ [4]       │
+        └───────────┘
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.slice(0, 1, as_array=True))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 1] │
+        ╞═══════════════╡
+        │ [1]           │
+        │ [4]           │
+        └───────────────┘
+        """
+        offset = parse_into_expression(offset)
+        length = parse_into_expression(length) if length is not None else None
+        return wrap_expr(self._pyexpr.arr_slice(offset, length, as_array))
+
+    def head(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
+        """
+        Get the first `n` elements of the sub-arrays.
+
+        Parameters
+        ----------
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.head(1))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1]       │
+        │ [4]       │
+        └───────────┘
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.head(1, as_array=True))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 1] │
+        ╞═══════════════╡
+        │ [1]           │
+        │ [4]           │
+        └───────────────┘
+        """
+        return self.slice(0, n, as_array=as_array)
+
+    def tail(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
+        """
+        Slice the last `n` values of every sublist.
+
+        Parameters
+        ----------
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.tail(1))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [2]       │
+        │ [3]       │
+        └───────────┘
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.tail(1, as_array=True))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 1] │
+        ╞═══════════════╡
+        │ [2]           │
+        │ [3]           │
+        └───────────────┘
+        """
+        n = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.arr_tail(n, as_array))
 
     def min(self) -> Expr:
         """
@@ -135,6 +303,29 @@ class ExprArrayNameSpace:
         └─────┘
         """
         return wrap_expr(self._pyexpr.arr_var(ddof))
+
+    def mean(self) -> Expr:
+        """
+        Compute the mean of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2, 3], [1, 1, 16]]},
+        ...     schema={"a": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.select(pl.col("a").arr.mean())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 2.0 │
+        │ 6.0 │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_mean())
 
     def median(self) -> Expr:
         """
@@ -348,7 +539,6 @@ class ExprArrayNameSpace:
         │ [3, 2, 1]     ┆ [3, 2, 1]     │
         │ [9, 1, 2]     ┆ [9, 2, 1]     │
         └───────────────┴───────────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_sort(descending, nulls_last))
 
@@ -374,7 +564,6 @@ class ExprArrayNameSpace:
         │ [3, 2, 1]     ┆ [1, 2, 3]     │
         │ [9, 1, 2]     ┆ [2, 1, 9]     │
         └───────────────┴───────────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_reverse())
 
@@ -406,7 +595,6 @@ class ExprArrayNameSpace:
         │ [1, 2]        ┆ 0       │
         │ [2, 1]        ┆ 1       │
         └───────────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_arg_min())
 
@@ -438,7 +626,6 @@ class ExprArrayNameSpace:
         │ [1, 2]        ┆ 1       │
         │ [2, 1]        ┆ 0       │
         └───────────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_arg_max())
 
@@ -476,7 +663,6 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ -2  ┆ 5   │
         │ [7, 8, 9]     ┆ 0   ┆ 7   │
         └───────────────┴─────┴─────┘
-
         """
         index = parse_into_expression(index)
         return wrap_expr(self._pyexpr.arr_get(index, null_on_oob))
@@ -502,7 +688,6 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ 4     │
         │ [7, 8, 9]     ┆ 7     │
         └───────────────┴───────┘
-
         """
         return self.get(0, null_on_oob=True)
 
@@ -527,7 +712,6 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ 6    │
         │ [7, 9, 8]     ┆ 8    │
         └───────────────┴──────┘
-
         """
         return self.get(-1, null_on_oob=True)
 
@@ -571,7 +755,6 @@ class ExprArrayNameSpace:
         │ ["a", "b"]    ┆ *         ┆ a*b  │
         │ ["x", "y"]    ┆ _         ┆ x_y  │
         └───────────────┴───────────┴──────┘
-
         """
         separator = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator, ignore_nulls))
@@ -607,9 +790,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_explode())
 
-    def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
-    ) -> Expr:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
         Check if sub-arrays contain the given item.
 
@@ -617,6 +798,8 @@ class ExprArrayNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -640,10 +823,9 @@ class ExprArrayNameSpace:
         │ ["x", "y"]    ┆ false    │
         │ ["a", "c"]    ┆ true     │
         └───────────────┴──────────┘
-
         """
         item = parse_into_expression(item, str_as_lit=True)
-        return wrap_expr(self._pyexpr.arr_contains(item))
+        return wrap_expr(self._pyexpr.arr_contains(item, nulls_equal))
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """

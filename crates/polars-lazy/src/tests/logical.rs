@@ -25,7 +25,7 @@ fn test_duration() -> PolarsResult<()> {
             (col("date") - col("date").first()).alias("date"),
             (col("datetime") - col("datetime").first()).alias("datetime"),
         ])
-        .explode([col("date"), col("datetime")])
+        .explode(by_name(["date", "datetime"], true))
         .collect()?;
 
     for c in ["date", "datetime"] {
@@ -70,7 +70,7 @@ fn test_lazy_arithmetic() {
     print_plans(&lf);
 
     let new = lf.collect().unwrap();
-    println!("{:?}", new);
+    println!("{new:?}");
     assert_eq!(new.height(), 7);
     assert_eq!(
         new.column("super_wide").unwrap().f64().unwrap().get(0),
@@ -88,7 +88,7 @@ fn test_lazy_logical_plan_filter_and_alias_combined() {
 
     print_plans(&lf);
     let df = lf.collect().unwrap();
-    println!("{:?}", df);
+    println!("{df:?}");
 }
 
 #[test]

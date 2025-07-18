@@ -1,21 +1,21 @@
 use std::borrow::Cow;
 
+use arrow::array::Array;
+use arrow::bitmap::BitmapBuilder;
+use arrow::types::NativeType;
 use numpy::{Element, PyArray1, PyArrayMethods};
-use polars::export::arrow;
-use polars::export::arrow::array::Array;
-use polars::export::arrow::bitmap::MutableBitmap;
-use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
+use crate::PySeries;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{reinterpret_vec, Wrap};
+use crate::conversion::{Wrap, reinterpret_vec};
 use crate::error::PyPolarsErr;
 use crate::interop::arrow::to_rust::array_to_rust;
 use crate::prelude::ObjectValue;
-use crate::PySeries;
+use crate::utils::EnterPolarsExt;
 
 // Init with numpy arrays.
 macro_rules! init_method {
@@ -51,41 +51,58 @@ fn mmap_numpy_array<T: Element + NativeType>(name: &str, array: &Bound<PyArray1<
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_bool(py: Python, name: &str, array: &Bound<PyArray1<bool>>, _strict: bool) -> Self {
+    fn new_bool(
+        py: Python<'_>,
+        name: &str,
+        array: &Bound<PyArray1<bool>>,
+        _strict: bool,
+    ) -> PyResult<Self> {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
-        py.allow_threads(|| Series::new(name.into(), vals).into())
+        py.enter_polars_series(|| Ok(Series::new(name.into(), vals)))
     }
 
     #[staticmethod]
-    fn new_f32(py: Python, name: &str, array: &Bound<PyArray1<f32>>, nan_is_null: bool) -> Self {
+    fn new_f32(
+        py: Python<'_>,
+        name: &str,
+        array: &Bound<PyArray1<f32>>,
+        nan_is_null: bool,
+    ) -> PyResult<Self> {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
-            let ca: Float32Chunked = py.allow_threads(|| {
-                vals.iter()
+            py.enter_polars_series(|| {
+                let ca: Float32Chunked = vals
+                    .iter()
                     .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
-                    .collect_trusted()
-            });
-            ca.with_name(name.into()).into_series().into()
+                    .collect_trusted();
+                Ok(ca.with_name(name.into()))
+            })
         } else {
-            mmap_numpy_array(name, array)
+            Ok(mmap_numpy_array(name, array))
         }
     }
 
     #[staticmethod]
-    fn new_f64(py: Python, name: &str, array: &Bound<PyArray1<f64>>, nan_is_null: bool) -> Self {
+    fn new_f64(
+        py: Python<'_>,
+        name: &str,
+        array: &Bound<PyArray1<f64>>,
+        nan_is_null: bool,
+    ) -> PyResult<Self> {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
-            let ca: Float64Chunked = py.allow_threads(|| {
-                vals.iter()
+            py.enter_polars_series(|| {
+                let ca: Float64Chunked = vals
+                    .iter()
                     .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
-                    .collect_trusted()
-            });
-            ca.with_name(name.into()).into_series().into()
+                    .collect_trusted();
+                Ok(ca.with_name(name.into()))
+            })
         } else {
-            mmap_numpy_array(name, array)
+            Ok(mmap_numpy_array(name, array))
         }
     }
 }
@@ -113,11 +130,14 @@ impl PySeries {
     }
 }
 
-fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, _strict: bool) -> PyResult<PySeries>
+fn new_primitive<'py, T>(
+    name: &str,
+    values: &Bound<'py, PyAny>,
+    _strict: bool,
+) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-    T::Native: FromPyObject<'a>,
+    T::Native: FromPyObject<'py>,
 {
     let len = values.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name.into(), len);
@@ -162,11 +182,11 @@ init_method_opt!(new_opt_i128, Int128Type, i64);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 
-fn convert_to_avs<'a>(
-    values: &'a Bound<'a, PyAny>,
+fn convert_to_avs(
+    values: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
-) -> PyResult<Vec<AnyValue<'a>>> {
+) -> PyResult<Vec<AnyValue<'static>>> {
     values
         .try_iter()?
         .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object))
@@ -181,6 +201,7 @@ impl PySeries {
             .try_iter()?
             .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
             .collect::<PyResult<Vec<AnyValue>>>();
+
         let result = any_values_result.and_then(|avs| {
             let s = Series::from_any_values(name.into(), avs.as_slice(), strict).map_err(|e| {
                 PyTypeError::new_err(format!(
@@ -291,10 +312,10 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_object(py: Python, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
+    pub fn new_object(py: Python<'_>, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
-            let mut validity = MutableBitmap::with_capacity(values.len());
+            let mut validity = BitmapBuilder::with_capacity(values.len());
             values.iter().for_each(|v| {
                 let is_valid = !v.inner.is_none(py);
                 // SAFETY: we can ensure that validity has correct capacity.
@@ -304,7 +325,7 @@ impl PySeries {
             let ca = ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
                 name.into(),
                 values,
-                validity.into(),
+                validity.into_opt_validity(),
             );
             let s = ca.into_series();
             s.into()

@@ -16,13 +16,15 @@ polars-error = { workspace = true }
 polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
-atoi = { workspace = true }
+atoi_simd = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 now = { version = "0.1" }
-once_cell = { workspace = true }
+num-traits = { workspace = true }
+rayon = { workspace = true }
 regex = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
@@ -45,10 +47,15 @@ offset_by = []
 rolling_window = ["polars-core/rolling_window"]
 rolling_window_by = ["polars-core/rolling_window_by", "dtype-duration"]
 fmt = ["polars-core/fmt"]
-serde = ["dep:serde", "polars-utils/serde"]
+serde = ["dep:serde", "polars-utils/serde", "polars-compute/serde"]
+dsl-schema = ["dep:schemars", "polars-utils/dsl-schema", "polars-compute/dsl-schema"]
 temporal = ["polars-core/temporal"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
+allow_unused = []
 
 default = []
+
+[lints]
+workspace = true

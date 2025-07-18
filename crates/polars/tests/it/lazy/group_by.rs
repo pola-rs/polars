@@ -1,8 +1,8 @@
-#[cfg(feature = "rank")]
-use polars_core::series::ops::NullBehavior;
 // used only if feature="dtype-duration", "dtype-struct"
 #[allow(unused_imports)]
 use polars_core::SINGLE_LOCK;
+#[cfg(feature = "rank")]
+use polars_core::series::ops::NullBehavior;
 
 use super::*;
 
@@ -22,7 +22,7 @@ fn test_filter_sort_diff_2984() -> PolarsResult<()> {
         .agg([col("id")
             .filter(col("id").lt(lit(3)))
             .sort(Default::default())
-            .diff(1, Default::default())
+            .diff(lit(1), Default::default())
             .sum()])
         .sort(["group"], Default::default())
         .collect()?;
@@ -69,11 +69,11 @@ fn test_filter_diff_arithmetic() -> PolarsResult<()> {
         .group_by([col("user")])
         .agg([(col("value")
             .filter(col("group").eq(lit(1)))
-            .diff(1, Default::default())
+            .diff(lit(1), Default::default())
             * lit(2))
         .alias("diff")])
         .sort(["user"], Default::default())
-        .explode([col("diff")])
+        .explode(cols(["diff"]))
         .collect()?;
 
     let out = out.column("diff")?;
@@ -113,14 +113,16 @@ fn test_group_by_agg_list_with_not_aggregated() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("group")])
-        .agg([when(col("value").diff(1, NullBehavior::Ignore).gt_eq(0))
-            .then(col("value").diff(1, NullBehavior::Ignore))
-            .otherwise(col("value"))])
+        .agg([
+            when(col("value").diff(lit(1), NullBehavior::Ignore).gt_eq(0))
+                .then(col("value").diff(lit(1), NullBehavior::Ignore))
+                .otherwise(col("value")),
+        ])
         .sort(["group"], Default::default())
         .collect()?;
 
     let out = out.column("value")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     assert_eq!(
         out,
         Column::new("value".into(), &[0, 2, 1, 3, 2, 2, 7, 2, 3, 1, 2, 1])

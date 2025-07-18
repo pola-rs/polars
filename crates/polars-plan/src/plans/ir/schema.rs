@@ -18,7 +18,7 @@ impl IR {
     pub fn name(&self) -> &'static str {
         use IR::*;
         match self {
-            Scan { scan_type, .. } => scan_type.into(),
+            Scan { scan_type, .. } => (&**scan_type).into(),
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
@@ -36,10 +36,14 @@ impl IR {
             HConcat { .. } => "hconcat",
             ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
-                SinkType::Memory => "sink (memory)",
-                SinkType::File { .. } => "sink (file)",
+                SinkTypeIR::Memory => "sink (memory)",
+                SinkTypeIR::File { .. } => "sink (file)",
+                SinkTypeIR::Partition { .. } => "sink (partition)",
             },
+            SinkMultiple { .. } => "sink multiple",
             SimpleProjection { .. } => "simple_projection",
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => "merge_sorted",
             Invalid => "invalid",
         }
     }
@@ -86,7 +90,12 @@ impl IR {
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | Sink { input, .. } => return arena.get(*input).schema(arena),
+            Distinct { input, .. }
+            | Sink {
+                input,
+                payload: SinkTypeIR::Memory,
+            } => return arena.get(*input).schema(arena),
+            Sink { .. } | SinkMultiple { .. } => return Cow::Owned(Arc::new(Schema::default())),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
@@ -99,6 +108,8 @@ impl IR {
                 };
             },
             ExtContext { schema, .. } => schema,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
             Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
@@ -129,8 +140,12 @@ impl IR {
             | Sort { input, .. }
             | Filter { input, .. }
             | Distinct { input, .. }
-            | Sink { input, .. }
+            | Sink {
+                input,
+                payload: SinkTypeIR::Memory,
+            }
             | Slice { input, .. } => IR::schema_with_cache(*input, arena, cache),
+            Sink { .. } | SinkMultiple { .. } => Arc::new(Schema::default()),
             Scan {
                 output_schema,
                 file_info,
@@ -153,6 +168,8 @@ impl IR {
                 let input_schema = IR::schema_with_cache(*input, arena, cache);
                 function.schema(&input_schema).unwrap().into_owned()
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
             Invalid => unreachable!(),
         };
         cache.insert(node, schema.clone());

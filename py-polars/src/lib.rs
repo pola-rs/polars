@@ -4,25 +4,30 @@
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 
 mod allocator;
-#[cfg(debug_assertions)]
-mod memory;
 
 use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
-#[cfg(feature = "polars_cloud")]
-use polars_python::cloud;
+#[cfg(feature = "catalog")]
+use polars_python::catalog::unity::PyCatalogClient;
+#[cfg(feature = "polars_cloud_client")]
+use polars_python::cloud_client;
+#[cfg(feature = "polars_cloud_server")]
+use polars_python::cloud_server;
+use polars_python::conversion::PyCategories;
 use polars_python::dataframe::PyDataFrame;
+use polars_python::expr::datatype::PyDataTypeExpr;
+use polars_python::expr::selector::PySelector;
 use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use polars_python::lazyframe::PyInProcessQuery;
-use polars_python::lazyframe::PyLazyFrame;
+use polars_python::lazyframe::{PyLazyFrame, PyOptFlags, PyPartitioning};
 use polars_python::lazygroupby::PyLazyGroupBy;
 use polars_python::series::PySeries;
 #[cfg(feature = "sql")]
 use polars_python::sql::PySQLContext;
-use polars_python::{datatypes, exceptions, functions};
+use polars_python::{datatypes, exceptions, functions, testing};
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
@@ -40,6 +45,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Cache>().unwrap();
     m.add_class::<GroupBy>().unwrap();
     m.add_class::<Join>().unwrap();
+    m.add_class::<MergeSorted>().unwrap();
     m.add_class::<HStack>().unwrap();
     m.add_class::<Reduce>().unwrap();
     m.add_class::<Distinct>().unwrap();
@@ -76,6 +82,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyStringFunction>().unwrap();
     m.add_class::<PyBooleanFunction>().unwrap();
     m.add_class::<PyTemporalFunction>().unwrap();
+    m.add_class::<PyStructFunction>().unwrap();
     // Options
     m.add_class::<PyWindowMapping>().unwrap();
     m.add_class::<PyRollingGroupOptions>().unwrap();
@@ -89,15 +96,20 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
+    m.add_class::<PyOptFlags>().unwrap();
     #[cfg(not(target_arch = "wasm32"))]
     m.add_class::<PyInProcessQuery>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
+    m.add_class::<PyDataTypeExpr>().unwrap();
+    m.add_class::<PySelector>().unwrap();
+    m.add_class::<PyPartitioning>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "csv")]
     m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
+    m.add_class::<PyCategories>().unwrap();
 
     // Submodules
     // LogicalPlan objects
@@ -121,6 +133,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::int_ranges))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::linear_space))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::linear_spaces))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::date_range))
         .unwrap();
@@ -166,6 +182,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::explain_all))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all_with_callback))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cols)).unwrap();
@@ -193,18 +211,11 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::index_cols))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::duration))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::first)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::nth)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
@@ -220,6 +231,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Functions: other
     m.add_wrapped(wrap_pyfunction!(functions::check_length))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::py_get_engine_affinity))
+        .unwrap();
 
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
@@ -230,7 +243,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::read_ipc_schema))
         .unwrap();
     #[cfg(feature = "parquet")]
-    m.add_wrapped(wrap_pyfunction!(functions::read_parquet_schema))
+    m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
     #[cfg(feature = "clipboard")]
     m.add_wrapped(wrap_pyfunction!(functions::read_clipboard_string))
@@ -238,6 +251,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "clipboard")]
     m.add_wrapped(wrap_pyfunction!(functions::write_clipboard_string))
         .unwrap();
+    #[cfg(feature = "catalog")]
+    m.add_class::<PyCatalogClient>().unwrap();
 
     // Functions - meta
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
@@ -292,6 +307,14 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(datatypes::_get_dtype_max))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(datatypes::_get_dtype_min))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(datatypes::_known_timezones))
+        .unwrap();
+
+    // Testing
+    m.add_wrapped(wrap_pyfunction!(testing::assert_series_equal_py))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(testing::assert_dataframe_equal_py))
         .unwrap();
 
     // Exceptions - Errors
@@ -378,11 +401,11 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     .unwrap();
 
     // Cloud
-    #[cfg(feature = "polars_cloud")]
-    m.add_wrapped(wrap_pyfunction!(cloud::prepare_cloud_plan))
+    #[cfg(feature = "polars_cloud_client")]
+    m.add_wrapped(wrap_pyfunction!(cloud_client::prepare_cloud_plan))
         .unwrap();
-    #[cfg(feature = "polars_cloud")]
-    m.add_wrapped(wrap_pyfunction!(cloud::_execute_ir_plan_with_gpu))
+    #[cfg(feature = "polars_cloud_server")]
+    m.add_wrapped(wrap_pyfunction!(cloud_server::_execute_ir_plan_with_gpu))
         .unwrap();
 
     // Build info

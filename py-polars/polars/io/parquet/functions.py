@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import contextlib
 import io
+from collections.abc import Sequence
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
 import polars.functions as F
 from polars import concat as plconcat
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
@@ -18,21 +22,24 @@ from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
 from polars.io._utils import (
-    parse_row_index_args,
     prepare_file_arg,
 )
-from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
+from polars.io.scan_options._options import ScanOptions
 
 with contextlib.suppress(ImportError):
     from polars.polars import PyLazyFrame
-    from polars.polars import read_parquet_schema as _read_parquet_schema
+    from polars.polars import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import FileSource, ParallelStrategy, SchemaDict
+    from polars._typing import DeletionFiles, FileSource, ParallelStrategy, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.scan_options import ScanCastOptions
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -60,10 +67,15 @@ def read_parquet(
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
     include_file_paths: str | None = None,
-    allow_missing_columns: bool = False,
+    missing_columns: Literal["insert", "raise"] = "raise",
+    allow_missing_columns: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
+
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
 
     Parameters
     ----------
@@ -104,7 +116,7 @@ def read_parquet(
     schema
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
-        file(s), consider also enabling `allow_missing_columns`.
+        file(s), consider also passing `missing_columns='insert'`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -159,6 +171,13 @@ def read_parquet(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
         Only valid when `use_pyarrow=False`.
+    missing_columns
+        Configuration for behavior when columns defined in the schema
+        are missing from the data:
+
+        * `insert`: Inserts the missing columns using NULLs as the row values.
+        * `raise`: Raises an error.
+
     allow_missing_columns
         When reading a list of parquet files, if a column existing in the first
         file cannot be found in subsequent files, the default behavior is to
@@ -166,21 +185,33 @@ def read_parquet(
         `True`, a full-NULL column is returned instead of erroring for the files
         that do not contain the column.
 
+        .. deprecated:: 1.30.0
+            Use the parameter `missing_columns` instead and pass one of
+            `('insert', 'raise')`.
+
     Returns
     -------
     DataFrame
 
     See Also
     --------
-    scan_parquet
+    scan_parquet: Lazily read from a parquet file or multiple files via glob patterns.
     scan_pyarrow_dataset
+
+    Warnings
+    --------
+    Calling `read_parquet().lazy()` is an antipattern as this forces Polars to
+    materialize a full parquet file and therefore cannot push any optimizations
+    into the reader. Therefore always prefer `scan_parquet` if you want to work
+    with `LazyFrame` s.
+
     """
     if schema is not None:
-        msg = "The `schema` parameter of `read_parquet` is considered unstable."
+        msg = "the `schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     if hive_schema is not None:
-        msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
+        msg = "the `hive_schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     # Dispatch to pyarrow if requested
@@ -209,6 +240,16 @@ def read_parquet(
             rechunk=rechunk,
         )
 
+    if allow_missing_columns is not None:
+        issue_deprecation_warning(
+            "the parameter `allow_missing_columns` for `read_parquet` is deprecated. "
+            "Use the parameter `missing_columns` instead and pass one of "
+            "`('insert', 'raise')`.",
+            version="1.30.0",
+        )
+
+        missing_columns = "insert" if allow_missing_columns else "raise"
+
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
         source,
@@ -229,7 +270,7 @@ def read_parquet(
         retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
-        allow_missing_columns=allow_missing_columns,
+        missing_columns=missing_columns,
     )
 
     if columns is not None:
@@ -299,6 +340,10 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     """
     Get the schema of a Parquet file without reading data.
 
+    If you would like to read the schema of a cloud file with authentication
+    configuration, it is recommended use `scan_parquet` - e.g.
+    `scan_parquet(..., storage_options=...).collect_schema()`.
+
     Parameters
     ----------
     source
@@ -311,11 +356,39 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
+
+    See Also
+    --------
+    scan_parquet
+    """
+    return scan_parquet(source).collect_schema()
+
+
+def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, str]:
+    """
+    Get file-level custom metadata of a Parquet file without reading data.
+
+    .. warning::
+        This functionality is considered **experimental**. It may be removed or
+        changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    source
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance). For file-like objects, the stream position
+        may not be updated accordingly after reading.
+
+    Returns
+    -------
+    dict
+        Dictionary with the metadata. Empty if no custom metadata is available.
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
 
-    return _read_parquet_schema(source)
+    return _read_parquet_metadata(source)
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -340,13 +413,24 @@ def scan_parquet(
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int = 2,
     include_file_paths: str | None = None,
-    allow_missing_columns: bool = False,
+    missing_columns: Literal["insert", "raise"] = "raise",
+    allow_missing_columns: bool | None = None,
+    extra_columns: Literal["ignore", "raise"] = "raise",
+    cast_options: ScanCastOptions | None = None,
+    _deletion_files: DeletionFiles | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
 
     This function allows the query optimizer to push down predicates and projections to
     the scan level, typically increasing performance and reducing memory overhead.
+
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
+    .. versionchanged:: 1.30.0
+        * The `allow_missing_columns` is deprecated in favor of `missing_columns`.
 
     Parameters
     ----------
@@ -391,7 +475,7 @@ def scan_parquet(
     schema
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
-        file(s), consider also enabling `allow_missing_columns`.
+        file(s), consider also passing `missing_columns='insert'`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -438,12 +522,37 @@ def scan_parquet(
         Number of retries if accessing a cloud instance fails.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    missing_columns
+        Configuration for behavior when columns defined in the schema
+        are missing from the data:
+
+        * `insert`: Inserts the missing columns using NULLs as the row values.
+        * `raise`: Raises an error.
+
     allow_missing_columns
         When reading a list of parquet files, if a column existing in the first
         file cannot be found in subsequent files, the default behavior is to
         raise an error. However, if `allow_missing_columns` is set to
         `True`, a full-NULL column is returned instead of erroring for the files
         that do not contain the column.
+
+        .. deprecated:: 1.30.0
+            Use the parameter `missing_columns` instead and pass one of
+            `('insert', 'raise')`.
+    extra_columns
+        Configuration for behavior when extra columns outside of the
+        defined schema are encountered in the data:
+
+        * `ignore`: Silently ignores.
+        * `raise`: Raises an error.
+
+    cast_options
+        Configuration for column type-casting during scans. Useful for datasets
+        containing files that have differing schemas.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     See Also
     --------
@@ -468,12 +577,26 @@ def scan_parquet(
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
     if schema is not None:
-        msg = "The `schema` parameter of `scan_parquet` is considered unstable."
+        msg = "the `schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     if hive_schema is not None:
-        msg = "The `hive_schema` parameter of `scan_parquet` is considered unstable."
+        msg = "the `hive_schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
+
+    if cast_options is not None:
+        msg = "The `cast_options` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
+    if allow_missing_columns is not None:
+        issue_deprecation_warning(
+            "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
+            "Use the parameter `missing_columns` instead and pass one of "
+            "`('insert', 'raise')`.",
+            version="1.30.0",
+        )
+
+        missing_columns = "insert" if allow_missing_columns else "raise"
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
@@ -482,86 +605,48 @@ def scan_parquet(
             normalize_filepath(source, check_not_directory=False) for source in source
         ]
 
-    credential_provider = _maybe_init_credential_provider(
+    credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_parquet"
     )
 
-    return _scan_parquet_impl(
-        source,  # type: ignore[arg-type]
-        n_rows=n_rows,
-        cache=cache,
-        parallel=parallel,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
-        storage_options=storage_options,
-        credential_provider=credential_provider,
-        low_memory=low_memory,
-        use_statistics=use_statistics,
-        hive_partitioning=hive_partitioning,
-        schema=schema,
-        hive_schema=hive_schema,
-        try_parse_hive_dates=try_parse_hive_dates,
-        retries=retries,
-        glob=glob,
-        include_file_paths=include_file_paths,
-        allow_missing_columns=allow_missing_columns,
+    del credential_provider
+
+    sources = (
+        [source]
+        if not isinstance(source, Sequence) or isinstance(source, (str, bytes))
+        else source
     )
-
-
-def _scan_parquet_impl(
-    source: str | list[str] | list[Path] | IO[str] | IO[bytes],
-    *,
-    n_rows: int | None = None,
-    cache: bool = True,
-    parallel: ParallelStrategy = "auto",
-    rechunk: bool = False,
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-    storage_options: dict[str, object] | None = None,
-    credential_provider: CredentialProviderFunction | None = None,
-    low_memory: bool = False,
-    use_statistics: bool = True,
-    hive_partitioning: bool | None = None,
-    glob: bool = True,
-    schema: SchemaDict | None = None,
-    hive_schema: SchemaDict | None = None,
-    try_parse_hive_dates: bool = True,
-    retries: int = 2,
-    include_file_paths: str | None = None,
-    allow_missing_columns: bool = False,
-) -> LazyFrame:
-    if isinstance(source, list):
-        sources = source
-        source = None  # type: ignore[assignment]
-    else:
-        sources = []
-
-    if storage_options:
-        storage_options = list(storage_options.items())  # type: ignore[assignment]
-    else:
-        # Handle empty dict input
-        storage_options = None
 
     pylf = PyLazyFrame.new_from_parquet(
-        source,
-        sources,
-        n_rows,
-        cache,
-        parallel,
-        rechunk,
-        parse_row_index_args(row_index_name, row_index_offset),
-        low_memory,
-        cloud_options=storage_options,
-        credential_provider=credential_provider,
-        use_statistics=use_statistics,
-        hive_partitioning=hive_partitioning,
+        sources=sources,
         schema=schema,
-        hive_schema=hive_schema,
-        try_parse_hive_dates=try_parse_hive_dates,
-        retries=retries,
-        glob=glob,
-        include_file_paths=include_file_paths,
-        allow_missing_columns=allow_missing_columns,
+        parallel=parallel,
+        low_memory=low_memory,
+        use_statistics=use_statistics,
+        scan_options=ScanOptions(
+            row_index=(
+                (row_index_name, row_index_offset)
+                if row_index_name is not None
+                else None
+            ),
+            pre_slice=(0, n_rows) if n_rows is not None else None,
+            cast_options=cast_options,
+            extra_columns=extra_columns,
+            missing_columns=missing_columns,
+            include_file_paths=include_file_paths,
+            glob=glob,
+            hive_partitioning=hive_partitioning,
+            hive_schema=hive_schema,
+            try_parse_hive_dates=try_parse_hive_dates,
+            rechunk=rechunk,
+            cache=cache,
+            storage_options=(
+                list(storage_options.items()) if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
+            deletion_files=_deletion_files,
+        ),
     )
+
     return wrap_ldf(pylf)

@@ -55,6 +55,8 @@ These functions are available from the Polars module root and can be used as exp
    int_ranges
    last
    len
+   linear_space
+   linear_spaces
    lit
    map_batches
    map_groups
@@ -73,6 +75,7 @@ These functions are available from the Polars module root and can be used as exp
    repeat
    rolling_corr
    rolling_cov
+   row_index
    select
    sql
    sql_expr

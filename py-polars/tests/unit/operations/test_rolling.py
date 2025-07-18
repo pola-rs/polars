@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -55,11 +56,65 @@ def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
             .rolling(index_column="index", period="5i")
             .agg(
                 # trigger the apply on the expression engine
-                pl.col("a").map_elements(lambda x: x).sum()
+                pl.col("a")
+                .map_elements(lambda x: x, return_dtype=pl.self_dtype())
+                .sum()
             )
         )["a"],
-        df["a"].rolling_sum(window_size=5, min_periods=1),
+        df["a"].rolling_sum(window_size=5, min_samples=1),
     )
+
+
+# TODO: This test requires the environment variable to be set prior to starting
+# the thread pool, which implies prior to import. The test is only valid when
+# run in isolation, and invalid otherwise because of xdist import caching.
+# See GH issue #22070
+def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
+    df = pl.select(
+        pl.date_range(pl.date(2023, 1, 1), pl.date(2023, 1, 5))
+    ).with_row_index()
+
+    out = df.rolling(index_column="date", period="1y").agg(
+        a1=pl.when(pl.col("date") >= pl.col("date"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last(),
+        a2=pl.when(pl.col("date") >= pl.col("date"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last(),
+    )["a1", "a2"]
+    expected = pl.DataFrame({"a1": [0, 1, 3, 6, 10], "a2": [0, 1, 3, 6, 10]})
+    assert_frame_equal(out, expected)
+
+
+# TODO: This test requires the environment variable to be set prior to starting
+# the thread pool, which implies prior to import. The test is only valid when
+# run in isolation, and invalid otherwise because of xdist import caching.
+# See GH issue #22070
+def test_rolling_group_by_overlapping_groups_21859_b(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
+    df = pl.DataFrame({"a": [20, 30, 40]})
+    out = (
+        df.with_row_index()
+        .with_columns(pl.col("index"))
+        .cast(pl.Int64)
+        .rolling(index_column="index", period="3i")
+        .agg(
+            # trigger the apply on the expression engine
+            pl.col("a")
+            .map_elements(lambda x: x, return_dtype=pl.self_dtype())
+            .sum()
+            .alias("a1"),
+            pl.col("a")
+            .map_elements(lambda x: x, return_dtype=pl.self_dtype())
+            .sum()
+            .alias("a2"),
+        )["a1", "a2"]
+    )
+    expected = pl.DataFrame({"a1": [20, 50, 90], "a2": [20, 50, 90]})
+    assert_frame_equal(out, expected)
 
 
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
@@ -436,18 +491,25 @@ def test_rolling_by_() -> None:
 
 def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     df1 = pl.DataFrame({"Event": ["Rain", "Sun"]})
-    df2 = pl.DataFrame({"Date": [1, 2, 3, 4]})
-    df = df1.join(df2, how="cross").set_sorted("Date")
+    df2 = pl.DataFrame({"Date": [1, 2, 3, 4]}).set_sorted("Date")
+    df = df1.join(df2, how="cross")
 
     result = df.rolling(
         index_column="Date", period="2i", offset="-2i", group_by="Event", closed="left"
     ).agg(pl.len())
 
-    assert result.to_dict(as_series=False) == {
-        "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
-        "Date": [1, 2, 3, 4, 1, 2, 3, 4],
-        "len": [0, 1, 2, 2, 0, 1, 2, 2],
-    }
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "Event": ["Sun", "Sun", "Sun", "Sun", "Rain", "Rain", "Rain", "Rain"],
+                "Date": [1, 2, 3, 4, 1, 2, 3, 4],
+                "len": [0, 1, 2, 2, 0, 1, 2, 2],
+            },
+            schema_overrides={"len": pl.get_index_type()},
+        ),
+        check_row_order=False,
+    )
 
 
 def test_rolling_duplicates() -> None:
@@ -533,3 +595,147 @@ def test_rolling_by_ordering() -> None:
         ],
         "sum val": [2, 2, 1, 1, 2, 2, 1],
     }
+
+
+def test_rolling_bool() -> None:
+    dates = [
+        "2020-01-01 13:45:48",
+        "2020-01-01 16:42:13",
+        "2020-01-01 16:45:09",
+        "2020-01-02 18:12:48",
+        "2020-01-03 19:45:32",
+        "2020-01-08 23:16:43",
+    ]
+
+    df = (
+        pl.DataFrame({"dt": dates, "a": [True, False, None, None, True, False]})
+        .with_columns(pl.col("dt").str.strptime(pl.Datetime))
+        .set_sorted("dt")
+    )
+
+    period: str | timedelta
+    for period in ("2d", timedelta(days=2)):
+        out = df.rolling(index_column="dt", period=period).agg(
+            sum_a=pl.col.a.sum(),
+            min_a=pl.col.a.min(),
+            max_a=pl.col.a.max(),
+            sum_a_ref=pl.col.a.cast(pl.Int32).sum(),
+            min_a_ref=pl.col.a.cast(pl.Int32).min().cast(pl.Boolean),
+            max_a_ref=pl.col.a.cast(pl.Int32).max().cast(pl.Boolean),
+        )
+        assert out["sum_a"].to_list() == out["sum_a_ref"].to_list()
+        assert out["max_a"].to_list() == out["max_a_ref"].to_list()
+        assert out["min_a"].to_list() == out["min_a_ref"].to_list()
+
+
+def test_rolling_var_zero_weight() -> None:
+    assert_series_equal(
+        pl.Series([1.0, None, 1.0, 2.0]).rolling_var(2),
+        pl.Series([None, None, None, 0.5]),
+    )
+
+
+def test_rolling_unsupported_22065() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", [[]]).rolling_sum(10)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", ["1.0"], pl.Decimal).rolling_min(1)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", [None]).rolling_sum(10)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", []).rolling_sum(10)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", [[None]], pl.List(pl.Null)).rolling_sum(10)
+
+
+def test_rolling_mean_f32_22936() -> None:
+    arr = np.array(
+        [
+            4.17571609e-05,
+            4.27760388e-05,
+            5.72538265e-05,
+            5.85808011e-05,
+            5.80585256e-05,
+            5.66820236e-05,
+            5.63966605e-05,
+            5.97858889e-05,
+            5.84967784e-05,
+            9.24392344e04,
+            5.20393951e-05,
+            5.19272326e-05,
+            4.18911623e-05,
+            4.23079109e-05,
+            4.28866042e-05,
+            4.07778753e-05,
+            4.04103557e-05,
+            4.25533253e-05,
+            5.24330462e-05,
+            6.08061091e-05,
+            5.93549412e-05,
+            5.76712700e-05,
+            6.57564160e-05,
+            6.62090970e-05,
+            6.46697372e-05,
+            6.40037397e-05,
+            6.18191480e-05,
+            6.33935779e-05,
+            6.13316370e-05,
+            5.91840580e-05,
+            5.85238740e-05,
+            5.38484855e-05,
+            5.27409211e-05,
+            5.15455504e-05,
+            5.23890667e-05,
+            5.40723668e-05,
+            5.63136491e-05,
+            5.61193119e-05,
+            5.61807392e-05,
+            5.93001459e-05,
+            6.08127375e-05,
+            6.04183369e-05,
+            6.24700697e-05,
+            6.20444407e-05,
+            5.98985389e-05,
+            6.08591145e-05,
+            5.87234099e-05,
+            5.92241740e-05,
+            5.97595426e-05,
+            5.95900237e-05,
+            5.63832436e-05,
+        ],
+        dtype=np.float32,
+    )
+
+    expected = pl.Series(
+        [
+            6.1009144701529294e-05,
+            6.1128826928325e-05,
+            6.113809649832547e-05,
+            6.079911327105947e-05,
+            6.014993414282799e-05,
+            5.9692956710932776e-05,
+            5.9631252952385694e-05,
+            5.873607733519748e-05,
+            5.873924237675965e-05,
+            5.857759970240295e-05,
+        ],
+        dtype=pl.Float32,
+    )
+    out = (
+        pl.Series(arr).rolling_mean(window_size=5, min_samples=1, center=True).tail(10)
+    )
+
+    assert_series_equal(expected, out)
+
+
+def test_rolling_max_23066() -> None:
+    df = pl.DataFrame(
+        {"data": [3.0, None, 14.0, 40.0, 5.0, 10.0, 0.0, 0.0, 30.0, None]}
+    )
+    result = df.select(pl.col.data.rolling_max(window_size=4, min_samples=4))
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"data": [None, None, None, None, None, 40.0, 40.0, 10.0, 30.0, None]}
+        ),
+    )

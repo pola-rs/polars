@@ -58,9 +58,12 @@ fn compute_keys(
     df: &DataFrame,
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
-    keys.iter()
-        .map(|s| s.evaluate(df, state).map(Column::from))
-        .collect()
+    let evaluated = keys
+        .iter()
+        .map(|s| s.evaluate(df, state))
+        .collect::<PolarsResult<_>>()?;
+    let df = check_expand_literals(df, keys, evaluated, false, Default::default())?;
+    Ok(df.take_columns())
 }
 
 fn run_partitions(
@@ -131,7 +134,7 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
         sample_size = set_size;
     }
 
-    let finish = |groups: &GroupsProxy| {
+    let finish = |groups: &GroupsType| {
         let u = groups.len() as f64;
         let ui = if groups.len() == sample_size {
             u
@@ -151,12 +154,8 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
         Ok(finish(&groups))
     } else {
         let offset = (keys[0].len() / 2) as i64;
-        let keys = keys
-            .iter()
-            .map(|s| s.slice(offset, sample_size))
-            .map(Column::from)
-            .collect::<Vec<_>>();
-        let df = unsafe { DataFrame::new_no_checks_height_from_first(keys) };
+        let df = unsafe { DataFrame::new_no_checks_height_from_first(keys.to_vec()) };
+        let df = df.slice(offset, sample_size);
         let names = df.get_column_names().into_iter().cloned();
         let gb = df.group_by(names).unwrap();
         Ok(finish(gb.get_groups()))
@@ -209,8 +208,8 @@ fn can_run_partitioned(
 
         let (unique_estimate, sampled_method) = match (keys.len(), keys[0].dtype()) {
             #[cfg(feature = "dtype-categorical")]
-            (1, DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _)) => {
-                (rev_map.len(), "known")
+            (1, DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) => {
+                (mapping.num_cats_upper_bound(), "known")
             },
             _ => {
                 // sqrt(N) is a good sample size as it remains low on large numbers
@@ -235,13 +234,17 @@ fn can_run_partitioned(
                 Ok(true)
             } else {
                 if state.verbose() {
-                    eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                    eprintln!(
+                        "PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION"
+                    );
                 }
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {
             if state.verbose() {
-                eprintln!("estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION")
+                eprintln!(
+                    "estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION"
+                )
             }
             Ok(false)
         } else {
@@ -319,7 +322,7 @@ impl PartitionGroupByExec {
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
-            groups = sliced_groups.as_deref().unwrap();
+            groups = sliced_groups.as_ref().unwrap();
         }
 
         let get_columns = || gb.keys_sliced(self.slice);
@@ -331,9 +334,7 @@ impl PartitionGroupByExec {
                 .zip(&df.get_columns()[self.phys_keys.len()..])
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
-                    agg_expr
-                        .finalize(partitioned_s.clone(), groups, state)
-                        .map(Column::from)
+                    agg_expr.finalize(partitioned_s.clone(), groups, state)
                 })
                 .collect();
 

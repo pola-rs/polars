@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::{fmt, str};
 
 #[cfg(any(
@@ -22,8 +23,6 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
-#[cfg(feature = "dtype-duration")]
-use itoa;
 use num_traits::{Num, NumCast};
 use polars_error::feature_gated;
 
@@ -106,11 +105,7 @@ fn parse_env_var_limit(name: &str, default: usize) -> usize {
     parse_env_var(name).map_or(
         default,
         |n: i64| {
-            if n < 0 {
-                usize::MAX
-            } else {
-                n as usize
-            }
+            if n < 0 { usize::MAX } else { n as usize }
         },
     )
 }
@@ -228,7 +223,7 @@ fn format_object_array(
     array_type: &str,
 ) -> fmt::Result {
     match object.dtype() {
-        DataType::Object(inner_type, _) => {
+        DataType::Object(inner_type) => {
             let limit = std::cmp::min(DEFAULT_ROW_LIMIT, object.len());
             write!(
                 f,
@@ -253,7 +248,7 @@ where
     T: PolarsNumericType,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let dt = format!("{}", T::get_dtype());
+        let dt = format!("{}", T::get_static_dtype());
         format_array!(f, self, dt, self.name(), "ChunkedArray")
     }
 }
@@ -405,20 +400,20 @@ impl Debug for Series {
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => format_object_array(f, self, self.name(), "Series"),
+            DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => {
-                format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
+            DataType::Categorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "cat", self.name(), "Series")
+                })
             },
 
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => format_array!(
-                f,
-                self.categorical().unwrap(),
-                "enum",
-                self.name(),
-                "Series"
-            ),
+            DataType::Enum(fcats, _) => {
+                with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "enum", self.name(), "Series")
+                })
+            },
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
                 f,
@@ -610,7 +605,7 @@ impl Display for DataFrame {
             let padding = 2; // eg: one char either side of the value
 
             let (n_first, n_last) = if self.width() > max_n_cols {
-                ((max_n_cols + 1) / 2, max_n_cols / 2)
+                (max_n_cols.div_ceil(2), max_n_cols / 2)
             } else {
                 (self.width(), 0)
             };
@@ -724,10 +719,15 @@ impl Display for DataFrame {
             let tbl_fallback_width = 100;
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
-                    Some(
-                        s.parse::<u16>()
-                            .expect("could not parse table width argument"),
-                    )
+                    let n = s
+                        .parse::<i64>()
+                        .expect("could not parse table width argument");
+                    let w = if n < 0 {
+                        u16::MAX
+                    } else {
+                        u16::try_from(n).expect("table width argument does not fit in u16")
+                    };
+                    Some(w)
                 })
                 .unwrap_or(None);
 
@@ -744,8 +744,12 @@ impl Display for DataFrame {
                     str_truncate + ellipsis_len + padding,
                     std::cmp::max(name_lengths[idx], *elem_len),
                 );
-                if mx <= min_col_width {
+                if (mx <= min_col_width) && !(max_n_rows > 0 && height > max_n_rows) {
+                    // col width is less than min width + table is not truncated
                     constraints.push(col_width_exact(mx));
+                } else if mx <= min_col_width {
+                    // col width is less than min width + table is truncated (w/ ellipsis)
+                    constraints.push(col_width_bounds(mx, min_col_width));
                 } else {
                     constraints.push(col_width_bounds(min_col_width, mx));
                 }
@@ -785,7 +789,7 @@ impl Display for DataFrame {
                 for (column_index, column) in table.column_iter_mut().enumerate() {
                     let dtype = fields[column_index].dtype();
                     let mut preset = str_preset.as_str();
-                    if dtype.is_numeric() || dtype.is_decimal() {
+                    if dtype.is_primitive_numeric() || dtype.is_decimal() {
                         preset = num_preset.as_str();
                     }
                     match preset {
@@ -803,9 +807,9 @@ impl Display for DataFrame {
             } else {
                 let shape_str = fmt_df_shape(&self.shape());
                 if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
-                    write!(f, "{table}\nshape: {}", shape_str)?;
+                    write!(f, "{table}\nshape: {shape_str}")?;
                 } else {
-                    write!(f, "shape: {}\n{}", shape_str, table)?;
+                    write!(f, "shape: {shape_str}\n{table}")?;
                 }
             }
         }
@@ -832,15 +836,14 @@ fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> St
         } else {
             0
         };
-        let int_body = num[sign_offset..]
-            .as_bytes()
+        let int_body = &num.as_bytes()[sign_offset..]
             .rchunks(group_size as usize)
             .rev()
             .map(str::from_utf8)
             .collect::<Result<Vec<&str>, _>>()
             .unwrap()
             .join(group_separator);
-        out.push_str(&int_body);
+        out.push_str(int_body);
         out
     }
 }
@@ -901,10 +904,10 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     let float_precision = get_float_precision();
 
     if let Some(precision) = float_precision {
-        if format!("{v:.precision$}", precision = precision).len() > 19 {
-            return write!(f, "{v:>width$.precision$e}", precision = precision);
+        if format!("{v:.precision$}").len() > 19 {
+            return write!(f, "{v:>width$.precision$e}");
         }
-        let s = format!("{v:>width$.precision$}", precision = precision);
+        let s = format!("{v:>width$.precision$}");
         return write!(f, "{}", fmt_float_string(s.as_str()));
     }
 
@@ -1095,9 +1098,9 @@ pub fn iso_duration_string(s: &mut String, mut v: i64, unit: TimeUnit) {
                     s.push_str(buffer.format(whole_num));
                     if fractional_part != 0 {
                         let secs = match unit {
-                            TimeUnit::Nanoseconds => format!(".{:09}", fractional_part),
-                            TimeUnit::Microseconds => format!(".{:06}", fractional_part),
-                            TimeUnit::Milliseconds => format!(".{:03}", fractional_part),
+                            TimeUnit::Nanoseconds => format!(".{fractional_part:09}"),
+                            TimeUnit::Microseconds => format!(".{fractional_part:06}"),
+                            TimeUnit::Milliseconds => format!(".{fractional_part:03}"),
                         };
                         s.push_str(secs.trim_end_matches('0'));
                     }
@@ -1131,7 +1134,7 @@ fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
         if b.is_ascii_alphanumeric() || b.is_ascii_punctuation() {
             write!(f, "{}", *b as char)?;
         } else {
-            write!(f, "\\x{:02x}", b)?;
+            write!(f, "\\x{b:02x}")?;
         }
     }
     if bytes.len() > width {
@@ -1179,10 +1182,10 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _)
-            | AnyValue::CategoricalOwned(_, _, _)
-            | AnyValue::Enum(_, _, _)
-            | AnyValue::EnumOwned(_, _, _) => {
+            AnyValue::Categorical(_, _)
+            | AnyValue::CategoricalOwned(_, _)
+            | AnyValue::Enum(_, _)
+            | AnyValue::EnumOwned(_, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },
@@ -1256,6 +1259,10 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
 
 impl Series {
     pub fn fmt_list(&self) -> String {
+        assert!(
+            !self.dtype().is_object(),
+            "nested Objects are not allowed\n\nYou probably got here by not setting a `return_dtype` on a UDF on Objects."
+        );
         if self.is_empty() {
             return "[]".to_owned();
         }
@@ -1268,7 +1275,7 @@ impl Series {
             _ if max_items >= self.len() => {
                 // this will always leave a trailing ", " after the last item
                 // but for long lists, this is faster than checking against the length each time
-                for item in self.iter() {
+                for item in self.rechunk().iter() {
                     write!(result, "{item}, ").unwrap();
                 }
                 // remove trailing ", " and replace with closing brace
@@ -1295,11 +1302,9 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::compute::decimal::format_decimal;
-
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let trim_zeros = get_trim_decimal_zeros();
-    let repr = format_decimal(v, scale, trim_zeros);
-    f.write_str(fmt_float_string(repr.as_str()).as_str())
+    f.write_str(fmt_float_string(fmt_buf.format(v, scale, trim_zeros)).as_str())
 }
 
 #[cfg(all(
@@ -1308,6 +1313,7 @@ fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
     feature = "dtype-date",
     feature = "dtype-datetime"
 ))]
+#[allow(unsafe_op_in_unsafe_fn)]
 mod test {
     use crate::prelude::*;
 
@@ -1330,10 +1336,10 @@ Series: 'a' [list[i32]]
 	[1, 2, … 6]
 	null
 ]"#,
-            format!("{:?}", list_long)
+            format!("{list_long:?}")
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1342,10 +1348,10 @@ Series: 'a' [list[i32]]
 	[1, 2, 3, 4, 5, 6]
 	null
 ]"#,
-            format!("{:?}", list_long)
+            format!("{list_long:?}")
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1354,10 +1360,10 @@ Series: 'a' [list[i32]]
 	[1, 2, 3, 4, 5, 6]
 	null
 ]"#,
-            format!("{:?}", list_long)
+            format!("{list_long:?}")
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1366,10 +1372,10 @@ Series: 'a' [list[i32]]
 	[…]
 	null
 ]"#,
-            format!("{:?}", list_long)
+            format!("{list_long:?}")
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1378,10 +1384,10 @@ Series: 'a' [list[i32]]
 	[… 6]
 	null
 ]"#,
-            format!("{:?}", list_long)
+            format!("{list_long:?}")
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1390,7 +1396,7 @@ Series: 'a' [list[i32]]
 	[1, 2, 3, … 6]
 	null
 ]"#,
-            format!("{:?}", list_long)
+            format!("{list_long:?}")
         );
 
         let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
@@ -1403,7 +1409,7 @@ Series: 'a' [list[i32]]
         builder.append_opt_slice(None);
         let list_short = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1412,10 +1418,10 @@ Series: 'a' [list[i32]]
 	[1]
 	null
 ]"#,
-            format!("{:?}", list_short)
+            format!("{list_short:?}")
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1424,10 +1430,10 @@ Series: 'a' [list[i32]]
 	[…]
 	null
 ]"#,
-            format!("{:?}", list_short)
+            format!("{list_short:?}")
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1436,7 +1442,7 @@ Series: 'a' [list[i32]]
 	[1]
 	null
 ]"#,
-            format!("{:?}", list_short)
+            format!("{list_short:?}")
         );
 
         let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
@@ -1449,7 +1455,7 @@ Series: 'a' [list[i32]]
         builder.append_opt_slice(None);
         let list_empty = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1458,7 +1464,7 @@ Series: 'a' [list[i32]]
 	[]
 	null
 ]"#,
-            format!("{:?}", list_empty)
+            format!("{list_empty:?}")
         );
     }
 
@@ -1502,7 +1508,7 @@ ChunkedArray: 'Date' [i32]
 	null
 	3
 ]"#,
-            format!("{:?}", ca)
+            format!("{ca:?}")
         );
         let ca = StringChunked::new(PlSmallStr::from_static("name"), &["a", "b"]);
         assert_eq!(
@@ -1512,7 +1518,7 @@ ChunkedArray: 'name' [str]
 	"a"
 	"b"
 ]"#,
-            format!("{:?}", ca)
+            format!("{ca:?}")
         );
     }
 }

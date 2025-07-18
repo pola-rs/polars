@@ -1,31 +1,66 @@
-use polars_error::{polars_bail, PolarsError, PolarsResult};
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedBytes;
-use pyo3::types::PyBytes;
 #[cfg(feature = "serde")]
 pub use serde_wrap::{
-    PySerializeWrap, TrySerializeToBytes, PYTHON3_VERSION,
-    SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
+    PYTHON3_VERSION, PySerializeWrap, SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
+    TrySerializeToBytes,
 };
 
+/// Wrapper around PyObject from pyo3 with additional trait impls.
 #[derive(Debug)]
-pub struct PythonFunction(pub PyObject);
+pub struct PythonObject(pub PyObject);
+// Note: We have this because the struct itself used to be called `PythonFunction`, so it's
+// referred to as such from a lot of places.
+pub type PythonFunction = PythonObject;
 
-impl Clone for PythonFunction {
+impl std::ops::Deref for PythonObject {
+    type Target = PyObject;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for PythonObject {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Clone for PythonObject {
     fn clone(&self) -> Self {
         Python::with_gil(|py| Self(self.0.clone_ref(py)))
     }
 }
 
-impl From<PyObject> for PythonFunction {
+impl From<PyObject> for PythonObject {
     fn from(value: PyObject) -> Self {
         Self(value)
     }
 }
 
-impl Eq for PythonFunction {}
+impl<'py> pyo3::conversion::IntoPyObject<'py> for PythonObject {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
 
-impl PartialEq for PythonFunction {
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.0.into_bound(py))
+    }
+}
+
+impl<'py> pyo3::conversion::IntoPyObject<'py> for &PythonObject {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.0.bind(py).clone())
+    }
+}
+
+impl Eq for PythonObject {}
+
+impl PartialEq for PythonObject {
     fn eq(&self, other: &Self) -> bool {
         Python::with_gil(|py| {
             let eq = self.0.getattr(py, "__eq__").unwrap();
@@ -38,103 +73,101 @@ impl PartialEq for PythonFunction {
     }
 }
 
-#[cfg(feature = "serde")]
-impl serde::Serialize for PythonFunction {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::Error;
-        let bytes = self
-            .try_serialize_to_bytes()
-            .map_err(|e| S::Error::custom(e.to_string()))?;
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PythonObject {
+    fn schema_name() -> String {
+        "PythonObject".to_owned()
+    }
 
-        Vec::<u8>::serialize(&bytes, serializer)
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PythonObject"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
 #[cfg(feature = "serde")]
-impl<'a> serde::Deserialize<'a> for PythonFunction {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        use serde::de::Error;
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
-        let v = Self::try_deserialize_bytes(bytes.as_slice())
-            .map_err(|e| D::Error::custom(e.to_string()));
-        v
+mod _serde_impls {
+    use super::{PySerializeWrap, PythonObject, TrySerializeToBytes};
+    use crate::pl_serialize::deserialize_map_bytes;
+
+    impl PythonObject {
+        pub fn serialize_with_pyversion<T, S>(
+            value: &T,
+            serializer: S,
+        ) -> std::result::Result<S::Ok, S::Error>
+        where
+            T: AsRef<PythonObject>,
+            S: serde::ser::Serializer,
+        {
+            use serde::Serialize;
+            PySerializeWrap(value.as_ref()).serialize(serializer)
+        }
+
+        pub fn deserialize_with_pyversion<'de, T, D>(d: D) -> Result<T, D::Error>
+        where
+            T: From<PythonObject>,
+            D: serde::de::Deserializer<'de>,
+        {
+            use serde::Deserialize;
+            let v: PySerializeWrap<PythonObject> = PySerializeWrap::deserialize(d)?;
+
+            Ok(v.0.into())
+        }
     }
-}
 
-#[cfg(feature = "serde")]
-impl TrySerializeToBytes for PythonFunction {
-    fn try_serialize_to_bytes(&self) -> polars_error::PolarsResult<Vec<u8>> {
-        serialize_pyobject_with_cloudpickle_fallback(&self.0)
+    impl TrySerializeToBytes for PythonObject {
+        fn try_serialize_to_bytes(&self) -> polars_error::PolarsResult<Vec<u8>> {
+            let mut buf = Vec::new();
+            crate::pl_serialize::python_object_serialize(&self.0, &mut buf)?;
+            Ok(buf)
+        }
+
+        fn try_deserialize_bytes(bytes: &[u8]) -> polars_error::PolarsResult<Self> {
+            crate::pl_serialize::python_object_deserialize(bytes).map(PythonObject)
+        }
     }
 
-    fn try_deserialize_bytes(bytes: &[u8]) -> polars_error::PolarsResult<Self> {
-        deserialize_pyobject_bytes_maybe_cloudpickle(bytes)
+    impl serde::Serialize for PythonObject {
+        fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            use serde::ser::Error;
+            let bytes = self
+                .try_serialize_to_bytes()
+                .map_err(|e| S::Error::custom(e.to_string()))?;
+
+            Vec::<u8>::serialize(&bytes, serializer)
+        }
     }
-}
 
-pub fn serialize_pyobject_with_cloudpickle_fallback(py_object: &PyObject) -> PolarsResult<Vec<u8>> {
-    Python::with_gil(|py| {
-        let pickle = PyModule::import(py, "pickle")
-            .expect("unable to import 'pickle'")
-            .getattr("dumps")
-            .unwrap();
-
-        let dumped = pickle.call1((py_object.clone_ref(py),));
-
-        let (dumped, used_cloudpickle) = if let Ok(v) = dumped {
-            (v, false)
-        } else {
-            let cloudpickle = PyModule::import(py, "cloudpickle")
-                .map_err(from_pyerr)?
-                .getattr("dumps")
-                .unwrap();
-            let dumped = cloudpickle
-                .call1((py_object.clone_ref(py),))
-                .map_err(from_pyerr)?;
-            (dumped, true)
-        };
-
-        let py_bytes = dumped.extract::<PyBackedBytes>().map_err(from_pyerr)?;
-
-        Ok([&[used_cloudpickle as u8, b'C'][..], py_bytes.as_ref()].concat())
-    })
-}
-
-pub fn deserialize_pyobject_bytes_maybe_cloudpickle<T: for<'a> From<PyObject>>(
-    bytes: &[u8],
-) -> PolarsResult<T> {
-    // TODO: Actually deserialize with cloudpickle if it's set.
-    let [_used_cloudpickle @ 0 | _used_cloudpickle @ 1, b'C', rem @ ..] = bytes else {
-        polars_bail!(ComputeError: "deserialize_pyobject_bytes_maybe_cloudpickle: invalid start bytes")
-    };
-
-    let bytes = rem;
-
-    Python::with_gil(|py| {
-        let pickle = PyModule::import(py, "pickle")
-            .expect("unable to import 'pickle'")
-            .getattr("loads")
-            .unwrap();
-        let arg = (PyBytes::new(py, bytes),);
-        let pyany_bound = pickle.call1(arg).map_err(from_pyerr)?;
-        Ok(PyObject::from(pyany_bound).into())
-    })
+    impl<'a> serde::Deserialize<'a> for PythonObject {
+        fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'a>,
+        {
+            use serde::de::Error;
+            deserialize_map_bytes(deserializer, |bytes| {
+                Self::try_deserialize_bytes(&bytes).map_err(|e| D::Error::custom(e.to_string()))
+            })?
+        }
+    }
 }
 
 #[cfg(feature = "serde")]
 mod serde_wrap {
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
+
     use polars_error::PolarsResult;
+
+    use crate::pl_serialize::deserialize_map_bytes;
 
     pub const SERDE_MAGIC_BYTE_MARK: &[u8] = "PLPYFN".as_bytes();
     /// [minor, micro]
-    pub static PYTHON3_VERSION: Lazy<[u8; 2]> = Lazy::new(super::get_python3_version);
+    pub static PYTHON3_VERSION: LazyLock<[u8; 2]> = LazyLock::new(super::get_python3_version);
 
     /// Serializes a Python object without additional system metadata. This is intended to be used
     /// together with `PySerializeWrap`, which attaches e.g. Python version metadata.
@@ -158,9 +191,7 @@ mod serde_wrap {
                 .try_serialize_to_bytes()
                 .map_err(|e| S::Error::custom(e.to_string()))?;
 
-            serializer.serialize_bytes(
-                &[SERDE_MAGIC_BYTE_MARK, &*PYTHON3_VERSION, dumped.as_slice()].concat(),
-            )
+            serializer.serialize_bytes(dumped.as_slice())
         }
     }
 
@@ -170,44 +201,12 @@ mod serde_wrap {
             D: serde::Deserializer<'a>,
         {
             use serde::de::Error;
-            let bytes = Vec::<u8>::deserialize(deserializer)?;
 
-            let Some((magic, rem)) = bytes.split_at_checked(SERDE_MAGIC_BYTE_MARK.len()) else {
-                return Err(D::Error::custom(
-                    "unexpected EOF when reading serialized pyobject version",
-                ));
-            };
-
-            if magic != SERDE_MAGIC_BYTE_MARK {
-                return Err(D::Error::custom(
-                    "serialized pyobject did not begin with magic byte mark",
-                ));
-            }
-
-            let bytes = rem;
-
-            let [a, b, rem @ ..] = bytes else {
-                return Err(D::Error::custom(
-                    "unexpected EOF when reading serialized pyobject metadata",
-                ));
-            };
-
-            let py3_version = [*a, *b];
-
-            if py3_version != *PYTHON3_VERSION {
-                return Err(D::Error::custom(format!(
-                    "python version that pyobject was serialized with {:?} \
-                    differs from system python version {:?}",
-                    (3, py3_version[0], py3_version[1]),
-                    (3, PYTHON3_VERSION[0], PYTHON3_VERSION[1]),
-                )));
-            }
-
-            let bytes = rem;
-
-            T::try_deserialize_bytes(bytes)
-                .map(Self)
-                .map_err(|e| D::Error::custom(e.to_string()))
+            deserialize_map_bytes(deserializer, |bytes| {
+                T::try_deserialize_bytes(bytes.as_ref())
+                    .map(Self)
+                    .map_err(|e| D::Error::custom(e.to_string()))
+            })?
         }
     }
 }
@@ -225,8 +224,4 @@ fn get_python3_version() -> [u8; 2] {
             version_info.getattr("micro").unwrap().extract().unwrap(),
         ]
     })
-}
-
-fn from_pyerr(e: PyErr) -> PolarsError {
-    PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }

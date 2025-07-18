@@ -2,7 +2,7 @@ use super::*;
 
 impl Expr {
     pub fn shuffle(self, seed: Option<u64>) -> Self {
-        self.apply_private(FunctionExpr::Random {
+        self.map_unary(FunctionExpr::Random {
             method: RandomMethod::Shuffle,
             seed,
         })
@@ -15,7 +15,7 @@ impl Expr {
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
-        self.apply_many_private(
+        self.map_binary(
             FunctionExpr::Random {
                 method: RandomMethod::Sample {
                     is_fraction: false,
@@ -24,9 +24,7 @@ impl Expr {
                 },
                 seed,
             },
-            &[n],
-            false,
-            false,
+            n,
         )
     }
 
@@ -37,7 +35,7 @@ impl Expr {
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
-        self.apply_many_private(
+        self.map_binary(
             FunctionExpr::Random {
                 method: RandomMethod::Sample {
                     is_fraction: true,
@@ -46,9 +44,7 @@ impl Expr {
                 },
                 seed,
             },
-            &[frac],
-            false,
-            false,
+            frac,
         )
     }
 }

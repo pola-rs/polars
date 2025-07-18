@@ -5,13 +5,19 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
+use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
+use polars_plan::plans::{node_to_expr, to_expr_ir};
+use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
-use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
+use super::datatype::PyDataTypeExpr;
+use super::selector::PySelector;
+use crate::PyExpr;
+use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
-use crate::PyExpr;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyExpr {
@@ -238,9 +244,7 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
-        let dt = dtype.0;
-
+    fn cast(&self, dtype: PyDataTypeExpr, strict: bool, wrap_numerical: bool) -> Self {
         let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
@@ -249,7 +253,7 @@ impl PyExpr {
             CastOptions::NonStrict
         };
 
-        let expr = self.inner.clone().cast_with_options(dt, options);
+        let expr = self.inner.clone().cast_with_options(dtype.inner, options);
         expr.into()
     }
     fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
@@ -266,16 +270,7 @@ impl PyExpr {
     }
 
     fn arg_sort(&self, descending: bool, nulls_last: bool) -> Self {
-        self.inner
-            .clone()
-            .arg_sort(SortOptions {
-                descending,
-                nulls_last,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .into()
+        self.inner.clone().arg_sort(descending, nulls_last).into()
     }
 
     #[cfg(feature = "top_k")]
@@ -318,13 +313,20 @@ impl PyExpr {
         self.inner.clone().arg_min().into()
     }
 
+    #[cfg(feature = "index_of")]
+    fn index_of(&self, element: Self) -> Self {
+        self.inner.clone().index_of(element.inner).into()
+    }
+
     #[cfg(feature = "search_sorted")]
-    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
+    #[pyo3(signature = (element, side, descending=false))]
+    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>, descending: bool) -> Self {
         self.inner
             .clone()
-            .search_sorted(element.inner, side.0)
+            .search_sorted(element.inner, side.0, descending)
             .into()
     }
+
     fn gather(&self, idx: Self) -> Self {
         self.inner.clone().gather(idx.inner).into()
     }
@@ -355,14 +357,6 @@ impl PyExpr {
                 },
             )
             .into()
-    }
-
-    fn backward_fill(&self, limit: FillNullLimit) -> Self {
-        self.inner.clone().backward_fill(limit).into()
-    }
-
-    fn forward_fill(&self, limit: FillNullLimit) -> Self {
-        self.inner.clone().forward_fill(limit).into()
     }
 
     #[pyo3(signature = (n, fill_value=None))]
@@ -423,6 +417,13 @@ impl PyExpr {
             .into()
     }
 
+    fn is_close(&self, other: Self, abs_tol: f64, rel_tol: f64, nans_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .is_close(other.inner, abs_tol, rel_tol, nans_equal)
+            .into()
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
@@ -459,8 +460,8 @@ impl PyExpr {
             .into()
     }
 
-    fn round(&self, decimals: u32) -> Self {
-        self.inner.clone().round(decimals).into()
+    fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
+        self.inner.clone().round(decimals, mode.0).into()
     }
 
     fn round_sig_figs(&self, digits: i32) -> Self {
@@ -583,16 +584,18 @@ impl PyExpr {
     #[pyo3(signature = (partition_by, order_by, order_by_descending, order_by_nulls_last, mapping_strategy))]
     fn over(
         &self,
-        partition_by: Vec<Self>,
+        partition_by: Option<Vec<Self>>,
         order_by: Option<Vec<Self>>,
         order_by_descending: bool,
         order_by_nulls_last: bool,
         mapping_strategy: Wrap<WindowMapping>,
-    ) -> Self {
-        let partition_by = partition_by
-            .into_iter()
-            .map(|e| e.inner)
-            .collect::<Vec<Expr>>();
+    ) -> PyResult<Self> {
+        let partition_by = partition_by.map(|partition_by| {
+            partition_by
+                .into_iter()
+                .map(|e| e.inner)
+                .collect::<Vec<Expr>>()
+        });
 
         let order_by = order_by.map(|order_by| {
             (
@@ -606,10 +609,12 @@ impl PyExpr {
             )
         });
 
-        self.inner
+        Ok(self
+            .inner
             .clone()
             .over_with_options(partition_by, order_by, mapping_strategy.0)
-            .into()
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn rolling(
@@ -642,8 +647,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn is_in(&self, expr: Self) -> Self {
-        self.inner.clone().is_in(expr.inner).into()
+    fn is_in(&self, expr: Self, nulls_equal: bool) -> Self {
+        self.inner.clone().is_in(expr.inner, nulls_equal).into()
     }
 
     #[cfg(feature = "repeat_by")]
@@ -679,10 +684,10 @@ impl PyExpr {
         self.inner.clone().cum_count(reverse).into()
     }
 
-    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
+    fn cumulative_eval(&self, expr: Self, min_samples: usize) -> Self {
         self.inner
             .clone()
-            .cumulative_eval(expr.inner, min_periods, parallel)
+            .cumulative_eval(expr.inner, min_samples)
             .into()
     }
 
@@ -694,23 +699,22 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise, returns_scalar))]
+    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
     fn map_batches(
         &self,
         lambda: PyObject,
-        output_type: Option<Wrap<DataType>>,
-        agg_list: bool,
+        output_type: Option<PyDataTypeExpr>,
         is_elementwise: bool,
         returns_scalar: bool,
+        is_ufunc: bool,
     ) -> Self {
-        map_single(
-            self,
-            lambda,
-            output_type,
-            agg_list,
-            is_elementwise,
-            returns_scalar,
-        )
+        let output_type = if is_ufunc {
+            debug_assert!(output_type.is_none());
+            Some(DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc)))
+        } else {
+            output_type.map(|v| v.inner)
+        };
+        map_single(self, lambda, output_type, is_elementwise, returns_scalar)
     }
 
     fn dot(&self, other: Self) -> Self {
@@ -722,13 +726,6 @@ impl PyExpr {
     }
     fn mode(&self) -> Self {
         self.inner.clone().mode().into()
-    }
-    fn exclude(&self, columns: Vec<String>) -> Self {
-        self.inner.clone().exclude(columns).into()
-    }
-    fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        let dtypes = vec_extract_wrapped(dtypes);
-        self.inner.clone().exclude_dtype(&dtypes).into()
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
@@ -754,8 +751,8 @@ impl PyExpr {
         self.inner.clone().rank(options, seed).into()
     }
 
-    fn diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> Self {
-        self.inner.clone().diff(n, null_behavior.0).into()
+    fn diff(&self, n: PyExpr, null_behavior: Wrap<NullBehavior>) -> Self {
+        self.inner.clone().diff(n.inner, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]
@@ -910,7 +907,7 @@ impl PyExpr {
         old: PyExpr,
         new: PyExpr,
         default: Option<PyExpr>,
-        return_dtype: Option<Wrap<DataType>>,
+        return_dtype: Option<PyDataTypeExpr>,
     ) -> Self {
         self.inner
             .clone()
@@ -918,7 +915,7 @@ impl PyExpr {
                 old.inner,
                 new.inner,
                 default.map(|e| e.inner),
-                return_dtype.map(|dt| dt.0),
+                return_dtype.map(|dt| dt.inner),
             )
             .into()
     }
@@ -937,5 +934,39 @@ impl PyExpr {
             .clone()
             .hist(bins, bin_count, include_category, include_breakpoint)
             .into()
+    }
+
+    #[pyo3(signature = (schema))]
+    fn skip_batch_predicate(&self, py: Python<'_>, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
+        let mut aexpr_arena = Arena::new();
+        py.enter_polars(|| {
+            let node = to_expr_ir(self.inner.clone(), &mut aexpr_arena, &schema.0, true)?.node();
+            let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
+            else {
+                return Ok(None);
+            };
+            let skip_batch_predicate = node_to_expr(node, &aexpr_arena);
+            PolarsResult::Ok(Some(Self {
+                inner: skip_batch_predicate,
+            }))
+        })
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    fn into_selector(&self) -> PyResult<PySelector> {
+        Ok(self
+            .inner
+            .clone()
+            .into_selector()
+            .ok_or_else(
+                || polars_err!(InvalidOperation: "expr `{}` is not a selector", &self.inner),
+            )
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
+    #[staticmethod]
+    fn new_selector(selector: PySelector) -> Self {
+        Expr::Selector(selector.inner).into()
     }
 }

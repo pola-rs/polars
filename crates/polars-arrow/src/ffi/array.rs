@@ -1,12 +1,12 @@
 //! Contains functionality to load an ArrayData from the C Data Interface
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::ArrowArray;
 use crate::array::*;
-use crate::bitmap::utils::bytes_for;
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::bytes_for;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
@@ -523,11 +523,11 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// * `array.children` is not mutably shared for the lifetime of `parent`
     /// * the pointer of `array.children` at `index` is valid
     /// * the pointer of `array.children` at `index` is not mutably shared for the lifetime of `parent`
-    unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild> {
+    unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild<'_>> {
         create_child(self.array(), self.dtype(), self.parent().clone(), index)
     }
 
-    unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild>> {
+    unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild<'_>>> {
         create_dictionary(self.array(), self.dtype(), self.parent().clone())
     }
 

@@ -1,15 +1,14 @@
-use polars::export::arrow;
-use polars::export::arrow::array::Array;
-use polars::export::arrow::ffi;
-use polars::export::arrow::ffi::{
-    ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema,
-};
+use arrow::array::Array;
+use arrow::ffi;
+use arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars::prelude::*;
+use polars_ffi::version_0::SeriesExport;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyTuple, PyType};
 
 use super::PySeries;
+use crate::error::PyPolarsErr;
 
 /// Validate PyCapsule has provided name
 fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> PyResult<()> {
@@ -18,8 +17,7 @@ fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> P
         let capsule_name = capsule_name.to_str()?;
         if capsule_name != expected_name {
             return Err(PyValueError::new_err(format!(
-                "Expected name '{}' in PyCapsule, instead got '{}'",
-                expected_name, capsule_name
+                "Expected name '{expected_name}' in PyCapsule, instead got '{capsule_name}'"
             )));
         }
     } else {
@@ -33,7 +31,7 @@ fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> P
 
 /// Import `__arrow_c_array__` across Python boundary
 pub(crate) fn call_arrow_c_array<'py>(
-    ob: &'py Bound<PyAny>,
+    ob: &Bound<'py, PyAny>,
 ) -> PyResult<(Bound<'py, PyCapsule>, Bound<'py, PyCapsule>)> {
     if !ob.hasattr("__arrow_c_array__")? {
         return Err(PyValueError::new_err(
@@ -78,7 +76,7 @@ pub(crate) fn import_array_pycapsules(
 }
 
 /// Import `__arrow_c_stream__` across Python boundary.
-fn call_arrow_c_stream<'py>(ob: &'py Bound<PyAny>) -> PyResult<Bound<'py, PyCapsule>> {
+fn call_arrow_c_stream<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyCapsule>> {
     if !ob.hasattr("__arrow_c_stream__")? {
         return Err(PyValueError::new_err(
             "Expected an object with dunder __arrow_c_stream__",
@@ -134,5 +132,22 @@ impl PySeries {
     pub fn from_arrow_c_stream(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let capsule = call_arrow_c_stream(ob)?;
         import_stream_pycapsule(&capsule)
+    }
+
+    #[classmethod]
+    /// Import a series via polars-ffi
+    /// Takes ownership of the [`SeriesExport`] at [`location`]
+    /// # Safety
+    /// [`location`] should be the address of an allocated and initialized [`SeriesExport`]
+    pub unsafe fn _import(_cls: &Bound<PyType>, location: usize) -> PyResult<Self> {
+        let location = location as *mut SeriesExport;
+
+        // # Safety
+        // `location` should be valid for reading
+        let series = unsafe {
+            let export = location.read();
+            polars_ffi::version_0::import_series(export).map_err(PyPolarsErr::from)?
+        };
+        Ok(PySeries { series })
     }
 }

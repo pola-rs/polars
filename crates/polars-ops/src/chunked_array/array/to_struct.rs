@@ -1,11 +1,11 @@
-use polars_core::export::rayon::prelude::*;
 use polars_core::POOL;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use rayon::prelude::*;
 
 use super::*;
 
-pub type ArrToStructNameGenerator = Arc<dyn Fn(usize) -> PlSmallStr + Send + Sync>;
+pub type ArrToStructNameGenerator = Arc<dyn Fn(usize) -> PolarsResult<PlSmallStr> + Send + Sync>;
 
 pub fn arr_default_struct_name_gen(idx: usize) -> PlSmallStr {
     format_pl_smallstr!("field_{idx}")
@@ -21,7 +21,7 @@ pub trait ToStruct: AsArray {
 
         let name_generator = name_generator
             .as_deref()
-            .unwrap_or(&arr_default_struct_name_gen);
+            .unwrap_or(&|i| Ok(arr_default_struct_name_gen(i)));
 
         let fields = POOL.install(|| {
             (0..n_fields)
@@ -31,9 +31,9 @@ pub trait ToStruct: AsArray {
                         &Int64Chunked::from_slice(PlSmallStr::EMPTY, &[i as i64]),
                         true,
                     )
-                    .map(|mut s| {
-                        s.rename(name_generator(i).clone());
-                        s
+                    .and_then(|mut s| {
+                        s.rename(name_generator(i)?.clone());
+                        Ok(s)
                     })
                 })
                 .collect::<PolarsResult<Vec<_>>>()

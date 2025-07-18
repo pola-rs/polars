@@ -61,7 +61,7 @@ impl Executor for SortExec {
             let by = self
                 .by_column
                 .iter()
-                .map(|s| Ok(s.to_field(&df.schema())?.name))
+                .map(|s| Ok(s.to_field(df.schema())?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("sort".to_string(), &by);
             Cow::Owned(name)

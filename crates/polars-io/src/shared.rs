@@ -4,7 +4,9 @@ use std::sync::Arc;
 use arrow::array::new_empty_array;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
+use polars_utils::plpath::PlPathRef;
 
+use crate::cloud::CloudOptions;
 use crate::options::RowIndex;
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 use crate::predicates::PhysicalIoExpr;
@@ -41,7 +43,12 @@ where
 }
 
 pub trait WriteDataFrameToFile {
-    fn write_df_to_file<W: std::io::Write>(&self, df: DataFrame, file: W) -> PolarsResult<()>;
+    fn write_df_to_file(
+        &self,
+        df: &mut DataFrame,
+        addr: PlPathRef<'_>,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<()>;
 }
 
 pub trait ArrowReader {
@@ -65,10 +72,10 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     while let Some(batch) = reader.next_record_batch()? {
         let current_num_rows = num_rows as IdxSize;
         num_rows += batch.len();
-        let mut df = DataFrame::try_from((batch, arrow_schema))?;
+        let mut df = DataFrame::from(batch);
 
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset));
+            unsafe { df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset)) };
         }
 
         if let Some(predicate) = &predicate {
@@ -84,7 +91,10 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
                 if polars_core::config::verbose() {
-                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height().saturating_sub(n))
+                    eprintln!(
+                        "sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.",
+                        df.height().saturating_sub(n)
+                    )
                 }
                 parsed_dfs.push(df.slice(0, len));
                 break;
@@ -116,7 +126,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     Ok(df)
 }
 
-pub(crate) fn schema_to_arrow_checked(
+pub fn schema_to_arrow_checked(
     schema: &Schema,
     compat_level: CompatLevel,
     _file_name: &str,
@@ -127,7 +137,7 @@ pub(crate) fn schema_to_arrow_checked(
             #[cfg(feature = "object")]
             {
                 polars_ensure!(
-                    !matches!(field.dtype(), DataType::Object(_, _)),
+                    !matches!(field.dtype(), DataType::Object(_)),
                     ComputeError: "cannot write 'Object' datatype to {}",
                     _file_name
                 );

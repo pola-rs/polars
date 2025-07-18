@@ -1,7 +1,6 @@
 mod group_by;
 mod join;
 mod keys;
-mod rename;
 mod utils;
 
 use polars_core::datatypes::PlHashMap;
@@ -10,10 +9,8 @@ use recursive::recursive;
 use utils::*;
 
 use super::*;
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
 pub type ExprEval<'a> =
@@ -29,19 +26,28 @@ mod inner {
     use super::ExprEval;
 
     pub struct PredicatePushDown<'a> {
+        // TODO: Remove unused
+        #[expect(unused)]
         pub(super) expr_eval: ExprEval<'a>,
+        #[expect(unused)]
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
         nodes_scratch: UnitVec<Node>,
+        #[expect(unused)]
+        pub(super) new_streaming: bool,
+        // Controls pushing filters past fallible projections
+        pub(super) maintain_errors: bool,
     }
 
     impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>) -> Self {
+        pub fn new(expr_eval: ExprEval<'a>, maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
                 expr_eval,
                 verbose: verbose(),
                 block_at_cache: true,
                 nodes_scratch: unitvec![],
+                new_streaming,
+                maintain_errors,
             }
         }
 
@@ -111,12 +117,15 @@ impl PredicatePushDown<'_> {
             }
             let input = inputs[inputs.len() - 1];
 
+            let maintain_errors = self.maintain_errors;
             let (eligibility, alias_rename_map) = pushdown_eligibility(
                 &exprs,
                 &[],
                 &acc_predicates,
                 expr_arena,
                 self.empty_nodes_scratch_mut(),
+                maintain_errors,
+                lp_arena.get(input),
             )?;
 
             let local_predicates = match eligibility {
@@ -129,40 +138,13 @@ impl PredicatePushDown<'_> {
                     out
                 },
                 PushdownEligibility::NoPushdown => {
-                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
                 },
             };
 
             if !alias_rename_map.is_empty() {
-                for (_, e) in acc_predicates.iter_mut() {
-                    let mut needs_rename = false;
-
-                    for (_, ae) in (&*expr_arena).iter(e.node()) {
-                        if let AExpr::Column(name) = ae {
-                            needs_rename |= alias_rename_map.contains_key(name);
-
-                            if needs_rename {
-                                break;
-                            }
-                        }
-                    }
-
-                    if needs_rename {
-                        // TODO! Do this directly on AExpr.
-                        let mut new_expr = node_to_expr(e.node(), expr_arena);
-                        new_expr = new_expr.map_expr(|e| match e {
-                            Expr::Column(name) => {
-                                if let Some(rename_to) = alias_rename_map.get(&*name) {
-                                    Expr::Column(rename_to.clone())
-                                } else {
-                                    Expr::Column(name)
-                                }
-                            },
-                            e => e,
-                        });
-                        let predicate = to_aexpr(new_expr, expr_arena)?;
-                        e.set_node(predicate);
-                    }
+                for (_, expr_ir) in acc_predicates.iter_mut() {
+                    map_column_references(expr_ir, expr_arena, &alias_rename_map);
                 }
             }
 
@@ -276,8 +258,14 @@ impl PredicatePushDown<'_> {
     ) -> PolarsResult<IR> {
         use IR::*;
 
+        // Note: The logic within the match block should ensure `acc_predicates` is left in a state
+        // where it contains only pushable exprs after it is done (although in some cases it may
+        // contain a single fallible expression).
+
         match lp {
             Filter {
+                // Note: We assume AND'ed predicates have already been split to separate IR filter
+                // nodes during DSL conversion so we don't do that here.
                 ref predicate,
                 input,
             } => {
@@ -292,12 +280,16 @@ impl PredicatePushDown<'_> {
                 let tmp_key = temporary_unique_key(&acc_predicates);
                 acc_predicates.insert(tmp_key.clone(), predicate.clone());
 
+                let maintain_errors = self.maintain_errors;
+
                 let local_predicates = match pushdown_eligibility(
                     &[],
-                    &[predicate.clone()],
+                    &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
                     self.empty_nodes_scratch_mut(),
+                    maintain_errors,
+                    lp_arena.get(input),
                 )?
                 .0
                 {
@@ -341,42 +333,49 @@ impl PredicatePushDown<'_> {
                 df,
                 schema,
                 output_schema,
-                filter: selection,
             } => {
-                let selection = predicate_at_scan(acc_predicates, selection, expr_arena);
-                let lp = DataFrameScan {
+                let selection = predicate_at_scan(acc_predicates, None, expr_arena);
+                let mut lp = DataFrameScan {
                     df,
                     schema,
                     output_schema,
-                    filter: selection,
                 };
+
+                if let Some(predicate) = selection {
+                    let input = lp_arena.add(lp);
+
+                    lp = IR::Filter { input, predicate }
+                }
+
                 Ok(lp)
             },
             Scan {
-                mut sources,
+                sources,
                 file_info,
-                hive_parts: mut scan_hive_parts,
+                hive_parts: scan_hive_parts,
                 ref predicate,
-                mut scan_type,
-                file_options: options,
+                scan_type,
+                unified_scan_args,
                 output_schema,
+                id: _,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
-                if let Some(col) = options.include_file_paths.as_deref() {
+                // TODO: Allow predicates on file names, this should be supported by new-streaming.
+                if let Some(col) = unified_scan_args.include_file_paths.as_deref() {
                     blocked_names.push(col);
                 }
 
-                match &scan_type {
+                match &*scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => {},
+                    FileScanIR::Parquet { .. } => {},
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => {},
+                    FileScanIR::Ipc { .. } => {},
                     _ => {
                         // Disallow row index pushdown of other scans as they may
                         // not update the row index properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_index) = options.row_index {
+                        if let Some(ref row_index) = unified_scan_args.row_index {
                             blocked_names.push(row_index.name.as_ref());
                         };
                     },
@@ -391,61 +390,12 @@ impl PredicatePushDown<'_> {
                 };
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
-                if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
-                    if let Some(io_expr) =
-                        self.expr_eval.unwrap()(predicate, expr_arena, &file_info.schema)
-                    {
-                        if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
-                            let paths = sources.as_paths().ok_or_else(|| {
-                                polars_err!(nyi = "Hive partitioning of in-memory buffers")
-                            })?;
-                            let mut new_paths = Vec::with_capacity(paths.len());
-                            let mut new_hive_parts = Vec::with_capacity(paths.len());
-
-                            for i in 0..paths.len() {
-                                let path = &paths[i];
-                                let hive_parts = &hive_parts[i];
-
-                                if stats_evaluator.should_read(hive_parts.get_statistics())? {
-                                    new_paths.push(path.clone());
-                                    new_hive_parts.push(hive_parts.clone());
-                                }
-                            }
-
-                            if paths.len() != new_paths.len() {
-                                if self.verbose {
-                                    eprintln!(
-                                        "hive partitioning: skipped {} files, first file : {}",
-                                        paths.len() - new_paths.len(),
-                                        paths[0].display()
-                                    )
-                                }
-                                scan_type.remove_metadata();
-                            }
-                            if new_paths.is_empty() {
-                                let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
-                                let df = DataFrame::empty_with_schema(schema);
-
-                                return Ok(DataFrameScan {
-                                    df: Arc::new(df),
-                                    schema: schema.clone(),
-                                    output_schema: None,
-                                    filter: None,
-                                });
-                            } else {
-                                sources = ScanSources::Paths(new_paths.into());
-                                scan_hive_parts = Some(Arc::from(new_hive_parts));
-                            }
-                        }
-                    }
-                }
-
-                let mut do_optimization = match &scan_type {
+                let mut do_optimization = match &*scan_type {
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => options.slice.is_none(),
-                    FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
+                    FileScanIR::Csv { .. } => unified_scan_args.pre_slice.is_none(),
+                    FileScanIR::Anonymous { function, .. } => function.allows_predicate_pushdown(),
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => true,
+                    FileScanIR::NDJson { .. } => true,
                     #[allow(unreachable_patterns)]
                     _ => true,
                 };
@@ -459,9 +409,10 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate,
-                        file_options: options,
+                        unified_scan_args,
                         output_schema,
                         scan_type,
+                        id: Default::default(),
                     }
                 } else {
                     let lp = Scan {
@@ -469,9 +420,10 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate: None,
-                        file_options: options,
+                        unified_scan_args,
                         output_schema,
                         scan_type,
+                        id: Default::default(),
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
@@ -484,25 +436,37 @@ impl PredicatePushDown<'_> {
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
             Distinct { input, options } => {
-                if let Some(ref subset) = options.subset {
-                    // Predicates on the subset can pass.
-                    let subset = subset.clone();
-                    let mut names_set = PlHashSet::<PlSmallStr>::with_capacity(subset.len());
-                    for name in subset.iter() {
-                        names_set.insert(name.clone());
-                    }
-
-                    let condition = |name: &PlSmallStr| !names_set.contains(name.as_str());
-                    let local_predicates =
-                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                    self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                    let lp = Distinct { input, options };
-                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                let subset = if let Some(ref subset) = options.subset {
+                    subset.as_ref()
                 } else {
-                    let lp = Distinct { input, options };
-                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                    &[]
+                };
+                let mut names_set = PlHashSet::<PlSmallStr>::with_capacity(subset.len());
+                for name in subset.iter() {
+                    names_set.insert(name.clone());
                 }
+
+                let local_predicates = match options.keep_strategy {
+                    UniqueKeepStrategy::Any => {
+                        let condition = |e: &ExprIR| {
+                            // if not elementwise -> to local
+                            !is_elementwise_rec(e.node(), expr_arena)
+                        };
+                        transfer_to_local_by_expr_ir(expr_arena, &mut acc_predicates, condition)
+                    },
+                    UniqueKeepStrategy::First
+                    | UniqueKeepStrategy::Last
+                    | UniqueKeepStrategy::None => {
+                        let condition = |name: &PlSmallStr| {
+                            !subset.is_empty() && !names_set.contains(name.as_str())
+                        };
+                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition)
+                    },
+                };
+
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                let lp = Distinct { input, options };
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
             Join {
                 input_left,
@@ -526,23 +490,6 @@ impl PredicatePushDown<'_> {
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {
                     match function {
-                        FunctionIR::Rename { existing, new, .. } => {
-                            let local_predicates =
-                                process_rename(&mut acc_predicates, expr_arena, existing, new)?;
-                            let lp = self.pushdown_and_continue(
-                                lp,
-                                acc_predicates,
-                                lp_arena,
-                                expr_arena,
-                                false,
-                            )?;
-                            Ok(self.optional_apply_predicate(
-                                lp,
-                                local_predicates,
-                                lp_arena,
-                                expr_arena,
-                            ))
-                        },
                         FunctionIR::Explode { columns, .. } => {
                             let condition = |name: &PlSmallStr| columns.iter().any(|s| s == name);
 
@@ -660,37 +607,15 @@ impl PredicatePushDown<'_> {
                 acc_predicates,
             ),
             lp @ Union { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             lp @ Sort { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
-            // Pushed down passed these nodes
-            lp @ Sink { .. } => {
+            lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            // Pushed down passed these nodes
             lp @ HStack { .. }
             | lp @ Select { .. }
             | lp @ SimpleProjection { .. }
@@ -717,23 +642,36 @@ impl PredicatePushDown<'_> {
             PythonScan { mut options } => {
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
-                    // For IO plugins we only accept streamable expressions as
-                    // we want to apply the predicates to the batches.
-                    if !is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena)
-                        && matches!(options.python_source, PythonScanSource::IOPlugin)
-                    {
-                        let lp = PythonScan { options };
-                        return Ok(self.optional_apply_predicate(
-                            lp,
-                            vec![predicate],
-                            lp_arena,
-                            expr_arena,
-                        ));
-                    }
+                    match ExprPushdownGroup::Pushable.update_with_expr_rec(
+                        expr_arena.get(predicate.node()),
+                        expr_arena,
+                        None,
+                    ) {
+                        ExprPushdownGroup::Barrier => {
+                            if cfg!(debug_assertions) {
+                                // Expression should not be pushed here by the optimizer
+                                panic!()
+                            }
 
-                    options.predicate = PythonPredicate::Polars(predicate);
+                            return Ok(self.optional_apply_predicate(
+                                PythonScan { options },
+                                vec![predicate],
+                                lp_arena,
+                                expr_arena,
+                            ));
+                        },
+
+                        ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
+                            options.predicate = PythonPredicate::Polars(predicate);
+                        },
+                    }
                 }
+
                 Ok(PythonScan { options })
+            },
+            #[cfg(feature = "merge_sorted")]
+            lp @ MergeSorted { .. } => {
+                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             Invalid => unreachable!(),
         }

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
@@ -27,12 +28,15 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 
+use polars_compute::rolling::QuantileMethod;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
+
 use super::*;
+use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
-use crate::chunked_array::AsSinglePtr;
 
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);
@@ -51,15 +55,9 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
     }
 }
 
-unsafe impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
-where
-    SeriesWrap<ChunkedArray<T>>: SeriesTrait,
-{
-    fn into_series(self) -> Series
-    where
-        Self: Sized,
-    {
-        Series(Arc::new(SeriesWrap(self)))
+unsafe impl<T: PolarsPhysicalType> IntoSeries for ChunkedArray<T> {
+    fn into_series(self) -> Series {
+        T::ca_into_series(self)
     }
 }
 
@@ -70,7 +68,7 @@ macro_rules! impl_dyn_series {
                 self.0.compute_len()
             }
 
-            fn _field(&self) -> Cow<Field> {
+            fn _field(&self) -> Cow<'_, Field> {
                 Cow::Borrowed(self.0.ref_field())
             }
 
@@ -113,7 +111,7 @@ macro_rules! impl_dyn_series {
 
             fn vec_hash(
                 &self,
-                random_state: PlRandomState,
+                random_state: PlSeedableRandomStateQuality,
                 buf: &mut Vec<u64>,
             ) -> PolarsResult<()> {
                 self.0.vec_hash(random_state, buf)?;
@@ -122,7 +120,7 @@ macro_rules! impl_dyn_series {
 
             fn vec_hash_combine(
                 &self,
-                build_hasher: PlRandomState,
+                build_hasher: PlSeedableRandomStateQuality,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
                 self.0.vec_hash_combine(build_hasher, hashes)?;
@@ -130,17 +128,17 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
                 self.0.agg_min(groups)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 self.0.agg_max(groups)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
                 use DataType::*;
                 match self.dtype() {
                     Int8 | UInt8 | Int16 | UInt16 => self
@@ -152,30 +150,30 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+            unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
                 self.0.agg_std(groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+            unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
                 self.0.agg_var(groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
                 self.0.agg_list(groups)
             }
 
             #[cfg(feature = "bitwise")]
-            unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
                 self.0.agg_and(groups)
             }
             #[cfg(feature = "bitwise")]
-            unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
                 self.0.agg_or(groups)
             }
             #[cfg(feature = "bitwise")]
-            unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
                 self.0.agg_xor(groups)
             }
 
@@ -195,8 +193,8 @@ macro_rules! impl_dyn_series {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
             #[cfg(feature = "algorithm_group_by")]
-            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-                IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+                IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
             }
 
             fn arg_sort_multiple(
@@ -222,7 +220,7 @@ macro_rules! impl_dyn_series {
                 self.0.rename(name);
             }
 
-            fn chunk_lengths(&self) -> ChunkLenIter {
+            fn chunk_lengths(&self) -> ChunkLenIter<'_> {
                 self.0.chunk_lengths()
             }
             fn name(&self) -> &PlSmallStr {
@@ -252,6 +250,10 @@ macro_rules! impl_dyn_series {
                 polars_ensure!(self.0.dtype() == other.dtype(), append);
                 self.0.append(other.as_ref().as_ref())?;
                 Ok(())
+            }
+            fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+                polars_ensure!(self.0.dtype() == other.dtype(), append);
+                self.0.append_owned(other.take_inner())
             }
 
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -305,7 +307,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn rechunk(&self) -> Series {
-                self.0.rechunk().into_series()
+                self.0.rechunk().into_owned().into_series()
             }
 
             fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -317,7 +319,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
-            unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+            unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
                 self.0.get_any_value_unchecked(index)
             }
 
@@ -400,7 +402,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.and_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -408,7 +410,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn or_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.or_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -416,7 +418,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "bitwise")]
             fn xor_reduce(&self) -> PolarsResult<Scalar> {
-                let dt = <$pdt as PolarsDataType>::get_dtype();
+                let dt = <$pdt as PolarsDataType>::get_static_dtype();
                 let av = self.0.xor_reduce().map_or(AnyValue::Null, Into::into);
 
                 Ok(Scalar::new(dt, av))
@@ -431,6 +433,10 @@ macro_rules! impl_dyn_series {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
 
+            fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+                self.0.find_validity_mismatch(other, idxs)
+            }
+
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
@@ -438,6 +444,18 @@ macro_rules! impl_dyn_series {
 
             fn as_any(&self) -> &dyn Any {
                 &self.0
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                &mut self.0
+            }
+
+            fn as_phys_any(&self) -> &dyn Any {
+                &self.0
+            }
+
+            fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+                self as _
             }
         }
     };

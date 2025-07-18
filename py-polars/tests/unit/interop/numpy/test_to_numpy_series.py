@@ -52,7 +52,7 @@ def test_series_to_numpy_numeric_zero_copy(
     dtype: PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, 3]).cast(dtype)
-    result = s.to_numpy(allow_copy=False)
+    result: npt.NDArray[np.generic] = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == s.to_list()
@@ -78,7 +78,7 @@ def test_series_to_numpy_numeric_with_nulls(
     dtype: PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, None], dtype=dtype, strict=False)
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert result.tolist()[:-1] == s.to_list()[:-1]
     assert np.isnan(result[-1])
@@ -104,7 +104,7 @@ def test_series_to_numpy_temporal_zero_copy(
 ) -> None:
     values = [0, 2_000, 1_000_000]
     s = pl.Series(values, dtype=dtype, strict=False)
-    result = s.to_numpy(allow_copy=False)
+    result: npt.NDArray[np.generic] = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     # NumPy tolist returns integers for ns precision
@@ -118,7 +118,7 @@ def test_series_to_numpy_temporal_zero_copy(
 def test_series_to_numpy_datetime_with_tz_zero_copy() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28)]
     s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam").rechunk()
-    result = s.to_numpy(allow_copy=False)
+    result: npt.NDArray[np.generic] = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == values
@@ -129,7 +129,7 @@ def test_series_to_numpy_date() -> None:
     values = [date(1970, 1, 1), date(2024, 2, 28)]
     s = pl.Series(values)
 
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.dtype("datetime64[D]")
@@ -168,7 +168,7 @@ def test_series_to_numpy_temporal_with_nulls(
 ) -> None:
     values = [0, 2_000, 1_000_000, None]
     s = pl.Series(values, dtype=dtype, strict=False)
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     # NumPy tolist returns integers for ns precision
     if getattr(s.dtype, "time_unit", None) == "ns":
@@ -182,7 +182,7 @@ def test_series_to_numpy_temporal_with_nulls(
 def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28), None]
     s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert result.tolist() == values
     assert result.dtype == np.dtype("datetime64[us]")
@@ -209,7 +209,7 @@ def test_to_numpy_object_dtypes(
         values.append(None)
 
     s = pl.Series(values, dtype=dtype)
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert result.tolist() == values
     assert result.dtype == np.object_
@@ -218,7 +218,7 @@ def test_to_numpy_object_dtypes(
 
 def test_series_to_numpy_bool() -> None:
     s = pl.Series([True, False])
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.bool_
@@ -228,7 +228,7 @@ def test_series_to_numpy_bool() -> None:
 
 def test_series_to_numpy_bool_with_nulls() -> None:
     s = pl.Series([True, False, None])
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.object_
@@ -249,7 +249,7 @@ def test_series_to_numpy_array_of_int() -> None:
 def test_series_to_numpy_array_of_str() -> None:
     values = [["1", "2", "3"], ["4", "5", "10000"]]
     s = pl.Series(values, dtype=pl.Array(pl.String, 3))
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
     assert result.tolist() == values
     assert result.dtype == np.object_
 
@@ -343,7 +343,7 @@ def test_to_numpy_chunked() -> None:
     s2 = pl.Series([3, 4])
     s = pl.concat([s1, s2], rechunk=False)
 
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.int64
@@ -362,7 +362,7 @@ def test_to_numpy_chunked_temporal_nested() -> None:
     s2 = pl.Series([[datetime(2022, 1, 1)], [datetime(2023, 1, 1)]], dtype=dtype)
     s = pl.concat([s1, s2], rechunk=False)
 
-    result = s.to_numpy()
+    result: npt.NDArray[np.generic] = s.to_numpy()
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.dtype("datetime64[us]")
@@ -375,7 +375,7 @@ def test_zero_copy_only_deprecated() -> None:
     values = [1, 2]
     s = pl.Series([1, 2])
     with pytest.deprecated_call():
-        result = s.to_numpy(zero_copy_only=True)
+        result: npt.NDArray[np.generic] = s.to_numpy(zero_copy_only=True)
     assert result.tolist() == values
 
 

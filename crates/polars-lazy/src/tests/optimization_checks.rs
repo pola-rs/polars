@@ -5,18 +5,15 @@ pub(crate) fn row_index_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    (&lp_arena).iter(lp).any(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            Scan {
-                file_options: FileScanOptions {
-                    row_index: Some(_),
-                    ..
-                },
-                ..
-            }
-        )
+    lp_arena.iter(lp).any(|(_, lp)| {
+        if let IR::Scan {
+            unified_scan_args, ..
+        } = lp
+        {
+            unified_scan_args.row_index.is_some()
+        } else {
+            false
+        }
     })
 }
 
@@ -24,18 +21,14 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    (&lp_arena).iter(lp).any(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            DataFrameScan {
-                filter: Some(_),
-                ..
-            } | Scan {
-                predicate: Some(_),
-                ..
-            }
-        )
+    lp_arena.iter(lp).any(|(_, lp)| match lp {
+        IR::Filter { input, .. } => {
+            matches!(lp_arena.get(*input), IR::DataFrameScan { .. })
+        },
+        IR::Scan {
+            predicate: Some(_), ..
+        } => true,
+        _ => false,
     })
 }
 
@@ -43,46 +36,14 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    (&lp_arena).iter(lp).all(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            DataFrameScan {
-                filter: Some(_),
-                ..
-            } | Scan {
-                predicate: Some(_),
-                ..
-            }
-        )
-    })
-}
-
-#[cfg(feature = "streaming")]
-pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
-    let (mut expr_arena, mut lp_arena) = get_arenas();
-    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    matches!(
-        lp_arena.get(lp),
-        IR::MapFunction {
-            function: FunctionIR::Pipeline { .. },
-            ..
-        }
-    )
-}
-
-#[cfg(feature = "streaming")]
-pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
-    let (mut expr_arena, mut lp_arena) = get_arenas();
-    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    (&lp_arena).iter(lp).any(|(_, lp)| {
-        matches!(
-            lp,
-            IR::MapFunction {
-                function: FunctionIR::Pipeline { .. },
-                ..
-            }
-        )
+    lp_arena.iter(lp).all(|(_, lp)| match lp {
+        IR::Filter { input, .. } => {
+            matches!(lp_arena.get(*input), IR::DataFrameScan { .. })
+        },
+        IR::Scan {
+            predicate: Some(_), ..
+        } => true,
+        _ => false,
     })
 }
 
@@ -90,10 +51,12 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
 fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    (&lp_arena).iter(lp).any(|(_, lp)| {
+    lp_arena.iter(lp).any(|(_, lp)| {
         use IR::*;
         match lp {
-            Scan { file_options, .. } => file_options.slice.is_some(),
+            Scan {
+                unified_scan_args, ..
+            } => unified_scan_args.pre_slice.is_some(),
             _ => false,
         }
     })
@@ -128,11 +91,6 @@ fn test_pred_pd_1() -> PolarsResult<()> {
         .filter(col("B").gt(lit(1)));
 
     assert!(predicate_at_scan(q));
-
-    // check if we do not pass slice
-    let q = df.lazy().limit(10).filter(col("B").gt(lit(1)));
-
-    assert!(!predicate_at_scan(q));
 
     Ok(())
 }
@@ -212,7 +170,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+    assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
             Join { options, .. } => options.args.slice == Some((1, 3)),
@@ -242,7 +200,7 @@ pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+    assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
             GroupBy { options, .. } => options.slice == Some((1, 3)),
@@ -271,7 +229,7 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+    assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
             Sort { slice, .. } => *slice == Some((1, 3)),
@@ -470,7 +428,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
         .with_columns([col("c0"), col("c1").alias("c4")])
         .select([col("c1"), col("c4")]);
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    (&lp_arena).iter(lp).for_each(|(_, lp)| {
+    lp_arena.iter(lp).for_each(|(_, lp)| {
         use IR::*;
         match lp {
             DataFrameScan { output_schema, .. } => {
@@ -492,7 +450,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     // check if with_column is pruned
-    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+    assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
 
         matches!(lp, SimpleProjection { .. } | DataFrameScan { .. })

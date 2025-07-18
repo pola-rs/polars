@@ -5,7 +5,7 @@ use polars::prelude::*;
 #[test]
 fn test_ipc_compression_variadic_buffers() {
     let mut df = df![
-        "foo" => std::iter::repeat("Home delivery vat 24 %").take(3).collect::<Vec<_>>()
+        "foo" => std::iter::repeat_n("Home delivery vat 24 %",3).collect::<Vec<_>>()
     ]
     .unwrap();
 
@@ -132,7 +132,7 @@ fn test_write_with_compression() {
 
         let df_read = IpcReader::new(buf)
             .finish()
-            .unwrap_or_else(|_| panic!("IPC reader: {:?}", compression));
+            .unwrap_or_else(|_| panic!("IPC reader: {compression:?}"));
         assert!(df.equals(&df_read));
     }
 }

@@ -48,4 +48,4 @@ def test_to_dict_misc(as_series: bool, inner_dtype: Any) -> None:
     assert isinstance(s, dict)
     for v in s.values():
         assert isinstance(v, inner_dtype)
-        assert len(v) == len(df)
+        assert len(v) == df.height

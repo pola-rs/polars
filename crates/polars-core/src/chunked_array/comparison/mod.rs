@@ -6,14 +6,14 @@ mod categorical;
 use std::ops::{BitAnd, Not};
 
 use arrow::array::BooleanArray;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
 use crate::prelude::*;
-use crate::series::implementations::null::NullChunked;
 use crate::series::IsSorted;
+use crate::series::implementations::null::NullChunked;
 use crate::utils::align_chunks_binary;
 
 impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
@@ -828,12 +828,27 @@ where
         }
 
         if !is_missing && (a.null_count() > 0 || b.null_count() > 0) {
+            let mut a = a;
+            let mut b = b;
+
+            if broadcasts {
+                if a.len() == 1 {
+                    a = std::borrow::Cow::Owned(a.new_from_index(0, b.len()));
+                }
+                if b.len() == 1 {
+                    b = std::borrow::Cow::Owned(b.new_from_index(0, a.len()));
+                }
+            }
+
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
             unsafe {
+                let mut new_null_count = 0;
                 for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
-                    arr.set_validity(a.validity().cloned())
+                    arr.set_validity(a.validity().cloned());
+                    new_null_count += arr.null_count();
                 }
+                out.set_null_count(new_null_count);
             }
         }
 
@@ -1148,8 +1163,9 @@ impl ChunkEqualElement for ListChunked {}
 impl ChunkEqualElement for ArrayChunked {}
 
 #[cfg(test)]
+#[cfg_attr(feature = "nightly", allow(clippy::manual_repeat_n))] // remove once stable
 mod test {
-    use std::iter::repeat;
+    use std::iter::repeat_n;
 
     use super::super::test::get_chunked_array;
     use crate::prelude::*;
@@ -1180,51 +1196,51 @@ mod test {
 
         assert_eq!(
             a1.equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
     }
 
@@ -1235,51 +1251,51 @@ mod test {
 
         assert_eq!(
             a1.equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
     }
 
@@ -1391,7 +1407,7 @@ mod test {
     fn list_broadcasting_lists() {
         let s_el = Series::new(PlSmallStr::EMPTY, &[1, 2, 3]);
         let s_lhs = Series::new(PlSmallStr::EMPTY, &[s_el.clone(), s_el.clone()]);
-        let s_rhs = Series::new(PlSmallStr::EMPTY, &[s_el.clone()]);
+        let s_rhs = Series::new(PlSmallStr::EMPTY, std::slice::from_ref(&s_el));
 
         let result = s_lhs.list().unwrap().equal(s_rhs.list().unwrap());
         assert_eq!(result.len(), 2);

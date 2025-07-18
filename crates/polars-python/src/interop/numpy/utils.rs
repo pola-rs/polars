@@ -1,8 +1,9 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ffi::{c_int, c_void};
 
 use ndarray::{Dim, Dimension};
 use numpy::npyffi::PyArrayObject;
-use numpy::{npyffi, Element, PyArrayDescr, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
+use numpy::{Element, PY_ARRAY_API, PyArrayDescr, PyArrayDescrMethods, ToNpyDims, npyffi};
 use polars_core::prelude::*;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -10,7 +11,7 @@ use pyo3::types::PyTuple;
 
 /// Create a NumPy ndarray view of the data.
 pub(super) unsafe fn create_borrowed_np_array<I>(
-    py: Python,
+    py: Python<'_>,
     dtype: Bound<PyArrayDescr>,
     mut shape: Dim<I>,
     flags: c_int,
@@ -47,7 +48,7 @@ where
 /// Returns whether the data type supports creating a NumPy view.
 pub(super) fn dtype_supports_view(dtype: &DataType) -> bool {
     match dtype {
-        dt if dt.is_numeric() => true,
+        dt if dt.is_primitive_numeric() => true,
         DataType::Datetime(_, _) | DataType::Duration(_) => true,
         DataType::Array(inner, _) => dtype_supports_view(inner.as_ref()),
         _ => false,
@@ -70,7 +71,7 @@ pub(super) fn series_contains_null(s: &Series) -> bool {
 
 /// Reshape the first dimension of a NumPy array to the given height and width.
 pub(super) fn reshape_numpy_array(
-    py: Python,
+    py: Python<'_>,
     arr: PyObject,
     height: usize,
     width: usize,
@@ -94,11 +95,11 @@ pub(super) fn reshape_numpy_array(
 }
 
 /// Get the NumPy temporal data type associated with the given Polars [`DataType`].
-pub(super) fn polars_dtype_to_np_temporal_dtype<'a>(
-    py: Python<'a>,
+pub(super) fn polars_dtype_to_np_temporal_dtype<'py>(
+    py: Python<'py>,
     dtype: &DataType,
-) -> Bound<'a, PyArrayDescr> {
-    use numpy::datetime::{units, Datetime, Timedelta};
+) -> Bound<'py, PyArrayDescr> {
+    use numpy::datetime::{Datetime, Timedelta, units};
     match dtype {
         DataType::Datetime(TimeUnit::Milliseconds, _) => {
             Datetime::<units::Milliseconds>::get_dtype(py)
@@ -116,6 +117,6 @@ pub(super) fn polars_dtype_to_np_temporal_dtype<'a>(
             Timedelta::<units::Microseconds>::get_dtype(py)
         },
         DataType::Duration(TimeUnit::Nanoseconds) => Timedelta::<units::Nanoseconds>::get_dtype(py),
-        _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
+        _ => panic!("only Datetime/Duration inputs supported, got {dtype}"),
     }
 }

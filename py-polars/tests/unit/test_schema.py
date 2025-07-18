@@ -33,7 +33,7 @@ def test_schema() -> None:
         pl.Schema(
             {
                 "foo": pl.UInt32(),
-                "bar": pl.Categorical("physical"),
+                "bar": pl.Categorical(),
                 "baz": pl.Struct({"x": pl.Int64(), "y": pl.Float64()}),
             }
         ),
@@ -129,9 +129,8 @@ def test_schema_in_map_elements_returns_scalar() -> None:
     )
     q = ldf.group_by("portfolio").agg(
         pl.col("amounts")
-        .map_elements(
-            lambda x: float(x.sum()), return_dtype=pl.Float64, returns_scalar=True
-        )
+        .implode()
+        .map_elements(lambda x: float(x.sum()), return_dtype=pl.Float64)
         .alias("irr")
     )
     assert q.collect_schema() == schema

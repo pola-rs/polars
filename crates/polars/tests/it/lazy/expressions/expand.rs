@@ -1,4 +1,4 @@
-use polars::export::chrono::NaiveDate;
+use chrono::NaiveDate;
 
 use super::*;
 
@@ -30,6 +30,8 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
     .lazy()
     .with_column(
         dtype_col(&DataType::Datetime(TimeUnit::Milliseconds, None))
+            .as_selector()
+            .as_expr()
             .dt()
             .to_string("%m/%d/%Y"),
     )

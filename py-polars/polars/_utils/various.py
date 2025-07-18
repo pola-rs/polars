@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import warnings
+from collections import Counter
 from collections.abc import (
     Collection,
     Generator,
@@ -42,7 +43,7 @@ from polars.dependencies import _check_for_numpy, import_optional, subprocess
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Reversible
+    from collections.abc import Iterator, MutableMapping, Reversible
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -247,6 +248,16 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
     return [v for v in values if not (v in seen or add_(v))]
 
 
+def deduplicate_names(names: Iterable[str]) -> list[str]:
+    """Ensure name uniqueness by appending a counter to subsequent duplicates."""
+    seen: MutableMapping[str, int] = Counter()
+    deduped = []
+    for nm in names:
+        deduped.append(f"{nm}{seen[nm] - 1}" if nm in seen else nm)
+        seen[nm] += 1
+    return deduped
+
+
 @overload
 def scale_bytes(sz: int, unit: SizeUnit) -> int | float: ...
 
@@ -435,7 +446,7 @@ NoDefault = Literal[_NoDefault.no_default]
 
 def find_stacklevel() -> int:
     """
-    Find the first place in the stack that is not inside polars.
+    Find the first place in the stack that is not inside Polars.
 
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
@@ -641,6 +652,7 @@ def re_escape(s: str) -> str:
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
 
 
+# Don't rename or move. This is used by polars cloud
 def display_dot_graph(
     *,
     dot: str,
@@ -653,7 +665,9 @@ def display_dot_graph(
         # we do not show a graph, nor save a graph to disk
         return dot
 
-    output_type = "svg" if _in_notebook() else "png"
+    output_type = (
+        "svg" if _in_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
+    )
 
     try:
         graph = subprocess.check_output(
@@ -661,7 +675,7 @@ def display_dot_graph(
         )
     except (ImportError, FileNotFoundError):
         msg = (
-            "The graphviz `dot` binary should be on your PATH."
+            "the graphviz `dot` binary should be on your PATH."
             "(If not installed you can download here: https://graphviz.org/download/)"
         )
         raise ImportError(msg) from None
@@ -677,6 +691,16 @@ def display_dot_graph(
 
         return display(SVG(graph))
     else:
+        if (cmd := os.environ.get("POLARS_DOT_SVG_VIEWER", None)) is not None:
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".svg") as file:
+                file.write(graph)
+                file.flush()
+                cmd = cmd.replace("%file%", file.name)
+                subprocess.run(cmd, shell=True)
+            return None
+
         import_optional(
             "matplotlib",
             err_prefix="",
@@ -687,6 +711,56 @@ def display_dot_graph(
 
         plt.figure(figsize=figsize)
         img = mpimg.imread(BytesIO(graph))
+        plt.axis("off")
         plt.imshow(img)
         plt.show()
         return None
+
+
+def qualified_type_name(obj: Any, *, qualify_polars: bool = False) -> str:
+    """
+    Return the module-qualified name of the given object as a string.
+
+    Parameters
+    ----------
+    obj
+        The object to get the qualified name for.
+    qualify_polars
+        If False (default), omit the module path for our own (Polars) objects.
+    """
+    if isinstance(obj, type):
+        module = obj.__module__
+        name = obj.__name__
+    else:
+        module = obj.__class__.__module__
+        name = obj.__class__.__name__
+
+    if (
+        not module
+        or module == "builtins"
+        or (not qualify_polars and module.startswith("polars."))
+    ):
+        return name
+
+    return f"{module}.{name}"
+
+
+def require_same_type(current: Any, other: Any) -> None:
+    """
+    Raise an error if the two arguments are not of the same type.
+
+    The check will not raise an error if one object is of a subclass of the other.
+
+    Parameters
+    ----------
+    current
+        The object the type of which is being checked against.
+    other
+        An object that has to be of the same type.
+    """
+    if not isinstance(other, type(current)) and not isinstance(current, type(other)):
+        msg = (
+            f"expected `other` to be a {qualified_type_name(current)!r}, "
+            f"not {qualified_type_name(other)!r}"
+        )
+        raise TypeError(msg)

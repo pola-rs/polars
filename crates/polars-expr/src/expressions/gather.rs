@@ -28,7 +28,7 @@ impl PhysicalExpr for GatherExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
@@ -89,11 +89,6 @@ impl PhysicalExpr for GatherExpr {
         Ok(ac)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.phys_expr.collect_live_columns(lv);
-        self.idx.collect_live_columns(lv);
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.phys_expr.to_field(input_schema)
     }
@@ -129,8 +124,8 @@ impl GatherExpr {
             let groups = ac.groups();
 
             // Determine the gather indices.
-            let idx: IdxCa = match groups.as_ref() {
-                GroupsProxy::Idx(groups) => {
+            let idx: IdxCa = match groups.as_ref().as_ref() {
+                GroupsType::Idx(groups) => {
                     if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
                         None => false,
                         Some(idx) => idx >= g.len() as IdxSize,
@@ -149,7 +144,7 @@ impl GatherExpr {
                         })
                         .collect_trusted()
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     if groups.iter().zip(idx).any(|(g, idx)| match idx {
                         None => false,
                         Some(idx) => idx >= g[1],
@@ -171,7 +166,13 @@ impl GatherExpr {
                 taken.as_list().into_column()
             };
 
-            ac.with_values(taken, true, Some(&self.expr))?;
+            ac.with_values_and_args(taken, true, Some(&self.expr), false, self.returns_scalar)?;
+
+            if self.returns_scalar {
+                ac.with_update_groups(UpdateGroups::No);
+            } else {
+                ac.with_update_groups(UpdateGroups::WithSeriesLen);
+            }
             Ok(ac)
         } else {
             self.gather_aggregated_expensive(ac, idx)
@@ -190,7 +191,7 @@ impl GatherExpr {
             .try_apply_amortized(|s| s.as_ref().take(idx))?;
 
         ac.with_values(out.into_column(), true, Some(&self.expr))?;
-        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 
@@ -207,8 +208,8 @@ impl GatherExpr {
                     let groups = ac.groups();
 
                     // We offset the groups first by idx.
-                    let idx: NoNull<IdxCa> = match groups.as_ref() {
-                        GroupsProxy::Idx(groups) => {
+                    let idx: NoNull<IdxCa> = match groups.as_ref().as_ref() {
+                        GroupsType::Idx(groups) => {
                             if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
                                 self.oob_err()?;
                             }
@@ -221,7 +222,7 @@ impl GatherExpr {
                                 })
                                 .collect_trusted()
                         },
-                        GroupsProxy::Slice { groups, .. } => {
+                        GroupsType::Slice { groups, .. } => {
                             if groups.iter().any(|g| idx >= g[1]) {
                                 self.oob_err()?;
                             }
@@ -238,7 +239,12 @@ impl GatherExpr {
                     };
 
                     ac.with_values(taken, true, Some(&self.expr))?;
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+
+                    if self.returns_scalar {
+                        ac.with_update_groups(UpdateGroups::No);
+                    } else {
+                        ac.with_update_groups(UpdateGroups::WithSeriesLen);
+                    }
                     Ok(ac)
                 },
             }
@@ -251,7 +257,7 @@ impl GatherExpr {
         &self,
         mut ac: AggregationContext<'b>,
         mut idx: AggregationContext<'b>,
-        groups: &'b GroupsProxy,
+        groups: &'b GroupsType,
     ) -> PolarsResult<AggregationContext<'b>> {
         let mut builder = get_list_builder(
             &ac.dtype(),
@@ -273,6 +279,7 @@ impl GatherExpr {
         }
         let out = builder.finish().into_column();
         ac.with_agg_state(AggState::AggregatedList(out));
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
     }
 }

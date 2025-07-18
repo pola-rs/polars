@@ -42,9 +42,6 @@ pub fn materialize_left_join_from_series(
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
-    #[cfg(feature = "dtype-categorical")]
-    _check_categorical_src(s_left.dtype(), s_right.dtype())?;
-
     let mut s_left = s_left.clone();
     // Eagerly limit left if possible.
     if let Some((offset, len)) = args.slice {
@@ -79,14 +76,20 @@ pub fn materialize_left_join_from_series(
         s_right = s_right.rechunk();
     }
 
-    let (left_idx, right_idx) =
-        sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
+    let (left_idx, right_idx) = sort_or_hash_left(
+        &s_left,
+        &s_right,
+        verbose,
+        args.validation,
+        args.nulls_equal,
+    )?;
 
     let right = if let Some(drop_names) = drop_names {
         right.drop_many(drop_names)
     } else {
         right.drop(s_right.name()).unwrap()
     };
+    try_raise_keyboard_interrupt();
 
     #[cfg(feature = "chunked_ids")]
     match (left_idx, right_idx) {
@@ -170,8 +173,7 @@ fn maintain_order_idx(
     let join_tuples_left = df
         .column("a")
         .unwrap()
-        .as_series()
-        .unwrap()
+        .as_materialized_series()
         .idx()
         .unwrap()
         .cont_slice()
@@ -180,8 +182,7 @@ fn maintain_order_idx(
     let join_tuples_right = df
         .column("b")
         .unwrap()
-        .as_series()
-        .unwrap()
+        .as_materialized_series()
         .idx()
         .unwrap()
         .cont_slice()

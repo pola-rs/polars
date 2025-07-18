@@ -9,7 +9,6 @@ use std::ops::{Deref, DerefMut};
 mod schema;
 
 pub use any_value::*;
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 pub use arrow::legacy::utils::*;
 pub use arrow::trusted_len::TrustMyLength;
@@ -21,8 +20,8 @@ pub use series::*;
 pub use supertype::*;
 pub use {arrow, rayon};
 
-use crate::prelude::*;
 use crate::POOL;
+use crate::prelude::*;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -114,6 +113,8 @@ pub trait Container: Clone {
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self>;
 
+    fn should_rechunk(&self) -> bool;
+
     fn n_chunks(&self) -> usize;
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize>;
@@ -134,6 +135,10 @@ impl Container for DataFrame {
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self> {
         flatten_df_iter(self)
+    }
+
+    fn should_rechunk(&self) -> bool {
+        self.should_rechunk()
     }
 
     fn n_chunks(&self) -> usize {
@@ -164,6 +169,10 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
             .map(|arr| Self::with_chunk(self.name().clone(), arr.clone()))
     }
 
+    fn should_rechunk(&self) -> bool {
+        false
+    }
+
     fn n_chunks(&self) -> usize {
         self.chunks().len()
     }
@@ -188,6 +197,10 @@ impl Container for Series {
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self> {
         (0..self.0.n_chunks()).map(|i| self.select_chunk(i))
+    }
+
+    fn should_rechunk(&self) -> bool {
+        false
     }
 
     fn n_chunks(&self) -> usize {
@@ -234,6 +247,8 @@ pub fn split<C: Container>(container: &C, target: usize) -> Vec<C> {
         && container
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
+        // We cannot get chunks if they are misaligned
+        && !container.should_rechunk()
     {
         return container.iter_chunks().collect();
     }
@@ -254,6 +269,8 @@ pub fn split_and_flatten<C: Container>(container: &C, target: usize) -> Vec<C> {
         && container
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
+        // We cannot get chunks if they are misaligned
+        && !container.should_rechunk()
     {
         return container.iter_chunks().collect();
     }
@@ -319,7 +336,6 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 }
 
 #[inline]
-#[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let signed_start_offset = if offset < 0 {
         offset.saturating_add_unsigned(array_len as u64)
@@ -555,6 +571,18 @@ macro_rules! with_match_physical_integer_polars_type {(
     }
 })}
 
+#[macro_export]
+macro_rules! with_match_categorical_physical_type {(
+    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    match $dtype {
+        CategoricalPhysical::U8 => __with_ty__! { Categorical8Type },
+        CategoricalPhysical::U16 => __with_ty__! { Categorical16Type },
+        CategoricalPhysical::U32 => __with_ty__! { Categorical32Type },
+    }
+})}
+
 /// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
@@ -720,12 +748,43 @@ macro_rules! df {
 }
 
 pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
-    use TimeUnit::*;
+    use crate::datatypes::time_unit::TimeUnit::*;
     match (tu_l, tu_r) {
         (Nanoseconds, Microseconds) => Microseconds,
         (_, Milliseconds) => Milliseconds,
         _ => *tu_l,
     }
+}
+
+#[cold]
+#[inline(never)]
+fn width_mismatch(df1: &DataFrame, df2: &DataFrame) -> PolarsError {
+    let mut df1_extra = Vec::new();
+    let mut df2_extra = Vec::new();
+
+    let s1 = df1.schema();
+    let s2 = df2.schema();
+
+    s1.field_compare(s2, &mut df1_extra, &mut df2_extra);
+
+    let df1_extra = df1_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let df2_extra = df2_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    polars_err!(
+        SchemaMismatch: r#"unable to vstack, dataframes have different widths ({} != {}).
+One dataframe has additional columns: [{df1_extra}].
+Other dataframe has additional columns: [{df2_extra}]."#,
+        df1.width(),
+        df2.width(),
+    )
 }
 
 pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
@@ -738,7 +797,11 @@ where
     acc_df.reserve_chunks(additional);
 
     for df in iter {
-        acc_df.vstack_mut_unchecked(&df);
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
     }
     Some(acc_df)
 }
@@ -755,7 +818,11 @@ where
     acc_df.reserve_chunks(additional);
 
     for df in iter {
-        acc_df.vstack_mut_unchecked(&df);
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
     }
     acc_df
 }
@@ -772,7 +839,11 @@ where
     let mut acc_df = iter.next().unwrap();
     acc_df.reserve_chunks(additional);
     for df in iter {
-        acc_df.vstack_mut(&df)?;
+        if acc_df.width() != df.width() {
+            return Err(width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned(df)?;
     }
 
     Ok(acc_df)
@@ -874,6 +945,46 @@ where
     }
 }
 
+/// Ensure the chunks in ChunkedArray and Series have the same length.
+/// # Panics
+/// This will panic if `left.len() != right.len()` and array is chunked.
+pub fn align_chunks_binary_ca_series<'a, T>(
+    left: &'a ChunkedArray<T>,
+    right: &'a Series,
+) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, Series>)
+where
+    T: PolarsDataType,
+{
+    let assert = || {
+        assert_eq!(
+            left.len(),
+            right.len(),
+            "expected arrays of the same length"
+        )
+    };
+    match (left.chunks.len(), right.chunks().len()) {
+        // All chunks are equal length
+        (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            assert();
+            (Cow::Borrowed(left), Cow::Borrowed(right))
+        },
+        (_, 1) => (left.rechunk(), Cow::Borrowed(right)),
+        (1, _) => (Cow::Borrowed(left), Cow::Owned(right.rechunk())),
+        (_, _) => {
+            assert();
+            (left.rechunk(), Cow::Owned(right.rechunk()))
+        },
+    }
+}
+
 #[cfg(feature = "performant")]
 pub(crate) fn align_chunks_binary_owned_series(left: Series, right: Series) -> (Series, Series) {
     match (left.chunks().len(), right.chunks().len()) {
@@ -914,9 +1025,9 @@ where
         {
             (left, right)
         },
-        (_, 1) => (left.rechunk(), right),
-        (1, _) => (left, right.rechunk()),
-        (_, _) => (left.rechunk(), right.rechunk()),
+        (_, 1) => (left.rechunk().into_owned(), right),
+        (1, _) => (left, right.rechunk().into_owned()),
+        (_, _) => (left.rechunk().into_owned(), right.rechunk().into_owned()),
     }
 }
 
@@ -1018,10 +1129,8 @@ where
     T: PolarsDataType,
 {
     let (left, right) = align_chunks_binary(left, right);
-    let left_chunk_refs: Vec<_> = left.chunks().iter().map(|c| &**c).collect();
-    let left_validity = concatenate_validities(&left_chunk_refs);
-    let right_chunk_refs: Vec<_> = right.chunks().iter().map(|c| &**c).collect();
-    let right_validity = concatenate_validities(&right_chunk_refs);
+    let left_validity = concatenate_validities(left.chunks());
+    let right_validity = concatenate_validities(right.chunks());
     combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
 }
 
@@ -1101,18 +1210,19 @@ pub(crate) fn index_to_chunked_index_rev<
     )
 }
 
-pub(crate) fn first_non_null<'a, I>(iter: I) -> Option<usize>
+pub fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
     I: Iterator<Item = Option<&'a Bitmap>>,
 {
     let mut offset = 0;
     for validity in iter {
-        if let Some(validity) = validity {
-            let mask = BitMask::from_bitmap(validity);
-            if let Some(n) = mask.nth_set_bit_idx(0, 0) {
+        if let Some(mask) = validity {
+            let len_mask = mask.len();
+            let n = mask.leading_zeros();
+            if n < len_mask {
                 return Some(offset + n);
             }
-            offset += validity.len()
+            offset += len_mask
         } else {
             return Some(offset);
         }
@@ -1120,7 +1230,7 @@ where
     None
 }
 
-pub(crate) fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
+pub fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
 where
     I: DoubleEndedIterator<Item = Option<&'a Bitmap>>,
 {
@@ -1129,15 +1239,15 @@ where
     }
     let mut offset = 0;
     for validity in iter.rev() {
-        if let Some(validity) = validity {
-            let mask = BitMask::from_bitmap(validity);
-            if let Some(n) = mask.nth_set_bit_idx_rev(0, mask.len()) {
-                let mask_start = len - offset - mask.len();
-                return Some(mask_start + n);
+        if let Some(mask) = validity {
+            let len_mask = mask.len();
+            let n = mask.trailing_zeros();
+            if n < len_mask {
+                return Some(len - offset - n - 1);
             }
-            offset += validity.len()
+            offset += len_mask;
         } else {
-            return Some(len - 1 - offset);
+            return Some(len - offset - 1);
         }
     }
     None

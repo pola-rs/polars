@@ -26,8 +26,10 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
 ]
 dynamic = ["version"]
 
@@ -39,6 +41,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
+polars_cloud = ["polars_cloud >= 0.0.1a1"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -56,14 +59,14 @@ excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
 connectorx = ["connectorx >= 0.3.2"]
 sqlalchemy = ["sqlalchemy", "polars[pandas]"]
-database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
+database = ["polars[adbc,connectorx,sqlalchemy]"]
 
 # Cloud
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 0.19.0"]
-iceberg = ["pyiceberg >= 0.5.0"]
+deltalake = ["deltalake >= 1.0.0"]
+iceberg = ["pyiceberg >= 0.7.1"]
 
 # Other
 async = ["gevent"]
@@ -105,6 +108,7 @@ module = [
   "arrow_odbc",
   "backports",
   "connectorx",
+  "dateutil.*",
   "deltalake.*",
   "fsspec.*",
   "gevent",
@@ -113,9 +117,9 @@ module = [
   "kuzu",
   "matplotlib.*",
   "moto.server",
-  "nest_asyncio",
   "openpyxl",
   "polars.polars",
+  "polars_cloud",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
@@ -230,12 +234,14 @@ addopts = [
 ]
 markers = [
   "ci_only: Tests that should only run on CI by default.",
+  "benchmark: Tests used to benchmark with.",
   "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
   "release: Tests that should be run on a Polars release build.",
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
   "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
+  "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
 ]
 filterwarnings = [
   # Fail on warnings
@@ -258,6 +264,8 @@ filterwarnings = [
   # Ignore invalid warnings when running earlier versions of SQLAlchemy (we
   # know they are invalid because our standard tests run the latest version)
   "ignore:Deprecated API features detected.*:DeprecationWarning",
+  # numpy import can generate this warning in Python 3.13 on certain runners
+  "ignore:.*numpy\\.longdouble.*:UserWarning",
 ]
 xfail_strict = true
 
@@ -275,4 +283,14 @@ exclude_lines = [
   "except ImportError",
   "if TYPE_CHECKING:",
   "from typing_extensions import ",
+]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch" },
 ]

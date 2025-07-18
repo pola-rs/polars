@@ -1,8 +1,12 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+use std::sync::Arc;
+
 use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::cast::binary_to_binview;
+use polars_dtype::categorical::CategoricalMapping;
 
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
 const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
@@ -22,23 +26,8 @@ pub enum RowEncodingContext {
 
 #[derive(Debug, Clone)]
 pub struct RowEncodingCategoricalContext {
-    /// The number of known categories in categorical / enum currently.
-    pub num_known_categories: u32,
     pub is_enum: bool,
-
-    /// The mapping from key to lexical sort index
-    pub lexical_sort_idxs: Option<Vec<u32>>,
-}
-
-impl RowEncodingCategoricalContext {
-    pub fn needed_num_bits(&self) -> usize {
-        if self.num_known_categories == 0 {
-            0
-        } else {
-            let max_category_index = self.num_known_categories - 1;
-            (max_category_index.next_power_of_two().trailing_zeros() + 1) as usize
-        }
-    }
+    pub mapping: Arc<CategoricalMapping>,
 }
 
 bitflags::bitflags! {
@@ -76,6 +65,10 @@ impl RowEncodingOptions {
 
     pub fn new_unsorted() -> Self {
         Self::NO_ORDER
+    }
+
+    pub fn is_ordered(self) -> bool {
+        !self.contains(Self::NO_ORDER)
     }
 
     pub fn null_sentinel(self) -> u8 {
@@ -125,6 +118,15 @@ impl RowEncodingOptions {
             EMPTY_STR_TOKEN
         }
     }
+
+    pub fn into_nested(mut self) -> RowEncodingOptions {
+        // Correct nested ordering (see #22557)
+        self.set(
+            RowEncodingOptions::NULLS_LAST,
+            self.contains(RowEncodingOptions::DESCENDING),
+        );
+        self
+    }
 }
 
 #[derive(Default, Clone)]
@@ -157,7 +159,7 @@ impl RowsEncoded {
         RowsEncoded { values, offsets }
     }
 
-    pub fn iter(&self) -> RowsEncodedIter {
+    pub fn iter(&self) -> RowsEncodedIter<'_> {
         let iter = self.offsets[1..].iter();
         let offset = self.offsets[0];
         RowsEncodedIter {

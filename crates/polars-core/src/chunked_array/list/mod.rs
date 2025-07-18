@@ -1,6 +1,8 @@
 //! Special list utility methods
 pub(super) mod iterator;
 
+use std::borrow::Cow;
+
 use crate::prelude::*;
 
 impl ListChunked {
@@ -12,6 +14,9 @@ impl ListChunked {
         }
     }
 
+    /// # Panics
+    /// Panics if the physical representation of `dtype` differs the physical
+    /// representation of the existing inner `dtype`.
     pub fn set_inner_dtype(&mut self, dtype: DataType) {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
         let field = Arc::make_mut(&mut self.field);
@@ -34,6 +39,44 @@ impl ListChunked {
         debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::List(Box::new(inner_dtype)))
+    }
+
+    /// Convert the datatype of the list into the physical datatype.
+    pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
+        let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
+            return Cow::Borrowed(self);
+        };
+
+        let ca = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
+            // Physical repr got rechunked, rechunk self as well.
+            self.rechunk()
+        } else {
+            Cow::Borrowed(self)
+        };
+
+        assert_eq!(ca.chunks().len(), physical_repr.chunks().len());
+
+        let chunks: Vec<_> = ca
+            .downcast_iter()
+            .zip(physical_repr.into_chunks())
+            .map(|(chunk, values)| {
+                LargeListArray::new(
+                    ArrowDataType::LargeList(Box::new(ArrowField::new(
+                        PlSmallStr::from_static("item"),
+                        values.dtype().clone(),
+                        true,
+                    ))),
+                    chunk.offsets().clone(),
+                    values,
+                    chunk.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect();
+
+        let name = self.name().clone();
+        let dtype = DataType::List(Box::new(self.inner_dtype().to_physical()));
+        Cow::Owned(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
     }
 
     /// Convert a non-logical [`ListChunked`] back into a logical [`ListChunked`] without casting.
@@ -102,7 +145,7 @@ impl ListChunked {
     ) -> PolarsResult<ListChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
+        let arr = ca.downcast_as_array();
 
         // SAFETY:
         // Inner dtype is passed correctly
@@ -139,15 +182,5 @@ impl ListChunked {
                 DataType::List(Box::new(out.dtype().clone())),
             )
         })
-    }
-
-    pub fn rechunk_and_trim_to_normalized_offsets(&self) -> Self {
-        Self::with_chunk(
-            self.name().clone(),
-            self.rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .trim_to_normalized_offsets_recursive(),
-        )
     }
 }

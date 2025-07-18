@@ -48,6 +48,10 @@ impl ScalarColumn {
         }
     }
 
+    pub fn full_null(name: PlSmallStr, length: usize, dtype: DataType) -> Self {
+        Self::new(name, Scalar::null(dtype), length)
+    }
+
     pub fn name(&self) -> &PlSmallStr {
         &self.name
     }
@@ -116,9 +120,12 @@ impl ScalarColumn {
     /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
     pub fn as_n_values_series(&self, n: usize) -> Series {
         let length = usize::min(n, self.length);
+
         match self.materialized.get() {
-            Some(s) => s.head(Some(length)),
-            None => Self::_to_series(self.name.clone(), self.scalar.clone(), length),
+            // Don't take a refcount if we only want length-1 (or empty) - the materialized series
+            // could be extremely large.
+            Some(s) if length == self.length || length > 1 => s.head(Some(length)),
+            _ => Self::_to_series(self.name.clone(), self.scalar.clone(), length),
         }
     }
 
@@ -143,7 +150,11 @@ impl ScalarColumn {
     pub fn from_single_value_series(series: Series, length: usize) -> Self {
         debug_assert!(series.len() <= 1);
 
-        let value = series.get(0).map_or(AnyValue::Null, |av| av.into_static());
+        let value = if series.is_empty() {
+            AnyValue::Null
+        } else {
+            unsafe { series.get_unchecked(0) }.into_static()
+        };
         let value = Scalar::new(series.dtype().clone(), value);
         ScalarColumn::new(series.name().clone(), value, length)
     }
@@ -167,7 +178,7 @@ impl ScalarColumn {
             materialized: OnceLock::new(),
         };
 
-        if self.length >= length {
+        if length == self.length || (length < self.length && length > 1) {
             if let Some(materialized) = self.materialized.get() {
                 resized.materialized = OnceLock::from(materialized.head(Some(length)));
                 debug_assert_eq!(resized.materialized.get().unwrap().len(), length);
@@ -187,7 +198,7 @@ impl ScalarColumn {
                 let materialized = s.cast_with_options(dtype, options)?;
                 assert_eq!(self.length, materialized.len());
 
-                let mut casted = if materialized.len() == 0 {
+                let mut casted = if materialized.is_empty() {
                     Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
                 } else {
                     // SAFETY: Just did bounds check
@@ -235,7 +246,7 @@ impl ScalarColumn {
                 let materialized = s.cast_unchecked(dtype)?;
                 assert_eq!(self.length, materialized.len());
 
-                let mut casted = if materialized.len() == 0 {
+                let mut casted = if materialized.is_empty() {
                     Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
                 } else {
                     // SAFETY: Just did bounds check
@@ -291,6 +302,11 @@ impl ScalarColumn {
     pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {
         self.scalar = map_scalar(std::mem::take(&mut self.scalar));
         self.materialized.take();
+    }
+    pub fn with_value(&mut self, value: AnyValue<'static>) -> &mut Self {
+        self.scalar.update(value);
+        self.materialized.take();
+        self
     }
 }
 

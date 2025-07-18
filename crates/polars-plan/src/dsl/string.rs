@@ -6,14 +6,12 @@ impl StringNameSpace {
     /// Check if a string value contains a literal substring.
     #[cfg(feature = "regex")]
     pub fn contains_literal(self, pat: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Contains {
+        self.0.map_binary(
+            StringFunction::Contains {
                 literal: true,
                 strict: false,
-            }),
-            &[pat],
-            false,
-            Some(Default::default()),
+            },
+            pat,
         )
     }
 
@@ -21,33 +19,29 @@ impl StringNameSpace {
     /// an invalid regex, whereas if `strict` is `false`, an invalid regex will simply evaluate to `false`.
     #[cfg(feature = "regex")]
     pub fn contains(self, pat: Expr, strict: bool) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Contains {
+        self.0.map_binary(
+            StringFunction::Contains {
                 literal: false,
                 strict,
-            }),
-            &[pat],
-            false,
-            Some(Default::default()),
+            },
+            pat,
         )
     }
 
     /// Uses aho-corasick to find many patterns.
     ///
     /// # Arguments
-    /// - `patterns`: an expression that evaluates to an String column
+    /// - `patterns`: an expression that evaluates to a String column
     /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
     ///   When this option is enabled, searching will be performed without respect to case for
     ///   ASCII letters (a-z and A-Z) only.
     #[cfg(feature = "find_many")]
     pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::ContainsMany {
+        self.0.map_binary(
+            StringFunction::ContainsAny {
                 ascii_case_insensitive,
-            }),
-            &[patterns],
-            false,
-            None,
+            },
+            patterns,
         )
     }
 
@@ -65,13 +59,12 @@ impl StringNameSpace {
         replace_with: Expr,
         ascii_case_insensitive: bool,
     ) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::ReplaceMany {
+        self.0.map_ternary(
+            StringFunction::ReplaceMany {
                 ascii_case_insensitive,
-            }),
-            &[patterns, replace_with],
-            false,
-            None,
+            },
+            patterns,
+            replace_with,
         )
     }
 
@@ -89,14 +82,12 @@ impl StringNameSpace {
         ascii_case_insensitive: bool,
         overlapping: bool,
     ) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::ExtractMany {
+        self.0.map_binary(
+            StringFunction::ExtractMany {
                 ascii_case_insensitive,
                 overlapping,
-            }),
-            &[patterns],
-            false,
-            None,
+            },
+            patterns,
         )
     }
 
@@ -114,71 +105,48 @@ impl StringNameSpace {
         ascii_case_insensitive: bool,
         overlapping: bool,
     ) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::FindMany {
+        self.0.map_binary(
+            StringFunction::FindMany {
                 ascii_case_insensitive,
                 overlapping,
-            }),
-            &[patterns],
-            false,
-            None,
+            },
+            patterns,
         )
     }
 
     /// Check if a string value ends with the `sub` string.
     pub fn ends_with(self, sub: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::EndsWith),
-            &[sub],
-            false,
-            Some(Default::default()),
-        )
+        self.0.map_binary(StringFunction::EndsWith, sub)
     }
 
     /// Check if a string value starts with the `sub` string.
     pub fn starts_with(self, sub: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::StartsWith),
-            &[sub],
-            false,
-            Some(Default::default()),
-        )
+        self.0.map_binary(StringFunction::StartsWith, sub)
     }
 
     #[cfg(feature = "string_encoding")]
     pub fn hex_encode(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::HexEncode))
+        self.0.map_unary(StringFunction::HexEncode)
     }
 
     #[cfg(feature = "binary_encoding")]
     pub fn hex_decode(self, strict: bool) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::HexDecode(strict)))
+        self.0.map_unary(StringFunction::HexDecode(strict))
     }
 
     #[cfg(feature = "string_encoding")]
     pub fn base64_encode(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Base64Encode))
+        self.0.map_unary(StringFunction::Base64Encode)
     }
 
     #[cfg(feature = "binary_encoding")]
     pub fn base64_decode(self, strict: bool) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Base64Decode(
-                strict,
-            )))
+        self.0.map_unary(StringFunction::Base64Decode(strict))
     }
 
     /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: Expr, group_index: usize) -> Expr {
-        self.0.map_many_private(
-            StringFunction::Extract(group_index).into(),
-            &[pat],
-            false,
-            Some(Default::default()),
-        )
+        self.0.map_binary(StringFunction::Extract(group_index), pat)
     }
 
     #[cfg(feature = "extract_groups")]
@@ -188,7 +156,7 @@ impl StringNameSpace {
         // and we need to compile it here to determine the output datatype
 
         use polars_utils::format_pl_smallstr;
-        let reg = regex::Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
         let names = reg
             .capture_names()
             .enumerate()
@@ -207,13 +175,10 @@ impl StringNameSpace {
                 .collect(),
         );
 
-        Ok(self.0.map_private(
-            StringFunction::ExtractGroups {
-                dtype,
-                pat: pat.into(),
-            }
-            .into(),
-        ))
+        Ok(self.0.map_unary(StringFunction::ExtractGroups {
+            dtype,
+            pat: pat.into(),
+        }))
     }
 
     /// Pad the start of the string until it reaches the given length.
@@ -222,9 +187,9 @@ impl StringNameSpace {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    pub fn pad_start(self, length: usize, fill_char: char) -> Expr {
+    pub fn pad_start(self, length: Expr, fill_char: char) -> Expr {
         self.0
-            .map_private(StringFunction::PadStart { length, fill_char }.into())
+            .map_binary(StringFunction::PadStart { fill_char }, length)
     }
 
     /// Pad the end of the string until it reaches the given length.
@@ -233,9 +198,9 @@ impl StringNameSpace {
     /// Strings with length equal to or greater than the given length are
     /// returned as-is.
     #[cfg(feature = "string_pad")]
-    pub fn pad_end(self, length: usize, fill_char: char) -> Expr {
+    pub fn pad_end(self, length: Expr, fill_char: char) -> Expr {
         self.0
-            .map_private(StringFunction::PadEnd { length, fill_char }.into())
+            .map_binary(StringFunction::PadEnd { fill_char }, length)
     }
 
     /// Pad the start of the string with zeros until it reaches the given length.
@@ -246,63 +211,55 @@ impl StringNameSpace {
     /// returned as-is.
     #[cfg(feature = "string_pad")]
     pub fn zfill(self, length: Expr) -> Expr {
-        self.0
-            .map_many_private(StringFunction::ZFill.into(), &[length], false, None)
+        self.0.map_binary(StringFunction::ZFill, length)
     }
 
     /// Find the index of a literal substring within another string value.
     #[cfg(feature = "regex")]
     pub fn find_literal(self, pat: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Find {
+        self.0.map_binary(
+            StringFunction::Find {
                 literal: true,
                 strict: false,
-            }),
-            &[pat],
-            false,
-            Some(Default::default()),
+            },
+            pat,
         )
     }
 
     /// Find the index of a substring defined by a regular expressions within another string value.
     #[cfg(feature = "regex")]
     pub fn find(self, pat: Expr, strict: bool) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Find {
+        self.0.map_binary(
+            StringFunction::Find {
                 literal: false,
                 strict,
-            }),
-            &[pat],
-            false,
-            Some(Default::default()),
+            },
+            pat,
         )
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: Expr) -> Expr {
-        self.0
-            .map_many_private(StringFunction::ExtractAll.into(), &[pat], false, None)
+        self.0.map_binary(StringFunction::ExtractAll, pat)
     }
 
     /// Count all successive non-overlapping regex matches.
     pub fn count_matches(self, pat: Expr, literal: bool) -> Expr {
-        self.0.map_many_private(
-            StringFunction::CountMatches(literal).into(),
-            &[pat],
-            false,
-            None,
-        )
+        self.0
+            .map_binary(StringFunction::CountMatches(literal), pat)
     }
 
     /// Convert a String column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
-    pub fn strptime(self, dtype: DataType, options: StrptimeOptions, ambiguous: Expr) -> Expr {
-        self.0.map_many_private(
-            StringFunction::Strptime(dtype, options).into(),
-            &[ambiguous],
-            false,
-            None,
-        )
+    pub fn strptime(
+        self,
+        dtype: impl Into<DataTypeExpr>,
+        options: StrptimeOptions,
+        ambiguous: Expr,
+    ) -> Expr {
+        // Only elementwise if the format is explicitly set, or we're constant.
+        self.0
+            .map_binary(StringFunction::Strptime(dtype.into(), options), ambiguous)
     }
 
     /// Convert a String column into a Date column.
@@ -347,8 +304,7 @@ impl StringNameSpace {
     /// Convert a String column into a Decimal column.
     #[cfg(feature = "dtype-decimal")]
     pub fn to_decimal(self, infer_length: usize) -> Expr {
-        self.0
-            .map_private(StringFunction::ToDecimal(infer_length).into())
+        self.0.map_unary(StringFunction::ToDecimal(infer_length))
     }
 
     /// Concat the values into a string array.
@@ -357,45 +313,31 @@ impl StringNameSpace {
     /// * `delimiter` - A string that will act as delimiter between values.
     #[cfg(feature = "concat_str")]
     pub fn join(self, delimiter: &str, ignore_nulls: bool) -> Expr {
-        self.0
-            .apply_private(
-                StringFunction::ConcatVertical {
-                    delimiter: delimiter.into(),
-                    ignore_nulls,
-                }
-                .into(),
-            )
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::RETURNS_SCALAR;
-                options.collect_groups = ApplyOptions::GroupWise;
-                options
-            })
+        self.0.map_unary(StringFunction::ConcatVertical {
+            delimiter: delimiter.into(),
+            ignore_nulls,
+        })
     }
 
     /// Split the string by a substring. The resulting dtype is `List<String>`.
     pub fn split(self, by: Expr) -> Expr {
-        self.0
-            .map_many_private(StringFunction::Split(false).into(), &[by], false, None)
+        self.0.map_binary(StringFunction::Split(false), by)
     }
 
     /// Split the string by a substring and keep the substring. The resulting dtype is `List<String>`.
     pub fn split_inclusive(self, by: Expr) -> Expr {
-        self.0
-            .map_many_private(StringFunction::Split(true).into(), &[by], false, None)
+        self.0.map_binary(StringFunction::Split(true), by)
     }
 
     #[cfg(feature = "dtype-struct")]
     /// Split exactly `n` times by a given substring. The resulting dtype is [`DataType::Struct`].
     pub fn split_exact(self, by: Expr, n: usize) -> Expr {
-        self.0.map_many_private(
+        self.0.map_binary(
             StringFunction::SplitExact {
                 n,
                 inclusive: false,
-            }
-            .into(),
-            &[by],
-            false,
-            None,
+            },
+            by,
         )
     }
 
@@ -403,144 +345,97 @@ impl StringNameSpace {
     /// Split exactly `n` times by a given substring and keep the substring.
     /// The resulting dtype is [`DataType::Struct`].
     pub fn split_exact_inclusive(self, by: Expr, n: usize) -> Expr {
-        self.0.map_many_private(
-            StringFunction::SplitExact { n, inclusive: true }.into(),
-            &[by],
-            false,
-            None,
-        )
+        self.0
+            .map_binary(StringFunction::SplitExact { n, inclusive: true }, by)
     }
 
     #[cfg(feature = "dtype-struct")]
     /// Split by a given substring, returning exactly `n` items. If there are more possible splits,
     /// keeps the remainder of the string intact. The resulting dtype is [`DataType::Struct`].
     pub fn splitn(self, by: Expr, n: usize) -> Expr {
-        self.0
-            .map_many_private(StringFunction::SplitN(n).into(), &[by], false, None)
+        self.0.map_binary(StringFunction::SplitN(n), by)
     }
 
     #[cfg(feature = "regex")]
     /// Replace values that match a regex `pat` with a `value`.
     pub fn replace(self, pat: Expr, value: Expr, literal: bool) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Replace { n: 1, literal }),
-            &[pat, value],
-            false,
-            Some(Default::default()),
-        )
+        self.0
+            .map_ternary(StringFunction::Replace { n: 1, literal }, pat, value)
     }
 
     #[cfg(feature = "regex")]
     /// Replace values that match a regex `pat` with a `value`.
     pub fn replace_n(self, pat: Expr, value: Expr, literal: bool, n: i64) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Replace { n, literal }),
-            &[pat, value],
-            false,
-            Some(Default::default()),
-        )
+        self.0
+            .map_ternary(StringFunction::Replace { n, literal }, pat, value)
     }
 
     #[cfg(feature = "regex")]
     /// Replace all values that match a regex `pat` with a `value`.
     pub fn replace_all(self, pat: Expr, value: Expr, literal: bool) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Replace { n: -1, literal }),
-            &[pat, value],
-            false,
-            Some(Default::default()),
-        )
+        self.0
+            .map_ternary(StringFunction::Replace { n: -1, literal }, pat, value)
+    }
+
+    #[cfg(feature = "string_normalize")]
+    /// Normalize each string
+    pub fn normalize(self, form: UnicodeForm) -> Expr {
+        self.0.map_unary(StringFunction::Normalize { form })
     }
 
     #[cfg(feature = "string_reverse")]
     /// Reverse each string
     pub fn reverse(self) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Reverse),
-            &[],
-            false,
-            None,
-        )
+        self.0.map_unary(StringFunction::Reverse)
     }
 
     /// Remove leading and trailing characters, or whitespace if matches is None.
     pub fn strip_chars(self, matches: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::StripChars),
-            &[matches],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::StripChars, matches)
     }
 
     /// Remove leading characters, or whitespace if matches is None.
     pub fn strip_chars_start(self, matches: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::StripCharsStart),
-            &[matches],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::StripCharsStart, matches)
     }
 
     /// Remove trailing characters, or whitespace if matches is None.
     pub fn strip_chars_end(self, matches: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::StripCharsEnd),
-            &[matches],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::StripCharsEnd, matches)
     }
 
     /// Remove prefix.
     pub fn strip_prefix(self, prefix: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::StripPrefix),
-            &[prefix],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::StripPrefix, prefix)
     }
 
     /// Remove suffix.
     pub fn strip_suffix(self, suffix: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::StripSuffix),
-            &[suffix],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::StripSuffix, suffix)
     }
 
     /// Convert all characters to lowercase.
     pub fn to_lowercase(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Lowercase))
+        self.0.map_unary(StringFunction::Lowercase)
     }
 
     /// Convert all characters to uppercase.
     pub fn to_uppercase(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Uppercase))
+        self.0.map_unary(StringFunction::Uppercase)
     }
 
     /// Convert all characters to titlecase.
     #[cfg(feature = "nightly")]
     pub fn to_titlecase(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Titlecase))
+        self.0.map_unary(StringFunction::Titlecase)
     }
 
     #[cfg(feature = "string_to_integer")]
     /// Parse string in base radix into decimal.
-    pub fn to_integer(self, base: Expr, strict: bool) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::ToInteger(strict)),
-            &[base],
-            false,
-            None,
-        )
+    /// The resulting dtype is `dtype`
+    pub fn to_integer(self, base: Expr, dtype: Option<DataType>, strict: bool) -> Expr {
+        self.0
+            .map_binary(StringFunction::ToInteger { dtype, strict }, base)
     }
 
     /// Return the length of each string as the number of bytes.
@@ -552,8 +447,7 @@ impl StringNameSpace {
     ///
     /// [`len_chars`]: StringNameSpace::len_chars
     pub fn len_bytes(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::LenBytes))
+        self.0.map_unary(StringFunction::LenBytes)
     }
 
     /// Return the length of each string as the number of characters.
@@ -564,67 +458,43 @@ impl StringNameSpace {
     ///
     /// [`len_bytes`]: StringNameSpace::len_bytes
     pub fn len_chars(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::LenChars))
+        self.0.map_unary(StringFunction::LenChars)
     }
 
     /// Slice the string values.
     pub fn slice(self, offset: Expr, length: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Slice),
-            &[offset, length],
-            false,
-            None,
-        )
+        self.0.map_ternary(StringFunction::Slice, offset, length)
     }
 
     /// Take the first `n` characters of the string values.
     pub fn head(self, n: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Head),
-            &[n],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::Head, n)
     }
 
     /// Take the last `n` characters of the string values.
     pub fn tail(self, n: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Tail),
-            &[n],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::Tail, n)
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_decode(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
-        // Apply, because dtype should be inferred only once and be consistent over chunks/morsels.
-        self.0
-            .apply_private(FunctionExpr::StringExpr(StringFunction::JsonDecode {
-                dtype,
-                infer_schema_len,
-            }))
+    pub fn json_decode(
+        self,
+        dtype: Option<impl Into<DataTypeExpr>>,
+        infer_schema_len: Option<usize>,
+    ) -> Expr {
+        self.0.map_unary(StringFunction::JsonDecode {
+            dtype: dtype.map(Into::into),
+            infer_schema_len,
+        })
     }
 
     #[cfg(feature = "extract_jsonpath")]
     pub fn json_path_match(self, pat: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::JsonPathMatch),
-            &[pat],
-            false,
-            None,
-        )
+        self.0.map_binary(StringFunction::JsonPathMatch, pat)
     }
 
     #[cfg(feature = "regex")]
     pub fn escape_regex(self) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::EscapeRegex),
-            &[],
-            false,
-            None,
-        )
+        self.0.map_unary(StringFunction::EscapeRegex)
     }
 }

@@ -76,14 +76,14 @@ fn pop_all_some() {
 
 #[test]
 fn from_trusted_len_iter() {
-    let iter = std::iter::repeat(true).take(2).map(Some);
+    let iter = std::iter::repeat_n(true, 2).map(Some);
     let a = MutableBooleanArray::from_trusted_len_iter(iter);
     assert_eq!(a, MutableBooleanArray::from([Some(true), Some(true)]));
 }
 
 #[test]
 fn from_iter() {
-    let iter = std::iter::repeat(true).take(2).map(Some);
+    let iter = std::iter::repeat_n(true, 2).map(Some);
     let a: MutableBooleanArray = iter.collect();
     assert_eq!(a, MutableBooleanArray::from([Some(true), Some(true)]));
 }

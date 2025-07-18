@@ -1,5 +1,5 @@
 #[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::parse_time_zone;
+use polars_core::datatypes::time_zone::parse_time_zone;
 use polars_core::prelude::*;
 use polars_ops::prelude::*;
 use polars_ops::series::SeriesMethods;
@@ -12,7 +12,7 @@ pub trait PolarsUpsample {
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
     /// * `time_column` - Will be used to determine a date_range.
-    ///                   Note that this column has to be sorted for the output to make sense.
+    ///   Note that this column has to be sorted for the output to make sense.
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
@@ -53,7 +53,7 @@ pub trait PolarsUpsample {
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
     /// * `time_column` - Will be used to determine a date_range.
-    ///                   Note that this column has to be sorted for the output to make sense.
+    ///   Note that this column has to be sorted for the output to make sense.
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
@@ -216,6 +216,7 @@ fn upsample_single_impl(
                         [index_col_name.clone()],
                         [index_col_name.clone()],
                         JoinArgs::new(JoinType::Left),
+                        None,
                     )
                 },
                 _ => polars_bail!(

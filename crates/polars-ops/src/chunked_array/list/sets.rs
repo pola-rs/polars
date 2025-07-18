@@ -110,6 +110,7 @@ fn copied_wrapper_opt<T: Copy + TotalEq + TotalHash>(
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum SetOperation {
     Intersection,
     Union,
@@ -419,21 +420,13 @@ pub fn list_set_operation(
     let mut a = a.clone();
     let mut b = b.clone();
     if a.len() != b.len() {
-        a = a.rechunk();
-        b = b.rechunk();
+        a.rechunk_mut();
+        b.rechunk_mut();
     }
 
     // We will OOB in the kernel otherwise.
     a.prune_empty_chunks();
     b.prune_empty_chunks();
-
-    // Make categoricals compatible
-    #[cfg(feature = "dtype-categorical")]
-    if let (DataType::Categorical(_, _), DataType::Categorical(_, _)) =
-        (&a.inner_dtype(), &b.inner_dtype())
-    {
-        (a, b) = make_list_categoricals_compatible(a, b)?;
-    }
 
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {

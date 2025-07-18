@@ -284,7 +284,7 @@ class CompatLevel:
             at any point without it being considered a breaking change.
         """
         issue_unstable_warning(
-            "Using the highest compatibility level is considered unstable."
+            "using the highest compatibility level is considered unstable."
         )
         return CompatLevel._newest()
 

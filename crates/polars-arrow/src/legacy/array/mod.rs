@@ -1,8 +1,9 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use crate::array::{
-    new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray,
-    PrimitiveArray, StructArray, ViewType,
+    Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray, PrimitiveArray,
+    StructArray, ViewType, new_null_array,
 };
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
@@ -60,7 +61,7 @@ pub trait ListFromIter {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
 
-        let mut validity = MutableBitmap::with_capacity(lower);
+        let mut validity = BitmapBuilder::with_capacity(lower);
         let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
@@ -73,7 +74,7 @@ pub trait ListFromIter {
             ListArray::<i64>::default_datatype(dtype.clone()),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values.to(dtype)),
-            Some(validity.into()),
+            validity.into_opt_validity(),
         )
     }
 
@@ -121,7 +122,7 @@ pub trait ListFromIter {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
 
-        let mut validity = MutableBitmap::with_capacity(lower);
+        let mut validity = BitmapBuilder::with_capacity(lower);
         let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
@@ -151,7 +152,7 @@ pub trait ListFromIter {
             ListArray::<i64>::default_datatype(T::DATA_TYPE),
             Offsets::new_unchecked(offsets).into(),
             values.freeze().boxed(),
-            Some(validity.into()),
+            validity.into_opt_validity(),
         )
     }
 
@@ -219,7 +220,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
             let length = if width == array.size() {
                 array.len()
             } else {
-                assert!(array.values().len() > 0 || width != 0);
+                assert!(!array.values().is_empty() || width != 0);
                 if width == 0 {
                     0
                 } else {

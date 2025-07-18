@@ -11,6 +11,9 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.various import parse_version
+from polars.interchange.from_dataframe import (
+    from_dataframe as from_dataframe_interchange_protocol,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -37,7 +40,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Datetime,
     # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    # pl.Categorical("physical"),
+    # pl.Categorical("lexical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -53,8 +56,7 @@ def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     df_pa = pa.interchange.from_dataframe(dfi)
 
-    with pl.StringCache():
-        result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
+    result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -123,7 +125,7 @@ def test_to_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     df_pa = df.to_arrow()
-    result = pl.from_dataframe(df_pa)
+    result = from_dataframe_interchange_protocol(df_pa)
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -140,7 +142,7 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pa = df.to_arrow()
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pa, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -157,7 +159,7 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = pl.from_dataframe(df_pd)
+    result = from_dataframe_interchange_protocol(df_pd)
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -180,7 +182,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = pl.from_dataframe(df_pd, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -200,7 +202,7 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = pl.from_dataframe(df_pd)
+    result = from_dataframe_interchange_protocol(df_pd)
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -223,7 +225,7 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = pl.from_dataframe(df_pd, allow_copy=False)
+    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -284,9 +286,4 @@ def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
 
     assert_series_equal(
         df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
-    )
-    assert_series_equal(
-        df.select(pl.col.col1.cat.get_categories()).to_series(),
-        pl.Series(["A", "B"]),
-        check_names=False,
     )

@@ -1,6 +1,6 @@
 //! This module defines a FunctionRegistry for supported SQL functions and UDFs.
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_plan::prelude::udf::UserDefinedFunction;
 pub use polars_plan::prelude::{Context, FunctionOptions};
 /// A registry that holds user defined functions.

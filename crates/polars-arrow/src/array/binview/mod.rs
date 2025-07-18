@@ -1,15 +1,21 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
+
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
 mod mutable;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 mod view;
 
 use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_error::*;
 
@@ -29,12 +35,14 @@ pub use mutable::MutableBinaryViewArray;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use private::Sealed;
 
-use crate::array::binview::view::{validate_binary_view, validate_utf8_only};
+use crate::array::binview::view::{validate_binary_views, validate_views_utf8_only};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
-pub use view::{validate_utf8_view, View};
+pub type BinaryViewArrayBuilder = BinaryViewArrayGenericBuilder<[u8]>;
+pub type Utf8ViewArrayBuilder = BinaryViewArrayGenericBuilder<str>;
+pub use view::{View, validate_utf8_views};
 
 use super::Splitable;
 
@@ -44,14 +52,19 @@ pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
 static BIN_VIEW_TYPE: ArrowDataType = ArrowDataType::BinaryView;
 static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
 
+// Growth parameters of view array buffers.
+const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
+const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
+
 pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     const IS_UTF8: bool;
     const DATA_TYPE: ArrowDataType;
     type Owned: Debug + Clone + Sync + Send + AsRef<Self>;
 
     /// # Safety
-    /// The caller must ensure `index < self.len()`.
+    /// The caller must ensure that `slice` is a valid view.
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
+    fn from_bytes(slice: &[u8]) -> Option<&Self>;
 
     fn to_bytes(&self) -> &[u8];
 
@@ -69,6 +82,10 @@ impl ViewType for str {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         std::str::from_utf8_unchecked(slice)
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        std::str::from_utf8(slice).ok()
     }
 
     #[inline(always)]
@@ -92,6 +109,10 @@ impl ViewType for [u8] {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         slice
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        Some(slice)
     }
 
     #[inline(always)]
@@ -299,9 +320,9 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         if T::IS_UTF8 {
-            validate_utf8_view(views.as_ref(), buffers.as_ref())?;
+            validate_utf8_views(views.as_ref(), buffers.as_ref())?;
         } else {
-            validate_binary_view(views.as_ref(), buffers.as_ref())?;
+            validate_binary_views(views.as_ref(), buffers.as_ref())?;
         }
 
         if let Some(validity) = &validity {
@@ -347,13 +368,42 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
     }
 
+    /// Returns the element at index `i`, or None if it is null.
+    /// # Panics
+    /// iff `i >= self.len()`
+    #[inline]
+    pub fn get(&self, i: usize) -> Option<&T> {
+        assert!(i < self.len());
+        unsafe { self.get_unchecked(i) }
+    }
+
+    /// Returns the element at index `i`, or None if it is null.
+    ///
+    /// # Safety
+    /// Assumes that the `i < self.len`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, i: usize) -> Option<&T> {
+        if self
+            .validity
+            .as_ref()
+            .is_none_or(|v| v.get_bit_unchecked(i))
+        {
+            let v = self.views.get_unchecked(i);
+            Some(T::from_bytes_unchecked(
+                v.get_slice_unchecked(&self.buffers),
+            ))
+        } else {
+            None
+        }
+    }
+
     /// Returns an iterator of `Option<&T>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&T, BinaryViewValueIter<T>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&T, BinaryViewValueIter<'_, T>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> BinaryViewValueIter<T> {
+    pub fn values_iter(&self) -> BinaryViewValueIter<'_, T> {
         BinaryViewValueIter::new(self)
     }
 
@@ -440,8 +490,17 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         mutable.freeze().with_validity(self.validity)
     }
 
+    pub fn deshare(&self) -> Self {
+        if Arc::strong_count(&self.buffers) == 1
+            && self.buffers.iter().all(|b| b.storage_refcount() == 1)
+        {
+            return self.clone();
+        }
+        self.clone().gc()
+    }
+
     pub fn is_sliced(&self) -> bool {
-        self.views.as_ptr() != self.views.storage_ptr()
+        !std::ptr::eq(self.views.as_ptr(), self.views.storage_ptr())
     }
 
     pub fn maybe_gc(self) -> Self {
@@ -506,7 +565,7 @@ impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
         // SAFETY: views are correct
-        unsafe { validate_utf8_only(&self.views, &self.buffers, &self.buffers) }
+        unsafe { validate_views_utf8_only(&self.views, &self.buffers, 0) }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].
