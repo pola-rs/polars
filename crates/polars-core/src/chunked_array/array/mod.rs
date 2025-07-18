@@ -70,7 +70,7 @@ impl ArrayChunked {
                 FixedSizeListArray::new(
                     ArrowDataType::FixedSizeList(
                         Box::new(ArrowField::new(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             values.dtype().clone(),
                             true,
                         )),
@@ -115,7 +115,7 @@ impl ArrayChunked {
                 FixedSizeListArray::new(
                     ArrowDataType::FixedSizeList(
                         Box::new(ArrowField::new(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             values.dtype().clone(),
                             true,
                         )),

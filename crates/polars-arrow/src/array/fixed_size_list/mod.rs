@@ -1,4 +1,5 @@
 use super::{Array, ArrayRef, Splitable, new_empty_array, new_null_array};
+use crate::array::list::LIST_VALUES_NAME;
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
@@ -12,7 +13,6 @@ mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
-use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "proptest")]
 pub mod proptest;
 
@@ -334,7 +334,7 @@ impl FixedSizeListArray {
 
     /// Returns a [`ArrowDataType`] consistent with [`FixedSizeListArray`].
     pub fn default_datatype(dtype: ArrowDataType, size: usize) -> ArrowDataType {
-        let field = Box::new(Field::new(PlSmallStr::from_static("item"), dtype, true));
+        let field = Box::new(Field::new(LIST_VALUES_NAME, dtype, true));
         ArrowDataType::FixedSizeList(field, size)
     }
 }

@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use arrow::array::{Array, LIST_VALUES_NAME};
 use arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
@@ -143,7 +143,7 @@ impl ColumnTransform {
                     let values: Box<dyn Array> = list_arr.values().clone();
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             vec![values],
                             values_dtype,
                         )
@@ -166,7 +166,7 @@ impl ColumnTransform {
 
                     let list_arr = LargeListArray::new(
                         ArrowDataType::LargeList(Box::new(ArrowField::new(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             values.dtype().clone(),
                             true,
                         ))),
@@ -216,7 +216,7 @@ impl ColumnTransform {
                     let values: Box<dyn Array> = fixed_size_list_arr.values().clone();
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::from_static("item"),
+                            LIST_VALUES_NAME,
                             vec![values],
                             values_dtype,
                         )
@@ -240,7 +240,7 @@ impl ColumnTransform {
                     let fixed_size_list_arr = FixedSizeListArray::new(
                         ArrowDataType::FixedSizeList(
                             Box::new(ArrowField::new(
-                                PlSmallStr::from_static("item"),
+                                LIST_VALUES_NAME,
                                 values.dtype().clone(),
                                 true,
                             )),

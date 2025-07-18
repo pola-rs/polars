@@ -1104,7 +1104,7 @@ mod test {
             PlSmallStr::from_static("a"),
             [ListArray::new(
                 ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    PlSmallStr::from_static("item"),
+                    LIST_VALUES_NAME,
                     ArrowDataType::Int32,
                     true,
                 ))),
