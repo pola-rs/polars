@@ -808,7 +808,7 @@ mod inner {
             FixedSizeListArray::new(
                 ArrowDataType::FixedSizeList(
                     Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         inner_array.dtype().clone(),
                         // is_nullable, we always set true otherwise the Eq kernels would panic
                         // when they assert == on the arrow `Field`

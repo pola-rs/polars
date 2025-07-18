@@ -62,7 +62,7 @@ impl ListChunked {
             .map(|(chunk, values)| {
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         values.dtype().clone(),
                         true,
                     ))),
@@ -111,7 +111,7 @@ impl ListChunked {
             .map(|(chunk, values)| {
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         values.dtype().clone(),
                         true,
                     ))),
