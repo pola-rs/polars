@@ -388,16 +388,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -510,16 +502,8 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {

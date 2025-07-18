@@ -498,6 +498,36 @@ fn simplify_input_streams(
     Ok(input_streams)
 }
 
+// Assuming that agg_node is a single-input reduction, lowers its input recursively
+// and returns a Reduce node as well a node corresponding to the column to select
+// from the Reduce node for the aggregate.
+fn lower_unary_reduce_node(
+    input: PhysStream,
+    agg_node: Node,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<(PhysStream, Node)> {
+    let agg_aexpr = ctx.expr_arena.get(agg_node).clone();
+    let mut agg_input = Vec::with_capacity(1);
+    agg_aexpr.inputs_rev(&mut agg_input);
+    assert!(agg_input.len() == 1);
+
+    let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
+    let trans_agg_node = ctx.expr_arena.add(agg_aexpr.replace_inputs(&trans_exprs));
+
+    let out_name = unique_column_name();
+    let expr_ir = ExprIR::new(trans_agg_node, OutputName::Alias(out_name.clone()));
+    let output_schema = schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
+    let kind = PhysNodeKind::Reduce {
+        input: trans_input,
+        exprs: vec![expr_ir],
+    };
+
+    let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+    let reduce_stream = PhysStream::first(reduce_node_key);
+    let out_node = ctx.expr_arena.add(AExpr::Column(out_name));
+    Ok((reduce_stream, out_node))
+}
+
 // In the recursive lowering we don't bother with named expressions at all, so
 // we work directly with Nodes.
 #[recursive::recursive]
@@ -700,40 +730,6 @@ fn lower_exprs_with_ctx(
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(left_col_expr);
-            },
-
-            #[cfg(feature = "bitwise")]
-            AExpr::Function {
-                input: ref mut inner_exprs,
-                function: IRFunctionExpr::Bitwise(inner_fn),
-                options,
-            } if matches!(
-                inner_fn,
-                IRBitwiseFunction::And | IRBitwiseFunction::Or | IRBitwiseFunction::Xor
-            ) =>
-            {
-                assert!(inner_exprs.len() == 1);
-
-                let (trans_input, trans_exprs) =
-                    lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
-                inner_exprs[0] = ExprIR::from_node(trans_exprs[0], ctx.expr_arena);
-
-                let out_name = unique_column_name();
-                let trans_fn_expr = ctx.expr_arena.add(AExpr::Function {
-                    input: vec![ExprIR::from_node(trans_exprs[0], ctx.expr_arena)],
-                    function: IRFunctionExpr::Bitwise(inner_fn),
-                    options,
-                });
-                let expr_ir = ExprIR::new(trans_fn_expr, OutputName::Alias(out_name.clone()));
-                let output_schema =
-                    schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
-                let kind = PhysNodeKind::Reduce {
-                    input: trans_input,
-                    exprs: vec![expr_ir],
-                };
-                let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(reduce_node_key));
-                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
             // Lower arbitrary elementwise functions.
@@ -949,38 +945,22 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(PhysStream::first(filter_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
-            AExpr::Agg(mut agg) => match agg {
-                // Change agg mutably so we can share the codepath for all of these.
-                IRAggExpr::Min {
-                    input: ref mut inner,
-                    ..
-                }
-                | IRAggExpr::Max {
-                    input: ref mut inner,
-                    ..
-                }
-                | IRAggExpr::First(ref mut inner)
-                | IRAggExpr::Last(ref mut inner)
-                | IRAggExpr::Sum(ref mut inner)
-                | IRAggExpr::Mean(ref mut inner)
-                | IRAggExpr::Var(ref mut inner, _ /* ddof */)
-                | IRAggExpr::Std(ref mut inner, _ /* ddof */)
-                | IRAggExpr::Count(ref mut inner, _ /* count_nulls */) => {
-                    let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[*inner], ctx)?;
-                    *inner = trans_exprs[0];
 
-                    let out_name = unique_column_name();
-                    let trans_agg_expr = ctx.expr_arena.add(AExpr::Agg(agg));
-                    let expr_ir = ExprIR::new(trans_agg_expr, OutputName::Alias(out_name.clone()));
-                    let output_schema =
-                        schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
-                    let kind = PhysNodeKind::Reduce {
-                        input: trans_input,
-                        exprs: vec![expr_ir],
-                    };
-                    let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                    input_streams.insert(PhysStream::first(reduce_node_key));
-                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            // Aggregates.
+            AExpr::Agg(agg) => match agg {
+                // Change agg mutably so we can share the codepath for all of these.
+                IRAggExpr::Min { .. }
+                | IRAggExpr::Max { .. }
+                | IRAggExpr::First(_)
+                | IRAggExpr::Last(_)
+                | IRAggExpr::Sum(_)
+                | IRAggExpr::Mean(_)
+                | IRAggExpr::Var { .. }
+                | IRAggExpr::Std { .. }
+                | IRAggExpr::Count { .. } => {
+                    let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                    input_streams.insert(trans_stream);
+                    transformed_exprs.push(trans_expr);
                 },
                 IRAggExpr::NUnique(inner) => {
                     // Lower to no-aggregate group-by with unique name feeding into len aggregate.
@@ -1032,6 +1012,31 @@ fn lower_exprs_with_ctx(
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
+            },
+
+            #[cfg(feature = "bitwise")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::Bitwise(
+                        IRBitwiseFunction::And | IRBitwiseFunction::Or | IRBitwiseFunction::Xor,
+                    ),
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::Boolean(
+                        IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
+                    ),
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_unary_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
             },
 
             // Length-based expressions.
