@@ -832,6 +832,7 @@ impl ProbeState {
                     // consecutively on the same partition.
                     probe_partitions.clear();
                     hash_keys.gen_partitions(&partitioner, &mut probe_partitions, emit_unmatched);
+
                     let mut probe_group_start = 0;
                     while probe_group_start < probe_partitions.len() {
                         let p_idx = probe_partitions[probe_group_start];
@@ -971,17 +972,17 @@ impl ProbeState {
                             }
                         }
                     }
+                }
 
-                    if !probe_match.is_empty() {
-                        if !payload_rechunked {
-                            payload.rechunk_mut();
-                        }
-                        probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
-                        probe_match.clear();
-                        let out_morsel = new_morsel(&mut build_out, &mut probe_out);
-                        if send.send(out_morsel).await.is_err() {
-                            return Ok(max_seq);
-                        }
+                if !probe_match.is_empty() {
+                    if !payload_rechunked {
+                        payload.rechunk_mut();
+                    }
+                    probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                    probe_match.clear();
+                    let out_morsel = new_morsel(&mut build_out, &mut probe_out);
+                    if send.send(out_morsel).await.is_err() {
+                        return Ok(max_seq);
                     }
                 }
             }
