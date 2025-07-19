@@ -771,8 +771,8 @@ pub(super) fn strptime(
         #[cfg(feature = "dtype-date")]
         DataType::Date => to_date(&s[0], options),
         #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(time_unit, time_zone) => {
-            to_datetime(s, &time_unit, time_zone.as_ref(), options)
+        DataType::Datetime(time_unit, ref time_zone) => {
+            to_datetime(s, &time_unit, time_zone.as_ref(), options)?.strict_cast(&dtype)
         },
         #[cfg(feature = "dtype-time")]
         DataType::Time => to_time(&s[0], options),
