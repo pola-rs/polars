@@ -320,13 +320,23 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
+        let are_all_inputs_known = inputs.iter().all(|c| c.dtype().is_known());
 
-        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
+        let column = if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
             self.eval_and_flatten(&mut inputs)
         } else {
             let in_name = inputs[0].name().clone();
             Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
+        }?;
+
+        if cfg!(debug_assertions) && are_all_inputs_known && self.output_field.dtype().is_known() {
+            assert_eq!(
+                self.output_field,
+                Field::new(column.name().clone(), column.dtype().clone())
+            );
         }
+
+        Ok(column)
     }
 
     fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
