@@ -1,0 +1,6 @@
+﻿polars.DataFrame.max\_horizontal
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.max_horizontal

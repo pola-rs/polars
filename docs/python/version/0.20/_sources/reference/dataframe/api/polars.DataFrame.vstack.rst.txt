@@ -1,0 +1,6 @@
+﻿polars.DataFrame.vstack
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.vstack

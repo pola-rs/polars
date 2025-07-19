@@ -1,0 +1,321 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-ops/src/series/ops/arg_min_max.rs`."><title>arg_min_max.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="polars_ops" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-4e99c027.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_ops/series/ops/</div>arg_min_max.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>argminmax::ArgMinMax;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>arrow::array::Array;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>polars_core::chunked_array::ops::float_sorted_arg_max::{
+<a href=#4 id=4 data-nosnippet>4</a>    float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
+<a href=#5 id=5 data-nosnippet>5</a>};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>polars_core::series::IsSorted;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>polars_core::with_match_categorical_physical_type;
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="doccomment">/// Argmin/ Argmax
+<a href=#12 id=12 data-nosnippet>12</a></span><span class="kw">pub trait </span>ArgAgg {
+<a href=#13 id=13 data-nosnippet>13</a>    <span class="doccomment">/// Get the index of the minimal value
+<a href=#14 id=14 data-nosnippet>14</a>    </span><span class="kw">fn </span>arg_min(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;;
+<a href=#15 id=15 data-nosnippet>15</a>    <span class="doccomment">/// Get the index of the maximal value
+<a href=#16 id=16 data-nosnippet>16</a>    </span><span class="kw">fn </span>arg_max(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;;
+<a href=#17 id=17 data-nosnippet>17</a>}
+<a href=#18 id=18 data-nosnippet>18</a>
+<a href=#19 id=19 data-nosnippet>19</a><span class="macro">macro_rules!</span> with_match_physical_numeric_polars_type {(
+<a href=#20 id=20 data-nosnippet>20</a>    <span class="macro-nonterminal">$key_type</span>:expr, | <span class="macro-nonterminal">$</span><span class="kw">_</span>:<span class="macro-nonterminal">tt $T</span>:ident | $(<span class="macro-nonterminal">$body</span>:tt)*
+<a href=#21 id=21 data-nosnippet>21</a>) =&gt; ({
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="macro">macro_rules!</span> __with_ty__ {( <span class="macro-nonterminal">$</span><span class="kw">_ </span><span class="macro-nonterminal">$T</span>:ident ) =&gt; ( $(<span class="macro-nonterminal">$body</span>)* )}
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">use </span>DataType::<span class="kw-2">*</span>;
+<a href=#24 id=24 data-nosnippet>24</a>    <span class="kw">match </span><span class="macro-nonterminal">$key_type </span>{
+<a href=#25 id=25 data-nosnippet>25</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-i8"</span>)]
+<a href=#26 id=26 data-nosnippet>26</a>        </span>Int8 =&gt; <span class="macro">__with_ty__!</span> { Int8Type },
+<a href=#27 id=27 data-nosnippet>27</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-i16"</span>)]
+<a href=#28 id=28 data-nosnippet>28</a>        </span>Int16 =&gt; <span class="macro">__with_ty__!</span> { Int16Type },
+<a href=#29 id=29 data-nosnippet>29</a>        Int32 =&gt; <span class="macro">__with_ty__!</span> { Int32Type },
+<a href=#30 id=30 data-nosnippet>30</a>        Int64 =&gt; <span class="macro">__with_ty__!</span> { Int64Type },
+<a href=#31 id=31 data-nosnippet>31</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-u8"</span>)]
+<a href=#32 id=32 data-nosnippet>32</a>        </span>UInt8 =&gt; <span class="macro">__with_ty__!</span> { UInt8Type },
+<a href=#33 id=33 data-nosnippet>33</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-u16"</span>)]
+<a href=#34 id=34 data-nosnippet>34</a>        </span>UInt16 =&gt; <span class="macro">__with_ty__!</span> { UInt16Type },
+<a href=#35 id=35 data-nosnippet>35</a>        UInt32 =&gt; <span class="macro">__with_ty__!</span> { UInt32Type },
+<a href=#36 id=36 data-nosnippet>36</a>        UInt64 =&gt; <span class="macro">__with_ty__!</span> { UInt64Type },
+<a href=#37 id=37 data-nosnippet>37</a>        Float32 =&gt; <span class="macro">__with_ty__!</span> { Float32Type },
+<a href=#38 id=38 data-nosnippet>38</a>        Float64 =&gt; <span class="macro">__with_ty__!</span> { Float64Type },
+<a href=#39 id=39 data-nosnippet>39</a>        dt =&gt; <span class="macro">panic!</span>(<span class="string">"not implemented for dtype {:?}"</span>, dt),
+<a href=#40 id=40 data-nosnippet>40</a>    }
+<a href=#41 id=41 data-nosnippet>41</a>})}
+<a href=#42 id=42 data-nosnippet>42</a>
+<a href=#43 id=43 data-nosnippet>43</a><span class="kw">impl </span>ArgAgg <span class="kw">for </span>Series {
+<a href=#44 id=44 data-nosnippet>44</a>    <span class="kw">fn </span>arg_min(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+<a href=#45 id=45 data-nosnippet>45</a>        <span class="kw">use </span>DataType::<span class="kw-2">*</span>;
+<a href=#46 id=46 data-nosnippet>46</a>        <span class="kw">let </span>phys_s = <span class="self">self</span>.to_physical_repr();
+<a href=#47 id=47 data-nosnippet>47</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#49 id=49 data-nosnippet>49</a>            </span>Categorical(cats, <span class="kw">_</span>) =&gt; {
+<a href=#50 id=50 data-nosnippet>50</a>                <span class="macro">with_match_categorical_physical_type!</span>(cats.physical(), |<span class="macro-nonterminal">$C</span>| {
+<a href=#51 id=51 data-nosnippet>51</a>                    <span class="kw">let </span>ca = <span class="self">self</span>.cat::&lt;<span class="macro-nonterminal">$C</span>&gt;().unwrap();
+<a href=#52 id=52 data-nosnippet>52</a>                    <span class="kw">if </span>ca.null_count() == ca.len() {
+<a href=#53 id=53 data-nosnippet>53</a>                        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#54 id=54 data-nosnippet>54</a>                    }
+<a href=#55 id=55 data-nosnippet>55</a>                    ca.iter_str()
+<a href=#56 id=56 data-nosnippet>56</a>                        .enumerate()
+<a href=#57 id=57 data-nosnippet>57</a>                        .flat_map(|(idx, val)| val.map(|val| (idx, val)))
+<a href=#58 id=58 data-nosnippet>58</a>                        .reduce(|acc, (idx, val)| <span class="kw">if </span>acc.<span class="number">1 </span>&gt; val { (idx, val) } <span class="kw">else </span>{ acc })
+<a href=#59 id=59 data-nosnippet>59</a>                        .map(|tpl| tpl.<span class="number">0</span>)
+<a href=#60 id=60 data-nosnippet>60</a>                })
+<a href=#61 id=61 data-nosnippet>61</a>            },
+<a href=#62 id=62 data-nosnippet>62</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#63 id=63 data-nosnippet>63</a>            </span>Enum(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; phys_s.arg_min(),
+<a href=#64 id=64 data-nosnippet>64</a>            Date | Datetime(<span class="kw">_</span>, <span class="kw">_</span>) | Duration(<span class="kw">_</span>) | Time =&gt; phys_s.arg_min(),
+<a href=#65 id=65 data-nosnippet>65</a>            String =&gt; {
+<a href=#66 id=66 data-nosnippet>66</a>                <span class="kw">let </span>ca = <span class="self">self</span>.str().unwrap();
+<a href=#67 id=67 data-nosnippet>67</a>                arg_min_str(ca)
+<a href=#68 id=68 data-nosnippet>68</a>            },
+<a href=#69 id=69 data-nosnippet>69</a>            Boolean =&gt; {
+<a href=#70 id=70 data-nosnippet>70</a>                <span class="kw">let </span>ca = <span class="self">self</span>.bool().unwrap();
+<a href=#71 id=71 data-nosnippet>71</a>                arg_min_bool(ca)
+<a href=#72 id=72 data-nosnippet>72</a>            },
+<a href=#73 id=73 data-nosnippet>73</a>            dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#74 id=74 data-nosnippet>74</a>                <span class="macro">with_match_physical_numeric_polars_type!</span>(phys_s.dtype(), |<span class="macro-nonterminal">$T</span>| {
+<a href=#75 id=75 data-nosnippet>75</a>                    <span class="kw">let </span>ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;<span class="macro-nonterminal">$T</span>&gt; = phys_s.as_ref().as_ref().as_ref();
+<a href=#76 id=76 data-nosnippet>76</a>                    arg_min_numeric_dispatch(ca)
+<a href=#77 id=77 data-nosnippet>77</a>                })
+<a href=#78 id=78 data-nosnippet>78</a>            },
+<a href=#79 id=79 data-nosnippet>79</a>            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#80 id=80 data-nosnippet>80</a>        }
+<a href=#81 id=81 data-nosnippet>81</a>    }
+<a href=#82 id=82 data-nosnippet>82</a>
+<a href=#83 id=83 data-nosnippet>83</a>    <span class="kw">fn </span>arg_max(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+<a href=#84 id=84 data-nosnippet>84</a>        <span class="kw">use </span>DataType::<span class="kw-2">*</span>;
+<a href=#85 id=85 data-nosnippet>85</a>        <span class="kw">let </span>phys_s = <span class="self">self</span>.to_physical_repr();
+<a href=#86 id=86 data-nosnippet>86</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#87 id=87 data-nosnippet>87</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#88 id=88 data-nosnippet>88</a>            </span>Categorical(cats, <span class="kw">_</span>) =&gt; {
+<a href=#89 id=89 data-nosnippet>89</a>                <span class="macro">with_match_categorical_physical_type!</span>(cats.physical(), |<span class="macro-nonterminal">$C</span>| {
+<a href=#90 id=90 data-nosnippet>90</a>                    <span class="kw">let </span>ca = <span class="self">self</span>.cat::&lt;<span class="macro-nonterminal">$C</span>&gt;().unwrap();
+<a href=#91 id=91 data-nosnippet>91</a>                    <span class="kw">if </span>ca.null_count() == ca.len() {
+<a href=#92 id=92 data-nosnippet>92</a>                        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#93 id=93 data-nosnippet>93</a>                    }
+<a href=#94 id=94 data-nosnippet>94</a>                    ca.iter_str()
+<a href=#95 id=95 data-nosnippet>95</a>                        .enumerate()
+<a href=#96 id=96 data-nosnippet>96</a>                        .flat_map(|(idx, val)| val.map(|val| (idx, val)))
+<a href=#97 id=97 data-nosnippet>97</a>                        .reduce(|acc, (idx, val)| <span class="kw">if </span>acc.<span class="number">1 </span>&lt; val { (idx, val) } <span class="kw">else </span>{ acc })
+<a href=#98 id=98 data-nosnippet>98</a>                        .map(|tpl| tpl.<span class="number">0</span>)
+<a href=#99 id=99 data-nosnippet>99</a>                })
+<a href=#100 id=100 data-nosnippet>100</a>            },
+<a href=#101 id=101 data-nosnippet>101</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#102 id=102 data-nosnippet>102</a>            </span>Enum(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; phys_s.arg_max(),
+<a href=#103 id=103 data-nosnippet>103</a>            Date | Datetime(<span class="kw">_</span>, <span class="kw">_</span>) | Duration(<span class="kw">_</span>) | Time =&gt; phys_s.arg_max(),
+<a href=#104 id=104 data-nosnippet>104</a>            String =&gt; {
+<a href=#105 id=105 data-nosnippet>105</a>                <span class="kw">let </span>ca = <span class="self">self</span>.str().unwrap();
+<a href=#106 id=106 data-nosnippet>106</a>                arg_max_str(ca)
+<a href=#107 id=107 data-nosnippet>107</a>            },
+<a href=#108 id=108 data-nosnippet>108</a>            Boolean =&gt; {
+<a href=#109 id=109 data-nosnippet>109</a>                <span class="kw">let </span>ca = <span class="self">self</span>.bool().unwrap();
+<a href=#110 id=110 data-nosnippet>110</a>                arg_max_bool(ca)
+<a href=#111 id=111 data-nosnippet>111</a>            },
+<a href=#112 id=112 data-nosnippet>112</a>            dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#113 id=113 data-nosnippet>113</a>                <span class="macro">with_match_physical_numeric_polars_type!</span>(phys_s.dtype(), |<span class="macro-nonterminal">$T</span>| {
+<a href=#114 id=114 data-nosnippet>114</a>                    <span class="kw">let </span>ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;<span class="macro-nonterminal">$T</span>&gt; = phys_s.as_ref().as_ref().as_ref();
+<a href=#115 id=115 data-nosnippet>115</a>                    arg_max_numeric_dispatch(ca)
+<a href=#116 id=116 data-nosnippet>116</a>                })
+<a href=#117 id=117 data-nosnippet>117</a>            },
+<a href=#118 id=118 data-nosnippet>118</a>            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#119 id=119 data-nosnippet>119</a>        }
+<a href=#120 id=120 data-nosnippet>120</a>    }
+<a href=#121 id=121 data-nosnippet>121</a>}
+<a href=#122 id=122 data-nosnippet>122</a>
+<a href=#123 id=123 data-nosnippet>123</a><span class="kw">fn </span>arg_max_numeric_dispatch&lt;T&gt;(ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;T&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;
+<a href=#124 id=124 data-nosnippet>124</a><span class="kw">where
+<a href=#125 id=125 data-nosnippet>125</a>    </span>T: PolarsNumericType,
+<a href=#126 id=126 data-nosnippet>126</a>    <span class="kw">for</span>&lt;<span class="lifetime">'b</span>&gt; <span class="kw-2">&amp;</span><span class="lifetime">'b </span>[T::Native]: ArgMinMax,
+<a href=#127 id=127 data-nosnippet>127</a>{
+<a href=#128 id=128 data-nosnippet>128</a>    <span class="kw">if </span>ca.null_count() == ca.len() {
+<a href=#129 id=129 data-nosnippet>129</a>        <span class="prelude-val">None
+<a href=#130 id=130 data-nosnippet>130</a>    </span>} <span class="kw">else if </span>T::get_static_dtype().is_float() &amp;&amp; !<span class="macro">matches!</span>(ca.is_sorted_flag(), IsSorted::Not) {
+<a href=#131 id=131 data-nosnippet>131</a>        arg_max_float_sorted(ca)
+<a href=#132 id=132 data-nosnippet>132</a>    } <span class="kw">else if let </span><span class="prelude-val">Ok</span>(vals) = ca.cont_slice() {
+<a href=#133 id=133 data-nosnippet>133</a>        arg_max_numeric_slice(vals, ca.is_sorted_flag())
+<a href=#134 id=134 data-nosnippet>134</a>    } <span class="kw">else </span>{
+<a href=#135 id=135 data-nosnippet>135</a>        arg_max_numeric(ca)
+<a href=#136 id=136 data-nosnippet>136</a>    }
+<a href=#137 id=137 data-nosnippet>137</a>}
+<a href=#138 id=138 data-nosnippet>138</a>
+<a href=#139 id=139 data-nosnippet>139</a><span class="kw">fn </span>arg_min_numeric_dispatch&lt;T&gt;(ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;T&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;
+<a href=#140 id=140 data-nosnippet>140</a><span class="kw">where
+<a href=#141 id=141 data-nosnippet>141</a>    </span>T: PolarsNumericType,
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="kw">for</span>&lt;<span class="lifetime">'b</span>&gt; <span class="kw-2">&amp;</span><span class="lifetime">'b </span>[T::Native]: ArgMinMax,
+<a href=#143 id=143 data-nosnippet>143</a>{
+<a href=#144 id=144 data-nosnippet>144</a>    <span class="kw">if </span>ca.null_count() == ca.len() {
+<a href=#145 id=145 data-nosnippet>145</a>        <span class="prelude-val">None
+<a href=#146 id=146 data-nosnippet>146</a>    </span>} <span class="kw">else if let </span><span class="prelude-val">Ok</span>(vals) = ca.cont_slice() {
+<a href=#147 id=147 data-nosnippet>147</a>        arg_min_numeric_slice(vals, ca.is_sorted_flag())
+<a href=#148 id=148 data-nosnippet>148</a>    } <span class="kw">else </span>{
+<a href=#149 id=149 data-nosnippet>149</a>        arg_min_numeric(ca)
+<a href=#150 id=150 data-nosnippet>150</a>    }
+<a href=#151 id=151 data-nosnippet>151</a>}
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a><span class="kw">fn </span>arg_max_bool(ca: <span class="kw-2">&amp;</span>BooleanChunked) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+<a href=#154 id=154 data-nosnippet>154</a>    ca.first_true_idx().or_else(|| ca.first_false_idx())
+<a href=#155 id=155 data-nosnippet>155</a>}
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a><span class="doccomment">/// # Safety
+<a href=#158 id=158 data-nosnippet>158</a>/// `ca` has a float dtype, has at least one non-null value and is sorted.
+<a href=#159 id=159 data-nosnippet>159</a></span><span class="kw">fn </span>arg_max_float_sorted&lt;T&gt;(ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;T&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;
+<a href=#160 id=160 data-nosnippet>160</a><span class="kw">where
+<a href=#161 id=161 data-nosnippet>161</a>    </span>T: PolarsNumericType,
+<a href=#162 id=162 data-nosnippet>162</a>{
+<a href=#163 id=163 data-nosnippet>163</a>    <span class="kw">let </span>out = <span class="kw">match </span>ca.is_sorted_flag() {
+<a href=#164 id=164 data-nosnippet>164</a>        IsSorted::Ascending =&gt; float_arg_max_sorted_ascending(ca),
+<a href=#165 id=165 data-nosnippet>165</a>        IsSorted::Descending =&gt; float_arg_max_sorted_descending(ca),
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#167 id=167 data-nosnippet>167</a>    };
+<a href=#168 id=168 data-nosnippet>168</a>    <span class="prelude-val">Some</span>(out)
+<a href=#169 id=169 data-nosnippet>169</a>}
+<a href=#170 id=170 data-nosnippet>170</a>
+<a href=#171 id=171 data-nosnippet>171</a><span class="kw">fn </span>arg_min_bool(ca: <span class="kw-2">&amp;</span>BooleanChunked) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+<a href=#172 id=172 data-nosnippet>172</a>    ca.first_false_idx().or_else(|| ca.first_true_idx())
+<a href=#173 id=173 data-nosnippet>173</a>}
+<a href=#174 id=174 data-nosnippet>174</a>
+<a href=#175 id=175 data-nosnippet>175</a><span class="kw">fn </span>arg_min_str(ca: <span class="kw-2">&amp;</span>StringChunked) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+<a href=#176 id=176 data-nosnippet>176</a>    <span class="kw">if </span>ca.null_count() == ca.len() {
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#178 id=178 data-nosnippet>178</a>    }
+<a href=#179 id=179 data-nosnippet>179</a>    <span class="kw">match </span>ca.is_sorted_flag() {
+<a href=#180 id=180 data-nosnippet>180</a>        IsSorted::Ascending =&gt; ca.first_non_null(),
+<a href=#181 id=181 data-nosnippet>181</a>        IsSorted::Descending =&gt; ca.last_non_null(),
+<a href=#182 id=182 data-nosnippet>182</a>        IsSorted::Not =&gt; ca
+<a href=#183 id=183 data-nosnippet>183</a>            .iter()
+<a href=#184 id=184 data-nosnippet>184</a>            .enumerate()
+<a href=#185 id=185 data-nosnippet>185</a>            .flat_map(|(idx, val)| val.map(|val| (idx, val)))
+<a href=#186 id=186 data-nosnippet>186</a>            .reduce(|acc, (idx, val)| <span class="kw">if </span>acc.<span class="number">1 </span>&gt; val { (idx, val) } <span class="kw">else </span>{ acc })
+<a href=#187 id=187 data-nosnippet>187</a>            .map(|tpl| tpl.<span class="number">0</span>),
+<a href=#188 id=188 data-nosnippet>188</a>    }
+<a href=#189 id=189 data-nosnippet>189</a>}
+<a href=#190 id=190 data-nosnippet>190</a>
+<a href=#191 id=191 data-nosnippet>191</a><span class="kw">fn </span>arg_max_str(ca: <span class="kw-2">&amp;</span>StringChunked) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="kw">if </span>ca.null_count() == ca.len() {
+<a href=#193 id=193 data-nosnippet>193</a>        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#194 id=194 data-nosnippet>194</a>    }
+<a href=#195 id=195 data-nosnippet>195</a>    <span class="kw">match </span>ca.is_sorted_flag() {
+<a href=#196 id=196 data-nosnippet>196</a>        IsSorted::Ascending =&gt; ca.last_non_null(),
+<a href=#197 id=197 data-nosnippet>197</a>        IsSorted::Descending =&gt; ca.first_non_null(),
+<a href=#198 id=198 data-nosnippet>198</a>        IsSorted::Not =&gt; ca
+<a href=#199 id=199 data-nosnippet>199</a>            .iter()
+<a href=#200 id=200 data-nosnippet>200</a>            .enumerate()
+<a href=#201 id=201 data-nosnippet>201</a>            .reduce(|acc, (idx, val)| <span class="kw">if </span>acc.<span class="number">1 </span>&lt; val { (idx, val) } <span class="kw">else </span>{ acc })
+<a href=#202 id=202 data-nosnippet>202</a>            .map(|tpl| tpl.<span class="number">0</span>),
+<a href=#203 id=203 data-nosnippet>203</a>    }
+<a href=#204 id=204 data-nosnippet>204</a>}
+<a href=#205 id=205 data-nosnippet>205</a>
+<a href=#206 id=206 data-nosnippet>206</a><span class="kw">fn </span>arg_min_numeric&lt;<span class="lifetime">'a</span>, T&gt;(ca: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ChunkedArray&lt;T&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;
+<a href=#207 id=207 data-nosnippet>207</a><span class="kw">where
+<a href=#208 id=208 data-nosnippet>208</a>    </span>T: PolarsNumericType,
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="kw">for</span>&lt;<span class="lifetime">'b</span>&gt; <span class="kw-2">&amp;</span><span class="lifetime">'b </span>[T::Native]: ArgMinMax,
+<a href=#210 id=210 data-nosnippet>210</a>{
+<a href=#211 id=211 data-nosnippet>211</a>    <span class="kw">match </span>ca.is_sorted_flag() {
+<a href=#212 id=212 data-nosnippet>212</a>        IsSorted::Ascending =&gt; ca.first_non_null(),
+<a href=#213 id=213 data-nosnippet>213</a>        IsSorted::Descending =&gt; ca.last_non_null(),
+<a href=#214 id=214 data-nosnippet>214</a>        IsSorted::Not =&gt; {
+<a href=#215 id=215 data-nosnippet>215</a>            ca.downcast_iter()
+<a href=#216 id=216 data-nosnippet>216</a>                .fold((<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="number">0</span>), |acc, arr| {
+<a href=#217 id=217 data-nosnippet>217</a>                    <span class="kw">if </span>arr.len() == <span class="number">0 </span>{
+<a href=#218 id=218 data-nosnippet>218</a>                        <span class="kw">return </span>acc;
+<a href=#219 id=219 data-nosnippet>219</a>                    }
+<a href=#220 id=220 data-nosnippet>220</a>                    <span class="kw">let </span>chunk_min: <span class="prelude-ty">Option</span>&lt;(usize, T::Native)&gt; = <span class="kw">if </span>arr.null_count() &gt; <span class="number">0 </span>{
+<a href=#221 id=221 data-nosnippet>221</a>                        arr.into_iter()
+<a href=#222 id=222 data-nosnippet>222</a>                            .enumerate()
+<a href=#223 id=223 data-nosnippet>223</a>                            .flat_map(|(idx, val)| val.map(|val| (idx, <span class="kw-2">*</span>val)))
+<a href=#224 id=224 data-nosnippet>224</a>                            .reduce(|acc, (idx, val)| <span class="kw">if </span>acc.<span class="number">1 </span>&gt; val { (idx, val) } <span class="kw">else </span>{ acc })
+<a href=#225 id=225 data-nosnippet>225</a>                    } <span class="kw">else </span>{
+<a href=#226 id=226 data-nosnippet>226</a>                        <span class="comment">// When no nulls &amp; array not empty =&gt; we can use fast argminmax
+<a href=#227 id=227 data-nosnippet>227</a>                        </span><span class="kw">let </span>min_idx: usize = arr.values().as_slice().argmin();
+<a href=#228 id=228 data-nosnippet>228</a>                        <span class="prelude-val">Some</span>((min_idx, arr.value(min_idx)))
+<a href=#229 id=229 data-nosnippet>229</a>                    };
+<a href=#230 id=230 data-nosnippet>230</a>
+<a href=#231 id=231 data-nosnippet>231</a>                    <span class="kw">let </span>new_offset: usize = acc.<span class="number">2 </span>+ arr.len();
+<a href=#232 id=232 data-nosnippet>232</a>                    <span class="kw">match </span>acc {
+<a href=#233 id=233 data-nosnippet>233</a>                        (<span class="prelude-val">Some</span>(<span class="kw">_</span>), <span class="prelude-val">Some</span>(acc_v), offset) =&gt; <span class="kw">match </span>chunk_min {
+<a href=#234 id=234 data-nosnippet>234</a>                            <span class="prelude-val">Some</span>((idx, val)) <span class="kw">if </span>val &lt; acc_v =&gt; {
+<a href=#235 id=235 data-nosnippet>235</a>                                (<span class="prelude-val">Some</span>(idx + offset), <span class="prelude-val">Some</span>(val), new_offset)
+<a href=#236 id=236 data-nosnippet>236</a>                            },
+<a href=#237 id=237 data-nosnippet>237</a>                            <span class="kw">_ </span>=&gt; (acc.<span class="number">0</span>, acc.<span class="number">1</span>, new_offset),
+<a href=#238 id=238 data-nosnippet>238</a>                        },
+<a href=#239 id=239 data-nosnippet>239</a>                        (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, offset) =&gt; <span class="kw">match </span>chunk_min {
+<a href=#240 id=240 data-nosnippet>240</a>                            <span class="prelude-val">Some</span>((idx, val)) =&gt; (<span class="prelude-val">Some</span>(idx + offset), <span class="prelude-val">Some</span>(val), new_offset),
+<a href=#241 id=241 data-nosnippet>241</a>                            <span class="prelude-val">None </span>=&gt; (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, new_offset),
+<a href=#242 id=242 data-nosnippet>242</a>                        },
+<a href=#243 id=243 data-nosnippet>243</a>                        <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#244 id=244 data-nosnippet>244</a>                    }
+<a href=#245 id=245 data-nosnippet>245</a>                })
+<a href=#246 id=246 data-nosnippet>246</a>                .<span class="number">0
+<a href=#247 id=247 data-nosnippet>247</a>        </span>},
+<a href=#248 id=248 data-nosnippet>248</a>    }
+<a href=#249 id=249 data-nosnippet>249</a>}
+<a href=#250 id=250 data-nosnippet>250</a>
+<a href=#251 id=251 data-nosnippet>251</a><span class="kw">fn </span>arg_max_numeric&lt;<span class="lifetime">'a</span>, T&gt;(ca: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ChunkedArray&lt;T&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;
+<a href=#252 id=252 data-nosnippet>252</a><span class="kw">where
+<a href=#253 id=253 data-nosnippet>253</a>    </span>T: PolarsNumericType,
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="kw">for</span>&lt;<span class="lifetime">'b</span>&gt; <span class="kw-2">&amp;</span><span class="lifetime">'b </span>[T::Native]: ArgMinMax,
+<a href=#255 id=255 data-nosnippet>255</a>{
+<a href=#256 id=256 data-nosnippet>256</a>    <span class="kw">match </span>ca.is_sorted_flag() {
+<a href=#257 id=257 data-nosnippet>257</a>        IsSorted::Ascending =&gt; ca.last_non_null(),
+<a href=#258 id=258 data-nosnippet>258</a>        IsSorted::Descending =&gt; ca.first_non_null(),
+<a href=#259 id=259 data-nosnippet>259</a>        IsSorted::Not =&gt; {
+<a href=#260 id=260 data-nosnippet>260</a>            ca.downcast_iter()
+<a href=#261 id=261 data-nosnippet>261</a>                .fold((<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="number">0</span>), |acc, arr| {
+<a href=#262 id=262 data-nosnippet>262</a>                    <span class="kw">if </span>arr.len() == <span class="number">0 </span>{
+<a href=#263 id=263 data-nosnippet>263</a>                        <span class="kw">return </span>acc;
+<a href=#264 id=264 data-nosnippet>264</a>                    }
+<a href=#265 id=265 data-nosnippet>265</a>                    <span class="kw">let </span>chunk_max: <span class="prelude-ty">Option</span>&lt;(usize, T::Native)&gt; = <span class="kw">if </span>arr.null_count() &gt; <span class="number">0 </span>{
+<a href=#266 id=266 data-nosnippet>266</a>                        <span class="comment">// When there are nulls, we should compare Option&lt;T::Native&gt;
+<a href=#267 id=267 data-nosnippet>267</a>                        </span>arr.into_iter()
+<a href=#268 id=268 data-nosnippet>268</a>                            .enumerate()
+<a href=#269 id=269 data-nosnippet>269</a>                            .flat_map(|(idx, val)| val.map(|val| (idx, <span class="kw-2">*</span>val)))
+<a href=#270 id=270 data-nosnippet>270</a>                            .reduce(|acc, (idx, val)| <span class="kw">if </span>acc.<span class="number">1 </span>&lt; val { (idx, val) } <span class="kw">else </span>{ acc })
+<a href=#271 id=271 data-nosnippet>271</a>                    } <span class="kw">else </span>{
+<a href=#272 id=272 data-nosnippet>272</a>                        <span class="comment">// When no nulls &amp; array not empty =&gt; we can use fast argminmax
+<a href=#273 id=273 data-nosnippet>273</a>                        </span><span class="kw">let </span>max_idx: usize = arr.values().as_slice().argmax();
+<a href=#274 id=274 data-nosnippet>274</a>                        <span class="prelude-val">Some</span>((max_idx, arr.value(max_idx)))
+<a href=#275 id=275 data-nosnippet>275</a>                    };
+<a href=#276 id=276 data-nosnippet>276</a>
+<a href=#277 id=277 data-nosnippet>277</a>                    <span class="kw">let </span>new_offset: usize = acc.<span class="number">2 </span>+ arr.len();
+<a href=#278 id=278 data-nosnippet>278</a>                    <span class="kw">match </span>acc {
+<a href=#279 id=279 data-nosnippet>279</a>                        (<span class="prelude-val">Some</span>(<span class="kw">_</span>), <span class="prelude-val">Some</span>(acc_v), offset) =&gt; <span class="kw">match </span>chunk_max {
+<a href=#280 id=280 data-nosnippet>280</a>                            <span class="prelude-val">Some</span>((idx, val)) <span class="kw">if </span>acc_v &lt; val =&gt; {
+<a href=#281 id=281 data-nosnippet>281</a>                                (<span class="prelude-val">Some</span>(idx + offset), <span class="prelude-val">Some</span>(val), new_offset)
+<a href=#282 id=282 data-nosnippet>282</a>                            },
+<a href=#283 id=283 data-nosnippet>283</a>                            <span class="kw">_ </span>=&gt; (acc.<span class="number">0</span>, acc.<span class="number">1</span>, new_offset),
+<a href=#284 id=284 data-nosnippet>284</a>                        },
+<a href=#285 id=285 data-nosnippet>285</a>                        (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, offset) =&gt; <span class="kw">match </span>chunk_max {
+<a href=#286 id=286 data-nosnippet>286</a>                            <span class="prelude-val">Some</span>((idx, val)) =&gt; (<span class="prelude-val">Some</span>(idx + offset), <span class="prelude-val">Some</span>(val), new_offset),
+<a href=#287 id=287 data-nosnippet>287</a>                            <span class="prelude-val">None </span>=&gt; (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, new_offset),
+<a href=#288 id=288 data-nosnippet>288</a>                        },
+<a href=#289 id=289 data-nosnippet>289</a>                        <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#290 id=290 data-nosnippet>290</a>                    }
+<a href=#291 id=291 data-nosnippet>291</a>                })
+<a href=#292 id=292 data-nosnippet>292</a>                .<span class="number">0
+<a href=#293 id=293 data-nosnippet>293</a>        </span>},
+<a href=#294 id=294 data-nosnippet>294</a>    }
+<a href=#295 id=295 data-nosnippet>295</a>}
+<a href=#296 id=296 data-nosnippet>296</a>
+<a href=#297 id=297 data-nosnippet>297</a><span class="kw">fn </span>arg_min_numeric_slice&lt;T&gt;(vals: <span class="kw-2">&amp;</span>[T], is_sorted: IsSorted) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;
+<a href=#298 id=298 data-nosnippet>298</a><span class="kw">where
+<a href=#299 id=299 data-nosnippet>299</a>    for</span>&lt;<span class="lifetime">'a</span>&gt; <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[T]: ArgMinMax,
+<a href=#300 id=300 data-nosnippet>300</a>{
+<a href=#301 id=301 data-nosnippet>301</a>    <span class="kw">match </span>is_sorted {
+<a href=#302 id=302 data-nosnippet>302</a>        <span class="comment">// all vals are not null guarded by cont_slice
+<a href=#303 id=303 data-nosnippet>303</a>        </span>IsSorted::Ascending =&gt; <span class="prelude-val">Some</span>(<span class="number">0</span>),
+<a href=#304 id=304 data-nosnippet>304</a>        <span class="comment">// all vals are not null guarded by cont_slice
+<a href=#305 id=305 data-nosnippet>305</a>        </span>IsSorted::Descending =&gt; <span class="prelude-val">Some</span>(vals.len() - <span class="number">1</span>),
+<a href=#306 id=306 data-nosnippet>306</a>        IsSorted::Not =&gt; <span class="prelude-val">Some</span>(vals.argmin()), <span class="comment">// assumes not empty
+<a href=#307 id=307 data-nosnippet>307</a>    </span>}
+<a href=#308 id=308 data-nosnippet>308</a>}
+<a href=#309 id=309 data-nosnippet>309</a>
+<a href=#310 id=310 data-nosnippet>310</a><span class="kw">fn </span>arg_max_numeric_slice&lt;T&gt;(vals: <span class="kw-2">&amp;</span>[T], is_sorted: IsSorted) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt;
+<a href=#311 id=311 data-nosnippet>311</a><span class="kw">where
+<a href=#312 id=312 data-nosnippet>312</a>    for</span>&lt;<span class="lifetime">'a</span>&gt; <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[T]: ArgMinMax,
+<a href=#313 id=313 data-nosnippet>313</a>{
+<a href=#314 id=314 data-nosnippet>314</a>    <span class="kw">match </span>is_sorted {
+<a href=#315 id=315 data-nosnippet>315</a>        <span class="comment">// all vals are not null guarded by cont_slice
+<a href=#316 id=316 data-nosnippet>316</a>        </span>IsSorted::Ascending =&gt; <span class="prelude-val">Some</span>(vals.len() - <span class="number">1</span>),
+<a href=#317 id=317 data-nosnippet>317</a>        <span class="comment">// all vals are not null guarded by cont_slice
+<a href=#318 id=318 data-nosnippet>318</a>        </span>IsSorted::Descending =&gt; <span class="prelude-val">Some</span>(<span class="number">0</span>),
+<a href=#319 id=319 data-nosnippet>319</a>        IsSorted::Not =&gt; <span class="prelude-val">Some</span>(vals.argmax()), <span class="comment">// assumes not empty
+<a href=#320 id=320 data-nosnippet>320</a>    </span>}
+<a href=#321 id=321 data-nosnippet>321</a>}</code></pre></div></section></main></body></html>

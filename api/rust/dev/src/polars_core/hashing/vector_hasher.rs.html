@@ -1,0 +1,511 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-core/src/hashing/vector_hasher.rs`."><title>vector_hasher.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-4e99c027.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_core/hashing/</div>vector_hasher.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>std::hash::BuildHasher;
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>arrow::bitmap::utils::get_bit_unchecked;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>polars_utils::aliases::PlSeedableRandomStateQuality;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>polars_utils::hashing::{_boost_hash_combine, folded_multiply};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>polars_utils::total_ord::{ToTotalOrd, TotalHash};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rayon::prelude::<span class="kw-2">*</span>;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>xxhash_rust::xxh3::xxh3_64_with_seed;
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><span class="kw">crate</span>::POOL;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><span class="kw">crate</span>::prelude::<span class="kw-2">*</span>;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><span class="kw">crate</span>::series::implementations::null::NullChunked;
+<a href=#14 id=14 data-nosnippet>14</a>
+<a href=#15 id=15 data-nosnippet>15</a><span class="comment">// See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4
+<a href=#16 id=16 data-nosnippet>16</a></span><span class="kw">const </span>MULTIPLE: u64 = <span class="number">6364136223846793005</span>;
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a><span class="comment">// Read more:
+<a href=#19 id=19 data-nosnippet>19</a>//  https://www.cockroachlabs.com/blog/vectorized-hash-joiner/
+<a href=#20 id=20 data-nosnippet>20</a>//  http://myeyesareblind.com/2017/02/06/Combine-hash-values/
+<a href=#21 id=21 data-nosnippet>21</a>
+<a href=#22 id=22 data-nosnippet>22</a></span><span class="kw">pub trait </span>VecHash {
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="doccomment">/// Compute the hash for all values in the array.
+<a href=#24 id=24 data-nosnippet>24</a>    </span><span class="kw">fn </span>vec_hash(
+<a href=#25 id=25 data-nosnippet>25</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#26 id=26 data-nosnippet>26</a>        _random_state: PlSeedableRandomStateQuality,
+<a href=#27 id=27 data-nosnippet>27</a>        _buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#28 id=28 data-nosnippet>28</a>    ) -&gt; PolarsResult&lt;()&gt;;
+<a href=#29 id=29 data-nosnippet>29</a>
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#31 id=31 data-nosnippet>31</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#32 id=32 data-nosnippet>32</a>        _random_state: PlSeedableRandomStateQuality,
+<a href=#33 id=33 data-nosnippet>33</a>        _hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#34 id=34 data-nosnippet>34</a>    ) -&gt; PolarsResult&lt;()&gt;;
+<a href=#35 id=35 data-nosnippet>35</a>}
+<a href=#36 id=36 data-nosnippet>36</a>
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>get_null_hash_value(random_state: <span class="kw-2">&amp;</span>PlSeedableRandomStateQuality) -&gt; u64 {
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="comment">// we just start with a large prime number and hash that twice
+<a href=#39 id=39 data-nosnippet>39</a>    // to get a constant hash value for null/None
+<a href=#40 id=40 data-nosnippet>40</a>    </span><span class="kw">let </span>first = random_state.hash_one(<span class="number">3188347919usize</span>);
+<a href=#41 id=41 data-nosnippet>41</a>    random_state.hash_one(first)
+<a href=#42 id=42 data-nosnippet>42</a>}
+<a href=#43 id=43 data-nosnippet>43</a>
+<a href=#44 id=44 data-nosnippet>44</a><span class="kw">fn </span>insert_null_hash(
+<a href=#45 id=45 data-nosnippet>45</a>    chunks: <span class="kw-2">&amp;</span>[ArrayRef],
+<a href=#46 id=46 data-nosnippet>46</a>    random_state: PlSeedableRandomStateQuality,
+<a href=#47 id=47 data-nosnippet>47</a>    buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#48 id=48 data-nosnippet>48</a>) {
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#50 id=50 data-nosnippet>50</a>    <span class="kw">let </span>hashes = buf.as_mut_slice();
+<a href=#51 id=51 data-nosnippet>51</a>
+<a href=#52 id=52 data-nosnippet>52</a>    <span class="kw">let </span><span class="kw-2">mut </span>offset = <span class="number">0</span>;
+<a href=#53 id=53 data-nosnippet>53</a>    chunks.iter().for_each(|arr| {
+<a href=#54 id=54 data-nosnippet>54</a>        <span class="kw">if </span>arr.null_count() &gt; <span class="number">0 </span>{
+<a href=#55 id=55 data-nosnippet>55</a>            <span class="kw">let </span>validity = arr.validity().unwrap();
+<a href=#56 id=56 data-nosnippet>56</a>            <span class="kw">let </span>(slice, byte_offset, <span class="kw">_</span>) = validity.as_slice();
+<a href=#57 id=57 data-nosnippet>57</a>            (<span class="number">0</span>..validity.len())
+<a href=#58 id=58 data-nosnippet>58</a>                .map(|i| <span class="kw">unsafe </span>{ get_bit_unchecked(slice, i + byte_offset) })
+<a href=#59 id=59 data-nosnippet>59</a>                .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#60 id=60 data-nosnippet>60</a>                .for_each(|(valid, h)| {
+<a href=#61 id=61 data-nosnippet>61</a>                    <span class="kw-2">*</span>h = [null_h, <span class="kw-2">*</span>h][valid <span class="kw">as </span>usize];
+<a href=#62 id=62 data-nosnippet>62</a>                })
+<a href=#63 id=63 data-nosnippet>63</a>        }
+<a href=#64 id=64 data-nosnippet>64</a>        offset += arr.len();
+<a href=#65 id=65 data-nosnippet>65</a>    });
+<a href=#66 id=66 data-nosnippet>66</a>}
+<a href=#67 id=67 data-nosnippet>67</a>
+<a href=#68 id=68 data-nosnippet>68</a><span class="kw">fn </span>numeric_vec_hash&lt;T&gt;(
+<a href=#69 id=69 data-nosnippet>69</a>    ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;T&gt;,
+<a href=#70 id=70 data-nosnippet>70</a>    random_state: PlSeedableRandomStateQuality,
+<a href=#71 id=71 data-nosnippet>71</a>    buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#72 id=72 data-nosnippet>72</a>) <span class="kw">where
+<a href=#73 id=73 data-nosnippet>73</a>    </span>T: PolarsNumericType,
+<a href=#74 id=74 data-nosnippet>74</a>    T::Native: TotalHash + ToTotalOrd,
+<a href=#75 id=75 data-nosnippet>75</a>    &lt;T::Native <span class="kw">as </span>ToTotalOrd&gt;::TotalOrdItem: Hash,
+<a href=#76 id=76 data-nosnippet>76</a>{
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="comment">// Note that we don't use the no null branch! This can break in unexpected ways.
+<a href=#78 id=78 data-nosnippet>78</a>    // for instance with threading we split an array in n_threads, this may lead to
+<a href=#79 id=79 data-nosnippet>79</a>    // splits that have no nulls and splits that have nulls. Then one array is hashed with
+<a href=#80 id=80 data-nosnippet>80</a>    // Option&lt;T&gt; and the other array with T.
+<a href=#81 id=81 data-nosnippet>81</a>    // Meaning that they cannot be compared. By always hashing on Option&lt;T&gt; the random_state is
+<a href=#82 id=82 data-nosnippet>82</a>    // the only deterministic seed.
+<a href=#83 id=83 data-nosnippet>83</a>    </span>buf.clear();
+<a href=#84 id=84 data-nosnippet>84</a>    buf.reserve(ca.len());
+<a href=#85 id=85 data-nosnippet>85</a>
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="attr">#[allow(unused_unsafe)]
+<a href=#87 id=87 data-nosnippet>87</a>    #[allow(clippy::useless_transmute)]
+<a href=#88 id=88 data-nosnippet>88</a>    </span>ca.downcast_iter().for_each(|arr| {
+<a href=#89 id=89 data-nosnippet>89</a>        buf.extend(
+<a href=#90 id=90 data-nosnippet>90</a>            arr.values()
+<a href=#91 id=91 data-nosnippet>91</a>                .as_slice()
+<a href=#92 id=92 data-nosnippet>92</a>                .iter()
+<a href=#93 id=93 data-nosnippet>93</a>                .copied()
+<a href=#94 id=94 data-nosnippet>94</a>                .map(|v| random_state.hash_one(v.to_total_ord())),
+<a href=#95 id=95 data-nosnippet>95</a>        );
+<a href=#96 id=96 data-nosnippet>96</a>    });
+<a href=#97 id=97 data-nosnippet>97</a>    insert_null_hash(<span class="kw-2">&amp;</span>ca.chunks, random_state, buf)
+<a href=#98 id=98 data-nosnippet>98</a>}
+<a href=#99 id=99 data-nosnippet>99</a>
+<a href=#100 id=100 data-nosnippet>100</a><span class="kw">fn </span>numeric_vec_hash_combine&lt;T&gt;(
+<a href=#101 id=101 data-nosnippet>101</a>    ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;T&gt;,
+<a href=#102 id=102 data-nosnippet>102</a>    random_state: PlSeedableRandomStateQuality,
+<a href=#103 id=103 data-nosnippet>103</a>    hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#104 id=104 data-nosnippet>104</a>) <span class="kw">where
+<a href=#105 id=105 data-nosnippet>105</a>    </span>T: PolarsNumericType,
+<a href=#106 id=106 data-nosnippet>106</a>    T::Native: TotalHash + ToTotalOrd,
+<a href=#107 id=107 data-nosnippet>107</a>    &lt;T::Native <span class="kw">as </span>ToTotalOrd&gt;::TotalOrdItem: Hash,
+<a href=#108 id=108 data-nosnippet>108</a>{
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#110 id=110 data-nosnippet>110</a>
+<a href=#111 id=111 data-nosnippet>111</a>    <span class="kw">let </span><span class="kw-2">mut </span>offset = <span class="number">0</span>;
+<a href=#112 id=112 data-nosnippet>112</a>    ca.downcast_iter().for_each(|arr| {
+<a href=#113 id=113 data-nosnippet>113</a>        <span class="kw">match </span>arr.null_count() {
+<a href=#114 id=114 data-nosnippet>114</a>            <span class="number">0 </span>=&gt; arr
+<a href=#115 id=115 data-nosnippet>115</a>                .values()
+<a href=#116 id=116 data-nosnippet>116</a>                .as_slice()
+<a href=#117 id=117 data-nosnippet>117</a>                .iter()
+<a href=#118 id=118 data-nosnippet>118</a>                .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#119 id=119 data-nosnippet>119</a>                .for_each(|(v, h)| {
+<a href=#120 id=120 data-nosnippet>120</a>                    <span class="comment">// Inlined from ahash. This ensures we combine with the previous state.
+<a href=#121 id=121 data-nosnippet>121</a>                    </span><span class="kw-2">*</span>h = folded_multiply(
+<a href=#122 id=122 data-nosnippet>122</a>                        <span class="comment">// Be careful not to xor the hash directly with the existing hash,
+<a href=#123 id=123 data-nosnippet>123</a>                        // it would lead to 0-hashes for 2 columns containing equal values.
+<a href=#124 id=124 data-nosnippet>124</a>                        </span>random_state.hash_one(v.to_total_ord()) ^ folded_multiply(<span class="kw-2">*</span>h, MULTIPLE),
+<a href=#125 id=125 data-nosnippet>125</a>                        MULTIPLE,
+<a href=#126 id=126 data-nosnippet>126</a>                    );
+<a href=#127 id=127 data-nosnippet>127</a>                }),
+<a href=#128 id=128 data-nosnippet>128</a>            <span class="kw">_ </span>=&gt; {
+<a href=#129 id=129 data-nosnippet>129</a>                <span class="kw">let </span>validity = arr.validity().unwrap();
+<a href=#130 id=130 data-nosnippet>130</a>                <span class="kw">let </span>(slice, byte_offset, <span class="kw">_</span>) = validity.as_slice();
+<a href=#131 id=131 data-nosnippet>131</a>                (<span class="number">0</span>..validity.len())
+<a href=#132 id=132 data-nosnippet>132</a>                    .map(|i| <span class="kw">unsafe </span>{ get_bit_unchecked(slice, i + byte_offset) })
+<a href=#133 id=133 data-nosnippet>133</a>                    .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#134 id=134 data-nosnippet>134</a>                    .zip(arr.values().as_slice())
+<a href=#135 id=135 data-nosnippet>135</a>                    .for_each(|((valid, h), l)| {
+<a href=#136 id=136 data-nosnippet>136</a>                        <span class="kw">let </span>lh = random_state.hash_one(l.to_total_ord());
+<a href=#137 id=137 data-nosnippet>137</a>                        <span class="kw">let </span>to_hash = [null_h, lh][valid <span class="kw">as </span>usize];
+<a href=#138 id=138 data-nosnippet>138</a>                        <span class="kw-2">*</span>h = folded_multiply(to_hash ^ folded_multiply(<span class="kw-2">*</span>h, MULTIPLE), MULTIPLE);
+<a href=#139 id=139 data-nosnippet>139</a>                    });
+<a href=#140 id=140 data-nosnippet>140</a>            },
+<a href=#141 id=141 data-nosnippet>141</a>        }
+<a href=#142 id=142 data-nosnippet>142</a>        offset += arr.len();
+<a href=#143 id=143 data-nosnippet>143</a>    });
+<a href=#144 id=144 data-nosnippet>144</a>}
+<a href=#145 id=145 data-nosnippet>145</a>
+<a href=#146 id=146 data-nosnippet>146</a><span class="macro">macro_rules!</span> vec_hash_numeric {
+<a href=#147 id=147 data-nosnippet>147</a>    (<span class="macro-nonterminal">$ca</span>:ident) =&gt; {
+<a href=#148 id=148 data-nosnippet>148</a>        <span class="kw">impl </span>VecHash <span class="kw">for </span><span class="macro-nonterminal">$ca </span>{
+<a href=#149 id=149 data-nosnippet>149</a>            <span class="kw">fn </span>vec_hash(
+<a href=#150 id=150 data-nosnippet>150</a>                <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#151 id=151 data-nosnippet>151</a>                random_state: PlSeedableRandomStateQuality,
+<a href=#152 id=152 data-nosnippet>152</a>                buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#153 id=153 data-nosnippet>153</a>            ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#154 id=154 data-nosnippet>154</a>                numeric_vec_hash(<span class="self">self</span>, random_state, buf);
+<a href=#155 id=155 data-nosnippet>155</a>                <span class="prelude-val">Ok</span>(())
+<a href=#156 id=156 data-nosnippet>156</a>            }
+<a href=#157 id=157 data-nosnippet>157</a>
+<a href=#158 id=158 data-nosnippet>158</a>            <span class="kw">fn </span>vec_hash_combine(
+<a href=#159 id=159 data-nosnippet>159</a>                <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#160 id=160 data-nosnippet>160</a>                random_state: PlSeedableRandomStateQuality,
+<a href=#161 id=161 data-nosnippet>161</a>                hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#162 id=162 data-nosnippet>162</a>            ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#163 id=163 data-nosnippet>163</a>                numeric_vec_hash_combine(<span class="self">self</span>, random_state, hashes);
+<a href=#164 id=164 data-nosnippet>164</a>                <span class="prelude-val">Ok</span>(())
+<a href=#165 id=165 data-nosnippet>165</a>            }
+<a href=#166 id=166 data-nosnippet>166</a>        }
+<a href=#167 id=167 data-nosnippet>167</a>    };
+<a href=#168 id=168 data-nosnippet>168</a>}
+<a href=#169 id=169 data-nosnippet>169</a>
+<a href=#170 id=170 data-nosnippet>170</a><span class="macro">vec_hash_numeric!</span>(Int64Chunked);
+<a href=#171 id=171 data-nosnippet>171</a><span class="macro">vec_hash_numeric!</span>(Int32Chunked);
+<a href=#172 id=172 data-nosnippet>172</a><span class="macro">vec_hash_numeric!</span>(Int16Chunked);
+<a href=#173 id=173 data-nosnippet>173</a><span class="macro">vec_hash_numeric!</span>(Int8Chunked);
+<a href=#174 id=174 data-nosnippet>174</a><span class="macro">vec_hash_numeric!</span>(UInt64Chunked);
+<a href=#175 id=175 data-nosnippet>175</a><span class="macro">vec_hash_numeric!</span>(UInt32Chunked);
+<a href=#176 id=176 data-nosnippet>176</a><span class="macro">vec_hash_numeric!</span>(UInt16Chunked);
+<a href=#177 id=177 data-nosnippet>177</a><span class="macro">vec_hash_numeric!</span>(UInt8Chunked);
+<a href=#178 id=178 data-nosnippet>178</a><span class="macro">vec_hash_numeric!</span>(Float64Chunked);
+<a href=#179 id=179 data-nosnippet>179</a><span class="macro">vec_hash_numeric!</span>(Float32Chunked);
+<a href=#180 id=180 data-nosnippet>180</a><span class="attr">#[cfg(any(feature = <span class="string">"dtype-decimal"</span>, feature = <span class="string">"dtype-i128"</span>))]
+<a href=#181 id=181 data-nosnippet>181</a></span><span class="macro">vec_hash_numeric!</span>(Int128Chunked);
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a><span class="kw">impl </span>VecHash <span class="kw">for </span>StringChunked {
+<a href=#184 id=184 data-nosnippet>184</a>    <span class="kw">fn </span>vec_hash(
+<a href=#185 id=185 data-nosnippet>185</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#186 id=186 data-nosnippet>186</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#187 id=187 data-nosnippet>187</a>        buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#188 id=188 data-nosnippet>188</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#189 id=189 data-nosnippet>189</a>        <span class="self">self</span>.as_binary().vec_hash(random_state, buf)<span class="question-mark">?</span>;
+<a href=#190 id=190 data-nosnippet>190</a>        <span class="prelude-val">Ok</span>(())
+<a href=#191 id=191 data-nosnippet>191</a>    }
+<a href=#192 id=192 data-nosnippet>192</a>
+<a href=#193 id=193 data-nosnippet>193</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#194 id=194 data-nosnippet>194</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#195 id=195 data-nosnippet>195</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#196 id=196 data-nosnippet>196</a>        hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#197 id=197 data-nosnippet>197</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#198 id=198 data-nosnippet>198</a>        <span class="self">self</span>.as_binary().vec_hash_combine(random_state, hashes)<span class="question-mark">?</span>;
+<a href=#199 id=199 data-nosnippet>199</a>        <span class="prelude-val">Ok</span>(())
+<a href=#200 id=200 data-nosnippet>200</a>    }
+<a href=#201 id=201 data-nosnippet>201</a>}
+<a href=#202 id=202 data-nosnippet>202</a>
+<a href=#203 id=203 data-nosnippet>203</a><span class="comment">// used in polars-pipe
+<a href=#204 id=204 data-nosnippet>204</a></span><span class="kw">pub fn </span>_hash_binary_array(
+<a href=#205 id=205 data-nosnippet>205</a>    arr: <span class="kw-2">&amp;</span>BinaryArray&lt;i64&gt;,
+<a href=#206 id=206 data-nosnippet>206</a>    random_state: PlSeedableRandomStateQuality,
+<a href=#207 id=207 data-nosnippet>207</a>    buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#208 id=208 data-nosnippet>208</a>) {
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#210 id=210 data-nosnippet>210</a>    <span class="kw">if </span>arr.null_count() == <span class="number">0 </span>{
+<a href=#211 id=211 data-nosnippet>211</a>        <span class="comment">// use the null_hash as seed to get a hash determined by `random_state` that is passed
+<a href=#212 id=212 data-nosnippet>212</a>        </span>buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
+<a href=#213 id=213 data-nosnippet>213</a>    } <span class="kw">else </span>{
+<a href=#214 id=214 data-nosnippet>214</a>        buf.extend(arr.into_iter().map(|opt_v| <span class="kw">match </span>opt_v {
+<a href=#215 id=215 data-nosnippet>215</a>            <span class="prelude-val">Some</span>(v) =&gt; xxh3_64_with_seed(v, null_h),
+<a href=#216 id=216 data-nosnippet>216</a>            <span class="prelude-val">None </span>=&gt; null_h,
+<a href=#217 id=217 data-nosnippet>217</a>        }))
+<a href=#218 id=218 data-nosnippet>218</a>    }
+<a href=#219 id=219 data-nosnippet>219</a>}
+<a href=#220 id=220 data-nosnippet>220</a>
+<a href=#221 id=221 data-nosnippet>221</a><span class="kw">fn </span>hash_binview_array(
+<a href=#222 id=222 data-nosnippet>222</a>    arr: <span class="kw-2">&amp;</span>BinaryViewArray,
+<a href=#223 id=223 data-nosnippet>223</a>    random_state: PlSeedableRandomStateQuality,
+<a href=#224 id=224 data-nosnippet>224</a>    buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#225 id=225 data-nosnippet>225</a>) {
+<a href=#226 id=226 data-nosnippet>226</a>    <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#227 id=227 data-nosnippet>227</a>    <span class="kw">if </span>arr.null_count() == <span class="number">0 </span>{
+<a href=#228 id=228 data-nosnippet>228</a>        <span class="comment">// use the null_hash as seed to get a hash determined by `random_state` that is passed
+<a href=#229 id=229 data-nosnippet>229</a>        </span>buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
+<a href=#230 id=230 data-nosnippet>230</a>    } <span class="kw">else </span>{
+<a href=#231 id=231 data-nosnippet>231</a>        buf.extend(arr.into_iter().map(|opt_v| <span class="kw">match </span>opt_v {
+<a href=#232 id=232 data-nosnippet>232</a>            <span class="prelude-val">Some</span>(v) =&gt; xxh3_64_with_seed(v, null_h),
+<a href=#233 id=233 data-nosnippet>233</a>            <span class="prelude-val">None </span>=&gt; null_h,
+<a href=#234 id=234 data-nosnippet>234</a>        }))
+<a href=#235 id=235 data-nosnippet>235</a>    }
+<a href=#236 id=236 data-nosnippet>236</a>}
+<a href=#237 id=237 data-nosnippet>237</a>
+<a href=#238 id=238 data-nosnippet>238</a><span class="kw">impl </span>VecHash <span class="kw">for </span>BinaryChunked {
+<a href=#239 id=239 data-nosnippet>239</a>    <span class="kw">fn </span>vec_hash(
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#241 id=241 data-nosnippet>241</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#242 id=242 data-nosnippet>242</a>        buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#243 id=243 data-nosnippet>243</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#244 id=244 data-nosnippet>244</a>        buf.clear();
+<a href=#245 id=245 data-nosnippet>245</a>        buf.reserve(<span class="self">self</span>.len());
+<a href=#246 id=246 data-nosnippet>246</a>        <span class="self">self</span>.downcast_iter()
+<a href=#247 id=247 data-nosnippet>247</a>            .for_each(|arr| hash_binview_array(arr, random_state, buf));
+<a href=#248 id=248 data-nosnippet>248</a>        <span class="prelude-val">Ok</span>(())
+<a href=#249 id=249 data-nosnippet>249</a>    }
+<a href=#250 id=250 data-nosnippet>250</a>
+<a href=#251 id=251 data-nosnippet>251</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#252 id=252 data-nosnippet>252</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#253 id=253 data-nosnippet>253</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#254 id=254 data-nosnippet>254</a>        hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#255 id=255 data-nosnippet>255</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#256 id=256 data-nosnippet>256</a>        <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#257 id=257 data-nosnippet>257</a>
+<a href=#258 id=258 data-nosnippet>258</a>        <span class="kw">let </span><span class="kw-2">mut </span>offset = <span class="number">0</span>;
+<a href=#259 id=259 data-nosnippet>259</a>        <span class="self">self</span>.downcast_iter().for_each(|arr| {
+<a href=#260 id=260 data-nosnippet>260</a>            <span class="kw">match </span>arr.null_count() {
+<a href=#261 id=261 data-nosnippet>261</a>                <span class="number">0 </span>=&gt; arr
+<a href=#262 id=262 data-nosnippet>262</a>                    .values_iter()
+<a href=#263 id=263 data-nosnippet>263</a>                    .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#264 id=264 data-nosnippet>264</a>                    .for_each(|(v, h)| {
+<a href=#265 id=265 data-nosnippet>265</a>                        <span class="kw">let </span>l = xxh3_64_with_seed(v, null_h);
+<a href=#266 id=266 data-nosnippet>266</a>                        <span class="kw-2">*</span>h = _boost_hash_combine(l, <span class="kw-2">*</span>h)
+<a href=#267 id=267 data-nosnippet>267</a>                    }),
+<a href=#268 id=268 data-nosnippet>268</a>                <span class="kw">_ </span>=&gt; {
+<a href=#269 id=269 data-nosnippet>269</a>                    <span class="kw">let </span>validity = arr.validity().unwrap();
+<a href=#270 id=270 data-nosnippet>270</a>                    <span class="kw">let </span>(slice, byte_offset, <span class="kw">_</span>) = validity.as_slice();
+<a href=#271 id=271 data-nosnippet>271</a>                    (<span class="number">0</span>..validity.len())
+<a href=#272 id=272 data-nosnippet>272</a>                        .map(|i| <span class="kw">unsafe </span>{ get_bit_unchecked(slice, i + byte_offset) })
+<a href=#273 id=273 data-nosnippet>273</a>                        .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#274 id=274 data-nosnippet>274</a>                        .zip(arr.values_iter())
+<a href=#275 id=275 data-nosnippet>275</a>                        .for_each(|((valid, h), l)| {
+<a href=#276 id=276 data-nosnippet>276</a>                            <span class="kw">let </span>l = <span class="kw">if </span>valid {
+<a href=#277 id=277 data-nosnippet>277</a>                                xxh3_64_with_seed(l, null_h)
+<a href=#278 id=278 data-nosnippet>278</a>                            } <span class="kw">else </span>{
+<a href=#279 id=279 data-nosnippet>279</a>                                null_h
+<a href=#280 id=280 data-nosnippet>280</a>                            };
+<a href=#281 id=281 data-nosnippet>281</a>                            <span class="kw-2">*</span>h = _boost_hash_combine(l, <span class="kw-2">*</span>h)
+<a href=#282 id=282 data-nosnippet>282</a>                        });
+<a href=#283 id=283 data-nosnippet>283</a>                },
+<a href=#284 id=284 data-nosnippet>284</a>            }
+<a href=#285 id=285 data-nosnippet>285</a>            offset += arr.len();
+<a href=#286 id=286 data-nosnippet>286</a>        });
+<a href=#287 id=287 data-nosnippet>287</a>        <span class="prelude-val">Ok</span>(())
+<a href=#288 id=288 data-nosnippet>288</a>    }
+<a href=#289 id=289 data-nosnippet>289</a>}
+<a href=#290 id=290 data-nosnippet>290</a>
+<a href=#291 id=291 data-nosnippet>291</a><span class="kw">impl </span>VecHash <span class="kw">for </span>BinaryOffsetChunked {
+<a href=#292 id=292 data-nosnippet>292</a>    <span class="kw">fn </span>vec_hash(
+<a href=#293 id=293 data-nosnippet>293</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#294 id=294 data-nosnippet>294</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#295 id=295 data-nosnippet>295</a>        buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#296 id=296 data-nosnippet>296</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#297 id=297 data-nosnippet>297</a>        buf.clear();
+<a href=#298 id=298 data-nosnippet>298</a>        buf.reserve(<span class="self">self</span>.len());
+<a href=#299 id=299 data-nosnippet>299</a>        <span class="self">self</span>.downcast_iter()
+<a href=#300 id=300 data-nosnippet>300</a>            .for_each(|arr| _hash_binary_array(arr, random_state, buf));
+<a href=#301 id=301 data-nosnippet>301</a>        <span class="prelude-val">Ok</span>(())
+<a href=#302 id=302 data-nosnippet>302</a>    }
+<a href=#303 id=303 data-nosnippet>303</a>
+<a href=#304 id=304 data-nosnippet>304</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#305 id=305 data-nosnippet>305</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#306 id=306 data-nosnippet>306</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#307 id=307 data-nosnippet>307</a>        hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#308 id=308 data-nosnippet>308</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#309 id=309 data-nosnippet>309</a>        <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#310 id=310 data-nosnippet>310</a>
+<a href=#311 id=311 data-nosnippet>311</a>        <span class="kw">let </span><span class="kw-2">mut </span>offset = <span class="number">0</span>;
+<a href=#312 id=312 data-nosnippet>312</a>        <span class="self">self</span>.downcast_iter().for_each(|arr| {
+<a href=#313 id=313 data-nosnippet>313</a>            <span class="kw">match </span>arr.null_count() {
+<a href=#314 id=314 data-nosnippet>314</a>                <span class="number">0 </span>=&gt; arr
+<a href=#315 id=315 data-nosnippet>315</a>                    .values_iter()
+<a href=#316 id=316 data-nosnippet>316</a>                    .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#317 id=317 data-nosnippet>317</a>                    .for_each(|(v, h)| {
+<a href=#318 id=318 data-nosnippet>318</a>                        <span class="kw">let </span>l = xxh3_64_with_seed(v, null_h);
+<a href=#319 id=319 data-nosnippet>319</a>                        <span class="kw-2">*</span>h = _boost_hash_combine(l, <span class="kw-2">*</span>h)
+<a href=#320 id=320 data-nosnippet>320</a>                    }),
+<a href=#321 id=321 data-nosnippet>321</a>                <span class="kw">_ </span>=&gt; {
+<a href=#322 id=322 data-nosnippet>322</a>                    <span class="kw">let </span>validity = arr.validity().unwrap();
+<a href=#323 id=323 data-nosnippet>323</a>                    <span class="kw">let </span>(slice, byte_offset, <span class="kw">_</span>) = validity.as_slice();
+<a href=#324 id=324 data-nosnippet>324</a>                    (<span class="number">0</span>..validity.len())
+<a href=#325 id=325 data-nosnippet>325</a>                        .map(|i| <span class="kw">unsafe </span>{ get_bit_unchecked(slice, i + byte_offset) })
+<a href=#326 id=326 data-nosnippet>326</a>                        .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#327 id=327 data-nosnippet>327</a>                        .zip(arr.values_iter())
+<a href=#328 id=328 data-nosnippet>328</a>                        .for_each(|((valid, h), l)| {
+<a href=#329 id=329 data-nosnippet>329</a>                            <span class="kw">let </span>l = <span class="kw">if </span>valid {
+<a href=#330 id=330 data-nosnippet>330</a>                                xxh3_64_with_seed(l, null_h)
+<a href=#331 id=331 data-nosnippet>331</a>                            } <span class="kw">else </span>{
+<a href=#332 id=332 data-nosnippet>332</a>                                null_h
+<a href=#333 id=333 data-nosnippet>333</a>                            };
+<a href=#334 id=334 data-nosnippet>334</a>                            <span class="kw-2">*</span>h = _boost_hash_combine(l, <span class="kw-2">*</span>h)
+<a href=#335 id=335 data-nosnippet>335</a>                        });
+<a href=#336 id=336 data-nosnippet>336</a>                },
+<a href=#337 id=337 data-nosnippet>337</a>            }
+<a href=#338 id=338 data-nosnippet>338</a>            offset += arr.len();
+<a href=#339 id=339 data-nosnippet>339</a>        });
+<a href=#340 id=340 data-nosnippet>340</a>        <span class="prelude-val">Ok</span>(())
+<a href=#341 id=341 data-nosnippet>341</a>    }
+<a href=#342 id=342 data-nosnippet>342</a>}
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a><span class="kw">impl </span>VecHash <span class="kw">for </span>NullChunked {
+<a href=#345 id=345 data-nosnippet>345</a>    <span class="kw">fn </span>vec_hash(
+<a href=#346 id=346 data-nosnippet>346</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#347 id=347 data-nosnippet>347</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#348 id=348 data-nosnippet>348</a>        buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#349 id=349 data-nosnippet>349</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#350 id=350 data-nosnippet>350</a>        <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#351 id=351 data-nosnippet>351</a>        buf.clear();
+<a href=#352 id=352 data-nosnippet>352</a>        buf.resize(<span class="self">self</span>.len(), null_h);
+<a href=#353 id=353 data-nosnippet>353</a>        <span class="prelude-val">Ok</span>(())
+<a href=#354 id=354 data-nosnippet>354</a>    }
+<a href=#355 id=355 data-nosnippet>355</a>
+<a href=#356 id=356 data-nosnippet>356</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#357 id=357 data-nosnippet>357</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#358 id=358 data-nosnippet>358</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#359 id=359 data-nosnippet>359</a>        hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#360 id=360 data-nosnippet>360</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#361 id=361 data-nosnippet>361</a>        <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#362 id=362 data-nosnippet>362</a>        hashes
+<a href=#363 id=363 data-nosnippet>363</a>            .iter_mut()
+<a href=#364 id=364 data-nosnippet>364</a>            .for_each(|h| <span class="kw-2">*</span>h = _boost_hash_combine(null_h, <span class="kw-2">*</span>h));
+<a href=#365 id=365 data-nosnippet>365</a>        <span class="prelude-val">Ok</span>(())
+<a href=#366 id=366 data-nosnippet>366</a>    }
+<a href=#367 id=367 data-nosnippet>367</a>}
+<a href=#368 id=368 data-nosnippet>368</a><span class="kw">impl </span>VecHash <span class="kw">for </span>BooleanChunked {
+<a href=#369 id=369 data-nosnippet>369</a>    <span class="kw">fn </span>vec_hash(
+<a href=#370 id=370 data-nosnippet>370</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#371 id=371 data-nosnippet>371</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#372 id=372 data-nosnippet>372</a>        buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#373 id=373 data-nosnippet>373</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#374 id=374 data-nosnippet>374</a>        buf.clear();
+<a href=#375 id=375 data-nosnippet>375</a>        buf.reserve(<span class="self">self</span>.len());
+<a href=#376 id=376 data-nosnippet>376</a>        <span class="kw">let </span>true_h = random_state.hash_one(<span class="bool-val">true</span>);
+<a href=#377 id=377 data-nosnippet>377</a>        <span class="kw">let </span>false_h = random_state.hash_one(<span class="bool-val">false</span>);
+<a href=#378 id=378 data-nosnippet>378</a>        <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#379 id=379 data-nosnippet>379</a>        <span class="self">self</span>.downcast_iter().for_each(|arr| {
+<a href=#380 id=380 data-nosnippet>380</a>            <span class="kw">if </span>arr.null_count() == <span class="number">0 </span>{
+<a href=#381 id=381 data-nosnippet>381</a>                buf.extend(arr.values_iter().map(|v| <span class="kw">if </span>v { true_h } <span class="kw">else </span>{ false_h }))
+<a href=#382 id=382 data-nosnippet>382</a>            } <span class="kw">else </span>{
+<a href=#383 id=383 data-nosnippet>383</a>                buf.extend(arr.into_iter().map(|opt_v| <span class="kw">match </span>opt_v {
+<a href=#384 id=384 data-nosnippet>384</a>                    <span class="prelude-val">Some</span>(<span class="bool-val">true</span>) =&gt; true_h,
+<a href=#385 id=385 data-nosnippet>385</a>                    <span class="prelude-val">Some</span>(<span class="bool-val">false</span>) =&gt; false_h,
+<a href=#386 id=386 data-nosnippet>386</a>                    <span class="prelude-val">None </span>=&gt; null_h,
+<a href=#387 id=387 data-nosnippet>387</a>                }))
+<a href=#388 id=388 data-nosnippet>388</a>            }
+<a href=#389 id=389 data-nosnippet>389</a>        });
+<a href=#390 id=390 data-nosnippet>390</a>        <span class="prelude-val">Ok</span>(())
+<a href=#391 id=391 data-nosnippet>391</a>    }
+<a href=#392 id=392 data-nosnippet>392</a>
+<a href=#393 id=393 data-nosnippet>393</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#394 id=394 data-nosnippet>394</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#395 id=395 data-nosnippet>395</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#396 id=396 data-nosnippet>396</a>        hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#397 id=397 data-nosnippet>397</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#398 id=398 data-nosnippet>398</a>        <span class="kw">let </span>true_h = random_state.hash_one(<span class="bool-val">true</span>);
+<a href=#399 id=399 data-nosnippet>399</a>        <span class="kw">let </span>false_h = random_state.hash_one(<span class="bool-val">false</span>);
+<a href=#400 id=400 data-nosnippet>400</a>        <span class="kw">let </span>null_h = get_null_hash_value(<span class="kw-2">&amp;</span>random_state);
+<a href=#401 id=401 data-nosnippet>401</a>
+<a href=#402 id=402 data-nosnippet>402</a>        <span class="kw">let </span><span class="kw-2">mut </span>offset = <span class="number">0</span>;
+<a href=#403 id=403 data-nosnippet>403</a>        <span class="self">self</span>.downcast_iter().for_each(|arr| {
+<a href=#404 id=404 data-nosnippet>404</a>            <span class="kw">match </span>arr.null_count() {
+<a href=#405 id=405 data-nosnippet>405</a>                <span class="number">0 </span>=&gt; arr
+<a href=#406 id=406 data-nosnippet>406</a>                    .values_iter()
+<a href=#407 id=407 data-nosnippet>407</a>                    .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#408 id=408 data-nosnippet>408</a>                    .for_each(|(v, h)| {
+<a href=#409 id=409 data-nosnippet>409</a>                        <span class="kw">let </span>l = <span class="kw">if </span>v { true_h } <span class="kw">else </span>{ false_h };
+<a href=#410 id=410 data-nosnippet>410</a>                        <span class="kw-2">*</span>h = _boost_hash_combine(l, <span class="kw-2">*</span>h)
+<a href=#411 id=411 data-nosnippet>411</a>                    }),
+<a href=#412 id=412 data-nosnippet>412</a>                <span class="kw">_ </span>=&gt; {
+<a href=#413 id=413 data-nosnippet>413</a>                    <span class="kw">let </span>validity = arr.validity().unwrap();
+<a href=#414 id=414 data-nosnippet>414</a>                    <span class="kw">let </span>(slice, byte_offset, <span class="kw">_</span>) = validity.as_slice();
+<a href=#415 id=415 data-nosnippet>415</a>                    (<span class="number">0</span>..validity.len())
+<a href=#416 id=416 data-nosnippet>416</a>                        .map(|i| <span class="kw">unsafe </span>{ get_bit_unchecked(slice, i + byte_offset) })
+<a href=#417 id=417 data-nosnippet>417</a>                        .zip(<span class="kw-2">&amp;mut </span>hashes[offset..])
+<a href=#418 id=418 data-nosnippet>418</a>                        .zip(arr.values())
+<a href=#419 id=419 data-nosnippet>419</a>                        .for_each(|((valid, h), l)| {
+<a href=#420 id=420 data-nosnippet>420</a>                            <span class="kw">let </span>l = <span class="kw">if </span>valid {
+<a href=#421 id=421 data-nosnippet>421</a>                                <span class="kw">if </span>l { true_h } <span class="kw">else </span>{ false_h }
+<a href=#422 id=422 data-nosnippet>422</a>                            } <span class="kw">else </span>{
+<a href=#423 id=423 data-nosnippet>423</a>                                null_h
+<a href=#424 id=424 data-nosnippet>424</a>                            };
+<a href=#425 id=425 data-nosnippet>425</a>                            <span class="kw-2">*</span>h = _boost_hash_combine(l, <span class="kw-2">*</span>h)
+<a href=#426 id=426 data-nosnippet>426</a>                        });
+<a href=#427 id=427 data-nosnippet>427</a>                },
+<a href=#428 id=428 data-nosnippet>428</a>            }
+<a href=#429 id=429 data-nosnippet>429</a>            offset += arr.len();
+<a href=#430 id=430 data-nosnippet>430</a>        });
+<a href=#431 id=431 data-nosnippet>431</a>        <span class="prelude-val">Ok</span>(())
+<a href=#432 id=432 data-nosnippet>432</a>    }
+<a href=#433 id=433 data-nosnippet>433</a>}
+<a href=#434 id=434 data-nosnippet>434</a>
+<a href=#435 id=435 data-nosnippet>435</a><span class="attr">#[cfg(feature = <span class="string">"object"</span>)]
+<a href=#436 id=436 data-nosnippet>436</a></span><span class="kw">impl</span>&lt;T&gt; VecHash <span class="kw">for </span>ObjectChunked&lt;T&gt;
+<a href=#437 id=437 data-nosnippet>437</a><span class="kw">where
+<a href=#438 id=438 data-nosnippet>438</a>    </span>T: PolarsObject,
+<a href=#439 id=439 data-nosnippet>439</a>{
+<a href=#440 id=440 data-nosnippet>440</a>    <span class="kw">fn </span>vec_hash(
+<a href=#441 id=441 data-nosnippet>441</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#442 id=442 data-nosnippet>442</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#443 id=443 data-nosnippet>443</a>        buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#444 id=444 data-nosnippet>444</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#445 id=445 data-nosnippet>445</a>        <span class="comment">// Note that we don't use the no null branch! This can break in unexpected ways.
+<a href=#446 id=446 data-nosnippet>446</a>        // for instance with threading we split an array in n_threads, this may lead to
+<a href=#447 id=447 data-nosnippet>447</a>        // splits that have no nulls and splits that have nulls. Then one array is hashed with
+<a href=#448 id=448 data-nosnippet>448</a>        // Option&lt;T&gt; and the other array with T.
+<a href=#449 id=449 data-nosnippet>449</a>        // Meaning that they cannot be compared. By always hashing on Option&lt;T&gt; the random_state is
+<a href=#450 id=450 data-nosnippet>450</a>        // the only deterministic seed.
+<a href=#451 id=451 data-nosnippet>451</a>        </span>buf.clear();
+<a href=#452 id=452 data-nosnippet>452</a>        buf.reserve(<span class="self">self</span>.len());
+<a href=#453 id=453 data-nosnippet>453</a>
+<a href=#454 id=454 data-nosnippet>454</a>        <span class="self">self</span>.downcast_iter()
+<a href=#455 id=455 data-nosnippet>455</a>            .for_each(|arr| buf.extend(arr.into_iter().map(|opt_v| random_state.hash_one(opt_v))));
+<a href=#456 id=456 data-nosnippet>456</a>
+<a href=#457 id=457 data-nosnippet>457</a>        <span class="prelude-val">Ok</span>(())
+<a href=#458 id=458 data-nosnippet>458</a>    }
+<a href=#459 id=459 data-nosnippet>459</a>
+<a href=#460 id=460 data-nosnippet>460</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#461 id=461 data-nosnippet>461</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#462 id=462 data-nosnippet>462</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#463 id=463 data-nosnippet>463</a>        hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#464 id=464 data-nosnippet>464</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#465 id=465 data-nosnippet>465</a>        <span class="self">self</span>.apply_to_slice(
+<a href=#466 id=466 data-nosnippet>466</a>            |opt_v, h| {
+<a href=#467 id=467 data-nosnippet>467</a>                <span class="kw">let </span>hashed = random_state.hash_one(opt_v);
+<a href=#468 id=468 data-nosnippet>468</a>                _boost_hash_combine(hashed, <span class="kw-2">*</span>h)
+<a href=#469 id=469 data-nosnippet>469</a>            },
+<a href=#470 id=470 data-nosnippet>470</a>            hashes,
+<a href=#471 id=471 data-nosnippet>471</a>        );
+<a href=#472 id=472 data-nosnippet>472</a>        <span class="prelude-val">Ok</span>(())
+<a href=#473 id=473 data-nosnippet>473</a>    }
+<a href=#474 id=474 data-nosnippet>474</a>}
+<a href=#475 id=475 data-nosnippet>475</a>
+<a href=#476 id=476 data-nosnippet>476</a><span class="kw">pub fn </span>_df_rows_to_hashes_threaded_vertical(
+<a href=#477 id=477 data-nosnippet>477</a>    keys: <span class="kw-2">&amp;</span>[DataFrame],
+<a href=#478 id=478 data-nosnippet>478</a>    build_hasher: <span class="prelude-ty">Option</span>&lt;PlSeedableRandomStateQuality&gt;,
+<a href=#479 id=479 data-nosnippet>479</a>) -&gt; PolarsResult&lt;(Vec&lt;UInt64Chunked&gt;, PlSeedableRandomStateQuality)&gt; {
+<a href=#480 id=480 data-nosnippet>480</a>    <span class="kw">let </span>build_hasher = build_hasher.unwrap_or_default();
+<a href=#481 id=481 data-nosnippet>481</a>
+<a href=#482 id=482 data-nosnippet>482</a>    <span class="kw">let </span>hashes = POOL.install(|| {
+<a href=#483 id=483 data-nosnippet>483</a>        keys.into_par_iter()
+<a href=#484 id=484 data-nosnippet>484</a>            .map(|df| {
+<a href=#485 id=485 data-nosnippet>485</a>                <span class="kw">let </span>hb = build_hasher;
+<a href=#486 id=486 data-nosnippet>486</a>                <span class="kw">let </span><span class="kw-2">mut </span>hashes = <span class="macro">vec!</span>[];
+<a href=#487 id=487 data-nosnippet>487</a>                columns_to_hashes(df.get_columns(), <span class="prelude-val">Some</span>(hb), <span class="kw-2">&amp;mut </span>hashes)<span class="question-mark">?</span>;
+<a href=#488 id=488 data-nosnippet>488</a>                <span class="prelude-val">Ok</span>(UInt64Chunked::from_vec(PlSmallStr::EMPTY, hashes))
+<a href=#489 id=489 data-nosnippet>489</a>            })
+<a href=#490 id=490 data-nosnippet>490</a>            .collect::&lt;PolarsResult&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;&gt;()
+<a href=#491 id=491 data-nosnippet>491</a>    })<span class="question-mark">?</span>;
+<a href=#492 id=492 data-nosnippet>492</a>    <span class="prelude-val">Ok</span>((hashes, build_hasher))
+<a href=#493 id=493 data-nosnippet>493</a>}
+<a href=#494 id=494 data-nosnippet>494</a>
+<a href=#495 id=495 data-nosnippet>495</a><span class="kw">pub fn </span>columns_to_hashes(
+<a href=#496 id=496 data-nosnippet>496</a>    keys: <span class="kw-2">&amp;</span>[Column],
+<a href=#497 id=497 data-nosnippet>497</a>    build_hasher: <span class="prelude-ty">Option</span>&lt;PlSeedableRandomStateQuality&gt;,
+<a href=#498 id=498 data-nosnippet>498</a>    hashes: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#499 id=499 data-nosnippet>499</a>) -&gt; PolarsResult&lt;PlSeedableRandomStateQuality&gt; {
+<a href=#500 id=500 data-nosnippet>500</a>    <span class="kw">let </span>build_hasher = build_hasher.unwrap_or_default();
+<a href=#501 id=501 data-nosnippet>501</a>
+<a href=#502 id=502 data-nosnippet>502</a>    <span class="kw">let </span><span class="kw-2">mut </span>iter = keys.iter();
+<a href=#503 id=503 data-nosnippet>503</a>    <span class="kw">let </span>first = iter.next().expect(<span class="string">"at least one key"</span>);
+<a href=#504 id=504 data-nosnippet>504</a>    first.vec_hash(build_hasher, hashes)<span class="question-mark">?</span>;
+<a href=#505 id=505 data-nosnippet>505</a>
+<a href=#506 id=506 data-nosnippet>506</a>    <span class="kw">for </span>keys <span class="kw">in </span>iter {
+<a href=#507 id=507 data-nosnippet>507</a>        keys.vec_hash_combine(build_hasher, hashes)<span class="question-mark">?</span>;
+<a href=#508 id=508 data-nosnippet>508</a>    }
+<a href=#509 id=509 data-nosnippet>509</a>
+<a href=#510 id=510 data-nosnippet>510</a>    <span class="prelude-val">Ok</span>(build_hasher)
+<a href=#511 id=511 data-nosnippet>511</a>}</code></pre></div></section></main></body></html>

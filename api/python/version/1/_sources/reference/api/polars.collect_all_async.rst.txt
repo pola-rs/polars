@@ -1,0 +1,6 @@
+﻿polars.collect\_all\_async
+==========================
+
+.. currentmodule:: polars
+
+.. autofunction:: collect_all_async

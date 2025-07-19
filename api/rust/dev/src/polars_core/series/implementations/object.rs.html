@@ -1,0 +1,286 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-core/src/series/implementations/object.rs`."><title>object.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="polars_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-4e99c027.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_core/series/implementations/</div>object.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>std::any::Any;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>std::borrow::Cow;
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><span class="self">self</span>::compare_inner::TotalOrdInner;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use super</span>::{BitRepr, StatisticsFlags, <span class="kw-2">*</span>};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><span class="kw">crate</span>::chunked_array::cast::CastOptions;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><span class="kw">crate</span>::chunked_array::object::PolarsObjectSafe;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><span class="kw">crate</span>::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><span class="kw">crate</span>::prelude::<span class="kw-2">*</span>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><span class="kw">crate</span>::series::implementations::SeriesWrap;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><span class="kw">crate</span>::series::private::{PrivateSeries, PrivateSeriesNumeric};
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">impl</span>&lt;T: PolarsObject&gt; PrivateSeriesNumeric <span class="kw">for </span>SeriesWrap&lt;ObjectChunked&lt;T&gt;&gt; {
+<a href=#14 id=14 data-nosnippet>14</a>    <span class="kw">fn </span>bit_repr(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;BitRepr&gt; {
+<a href=#15 id=15 data-nosnippet>15</a>        <span class="prelude-val">None
+<a href=#16 id=16 data-nosnippet>16</a>    </span>}
+<a href=#17 id=17 data-nosnippet>17</a>}
+<a href=#18 id=18 data-nosnippet>18</a>
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">impl</span>&lt;T&gt; PrivateSeries <span class="kw">for </span>SeriesWrap&lt;ObjectChunked&lt;T&gt;&gt;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">where
+<a href=#21 id=21 data-nosnippet>21</a>    </span>T: PolarsObject,
+<a href=#22 id=22 data-nosnippet>22</a>{
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">fn </span>get_list_builder(
+<a href=#24 id=24 data-nosnippet>24</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#25 id=25 data-nosnippet>25</a>        _name: PlSmallStr,
+<a href=#26 id=26 data-nosnippet>26</a>        _values_capacity: usize,
+<a href=#27 id=27 data-nosnippet>27</a>        _list_capacity: usize,
+<a href=#28 id=28 data-nosnippet>28</a>    ) -&gt; Box&lt;<span class="kw">dyn </span>ListBuilderTrait&gt; {
+<a href=#29 id=29 data-nosnippet>29</a>        ObjectChunked::&lt;T&gt;::get_list_builder(_name, _values_capacity, _list_capacity)
+<a href=#30 id=30 data-nosnippet>30</a>    }
+<a href=#31 id=31 data-nosnippet>31</a>
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="kw">fn </span>compute_len(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#33 id=33 data-nosnippet>33</a>        <span class="self">self</span>.<span class="number">0</span>.compute_len()
+<a href=#34 id=34 data-nosnippet>34</a>    }
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="kw">fn </span>_field(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Cow&lt;<span class="lifetime">'_</span>, Field&gt; {
+<a href=#37 id=37 data-nosnippet>37</a>        Cow::Borrowed(<span class="self">self</span>.<span class="number">0</span>.ref_field())
+<a href=#38 id=38 data-nosnippet>38</a>    }
+<a href=#39 id=39 data-nosnippet>39</a>
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="kw">fn </span>_dtype(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>DataType {
+<a href=#41 id=41 data-nosnippet>41</a>        <span class="self">self</span>.<span class="number">0</span>.dtype()
+<a href=#42 id=42 data-nosnippet>42</a>    }
+<a href=#43 id=43 data-nosnippet>43</a>
+<a href=#44 id=44 data-nosnippet>44</a>    <span class="kw">fn </span>_set_flags(<span class="kw-2">&amp;mut </span><span class="self">self</span>, flags: StatisticsFlags) {
+<a href=#45 id=45 data-nosnippet>45</a>        <span class="self">self</span>.<span class="number">0</span>.set_flags(flags)
+<a href=#46 id=46 data-nosnippet>46</a>    }
+<a href=#47 id=47 data-nosnippet>47</a>    <span class="kw">fn </span>_get_flags(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; StatisticsFlags {
+<a href=#48 id=48 data-nosnippet>48</a>        <span class="self">self</span>.<span class="number">0</span>.get_flags()
+<a href=#49 id=49 data-nosnippet>49</a>    }
+<a href=#50 id=50 data-nosnippet>50</a>    <span class="kw">unsafe fn </span>agg_list(<span class="kw-2">&amp;</span><span class="self">self</span>, groups: <span class="kw-2">&amp;</span>GroupsType) -&gt; Series {
+<a href=#51 id=51 data-nosnippet>51</a>        <span class="self">self</span>.<span class="number">0</span>.agg_list(groups)
+<a href=#52 id=52 data-nosnippet>52</a>    }
+<a href=#53 id=53 data-nosnippet>53</a>
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="kw">fn </span>into_total_eq_inner&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>) -&gt; Box&lt;<span class="kw">dyn </span>TotalEqInner + <span class="lifetime">'a</span>&gt; {
+<a href=#55 id=55 data-nosnippet>55</a>        (<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>).into_total_eq_inner()
+<a href=#56 id=56 data-nosnippet>56</a>    }
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="kw">fn </span>into_total_ord_inner&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>) -&gt; Box&lt;<span class="kw">dyn </span>TotalOrdInner + <span class="lifetime">'a</span>&gt; {
+<a href=#58 id=58 data-nosnippet>58</a>        <span class="macro">invalid_operation_panic!</span>(into_total_ord_inner, <span class="self">self</span>)
+<a href=#59 id=59 data-nosnippet>59</a>    }
+<a href=#60 id=60 data-nosnippet>60</a>
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="kw">fn </span>vec_hash(
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#63 id=63 data-nosnippet>63</a>        random_state: PlSeedableRandomStateQuality,
+<a href=#64 id=64 data-nosnippet>64</a>        buf: <span class="kw-2">&amp;mut </span>Vec&lt;u64&gt;,
+<a href=#65 id=65 data-nosnippet>65</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#66 id=66 data-nosnippet>66</a>        <span class="self">self</span>.<span class="number">0</span>.vec_hash(random_state, buf)<span class="question-mark">?</span>;
+<a href=#67 id=67 data-nosnippet>67</a>        <span class="prelude-val">Ok</span>(())
+<a href=#68 id=68 data-nosnippet>68</a>    }
+<a href=#69 id=69 data-nosnippet>69</a>
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="kw">fn </span>vec_hash_combine(
+<a href=#71 id=71 data-nosnippet>71</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#72 id=72 data-nosnippet>72</a>        build_hasher: PlSeedableRandomStateQuality,
+<a href=#73 id=73 data-nosnippet>73</a>        hashes: <span class="kw-2">&amp;mut </span>[u64],
+<a href=#74 id=74 data-nosnippet>74</a>    ) -&gt; PolarsResult&lt;()&gt; {
+<a href=#75 id=75 data-nosnippet>75</a>        <span class="self">self</span>.<span class="number">0</span>.vec_hash_combine(build_hasher, hashes)<span class="question-mark">?</span>;
+<a href=#76 id=76 data-nosnippet>76</a>        <span class="prelude-val">Ok</span>(())
+<a href=#77 id=77 data-nosnippet>77</a>    }
+<a href=#78 id=78 data-nosnippet>78</a>
+<a href=#79 id=79 data-nosnippet>79</a>    <span class="attr">#[cfg(feature = <span class="string">"algorithm_group_by"</span>)]
+<a href=#80 id=80 data-nosnippet>80</a>    </span><span class="kw">fn </span>group_tuples(<span class="kw-2">&amp;</span><span class="self">self</span>, multithreaded: bool, sorted: bool) -&gt; PolarsResult&lt;GroupsType&gt; {
+<a href=#81 id=81 data-nosnippet>81</a>        IntoGroupsType::group_tuples(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, multithreaded, sorted)
+<a href=#82 id=82 data-nosnippet>82</a>    }
+<a href=#83 id=83 data-nosnippet>83</a>    <span class="attr">#[cfg(feature = <span class="string">"zip_with"</span>)]
+<a href=#84 id=84 data-nosnippet>84</a>    </span><span class="kw">fn </span>zip_with_same_type(<span class="kw-2">&amp;</span><span class="self">self</span>, mask: <span class="kw-2">&amp;</span>BooleanChunked, other: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#85 id=85 data-nosnippet>85</a>        <span class="self">self</span>.<span class="number">0
+<a href=#86 id=86 data-nosnippet>86</a>            </span>.zip_with(mask, other.as_ref().as_ref())
+<a href=#87 id=87 data-nosnippet>87</a>            .map(|ca| ca.into_series())
+<a href=#88 id=88 data-nosnippet>88</a>    }
+<a href=#89 id=89 data-nosnippet>89</a>}
+<a href=#90 id=90 data-nosnippet>90</a><span class="kw">impl</span>&lt;T&gt; SeriesTrait <span class="kw">for </span>SeriesWrap&lt;ObjectChunked&lt;T&gt;&gt;
+<a href=#91 id=91 data-nosnippet>91</a><span class="kw">where
+<a href=#92 id=92 data-nosnippet>92</a>    </span>T: PolarsObject,
+<a href=#93 id=93 data-nosnippet>93</a>{
+<a href=#94 id=94 data-nosnippet>94</a>    <span class="kw">fn </span>rename(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name: PlSmallStr) {
+<a href=#95 id=95 data-nosnippet>95</a>        ObjectChunked::rename(<span class="kw-2">&amp;mut </span><span class="self">self</span>.<span class="number">0</span>, name)
+<a href=#96 id=96 data-nosnippet>96</a>    }
+<a href=#97 id=97 data-nosnippet>97</a>
+<a href=#98 id=98 data-nosnippet>98</a>    <span class="kw">fn </span>chunk_lengths(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ChunkLenIter&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#99 id=99 data-nosnippet>99</a>        ObjectChunked::chunk_lengths(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#100 id=100 data-nosnippet>100</a>    }
+<a href=#101 id=101 data-nosnippet>101</a>
+<a href=#102 id=102 data-nosnippet>102</a>    <span class="kw">fn </span>name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>PlSmallStr {
+<a href=#103 id=103 data-nosnippet>103</a>        ObjectChunked::name(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#104 id=104 data-nosnippet>104</a>    }
+<a href=#105 id=105 data-nosnippet>105</a>
+<a href=#106 id=106 data-nosnippet>106</a>    <span class="kw">fn </span>dtype(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>DataType {
+<a href=#107 id=107 data-nosnippet>107</a>        ObjectChunked::dtype(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#108 id=108 data-nosnippet>108</a>    }
+<a href=#109 id=109 data-nosnippet>109</a>
+<a href=#110 id=110 data-nosnippet>110</a>    <span class="kw">fn </span>chunks(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>Vec&lt;ArrayRef&gt; {
+<a href=#111 id=111 data-nosnippet>111</a>        ObjectChunked::chunks(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#112 id=112 data-nosnippet>112</a>    }
+<a href=#113 id=113 data-nosnippet>113</a>    <span class="kw">unsafe fn </span>chunks_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>Vec&lt;ArrayRef&gt; {
+<a href=#114 id=114 data-nosnippet>114</a>        <span class="self">self</span>.<span class="number">0</span>.chunks_mut()
+<a href=#115 id=115 data-nosnippet>115</a>    }
+<a href=#116 id=116 data-nosnippet>116</a>
+<a href=#117 id=117 data-nosnippet>117</a>    <span class="kw">fn </span>slice(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: i64, length: usize) -&gt; Series {
+<a href=#118 id=118 data-nosnippet>118</a>        ObjectChunked::slice(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, offset, length).into_series()
+<a href=#119 id=119 data-nosnippet>119</a>    }
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="kw">fn </span>split_at(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: i64) -&gt; (Series, Series) {
+<a href=#122 id=122 data-nosnippet>122</a>        <span class="kw">let </span>(a, b) = ObjectChunked::split_at(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, offset);
+<a href=#123 id=123 data-nosnippet>123</a>        (a.into_series(), b.into_series())
+<a href=#124 id=124 data-nosnippet>124</a>    }
+<a href=#125 id=125 data-nosnippet>125</a>
+<a href=#126 id=126 data-nosnippet>126</a>    <span class="kw">fn </span>append(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;()&gt; {
+<a href=#127 id=127 data-nosnippet>127</a>        <span class="macro">polars_ensure!</span>(<span class="self">self</span>.dtype() == other.dtype(), append);
+<a href=#128 id=128 data-nosnippet>128</a>        ObjectChunked::append(<span class="kw-2">&amp;mut </span><span class="self">self</span>.<span class="number">0</span>, other.as_ref().as_ref())
+<a href=#129 id=129 data-nosnippet>129</a>    }
+<a href=#130 id=130 data-nosnippet>130</a>    <span class="kw">fn </span>append_owned(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: Series) -&gt; PolarsResult&lt;()&gt; {
+<a href=#131 id=131 data-nosnippet>131</a>        <span class="macro">polars_ensure!</span>(<span class="self">self</span>.dtype() == other.dtype(), append);
+<a href=#132 id=132 data-nosnippet>132</a>        ObjectChunked::append_owned(<span class="kw-2">&amp;mut </span><span class="self">self</span>.<span class="number">0</span>, other.take_inner())
+<a href=#133 id=133 data-nosnippet>133</a>    }
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>    <span class="kw">fn </span>extend(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _other: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;()&gt; {
+<a href=#136 id=136 data-nosnippet>136</a>        <span class="macro">polars_bail!</span>(opq = extend, <span class="self">self</span>.dtype());
+<a href=#137 id=137 data-nosnippet>137</a>    }
+<a href=#138 id=138 data-nosnippet>138</a>
+<a href=#139 id=139 data-nosnippet>139</a>    <span class="kw">fn </span>filter(<span class="kw-2">&amp;</span><span class="self">self</span>, filter: <span class="kw-2">&amp;</span>BooleanChunked) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#140 id=140 data-nosnippet>140</a>        ChunkFilter::filter(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, filter).map(|ca| ca.into_series())
+<a href=#141 id=141 data-nosnippet>141</a>    }
+<a href=#142 id=142 data-nosnippet>142</a>
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="kw">fn </span>take(<span class="kw-2">&amp;</span><span class="self">self</span>, indices: <span class="kw-2">&amp;</span>IdxCa) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#144 id=144 data-nosnippet>144</a>        <span class="kw">let </span>ca = <span class="self">self</span>.rechunk_object();
+<a href=#145 id=145 data-nosnippet>145</a>        <span class="prelude-val">Ok</span>(ca.take(indices)<span class="question-mark">?</span>.into_series())
+<a href=#146 id=146 data-nosnippet>146</a>    }
+<a href=#147 id=147 data-nosnippet>147</a>
+<a href=#148 id=148 data-nosnippet>148</a>    <span class="kw">unsafe fn </span>take_unchecked(<span class="kw-2">&amp;</span><span class="self">self</span>, indices: <span class="kw-2">&amp;</span>IdxCa) -&gt; Series {
+<a href=#149 id=149 data-nosnippet>149</a>        <span class="kw">let </span>ca = <span class="self">self</span>.rechunk_object();
+<a href=#150 id=150 data-nosnippet>150</a>        ca.take_unchecked(indices).into_series()
+<a href=#151 id=151 data-nosnippet>151</a>    }
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a>    <span class="kw">fn </span>take_slice(<span class="kw-2">&amp;</span><span class="self">self</span>, indices: <span class="kw-2">&amp;</span>[IdxSize]) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#154 id=154 data-nosnippet>154</a>        <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="number">0</span>.take(indices)<span class="question-mark">?</span>.into_series())
+<a href=#155 id=155 data-nosnippet>155</a>    }
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="kw">unsafe fn </span>take_slice_unchecked(<span class="kw-2">&amp;</span><span class="self">self</span>, indices: <span class="kw-2">&amp;</span>[IdxSize]) -&gt; Series {
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="self">self</span>.<span class="number">0</span>.take_unchecked(indices).into_series()
+<a href=#159 id=159 data-nosnippet>159</a>    }
+<a href=#160 id=160 data-nosnippet>160</a>
+<a href=#161 id=161 data-nosnippet>161</a>    <span class="kw">fn </span>len(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#162 id=162 data-nosnippet>162</a>        ObjectChunked::len(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#163 id=163 data-nosnippet>163</a>    }
+<a href=#164 id=164 data-nosnippet>164</a>
+<a href=#165 id=165 data-nosnippet>165</a>    <span class="kw">fn </span>rechunk(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Series {
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="comment">// do not call normal rechunk
+<a href=#167 id=167 data-nosnippet>167</a>        </span><span class="self">self</span>.rechunk_object().into_series()
+<a href=#168 id=168 data-nosnippet>168</a>    }
+<a href=#169 id=169 data-nosnippet>169</a>
+<a href=#170 id=170 data-nosnippet>170</a>    <span class="kw">fn </span>new_from_index(<span class="kw-2">&amp;</span><span class="self">self</span>, index: usize, length: usize) -&gt; Series {
+<a href=#171 id=171 data-nosnippet>171</a>        ChunkExpandAtIndex::new_from_index(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, index, length).into_series()
+<a href=#172 id=172 data-nosnippet>172</a>    }
+<a href=#173 id=173 data-nosnippet>173</a>
+<a href=#174 id=174 data-nosnippet>174</a>    <span class="kw">fn </span>cast(<span class="kw-2">&amp;</span><span class="self">self</span>, dtype: <span class="kw-2">&amp;</span>DataType, _cast_options: CastOptions) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#175 id=175 data-nosnippet>175</a>        <span class="kw">if </span><span class="macro">matches!</span>(dtype, DataType::Object(<span class="kw">_</span>)) {
+<a href=#176 id=176 data-nosnippet>176</a>            <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="number">0</span>.clone().into_series())
+<a href=#177 id=177 data-nosnippet>177</a>        } <span class="kw">else </span>{
+<a href=#178 id=178 data-nosnippet>178</a>            <span class="prelude-val">Err</span>(PolarsError::ComputeError(
+<a href=#179 id=179 data-nosnippet>179</a>                <span class="string">"cannot cast 'Object' type"</span>.into(),
+<a href=#180 id=180 data-nosnippet>180</a>            ))
+<a href=#181 id=181 data-nosnippet>181</a>        }
+<a href=#182 id=182 data-nosnippet>182</a>    }
+<a href=#183 id=183 data-nosnippet>183</a>
+<a href=#184 id=184 data-nosnippet>184</a>    <span class="kw">fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, index: usize) -&gt; PolarsResult&lt;AnyValue&lt;<span class="lifetime">'_</span>&gt;&gt; {
+<a href=#185 id=185 data-nosnippet>185</a>        ObjectChunked::get_any_value(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, index)
+<a href=#186 id=186 data-nosnippet>186</a>    }
+<a href=#187 id=187 data-nosnippet>187</a>    <span class="kw">unsafe fn </span>get_unchecked(<span class="kw-2">&amp;</span><span class="self">self</span>, index: usize) -&gt; AnyValue&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#188 id=188 data-nosnippet>188</a>        ObjectChunked::get_any_value_unchecked(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, index)
+<a href=#189 id=189 data-nosnippet>189</a>    }
+<a href=#190 id=190 data-nosnippet>190</a>    <span class="kw">fn </span>null_count(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#191 id=191 data-nosnippet>191</a>        ObjectChunked::null_count(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#192 id=192 data-nosnippet>192</a>    }
+<a href=#193 id=193 data-nosnippet>193</a>
+<a href=#194 id=194 data-nosnippet>194</a>    <span class="kw">fn </span>has_nulls(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#195 id=195 data-nosnippet>195</a>        ObjectChunked::has_nulls(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#196 id=196 data-nosnippet>196</a>    }
+<a href=#197 id=197 data-nosnippet>197</a>
+<a href=#198 id=198 data-nosnippet>198</a>    <span class="kw">fn </span>unique(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#199 id=199 data-nosnippet>199</a>        ChunkUnique::unique(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>).map(|ca| ca.into_series())
+<a href=#200 id=200 data-nosnippet>200</a>    }
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a>    <span class="kw">fn </span>n_unique(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;usize&gt; {
+<a href=#203 id=203 data-nosnippet>203</a>        ChunkUnique::n_unique(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#204 id=204 data-nosnippet>204</a>    }
+<a href=#205 id=205 data-nosnippet>205</a>
+<a href=#206 id=206 data-nosnippet>206</a>    <span class="kw">fn </span>arg_unique(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;IdxCa&gt; {
+<a href=#207 id=207 data-nosnippet>207</a>        ChunkUnique::arg_unique(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#208 id=208 data-nosnippet>208</a>    }
+<a href=#209 id=209 data-nosnippet>209</a>
+<a href=#210 id=210 data-nosnippet>210</a>    <span class="kw">fn </span>is_null(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; BooleanChunked {
+<a href=#211 id=211 data-nosnippet>211</a>        ObjectChunked::is_null(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#212 id=212 data-nosnippet>212</a>    }
+<a href=#213 id=213 data-nosnippet>213</a>
+<a href=#214 id=214 data-nosnippet>214</a>    <span class="kw">fn </span>is_not_null(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; BooleanChunked {
+<a href=#215 id=215 data-nosnippet>215</a>        ObjectChunked::is_not_null(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#216 id=216 data-nosnippet>216</a>    }
+<a href=#217 id=217 data-nosnippet>217</a>
+<a href=#218 id=218 data-nosnippet>218</a>    <span class="kw">fn </span>reverse(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Series {
+<a href=#219 id=219 data-nosnippet>219</a>        ChunkReverse::reverse(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>).into_series()
+<a href=#220 id=220 data-nosnippet>220</a>    }
+<a href=#221 id=221 data-nosnippet>221</a>
+<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">fn </span>shift(<span class="kw-2">&amp;</span><span class="self">self</span>, periods: i64) -&gt; Series {
+<a href=#223 id=223 data-nosnippet>223</a>        ChunkShift::shift(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, periods).into_series()
+<a href=#224 id=224 data-nosnippet>224</a>    }
+<a href=#225 id=225 data-nosnippet>225</a>
+<a href=#226 id=226 data-nosnippet>226</a>    <span class="kw">fn </span>clone_inner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Arc&lt;<span class="kw">dyn </span>SeriesTrait&gt; {
+<a href=#227 id=227 data-nosnippet>227</a>        Arc::new(SeriesWrap(Clone::clone(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>)))
+<a href=#228 id=228 data-nosnippet>228</a>    }
+<a href=#229 id=229 data-nosnippet>229</a>
+<a href=#230 id=230 data-nosnippet>230</a>    <span class="kw">fn </span>get_object(<span class="kw-2">&amp;</span><span class="self">self</span>, index: usize) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="kw">dyn </span>PolarsObjectSafe&gt; {
+<a href=#231 id=231 data-nosnippet>231</a>        ObjectChunked::&lt;T&gt;::get_object(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, index)
+<a href=#232 id=232 data-nosnippet>232</a>    }
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">unsafe fn </span>get_object_chunked_unchecked(
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#236 id=236 data-nosnippet>236</a>        chunk: usize,
+<a href=#237 id=237 data-nosnippet>237</a>        index: usize,
+<a href=#238 id=238 data-nosnippet>238</a>    ) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="kw">dyn </span>PolarsObjectSafe&gt; {
+<a href=#239 id=239 data-nosnippet>239</a>        ObjectChunked::&lt;T&gt;::get_object_chunked_unchecked(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, chunk, index)
+<a href=#240 id=240 data-nosnippet>240</a>    }
+<a href=#241 id=241 data-nosnippet>241</a>
+<a href=#242 id=242 data-nosnippet>242</a>    <span class="kw">fn </span>find_validity_mismatch(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span>Series, idxs: <span class="kw-2">&amp;mut </span>Vec&lt;IdxSize&gt;) {
+<a href=#243 id=243 data-nosnippet>243</a>        <span class="self">self</span>.<span class="number">0</span>.find_validity_mismatch(other, idxs)
+<a href=#244 id=244 data-nosnippet>244</a>    }
+<a href=#245 id=245 data-nosnippet>245</a>
+<a href=#246 id=246 data-nosnippet>246</a>    <span class="kw">fn </span>as_any(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw">dyn </span>Any {
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0
+<a href=#248 id=248 data-nosnippet>248</a>    </span>}
+<a href=#249 id=249 data-nosnippet>249</a>
+<a href=#250 id=250 data-nosnippet>250</a>    <span class="kw">fn </span>as_any_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="kw">dyn </span>Any {
+<a href=#251 id=251 data-nosnippet>251</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>.<span class="number">0
+<a href=#252 id=252 data-nosnippet>252</a>    </span>}
+<a href=#253 id=253 data-nosnippet>253</a>
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="kw">fn </span>as_phys_any(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="kw">dyn </span>Any {
+<a href=#255 id=255 data-nosnippet>255</a>        <span class="self">self
+<a href=#256 id=256 data-nosnippet>256</a>    </span>}
+<a href=#257 id=257 data-nosnippet>257</a>
+<a href=#258 id=258 data-nosnippet>258</a>    <span class="kw">fn </span>as_arc_any(<span class="self">self</span>: Arc&lt;<span class="self">Self</span>&gt;) -&gt; Arc&lt;<span class="kw">dyn </span>Any + Send + Sync&gt; {
+<a href=#259 id=259 data-nosnippet>259</a>        <span class="self">self </span><span class="kw">as _
+<a href=#260 id=260 data-nosnippet>260</a>    </span>}
+<a href=#261 id=261 data-nosnippet>261</a>}
+<a href=#262 id=262 data-nosnippet>262</a>
+<a href=#263 id=263 data-nosnippet>263</a><span class="attr">#[cfg(test)]
+<a href=#264 id=264 data-nosnippet>264</a></span><span class="kw">mod </span>test {
+<a href=#265 id=265 data-nosnippet>265</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#266 id=266 data-nosnippet>266</a>
+<a href=#267 id=267 data-nosnippet>267</a>    <span class="attr">#[test]
+<a href=#268 id=268 data-nosnippet>268</a>    </span><span class="kw">fn </span>test_downcast_object() -&gt; PolarsResult&lt;()&gt; {
+<a href=#269 id=269 data-nosnippet>269</a>        <span class="attr">#[allow(non_local_definitions)]
+<a href=#270 id=270 data-nosnippet>270</a>        </span><span class="kw">impl </span>PolarsObject <span class="kw">for </span>i32 {
+<a href=#271 id=271 data-nosnippet>271</a>            <span class="kw">fn </span>type_name() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
+<a href=#272 id=272 data-nosnippet>272</a>                <span class="string">"i32"
+<a href=#273 id=273 data-nosnippet>273</a>            </span>}
+<a href=#274 id=274 data-nosnippet>274</a>        }
+<a href=#275 id=275 data-nosnippet>275</a>
+<a href=#276 id=276 data-nosnippet>276</a>        <span class="kw">let </span>ca = ObjectChunked::new_from_vec(<span class="string">"a"</span>.into(), <span class="macro">vec!</span>[<span class="number">0i32</span>, <span class="number">1</span>, <span class="number">2</span>]);
+<a href=#277 id=277 data-nosnippet>277</a>        <span class="kw">let </span>s = ca.into_series();
+<a href=#278 id=278 data-nosnippet>278</a>
+<a href=#279 id=279 data-nosnippet>279</a>        <span class="kw">let </span>ca = s.as_any().downcast_ref::&lt;ObjectChunked&lt;i32&gt;&gt;().unwrap();
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="macro">assert_eq!</span>(<span class="kw-2">*</span>ca.get(<span class="number">0</span>).unwrap(), <span class="number">0</span>);
+<a href=#281 id=281 data-nosnippet>281</a>        <span class="macro">assert_eq!</span>(<span class="kw-2">*</span>ca.get(<span class="number">1</span>).unwrap(), <span class="number">1</span>);
+<a href=#282 id=282 data-nosnippet>282</a>        <span class="macro">assert_eq!</span>(<span class="kw-2">*</span>ca.get(<span class="number">2</span>).unwrap(), <span class="number">2</span>);
+<a href=#283 id=283 data-nosnippet>283</a>
+<a href=#284 id=284 data-nosnippet>284</a>        <span class="prelude-val">Ok</span>(())
+<a href=#285 id=285 data-nosnippet>285</a>    }
+<a href=#286 id=286 data-nosnippet>286</a>}</code></pre></div></section></main></body></html>

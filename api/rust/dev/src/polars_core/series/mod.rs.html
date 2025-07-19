@@ -1,0 +1,1193 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-core/src/series/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-4e99c027.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_core/series/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="attr">#![allow(unsafe_op_in_unsafe_fn)]
+<a href=#2 id=2 data-nosnippet>2</a></span><span class="doccomment">//! Type agnostic columnar data structure.
+<a href=#3 id=3 data-nosnippet>3</a></span><span class="kw">use </span><span class="kw">crate</span>::chunked_array::flags::StatisticsFlags;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">pub use </span><span class="kw">crate</span>::prelude::ChunkCompareEq;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><span class="kw">crate</span>::prelude::<span class="kw-2">*</span>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use crate</span>::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="macro">macro_rules!</span> invalid_operation_panic {
+<a href=#9 id=9 data-nosnippet>9</a>    (<span class="macro-nonterminal">$op</span>:ident, <span class="macro-nonterminal">$s</span>:expr) =&gt; {
+<a href=#10 id=10 data-nosnippet>10</a>        <span class="macro">panic!</span>(
+<a href=#11 id=11 data-nosnippet>11</a>            <span class="string">"`{}` operation not supported for dtype `{}`"</span>,
+<a href=#12 id=12 data-nosnippet>12</a>            <span class="macro">stringify!</span>(<span class="macro-nonterminal">$op</span>),
+<a href=#13 id=13 data-nosnippet>13</a>            <span class="macro-nonterminal">$s</span>._dtype()
+<a href=#14 id=14 data-nosnippet>14</a>        )
+<a href=#15 id=15 data-nosnippet>15</a>    };
+<a href=#16 id=16 data-nosnippet>16</a>}
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">pub mod </span>amortized_iter;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">mod </span>any_value;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">pub mod </span>arithmetic;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">pub mod </span>builder;
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">mod </span>comparison;
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">mod </span>from;
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">pub mod </span>implementations;
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">mod </span>into;
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>iterator;
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">pub mod </span>ops;
+<a href=#28 id=28 data-nosnippet>28</a><span class="kw">mod </span>series_trait;
+<a href=#29 id=29 data-nosnippet>29</a>
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">use </span>std::borrow::Cow;
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span>std::hash::{Hash, Hasher};
+<a href=#32 id=32 data-nosnippet>32</a><span class="kw">use </span>std::ops::Deref;
+<a href=#33 id=33 data-nosnippet>33</a>
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">use </span>arrow::compute::aggregate::estimated_bytes_size;
+<a href=#35 id=35 data-nosnippet>35</a><span class="kw">use </span>arrow::offset::Offsets;
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">pub use </span>from::<span class="kw-2">*</span>;
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">pub use </span>iterator::{SeriesIter, SeriesPhysIter};
+<a href=#38 id=38 data-nosnippet>38</a><span class="kw">use </span>num_traits::NumCast;
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">use </span>polars_error::feature_gated;
+<a href=#40 id=40 data-nosnippet>40</a><span class="kw">pub use </span>series_trait::{IsSorted, <span class="kw-2">*</span>};
+<a href=#41 id=41 data-nosnippet>41</a>
+<a href=#42 id=42 data-nosnippet>42</a><span class="kw">use </span><span class="kw">crate</span>::POOL;
+<a href=#43 id=43 data-nosnippet>43</a><span class="kw">use </span><span class="kw">crate</span>::chunked_array::cast::CastOptions;
+<a href=#44 id=44 data-nosnippet>44</a><span class="attr">#[cfg(feature = <span class="string">"zip_with"</span>)]
+<a href=#45 id=45 data-nosnippet>45</a></span><span class="kw">use </span><span class="kw">crate</span>::series::arithmetic::coerce_lhs_rhs;
+<a href=#46 id=46 data-nosnippet>46</a><span class="kw">use </span><span class="kw">crate</span>::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a><span class="doccomment">/// # Series
+<a href=#49 id=49 data-nosnippet>49</a>/// The columnar data type for a DataFrame.
+<a href=#50 id=50 data-nosnippet>50</a>///
+<a href=#51 id=51 data-nosnippet>51</a>/// Most of the available functions are defined in the [SeriesTrait trait](crate::series::SeriesTrait).
+<a href=#52 id=52 data-nosnippet>52</a>///
+<a href=#53 id=53 data-nosnippet>53</a>/// The `Series` struct consists
+<a href=#54 id=54 data-nosnippet>54</a>/// of typed [ChunkedArray]'s. To quickly cast
+<a href=#55 id=55 data-nosnippet>55</a>/// a `Series` to a `ChunkedArray` you can call the method with the name of the type:
+<a href=#56 id=56 data-nosnippet>56</a>///
+<a href=#57 id=57 data-nosnippet>57</a>/// ```
+<a href=#58 id=58 data-nosnippet>58</a>/// # use polars_core::prelude::*;
+<a href=#59 id=59 data-nosnippet>59</a>/// let s: Series = [1, 2, 3].iter().collect();
+<a href=#60 id=60 data-nosnippet>60</a>/// // Quickly obtain the ChunkedArray wrapped by the Series.
+<a href=#61 id=61 data-nosnippet>61</a>/// let chunked_array = s.i32().unwrap();
+<a href=#62 id=62 data-nosnippet>62</a>/// ```
+<a href=#63 id=63 data-nosnippet>63</a>///
+<a href=#64 id=64 data-nosnippet>64</a>/// ## Arithmetic
+<a href=#65 id=65 data-nosnippet>65</a>///
+<a href=#66 id=66 data-nosnippet>66</a>/// You can do standard arithmetic on series.
+<a href=#67 id=67 data-nosnippet>67</a>/// ```
+<a href=#68 id=68 data-nosnippet>68</a>/// # use polars_core::prelude::*;
+<a href=#69 id=69 data-nosnippet>69</a>/// let s = Series::new("a".into(), [1 , 2, 3]);
+<a href=#70 id=70 data-nosnippet>70</a>/// let out_add = &amp;s + &amp;s;
+<a href=#71 id=71 data-nosnippet>71</a>/// let out_sub = &amp;s - &amp;s;
+<a href=#72 id=72 data-nosnippet>72</a>/// let out_div = &amp;s / &amp;s;
+<a href=#73 id=73 data-nosnippet>73</a>/// let out_mul = &amp;s * &amp;s;
+<a href=#74 id=74 data-nosnippet>74</a>/// ```
+<a href=#75 id=75 data-nosnippet>75</a>///
+<a href=#76 id=76 data-nosnippet>76</a>/// Or with series and numbers.
+<a href=#77 id=77 data-nosnippet>77</a>///
+<a href=#78 id=78 data-nosnippet>78</a>/// ```
+<a href=#79 id=79 data-nosnippet>79</a>/// # use polars_core::prelude::*;
+<a href=#80 id=80 data-nosnippet>80</a>/// let s: Series = (1..3).collect();
+<a href=#81 id=81 data-nosnippet>81</a>/// let out_add_one = &amp;s + 1;
+<a href=#82 id=82 data-nosnippet>82</a>/// let out_multiply = &amp;s * 10;
+<a href=#83 id=83 data-nosnippet>83</a>///
+<a href=#84 id=84 data-nosnippet>84</a>/// // Could not overload left hand side operator.
+<a href=#85 id=85 data-nosnippet>85</a>/// let out_divide = 1.div(&amp;s);
+<a href=#86 id=86 data-nosnippet>86</a>/// let out_add = 1.add(&amp;s);
+<a href=#87 id=87 data-nosnippet>87</a>/// let out_subtract = 1.sub(&amp;s);
+<a href=#88 id=88 data-nosnippet>88</a>/// let out_multiply = 1.mul(&amp;s);
+<a href=#89 id=89 data-nosnippet>89</a>/// ```
+<a href=#90 id=90 data-nosnippet>90</a>///
+<a href=#91 id=91 data-nosnippet>91</a>/// ## Comparison
+<a href=#92 id=92 data-nosnippet>92</a>/// You can obtain boolean mask by comparing series.
+<a href=#93 id=93 data-nosnippet>93</a>///
+<a href=#94 id=94 data-nosnippet>94</a>/// ```
+<a href=#95 id=95 data-nosnippet>95</a>/// # use polars_core::prelude::*;
+<a href=#96 id=96 data-nosnippet>96</a>/// let s = Series::new("dollars".into(), &amp;[1, 2, 3]);
+<a href=#97 id=97 data-nosnippet>97</a>/// let mask = s.equal(1).unwrap();
+<a href=#98 id=98 data-nosnippet>98</a>/// let valid = [true, false, false].iter();
+<a href=#99 id=99 data-nosnippet>99</a>/// assert!(mask
+<a href=#100 id=100 data-nosnippet>100</a>///     .into_iter()
+<a href=#101 id=101 data-nosnippet>101</a>///     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
+<a href=#102 id=102 data-nosnippet>102</a>///     .zip(valid)
+<a href=#103 id=103 data-nosnippet>103</a>///     .all(|(a, b)| a == *b))
+<a href=#104 id=104 data-nosnippet>104</a>/// ```
+<a href=#105 id=105 data-nosnippet>105</a>///
+<a href=#106 id=106 data-nosnippet>106</a>/// See all the comparison operators in the [ChunkCompareEq trait](crate::chunked_array::ops::ChunkCompareEq) and
+<a href=#107 id=107 data-nosnippet>107</a>/// [ChunkCompareIneq trait](crate::chunked_array::ops::ChunkCompareIneq).
+<a href=#108 id=108 data-nosnippet>108</a>///
+<a href=#109 id=109 data-nosnippet>109</a>/// ## Iterators
+<a href=#110 id=110 data-nosnippet>110</a>/// The Series variants contain differently typed [ChunkedArray]s.
+<a href=#111 id=111 data-nosnippet>111</a>/// These structs can be turned into iterators, making it possible to use any function/ closure you want
+<a href=#112 id=112 data-nosnippet>112</a>/// on a Series.
+<a href=#113 id=113 data-nosnippet>113</a>///
+<a href=#114 id=114 data-nosnippet>114</a>/// These iterators return an `Option&lt;T&gt;` because the values of a series may be null.
+<a href=#115 id=115 data-nosnippet>115</a>///
+<a href=#116 id=116 data-nosnippet>116</a>/// ```
+<a href=#117 id=117 data-nosnippet>117</a>/// use polars_core::prelude::*;
+<a href=#118 id=118 data-nosnippet>118</a>/// let pi = 3.14;
+<a href=#119 id=119 data-nosnippet>119</a>/// let s = Series::new("angle".into(), [2f32 * pi, pi, 1.5 * pi].as_ref());
+<a href=#120 id=120 data-nosnippet>120</a>/// let s_cos: Series = s.f32()
+<a href=#121 id=121 data-nosnippet>121</a>///                     .expect("series was not an f32 dtype")
+<a href=#122 id=122 data-nosnippet>122</a>///                     .into_iter()
+<a href=#123 id=123 data-nosnippet>123</a>///                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
+<a href=#124 id=124 data-nosnippet>124</a>///                     .collect();
+<a href=#125 id=125 data-nosnippet>125</a>/// ```
+<a href=#126 id=126 data-nosnippet>126</a>///
+<a href=#127 id=127 data-nosnippet>127</a>/// ## Creation
+<a href=#128 id=128 data-nosnippet>128</a>/// Series can be create from different data structures. Below we'll show a few ways we can create
+<a href=#129 id=129 data-nosnippet>129</a>/// a Series object.
+<a href=#130 id=130 data-nosnippet>130</a>///
+<a href=#131 id=131 data-nosnippet>131</a>/// ```
+<a href=#132 id=132 data-nosnippet>132</a>/// # use polars_core::prelude::*;
+<a href=#133 id=133 data-nosnippet>133</a>/// // Series can be created from Vec's, slices and arrays
+<a href=#134 id=134 data-nosnippet>134</a>/// Series::new("boolean series".into(), &amp;[true, false, true]);
+<a href=#135 id=135 data-nosnippet>135</a>/// Series::new("int series".into(), &amp;[1, 2, 3]);
+<a href=#136 id=136 data-nosnippet>136</a>/// // And can be nullable
+<a href=#137 id=137 data-nosnippet>137</a>/// Series::new("got nulls".into(), &amp;[Some(1), None, Some(2)]);
+<a href=#138 id=138 data-nosnippet>138</a>///
+<a href=#139 id=139 data-nosnippet>139</a>/// // Series can also be collected from iterators
+<a href=#140 id=140 data-nosnippet>140</a>/// let from_iter: Series = (0..10)
+<a href=#141 id=141 data-nosnippet>141</a>///     .into_iter()
+<a href=#142 id=142 data-nosnippet>142</a>///     .collect();
+<a href=#143 id=143 data-nosnippet>143</a>///
+<a href=#144 id=144 data-nosnippet>144</a>/// ```
+<a href=#145 id=145 data-nosnippet>145</a></span><span class="attr">#[derive(Clone)]
+<a href=#146 id=146 data-nosnippet>146</a>#[must_use]
+<a href=#147 id=147 data-nosnippet>147</a></span><span class="kw">pub struct </span>Series(<span class="kw">pub </span>Arc&lt;<span class="kw">dyn </span>SeriesTrait&gt;);
+<a href=#148 id=148 data-nosnippet>148</a>
+<a href=#149 id=149 data-nosnippet>149</a><span class="kw">impl </span>PartialEq <span class="kw">for </span>Wrap&lt;Series&gt; {
+<a href=#150 id=150 data-nosnippet>150</a>    <span class="kw">fn </span>eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool {
+<a href=#151 id=151 data-nosnippet>151</a>        <span class="self">self</span>.<span class="number">0</span>.equals_missing(other)
+<a href=#152 id=152 data-nosnippet>152</a>    }
+<a href=#153 id=153 data-nosnippet>153</a>}
+<a href=#154 id=154 data-nosnippet>154</a>
+<a href=#155 id=155 data-nosnippet>155</a><span class="kw">impl </span>Eq <span class="kw">for </span>Wrap&lt;Series&gt; {}
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a><span class="kw">impl </span>Hash <span class="kw">for </span>Wrap&lt;Series&gt; {
+<a href=#158 id=158 data-nosnippet>158</a>    <span class="kw">fn </span>hash&lt;H: Hasher&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span>H) {
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">let </span>rs = PlSeedableRandomStateQuality::fixed();
+<a href=#160 id=160 data-nosnippet>160</a>        <span class="kw">let </span><span class="kw-2">mut </span>h = <span class="macro">vec!</span>[];
+<a href=#161 id=161 data-nosnippet>161</a>        <span class="kw">if </span><span class="self">self</span>.<span class="number">0</span>.vec_hash(rs, <span class="kw-2">&amp;mut </span>h).is_ok() {
+<a href=#162 id=162 data-nosnippet>162</a>            <span class="kw">let </span>h = h.into_iter().fold(<span class="number">0</span>, |a: u64, b| a.wrapping_add(b));
+<a href=#163 id=163 data-nosnippet>163</a>            h.hash(state)
+<a href=#164 id=164 data-nosnippet>164</a>        } <span class="kw">else </span>{
+<a href=#165 id=165 data-nosnippet>165</a>            <span class="self">self</span>.len().hash(state);
+<a href=#166 id=166 data-nosnippet>166</a>            <span class="self">self</span>.null_count().hash(state);
+<a href=#167 id=167 data-nosnippet>167</a>            <span class="self">self</span>.dtype().hash(state);
+<a href=#168 id=168 data-nosnippet>168</a>        }
+<a href=#169 id=169 data-nosnippet>169</a>    }
+<a href=#170 id=170 data-nosnippet>170</a>}
+<a href=#171 id=171 data-nosnippet>171</a>
+<a href=#172 id=172 data-nosnippet>172</a><span class="kw">impl </span>Series {
+<a href=#173 id=173 data-nosnippet>173</a>    <span class="doccomment">/// Create a new empty Series.
+<a href=#174 id=174 data-nosnippet>174</a>    </span><span class="kw">pub fn </span>new_empty(name: PlSmallStr, dtype: <span class="kw-2">&amp;</span>DataType) -&gt; Series {
+<a href=#175 id=175 data-nosnippet>175</a>        Series::full_null(name, <span class="number">0</span>, dtype)
+<a href=#176 id=176 data-nosnippet>176</a>    }
+<a href=#177 id=177 data-nosnippet>177</a>
+<a href=#178 id=178 data-nosnippet>178</a>    <span class="kw">pub fn </span>clear(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Series {
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">if </span><span class="self">self</span>.is_empty() {
+<a href=#180 id=180 data-nosnippet>180</a>            <span class="self">self</span>.clone()
+<a href=#181 id=181 data-nosnippet>181</a>        } <span class="kw">else </span>{
+<a href=#182 id=182 data-nosnippet>182</a>            <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#183 id=183 data-nosnippet>183</a>                <span class="attr">#[cfg(feature = <span class="string">"object"</span>)]
+<a href=#184 id=184 data-nosnippet>184</a>                </span>DataType::Object(<span class="kw">_</span>) =&gt; <span class="self">self
+<a href=#185 id=185 data-nosnippet>185</a>                    </span>.take(<span class="kw-2">&amp;</span>ChunkedArray::&lt;IdxType&gt;::new_vec(PlSmallStr::EMPTY, <span class="macro">vec!</span>[]))
+<a href=#186 id=186 data-nosnippet>186</a>                    .unwrap(),
+<a href=#187 id=187 data-nosnippet>187</a>                dt =&gt; Series::new_empty(<span class="self">self</span>.name().clone(), dt),
+<a href=#188 id=188 data-nosnippet>188</a>            }
+<a href=#189 id=189 data-nosnippet>189</a>        }
+<a href=#190 id=190 data-nosnippet>190</a>    }
+<a href=#191 id=191 data-nosnippet>191</a>
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="attr">#[doc(hidden)]
+<a href=#193 id=193 data-nosnippet>193</a>    </span><span class="kw">pub fn </span>_get_inner_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="kw">dyn </span>SeriesTrait {
+<a href=#194 id=194 data-nosnippet>194</a>        <span class="kw">if </span>Arc::weak_count(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>) + Arc::strong_count(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>) != <span class="number">1 </span>{
+<a href=#195 id=195 data-nosnippet>195</a>            <span class="self">self</span>.<span class="number">0 </span>= <span class="self">self</span>.<span class="number">0</span>.clone_inner();
+<a href=#196 id=196 data-nosnippet>196</a>        }
+<a href=#197 id=197 data-nosnippet>197</a>        Arc::get_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>.<span class="number">0</span>).expect(<span class="string">"implementation error"</span>)
+<a href=#198 id=198 data-nosnippet>198</a>    }
+<a href=#199 id=199 data-nosnippet>199</a>
+<a href=#200 id=200 data-nosnippet>200</a>    <span class="doccomment">/// Take or clone a owned copy of the inner [`ChunkedArray`].
+<a href=#201 id=201 data-nosnippet>201</a>    </span><span class="kw">pub fn </span>take_inner&lt;T: PolarsPhysicalType&gt;(<span class="self">self</span>) -&gt; ChunkedArray&lt;T&gt; {
+<a href=#202 id=202 data-nosnippet>202</a>        <span class="kw">let </span>arc_any = <span class="self">self</span>.<span class="number">0</span>.as_arc_any();
+<a href=#203 id=203 data-nosnippet>203</a>        <span class="kw">let </span>downcast = arc_any
+<a href=#204 id=204 data-nosnippet>204</a>            .downcast::&lt;implementations::SeriesWrap&lt;ChunkedArray&lt;T&gt;&gt;&gt;()
+<a href=#205 id=205 data-nosnippet>205</a>            .unwrap();
+<a href=#206 id=206 data-nosnippet>206</a>
+<a href=#207 id=207 data-nosnippet>207</a>        <span class="kw">match </span>Arc::try_unwrap(downcast) {
+<a href=#208 id=208 data-nosnippet>208</a>            <span class="prelude-val">Ok</span>(ca) =&gt; ca.<span class="number">0</span>,
+<a href=#209 id=209 data-nosnippet>209</a>            <span class="prelude-val">Err</span>(ca) =&gt; ca.as_ref().as_ref().clone(),
+<a href=#210 id=210 data-nosnippet>210</a>        }
+<a href=#211 id=211 data-nosnippet>211</a>    }
+<a href=#212 id=212 data-nosnippet>212</a>
+<a href=#213 id=213 data-nosnippet>213</a>    <span class="doccomment">/// # Safety
+<a href=#214 id=214 data-nosnippet>214</a>    /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+<a href=#215 id=215 data-nosnippet>215</a>    /// And that the null_count is updated (e.g. with a `compute_len()`)
+<a href=#216 id=216 data-nosnippet>216</a>    </span><span class="kw">pub unsafe fn </span>chunks_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>Vec&lt;ArrayRef&gt; {
+<a href=#217 id=217 data-nosnippet>217</a>        <span class="attr">#[allow(unused_mut)]
+<a href=#218 id=218 data-nosnippet>218</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>ca = <span class="self">self</span>._get_inner_mut();
+<a href=#219 id=219 data-nosnippet>219</a>        ca.chunks_mut()
+<a href=#220 id=220 data-nosnippet>220</a>    }
+<a href=#221 id=221 data-nosnippet>221</a>
+<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">pub fn </span>into_chunks(<span class="kw-2">mut </span><span class="self">self</span>) -&gt; Vec&lt;ArrayRef&gt; {
+<a href=#223 id=223 data-nosnippet>223</a>        <span class="kw">let </span>ca = <span class="self">self</span>._get_inner_mut();
+<a href=#224 id=224 data-nosnippet>224</a>        <span class="kw">let </span>chunks = std::mem::take(<span class="kw">unsafe </span>{ ca.chunks_mut() });
+<a href=#225 id=225 data-nosnippet>225</a>        ca.compute_len();
+<a href=#226 id=226 data-nosnippet>226</a>        chunks
+<a href=#227 id=227 data-nosnippet>227</a>    }
+<a href=#228 id=228 data-nosnippet>228</a>
+<a href=#229 id=229 data-nosnippet>229</a>    <span class="comment">// TODO! this probably can now be removed, now we don't have special case for structs.
+<a href=#230 id=230 data-nosnippet>230</a>    </span><span class="kw">pub fn </span>select_chunk(<span class="kw-2">&amp;</span><span class="self">self</span>, i: usize) -&gt; <span class="self">Self </span>{
+<a href=#231 id=231 data-nosnippet>231</a>        <span class="kw">let </span><span class="kw-2">mut </span>new = <span class="self">self</span>.clear();
+<a href=#232 id=232 data-nosnippet>232</a>        <span class="kw">let </span><span class="kw-2">mut </span>flags = <span class="self">self</span>.get_flags();
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>        <span class="kw">use </span>StatisticsFlags <span class="kw">as </span>F;
+<a href=#235 id=235 data-nosnippet>235</a>        flags &amp;= F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST;
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a>        <span class="comment">// Assign mut so we go through arc only once.
+<a href=#238 id=238 data-nosnippet>238</a>        </span><span class="kw">let </span>mut_new = new._get_inner_mut();
+<a href=#239 id=239 data-nosnippet>239</a>        <span class="kw">let </span>chunks = <span class="kw">unsafe </span>{ mut_new.chunks_mut() };
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw">let </span>chunk = <span class="self">self</span>.chunks()[i].clone();
+<a href=#241 id=241 data-nosnippet>241</a>        chunks.clear();
+<a href=#242 id=242 data-nosnippet>242</a>        chunks.push(chunk);
+<a href=#243 id=243 data-nosnippet>243</a>        mut_new.compute_len();
+<a href=#244 id=244 data-nosnippet>244</a>        mut_new._set_flags(flags);
+<a href=#245 id=245 data-nosnippet>245</a>        new
+<a href=#246 id=246 data-nosnippet>246</a>    }
+<a href=#247 id=247 data-nosnippet>247</a>
+<a href=#248 id=248 data-nosnippet>248</a>    <span class="kw">pub fn </span>is_sorted_flag(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; IsSorted {
+<a href=#249 id=249 data-nosnippet>249</a>        <span class="kw">if </span><span class="self">self</span>.len() &lt;= <span class="number">1 </span>{
+<a href=#250 id=250 data-nosnippet>250</a>            <span class="kw">return </span>IsSorted::Ascending;
+<a href=#251 id=251 data-nosnippet>251</a>        }
+<a href=#252 id=252 data-nosnippet>252</a>        <span class="self">self</span>.get_flags().is_sorted()
+<a href=#253 id=253 data-nosnippet>253</a>    }
+<a href=#254 id=254 data-nosnippet>254</a>
+<a href=#255 id=255 data-nosnippet>255</a>    <span class="kw">pub fn </span>set_sorted_flag(<span class="kw-2">&amp;mut </span><span class="self">self</span>, sorted: IsSorted) {
+<a href=#256 id=256 data-nosnippet>256</a>        <span class="kw">let </span><span class="kw-2">mut </span>flags = <span class="self">self</span>.get_flags();
+<a href=#257 id=257 data-nosnippet>257</a>        flags.set_sorted(sorted);
+<a href=#258 id=258 data-nosnippet>258</a>        <span class="self">self</span>.set_flags(flags);
+<a href=#259 id=259 data-nosnippet>259</a>    }
+<a href=#260 id=260 data-nosnippet>260</a>
+<a href=#261 id=261 data-nosnippet>261</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>clear_flags(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#262 id=262 data-nosnippet>262</a>        <span class="self">self</span>.set_flags(StatisticsFlags::empty());
+<a href=#263 id=263 data-nosnippet>263</a>    }
+<a href=#264 id=264 data-nosnippet>264</a>    <span class="kw">pub fn </span>get_flags(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; StatisticsFlags {
+<a href=#265 id=265 data-nosnippet>265</a>        <span class="self">self</span>.<span class="number">0</span>._get_flags()
+<a href=#266 id=266 data-nosnippet>266</a>    }
+<a href=#267 id=267 data-nosnippet>267</a>
+<a href=#268 id=268 data-nosnippet>268</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>set_flags(<span class="kw-2">&amp;mut </span><span class="self">self</span>, flags: StatisticsFlags) {
+<a href=#269 id=269 data-nosnippet>269</a>        <span class="self">self</span>._get_inner_mut()._set_flags(flags)
+<a href=#270 id=270 data-nosnippet>270</a>    }
+<a href=#271 id=271 data-nosnippet>271</a>
+<a href=#272 id=272 data-nosnippet>272</a>    <span class="kw">pub fn </span>into_frame(<span class="self">self</span>) -&gt; DataFrame {
+<a href=#273 id=273 data-nosnippet>273</a>        <span class="comment">// SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
+<a href=#274 id=274 data-nosnippet>274</a>        </span><span class="kw">unsafe </span>{ DataFrame::new_no_checks(<span class="self">self</span>.len(), <span class="macro">vec!</span>[<span class="self">self</span>.into()]) }
+<a href=#275 id=275 data-nosnippet>275</a>    }
+<a href=#276 id=276 data-nosnippet>276</a>
+<a href=#277 id=277 data-nosnippet>277</a>    <span class="doccomment">/// Rename series.
+<a href=#278 id=278 data-nosnippet>278</a>    </span><span class="kw">pub fn </span>rename(<span class="kw-2">&amp;mut </span><span class="self">self</span>, name: PlSmallStr) -&gt; <span class="kw-2">&amp;mut </span>Series {
+<a href=#279 id=279 data-nosnippet>279</a>        <span class="self">self</span>._get_inner_mut().rename(name);
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="self">self
+<a href=#281 id=281 data-nosnippet>281</a>    </span>}
+<a href=#282 id=282 data-nosnippet>282</a>
+<a href=#283 id=283 data-nosnippet>283</a>    <span class="doccomment">/// Return this Series with a new name.
+<a href=#284 id=284 data-nosnippet>284</a>    </span><span class="kw">pub fn </span>with_name(<span class="kw-2">mut </span><span class="self">self</span>, name: PlSmallStr) -&gt; Series {
+<a href=#285 id=285 data-nosnippet>285</a>        <span class="self">self</span>.rename(name);
+<a href=#286 id=286 data-nosnippet>286</a>        <span class="self">self
+<a href=#287 id=287 data-nosnippet>287</a>    </span>}
+<a href=#288 id=288 data-nosnippet>288</a>
+<a href=#289 id=289 data-nosnippet>289</a>    <span class="kw">pub fn </span>from_arrow_chunks(name: PlSmallStr, arrays: Vec&lt;ArrayRef&gt;) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#290 id=290 data-nosnippet>290</a>        <span class="self">Self</span>::try_from((name, arrays))
+<a href=#291 id=291 data-nosnippet>291</a>    }
+<a href=#292 id=292 data-nosnippet>292</a>
+<a href=#293 id=293 data-nosnippet>293</a>    <span class="kw">pub fn </span>from_arrow(name: PlSmallStr, array: ArrayRef) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#294 id=294 data-nosnippet>294</a>        <span class="self">Self</span>::try_from((name, array))
+<a href=#295 id=295 data-nosnippet>295</a>    }
+<a href=#296 id=296 data-nosnippet>296</a>
+<a href=#297 id=297 data-nosnippet>297</a>    <span class="doccomment">/// Shrink the capacity of this array to fit its length.
+<a href=#298 id=298 data-nosnippet>298</a>    </span><span class="kw">pub fn </span>shrink_to_fit(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#299 id=299 data-nosnippet>299</a>        <span class="self">self</span>._get_inner_mut().shrink_to_fit()
+<a href=#300 id=300 data-nosnippet>300</a>    }
+<a href=#301 id=301 data-nosnippet>301</a>
+<a href=#302 id=302 data-nosnippet>302</a>    <span class="doccomment">/// Append in place. This is done by adding the chunks of `other` to this [`Series`].
+<a href=#303 id=303 data-nosnippet>303</a>    ///
+<a href=#304 id=304 data-nosnippet>304</a>    /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
+<a href=#305 id=305 data-nosnippet>305</a>    </span><span class="kw">pub fn </span>append(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;<span class="kw-2">&amp;mut </span><span class="self">Self</span>&gt; {
+<a href=#306 id=306 data-nosnippet>306</a>        <span class="kw">let </span>must_cast = other.dtype().matches_schema_type(<span class="self">self</span>.dtype())<span class="question-mark">?</span>;
+<a href=#307 id=307 data-nosnippet>307</a>        <span class="kw">if </span>must_cast {
+<a href=#308 id=308 data-nosnippet>308</a>            <span class="kw">let </span>other = other.cast(<span class="self">self</span>.dtype())<span class="question-mark">?</span>;
+<a href=#309 id=309 data-nosnippet>309</a>            <span class="self">self</span>.append_owned(other)<span class="question-mark">?</span>;
+<a href=#310 id=310 data-nosnippet>310</a>        } <span class="kw">else </span>{
+<a href=#311 id=311 data-nosnippet>311</a>            <span class="self">self</span>._get_inner_mut().append(other)<span class="question-mark">?</span>;
+<a href=#312 id=312 data-nosnippet>312</a>        }
+<a href=#313 id=313 data-nosnippet>313</a>        <span class="prelude-val">Ok</span>(<span class="self">self</span>)
+<a href=#314 id=314 data-nosnippet>314</a>    }
+<a href=#315 id=315 data-nosnippet>315</a>
+<a href=#316 id=316 data-nosnippet>316</a>    <span class="doccomment">/// Append in place. This is done by adding the chunks of `other` to this [`Series`].
+<a href=#317 id=317 data-nosnippet>317</a>    ///
+<a href=#318 id=318 data-nosnippet>318</a>    /// See [`ChunkedArray::append_owned`] and [`ChunkedArray::extend`].
+<a href=#319 id=319 data-nosnippet>319</a>    </span><span class="kw">pub fn </span>append_owned(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: Series) -&gt; PolarsResult&lt;<span class="kw-2">&amp;mut </span><span class="self">Self</span>&gt; {
+<a href=#320 id=320 data-nosnippet>320</a>        <span class="kw">let </span>must_cast = other.dtype().matches_schema_type(<span class="self">self</span>.dtype())<span class="question-mark">?</span>;
+<a href=#321 id=321 data-nosnippet>321</a>        <span class="kw">if </span>must_cast {
+<a href=#322 id=322 data-nosnippet>322</a>            <span class="kw">let </span>other = other.cast(<span class="self">self</span>.dtype())<span class="question-mark">?</span>;
+<a href=#323 id=323 data-nosnippet>323</a>            <span class="self">self</span>._get_inner_mut().append_owned(other)<span class="question-mark">?</span>;
+<a href=#324 id=324 data-nosnippet>324</a>        } <span class="kw">else </span>{
+<a href=#325 id=325 data-nosnippet>325</a>            <span class="self">self</span>._get_inner_mut().append_owned(other)<span class="question-mark">?</span>;
+<a href=#326 id=326 data-nosnippet>326</a>        }
+<a href=#327 id=327 data-nosnippet>327</a>        <span class="prelude-val">Ok</span>(<span class="self">self</span>)
+<a href=#328 id=328 data-nosnippet>328</a>    }
+<a href=#329 id=329 data-nosnippet>329</a>
+<a href=#330 id=330 data-nosnippet>330</a>    <span class="doccomment">/// Redo a length and null_count compute
+<a href=#331 id=331 data-nosnippet>331</a>    </span><span class="kw">pub fn </span>compute_len(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#332 id=332 data-nosnippet>332</a>        <span class="self">self</span>._get_inner_mut().compute_len()
+<a href=#333 id=333 data-nosnippet>333</a>    }
+<a href=#334 id=334 data-nosnippet>334</a>
+<a href=#335 id=335 data-nosnippet>335</a>    <span class="doccomment">/// Extend the memory backed by this array with the values from `other`.
+<a href=#336 id=336 data-nosnippet>336</a>    ///
+<a href=#337 id=337 data-nosnippet>337</a>    /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
+<a href=#338 id=338 data-nosnippet>338</a>    </span><span class="kw">pub fn </span>extend(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;<span class="kw-2">&amp;mut </span><span class="self">Self</span>&gt; {
+<a href=#339 id=339 data-nosnippet>339</a>        <span class="kw">let </span>must_cast = other.dtype().matches_schema_type(<span class="self">self</span>.dtype())<span class="question-mark">?</span>;
+<a href=#340 id=340 data-nosnippet>340</a>        <span class="kw">if </span>must_cast {
+<a href=#341 id=341 data-nosnippet>341</a>            <span class="kw">let </span>other = other.cast(<span class="self">self</span>.dtype())<span class="question-mark">?</span>;
+<a href=#342 id=342 data-nosnippet>342</a>            <span class="self">self</span>._get_inner_mut().extend(<span class="kw-2">&amp;</span>other)<span class="question-mark">?</span>;
+<a href=#343 id=343 data-nosnippet>343</a>        } <span class="kw">else </span>{
+<a href=#344 id=344 data-nosnippet>344</a>            <span class="self">self</span>._get_inner_mut().extend(other)<span class="question-mark">?</span>;
+<a href=#345 id=345 data-nosnippet>345</a>        }
+<a href=#346 id=346 data-nosnippet>346</a>        <span class="prelude-val">Ok</span>(<span class="self">self</span>)
+<a href=#347 id=347 data-nosnippet>347</a>    }
+<a href=#348 id=348 data-nosnippet>348</a>
+<a href=#349 id=349 data-nosnippet>349</a>    <span class="doccomment">/// Sort the series with specific options.
+<a href=#350 id=350 data-nosnippet>350</a>    ///
+<a href=#351 id=351 data-nosnippet>351</a>    /// # Example
+<a href=#352 id=352 data-nosnippet>352</a>    ///
+<a href=#353 id=353 data-nosnippet>353</a>    /// ```rust
+<a href=#354 id=354 data-nosnippet>354</a>    /// # use polars_core::prelude::*;
+<a href=#355 id=355 data-nosnippet>355</a>    /// # fn main() -&gt; PolarsResult&lt;()&gt; {
+<a href=#356 id=356 data-nosnippet>356</a>    /// let s = Series::new("foo".into(), [2, 1, 3]);
+<a href=#357 id=357 data-nosnippet>357</a>    /// let sorted = s.sort(SortOptions::default())?;
+<a href=#358 id=358 data-nosnippet>358</a>    /// assert_eq!(sorted, Series::new("foo".into(), [1, 2, 3]));
+<a href=#359 id=359 data-nosnippet>359</a>    /// # Ok(())
+<a href=#360 id=360 data-nosnippet>360</a>    /// }
+<a href=#361 id=361 data-nosnippet>361</a>    /// ```
+<a href=#362 id=362 data-nosnippet>362</a>    ///
+<a href=#363 id=363 data-nosnippet>363</a>    /// See [`SortOptions`] for more options.
+<a href=#364 id=364 data-nosnippet>364</a>    </span><span class="kw">pub fn </span>sort(<span class="kw-2">&amp;</span><span class="self">self</span>, sort_options: SortOptions) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#365 id=365 data-nosnippet>365</a>        <span class="self">self</span>.sort_with(sort_options)
+<a href=#366 id=366 data-nosnippet>366</a>    }
+<a href=#367 id=367 data-nosnippet>367</a>
+<a href=#368 id=368 data-nosnippet>368</a>    <span class="doccomment">/// Only implemented for numeric types
+<a href=#369 id=369 data-nosnippet>369</a>    </span><span class="kw">pub fn </span>as_single_ptr(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; PolarsResult&lt;usize&gt; {
+<a href=#370 id=370 data-nosnippet>370</a>        <span class="self">self</span>._get_inner_mut().as_single_ptr()
+<a href=#371 id=371 data-nosnippet>371</a>    }
+<a href=#372 id=372 data-nosnippet>372</a>
+<a href=#373 id=373 data-nosnippet>373</a>    <span class="kw">pub fn </span>cast(<span class="kw-2">&amp;</span><span class="self">self</span>, dtype: <span class="kw-2">&amp;</span>DataType) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#374 id=374 data-nosnippet>374</a>        <span class="self">self</span>.cast_with_options(dtype, CastOptions::NonStrict)
+<a href=#375 id=375 data-nosnippet>375</a>    }
+<a href=#376 id=376 data-nosnippet>376</a>
+<a href=#377 id=377 data-nosnippet>377</a>    <span class="doccomment">/// Cast [`Series`] to another [`DataType`].
+<a href=#378 id=378 data-nosnippet>378</a>    </span><span class="kw">pub fn </span>cast_with_options(<span class="kw-2">&amp;</span><span class="self">self</span>, dtype: <span class="kw-2">&amp;</span>DataType, options: CastOptions) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#379 id=379 data-nosnippet>379</a>        <span class="kw">let </span>slf = <span class="self">self
+<a href=#380 id=380 data-nosnippet>380</a>            </span>.trim_lists_to_normalized_offsets()
+<a href=#381 id=381 data-nosnippet>381</a>            .map_or(Cow::Borrowed(<span class="self">self</span>), Cow::Owned);
+<a href=#382 id=382 data-nosnippet>382</a>        <span class="kw">let </span>slf = slf.propagate_nulls().map_or(slf, Cow::Owned);
+<a href=#383 id=383 data-nosnippet>383</a>
+<a href=#384 id=384 data-nosnippet>384</a>        <span class="kw">use </span>DataType <span class="kw">as </span>D;
+<a href=#385 id=385 data-nosnippet>385</a>        <span class="kw">let </span>do_clone = <span class="kw">match </span>dtype {
+<a href=#386 id=386 data-nosnippet>386</a>            D::Unknown(UnknownKind::Any | UnknownKind::Ufunc) =&gt; <span class="bool-val">true</span>,
+<a href=#387 id=387 data-nosnippet>387</a>            D::Unknown(UnknownKind::Int(<span class="kw">_</span>)) <span class="kw">if </span>slf.dtype().is_integer() =&gt; <span class="bool-val">true</span>,
+<a href=#388 id=388 data-nosnippet>388</a>            D::Unknown(UnknownKind::Float) <span class="kw">if </span>slf.dtype().is_float() =&gt; <span class="bool-val">true</span>,
+<a href=#389 id=389 data-nosnippet>389</a>            D::Unknown(UnknownKind::Str)
+<a href=#390 id=390 data-nosnippet>390</a>                <span class="kw">if </span>slf.dtype().is_string() | slf.dtype().is_categorical() =&gt;
+<a href=#391 id=391 data-nosnippet>391</a>            {
+<a href=#392 id=392 data-nosnippet>392</a>                <span class="bool-val">true
+<a href=#393 id=393 data-nosnippet>393</a>            </span>},
+<a href=#394 id=394 data-nosnippet>394</a>            dt <span class="kw">if </span>dt.is_primitive() &amp;&amp; dt == slf.dtype() =&gt; <span class="bool-val">true</span>,
+<a href=#395 id=395 data-nosnippet>395</a>            <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#396 id=396 data-nosnippet>396</a>        };
+<a href=#397 id=397 data-nosnippet>397</a>
+<a href=#398 id=398 data-nosnippet>398</a>        <span class="kw">if </span>do_clone {
+<a href=#399 id=399 data-nosnippet>399</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(slf.into_owned());
+<a href=#400 id=400 data-nosnippet>400</a>        }
+<a href=#401 id=401 data-nosnippet>401</a>
+<a href=#402 id=402 data-nosnippet>402</a>        <span class="kw">pub fn </span>cast_dtype(dtype: <span class="kw-2">&amp;</span>DataType) -&gt; <span class="prelude-ty">Option</span>&lt;DataType&gt; {
+<a href=#403 id=403 data-nosnippet>403</a>            <span class="kw">match </span>dtype {
+<a href=#404 id=404 data-nosnippet>404</a>                D::Unknown(UnknownKind::Int(v)) =&gt; <span class="prelude-val">Some</span>(materialize_dyn_int(<span class="kw-2">*</span>v).dtype()),
+<a href=#405 id=405 data-nosnippet>405</a>                D::Unknown(UnknownKind::Float) =&gt; <span class="prelude-val">Some</span>(DataType::Float64),
+<a href=#406 id=406 data-nosnippet>406</a>                D::Unknown(UnknownKind::Str) =&gt; <span class="prelude-val">Some</span>(DataType::String),
+<a href=#407 id=407 data-nosnippet>407</a>                <span class="comment">// Best leave as is.
+<a href=#408 id=408 data-nosnippet>408</a>                </span>D::List(inner) =&gt; cast_dtype(inner.as_ref()).map(Box::new).map(D::List),
+<a href=#409 id=409 data-nosnippet>409</a>                <span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#410 id=410 data-nosnippet>410</a>                </span>D::Struct(fields) =&gt; {
+<a href=#411 id=411 data-nosnippet>411</a>                    <span class="comment">// @NOTE: We only allocate if we really need to.
+<a href=#412 id=412 data-nosnippet>412</a>
+<a href=#413 id=413 data-nosnippet>413</a>                    </span><span class="kw">let </span><span class="kw-2">mut </span>field_iter = fields.iter().enumerate();
+<a href=#414 id=414 data-nosnippet>414</a>                    <span class="kw">let </span><span class="kw-2">mut </span>new_fields = <span class="kw">loop </span>{
+<a href=#415 id=415 data-nosnippet>415</a>                        <span class="kw">let </span>(i, field) = field_iter.next()<span class="question-mark">?</span>;
+<a href=#416 id=416 data-nosnippet>416</a>
+<a href=#417 id=417 data-nosnippet>417</a>                        <span class="kw">if let </span><span class="prelude-val">Some</span>(dtype) = cast_dtype(<span class="kw-2">&amp;</span>field.dtype) {
+<a href=#418 id=418 data-nosnippet>418</a>                            <span class="kw">let </span><span class="kw-2">mut </span>new_fields = Vec::with_capacity(fields.len());
+<a href=#419 id=419 data-nosnippet>419</a>                            new_fields.extend(fields.iter().take(i).cloned());
+<a href=#420 id=420 data-nosnippet>420</a>                            new_fields.push(Field {
+<a href=#421 id=421 data-nosnippet>421</a>                                name: field.name.clone(),
+<a href=#422 id=422 data-nosnippet>422</a>                                dtype,
+<a href=#423 id=423 data-nosnippet>423</a>                            });
+<a href=#424 id=424 data-nosnippet>424</a>                            <span class="kw">break </span>new_fields;
+<a href=#425 id=425 data-nosnippet>425</a>                        }
+<a href=#426 id=426 data-nosnippet>426</a>                    };
+<a href=#427 id=427 data-nosnippet>427</a>
+<a href=#428 id=428 data-nosnippet>428</a>                    new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
+<a href=#429 id=429 data-nosnippet>429</a>                        <span class="kw">let </span>dtype = cast_dtype(<span class="kw-2">&amp;</span>field.dtype).unwrap_or(field.dtype);
+<a href=#430 id=430 data-nosnippet>430</a>                        Field {
+<a href=#431 id=431 data-nosnippet>431</a>                            name: field.name.clone(),
+<a href=#432 id=432 data-nosnippet>432</a>                            dtype,
+<a href=#433 id=433 data-nosnippet>433</a>                        }
+<a href=#434 id=434 data-nosnippet>434</a>                    }));
+<a href=#435 id=435 data-nosnippet>435</a>
+<a href=#436 id=436 data-nosnippet>436</a>                    <span class="prelude-val">Some</span>(D::Struct(new_fields))
+<a href=#437 id=437 data-nosnippet>437</a>                },
+<a href=#438 id=438 data-nosnippet>438</a>                <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#439 id=439 data-nosnippet>439</a>            }
+<a href=#440 id=440 data-nosnippet>440</a>        }
+<a href=#441 id=441 data-nosnippet>441</a>
+<a href=#442 id=442 data-nosnippet>442</a>        <span class="kw">let </span><span class="kw-2">mut </span>casted = cast_dtype(dtype);
+<a href=#443 id=443 data-nosnippet>443</a>        <span class="kw">if </span>dtype.is_list() &amp;&amp; dtype.inner_dtype().is_some_and(|dt| dt.is_null()) {
+<a href=#444 id=444 data-nosnippet>444</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(from_inner_dtype) = slf.dtype().inner_dtype() {
+<a href=#445 id=445 data-nosnippet>445</a>                casted = <span class="prelude-val">Some</span>(DataType::List(Box::new(from_inner_dtype.clone())));
+<a href=#446 id=446 data-nosnippet>446</a>            }
+<a href=#447 id=447 data-nosnippet>447</a>        }
+<a href=#448 id=448 data-nosnippet>448</a>        <span class="kw">let </span>dtype = <span class="kw">match </span>casted {
+<a href=#449 id=449 data-nosnippet>449</a>            <span class="prelude-val">None </span>=&gt; dtype,
+<a href=#450 id=450 data-nosnippet>450</a>            <span class="prelude-val">Some</span>(<span class="kw-2">ref </span>dtype) =&gt; dtype,
+<a href=#451 id=451 data-nosnippet>451</a>        };
+<a href=#452 id=452 data-nosnippet>452</a>
+<a href=#453 id=453 data-nosnippet>453</a>        <span class="comment">// Always allow casting all nulls to other all nulls.
+<a href=#454 id=454 data-nosnippet>454</a>        </span><span class="kw">let </span>len = slf.len();
+<a href=#455 id=455 data-nosnippet>455</a>        <span class="kw">if </span>slf.null_count() == len {
+<a href=#456 id=456 data-nosnippet>456</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(Series::full_null(slf.name().clone(), len, dtype));
+<a href=#457 id=457 data-nosnippet>457</a>        }
+<a href=#458 id=458 data-nosnippet>458</a>
+<a href=#459 id=459 data-nosnippet>459</a>        <span class="kw">let </span>new_options = <span class="kw">match </span>options {
+<a href=#460 id=460 data-nosnippet>460</a>            <span class="comment">// Strictness is handled on this level to improve error messages.
+<a href=#461 id=461 data-nosnippet>461</a>            </span>CastOptions::Strict =&gt; CastOptions::NonStrict,
+<a href=#462 id=462 data-nosnippet>462</a>            opt =&gt; opt,
+<a href=#463 id=463 data-nosnippet>463</a>        };
+<a href=#464 id=464 data-nosnippet>464</a>
+<a href=#465 id=465 data-nosnippet>465</a>        <span class="kw">let </span>out = slf.<span class="number">0</span>.cast(dtype, new_options)<span class="question-mark">?</span>;
+<a href=#466 id=466 data-nosnippet>466</a>        <span class="kw">if </span>options.is_strict() {
+<a href=#467 id=467 data-nosnippet>467</a>            handle_casting_failures(slf.as_ref(), <span class="kw-2">&amp;</span>out)<span class="question-mark">?</span>;
+<a href=#468 id=468 data-nosnippet>468</a>        }
+<a href=#469 id=469 data-nosnippet>469</a>        <span class="prelude-val">Ok</span>(out)
+<a href=#470 id=470 data-nosnippet>470</a>    }
+<a href=#471 id=471 data-nosnippet>471</a>
+<a href=#472 id=472 data-nosnippet>472</a>    <span class="doccomment">/// Cast from physical to logical types without any checks on the validity of the cast.
+<a href=#473 id=473 data-nosnippet>473</a>    ///
+<a href=#474 id=474 data-nosnippet>474</a>    /// # Safety
+<a href=#475 id=475 data-nosnippet>475</a>    ///
+<a href=#476 id=476 data-nosnippet>476</a>    /// This can lead to invalid memory access in downstream code.
+<a href=#477 id=477 data-nosnippet>477</a>    </span><span class="kw">pub unsafe fn </span>cast_unchecked(<span class="kw-2">&amp;</span><span class="self">self</span>, dtype: <span class="kw-2">&amp;</span>DataType) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#478 id=478 data-nosnippet>478</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#479 id=479 data-nosnippet>479</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#480 id=480 data-nosnippet>480</a>            </span>DataType::Struct(<span class="kw">_</span>) =&gt; <span class="self">self</span>.struct_().unwrap().cast_unchecked(dtype),
+<a href=#481 id=481 data-nosnippet>481</a>            DataType::List(<span class="kw">_</span>) =&gt; <span class="self">self</span>.list().unwrap().cast_unchecked(dtype),
+<a href=#482 id=482 data-nosnippet>482</a>            dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#483 id=483 data-nosnippet>483</a>                <span class="macro">with_match_physical_numeric_polars_type!</span>(dt, |<span class="macro-nonterminal">$T</span>| {
+<a href=#484 id=484 data-nosnippet>484</a>                    <span class="kw">let </span>ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;<span class="macro-nonterminal">$T</span>&gt; = <span class="self">self</span>.as_ref().as_ref().as_ref();
+<a href=#485 id=485 data-nosnippet>485</a>                        ca.cast_unchecked(dtype)
+<a href=#486 id=486 data-nosnippet>486</a>                })
+<a href=#487 id=487 data-nosnippet>487</a>            },
+<a href=#488 id=488 data-nosnippet>488</a>            DataType::Binary =&gt; <span class="self">self</span>.binary().unwrap().cast_unchecked(dtype),
+<a href=#489 id=489 data-nosnippet>489</a>            <span class="kw">_ </span>=&gt; <span class="self">self</span>.cast_with_options(dtype, CastOptions::Overflowing),
+<a href=#490 id=490 data-nosnippet>490</a>        }
+<a href=#491 id=491 data-nosnippet>491</a>    }
+<a href=#492 id=492 data-nosnippet>492</a>
+<a href=#493 id=493 data-nosnippet>493</a>    <span class="doccomment">/// Convert a non-logical series back into a logical series without casting.
+<a href=#494 id=494 data-nosnippet>494</a>    ///
+<a href=#495 id=495 data-nosnippet>495</a>    /// # Safety
+<a href=#496 id=496 data-nosnippet>496</a>    ///
+<a href=#497 id=497 data-nosnippet>497</a>    /// This can lead to invalid memory access in downstream code.
+<a href=#498 id=498 data-nosnippet>498</a>    </span><span class="kw">pub unsafe fn </span>from_physical_unchecked(<span class="kw-2">&amp;</span><span class="self">self</span>, dtype: <span class="kw-2">&amp;</span>DataType) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#499 id=499 data-nosnippet>499</a>        <span class="macro">debug_assert!</span>(!<span class="self">self</span>.dtype().is_logical());
+<a href=#500 id=500 data-nosnippet>500</a>
+<a href=#501 id=501 data-nosnippet>501</a>        <span class="kw">if </span><span class="self">self</span>.dtype() == dtype {
+<a href=#502 id=502 data-nosnippet>502</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="self">self</span>.clone());
+<a href=#503 id=503 data-nosnippet>503</a>        }
+<a href=#504 id=504 data-nosnippet>504</a>
+<a href=#505 id=505 data-nosnippet>505</a>        <span class="kw">use </span>DataType <span class="kw">as </span>D;
+<a href=#506 id=506 data-nosnippet>506</a>        <span class="kw">match </span>(<span class="self">self</span>.dtype(), dtype) {
+<a href=#507 id=507 data-nosnippet>507</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#508 id=508 data-nosnippet>508</a>            </span>(D::Int128, D::Decimal(precision, scale)) =&gt; {
+<a href=#509 id=509 data-nosnippet>509</a>                <span class="self">self</span>.clone().into_decimal(<span class="kw-2">*</span>precision, scale.unwrap())
+<a href=#510 id=510 data-nosnippet>510</a>            },
+<a href=#511 id=511 data-nosnippet>511</a>
+<a href=#512 id=512 data-nosnippet>512</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#513 id=513 data-nosnippet>513</a>            </span>(phys, D::Categorical(cats, <span class="kw">_</span>)) <span class="kw">if </span><span class="kw-2">&amp;</span>cats.physical().dtype() == phys =&gt; {
+<a href=#514 id=514 data-nosnippet>514</a>                <span class="macro">with_match_categorical_physical_type!</span>(cats.physical(), |<span class="macro-nonterminal">$C</span>| {
+<a href=#515 id=515 data-nosnippet>515</a>                    <span class="kw">type </span>CA = ChunkedArray&lt;&lt;<span class="macro-nonterminal">$C </span><span class="kw">as </span>PolarsCategoricalType&gt;::PolarsPhysical&gt;;
+<a href=#516 id=516 data-nosnippet>516</a>                    <span class="kw">let </span>ca = <span class="self">self</span>.as_ref().as_any().downcast_ref::&lt;CA&gt;().unwrap();
+<a href=#517 id=517 data-nosnippet>517</a>                    <span class="prelude-val">Ok</span>(CategoricalChunked::&lt;<span class="macro-nonterminal">$C</span>&gt;::from_cats_and_dtype_unchecked(
+<a href=#518 id=518 data-nosnippet>518</a>                        ca.clone(),
+<a href=#519 id=519 data-nosnippet>519</a>                        dtype.clone(),
+<a href=#520 id=520 data-nosnippet>520</a>                    )
+<a href=#521 id=521 data-nosnippet>521</a>                    .into_series())
+<a href=#522 id=522 data-nosnippet>522</a>                })
+<a href=#523 id=523 data-nosnippet>523</a>            },
+<a href=#524 id=524 data-nosnippet>524</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#525 id=525 data-nosnippet>525</a>            </span>(phys, D::Enum(fcats, <span class="kw">_</span>)) <span class="kw">if </span><span class="kw-2">&amp;</span>fcats.physical().dtype() == phys =&gt; {
+<a href=#526 id=526 data-nosnippet>526</a>                <span class="macro">with_match_categorical_physical_type!</span>(fcats.physical(), |<span class="macro-nonterminal">$C</span>| {
+<a href=#527 id=527 data-nosnippet>527</a>                    <span class="kw">type </span>CA = ChunkedArray&lt;&lt;<span class="macro-nonterminal">$C </span><span class="kw">as </span>PolarsCategoricalType&gt;::PolarsPhysical&gt;;
+<a href=#528 id=528 data-nosnippet>528</a>                    <span class="kw">let </span>ca = <span class="self">self</span>.as_ref().as_any().downcast_ref::&lt;CA&gt;().unwrap();
+<a href=#529 id=529 data-nosnippet>529</a>                    <span class="prelude-val">Ok</span>(CategoricalChunked::&lt;<span class="macro-nonterminal">$C</span>&gt;::from_cats_and_dtype_unchecked(
+<a href=#530 id=530 data-nosnippet>530</a>                        ca.clone(),
+<a href=#531 id=531 data-nosnippet>531</a>                        dtype.clone(),
+<a href=#532 id=532 data-nosnippet>532</a>                    )
+<a href=#533 id=533 data-nosnippet>533</a>                    .into_series())
+<a href=#534 id=534 data-nosnippet>534</a>                })
+<a href=#535 id=535 data-nosnippet>535</a>            },
+<a href=#536 id=536 data-nosnippet>536</a>
+<a href=#537 id=537 data-nosnippet>537</a>            (D::Int32, D::Date) =&gt; <span class="macro">feature_gated!</span>(<span class="string">"dtype-time"</span>, <span class="prelude-val">Ok</span>(<span class="self">self</span>.clone().into_date())),
+<a href=#538 id=538 data-nosnippet>538</a>            (D::Int64, D::Datetime(tu, tz)) =&gt; <span class="macro">feature_gated!</span>(
+<a href=#539 id=539 data-nosnippet>539</a>                <span class="string">"dtype-datetime"</span>,
+<a href=#540 id=540 data-nosnippet>540</a>                <span class="prelude-val">Ok</span>(<span class="self">self</span>.clone().into_datetime(<span class="kw-2">*</span>tu, tz.clone()))
+<a href=#541 id=541 data-nosnippet>541</a>            ),
+<a href=#542 id=542 data-nosnippet>542</a>            (D::Int64, D::Duration(tu)) =&gt; {
+<a href=#543 id=543 data-nosnippet>543</a>                <span class="macro">feature_gated!</span>(<span class="string">"dtype-duration"</span>, <span class="prelude-val">Ok</span>(<span class="self">self</span>.clone().into_duration(<span class="kw-2">*</span>tu)))
+<a href=#544 id=544 data-nosnippet>544</a>            },
+<a href=#545 id=545 data-nosnippet>545</a>            (D::Int64, D::Time) =&gt; <span class="macro">feature_gated!</span>(<span class="string">"dtype-time"</span>, <span class="prelude-val">Ok</span>(<span class="self">self</span>.clone().into_time())),
+<a href=#546 id=546 data-nosnippet>546</a>
+<a href=#547 id=547 data-nosnippet>547</a>            (D::List(<span class="kw">_</span>), D::List(to)) =&gt; <span class="kw">unsafe </span>{
+<a href=#548 id=548 data-nosnippet>548</a>                <span class="self">self</span>.list()
+<a href=#549 id=549 data-nosnippet>549</a>                    .unwrap()
+<a href=#550 id=550 data-nosnippet>550</a>                    .from_physical_unchecked(to.as_ref().clone())
+<a href=#551 id=551 data-nosnippet>551</a>                    .map(|ca| ca.into_series())
+<a href=#552 id=552 data-nosnippet>552</a>            },
+<a href=#553 id=553 data-nosnippet>553</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-array"</span>)]
+<a href=#554 id=554 data-nosnippet>554</a>            </span>(D::Array(<span class="kw">_</span>, lw), D::Array(to, rw)) <span class="kw">if </span>lw == rw =&gt; <span class="kw">unsafe </span>{
+<a href=#555 id=555 data-nosnippet>555</a>                <span class="self">self</span>.array()
+<a href=#556 id=556 data-nosnippet>556</a>                    .unwrap()
+<a href=#557 id=557 data-nosnippet>557</a>                    .from_physical_unchecked(to.as_ref().clone())
+<a href=#558 id=558 data-nosnippet>558</a>                    .map(|ca| ca.into_series())
+<a href=#559 id=559 data-nosnippet>559</a>            },
+<a href=#560 id=560 data-nosnippet>560</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#561 id=561 data-nosnippet>561</a>            </span>(D::Struct(<span class="kw">_</span>), D::Struct(to)) =&gt; <span class="kw">unsafe </span>{
+<a href=#562 id=562 data-nosnippet>562</a>                <span class="self">self</span>.struct_()
+<a href=#563 id=563 data-nosnippet>563</a>                    .unwrap()
+<a href=#564 id=564 data-nosnippet>564</a>                    .from_physical_unchecked(to.as_slice())
+<a href=#565 id=565 data-nosnippet>565</a>                    .map(|ca| ca.into_series())
+<a href=#566 id=566 data-nosnippet>566</a>            },
+<a href=#567 id=567 data-nosnippet>567</a>
+<a href=#568 id=568 data-nosnippet>568</a>            <span class="kw">_ </span>=&gt; <span class="macro">panic!</span>(<span class="string">"invalid from_physical({dtype:?}) for {:?}"</span>, <span class="self">self</span>.dtype()),
+<a href=#569 id=569 data-nosnippet>569</a>        }
+<a href=#570 id=570 data-nosnippet>570</a>    }
+<a href=#571 id=571 data-nosnippet>571</a>
+<a href=#572 id=572 data-nosnippet>572</a>    <span class="doccomment">/// Cast numerical types to f64, and keep floats as is.
+<a href=#573 id=573 data-nosnippet>573</a>    </span><span class="kw">pub fn </span>to_float(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#574 id=574 data-nosnippet>574</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#575 id=575 data-nosnippet>575</a>            DataType::Float32 | DataType::Float64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.clone()),
+<a href=#576 id=576 data-nosnippet>576</a>            <span class="kw">_ </span>=&gt; <span class="self">self</span>.cast_with_options(<span class="kw-2">&amp;</span>DataType::Float64, CastOptions::Overflowing),
+<a href=#577 id=577 data-nosnippet>577</a>        }
+<a href=#578 id=578 data-nosnippet>578</a>    }
+<a href=#579 id=579 data-nosnippet>579</a>
+<a href=#580 id=580 data-nosnippet>580</a>    <span class="doccomment">/// Compute the sum of all values in this Series.
+<a href=#581 id=581 data-nosnippet>581</a>    /// Returns `Some(0)` if the array is empty, and `None` if the array only
+<a href=#582 id=582 data-nosnippet>582</a>    /// contains null values.
+<a href=#583 id=583 data-nosnippet>583</a>    ///
+<a href=#584 id=584 data-nosnippet>584</a>    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+<a href=#585 id=585 data-nosnippet>585</a>    /// first cast to `Int64` to prevent overflow issues.
+<a href=#586 id=586 data-nosnippet>586</a>    </span><span class="kw">pub fn </span>sum&lt;T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;T&gt;
+<a href=#587 id=587 data-nosnippet>587</a>    <span class="kw">where
+<a href=#588 id=588 data-nosnippet>588</a>        </span>T: NumCast,
+<a href=#589 id=589 data-nosnippet>589</a>    {
+<a href=#590 id=590 data-nosnippet>590</a>        <span class="kw">let </span>sum = <span class="self">self</span>.sum_reduce()<span class="question-mark">?</span>;
+<a href=#591 id=591 data-nosnippet>591</a>        <span class="kw">let </span>sum = sum.value().extract().unwrap();
+<a href=#592 id=592 data-nosnippet>592</a>        <span class="prelude-val">Ok</span>(sum)
+<a href=#593 id=593 data-nosnippet>593</a>    }
+<a href=#594 id=594 data-nosnippet>594</a>
+<a href=#595 id=595 data-nosnippet>595</a>    <span class="doccomment">/// Returns the minimum value in the array, according to the natural order.
+<a href=#596 id=596 data-nosnippet>596</a>    /// Returns an option because the array is nullable.
+<a href=#597 id=597 data-nosnippet>597</a>    </span><span class="kw">pub fn </span>min&lt;T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;T&gt;&gt;
+<a href=#598 id=598 data-nosnippet>598</a>    <span class="kw">where
+<a href=#599 id=599 data-nosnippet>599</a>        </span>T: NumCast,
+<a href=#600 id=600 data-nosnippet>600</a>    {
+<a href=#601 id=601 data-nosnippet>601</a>        <span class="kw">let </span>min = <span class="self">self</span>.min_reduce()<span class="question-mark">?</span>;
+<a href=#602 id=602 data-nosnippet>602</a>        <span class="kw">let </span>min = min.value().extract::&lt;T&gt;();
+<a href=#603 id=603 data-nosnippet>603</a>        <span class="prelude-val">Ok</span>(min)
+<a href=#604 id=604 data-nosnippet>604</a>    }
+<a href=#605 id=605 data-nosnippet>605</a>
+<a href=#606 id=606 data-nosnippet>606</a>    <span class="doccomment">/// Returns the maximum value in the array, according to the natural order.
+<a href=#607 id=607 data-nosnippet>607</a>    /// Returns an option because the array is nullable.
+<a href=#608 id=608 data-nosnippet>608</a>    </span><span class="kw">pub fn </span>max&lt;T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;T&gt;&gt;
+<a href=#609 id=609 data-nosnippet>609</a>    <span class="kw">where
+<a href=#610 id=610 data-nosnippet>610</a>        </span>T: NumCast,
+<a href=#611 id=611 data-nosnippet>611</a>    {
+<a href=#612 id=612 data-nosnippet>612</a>        <span class="kw">let </span>max = <span class="self">self</span>.max_reduce()<span class="question-mark">?</span>;
+<a href=#613 id=613 data-nosnippet>613</a>        <span class="kw">let </span>max = max.value().extract::&lt;T&gt;();
+<a href=#614 id=614 data-nosnippet>614</a>        <span class="prelude-val">Ok</span>(max)
+<a href=#615 id=615 data-nosnippet>615</a>    }
+<a href=#616 id=616 data-nosnippet>616</a>
+<a href=#617 id=617 data-nosnippet>617</a>    <span class="doccomment">/// Explode a list Series. This expands every item to a new row..
+<a href=#618 id=618 data-nosnippet>618</a>    </span><span class="kw">pub fn </span>explode(<span class="kw-2">&amp;</span><span class="self">self</span>, skip_empty: bool) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#619 id=619 data-nosnippet>619</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#620 id=620 data-nosnippet>620</a>            DataType::List(<span class="kw">_</span>) =&gt; <span class="self">self</span>.list().unwrap().explode(skip_empty),
+<a href=#621 id=621 data-nosnippet>621</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-array"</span>)]
+<a href=#622 id=622 data-nosnippet>622</a>            </span>DataType::Array(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; <span class="self">self</span>.array().unwrap().explode(skip_empty),
+<a href=#623 id=623 data-nosnippet>623</a>            <span class="kw">_ </span>=&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.clone()),
+<a href=#624 id=624 data-nosnippet>624</a>        }
+<a href=#625 id=625 data-nosnippet>625</a>    }
+<a href=#626 id=626 data-nosnippet>626</a>
+<a href=#627 id=627 data-nosnippet>627</a>    <span class="doccomment">/// Check if numeric value is NaN (note this is different than missing/ null)
+<a href=#628 id=628 data-nosnippet>628</a>    </span><span class="kw">pub fn </span>is_nan(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;BooleanChunked&gt; {
+<a href=#629 id=629 data-nosnippet>629</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#630 id=630 data-nosnippet>630</a>            DataType::Float32 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f32().unwrap().is_nan()),
+<a href=#631 id=631 data-nosnippet>631</a>            DataType::Float64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f64().unwrap().is_nan()),
+<a href=#632 id=632 data-nosnippet>632</a>            DataType::Null =&gt; <span class="prelude-val">Ok</span>(BooleanChunked::full_null(<span class="self">self</span>.name().clone(), <span class="self">self</span>.len())),
+<a href=#633 id=633 data-nosnippet>633</a>            dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#634 id=634 data-nosnippet>634</a>                <span class="kw">let </span>arr = BooleanArray::full(<span class="self">self</span>.len(), <span class="bool-val">false</span>, ArrowDataType::Boolean)
+<a href=#635 id=635 data-nosnippet>635</a>                    .with_validity(<span class="self">self</span>.rechunk_validity());
+<a href=#636 id=636 data-nosnippet>636</a>                <span class="prelude-val">Ok</span>(BooleanChunked::with_chunk(<span class="self">self</span>.name().clone(), arr))
+<a href=#637 id=637 data-nosnippet>637</a>            },
+<a href=#638 id=638 data-nosnippet>638</a>            <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(opq = is_nan, <span class="self">self</span>.dtype()),
+<a href=#639 id=639 data-nosnippet>639</a>        }
+<a href=#640 id=640 data-nosnippet>640</a>    }
+<a href=#641 id=641 data-nosnippet>641</a>
+<a href=#642 id=642 data-nosnippet>642</a>    <span class="doccomment">/// Check if numeric value is NaN (note this is different than missing/null)
+<a href=#643 id=643 data-nosnippet>643</a>    </span><span class="kw">pub fn </span>is_not_nan(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;BooleanChunked&gt; {
+<a href=#644 id=644 data-nosnippet>644</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#645 id=645 data-nosnippet>645</a>            DataType::Float32 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f32().unwrap().is_not_nan()),
+<a href=#646 id=646 data-nosnippet>646</a>            DataType::Float64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f64().unwrap().is_not_nan()),
+<a href=#647 id=647 data-nosnippet>647</a>            dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#648 id=648 data-nosnippet>648</a>                <span class="kw">let </span>arr = BooleanArray::full(<span class="self">self</span>.len(), <span class="bool-val">true</span>, ArrowDataType::Boolean)
+<a href=#649 id=649 data-nosnippet>649</a>                    .with_validity(<span class="self">self</span>.rechunk_validity());
+<a href=#650 id=650 data-nosnippet>650</a>                <span class="prelude-val">Ok</span>(BooleanChunked::with_chunk(<span class="self">self</span>.name().clone(), arr))
+<a href=#651 id=651 data-nosnippet>651</a>            },
+<a href=#652 id=652 data-nosnippet>652</a>            <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(opq = is_not_nan, <span class="self">self</span>.dtype()),
+<a href=#653 id=653 data-nosnippet>653</a>        }
+<a href=#654 id=654 data-nosnippet>654</a>    }
+<a href=#655 id=655 data-nosnippet>655</a>
+<a href=#656 id=656 data-nosnippet>656</a>    <span class="doccomment">/// Check if numeric value is finite
+<a href=#657 id=657 data-nosnippet>657</a>    </span><span class="kw">pub fn </span>is_finite(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;BooleanChunked&gt; {
+<a href=#658 id=658 data-nosnippet>658</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#659 id=659 data-nosnippet>659</a>            DataType::Float32 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f32().unwrap().is_finite()),
+<a href=#660 id=660 data-nosnippet>660</a>            DataType::Float64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f64().unwrap().is_finite()),
+<a href=#661 id=661 data-nosnippet>661</a>            DataType::Null =&gt; <span class="prelude-val">Ok</span>(BooleanChunked::full_null(<span class="self">self</span>.name().clone(), <span class="self">self</span>.len())),
+<a href=#662 id=662 data-nosnippet>662</a>            dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#663 id=663 data-nosnippet>663</a>                <span class="kw">let </span>arr = BooleanArray::full(<span class="self">self</span>.len(), <span class="bool-val">true</span>, ArrowDataType::Boolean)
+<a href=#664 id=664 data-nosnippet>664</a>                    .with_validity(<span class="self">self</span>.rechunk_validity());
+<a href=#665 id=665 data-nosnippet>665</a>                <span class="prelude-val">Ok</span>(BooleanChunked::with_chunk(<span class="self">self</span>.name().clone(), arr))
+<a href=#666 id=666 data-nosnippet>666</a>            },
+<a href=#667 id=667 data-nosnippet>667</a>            <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(opq = is_finite, <span class="self">self</span>.dtype()),
+<a href=#668 id=668 data-nosnippet>668</a>        }
+<a href=#669 id=669 data-nosnippet>669</a>    }
+<a href=#670 id=670 data-nosnippet>670</a>
+<a href=#671 id=671 data-nosnippet>671</a>    <span class="doccomment">/// Check if numeric value is infinite
+<a href=#672 id=672 data-nosnippet>672</a>    </span><span class="kw">pub fn </span>is_infinite(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;BooleanChunked&gt; {
+<a href=#673 id=673 data-nosnippet>673</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#674 id=674 data-nosnippet>674</a>            DataType::Float32 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f32().unwrap().is_infinite()),
+<a href=#675 id=675 data-nosnippet>675</a>            DataType::Float64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f64().unwrap().is_infinite()),
+<a href=#676 id=676 data-nosnippet>676</a>            DataType::Null =&gt; <span class="prelude-val">Ok</span>(BooleanChunked::full_null(<span class="self">self</span>.name().clone(), <span class="self">self</span>.len())),
+<a href=#677 id=677 data-nosnippet>677</a>            dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#678 id=678 data-nosnippet>678</a>                <span class="kw">let </span>arr = BooleanArray::full(<span class="self">self</span>.len(), <span class="bool-val">false</span>, ArrowDataType::Boolean)
+<a href=#679 id=679 data-nosnippet>679</a>                    .with_validity(<span class="self">self</span>.rechunk_validity());
+<a href=#680 id=680 data-nosnippet>680</a>                <span class="prelude-val">Ok</span>(BooleanChunked::with_chunk(<span class="self">self</span>.name().clone(), arr))
+<a href=#681 id=681 data-nosnippet>681</a>            },
+<a href=#682 id=682 data-nosnippet>682</a>            <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(opq = is_infinite, <span class="self">self</span>.dtype()),
+<a href=#683 id=683 data-nosnippet>683</a>        }
+<a href=#684 id=684 data-nosnippet>684</a>    }
+<a href=#685 id=685 data-nosnippet>685</a>
+<a href=#686 id=686 data-nosnippet>686</a>    <span class="doccomment">/// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+<a href=#687 id=687 data-nosnippet>687</a>    /// from `other` where the mask evaluates `false`. This function automatically broadcasts unit
+<a href=#688 id=688 data-nosnippet>688</a>    /// length inputs.
+<a href=#689 id=689 data-nosnippet>689</a>    </span><span class="attr">#[cfg(feature = <span class="string">"zip_with"</span>)]
+<a href=#690 id=690 data-nosnippet>690</a>    </span><span class="kw">pub fn </span>zip_with(<span class="kw-2">&amp;</span><span class="self">self</span>, mask: <span class="kw-2">&amp;</span>BooleanChunked, other: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#691 id=691 data-nosnippet>691</a>        <span class="kw">let </span>(lhs, rhs) = coerce_lhs_rhs(<span class="self">self</span>, other)<span class="question-mark">?</span>;
+<a href=#692 id=692 data-nosnippet>692</a>        lhs.zip_with_same_type(mask, rhs.as_ref())
+<a href=#693 id=693 data-nosnippet>693</a>    }
+<a href=#694 id=694 data-nosnippet>694</a>
+<a href=#695 id=695 data-nosnippet>695</a>    <span class="doccomment">/// Converts a Series to their physical representation, if they have one,
+<a href=#696 id=696 data-nosnippet>696</a>    /// otherwise the series is left unchanged.
+<a href=#697 id=697 data-nosnippet>697</a>    ///
+<a href=#698 id=698 data-nosnippet>698</a>    /// * Date -&gt; Int32
+<a href=#699 id=699 data-nosnippet>699</a>    /// * Datetime -&gt; Int64
+<a href=#700 id=700 data-nosnippet>700</a>    /// * Duration -&gt; Int64
+<a href=#701 id=701 data-nosnippet>701</a>    /// * Decimal -&gt; Int128
+<a href=#702 id=702 data-nosnippet>702</a>    /// * Time -&gt; Int64
+<a href=#703 id=703 data-nosnippet>703</a>    /// * Categorical -&gt; U8/U16/U32
+<a href=#704 id=704 data-nosnippet>704</a>    /// * List(inner) -&gt; List(physical of inner)
+<a href=#705 id=705 data-nosnippet>705</a>    /// * Array(inner) -&gt; Array(physical of inner)
+<a href=#706 id=706 data-nosnippet>706</a>    /// * Struct -&gt; Struct with physical repr of each struct column
+<a href=#707 id=707 data-nosnippet>707</a>    </span><span class="kw">pub fn </span>to_physical_repr(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Cow&lt;<span class="lifetime">'_</span>, Series&gt; {
+<a href=#708 id=708 data-nosnippet>708</a>        <span class="kw">use </span>DataType::<span class="kw-2">*</span>;
+<a href=#709 id=709 data-nosnippet>709</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#710 id=710 data-nosnippet>710</a>            <span class="comment">// NOTE: Don't use cast here, as it might rechunk (if all nulls)
+<a href=#711 id=711 data-nosnippet>711</a>            // which is not allowed in a phys repr.
+<a href=#712 id=712 data-nosnippet>712</a>            </span><span class="attr">#[cfg(feature = <span class="string">"dtype-date"</span>)]
+<a href=#713 id=713 data-nosnippet>713</a>            </span>Date =&gt; Cow::Owned(<span class="self">self</span>.date().unwrap().phys.clone().into_series()),
+<a href=#714 id=714 data-nosnippet>714</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-datetime"</span>)]
+<a href=#715 id=715 data-nosnippet>715</a>            </span>Datetime(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; Cow::Owned(<span class="self">self</span>.datetime().unwrap().phys.clone().into_series()),
+<a href=#716 id=716 data-nosnippet>716</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-duration"</span>)]
+<a href=#717 id=717 data-nosnippet>717</a>            </span>Duration(<span class="kw">_</span>) =&gt; Cow::Owned(<span class="self">self</span>.duration().unwrap().phys.clone().into_series()),
+<a href=#718 id=718 data-nosnippet>718</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-time"</span>)]
+<a href=#719 id=719 data-nosnippet>719</a>            </span>Time =&gt; Cow::Owned(<span class="self">self</span>.time().unwrap().phys.clone().into_series()),
+<a href=#720 id=720 data-nosnippet>720</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#721 id=721 data-nosnippet>721</a>            </span>dt @ (Categorical(<span class="kw">_</span>, <span class="kw">_</span>) | Enum(<span class="kw">_</span>, <span class="kw">_</span>)) =&gt; {
+<a href=#722 id=722 data-nosnippet>722</a>                <span class="macro">with_match_categorical_physical_type!</span>(dt.cat_physical().unwrap(), |<span class="macro-nonterminal">$C</span>| {
+<a href=#723 id=723 data-nosnippet>723</a>                    <span class="kw">let </span>ca = <span class="self">self</span>.cat::&lt;<span class="macro-nonterminal">$C</span>&gt;().unwrap();
+<a href=#724 id=724 data-nosnippet>724</a>                    Cow::Owned(ca.physical().clone().into_series())
+<a href=#725 id=725 data-nosnippet>725</a>                })
+<a href=#726 id=726 data-nosnippet>726</a>            },
+<a href=#727 id=727 data-nosnippet>727</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#728 id=728 data-nosnippet>728</a>            </span>Decimal(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; Cow::Owned(<span class="self">self</span>.decimal().unwrap().phys.clone().into_series()),
+<a href=#729 id=729 data-nosnippet>729</a>            List(<span class="kw">_</span>) =&gt; <span class="kw">match </span><span class="self">self</span>.list().unwrap().to_physical_repr() {
+<a href=#730 id=730 data-nosnippet>730</a>                Cow::Borrowed(<span class="kw">_</span>) =&gt; Cow::Borrowed(<span class="self">self</span>),
+<a href=#731 id=731 data-nosnippet>731</a>                Cow::Owned(ca) =&gt; Cow::Owned(ca.into_series()),
+<a href=#732 id=732 data-nosnippet>732</a>            },
+<a href=#733 id=733 data-nosnippet>733</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-array"</span>)]
+<a href=#734 id=734 data-nosnippet>734</a>            </span>Array(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; <span class="kw">match </span><span class="self">self</span>.array().unwrap().to_physical_repr() {
+<a href=#735 id=735 data-nosnippet>735</a>                Cow::Borrowed(<span class="kw">_</span>) =&gt; Cow::Borrowed(<span class="self">self</span>),
+<a href=#736 id=736 data-nosnippet>736</a>                Cow::Owned(ca) =&gt; Cow::Owned(ca.into_series()),
+<a href=#737 id=737 data-nosnippet>737</a>            },
+<a href=#738 id=738 data-nosnippet>738</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#739 id=739 data-nosnippet>739</a>            </span>Struct(<span class="kw">_</span>) =&gt; <span class="kw">match </span><span class="self">self</span>.struct_().unwrap().to_physical_repr() {
+<a href=#740 id=740 data-nosnippet>740</a>                Cow::Borrowed(<span class="kw">_</span>) =&gt; Cow::Borrowed(<span class="self">self</span>),
+<a href=#741 id=741 data-nosnippet>741</a>                Cow::Owned(ca) =&gt; Cow::Owned(ca.into_series()),
+<a href=#742 id=742 data-nosnippet>742</a>            },
+<a href=#743 id=743 data-nosnippet>743</a>            <span class="kw">_ </span>=&gt; Cow::Borrowed(<span class="self">self</span>),
+<a href=#744 id=744 data-nosnippet>744</a>        }
+<a href=#745 id=745 data-nosnippet>745</a>    }
+<a href=#746 id=746 data-nosnippet>746</a>
+<a href=#747 id=747 data-nosnippet>747</a>    <span class="doccomment">/// Traverse and collect every nth element in a new array.
+<a href=#748 id=748 data-nosnippet>748</a>    </span><span class="kw">pub fn </span>gather_every(<span class="kw-2">&amp;</span><span class="self">self</span>, n: usize, offset: usize) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#749 id=749 data-nosnippet>749</a>        <span class="macro">polars_ensure!</span>(n &gt; <span class="number">0</span>, ComputeError: <span class="string">"cannot perform gather every for `n=0`"</span>);
+<a href=#750 id=750 data-nosnippet>750</a>        <span class="kw">let </span>idx = ((offset <span class="kw">as </span>IdxSize)..<span class="self">self</span>.len() <span class="kw">as </span>IdxSize)
+<a href=#751 id=751 data-nosnippet>751</a>            .step_by(n)
+<a href=#752 id=752 data-nosnippet>752</a>            .collect_ca(PlSmallStr::EMPTY);
+<a href=#753 id=753 data-nosnippet>753</a>        <span class="comment">// SAFETY: we stay in-bounds.
+<a href=#754 id=754 data-nosnippet>754</a>        </span><span class="prelude-val">Ok</span>(<span class="kw">unsafe </span>{ <span class="self">self</span>.take_unchecked(<span class="kw-2">&amp;</span>idx) })
+<a href=#755 id=755 data-nosnippet>755</a>    }
+<a href=#756 id=756 data-nosnippet>756</a>
+<a href=#757 id=757 data-nosnippet>757</a>    <span class="attr">#[cfg(feature = <span class="string">"dot_product"</span>)]
+<a href=#758 id=758 data-nosnippet>758</a>    </span><span class="kw">pub fn </span>dot(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;f64&gt; {
+<a href=#759 id=759 data-nosnippet>759</a>        std::ops::Mul::mul(<span class="self">self</span>, other)<span class="question-mark">?</span>.sum::&lt;f64&gt;()
+<a href=#760 id=760 data-nosnippet>760</a>    }
+<a href=#761 id=761 data-nosnippet>761</a>
+<a href=#762 id=762 data-nosnippet>762</a>    <span class="doccomment">/// Get the sum of the Series as a new Series of length 1.
+<a href=#763 id=763 data-nosnippet>763</a>    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+<a href=#764 id=764 data-nosnippet>764</a>    ///
+<a href=#765 id=765 data-nosnippet>765</a>    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+<a href=#766 id=766 data-nosnippet>766</a>    /// first cast to `Int64` to prevent overflow issues.
+<a href=#767 id=767 data-nosnippet>767</a>    </span><span class="kw">pub fn </span>sum_reduce(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;Scalar&gt; {
+<a href=#768 id=768 data-nosnippet>768</a>        <span class="kw">use </span>DataType::<span class="kw-2">*</span>;
+<a href=#769 id=769 data-nosnippet>769</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#770 id=770 data-nosnippet>770</a>            Int8 | UInt8 | Int16 | UInt16 =&gt; <span class="self">self</span>.cast(<span class="kw-2">&amp;</span>Int64).unwrap().sum_reduce(),
+<a href=#771 id=771 data-nosnippet>771</a>            <span class="kw">_ </span>=&gt; <span class="self">self</span>.<span class="number">0</span>.sum_reduce(),
+<a href=#772 id=772 data-nosnippet>772</a>        }
+<a href=#773 id=773 data-nosnippet>773</a>    }
+<a href=#774 id=774 data-nosnippet>774</a>
+<a href=#775 id=775 data-nosnippet>775</a>    <span class="doccomment">/// Get the product of an array.
+<a href=#776 id=776 data-nosnippet>776</a>    ///
+<a href=#777 id=777 data-nosnippet>777</a>    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+<a href=#778 id=778 data-nosnippet>778</a>    /// first cast to `Int64` to prevent overflow issues.
+<a href=#779 id=779 data-nosnippet>779</a>    </span><span class="kw">pub fn </span>product(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;Scalar&gt; {
+<a href=#780 id=780 data-nosnippet>780</a>        <span class="attr">#[cfg(feature = <span class="string">"product"</span>)]
+<a href=#781 id=781 data-nosnippet>781</a>        </span>{
+<a href=#782 id=782 data-nosnippet>782</a>            <span class="kw">use </span>DataType::<span class="kw-2">*</span>;
+<a href=#783 id=783 data-nosnippet>783</a>            <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#784 id=784 data-nosnippet>784</a>                Boolean =&gt; <span class="self">self</span>.cast(<span class="kw-2">&amp;</span>DataType::Int64).unwrap().product(),
+<a href=#785 id=785 data-nosnippet>785</a>                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 =&gt; {
+<a href=#786 id=786 data-nosnippet>786</a>                    <span class="kw">let </span>s = <span class="self">self</span>.cast(<span class="kw-2">&amp;</span>Int64).unwrap();
+<a href=#787 id=787 data-nosnippet>787</a>                    s.product()
+<a href=#788 id=788 data-nosnippet>788</a>                },
+<a href=#789 id=789 data-nosnippet>789</a>                Int64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.i64().unwrap().prod_reduce()),
+<a href=#790 id=790 data-nosnippet>790</a>                UInt64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.u64().unwrap().prod_reduce()),
+<a href=#791 id=791 data-nosnippet>791</a>                <span class="attr">#[cfg(feature = <span class="string">"dtype-i128"</span>)]
+<a href=#792 id=792 data-nosnippet>792</a>                </span>Int128 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.i128().unwrap().prod_reduce()),
+<a href=#793 id=793 data-nosnippet>793</a>                Float32 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f32().unwrap().prod_reduce()),
+<a href=#794 id=794 data-nosnippet>794</a>                Float64 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.f64().unwrap().prod_reduce()),
+<a href=#795 id=795 data-nosnippet>795</a>                dt =&gt; {
+<a href=#796 id=796 data-nosnippet>796</a>                    <span class="macro">polars_bail!</span>(InvalidOperation: <span class="string">"`product` operation not supported for dtype `{dt}`"</span>)
+<a href=#797 id=797 data-nosnippet>797</a>                },
+<a href=#798 id=798 data-nosnippet>798</a>            }
+<a href=#799 id=799 data-nosnippet>799</a>        }
+<a href=#800 id=800 data-nosnippet>800</a>        <span class="attr">#[cfg(not(feature = <span class="string">"product"</span>))]
+<a href=#801 id=801 data-nosnippet>801</a>        </span>{
+<a href=#802 id=802 data-nosnippet>802</a>            <span class="macro">panic!</span>(<span class="string">"activate 'product' feature"</span>)
+<a href=#803 id=803 data-nosnippet>803</a>        }
+<a href=#804 id=804 data-nosnippet>804</a>    }
+<a href=#805 id=805 data-nosnippet>805</a>
+<a href=#806 id=806 data-nosnippet>806</a>    <span class="doccomment">/// Cast throws an error if conversion had overflows
+<a href=#807 id=807 data-nosnippet>807</a>    </span><span class="kw">pub fn </span>strict_cast(<span class="kw-2">&amp;</span><span class="self">self</span>, dtype: <span class="kw-2">&amp;</span>DataType) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#808 id=808 data-nosnippet>808</a>        <span class="self">self</span>.cast_with_options(dtype, CastOptions::Strict)
+<a href=#809 id=809 data-nosnippet>809</a>    }
+<a href=#810 id=810 data-nosnippet>810</a>
+<a href=#811 id=811 data-nosnippet>811</a>    <span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#812 id=812 data-nosnippet>812</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_decimal(
+<a href=#813 id=813 data-nosnippet>813</a>        <span class="self">self</span>,
+<a href=#814 id=814 data-nosnippet>814</a>        precision: <span class="prelude-ty">Option</span>&lt;usize&gt;,
+<a href=#815 id=815 data-nosnippet>815</a>        scale: usize,
+<a href=#816 id=816 data-nosnippet>816</a>    ) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#817 id=817 data-nosnippet>817</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#818 id=818 data-nosnippet>818</a>            DataType::Int128 =&gt; <span class="prelude-val">Ok</span>(<span class="self">self
+<a href=#819 id=819 data-nosnippet>819</a>                </span>.i128()
+<a href=#820 id=820 data-nosnippet>820</a>                .unwrap()
+<a href=#821 id=821 data-nosnippet>821</a>                .clone()
+<a href=#822 id=822 data-nosnippet>822</a>                .into_decimal(precision, scale)<span class="question-mark">?
+<a href=#823 id=823 data-nosnippet>823</a>                </span>.into_series()),
+<a href=#824 id=824 data-nosnippet>824</a>            DataType::Decimal(cur_prec, cur_scale)
+<a href=#825 id=825 data-nosnippet>825</a>                <span class="kw">if </span>(cur_prec.is_none() || precision.is_none() || <span class="kw-2">*</span>cur_prec == precision)
+<a href=#826 id=826 data-nosnippet>826</a>                    &amp;&amp; <span class="kw-2">*</span>cur_scale == <span class="prelude-val">Some</span>(scale) =&gt;
+<a href=#827 id=827 data-nosnippet>827</a>            {
+<a href=#828 id=828 data-nosnippet>828</a>                <span class="prelude-val">Ok</span>(<span class="self">self</span>)
+<a href=#829 id=829 data-nosnippet>829</a>            },
+<a href=#830 id=830 data-nosnippet>830</a>            dt =&gt; <span class="macro">panic!</span>(<span class="string">"into_decimal({precision:?}, {scale}) not implemented for {dt:?}"</span>),
+<a href=#831 id=831 data-nosnippet>831</a>        }
+<a href=#832 id=832 data-nosnippet>832</a>    }
+<a href=#833 id=833 data-nosnippet>833</a>
+<a href=#834 id=834 data-nosnippet>834</a>    <span class="attr">#[cfg(feature = <span class="string">"dtype-time"</span>)]
+<a href=#835 id=835 data-nosnippet>835</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_time(<span class="self">self</span>) -&gt; Series {
+<a href=#836 id=836 data-nosnippet>836</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#837 id=837 data-nosnippet>837</a>            DataType::Int64 =&gt; <span class="self">self</span>.i64().unwrap().clone().into_time().into_series(),
+<a href=#838 id=838 data-nosnippet>838</a>            DataType::Time =&gt; <span class="self">self
+<a href=#839 id=839 data-nosnippet>839</a>                </span>.time()
+<a href=#840 id=840 data-nosnippet>840</a>                .unwrap()
+<a href=#841 id=841 data-nosnippet>841</a>                .physical()
+<a href=#842 id=842 data-nosnippet>842</a>                .clone()
+<a href=#843 id=843 data-nosnippet>843</a>                .into_time()
+<a href=#844 id=844 data-nosnippet>844</a>                .into_series(),
+<a href=#845 id=845 data-nosnippet>845</a>            dt =&gt; <span class="macro">panic!</span>(<span class="string">"date not implemented for {dt:?}"</span>),
+<a href=#846 id=846 data-nosnippet>846</a>        }
+<a href=#847 id=847 data-nosnippet>847</a>    }
+<a href=#848 id=848 data-nosnippet>848</a>
+<a href=#849 id=849 data-nosnippet>849</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_date(<span class="self">self</span>) -&gt; Series {
+<a href=#850 id=850 data-nosnippet>850</a>        <span class="attr">#[cfg(not(feature = <span class="string">"dtype-date"</span>))]
+<a href=#851 id=851 data-nosnippet>851</a>        </span>{
+<a href=#852 id=852 data-nosnippet>852</a>            <span class="macro">panic!</span>(<span class="string">"activate feature dtype-date"</span>)
+<a href=#853 id=853 data-nosnippet>853</a>        }
+<a href=#854 id=854 data-nosnippet>854</a>        <span class="attr">#[cfg(feature = <span class="string">"dtype-date"</span>)]
+<a href=#855 id=855 data-nosnippet>855</a>        </span><span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#856 id=856 data-nosnippet>856</a>            DataType::Int32 =&gt; <span class="self">self</span>.i32().unwrap().clone().into_date().into_series(),
+<a href=#857 id=857 data-nosnippet>857</a>            DataType::Date =&gt; <span class="self">self
+<a href=#858 id=858 data-nosnippet>858</a>                </span>.date()
+<a href=#859 id=859 data-nosnippet>859</a>                .unwrap()
+<a href=#860 id=860 data-nosnippet>860</a>                .physical()
+<a href=#861 id=861 data-nosnippet>861</a>                .clone()
+<a href=#862 id=862 data-nosnippet>862</a>                .into_date()
+<a href=#863 id=863 data-nosnippet>863</a>                .into_series(),
+<a href=#864 id=864 data-nosnippet>864</a>            dt =&gt; <span class="macro">panic!</span>(<span class="string">"date not implemented for {dt:?}"</span>),
+<a href=#865 id=865 data-nosnippet>865</a>        }
+<a href=#866 id=866 data-nosnippet>866</a>    }
+<a href=#867 id=867 data-nosnippet>867</a>
+<a href=#868 id=868 data-nosnippet>868</a>    <span class="attr">#[allow(unused_variables)]
+<a href=#869 id=869 data-nosnippet>869</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_datetime(<span class="self">self</span>, timeunit: TimeUnit, tz: <span class="prelude-ty">Option</span>&lt;TimeZone&gt;) -&gt; Series {
+<a href=#870 id=870 data-nosnippet>870</a>        <span class="attr">#[cfg(not(feature = <span class="string">"dtype-datetime"</span>))]
+<a href=#871 id=871 data-nosnippet>871</a>        </span>{
+<a href=#872 id=872 data-nosnippet>872</a>            <span class="macro">panic!</span>(<span class="string">"activate feature dtype-datetime"</span>)
+<a href=#873 id=873 data-nosnippet>873</a>        }
+<a href=#874 id=874 data-nosnippet>874</a>
+<a href=#875 id=875 data-nosnippet>875</a>        <span class="attr">#[cfg(feature = <span class="string">"dtype-datetime"</span>)]
+<a href=#876 id=876 data-nosnippet>876</a>        </span><span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#877 id=877 data-nosnippet>877</a>            DataType::Int64 =&gt; <span class="self">self
+<a href=#878 id=878 data-nosnippet>878</a>                </span>.i64()
+<a href=#879 id=879 data-nosnippet>879</a>                .unwrap()
+<a href=#880 id=880 data-nosnippet>880</a>                .clone()
+<a href=#881 id=881 data-nosnippet>881</a>                .into_datetime(timeunit, tz)
+<a href=#882 id=882 data-nosnippet>882</a>                .into_series(),
+<a href=#883 id=883 data-nosnippet>883</a>            DataType::Datetime(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; <span class="self">self
+<a href=#884 id=884 data-nosnippet>884</a>                </span>.datetime()
+<a href=#885 id=885 data-nosnippet>885</a>                .unwrap()
+<a href=#886 id=886 data-nosnippet>886</a>                .physical()
+<a href=#887 id=887 data-nosnippet>887</a>                .clone()
+<a href=#888 id=888 data-nosnippet>888</a>                .into_datetime(timeunit, tz)
+<a href=#889 id=889 data-nosnippet>889</a>                .into_series(),
+<a href=#890 id=890 data-nosnippet>890</a>            dt =&gt; <span class="macro">panic!</span>(<span class="string">"into_datetime not implemented for {dt:?}"</span>),
+<a href=#891 id=891 data-nosnippet>891</a>        }
+<a href=#892 id=892 data-nosnippet>892</a>    }
+<a href=#893 id=893 data-nosnippet>893</a>
+<a href=#894 id=894 data-nosnippet>894</a>    <span class="attr">#[allow(unused_variables)]
+<a href=#895 id=895 data-nosnippet>895</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_duration(<span class="self">self</span>, timeunit: TimeUnit) -&gt; Series {
+<a href=#896 id=896 data-nosnippet>896</a>        <span class="attr">#[cfg(not(feature = <span class="string">"dtype-duration"</span>))]
+<a href=#897 id=897 data-nosnippet>897</a>        </span>{
+<a href=#898 id=898 data-nosnippet>898</a>            <span class="macro">panic!</span>(<span class="string">"activate feature dtype-duration"</span>)
+<a href=#899 id=899 data-nosnippet>899</a>        }
+<a href=#900 id=900 data-nosnippet>900</a>        <span class="attr">#[cfg(feature = <span class="string">"dtype-duration"</span>)]
+<a href=#901 id=901 data-nosnippet>901</a>        </span><span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#902 id=902 data-nosnippet>902</a>            DataType::Int64 =&gt; <span class="self">self
+<a href=#903 id=903 data-nosnippet>903</a>                </span>.i64()
+<a href=#904 id=904 data-nosnippet>904</a>                .unwrap()
+<a href=#905 id=905 data-nosnippet>905</a>                .clone()
+<a href=#906 id=906 data-nosnippet>906</a>                .into_duration(timeunit)
+<a href=#907 id=907 data-nosnippet>907</a>                .into_series(),
+<a href=#908 id=908 data-nosnippet>908</a>            DataType::Duration(<span class="kw">_</span>) =&gt; <span class="self">self
+<a href=#909 id=909 data-nosnippet>909</a>                </span>.duration()
+<a href=#910 id=910 data-nosnippet>910</a>                .unwrap()
+<a href=#911 id=911 data-nosnippet>911</a>                .physical()
+<a href=#912 id=912 data-nosnippet>912</a>                .clone()
+<a href=#913 id=913 data-nosnippet>913</a>                .into_duration(timeunit)
+<a href=#914 id=914 data-nosnippet>914</a>                .into_series(),
+<a href=#915 id=915 data-nosnippet>915</a>            dt =&gt; <span class="macro">panic!</span>(<span class="string">"into_duration not implemented for {dt:?}"</span>),
+<a href=#916 id=916 data-nosnippet>916</a>        }
+<a href=#917 id=917 data-nosnippet>917</a>    }
+<a href=#918 id=918 data-nosnippet>918</a>
+<a href=#919 id=919 data-nosnippet>919</a>    <span class="comment">// used for formatting
+<a href=#920 id=920 data-nosnippet>920</a>    </span><span class="kw">pub fn </span>str_value(<span class="kw-2">&amp;</span><span class="self">self</span>, index: usize) -&gt; PolarsResult&lt;Cow&lt;<span class="lifetime">'_</span>, str&gt;&gt; {
+<a href=#921 id=921 data-nosnippet>921</a>        <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="number">0</span>.get(index)<span class="question-mark">?</span>.str_value())
+<a href=#922 id=922 data-nosnippet>922</a>    }
+<a href=#923 id=923 data-nosnippet>923</a>    <span class="doccomment">/// Get the head of the Series.
+<a href=#924 id=924 data-nosnippet>924</a>    </span><span class="kw">pub fn </span>head(<span class="kw-2">&amp;</span><span class="self">self</span>, length: <span class="prelude-ty">Option</span>&lt;usize&gt;) -&gt; Series {
+<a href=#925 id=925 data-nosnippet>925</a>        <span class="kw">let </span>len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
+<a href=#926 id=926 data-nosnippet>926</a>        <span class="self">self</span>.slice(<span class="number">0</span>, std::cmp::min(len, <span class="self">self</span>.len()))
+<a href=#927 id=927 data-nosnippet>927</a>    }
+<a href=#928 id=928 data-nosnippet>928</a>
+<a href=#929 id=929 data-nosnippet>929</a>    <span class="doccomment">/// Get the tail of the Series.
+<a href=#930 id=930 data-nosnippet>930</a>    </span><span class="kw">pub fn </span>tail(<span class="kw-2">&amp;</span><span class="self">self</span>, length: <span class="prelude-ty">Option</span>&lt;usize&gt;) -&gt; Series {
+<a href=#931 id=931 data-nosnippet>931</a>        <span class="kw">let </span>len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
+<a href=#932 id=932 data-nosnippet>932</a>        <span class="kw">let </span>len = std::cmp::min(len, <span class="self">self</span>.len());
+<a href=#933 id=933 data-nosnippet>933</a>        <span class="self">self</span>.slice(-(len <span class="kw">as </span>i64), len)
+<a href=#934 id=934 data-nosnippet>934</a>    }
+<a href=#935 id=935 data-nosnippet>935</a>
+<a href=#936 id=936 data-nosnippet>936</a>    <span class="kw">pub fn </span>mean_reduce(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Scalar {
+<a href=#937 id=937 data-nosnippet>937</a>        <span class="kw">crate</span>::scalar::reduce::mean_reduce(<span class="self">self</span>.mean(), <span class="self">self</span>.dtype().clone())
+<a href=#938 id=938 data-nosnippet>938</a>    }
+<a href=#939 id=939 data-nosnippet>939</a>
+<a href=#940 id=940 data-nosnippet>940</a>    <span class="doccomment">/// Compute the unique elements, but maintain order. This requires more work
+<a href=#941 id=941 data-nosnippet>941</a>    /// than a naive [`Series::unique`](SeriesTrait::unique).
+<a href=#942 id=942 data-nosnippet>942</a>    </span><span class="kw">pub fn </span>unique_stable(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#943 id=943 data-nosnippet>943</a>        <span class="kw">let </span>idx = <span class="self">self</span>.arg_unique()<span class="question-mark">?</span>;
+<a href=#944 id=944 data-nosnippet>944</a>        <span class="comment">// SAFETY: Indices are in bounds.
+<a href=#945 id=945 data-nosnippet>945</a>        </span><span class="kw">unsafe </span>{ <span class="prelude-val">Ok</span>(<span class="self">self</span>.take_unchecked(<span class="kw-2">&amp;</span>idx)) }
+<a href=#946 id=946 data-nosnippet>946</a>    }
+<a href=#947 id=947 data-nosnippet>947</a>
+<a href=#948 id=948 data-nosnippet>948</a>    <span class="kw">pub fn </span>try_idx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>IdxCa&gt; {
+<a href=#949 id=949 data-nosnippet>949</a>        <span class="attr">#[cfg(feature = <span class="string">"bigidx"</span>)]
+<a href=#950 id=950 data-nosnippet>950</a>        </span>{
+<a href=#951 id=951 data-nosnippet>951</a>            <span class="self">self</span>.try_u64()
+<a href=#952 id=952 data-nosnippet>952</a>        }
+<a href=#953 id=953 data-nosnippet>953</a>        <span class="attr">#[cfg(not(feature = <span class="string">"bigidx"</span>))]
+<a href=#954 id=954 data-nosnippet>954</a>        </span>{
+<a href=#955 id=955 data-nosnippet>955</a>            <span class="self">self</span>.try_u32()
+<a href=#956 id=956 data-nosnippet>956</a>        }
+<a href=#957 id=957 data-nosnippet>957</a>    }
+<a href=#958 id=958 data-nosnippet>958</a>
+<a href=#959 id=959 data-nosnippet>959</a>    <span class="kw">pub fn </span>idx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PolarsResult&lt;<span class="kw-2">&amp;</span>IdxCa&gt; {
+<a href=#960 id=960 data-nosnippet>960</a>        <span class="attr">#[cfg(feature = <span class="string">"bigidx"</span>)]
+<a href=#961 id=961 data-nosnippet>961</a>        </span>{
+<a href=#962 id=962 data-nosnippet>962</a>            <span class="self">self</span>.u64()
+<a href=#963 id=963 data-nosnippet>963</a>        }
+<a href=#964 id=964 data-nosnippet>964</a>        <span class="attr">#[cfg(not(feature = <span class="string">"bigidx"</span>))]
+<a href=#965 id=965 data-nosnippet>965</a>        </span>{
+<a href=#966 id=966 data-nosnippet>966</a>            <span class="self">self</span>.u32()
+<a href=#967 id=967 data-nosnippet>967</a>        }
+<a href=#968 id=968 data-nosnippet>968</a>    }
+<a href=#969 id=969 data-nosnippet>969</a>
+<a href=#970 id=970 data-nosnippet>970</a>    <span class="doccomment">/// Returns an estimation of the total (heap) allocated size of the `Series` in bytes.
+<a href=#971 id=971 data-nosnippet>971</a>    ///
+<a href=#972 id=972 data-nosnippet>972</a>    /// # Implementation
+<a href=#973 id=973 data-nosnippet>973</a>    /// This estimation is the sum of the size of its buffers, validity, including nested arrays.
+<a href=#974 id=974 data-nosnippet>974</a>    /// Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+<a href=#975 id=975 data-nosnippet>975</a>    /// sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+<a href=#976 id=976 data-nosnippet>976</a>    ///
+<a href=#977 id=977 data-nosnippet>977</a>    /// When an array is sliced, its allocated size remains constant because the buffer unchanged.
+<a href=#978 id=978 data-nosnippet>978</a>    /// However, this function will yield a smaller number. This is because this function returns
+<a href=#979 id=979 data-nosnippet>979</a>    /// the visible size of the buffer, not its total capacity.
+<a href=#980 id=980 data-nosnippet>980</a>    ///
+<a href=#981 id=981 data-nosnippet>981</a>    /// FFI buffers are included in this estimation.
+<a href=#982 id=982 data-nosnippet>982</a>    </span><span class="kw">pub fn </span>estimated_size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#983 id=983 data-nosnippet>983</a>        <span class="kw">let </span><span class="kw-2">mut </span>size = <span class="number">0</span>;
+<a href=#984 id=984 data-nosnippet>984</a>        <span class="kw">match </span><span class="self">self</span>.dtype() {
+<a href=#985 id=985 data-nosnippet>985</a>            <span class="comment">// TODO @ cat-rework: include mapping size here?
+<a href=#986 id=986 data-nosnippet>986</a>            </span><span class="attr">#[cfg(feature = <span class="string">"object"</span>)]
+<a href=#987 id=987 data-nosnippet>987</a>            </span>DataType::Object(<span class="kw">_</span>) =&gt; {
+<a href=#988 id=988 data-nosnippet>988</a>                <span class="kw">let </span>ArrowDataType::FixedSizeBinary(size) = <span class="self">self</span>.chunks()[<span class="number">0</span>].dtype() <span class="kw">else </span>{
+<a href=#989 id=989 data-nosnippet>989</a>                    <span class="macro">unreachable!</span>()
+<a href=#990 id=990 data-nosnippet>990</a>                };
+<a href=#991 id=991 data-nosnippet>991</a>                <span class="comment">// This is only the pointer size in python. So will be a huge underestimation.
+<a href=#992 id=992 data-nosnippet>992</a>                </span><span class="kw">return </span><span class="self">self</span>.len() * <span class="kw-2">*</span>size;
+<a href=#993 id=993 data-nosnippet>993</a>            },
+<a href=#994 id=994 data-nosnippet>994</a>            <span class="kw">_ </span>=&gt; {},
+<a href=#995 id=995 data-nosnippet>995</a>        }
+<a href=#996 id=996 data-nosnippet>996</a>
+<a href=#997 id=997 data-nosnippet>997</a>        size += <span class="self">self
+<a href=#998 id=998 data-nosnippet>998</a>            </span>.chunks()
+<a href=#999 id=999 data-nosnippet>999</a>            .iter()
+<a href=#1000 id=1000 data-nosnippet>1000</a>            .map(|arr| estimated_bytes_size(<span class="kw-2">&amp;**</span>arr))
+<a href=#1001 id=1001 data-nosnippet>1001</a>            .sum::&lt;usize&gt;();
+<a href=#1002 id=1002 data-nosnippet>1002</a>
+<a href=#1003 id=1003 data-nosnippet>1003</a>        size
+<a href=#1004 id=1004 data-nosnippet>1004</a>    }
+<a href=#1005 id=1005 data-nosnippet>1005</a>
+<a href=#1006 id=1006 data-nosnippet>1006</a>    <span class="doccomment">/// Packs every element into a list.
+<a href=#1007 id=1007 data-nosnippet>1007</a>    </span><span class="kw">pub fn </span>as_list(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ListChunked {
+<a href=#1008 id=1008 data-nosnippet>1008</a>        <span class="kw">let </span>s = <span class="self">self</span>.rechunk();
+<a href=#1009 id=1009 data-nosnippet>1009</a>        <span class="comment">// don't  use `to_arrow` as we need the physical types
+<a href=#1010 id=1010 data-nosnippet>1010</a>        </span><span class="kw">let </span>values = s.chunks()[<span class="number">0</span>].clone();
+<a href=#1011 id=1011 data-nosnippet>1011</a>        <span class="kw">let </span>offsets = (<span class="number">0i64</span>..(s.len() <span class="kw">as </span>i64 + <span class="number">1</span>)).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+<a href=#1012 id=1012 data-nosnippet>1012</a>        <span class="kw">let </span>offsets = <span class="kw">unsafe </span>{ Offsets::new_unchecked(offsets) };
+<a href=#1013 id=1013 data-nosnippet>1013</a>
+<a href=#1014 id=1014 data-nosnippet>1014</a>        <span class="kw">let </span>dtype = LargeListArray::default_datatype(
+<a href=#1015 id=1015 data-nosnippet>1015</a>            s.dtype().to_physical().to_arrow(CompatLevel::newest()),
+<a href=#1016 id=1016 data-nosnippet>1016</a>        );
+<a href=#1017 id=1017 data-nosnippet>1017</a>        <span class="kw">let </span>new_arr = LargeListArray::new(dtype, offsets.into(), values, <span class="prelude-val">None</span>);
+<a href=#1018 id=1018 data-nosnippet>1018</a>        <span class="kw">let </span><span class="kw-2">mut </span>out = ListChunked::with_chunk(s.name().clone(), new_arr);
+<a href=#1019 id=1019 data-nosnippet>1019</a>        out.set_inner_dtype(s.dtype().clone());
+<a href=#1020 id=1020 data-nosnippet>1020</a>        out
+<a href=#1021 id=1021 data-nosnippet>1021</a>    }
+<a href=#1022 id=1022 data-nosnippet>1022</a>}
+<a href=#1023 id=1023 data-nosnippet>1023</a>
+<a href=#1024 id=1024 data-nosnippet>1024</a><span class="kw">impl </span>Deref <span class="kw">for </span>Series {
+<a href=#1025 id=1025 data-nosnippet>1025</a>    <span class="kw">type </span>Target = <span class="kw">dyn </span>SeriesTrait;
+<a href=#1026 id=1026 data-nosnippet>1026</a>
+<a href=#1027 id=1027 data-nosnippet>1027</a>    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Target {
+<a href=#1028 id=1028 data-nosnippet>1028</a>        <span class="self">self</span>.<span class="number">0</span>.as_ref()
+<a href=#1029 id=1029 data-nosnippet>1029</a>    }
+<a href=#1030 id=1030 data-nosnippet>1030</a>}
+<a href=#1031 id=1031 data-nosnippet>1031</a>
+<a href=#1032 id=1032 data-nosnippet>1032</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; AsRef&lt;(<span class="kw">dyn </span>SeriesTrait + <span class="lifetime">'a</span>)&gt; <span class="kw">for </span>Series {
+<a href=#1033 id=1033 data-nosnippet>1033</a>    <span class="kw">fn </span>as_ref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>(<span class="kw">dyn </span>SeriesTrait + <span class="lifetime">'a</span>) {
+<a href=#1034 id=1034 data-nosnippet>1034</a>        <span class="self">self</span>.<span class="number">0</span>.as_ref()
+<a href=#1035 id=1035 data-nosnippet>1035</a>    }
+<a href=#1036 id=1036 data-nosnippet>1036</a>}
+<a href=#1037 id=1037 data-nosnippet>1037</a>
+<a href=#1038 id=1038 data-nosnippet>1038</a><span class="kw">impl </span>Default <span class="kw">for </span>Series {
+<a href=#1039 id=1039 data-nosnippet>1039</a>    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#1040 id=1040 data-nosnippet>1040</a>        Int64Chunked::default().into_series()
+<a href=#1041 id=1041 data-nosnippet>1041</a>    }
+<a href=#1042 id=1042 data-nosnippet>1042</a>}
+<a href=#1043 id=1043 data-nosnippet>1043</a>
+<a href=#1044 id=1044 data-nosnippet>1044</a><span class="kw">impl</span>&lt;T: PolarsPhysicalType&gt; AsRef&lt;ChunkedArray&lt;T&gt;&gt; <span class="kw">for dyn </span>SeriesTrait + <span class="lifetime">'_ </span>{
+<a href=#1045 id=1045 data-nosnippet>1045</a>    <span class="kw">fn </span>as_ref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>ChunkedArray&lt;T&gt; {
+<a href=#1046 id=1046 data-nosnippet>1046</a>        <span class="comment">// @NOTE: SeriesTrait `as_any` returns a std::any::Any for the underlying ChunkedArray /
+<a href=#1047 id=1047 data-nosnippet>1047</a>        // Logical (so not the SeriesWrap).
+<a href=#1048 id=1048 data-nosnippet>1048</a>        </span><span class="kw">let </span><span class="prelude-val">Some</span>(ca) = <span class="self">self</span>.as_any().downcast_ref::&lt;ChunkedArray&lt;T&gt;&gt;() <span class="kw">else </span>{
+<a href=#1049 id=1049 data-nosnippet>1049</a>            <span class="macro">panic!</span>(
+<a href=#1050 id=1050 data-nosnippet>1050</a>                <span class="string">"implementation error, cannot get ref {:?} from {:?}"</span>,
+<a href=#1051 id=1051 data-nosnippet>1051</a>                T::get_static_dtype(),
+<a href=#1052 id=1052 data-nosnippet>1052</a>                <span class="self">self</span>.dtype()
+<a href=#1053 id=1053 data-nosnippet>1053</a>            );
+<a href=#1054 id=1054 data-nosnippet>1054</a>        };
+<a href=#1055 id=1055 data-nosnippet>1055</a>
+<a href=#1056 id=1056 data-nosnippet>1056</a>        ca
+<a href=#1057 id=1057 data-nosnippet>1057</a>    }
+<a href=#1058 id=1058 data-nosnippet>1058</a>}
+<a href=#1059 id=1059 data-nosnippet>1059</a>
+<a href=#1060 id=1060 data-nosnippet>1060</a><span class="kw">impl</span>&lt;T: PolarsPhysicalType&gt; AsMut&lt;ChunkedArray&lt;T&gt;&gt; <span class="kw">for dyn </span>SeriesTrait + <span class="lifetime">'_ </span>{
+<a href=#1061 id=1061 data-nosnippet>1061</a>    <span class="kw">fn </span>as_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>ChunkedArray&lt;T&gt; {
+<a href=#1062 id=1062 data-nosnippet>1062</a>        <span class="kw">if </span>!<span class="self">self</span>.as_any_mut().is::&lt;ChunkedArray&lt;T&gt;&gt;() {
+<a href=#1063 id=1063 data-nosnippet>1063</a>            <span class="macro">panic!</span>(
+<a href=#1064 id=1064 data-nosnippet>1064</a>                <span class="string">"implementation error, cannot get ref {:?} from {:?}"</span>,
+<a href=#1065 id=1065 data-nosnippet>1065</a>                T::get_static_dtype(),
+<a href=#1066 id=1066 data-nosnippet>1066</a>                <span class="self">self</span>.dtype()
+<a href=#1067 id=1067 data-nosnippet>1067</a>            );
+<a href=#1068 id=1068 data-nosnippet>1068</a>        }
+<a href=#1069 id=1069 data-nosnippet>1069</a>
+<a href=#1070 id=1070 data-nosnippet>1070</a>        <span class="comment">// @NOTE: SeriesTrait `as_any` returns a std::any::Any for the underlying ChunkedArray /
+<a href=#1071 id=1071 data-nosnippet>1071</a>        // Logical (so not the SeriesWrap).
+<a href=#1072 id=1072 data-nosnippet>1072</a>        </span><span class="self">self</span>.as_any_mut().downcast_mut::&lt;ChunkedArray&lt;T&gt;&gt;().unwrap()
+<a href=#1073 id=1073 data-nosnippet>1073</a>    }
+<a href=#1074 id=1074 data-nosnippet>1074</a>}
+<a href=#1075 id=1075 data-nosnippet>1075</a>
+<a href=#1076 id=1076 data-nosnippet>1076</a><span class="attr">#[cfg(test)]
+<a href=#1077 id=1077 data-nosnippet>1077</a></span><span class="kw">mod </span>test {
+<a href=#1078 id=1078 data-nosnippet>1078</a>    <span class="kw">use </span><span class="kw">crate</span>::prelude::<span class="kw-2">*</span>;
+<a href=#1079 id=1079 data-nosnippet>1079</a>    <span class="kw">use </span><span class="kw">crate</span>::series::<span class="kw-2">*</span>;
+<a href=#1080 id=1080 data-nosnippet>1080</a>
+<a href=#1081 id=1081 data-nosnippet>1081</a>    <span class="attr">#[test]
+<a href=#1082 id=1082 data-nosnippet>1082</a>    </span><span class="kw">fn </span>cast() {
+<a href=#1083 id=1083 data-nosnippet>1083</a>        <span class="kw">let </span>ar = UInt32Chunked::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>]);
+<a href=#1084 id=1084 data-nosnippet>1084</a>        <span class="kw">let </span>s = ar.into_series();
+<a href=#1085 id=1085 data-nosnippet>1085</a>        <span class="kw">let </span>s2 = s.cast(<span class="kw-2">&amp;</span>DataType::Int64).unwrap();
+<a href=#1086 id=1086 data-nosnippet>1086</a>
+<a href=#1087 id=1087 data-nosnippet>1087</a>        <span class="macro">assert!</span>(s2.i64().is_ok());
+<a href=#1088 id=1088 data-nosnippet>1088</a>        <span class="kw">let </span>s2 = s.cast(<span class="kw-2">&amp;</span>DataType::Float32).unwrap();
+<a href=#1089 id=1089 data-nosnippet>1089</a>        <span class="macro">assert!</span>(s2.f32().is_ok());
+<a href=#1090 id=1090 data-nosnippet>1090</a>    }
+<a href=#1091 id=1091 data-nosnippet>1091</a>
+<a href=#1092 id=1092 data-nosnippet>1092</a>    <span class="attr">#[test]
+<a href=#1093 id=1093 data-nosnippet>1093</a>    </span><span class="kw">fn </span>new_series() {
+<a href=#1094 id=1094 data-nosnippet>1094</a>        <span class="kw">let _ </span>= Series::new(<span class="string">"boolean series"</span>.into(), <span class="kw-2">&amp;</span><span class="macro">vec!</span>[<span class="bool-val">true</span>, <span class="bool-val">false</span>, <span class="bool-val">true</span>]);
+<a href=#1095 id=1095 data-nosnippet>1095</a>        <span class="kw">let _ </span>= Series::new(<span class="string">"int series"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+<a href=#1096 id=1096 data-nosnippet>1096</a>        <span class="kw">let </span>ca = Int32Chunked::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
+<a href=#1097 id=1097 data-nosnippet>1097</a>        <span class="kw">let _ </span>= ca.into_series();
+<a href=#1098 id=1098 data-nosnippet>1098</a>    }
+<a href=#1099 id=1099 data-nosnippet>1099</a>
+<a href=#1100 id=1100 data-nosnippet>1100</a>    <span class="attr">#[test]
+<a href=#1101 id=1101 data-nosnippet>1101</a>    #[cfg(feature = <span class="string">"dtype-date"</span>)]
+<a href=#1102 id=1102 data-nosnippet>1102</a>    </span><span class="kw">fn </span>roundtrip_list_logical_20311() {
+<a href=#1103 id=1103 data-nosnippet>1103</a>        <span class="kw">let </span>list = ListChunked::from_chunk_iter(
+<a href=#1104 id=1104 data-nosnippet>1104</a>            PlSmallStr::from_static(<span class="string">"a"</span>),
+<a href=#1105 id=1105 data-nosnippet>1105</a>            [ListArray::new(
+<a href=#1106 id=1106 data-nosnippet>1106</a>                ArrowDataType::LargeList(Box::new(ArrowField::new(
+<a href=#1107 id=1107 data-nosnippet>1107</a>                    LIST_VALUES_NAME,
+<a href=#1108 id=1108 data-nosnippet>1108</a>                    ArrowDataType::Int32,
+<a href=#1109 id=1109 data-nosnippet>1109</a>                    <span class="bool-val">true</span>,
+<a href=#1110 id=1110 data-nosnippet>1110</a>                ))),
+<a href=#1111 id=1111 data-nosnippet>1111</a>                <span class="kw">unsafe </span>{ Offsets::new_unchecked(<span class="macro">vec!</span>[<span class="number">0</span>, <span class="number">1</span>]) }.into(),
+<a href=#1112 id=1112 data-nosnippet>1112</a>                PrimitiveArray::new(ArrowDataType::Int32, <span class="macro">vec!</span>[<span class="number">1i32</span>].into(), <span class="prelude-val">None</span>).to_boxed(),
+<a href=#1113 id=1113 data-nosnippet>1113</a>                <span class="prelude-val">None</span>,
+<a href=#1114 id=1114 data-nosnippet>1114</a>            )],
+<a href=#1115 id=1115 data-nosnippet>1115</a>        );
+<a href=#1116 id=1116 data-nosnippet>1116</a>        <span class="kw">let </span>list = <span class="kw">unsafe </span>{ list.from_physical_unchecked(DataType::Date) }.unwrap();
+<a href=#1117 id=1117 data-nosnippet>1117</a>        <span class="macro">assert_eq!</span>(list.dtype(), <span class="kw-2">&amp;</span>DataType::List(Box::new(DataType::Date)));
+<a href=#1118 id=1118 data-nosnippet>1118</a>    }
+<a href=#1119 id=1119 data-nosnippet>1119</a>
+<a href=#1120 id=1120 data-nosnippet>1120</a>    <span class="attr">#[test]
+<a href=#1121 id=1121 data-nosnippet>1121</a>    #[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#1122 id=1122 data-nosnippet>1122</a>    </span><span class="kw">fn </span>new_series_from_empty_structs() {
+<a href=#1123 id=1123 data-nosnippet>1123</a>        <span class="kw">let </span>dtype = DataType::Struct(<span class="macro">vec!</span>[]);
+<a href=#1124 id=1124 data-nosnippet>1124</a>        <span class="kw">let </span>empties = <span class="macro">vec!</span>[AnyValue::StructOwned(Box::new((<span class="macro">vec!</span>[], <span class="macro">vec!</span>[]))); <span class="number">3</span>];
+<a href=#1125 id=1125 data-nosnippet>1125</a>        <span class="kw">let </span>s = Series::from_any_values_and_dtype(<span class="string">""</span>.into(), <span class="kw-2">&amp;</span>empties, <span class="kw-2">&amp;</span>dtype, <span class="bool-val">false</span>).unwrap();
+<a href=#1126 id=1126 data-nosnippet>1126</a>        <span class="macro">assert_eq!</span>(s.len(), <span class="number">3</span>);
+<a href=#1127 id=1127 data-nosnippet>1127</a>    }
+<a href=#1128 id=1128 data-nosnippet>1128</a>    <span class="attr">#[test]
+<a href=#1129 id=1129 data-nosnippet>1129</a>    </span><span class="kw">fn </span>new_series_from_arrow_primitive_array() {
+<a href=#1130 id=1130 data-nosnippet>1130</a>        <span class="kw">let </span>array = UInt32Array::from_slice([<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>]);
+<a href=#1131 id=1131 data-nosnippet>1131</a>        <span class="kw">let </span>array_ref: ArrayRef = Box::new(array);
+<a href=#1132 id=1132 data-nosnippet>1132</a>
+<a href=#1133 id=1133 data-nosnippet>1133</a>        <span class="kw">let _ </span>= Series::try_new(<span class="string">"foo"</span>.into(), array_ref).unwrap();
+<a href=#1134 id=1134 data-nosnippet>1134</a>    }
+<a href=#1135 id=1135 data-nosnippet>1135</a>
+<a href=#1136 id=1136 data-nosnippet>1136</a>    <span class="attr">#[test]
+<a href=#1137 id=1137 data-nosnippet>1137</a>    </span><span class="kw">fn </span>series_append() {
+<a href=#1138 id=1138 data-nosnippet>1138</a>        <span class="kw">let </span><span class="kw-2">mut </span>s1 = Series::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>]);
+<a href=#1139 id=1139 data-nosnippet>1139</a>        <span class="kw">let </span>s2 = Series::new(<span class="string">"b"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">3</span>]);
+<a href=#1140 id=1140 data-nosnippet>1140</a>        s1.append(<span class="kw-2">&amp;</span>s2).unwrap();
+<a href=#1141 id=1141 data-nosnippet>1141</a>        <span class="macro">assert_eq!</span>(s1.len(), <span class="number">3</span>);
+<a href=#1142 id=1142 data-nosnippet>1142</a>
+<a href=#1143 id=1143 data-nosnippet>1143</a>        <span class="comment">// add wrong type
+<a href=#1144 id=1144 data-nosnippet>1144</a>        </span><span class="kw">let </span>s2 = Series::new(<span class="string">"b"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">3.0</span>]);
+<a href=#1145 id=1145 data-nosnippet>1145</a>        <span class="macro">assert!</span>(s1.append(<span class="kw-2">&amp;</span>s2).is_err())
+<a href=#1146 id=1146 data-nosnippet>1146</a>    }
+<a href=#1147 id=1147 data-nosnippet>1147</a>
+<a href=#1148 id=1148 data-nosnippet>1148</a>    <span class="attr">#[test]
+<a href=#1149 id=1149 data-nosnippet>1149</a>    #[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#1150 id=1150 data-nosnippet>1150</a>    </span><span class="kw">fn </span>series_append_decimal() {
+<a href=#1151 id=1151 data-nosnippet>1151</a>        <span class="kw">let </span>s1 = Series::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1.1</span>, <span class="number">2.3</span>])
+<a href=#1152 id=1152 data-nosnippet>1152</a>            .cast(<span class="kw-2">&amp;</span>DataType::Decimal(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="number">2</span>)))
+<a href=#1153 id=1153 data-nosnippet>1153</a>            .unwrap();
+<a href=#1154 id=1154 data-nosnippet>1154</a>        <span class="kw">let </span>s2 = Series::new(<span class="string">"b"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">3</span>])
+<a href=#1155 id=1155 data-nosnippet>1155</a>            .cast(<span class="kw-2">&amp;</span>DataType::Decimal(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="number">0</span>)))
+<a href=#1156 id=1156 data-nosnippet>1156</a>            .unwrap();
+<a href=#1157 id=1157 data-nosnippet>1157</a>
+<a href=#1158 id=1158 data-nosnippet>1158</a>        {
+<a href=#1159 id=1159 data-nosnippet>1159</a>            <span class="kw">let </span><span class="kw-2">mut </span>s1 = s1.clone();
+<a href=#1160 id=1160 data-nosnippet>1160</a>            s1.append(<span class="kw-2">&amp;</span>s2).unwrap();
+<a href=#1161 id=1161 data-nosnippet>1161</a>            <span class="macro">assert_eq!</span>(s1.len(), <span class="number">3</span>);
+<a href=#1162 id=1162 data-nosnippet>1162</a>            <span class="macro">assert_eq!</span>(s1.get(<span class="number">2</span>).unwrap(), AnyValue::Decimal(<span class="number">300</span>, <span class="number">2</span>));
+<a href=#1163 id=1163 data-nosnippet>1163</a>        }
+<a href=#1164 id=1164 data-nosnippet>1164</a>
+<a href=#1165 id=1165 data-nosnippet>1165</a>        {
+<a href=#1166 id=1166 data-nosnippet>1166</a>            <span class="kw">let </span><span class="kw-2">mut </span>s2 = s2.clone();
+<a href=#1167 id=1167 data-nosnippet>1167</a>            s2.extend(<span class="kw-2">&amp;</span>s1).unwrap();
+<a href=#1168 id=1168 data-nosnippet>1168</a>            <span class="macro">assert_eq!</span>(s2.get(<span class="number">2</span>).unwrap(), AnyValue::Decimal(<span class="number">2</span>, <span class="number">0</span>));
+<a href=#1169 id=1169 data-nosnippet>1169</a>        }
+<a href=#1170 id=1170 data-nosnippet>1170</a>    }
+<a href=#1171 id=1171 data-nosnippet>1171</a>
+<a href=#1172 id=1172 data-nosnippet>1172</a>    <span class="attr">#[test]
+<a href=#1173 id=1173 data-nosnippet>1173</a>    </span><span class="kw">fn </span>series_slice_works() {
+<a href=#1174 id=1174 data-nosnippet>1174</a>        <span class="kw">let </span>series = Series::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1i64</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>]);
+<a href=#1175 id=1175 data-nosnippet>1175</a>
+<a href=#1176 id=1176 data-nosnippet>1176</a>        <span class="kw">let </span>slice_1 = series.slice(-<span class="number">3</span>, <span class="number">3</span>);
+<a href=#1177 id=1177 data-nosnippet>1177</a>        <span class="kw">let </span>slice_2 = series.slice(-<span class="number">5</span>, <span class="number">5</span>);
+<a href=#1178 id=1178 data-nosnippet>1178</a>        <span class="kw">let </span>slice_3 = series.slice(<span class="number">0</span>, <span class="number">5</span>);
+<a href=#1179 id=1179 data-nosnippet>1179</a>
+<a href=#1180 id=1180 data-nosnippet>1180</a>        <span class="macro">assert_eq!</span>(slice_1.get(<span class="number">0</span>).unwrap(), AnyValue::Int64(<span class="number">3</span>));
+<a href=#1181 id=1181 data-nosnippet>1181</a>        <span class="macro">assert_eq!</span>(slice_2.get(<span class="number">0</span>).unwrap(), AnyValue::Int64(<span class="number">1</span>));
+<a href=#1182 id=1182 data-nosnippet>1182</a>        <span class="macro">assert_eq!</span>(slice_3.get(<span class="number">0</span>).unwrap(), AnyValue::Int64(<span class="number">1</span>));
+<a href=#1183 id=1183 data-nosnippet>1183</a>    }
+<a href=#1184 id=1184 data-nosnippet>1184</a>
+<a href=#1185 id=1185 data-nosnippet>1185</a>    <span class="attr">#[test]
+<a href=#1186 id=1186 data-nosnippet>1186</a>    </span><span class="kw">fn </span>out_of_range_slice_does_not_panic() {
+<a href=#1187 id=1187 data-nosnippet>1187</a>        <span class="kw">let </span>series = Series::new(<span class="string">"a"</span>.into(), <span class="kw-2">&amp;</span>[<span class="number">1i64</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>]);
+<a href=#1188 id=1188 data-nosnippet>1188</a>
+<a href=#1189 id=1189 data-nosnippet>1189</a>        <span class="kw">let _ </span>= series.slice(-<span class="number">3</span>, <span class="number">4</span>);
+<a href=#1190 id=1190 data-nosnippet>1190</a>        <span class="kw">let _ </span>= series.slice(-<span class="number">6</span>, <span class="number">2</span>);
+<a href=#1191 id=1191 data-nosnippet>1191</a>        <span class="kw">let _ </span>= series.slice(<span class="number">4</span>, <span class="number">2</span>);
+<a href=#1192 id=1192 data-nosnippet>1192</a>    }
+<a href=#1193 id=1193 data-nosnippet>1193</a>}</code></pre></div></section></main></body></html>
