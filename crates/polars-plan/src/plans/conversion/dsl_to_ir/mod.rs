@@ -43,13 +43,15 @@ pub fn to_alp(
         opt_flags.contains(OptFlags::TYPE_CHECK),
     );
 
+    let cache_file_info = scans::resolve_known_scans(&lp)?;
+
     let mut ctxt = DslConversionContext {
         expr_arena,
         lp_arena,
         conversion_optimizer,
         opt_flags,
         nodes_scratch: &mut unitvec![],
-        cache_file_info: Default::default(),
+        cache_file_info,
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
     };
