@@ -72,6 +72,13 @@ def read_delta(
             at any point without it being considered a breaking change.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
+        For all `delta_table_options` keyword arguments, check the deltalake docs
+        `here
+        <https://https://delta-io.github.io/delta-rs/api/delta_table/>`__.
+        `partitions` will be passed to the underlying
+        `.file_uris()
+        <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.file_uris>`__
+        method.
     use_pyarrow
         Flag to enable pyarrow dataset reads.
     pyarrow_options
@@ -205,6 +212,13 @@ def scan_delta(
             at any point without it being considered a breaking change.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
+        For all `delta_table_options` keyword arguments, check the deltalake docs
+        `here
+        <https://https://delta-io.github.io/delta-rs/api/delta_table/>`__.
+        `partitions` will be passed to the underlying
+        `.file_uris()
+        <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.file_uris>`__
+        method.
     use_pyarrow
         Flag to enable pyarrow dataset reads.
     pyarrow_options
@@ -324,7 +338,9 @@ def scan_delta(
         credential_provider_creds = (
             _get_credentials_from_provider_expiry_aware(provider) or {}
         )
-
+    partition_filters = (
+        delta_table_options.pop("partitions", None) if delta_table_options else None
+    )
     dl_tbl = _get_delta_lake_table(
         table_path=source,
         version=version,
@@ -396,7 +412,7 @@ def scan_delta(
     # Required because main_schema cannot contain hive columns currently
     main_schema, hive_schema = _split_schema(polars_schema, partition_columns)
 
-    file_uris = dl_tbl.file_uris()
+    file_uris = dl_tbl.file_uris(partition_filters=partition_filters)
 
     # LakeFS has an S3 compatible API, for reading therefore it's safe to do this.
     # Deltalake internally has an integration for writing commits
