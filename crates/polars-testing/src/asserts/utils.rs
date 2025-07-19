@@ -96,7 +96,7 @@ impl SeriesEqualOptions {
 }
 
 /// Change a (possibly nested) Categorical data type to a String data type.
-pub fn categorical_dtype_to_string_dtype(dtype: &DataType) -> DataType {
+fn categorical_dtype_to_string_dtype(dtype: &DataType) -> DataType {
     match dtype {
         DataType::Categorical(..) => DataType::String,
         DataType::List(inner) => {
@@ -125,7 +125,7 @@ pub fn categorical_dtype_to_string_dtype(dtype: &DataType) -> DataType {
 }
 
 /// Cast a (possibly nested) Categorical Series to a String Series.
-pub fn categorical_series_to_string(s: &Series) -> PolarsResult<Series> {
+fn categorical_series_to_string(s: &Series) -> PolarsResult<Series> {
     let dtype = s.dtype();
     let noncat_dtype = categorical_dtype_to_string_dtype(dtype);
 
@@ -137,25 +137,25 @@ pub fn categorical_series_to_string(s: &Series) -> PolarsResult<Series> {
 }
 
 /// Returns true if both DataTypes are floating point types.
-pub fn are_both_floats(left: &DataType, right: &DataType) -> bool {
+fn are_both_floats(left: &DataType, right: &DataType) -> bool {
     left.is_float() && right.is_float()
 }
 
 /// Returns true if both DataTypes are list-like (either List or Array types).
-pub fn are_both_lists(left: &DataType, right: &DataType) -> bool {
+fn are_both_lists(left: &DataType, right: &DataType) -> bool {
     matches!(left, DataType::List(_) | DataType::Array(_, _))
         && matches!(right, DataType::List(_) | DataType::Array(_, _))
 }
 
 /// Returns true if both DataTypes are struct types.
-pub fn are_both_structs(left: &DataType, right: &DataType) -> bool {
+fn are_both_structs(left: &DataType, right: &DataType) -> bool {
     left.is_struct() && right.is_struct()
 }
 
 /// Returns true if both DataTypes are nested types (lists or structs) that contain floating point types within them.
 /// First checks if both types are either lists or structs, then unpacks their nested DataTypes to determine if
 /// at least one floating point type exists in each of the nested structures.
-pub fn comparing_nested_floats(left: &DataType, right: &DataType) -> bool {
+fn comparing_nested_floats(left: &DataType, right: &DataType) -> bool {
     if !are_both_lists(left, right) && !are_both_structs(left, right) {
         return false;
     }
@@ -170,7 +170,7 @@ pub fn comparing_nested_floats(left: &DataType, right: &DataType) -> bool {
 }
 
 /// Ensures that null values in two Series match exactly and returns an error if any mismatches are found.
-pub fn assert_series_null_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
+fn assert_series_null_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
     let null_value_mismatch = left.is_null().not_equal(&right.is_null());
 
     if null_value_mismatch.any() {
@@ -186,7 +186,7 @@ pub fn assert_series_null_values_match(left: &Series, right: &Series) -> PolarsR
 }
 
 /// Validates that NaN patterns are identical between two float Series, returning error if any mismatches are found.
-pub fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
+fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
     if !are_both_floats(left.dtype(), right.dtype()) {
         return Ok(());
     }
@@ -233,7 +233,7 @@ pub fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsRe
 /// Values are considered within tolerance if:
 /// `|left - right| <= (rtol * |right| + atol)` OR values are exactly equal
 ///
-pub fn assert_series_values_within_tolerance(
+fn assert_series_values_within_tolerance(
     left: &Series,
     right: &Series,
     unequal: &ChunkedArray<BooleanType>,
@@ -305,7 +305,7 @@ pub fn assert_series_values_within_tolerance(
 ///    - Verifies NaN values match using `assert_series_nan_values_match`
 ///    - Verifies float values are within tolerance using `assert_series_values_within_tolerance`
 ///
-pub fn assert_series_values_equal(
+fn assert_series_values_equal(
     left: &Series,
     right: &Series,
     check_order: bool,
@@ -420,7 +420,7 @@ pub fn assert_series_values_equal(
 /// 2. Iterates through corresponding columns
 /// 3. Recursively calls `assert_series_values_equal` on each column pair
 ///
-pub fn assert_series_nested_values_equal(
+fn assert_series_nested_values_equal(
     left: &Series,
     right: &Series,
     check_exact: bool,
@@ -693,7 +693,7 @@ impl DataFrameEqualOptions {
 ///    - When `check_column_order` is false, compares data type sets for equality
 ///    - When `check_column_order` is true, performs more precise type checking
 ///
-pub fn assert_dataframe_schema_equal(
+fn assert_dataframe_schema_equal(
     left: &DataFrame,
     right: &DataFrame,
     check_dtypes: bool,
