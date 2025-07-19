@@ -76,6 +76,9 @@ def test_ufunc() -> None:
         cast(pl.Series, np.power(s_uint64, 2)),
         pl.Series("a", [1, 4, 9, 16], dtype=pl.UInt64),
     )
+    print(np.power.types)  # windows runner info
+    print(s_uint64._s.to_numpy_view().dtype.char)  # windows runner info
+    print(s_uint64.to_numpy().dtype.char)  # windows runner info
     assert_series_equal(
         cast(pl.Series, np.power(s_uint64, 2.0)),
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
@@ -192,3 +195,31 @@ def test_generalized_ufunc_different_output_size() -> None:
         divide_by_sum(series2, series),
         pl.Series("s2", [1.0 / 56, 3.0 / 56], dtype=pl.Float64),
     )
+
+
+def test_numba_mixed_types() -> None:
+    nb = pytest.importorskip("numba")
+
+    @nb.guvectorize([(nb.int64[:], nb.int64[:], nb.uint64[:])], "(n),(n)->(n)")  # type: ignore[misc]
+    def int_uint(arr: Any, arr2: Any, result: Any) -> None:
+        for i in range(len(arr)):
+            result[i] = np.uint(arr[i] + arr2[i])
+
+    x = pl.Series([1, 2, 3], dtype=pl.Int64)
+    y = pl.Series([2, 3, 4], dtype=pl.Int64)
+
+    result = int_uint(x, y)
+    expected = pl.Series([3, 5, 7], dtype=pl.UInt64)
+    assert_series_equal(result, expected)
+
+    @nb.guvectorize([(nb.float64[:], nb.float64[:], nb.uint64[:])], "(n),(n)->(n)")  # type: ignore[misc]
+    def float_uint(arr: Any, arr2: Any, result: Any) -> None:
+        for i in range(len(arr)):
+            result[i] = np.uint(arr[i] + arr2[i])
+
+    x = pl.Series([1.0, 2.1, 3.2], dtype=pl.Float64)
+    y = pl.Series([2.3, 3.4, 4.5], dtype=pl.Float64)
+
+    result = float_uint(x, y)
+    expected = pl.Series([3, 5, 7], dtype=pl.UInt64)
+    assert_series_equal(result, expected)
