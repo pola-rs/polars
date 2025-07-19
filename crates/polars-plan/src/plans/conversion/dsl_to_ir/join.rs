@@ -112,9 +112,11 @@ pub fn resolve_join(
         .map(|e| {
             to_expr_ir_materialized_lit(
                 e,
-                ctxt.expr_arena,
-                &schema_left,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_left,
+                    ctxt.opt_flags,
+                ),
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -123,9 +125,11 @@ pub fn resolve_join(
         .map(|e| {
             to_expr_ir_materialized_lit(
                 e,
-                ctxt.expr_arena,
-                &schema_right,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_right,
+                    ctxt.opt_flags,
+                ),
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -454,9 +458,7 @@ fn resolve_join_where(
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_materialized_lit(
             e,
-            arena,
-            &schema_merged,
-            ctxt.opt_flags.contains(OptFlags::EAGER),
+            &mut ExprToIRContext::new_with_opt_eager(arena, &schema_merged, ctxt.opt_flags),
         )?;
         let node = predicate.node();
 

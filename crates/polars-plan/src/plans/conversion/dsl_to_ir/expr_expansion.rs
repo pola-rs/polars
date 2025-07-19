@@ -803,6 +803,17 @@ fn expand_expression_rec(
             let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let schemas = &[schema.clone(), evaluation_schema];
 
+            // Perform this before schema resolution so that we can better error messages.
+            for e in evaluation.as_ref().into_iter() {
+                if let Expr::Column(name) = e {
+                    polars_ensure!(
+                        name.is_empty(),
+                        ComputeError:
+                        "named columns are not allowed in `eval` functions; consider using `element`"
+                    );
+                }
+            }
+
             _ = expand_expression_by_combination_with_schemas(
                 &[expr.as_ref().clone(), evaluation.as_ref().clone()],
                 ignored_selector_columns,

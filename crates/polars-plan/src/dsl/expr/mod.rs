@@ -406,7 +406,9 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let expr = to_expr_ir(self.clone(), expr_arena, schema, true)?;
+        let mut ctx = ExprToIRContext::new(expr_arena, schema);
+        ctx.allow_unknown = true;
+        let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
         let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
