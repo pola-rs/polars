@@ -499,3 +499,26 @@ a,b
 
     q = pl.scan_csv(2 * [f], comment_prefix="#").tail(100)
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 1], "b": [1, 1]}))
+
+
+def test_csv_io_object_utf8_23629() -> None:
+    n_repeats = 10_000
+    for df in [
+        pl.DataFrame({"a": ["é,è"], "b": ["c,d"]}),
+        pl.DataFrame({"a": ["Ú;и"], "b": ["c;d"]}),
+        pl.DataFrame({"a": ["a,b"], "b": ["c,d"]}),
+        pl.DataFrame({"a": ["é," * n_repeats + "è"], "b": ["c," * n_repeats + "d"]}),
+    ]:
+        # bytes
+        f_bytes = io.BytesIO()
+        df.write_csv(f_bytes)
+        f_bytes.seek(0)
+        df_bytes = pl.read_csv(f_bytes)
+        assert_frame_equal(df, df_bytes)
+
+        # str
+        f_str = io.StringIO()
+        df.write_csv(f_str)
+        f_str.seek(0)
+        df_str = pl.read_csv(f_str)
+        assert_frame_equal(df, df_str)
