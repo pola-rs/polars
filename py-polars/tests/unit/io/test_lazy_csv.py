@@ -502,10 +502,12 @@ a,b
 
 
 def test_csv_io_object_utf8_23629() -> None:
+    n_repeats = 10_000
     for df in [
         pl.DataFrame({"a": ["é,è"], "b": ["c,d"]}),
         pl.DataFrame({"a": ["Ú;и"], "b": ["c;d"]}),
         pl.DataFrame({"a": ["a,b"], "b": ["c,d"]}),
+        pl.DataFrame({"a": ["é," * n_repeats + "è"], "b": ["c," * n_repeats + "d"]}),
     ]:
         # bytes
         f_bytes = io.BytesIO()

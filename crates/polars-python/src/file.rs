@@ -204,15 +204,20 @@ impl Write for PyFileLikeObject {
                         None,
                     )
                     .map_err(pyerr_to_io_err)?;
-                let n_chars = number_chars_written.extract(py).map_err(pyerr_to_io_err)?;
-                std::str::from_utf8(buf)
-                    .map(|str| {
-                        str.char_indices()
-                            .nth(n_chars)
-                            .map(|(i, ch)| i + ch.len_utf8())
-                            .unwrap_or(0)
-                    })
-                    .expect("unable to parse buffer as utf-8")
+                let n_chars: usize = number_chars_written.extract(py).map_err(pyerr_to_io_err)?;
+                // calculate n_bytes
+                if n_chars > 0 {
+                    std::str::from_utf8(buf)
+                        .map(|str| {
+                            str.char_indices()
+                                .nth(n_chars - 1)
+                                .map(|(i, ch)| i + ch.len_utf8())
+                                .unwrap()
+                        })
+                        .expect("unable to parse buffer as utf-8")
+                } else {
+                    0
+                }
             } else {
                 let number_bytes_written = self
                     .inner
@@ -220,7 +225,6 @@ impl Write for PyFileLikeObject {
                     .map_err(pyerr_to_io_err)?;
                 number_bytes_written.extract(py).map_err(pyerr_to_io_err)?
             };
-
             Ok(n_bytes)
         })
     }
