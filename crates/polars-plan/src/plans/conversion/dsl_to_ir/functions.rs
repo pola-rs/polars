@@ -6,9 +6,7 @@ use polars_utils::option::OptionTry;
 use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::dsl::{Expr, FunctionExpr};
-use crate::plans::conversion::dsl_to_ir::expr_to_ir::{
-    to_expr_ir_with_context, to_expr_irs_with_context,
-};
+use crate::plans::conversion::dsl_to_ir::expr_to_ir::{to_expr_ir, to_expr_irs};
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
@@ -24,7 +22,7 @@ pub(super) fn convert_functions(
         FunctionExpr::StructExpr(StructFunction::WithFields)
     ) {
         let mut input = input.into_iter();
-        let struct_input = to_expr_ir_with_context(input.next().unwrap(), ctx)?;
+        let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
         let dtype = struct_input
             .to_expr(ctx.arena)
             .to_field(ctx.schema, Context::Default)?
@@ -42,7 +40,7 @@ pub(super) fn convert_functions(
 
         let prev = ctx.with_fields.replace((struct_node, struct_schema));
         for i in input {
-            e.push(to_expr_ir_with_context(i, ctx)?);
+            e.push(to_expr_ir(i, ctx)?);
         }
         ctx.with_fields = prev;
 
@@ -58,7 +56,7 @@ pub(super) fn convert_functions(
     }
 
     // Converts inputs
-    let e = to_expr_irs_with_context(input, ctx)?;
+    let e = to_expr_irs(input, ctx)?;
     let mut set_elementwise = false;
 
     // Return before converting inputs
