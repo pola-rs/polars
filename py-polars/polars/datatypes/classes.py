@@ -283,6 +283,10 @@ class NumericType(DataType):
         """
         Return a literal expression representing the maximum value of this data type.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> pl.select(pl.Int8.max() == 127)
@@ -301,6 +305,10 @@ class NumericType(DataType):
     def min(cls) -> pl.Expr:
         """
         Return a literal expression representing the minimum value of this data type.
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
@@ -495,6 +503,10 @@ class Time(TemporalType):
         """
         Return a literal expression representing the maximum value of this data type.
 
+        Notes
+        -----
+        Null values are ignored.
+
         Examples
         --------
         >>> pl.select(pl.Time.max() == 86_399_999_999_999)
@@ -513,6 +525,10 @@ class Time(TemporalType):
     def min(cls) -> pl.Expr:
         """
         Return a literal expression representing the minimum value of this data type.
+
+        Notes
+        -----
+        Null values are ignored.
 
         Examples
         --------
