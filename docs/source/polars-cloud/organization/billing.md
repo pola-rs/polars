@@ -4,24 +4,15 @@ All payments and billing for Polars Cloud are handled via the AWS Marketplace. T
 provides a secure, streamlined way to manage your subscription, payments, and billing using AWS's
 trusted marketplace infrastructure.
 
+!!! tip "30-day Free Trial"
+
+    New organizatoins get full access to explore Polars Cloud for 30 days. The trial activates automatically when connecting your first workspace to AWS. After the trial you can easily subscribe via the AWS Marketplace.
+
 ## Subscribe to Polars Cloud
 
-### Prerequisites
+Subscribing to Polars Cloud requires an AWS account with billing permissions. You can access the marketplace listing either through the Billing page in your Polars Cloud organization or by searching "Polars Cloud" directly in AWS Marketplace.
 
-Before subscribing to Polars Cloud through AWS Marketplace, ensure you have:
-
-- An active AWS account with billing permissions
-
-### Steps to Sign Up
-
-1. Access the Marketplace: If you already have a Polars Cloud account, select the link to AWS
-   Marketplace on the `Billing` page of your organization. Alternatively, go directly to AWS
-   Marketplace and search for `Polars Cloud`.
-2. Review the Listing: Select the Polars Cloud listing and then select `View purchase options`.
-3. Review Terms: Carefully review the pricing, offer details, and terms and conditions.
-4. Subscribe: Select `Subscribe` at the end of the page to complete your subscription.
-5. Connect Your Account: Finalize the connection by selecting `Set up your account` in the
-   Marketplace portal.
+The subscription process connects your Polars Cloud organization to AWS billing, after which your organization status updates to reflect the marketplace connection. This typically completes within minutes, though allow up to an hour for status propagation.
 
 ### Verify Your Organization Connection
 
@@ -31,7 +22,7 @@ If the status doesn't update within one hour, contact our support team at suppor
 
 ### Request and Accept Private Offers
 
-Customers with large analytics workloads or enterprise customers requiring custom pricing, annual
+Customers with large-scale analytics workloads or enterprise customers requiring custom pricing, annual
 commitments, or specific terms can contact our team for a private offer. Reach out to the team at
 support@polars.tech.
 
@@ -45,8 +36,7 @@ more information about usage per workspace in the Polars Cloud dashboard.
 
 ### Cancelling your subscription
 
-You can unsubscribe via the AWS Marketplace at any time. You can find the option in your Marketplace
-account under `Manage subscriptions`.
+Cancel through the AWS Marketplace subscription management interface.
 
 **Important**: Unsubscribing will instantly stop all running queries in your organization. Ensure no
 critical workflows are running before cancelling.
