@@ -519,6 +519,7 @@ def test_str_to_integer_dtype() -> None:
         u16=pl.col("str").str.to_integer(base="base", dtype=pl.UInt16),
         u32=pl.col("str").str.to_integer(base="base", dtype=pl.UInt32),
         u64=pl.col("str").str.to_integer(base="base", dtype=pl.UInt64),
+        default=pl.col("str").str.to_integer(base="base"),
     ).collect()
 
     expected = pl.DataFrame(
@@ -531,6 +532,7 @@ def test_str_to_integer_dtype() -> None:
             "u16": [127, 127, 127, None, None],
             "u32": [127, 127, 127, None, None],
             "u64": [127, 127, 127, None, None],
+            "default": [127, 127, 127, None, None],
         },
         schema={
             "i8": pl.Int8,
@@ -541,6 +543,7 @@ def test_str_to_integer_dtype() -> None:
             "u16": pl.UInt16,
             "u32": pl.UInt32,
             "u64": pl.UInt64,
+            "default": pl.Int64,
         },
     )
     assert lf.collect_schema() == lf.collect().schema
