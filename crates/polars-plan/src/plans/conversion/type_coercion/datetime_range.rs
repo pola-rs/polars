@@ -117,7 +117,7 @@ pub(super) fn convert_tz(
             function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::ConvertTimeZone(tz.clone())),
             options: FunctionOptions::elementwise(),
         },
-        dt => polars_bail!(ComputeError: "cannot replace time zone of dtype {:?}", dt),
+        dt => polars_bail!(ComputeError: "cannot convert time zone of dtype {:?}", dt),
     };
 
     e.set_node(expr_arena.add(replacement_expr));

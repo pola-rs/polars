@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -781,3 +781,17 @@ def test_date_ranges_lit_combinations_end_interval_samples() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("closed", ["left", "right", "none"])
+def test_date_ranges_start_end_samples_notclosed(closed: ClosedInterval) -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match=(
+            "date_ranges does not support 'left', 'right', or 'none' for the 'closed' "
+            "parameter when 'start', 'end', and 'num_samples' is provided."
+        ),
+    ):
+        pl.date_ranges(
+            start=date(2025, 1, 1), end=date(2025, 1, 2), num_samples=3, closed=closed
+        )

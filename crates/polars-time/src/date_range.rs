@@ -263,8 +263,8 @@ pub(crate) fn datetime_range_i64_start_end_interval(
         // Fast path!
         polars_ensure!(
             step != 0,
-            InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
-            interval,
+            InvalidOperation: "interval {} is too small for time unit {} and was rounded to zero",
+            if interval.negative { -interval } else { interval },
             time_unit,
         );
 
@@ -349,8 +349,8 @@ pub(crate) fn datetime_range_i64_start_interval_samples(
         };
         polars_ensure!(
             step != 0,
-            InvalidOperation: "interval {} is too small for time unit {} and got rounded down to zero",
-            interval,
+            InvalidOperation: "interval {} is too small for time unit {} and was rounded to zero",
+            if interval.negative { -interval } else { interval },
             time_unit,
         );
 

@@ -102,6 +102,58 @@ def test_datetime_range_invalid_time_unit() -> None:
         )
 
 
+def test_datetime_range_interval_too_small() -> None:
+    # start/end/interval
+    with pytest.raises(
+        InvalidOperationError,
+        match="interval 1ns is too small for time unit μs and was rounded to zero",
+    ):
+        pl.datetime_range(
+            start=datetime(2025, 1, 1),
+            end=datetime(2025, 1, 5),
+            interval="1ns",
+            time_unit="us",
+            eager=True,
+        )
+
+    # start/interval/samples
+    with pytest.raises(
+        InvalidOperationError,
+        match="interval 1ns is too small for time unit μs and was rounded to zero",
+    ):
+        pl.datetime_range(
+            start=datetime(2025, 1, 1),
+            interval="1ns",
+            num_samples=5,
+            time_unit="us",
+            eager=True,
+        )
+
+    # end/interval/samples
+    with pytest.raises(
+        InvalidOperationError,
+        match="interval 1ns is too small for time unit μs and was rounded to zero",
+    ):
+        pl.datetime_range(
+            end=datetime(2025, 1, 5),
+            interval="1ns",
+            num_samples=5,
+            time_unit="us",
+            eager=True,
+        )
+
+
+def test_datetime_range_output_ns_due_to_interval() -> None:
+    result = pl.datetime_range(
+        start=datetime(2025, 1, 1),
+        end=datetime(2025, 1, 1, 0, 0, 0, 1),
+        interval="1ns",
+        eager=True,
+    )
+    assert result.len() == 1001
+    assert result.dtype == pl.Datetime(time_unit="ns")
+
+
 def test_datetime_range_lazy_time_zones() -> None:
     start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
     stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
