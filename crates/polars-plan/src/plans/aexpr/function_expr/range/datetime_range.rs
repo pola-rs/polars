@@ -451,7 +451,7 @@ impl FieldsMapper<'_> {
         let (data_tu, data_tz) = if let DataType::Datetime(tu, tz) = data_dtype {
             (tu, tz)
         } else {
-            (TimeUnit::Microseconds, None)
+            (TimeUnit::Milliseconds, None)
         };
 
         let tu = match time_unit {

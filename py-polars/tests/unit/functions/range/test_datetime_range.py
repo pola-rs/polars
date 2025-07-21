@@ -330,7 +330,7 @@ def test_datetime_range_end_of_month_5441(
         closed=closed,
         eager=True,
     )
-    expected = pl.Series("literal", expected_values)
+    expected = pl.Series("literal", expected_values, dtype=pl.Datetime("ms"))
     assert_series_equal(result, expected)
 
 
@@ -423,7 +423,7 @@ def test_dt_range_with_nanosecond_interval_19931() -> None:
 
 def test_datetime_range_with_nanoseconds_overflow_15735() -> None:
     s = pl.datetime_range(date(2000, 1, 1), date(2300, 1, 1), "24h", eager=True)
-    assert s.dtype == pl.Datetime("us")
+    assert s.dtype == pl.Datetime("ms")
     assert s.shape == (109574,)
 
 
@@ -432,7 +432,7 @@ def to_expected(
     values: list[date] | list[datetime], dtype: PolarsDataType
 ) -> pl.Series:
     if dtype == pl.Date:
-        return pl.Series("literal", values, dtype=pl.Datetime("us"))
+        return pl.Series("literal", values, dtype=pl.Datetime("ms"))
     else:
         if (tz := dtype.time_zone) is not None:  # type: ignore[union-attr]
             return pl.Series(

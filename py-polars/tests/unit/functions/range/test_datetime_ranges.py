@@ -131,8 +131,8 @@ def test_datetime_ranges_schema(
         "expected_datetime_range",
     ),
     [
-        (None, None, pl.Datetime("us"), "1s1d", ["2020-01-01", "2020-01-02 00:00:01"]),
-        (None, None, pl.Datetime("us"), "1d1s", ["2020-01-01", "2020-01-02 00:00:01"]),
+        (None, None, pl.Datetime("ms"), "1s1d", ["2020-01-01", "2020-01-02 00:00:01"]),
+        (None, None, pl.Datetime("ms"), "1d1s", ["2020-01-01", "2020-01-02 00:00:01"]),
         (
             None,
             None,
@@ -145,14 +145,14 @@ def test_datetime_ranges_schema(
         (
             None,
             "Asia/Kathmandu",
-            pl.Datetime("us", "Asia/Kathmandu"),
+            pl.Datetime("ms", "Asia/Kathmandu"),
             "1s1d",
             ["2020-01-01", "2020-01-02 00:00:01"],
         ),
         (
             None,
             "Asia/Kathmandu",
-            pl.Datetime("us", "Asia/Kathmandu"),
+            pl.Datetime("ms", "Asia/Kathmandu"),
             "1d1s",
             ["2020-01-01", "2020-01-02 00:00:01"],
         ),
@@ -406,7 +406,7 @@ def test_datetime_ranges_start_end_interval_forwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -538,7 +538,7 @@ def test_datetime_ranges_start_end_interval_backwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -668,7 +668,7 @@ def test_date_ranges_start_end_samples_forwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -798,7 +798,7 @@ def test_date_ranges_start_end_samples_backwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -918,7 +918,7 @@ def test_datetime_ranges_start_interval_samples_forwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -1038,7 +1038,7 @@ def test_datetime_ranges_start_interval_samples_backwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -1158,7 +1158,7 @@ def test_datetime_ranges_end_interval_samples_forwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -1278,7 +1278,7 @@ def test_datetime_ranges_end_interval_samples_backwards(
             time_zone=tz,
         )
     )
-    dt_out = pl.List(pl.Datetime("us")) if dtype == pl.Date else pl.List(dtype)
+    dt_out = pl.List(pl.Datetime("ms")) if dtype == pl.Date else pl.List(dtype)
     s_expected = pl.Series("dates", expected, dtype=dt_out)
     assert_frame_equal(result, s_expected.to_frame())
 
@@ -1295,10 +1295,11 @@ def test_datetime_ranges_lit_combinations_start_end_interval() -> None:
         end_lit=pl.datetime_ranges(start="start", end=date(2025, 1, 3), interval="1d"),
     )
     dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
+    s = pl.Series([dt, dt], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame(
         {
-            "start_lit": pl.Series([dt, dt]),
-            "end_lit": pl.Series([dt, dt]),
+            "start_lit": s,
+            "end_lit": s,
         }
     )
     assert_frame_equal(result, expected)
@@ -1317,7 +1318,7 @@ def test_datetime_ranges_null_lit_combinations_start_end_interval() -> None:
         end_lit=pl.datetime_ranges(start="start", end=lit_dt, interval="1d"),
         all_lit=pl.datetime_ranges(start=lit_dt, end=lit_dt, interval="1d"),
     )
-    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
+    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame({"start_lit": s, "end_lit": s, "all_lit": s})
     assert_frame_equal(result, expected)
 
@@ -1342,15 +1343,16 @@ def test_datetime_ranges_lit_combinations_start_end_samples() -> None:
         all_lit=pl.datetime_ranges(start=start, end=end, num_samples=3),
     )
     dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
+    s = pl.Series([dt, dt], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame(
         {
-            "start_lit": pl.Series([dt, dt]),
-            "end_lit": pl.Series([dt, dt]),
-            "samples_lit": pl.Series([dt, dt]),
-            "start_end_lit": pl.Series([dt, dt]),
-            "start_samples_lit": pl.Series([dt, dt]),
-            "end_samples_lit": pl.Series([dt, dt]),
-            "all_lit": pl.Series([dt, dt]),
+            "start_lit": s,
+            "end_lit": s,
+            "samples_lit": s,
+            "start_end_lit": s,
+            "start_samples_lit": s,
+            "end_samples_lit": s,
+            "all_lit": s,
         }
     )
     assert_frame_equal(result, expected)
@@ -1381,7 +1383,7 @@ def test_datetime_ranges_null_lit_combinations_start_end_samples() -> None:
         ),
         all_lit=pl.datetime_ranges(start=lit_dt, end=lit_dt, num_samples=lit_n),
     )
-    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
+    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame(
         {
             "start_lit": s,
@@ -1410,10 +1412,11 @@ def test_datetime_ranges_lit_combinations_start_interval_samples() -> None:
         samples_lit=pl.datetime_ranges(start="start", interval="1d", num_samples=3),
     )
     dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
+    s = pl.Series([dt, dt], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame(
         {
-            "start_lit": pl.Series([dt, dt]),
-            "samples_lit": pl.Series([dt, dt]),
+            "start_lit": s,
+            "samples_lit": s,
         }
     )
     assert_frame_equal(result, expected)
@@ -1435,7 +1438,7 @@ def test_datetime_ranges_null_lit_combinations_start_interval_samples() -> None:
         samples_lit=pl.datetime_ranges(start="start", interval="1d", num_samples=lit_n),
         all_lit=pl.datetime_ranges(start=lit_dt, interval="1d", num_samples=lit_n),
     )
-    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
+    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame(
         {
             "start_lit": s,
@@ -1460,10 +1463,11 @@ def test_datetime_ranges_lit_combinations_end_interval_samples() -> None:
         samples_lit=pl.datetime_ranges(end="end", num_samples=3, interval="1d"),
     )
     dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
+    s = pl.Series([dt, dt], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame(
         {
-            "end_lit": pl.Series([dt, dt]),
-            "samples_lit": pl.Series([dt, dt]),
+            "end_lit": s,
+            "samples_lit": s,
         }
     )
     assert_frame_equal(result, expected)
@@ -1483,7 +1487,7 @@ def test_datetime_ranges_null_lit_combinations_end_interval_samples() -> None:
         samples_lit=pl.datetime_ranges(end="end", num_samples=lit_n, interval="1d"),
         all_lit=pl.datetime_ranges(end=lit_dt, num_samples=lit_n, interval="1d"),
     )
-    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("us")))
+    s = pl.Series([None, None], dtype=pl.List(pl.Datetime("ms")))
     expected = pl.DataFrame(
         {
             "end_lit": s,

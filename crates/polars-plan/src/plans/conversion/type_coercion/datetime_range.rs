@@ -55,8 +55,8 @@ pub(super) fn build_datetime_supertype(
             } else if interval.is_some_and(|i| i.nanoseconds() % 1_000 != 0) {
                 DataType::Datetime(TimeUnit::Nanoseconds, None)
             } else {
-                // No datatype, use microseconds
-                DataType::Datetime(TimeUnit::Microseconds, None)
+                // No datatype, use milliseconds
+                DataType::Datetime(TimeUnit::Milliseconds, None)
             }
         },
         // overwrite nothing, keep as-is
