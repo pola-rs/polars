@@ -1162,6 +1162,15 @@ def test_datetime_ranges_lit_combinations_start_end_samples() -> None:
             start="start", end=date(2025, 1, 3), num_samples="samples"
         ),
         samples_lit=pl.datetime_ranges(start="start", end="end", num_samples=3),
+        start_end_lit=pl.datetime_ranges(
+            start=date(2025, 1, 1), end=date(2025, 1, 3), num_samples=3
+        ),
+        start_samples_lit=pl.datetime_ranges(
+            start=date(2025, 1, 1), end="end", num_samples=3
+        ),
+        end_samples_lit=pl.datetime_ranges(
+            start="start", end=date(2025, 1, 3), num_samples=3
+        ),
     )
     dt = [datetime(2025, 1, 1), datetime(2025, 1, 2), datetime(2025, 1, 3)]
     expected = pl.DataFrame(
@@ -1169,6 +1178,9 @@ def test_datetime_ranges_lit_combinations_start_end_samples() -> None:
             "start_lit": pl.Series([dt, dt]),
             "end_lit": pl.Series([dt, dt]),
             "samples_lit": pl.Series([dt, dt]),
+            "start_end_lit": pl.Series([dt, dt]),
+            "start_samples_lit": pl.Series([dt, dt]),
+            "end_samples_lit": pl.Series([dt, dt]),
         }
     )
     assert_frame_equal(result, expected)
