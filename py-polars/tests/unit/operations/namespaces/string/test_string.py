@@ -504,10 +504,13 @@ def test_str_to_integer_base_literal() -> None:
 
 
 def test_str_to_integer_dtype() -> None:
-    df = pl.DataFrame(
-        {"str": ["1111111", "7f", "127", None, "42"], "base": [2, 16, 10, 8, None]}
+    lf = pl.LazyFrame(
+        {
+            "str": ["1111111", "7f", "127", None, "42"],
+            "base": [2, 16, 10, 8, None],
+        }
     )
-    out = df.select(
+    out = lf.select(
         i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8),
         i16=pl.col("str").str.to_integer(base="base", dtype=pl.Int16),
         i32=pl.col("str").str.to_integer(base="base", dtype=pl.Int32),
@@ -516,7 +519,8 @@ def test_str_to_integer_dtype() -> None:
         u16=pl.col("str").str.to_integer(base="base", dtype=pl.UInt16),
         u32=pl.col("str").str.to_integer(base="base", dtype=pl.UInt32),
         u64=pl.col("str").str.to_integer(base="base", dtype=pl.UInt64),
-    )
+    ).collect()
+
     expected = pl.DataFrame(
         {
             "i8": [127, 127, 127, None, None],
@@ -539,6 +543,7 @@ def test_str_to_integer_dtype() -> None:
             "u64": pl.UInt64,
         },
     )
+    assert lf.collect_schema() == lf.collect().schema
     assert_frame_equal(out, expected)
 
 
