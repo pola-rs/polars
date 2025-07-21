@@ -154,8 +154,11 @@ impl IRStringFunction {
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
-            #[cfg(feature = "string_to_integer")]
-            ToInteger { .. } => mapper.with_dtype(DataType::Int64),
+            // ToInteger { dtype, .. } => match dtype {
+            //     None => mapper.with_dtype(DataType::Int64),
+            //     Some(dt) => mapper.with_dtype(dt.clone()),
+            // },
+            ToInteger { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             #[cfg(feature = "regex")]
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
