@@ -1123,3 +1123,8 @@ def test_pickle_selector_11425() -> None:
         "a",
         "b",
     ]
+
+
+def test_list_eval_selector_23667() -> None:
+    df = pl.DataFrame({"x": [[1, 2], [3]]})
+    assert_frame_equal(df, df.select(pl.all().list.eval(pl.element())))
