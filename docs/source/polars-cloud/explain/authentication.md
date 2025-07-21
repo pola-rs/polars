@@ -1,11 +1,16 @@
 # Logging in
 
-Polars cloud allows authentication through short-lived authentication tokens. The authentication system supports both interactive and programmatic workflows.
+Polars cloud allows authentication through short-lived authentication tokens. The authentication
+system supports both interactive and programmatic workflows.
 
-1. `authenticate` loads cached tokens when available, falling back to browser-based login when needed. This is the recommended method for most development workflows since it reuses existing sessions.
-2. `login` always initiates browser-based authentication. Use this when you need to switch between accounts.
+1. `authenticate` loads cached tokens when available, falling back to browser-based login when
+   needed. This is the recommended method for most development workflows since it reuses existing
+   sessions.
+2. `login` always initiates browser-based authentication. Use this when you need to switch between
+   accounts.
 
-You can find more information about the usage of authentication options in the [API Reference documentation](https://docs.cloud.pola.rs/reference/auth/index.html).
+You can find more information about the usage of authentication options in the
+[API Reference documentation](https://docs.cloud.pola.rs/reference/auth/index.html).
 
 ## Credential resolution
 
@@ -31,4 +36,7 @@ You can override this path by setting the environment variable `POLARS_CLOUD_ACC
 
 ## Service accounts
 
-Service accounts provide programmatic authentication for automated workflows, orchestration tools, and CI/CD pipelines where interactive login isn't feasible. These accounts use client credentials instead of user-based authentication flows. See the page on [service accounts](service-accounts.md) for more information.
+Service accounts provide programmatic authentication for automated workflows, orchestration tools,
+and CI/CD pipelines where interactive login isn't feasible. These accounts use client credentials
+instead of user-based authentication flows. See the page on [service accounts](service-accounts.md)
+for more information.

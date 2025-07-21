@@ -10,9 +10,13 @@ trusted marketplace infrastructure.
 
 ## Subscribe to Polars Cloud
 
-Subscribing to Polars Cloud requires an AWS account with billing permissions. You can access the marketplace listing either through the Billing page in your Polars Cloud organization or by searching "Polars Cloud" directly in AWS Marketplace.
+Subscribing to Polars Cloud requires an AWS account with billing permissions. You can access the
+marketplace listing either through the Billing page in your Polars Cloud organization or by
+searching "Polars Cloud" directly in AWS Marketplace.
 
-The subscription process connects your Polars Cloud organization to AWS billing, after which your organization status updates to reflect the marketplace connection. This typically completes within minutes, though allow up to an hour for status propagation.
+The subscription process connects your Polars Cloud organization to AWS billing, after which your
+organization status updates to reflect the marketplace connection. This typically completes within
+minutes, though allow up to an hour for status propagation.
 
 ### Verify Your Organization Connection
 
@@ -22,9 +26,9 @@ If the status doesn't update within one hour, contact our support team at suppor
 
 ### Request and Accept Private Offers
 
-Customers with large-scale analytics workloads or enterprise customers requiring custom pricing, annual
-commitments, or specific terms can contact our team for a private offer. Reach out to the team at
-support@polars.tech.
+Customers with large-scale analytics workloads or enterprise customers requiring custom pricing,
+annual commitments, or specific terms can contact our team for a private offer. Reach out to the
+team at support@polars.tech.
 
 ### Cost and Usage Monitoring
 
