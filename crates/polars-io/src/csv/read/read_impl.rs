@@ -19,7 +19,7 @@ use super::parser::{
     skip_lines_naive, skip_this_line,
 };
 use super::reader::prepare_csv_schema;
-use super::schema_inference::{check_decimal_comma, infer_file_schema};
+use super::schema_inference::infer_file_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
@@ -159,7 +159,6 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<CoreReader<'a>> {
         let separator = parse_options.separator;
 
-        check_decimal_comma(parse_options.decimal_comma, separator)?;
         #[cfg(feature = "decompress")]
         let mut reader_bytes = reader_bytes;
 

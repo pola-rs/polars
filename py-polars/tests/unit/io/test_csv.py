@@ -2236,12 +2236,6 @@ def test_csv_float_decimal() -> None:
     assert read.dtypes == [pl.Float64] * 2
     assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
 
-    floats = b"a;b\n12,239;1,233\n13,908;87,32"
-    with pytest.raises(
-        InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
-    ):
-        pl.read_csv(floats, decimal_comma=True)
-
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_fsspec_not_available() -> None:
@@ -2658,6 +2652,8 @@ x"y,b,c
         (";", None, False, None, True, b"123,75;60;9\n"),
         (",", None, True, 0, True, b"1e2,6e1,9\n"),
         (",", None, True, 3, True, b'"1,238e2","6,000e1",9\n'),
+        (",", None, True, 4, True, b'"1,2375e2","6,0000e1",9\n'),
+        (",", None, True, 5, True, b'"1,23750e2","6,00000e1",9\n'),
         (",", None, False, 0, True, b"124,60,9\n"),
         (",", None, False, 3, True, b'"123,750","60,000",9\n'),
         (",", "always", None, None, True, b'"123,75","60,0","9"\n'),
@@ -2708,11 +2704,15 @@ def test_write_csv_decimal_comma(
     buf.seek(0)
     assert buf.read() == expected
 
-    # Invariant testing:
-    #   df == read_csv(write_csv(df)), unless precision affects the value
-    # TODO: drop the separator condition when read_csv supports comma as both the
-    # decimal separator and field separator, see #23157
-    if (precision is None or precision > 2) and separator != ",":
+    # Round-trip testing: assert df == read_csv(write_csv(df)), unless:
+    # - precision affects the value, or
+    # - quote_style = 'never' generates malformed csv
+    round_trip = not (
+        (not scientific and precision is not None and precision <= 2)
+        or (scientific and precision is not None and precision != 4)
+        or (quote_style == "never" and decimal_comma and separator == ",")
+    )
+    if round_trip:
         # eager
         buf.seek(0)
         df.write_csv(
