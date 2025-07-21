@@ -136,7 +136,7 @@ impl Column {
     /// This method is safe to use. However, care must be taken when operating on the returned
     /// `Series` to ensure result correctness. E.g. It is suitable to perform elementwise operations
     /// on it, however e.g. aggregations will return unspecified results.
-    pub fn get_backing_series(&self) -> Series {
+    pub fn _get_backing_series(&self) -> Series {
         match self {
             Column::Series(s) => (**s).clone(),
             Column::Partitioned(s) => s.partitions().clone(),
@@ -154,7 +154,7 @@ impl Column {
     /// * `self` is `Column::Scalar` and if either:
     ///   * `self` is not empty and `new_s` is not of unit length.
     ///   * `self` is empty and `new_s` is not empty.
-    pub fn to_new_from_backing(&self, new_s: Series) -> Self {
+    pub fn _to_new_from_backing(&self, new_s: Series) -> Self {
         match self {
             Column::Series(s) => {
                 assert_eq!(new_s.len(), s.len());

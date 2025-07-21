@@ -105,7 +105,7 @@ impl ColumnTransform {
             TF::StructFieldsMapping { field_selectors } => {
                 use polars_core::prelude::StructChunked;
 
-                let input_s = input.get_backing_series();
+                let input_s = input._get_backing_series();
                 let struct_ca = input_s.struct_().unwrap();
                 let field_columns: Vec<Column> = struct_ca.fields_as_columns();
 
@@ -114,7 +114,7 @@ impl ColumnTransform {
                     .map(|x| x.select_from_columns(&field_columns, struct_ca.len()))
                     .collect::<PolarsResult<_>>()?;
 
-                input.to_new_from_backing(
+                input._to_new_from_backing(
                     StructChunked::from_columns(
                         struct_ca.name().clone(),
                         struct_ca.len(),
@@ -128,7 +128,7 @@ impl ColumnTransform {
             TF::ListValuesMapping { values_selector } => {
                 use polars_core::prelude::{LargeListArray, ListChunked};
 
-                let input_list_ca = input.get_backing_series().list().unwrap().clone();
+                let input_list_ca = input._get_backing_series().list().unwrap().clone();
 
                 let values_dtype = {
                     let DataType::List(inner) = input_list_ca.dtype() else {
@@ -190,7 +190,7 @@ impl ColumnTransform {
                 // Casts on the values should not affect outer NULLs.
                 out.retain_flags_from(&input_list_ca, StatisticsFlags::CAN_FAST_EXPLODE_LIST);
 
-                input.to_new_from_backing(out.into_series())
+                input._to_new_from_backing(out.into_series())
             },
 
             #[cfg(feature = "dtype-array")]
@@ -198,7 +198,7 @@ impl ColumnTransform {
                 use arrow::array::FixedSizeListArray;
                 use polars_core::prelude::ArrayChunked;
 
-                let input_array_ca = input.get_backing_series().array().unwrap().clone();
+                let input_array_ca = input._get_backing_series().array().unwrap().clone();
 
                 let values_dtype = {
                     let DataType::Array(inner, _) = input_array_ca.dtype() else {
@@ -260,7 +260,7 @@ impl ColumnTransform {
                 // Ensure logical types are restored.
                 out.set_inner_dtype(values_output_dtype.unwrap());
 
-                input.to_new_from_backing(out.into_series())
+                input._to_new_from_backing(out.into_series())
             },
         };
 
