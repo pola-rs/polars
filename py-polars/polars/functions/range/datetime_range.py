@@ -198,7 +198,7 @@ def datetime_range(
     ...     eager=True,
     ... ).alias("date")
     shape: (5,)
-    Series: 'date' [datetime[μs]]
+    Series: 'date' [datetime[ms]]
     [
             1985-01-01 00:00:00
             1985-01-03 06:00:00
@@ -213,7 +213,7 @@ def datetime_range(
     ...     eager=True,
     ... ).alias("date")
     shape: (4,)
-    Series: 'date' [datetime[μs]]
+    Series: 'date' [datetime[ms]]
     [
             1985-01-01 00:00:00
             1985-01-04 00:00:00
@@ -245,7 +245,7 @@ def datetime_range(
     ┌─────┬─────────────────────────────────────────────────────────────────┐
     │ key ┆ date                                                            │
     │ --- ┆ ---                                                             │
-    │ str ┆ list[datetime[μs]]                                              │
+    │ str ┆ list[datetime[ms]]                                              │
     ╞═════╪═════════════════════════════════════════════════════════════════╡
     │ one ┆ [2024-01-01 00:00:00, 2024-01-02 00:00:00]                      │
     │ two ┆ [2024-01-01 00:00:00, 2024-01-02 00:00:00, 2024-01-03 00:00:00] │
