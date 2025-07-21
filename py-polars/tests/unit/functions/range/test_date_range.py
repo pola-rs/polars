@@ -581,3 +581,17 @@ def test_date_range_end_interval_samples_backward_1mo(
         eager=True,
     )
     assert_series_equal(result, pl.Series("literal", expected))
+
+
+@pytest.mark.parametrize("closed", ["left", "right", "none"])
+def test_date_range_start_end_samples_notclosed(closed: ClosedInterval) -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match=(
+            "date_range does not support 'left', 'right', or 'none' for the 'closed' "
+            "parameter when 'start', 'end', and 'num_samples' is provided."
+        ),
+    ):
+        pl.date_range(
+            start=date(2025, 1, 1), end=date(2025, 1, 2), num_samples=3, closed=closed
+        )

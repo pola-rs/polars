@@ -128,7 +128,7 @@ fn upsample_impl(
         DataType::Date => {
             let mut df = source.clone();
             df.apply(index_column, |s| {
-                s.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                s.cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                     .unwrap()
             })
             .unwrap();
