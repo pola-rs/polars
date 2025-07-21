@@ -77,13 +77,26 @@ pub fn hive_partitions_from_paths(
         return Ok(None);
     };
 
+    // parse and decode 'k=v' strings
+    // Decoding is defined as the reversal of the encoding as performed by
+    // Scalar::serialize_encode() in the delta-rs crate. Since this crate is encoding
+    // twice, we are decoding twice.
     fn parse_hive_string_and_decode(part: &'_ str) -> Option<(&'_ str, std::borrow::Cow<'_, str>)> {
         let (k, v) = parse_hive_string(part)?;
-        let v = percent_encoding::percent_decode(v.as_bytes())
-            .decode_utf8()
-            .ok()?;
+        let decoded = percent_encoding::percent_decode_str(v).decode_utf8().ok()?;
+        let decoded = match decoded {
+            std::borrow::Cow::Borrowed(v) => {
+                percent_encoding::percent_decode_str(v).decode_utf8().ok()?
+            },
+            std::borrow::Cow::Owned(v) => std::borrow::Cow::Owned(
+                percent_encoding::percent_decode_str(&v)
+                    .decode_utf8()
+                    .ok()?
+                    .into(),
+            ),
+        };
 
-        Some((k, v))
+        Some((k, decoded))
     }
 
     // generate (k,v) tuples from 'k=v' partition strings
