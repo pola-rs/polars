@@ -682,3 +682,102 @@ def test_date_ranges_end_interval_samples_backward(
         )
     )
     assert_frame_equal(result, pl.Series("dates", expected).to_frame())
+
+
+def test_date_ranges_lit_combinations_start_end_interval() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 1)],
+            "end": [date(2025, 1, 3), date(2025, 1, 3)],
+        }
+    )
+
+    result = df.select(
+        start_lit=pl.date_ranges(start=date(2025, 1, 1), end="end", interval="1d"),
+        end_lit=pl.date_ranges(start="start", end=date(2025, 1, 3), interval="1d"),
+    )
+    dt = [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]
+    expected = pl.DataFrame(
+        {
+            "start_lit": pl.Series([dt, dt]),
+            "end_lit": pl.Series([dt, dt]),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_date_ranges_lit_combinations_start_end_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 1)],
+            "end": [date(2025, 1, 3), date(2025, 1, 3)],
+            "samples": [3, 3],
+        }
+    )
+
+    result = df.select(
+        start_lit=pl.date_ranges(
+            start=date(2025, 1, 1), end="end", num_samples="samples"
+        ),
+        end_lit=pl.date_ranges(
+            start="start", end=date(2025, 1, 3), num_samples="samples"
+        ),
+        samples_lit=pl.date_ranges(start="start", end="end", num_samples=3),
+    )
+    dt = [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]
+    expected = pl.DataFrame(
+        {
+            "start_lit": pl.Series([dt, dt]),
+            "end_lit": pl.Series([dt, dt]),
+            "samples_lit": pl.Series([dt, dt]),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_date_ranges_lit_combinations_start_interval_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "start": [date(2025, 1, 1), date(2025, 1, 1)],
+            "samples": [3, 3],
+        }
+    )
+
+    result = df.select(
+        start_lit=pl.date_ranges(
+            start=date(2025, 1, 1), interval="1d", num_samples="samples"
+        ),
+        samples_lit=pl.date_ranges(start="start", interval="1d", num_samples=3),
+    )
+    dt = [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]
+    expected = pl.DataFrame(
+        {
+            "start_lit": pl.Series([dt, dt]),
+            "samples_lit": pl.Series([dt, dt]),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_date_ranges_lit_combinations_end_interval_samples() -> None:
+    df = pl.DataFrame(
+        {
+            "end": [date(2025, 1, 3), date(2025, 1, 3)],
+            "samples": [3, 3],
+        }
+    )
+
+    result = df.select(
+        end_lit=pl.date_ranges(
+            end=date(2025, 1, 3), num_samples="samples", interval="1d"
+        ),
+        samples_lit=pl.date_ranges(end="end", num_samples=3, interval="1d"),
+    )
+    dt = [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]
+    expected = pl.DataFrame(
+        {
+            "end_lit": pl.Series([dt, dt]),
+            "samples_lit": pl.Series([dt, dt]),
+        }
+    )
+    assert_frame_equal(result, expected)
