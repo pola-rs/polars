@@ -575,6 +575,10 @@ fn get_arithmetic_field(
                 (Struct(_), Struct(_)) => {
                     return Ok(left_field);
                 },
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), r) if r.is_primitive_numeric() => {
+                    return Ok(left_field);
+                },
                 (Datetime(_, _), _)
                 | (_, Datetime(_, _))
                 | (Time, _)
