@@ -421,7 +421,7 @@ impl PyLazyFrame {
         use crate::dataset::dataset_provider_funcs;
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
-            reader_name: dataset_provider_funcs::reader_name,
+            name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });

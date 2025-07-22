@@ -1,3 +1,4 @@
+use polars::prelude::ColumnMapping;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
@@ -149,6 +150,18 @@ impl PyFileOptions {
                     .into_any()
                     .unbind()
             },
+        })
+    }
+
+    /// One of:
+    /// * None
+    /// * ("iceberg-column-mapping", <unimplemented>)
+    #[getter]
+    fn column_mapping(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(match &self.inner.column_mapping {
+            None => py.None().into_any(),
+
+            Some(ColumnMapping::Iceberg { .. }) => unimplemented!(),
         })
     }
 }

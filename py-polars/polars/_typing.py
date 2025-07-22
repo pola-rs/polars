@@ -109,6 +109,7 @@ CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 DeletionFiles: TypeAlias = tuple[
     Literal["iceberg-position-delete"], dict[int, list[str]]
 ]
+ColumnMapping: TypeAlias = tuple[Literal["iceberg-column-mapping"], "pa.Schema"]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
