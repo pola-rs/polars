@@ -1,7 +1,7 @@
 # Logging in
 
-Polars cloud allows authentication through short-lived authentication tokens. The authentication
-system supports both interactive and programmatic workflows.
+Polars Cloud allows authentication through short-lived authentication tokens. Authentication
+supports both interactive and programmatic workflows.
 
 1. `authenticate` loads cached tokens when available, falling back to browser-based login when
    needed. This is the recommended method for most development workflows since it reuses existing
@@ -37,6 +37,6 @@ You can override this path by setting the environment variable `POLARS_CLOUD_ACC
 ## Service accounts
 
 Service accounts provide programmatic authentication for automated workflows, orchestration tools,
-and CI/CD pipelines where interactive login isn't feasible. These accounts use client credentials
-instead of user-based authentication flows. See the page on [service accounts](service-accounts.md)
-for more information.
+and CI/CD pipelines. These accounts facilitate automated processes (typically in production
+environments) without requiring interactive login sessions. See the page on
+[service accounts](service-accounts.md) for more information.
