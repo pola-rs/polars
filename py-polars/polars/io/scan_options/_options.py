@@ -44,5 +44,5 @@ class ScanOptions:
     credential_provider: CredentialProviderBuilder | None = None
     retries: int = 2
 
-    deletion_files: DeletionFiles | None = None
     column_mapping: ColumnMapping | None = None
+    deletion_files: DeletionFiles | None = None
