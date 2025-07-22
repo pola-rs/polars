@@ -171,7 +171,21 @@ impl IRStringFunction {
             #[cfg(feature = "string_reverse")]
             Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
-            Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
+            Strptime(dtype, options) => match dtype {
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(time_unit, time_zone) => {
+                    let mut time_zone = time_zone.clone();
+                    if options
+                        .format
+                        .as_ref()
+                        .is_some_and(|format| TZ_AWARE_RE.is_match(format.as_str()))
+                    {
+                        time_zone = Some(time_zone.unwrap_or(TimeZone::UTC));
+                    }
+                    mapper.with_dtype(DataType::Datetime(*time_unit, time_zone))
+                },
+                _ => mapper.with_dtype(dtype.clone()),
+            },
             Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
