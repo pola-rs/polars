@@ -235,6 +235,13 @@ class Catalog:
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+        cast_options
+            Configuration for column type-casting during scans. Useful for datasets
+            containing files that have differing schemas.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         """
         table_info = self.get_table_info(catalog_name, namespace, table_name)
