@@ -60,7 +60,7 @@ impl OutputName {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct ExprIR {
     /// Output name of this expression.
@@ -78,21 +78,6 @@ impl Eq for ExprIR {}
 impl PartialEq for ExprIR {
     fn eq(&self, other: &Self) -> bool {
         self.node == other.node && self.output_name == other.output_name
-    }
-}
-
-impl Clone for ExprIR {
-    fn clone(&self) -> Self {
-        let output_dtype = OnceLock::new();
-        if let Some(dt) = self.output_dtype.get() {
-            output_dtype.set(dt.clone()).unwrap()
-        }
-
-        ExprIR {
-            output_name: self.output_name.clone(),
-            node: self.node,
-            output_dtype,
-        }
     }
 }
 
