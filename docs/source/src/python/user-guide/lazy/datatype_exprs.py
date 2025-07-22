@@ -1,6 +1,7 @@
 """
 # --8<-- [start:setup]
 import polars as pl
+import polars.selectors as cs
 
 # --8<-- [end:setup]
 # --8<-- [start:basic]
@@ -20,8 +21,8 @@ dtype_expr.to_signed_integer().collect_dtype(schema)
 # --8<-- [start:basic-inspect]
 df = schema.to_frame()
 df.select(
-    userid_dtype_name = pl.dtype_of('UserID').to_string_expr(),
-    userid_is_signed  = pl.dtype_of('UserID').is_signed_integer(),
+    userid_dtype_name = pl.dtype_of('UserID').display(),
+    userid_is_signed  = pl.dtype_of('UserID').matches(cs.signed_integer()),
 )
 # --8<-- [end:basic-inspect]
 

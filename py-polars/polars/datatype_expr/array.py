@@ -37,12 +37,12 @@ class DataTypeExprArrNameSpace:
 
     def shape(self) -> pl.Expr:
         """
-        Get the dimensions of sequentially nested arrays.
+        Get the array shape.
 
         Examples
         --------
         >>> pl.select(pl.Array(pl.Int8, (1, 2, 3)).to_dtype_expr().arr.shape())
-        shape: (1, 1)
+        shape: (3, 1)
         ┌─────────┐
         │ literal │
         │ ---     │

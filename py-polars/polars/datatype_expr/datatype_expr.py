@@ -35,8 +35,8 @@ class DataTypeExpr:
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
 
-    A expression made to represent a :class:`DataType` that can be used to
-    reference the datatype of an expression of column in a lazy context.
+    This expression is made to represent a :class:`DataType` that can be used to
+    reference a datatype in a lazy context.
 
     Examples
     --------
@@ -126,7 +126,29 @@ class DataTypeExpr:
         return pl.Expr._from_pyexpr(self._pydatatype_expr.display())
 
     def matches(self, selector: pl.Selector) -> pl.Expr:
-        """Get whether the output DataType is matches a certain selector."""
+        """
+        Get whether the output DataType is matches a certain selector.
+
+        Examples
+        --------
+        >>> import polars.selectors as cs
+        >>> pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...     }
+        ... ).select(
+        ...     a_is_string=pl.dtype_of("a").matches(cs.string()),
+        ...     a_is_integer=pl.dtype_of("a").matches(cs.integer()),
+        ... )
+        shape: (1, 2)
+        ┌─────────────┬──────────────┐
+        │ a_is_string ┆ a_is_integer │
+        │ ---         ┆ ---          │
+        │ bool        ┆ bool         │
+        ╞═════════════╪══════════════╡
+        │ false       ┆ true         │
+        └─────────────┴──────────────┘
+        """
         return pl.Expr._from_pyexpr(self._pydatatype_expr.matches(selector._pyselector))
 
     def wrap_in_list(self) -> DataTypeExpr:
