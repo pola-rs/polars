@@ -30,7 +30,7 @@ impl ComputeNode for StreamingSliceNode {
         send: &mut [PortState],
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
-        if self.stream_offset >= self.start_offset + self.length || self.length == 0 {
+        if self.stream_offset >= self.start_offset.saturating_add(self.length) || self.length == 0 {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
         } else {
@@ -51,7 +51,7 @@ impl ComputeNode for StreamingSliceNode {
         let mut recv = recv_ports[0].take().unwrap().serial();
         let mut send = send_ports[0].take().unwrap().serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let stop_offset = self.start_offset + self.length;
+            let stop_offset = self.start_offset.saturating_add(self.length);
 
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel.map(|df| {

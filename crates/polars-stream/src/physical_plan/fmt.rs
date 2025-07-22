@@ -233,6 +233,14 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::DynamicSlice {
+            input,
+            offset,
+            length,
+        } => (
+            "slice".to_owned(),
+            &[*input, *offset, *length][..],
+        ),
         PhysNodeKind::Filter { input, predicate } => (
             format!(
                 "filter\\n{}",

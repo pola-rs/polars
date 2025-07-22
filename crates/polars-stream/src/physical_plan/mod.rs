@@ -124,6 +124,12 @@ pub enum PhysNodeKind {
         offset: i64,
         length: usize,
     },
+    
+    DynamicSlice {
+        input: PhysStream,
+        offset: PhysStream,
+        length: PhysStream,
+    },
 
     Filter {
         input: PhysStream,
@@ -364,6 +370,15 @@ fn visit_node_inputs_mut(
                 rec!(input_right.node);
                 visit(input_left);
                 visit(input_right);
+            },
+            
+            PhysNodeKind::DynamicSlice { input, offset, length } => {
+                rec!(input.node);
+                rec!(offset.node);
+                rec!(length.node);
+                visit(input);
+                visit(offset);
+                visit(length);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
