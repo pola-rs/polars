@@ -24,16 +24,3 @@ This page gives an overview of all public Polars expressions.
     :noindex:
     :autosummary:
     :autosummary-nosignatures:
-
-Functions
----------
-
-Available data type expressions functions:
-
-.. autosummary::
-   :toctree: api/
-
-   dtype_of
-   self_dtype
-   DataType.to_dtype_expr
-=======
