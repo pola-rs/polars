@@ -6,7 +6,7 @@ use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{
     AExpr, DataFrameUdf, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by,
 };
@@ -214,9 +214,9 @@ fn try_lower_elementwise_scalar_agg_expr(
 
                     // Add to aggregation expressions and replace with a reference to its output.
                     let agg_expr = if let Some(name) = outer_name {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
+                        ExprIR::new(trans_agg_node, name)
                     } else {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
+                        ExprIR::new(trans_agg_node, unique_column_name())
                     };
                     agg_exprs.push(agg_expr.clone());
                     agg_expr.output_name().clone()
@@ -268,9 +268,9 @@ fn try_lower_elementwise_scalar_agg_expr(
 
                     // Add to aggregation expressions and replace with a reference to its output.
                     let agg_expr = if let Some(name) = outer_name {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
+                        ExprIR::new(trans_agg_node, name)
                     } else {
-                        ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
+                        ExprIR::new(trans_agg_node, unique_column_name())
                     };
                     agg_exprs.push(agg_expr.clone());
                     agg_expr.output_name().clone()
@@ -291,10 +291,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 .map(|i| {
                     // The function may be sensitive to names (e.g. pl.struct), so we restore them.
                     let new_node = lower_rec!(i.node())?;
-                    Some(ExprIR::new(
-                        new_node,
-                        OutputName::Alias(i.output_name().clone()),
-                    ))
+                    Some(ExprIR::new(new_node, i.output_name().clone()))
                 })
                 .collect::<Option<Vec<_>>>()?;
 
@@ -363,9 +360,9 @@ fn try_lower_elementwise_scalar_agg_expr(
 
                             // Add to aggregation expressions and replace with a reference to its output.
                             let agg_expr = if let Some(name) = outer_name {
-                                ExprIR::new(trans_agg_node, OutputName::Alias(name))
+                                ExprIR::new(trans_agg_node, name)
                             } else {
-                                ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
+                                ExprIR::new(trans_agg_node, unique_column_name())
                             };
                             agg_exprs.push(agg_expr.clone());
                             agg_expr.output_name().clone()
@@ -384,9 +381,9 @@ fn try_lower_elementwise_scalar_agg_expr(
         },
         AExpr::Len => {
             let agg_expr = if let Some(name) = outer_name {
-                ExprIR::new(expr, OutputName::Alias(name))
+                ExprIR::new(expr, name)
             } else {
-                ExprIR::new(expr, OutputName::Alias(unique_column_name()))
+                ExprIR::new(expr, unique_column_name())
             };
             let result_node = expr_arena.add(AExpr::Column(agg_expr.output_name().clone()));
             agg_exprs.push(agg_expr);
@@ -456,11 +453,8 @@ fn try_build_streaming_group_by(
         // Keys might refer to the same column multiple times, we have to give a unique name to it.
         let uniq_name = unique_column_name();
         let trans_key_node = expr_arena.add(AExpr::Column(uniq_col));
-        trans_keys.push(ExprIR::new(
-            trans_key_node,
-            OutputName::Alias(uniq_name.clone()),
-        ));
-        let output_name = OutputName::Alias(key.output_name().clone());
+        trans_keys.push(ExprIR::new(trans_key_node, uniq_name.clone()));
+        let output_name = key.output_name().clone();
         let trans_output_node = expr_arena.add(AExpr::Column(uniq_name));
         trans_output_exprs.push(ExprIR::new(trans_output_node, output_name));
     }
@@ -477,7 +471,7 @@ fn try_build_streaming_group_by(
             &mut uniq_input_exprs,
             &mut uniq_agg_exprs,
         )?;
-        let output_name = OutputName::Alias(agg.output_name().clone());
+        let output_name = agg.output_name().clone();
         trans_output_exprs.push(ExprIR::new(trans_node, output_name));
     }
 
@@ -485,7 +479,7 @@ fn try_build_streaming_group_by(
     let mut input_exprs = Vec::new();
     for (uniq_id, name) in uniq_input_exprs.iter() {
         let node = expr_merger.get_node(*uniq_id).unwrap();
-        input_exprs.push(ExprIR::new(node, OutputName::Alias(name.clone())));
+        input_exprs.push(ExprIR::new(node, name.clone()));
     }
 
     let pre_select =

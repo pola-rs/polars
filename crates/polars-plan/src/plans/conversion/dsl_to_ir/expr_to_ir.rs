@@ -4,12 +4,12 @@ use crate::plans::iterator::ArenaExprIter;
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl(expr, ctx)?;
-    Ok(ExprIR::new(node, OutputName::Alias(output_name)))
+    Ok(ExprIR::new(node, output_name))
 }
 
 pub fn to_expr_ir_materialized_lit(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl_materialized_lit(expr, ctx)?;
-    Ok(ExprIR::new(node, OutputName::Alias(output_name)))
+    Ok(ExprIR::new(node, output_name))
 }
 
 pub(super) fn to_expr_irs(
@@ -513,7 +513,7 @@ pub(super) fn to_aexpr_impl(
             let options = function.function_options();
             (
                 AExpr::Function {
-                    input: vec![ExprIR::new(*input, OutputName::Alias(PlSmallStr::EMPTY))],
+                    input: vec![ExprIR::new(*input, PlSmallStr::EMPTY)],
                     function,
                     options,
                 },

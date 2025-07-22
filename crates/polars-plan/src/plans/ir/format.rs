@@ -20,7 +20,7 @@ pub struct IRDisplay<'a> {
 #[derive(Clone, Copy)]
 pub struct ExprIRDisplay<'a> {
     pub(crate) node: Node,
-    pub(crate) output_name: &'a OutputName,
+    pub(crate) output_name: Option<&'a str>,
     pub(crate) expr_arena: &'a Arena<AExpr>,
 }
 
@@ -28,7 +28,7 @@ impl<'a> ExprIRDisplay<'a> {
     pub fn display_node(node: Node, expr_arena: &'a Arena<AExpr>) -> Self {
         Self {
             node,
-            output_name: &OutputName::None,
+            output_name: None,
             expr_arena,
         }
     }
@@ -42,15 +42,15 @@ pub(crate) struct ExprIRSliceDisplay<'a, T: AsExpr> {
 
 pub(crate) trait AsExpr {
     fn node(&self) -> Node;
-    fn output_name(&self) -> &OutputName;
+    fn output_name(&self) -> Option<&str>;
 }
 
 impl AsExpr for Node {
     fn node(&self) -> Node {
         *self
     }
-    fn output_name(&self) -> &OutputName {
-        &OutputName::None
+    fn output_name(&self) -> Option<&str> {
+        None
     }
 }
 
@@ -58,8 +58,8 @@ impl AsExpr for ExprIR {
     fn node(&self) -> Node {
         self.node()
     }
-    fn output_name(&self) -> &OutputName {
-        self.output_name_inner()
+    fn output_name(&self) -> Option<&str> {
+        Some(self.output_name().as_str())
     }
 }
 
@@ -134,7 +134,7 @@ impl<'a> IRDisplay<'a> {
     fn display_expr(&self, root: &'a ExprIR) -> ExprIRDisplay<'a> {
         ExprIRDisplay {
             node: root.node(),
-            output_name: root.output_name_inner(),
+            output_name: Some(root.output_name().as_str()),
             expr_arena: self.lp.expr_arena,
         }
     }
@@ -547,17 +547,10 @@ impl Display for ExprIRDisplay<'_> {
             },
         }?;
 
-        match self.output_name {
-            OutputName::None => {},
-            OutputName::LiteralLhs(_) => {},
-            OutputName::ColumnLhs(_) => {},
-            #[cfg(feature = "dtype-struct")]
-            OutputName::Field(_) => {},
-            OutputName::Alias(name) => {
-                if root.to_name(self.expr_arena) != name {
-                    write!(f, r#".alias("{name}")"#)?;
-                }
-            },
+        if let Some(name) = self.output_name
+            && root.to_name(self.expr_arena) != name
+        {
+            write!(f, r#".alias("{name}")"#)?;
         }
 
         Ok(())

@@ -275,11 +275,6 @@ pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
         .map(|e| {
             let e = e.as_ref();
             let mut field = e.field(schema, ctxt, arena).expect("should be resolved");
-
-            // TODO! (can this be removed?)
-            if let Some(name) = e.get_alias() {
-                field.name = name.clone()
-            }
             field.dtype = field.dtype.materialize_unknown(true).unwrap();
             field
         })

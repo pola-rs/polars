@@ -400,7 +400,7 @@ impl AExpr {
             },
             Function {
                 input, function, ..
-            } => match function.output_name().and_then(|v| v.into_inner()) {
+            } => match function.output_name() {
                 Some(name) => name.clone(),
                 None if input.is_empty() => format_pl_smallstr!("{}", &function),
                 None => input[0].output_name().clone(),

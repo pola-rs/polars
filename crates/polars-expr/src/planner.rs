@@ -143,10 +143,10 @@ pub fn create_physical_expr(
 ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
     let phys_expr = create_physical_expr_inner(expr_ir.node(), ctxt, expr_arena, schema, state)?;
 
-    if let Some(name) = expr_ir.get_alias() {
+    if expr_arena.get(expr_ir.node()).to_name(expr_arena) != expr_ir.output_name() {
         Ok(Arc::new(AliasExpr::new(
             phys_expr,
-            name.clone(),
+            expr_ir.output_name().clone(),
             node_to_expr(expr_ir.node(), expr_arena),
         )))
     } else {

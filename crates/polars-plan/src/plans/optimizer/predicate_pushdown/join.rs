@@ -573,7 +573,7 @@ fn try_rewrite_join_type(
                             original_key_output_name.clone(),
                             new_key_output_name.clone(),
                         );
-                        ae.set_alias(original_key_output_name)
+                        ae.set_output_name(original_key_output_name)
                     }
 
                     join_output_key_selectors.insert(rhs_input_key, ae);
@@ -605,7 +605,7 @@ fn try_rewrite_join_type(
                         if coalesced_to_right.contains(rhs_input_col.as_str()) {
                             original_to_new_names_map
                                 .insert(rhs_input_col.clone(), new_join_output_name);
-                            expr.set_alias(rhs_input_col.clone());
+                            expr.set_output_name(rhs_input_col.clone());
                         }
 
                         expr
@@ -691,7 +691,7 @@ fn try_rewrite_join_type(
                             original_key_output_name.clone(),
                             new_key_output_name.clone(),
                         );
-                        ae.set_alias(original_key_output_name.clone())
+                        ae.set_output_name(original_key_output_name.clone())
                     }
 
                     join_output_key_selectors.insert(lhs_input_key.clone(), ae);
@@ -738,7 +738,7 @@ fn try_rewrite_join_type(
                     if let Some(original_output_name) = original_output_name {
                         original_to_new_names_map
                             .insert(original_output_name.clone(), rhs_input_col.clone());
-                        expr.set_alias(original_output_name);
+                        expr.set_output_name(original_output_name);
                     }
 
                     column_selectors.push(expr);

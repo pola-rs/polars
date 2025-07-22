@@ -4,8 +4,8 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AExpr, aexpr_to_leaf_names_iter};
+use crate::plans::ExprIR;
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
-use crate::plans::{ExprIR, OutputName};
 
 /// Join origin of an expression
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -117,11 +117,10 @@ pub(super) fn remove_suffix<'a>(
 
     expr.set_node(node);
 
-    if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
-        if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
-            let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
-            expr.set_columnlhs(name);
-        }
+    let colname = expr.output_name();
+    if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
+        let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+        expr.set_output_name(name);
     }
 
     struct RemoveSuffix<'a> {

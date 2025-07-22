@@ -411,7 +411,7 @@ impl Expr {
         let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
         let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
-        Ok(Field::new(output_name.into_inner().unwrap(), dtype))
+        Ok(Field::new(output_name, dtype))
     }
 
     pub fn into_selector(self) -> Option<Selector> {

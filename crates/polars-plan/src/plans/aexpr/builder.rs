@@ -7,7 +7,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr};
 use crate::dsl::Operator;
-use crate::plans::{ExprIR, LiteralValue, OutputName};
+use crate::plans::{ExprIR, LiteralValue};
 
 #[derive(Clone, Copy)]
 pub struct AExprBuilder {
@@ -375,7 +375,7 @@ impl AExprBuilder {
     }
 
     pub fn expr_ir(self, name: impl Into<PlSmallStr>) -> ExprIR {
-        ExprIR::new(self.node(), OutputName::Alias(name.into()))
+        ExprIR::new(self.node(), name.into())
     }
 
     pub fn expr_ir_unnamed(self) -> ExprIR {

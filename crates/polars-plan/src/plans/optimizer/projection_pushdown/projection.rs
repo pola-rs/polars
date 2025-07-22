@@ -74,25 +74,8 @@ pub(super) fn process_projection(
                     opt_non_scalar = Some(e.clone())
                 }
 
-                let name = match e.output_name_inner() {
-                    OutputName::LiteralLhs(name) | OutputName::Alias(name) => {
-                        remove_names.insert(name.clone());
-                        name
-                    },
-                    #[cfg(feature = "dtype-struct")]
-                    OutputName::Field(name) => {
-                        remove_names.insert(name.clone());
-                        name
-                    },
-                    OutputName::ColumnLhs(name) => name,
-                    OutputName::None => {
-                        if cfg!(debug_assertions) {
-                            panic!()
-                        } else {
-                            return false;
-                        }
-                    },
-                };
+                let name = e.output_name();
+                remove_names.insert(name.clone());
 
                 let project = ctx.acc_projections.is_empty() || ctx.projected_names.contains(name);
                 projection_has_non_scalar |= project & is_non_scalar;

@@ -209,7 +209,7 @@ fn expr_irs_eq(l: &[ExprIR], r: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
 }
 
 fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
-    l.get_alias() == r.get_alias() && {
+    l.output_name() == r.output_name() && {
         let l = AexprNode::new(l.node());
         let r = AexprNode::new(r.node());
         l.hashable_and_cmp(expr_arena) == r.hashable_and_cmp(expr_arena)

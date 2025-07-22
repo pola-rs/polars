@@ -6,7 +6,6 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
-use self::expr_ir::OutputName;
 use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
 #[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
@@ -991,7 +990,7 @@ pub fn create_scan_predicate(
 
     if create_skip_batch_predicate {
         if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
-            let expr = ExprIR::new(node, predicate.output_name_inner().clone());
+            let expr = ExprIR::new(node, predicate.output_name().clone());
 
             if std::env::var("POLARS_OUTPUT_SKIP_BATCH_PRED").as_deref() == Ok("1") {
                 eprintln!("predicate: {}", predicate.display(expr_arena));
@@ -1048,7 +1047,7 @@ pub fn create_scan_predicate(
                         n,
                         (
                             create_physical_expr(
-                                &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
+                                &ExprIR::new(p, PlSmallStr::EMPTY),
                                 Context::Default,
                                 expr_arena,
                                 schema,

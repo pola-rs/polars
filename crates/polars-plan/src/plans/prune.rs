@@ -311,7 +311,7 @@ mod tests {
         let [a, b] = [(ir_a, arena_a), (ir_b, arena_b)].map(|(ir, arena)| {
             ir.get_exprs()
                 .into_iter()
-                .map(|e| (e.output_name_inner().clone(), e.to_expr(arena)))
+                .map(|e| (e.output_name().clone(), e.to_expr(arena)))
         });
         a.eq(b)
     }

@@ -486,9 +486,9 @@ fn resolve_join_suffixes(
                 let col = AExpr::Column(downstream_name.into());
                 let node = expr_arena.add(col);
                 all_columns = false;
-                ExprIR::new(node, OutputName::Alias(name.clone()))
+                ExprIR::new(node, name.clone())
             } else {
-                ExprIR::new(proj.0, OutputName::ColumnLhs(name.clone()))
+                ExprIR::new(proj.0, name.clone())
             }
         })
         .collect::<Vec<_>>();

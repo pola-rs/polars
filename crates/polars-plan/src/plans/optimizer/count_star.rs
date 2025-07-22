@@ -218,7 +218,7 @@ fn visit_logical_plan_for_scan_paths(
 
 fn is_valid_count_expr(e: &ExprIR, expr_arena: &Arena<AExpr>) -> (bool, Option<PlSmallStr>) {
     match expr_arena.get(e.node()) {
-        AExpr::Len => (true, e.get_alias().cloned()),
+        AExpr::Len => (true, Some(e.output_name().clone())),
         _ => (false, None),
     }
 }

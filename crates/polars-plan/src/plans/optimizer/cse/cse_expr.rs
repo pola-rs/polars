@@ -827,7 +827,7 @@ impl CommonSubExprOptimizer {
                                 },
                             ] => {
                                 for (new, original) in input_new.iter_mut().zip(input_original) {
-                                    new.set_alias(original.output_name().clone());
+                                    new.set_output_name(original.output_name().clone());
                                 }
                             },
                             [
@@ -840,7 +840,7 @@ impl CommonSubExprOptimizer {
                                 },
                             ] => {
                                 for (new, original) in input_new.iter_mut().zip(input_original) {
-                                    new.set_alias(original.output_name().clone());
+                                    new.set_output_name(original.output_name().clone());
                                 }
                             },
                             _ => {},
@@ -850,10 +850,8 @@ impl CommonSubExprOptimizer {
                     // If we don't end with an alias we add an alias. Because the normal left-hand
                     // rule we apply for determining the name will not work we now refer to
                     // intermediate temporary names starting with the `CSE_REPLACED` constant.
-                    if !e.has_alias() {
-                        let name = ae_node.to_field(schema, expr_arena)?.name;
-                        out_e.set_alias(name.clone());
-                    }
+                    let name = ae_node.to_field(schema, expr_arena)?.name;
+                    out_e.set_output_name(name.clone());
                     out_e
                 };
                 new_expr.push(new_node)
@@ -862,7 +860,7 @@ impl CommonSubExprOptimizer {
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
                 let name = id.materialize();
-                let out_e = ExprIR::new(*node, OutputName::Alias(name));
+                let out_e = ExprIR::new(*node, name);
                 new_expr.push(out_e)
             }
             let expr =

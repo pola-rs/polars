@@ -421,12 +421,10 @@ impl IRFunctionExpr {
         }
     }
 
-    pub(crate) fn output_name(&self) -> Option<OutputName> {
+    pub(crate) fn output_name(&self) -> Option<PlSmallStr> {
         match self {
             #[cfg(feature = "dtype-struct")]
-            IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)) => {
-                Some(OutputName::Field(name.clone()))
-            },
+            IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)) => Some(name.clone()),
             _ => None,
         }
     }

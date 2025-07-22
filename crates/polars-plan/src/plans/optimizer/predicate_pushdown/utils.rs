@@ -149,15 +149,9 @@ fn get_maybe_aliased_projection_to_input_name_map(
     expr_arena: &Arena<AExpr>,
 ) -> Option<(PlSmallStr, PlSmallStr)> {
     let ae = expr_arena.get(e.node());
-    match e.get_alias() {
-        Some(alias) => match ae {
-            AExpr::Column(c_name) => Some((alias.clone(), c_name.clone())),
-            _ => None,
-        },
-        _ => match ae {
-            AExpr::Column(c_name) => Some((c_name.clone(), c_name.clone())),
-            _ => None,
-        },
+    match ae {
+        AExpr::Column(c_name) => Some((e.output_name().clone(), c_name.clone())),
+        _ => None,
     }
 }
 

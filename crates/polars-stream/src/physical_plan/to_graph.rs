@@ -730,12 +730,12 @@ fn to_graph_rec<'a>(
             let unique_left_on = left_on
                 .iter()
                 .enumerate()
-                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .map(|(i, expr)| expr.with_output_name(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
                 .collect_vec();
             let unique_right_on = right_on
                 .iter()
                 .enumerate()
-                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .map(|(i, expr)| expr.with_output_name(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
                 .collect_vec();
 
             let left_key_selectors = unique_left_on

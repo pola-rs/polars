@@ -13,7 +13,7 @@ use polars_plan::dsl::{
     ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR,
     SinkTypeIR,
 };
-use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{
     AExpr, Context, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive,
 };
@@ -78,12 +78,7 @@ fn build_filter_stream(
         .output_schema
         .iter_names()
         .cloned()
-        .map(|name| {
-            ExprIR::new(
-                expr_arena.add(AExpr::Column(name.clone())),
-                OutputName::ColumnLhs(name),
-            )
-        })
+        .map(|name| ExprIR::new(expr_arena.add(AExpr::Column(name.clone())), name))
         .chain([predicate])
         .collect_vec();
     let (trans_input, mut trans_cols_and_predicate) = lower_exprs(
@@ -190,10 +185,7 @@ pub fn lower_ir(
             for name in input_schema.iter_names() {
                 let col_name = name.clone();
                 let col_expr = expr_arena.add(AExpr::Column(col_name.clone()));
-                selectors.insert(
-                    name.clone(),
-                    ExprIR::new(col_expr, OutputName::ColumnLhs(col_name)),
-                );
+                selectors.insert(name.clone(), ExprIR::new(col_expr, col_name));
             }
             for expr in exprs {
                 selectors.insert(expr.output_name().clone(), expr);
@@ -858,12 +850,12 @@ pub fn lower_ir(
                 let mut aug_left_on = left_on.clone();
                 for name in phys_sm[phys_left.node].output_schema.iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                    aug_left_on.push(ExprIR::new(col_expr, name.clone()));
                 }
                 let mut aug_right_on = right_on.clone();
                 for name in phys_sm[phys_right.node].output_schema.iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                    aug_right_on.push(ExprIR::new(col_expr, name.clone()));
                 }
                 let (trans_input_left, mut trans_left_on) = lower_exprs(
                     phys_left,
@@ -1013,7 +1005,7 @@ pub fn lower_ir(
                     group_by_output_schema
                         .insert(name.clone(), input_schema.get(name).unwrap().clone());
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone()))
+                    ExprIR::new(col_expr, name.clone())
                 })
                 .collect_vec();
 
@@ -1031,7 +1023,7 @@ pub fn lower_ir(
                         },
                         Last => expr_arena.add(AExpr::Agg(IRAggExpr::Last(col_expr))),
                     };
-                    ExprIR::new(agg_expr, OutputName::ColumnLhs(name.clone()))
+                    ExprIR::new(agg_expr, name.clone())
                 })
                 .collect_vec();
 
@@ -1039,10 +1031,7 @@ pub fn lower_ir(
                 // Track the length so we can filter out non-unique keys later.
                 let name = unique_column_name();
                 group_by_output_schema.insert(name.clone(), DataType::IDX_DTYPE);
-                aggs.push(ExprIR::new(
-                    expr_arena.add(AExpr::Len),
-                    OutputName::Alias(name),
-                ));
+                aggs.push(ExprIR::new(expr_arena.add(AExpr::Len), name));
             }
 
             let mut stream = build_group_by_stream(
@@ -1069,8 +1058,7 @@ pub fn lower_ir(
                     op: polars_plan::dsl::Operator::Eq,
                     right,
                 });
-                let predicate =
-                    ExprIR::new(predicate_aexpr, OutputName::ColumnLhs(unique_name.clone()));
+                let predicate = ExprIR::new(predicate_aexpr, unique_name.clone());
                 stream =
                     build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache, ctx)?;
             }
@@ -1080,7 +1068,7 @@ pub fn lower_ir(
                 .iter()
                 .map(|name| {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone()))
+                    ExprIR::new(col_expr, name.clone())
                 })
                 .collect_vec();
             stream = build_select_stream(stream, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;

@@ -240,10 +240,7 @@ impl<'a> IRBuilder<'a> {
                 .to_field(&schema, Context::Default, self.expr_arena)
                 .unwrap();
 
-            expr_irs.push(
-                ExprIR::new(node, OutputName::ColumnLhs(field.name.clone()))
-                    .with_dtype(field.dtype.clone()),
-            );
+            expr_irs.push(ExprIR::new(node, field.name.clone()).with_dtype(field.dtype.clone()));
             new_schema.with_column(field.name().clone(), field.dtype().clone());
         }
 

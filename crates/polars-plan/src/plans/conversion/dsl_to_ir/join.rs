@@ -207,7 +207,7 @@ pub fn resolve_join(
             for (i, mut e) in as_with_columns_l {
                 let tmp_name = get_tmp_name(count);
                 count += 1;
-                e.set_alias(tmp_name.clone());
+                e.set_output_name(tmp_name.clone());
                 let dtype = e.dtype(&schema_left_new, Context::Default, ctxt.expr_arena)?;
                 schema_left_new.with_column(tmp_name.clone(), dtype.clone());
 
@@ -227,7 +227,7 @@ pub fn resolve_join(
             for (i, mut e) in as_with_columns_r {
                 let tmp_name = get_tmp_name(count);
                 count += 1;
-                e.set_alias(tmp_name.clone());
+                e.set_output_name(tmp_name.clone());
                 let dtype = e.dtype(&schema_right_new, Context::Default, ctxt.expr_arena)?;
                 schema_right_new.with_column(tmp_name.clone(), dtype.clone());
 
