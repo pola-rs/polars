@@ -423,8 +423,8 @@ def scan_parquet(
     allow_missing_columns: bool | None = None,
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
-    _deletion_files: DeletionFiles | None = None,
     _column_mapping: ColumnMapping | None = None,
+    _deletion_files: DeletionFiles | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
