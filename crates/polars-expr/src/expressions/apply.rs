@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
 
 use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;

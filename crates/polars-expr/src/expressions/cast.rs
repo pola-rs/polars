@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 
