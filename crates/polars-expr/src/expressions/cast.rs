@@ -11,7 +11,6 @@ pub struct CastExpr {
     pub(crate) dtype: DataType,
     pub(crate) expr: Expr,
     pub(crate) options: CastOptions,
-    pub(crate) inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl CastExpr {

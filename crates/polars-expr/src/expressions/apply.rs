@@ -25,7 +25,6 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     output_field: Field,
-    inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl ApplyExpr {
@@ -56,7 +55,6 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             output_field,
-            inlined_eval: Default::default(),
         }
     }
 
