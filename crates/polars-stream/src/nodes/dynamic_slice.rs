@@ -2,11 +2,10 @@ use std::sync::Arc;
 
 use polars_core::schema::Schema;
 
+use super::compute_node_prelude::*;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::nodes::negative_slice::NegativeSliceNode;
 use crate::nodes::streaming_slice::StreamingSliceNode;
-
-use super::compute_node_prelude::*;
 
 /// A node that will dispatch either to StreamingSlice or NegativeSlice
 /// depending on the offset which is dynamically dispatched.
@@ -42,7 +41,7 @@ impl ComputeNode for DynamicSliceNode {
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 3 && send.len() == 1);
-        
+
         if recv[1] == PortState::Done && recv[2] == PortState::Done {
             if let Self::GatheringParams { offset, length } = self {
                 let offset = offset.get_output()?.unwrap();
@@ -65,17 +64,17 @@ impl ComputeNode for DynamicSliceNode {
                 length.update_state(&mut recv[2..3], &mut [], state)?;
                 recv[0] = PortState::Blocked;
                 send[0] = PortState::Blocked;
-            }
+            },
             Self::Streaming(node) => {
                 node.update_state(&mut recv[0..1], send, state)?;
                 recv[1] = PortState::Done;
                 recv[2] = PortState::Done;
-            }
+            },
             Self::Negative(node) => {
                 node.update_state(&mut recv[0..1], send, state)?;
                 recv[1] = PortState::Done;
                 recv[2] = PortState::Done;
-            }
+            },
         }
         Ok(())
     }
@@ -99,17 +98,29 @@ impl ComputeNode for DynamicSliceNode {
                 if recv_ports[2].is_some() {
                     length.spawn(scope, &mut recv_ports[2..3], &mut [], state, join_handles);
                 }
-            }
+            },
             Self::Streaming(node) => {
-                node.spawn(scope, &mut recv_ports[0..1], send_ports, state, join_handles);
+                node.spawn(
+                    scope,
+                    &mut recv_ports[0..1],
+                    send_ports,
+                    state,
+                    join_handles,
+                );
                 assert!(recv_ports[1].is_none());
                 assert!(recv_ports[2].is_none());
-            }
+            },
             Self::Negative(node) => {
-                node.spawn(scope, &mut recv_ports[0..1], send_ports, state, join_handles);
+                node.spawn(
+                    scope,
+                    &mut recv_ports[0..1],
+                    send_ports,
+                    state,
+                    join_handles,
+                );
                 assert!(recv_ports[1].is_none());
                 assert!(recv_ports[2].is_none());
-            }
+            },
         }
     }
 }

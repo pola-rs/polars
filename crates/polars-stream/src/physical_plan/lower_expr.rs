@@ -1094,8 +1094,12 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(row_idx_stream);
                 transformed_exprs.push(row_idx_col_aexpr);
             },
-            
-            AExpr::Slice { input: inner, offset, length } => {
+
+            AExpr::Slice {
+                input: inner,
+                offset,
+                length,
+            } => {
                 let out_name = unique_column_name();
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
                 let offset_expr_ir = ExprIR::from_node(offset, &ctx.expr_arena);
@@ -1108,12 +1112,12 @@ fn lower_exprs_with_ctx(
                 let kind = PhysNodeKind::DynamicSlice {
                     input: input_stream,
                     offset: offset_stream,
-                    length: length_stream
+                    length: length_stream,
                 };
                 let slice_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(slice_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
-            }
+            },
 
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }

@@ -124,7 +124,7 @@ pub enum PhysNodeKind {
         offset: i64,
         length: usize,
     },
-    
+
     DynamicSlice {
         input: PhysStream,
         offset: PhysStream,
@@ -371,8 +371,12 @@ fn visit_node_inputs_mut(
                 visit(input_left);
                 visit(input_right);
             },
-            
-            PhysNodeKind::DynamicSlice { input, offset, length } => {
+
+            PhysNodeKind::DynamicSlice {
+                input,
+                offset,
+                length,
+            } => {
                 rec!(input.node);
                 rec!(offset.node);
                 rec!(length.node);

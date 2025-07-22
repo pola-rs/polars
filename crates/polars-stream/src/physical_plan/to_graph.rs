@@ -155,7 +155,11 @@ fn to_graph_rec<'a>(
             let length_schema = ctx.phys_sm[length.node].output_schema.clone();
             ctx.graph.add_node(
                 nodes::dynamic_slice::DynamicSliceNode::new(offset_schema, length_schema),
-                [(input_key, input.port), (offset_key, offset.port), (length_key, length.port)],
+                [
+                    (input_key, input.port),
+                    (offset_key, offset.port),
+                    (length_key, length.port),
+                ],
             )
         },
 

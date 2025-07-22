@@ -237,10 +237,7 @@ fn visualize_plan_rec(
             input,
             offset,
             length,
-        } => (
-            "slice".to_owned(),
-            &[*input, *offset, *length][..],
-        ),
+        } => ("slice".to_owned(), &[*input, *offset, *length][..]),
         PhysNodeKind::Filter { input, predicate } => (
             format!(
                 "filter\\n{}",
