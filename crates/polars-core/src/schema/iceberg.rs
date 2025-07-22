@@ -128,7 +128,7 @@ fn arrow_field_to_iceberg_column_rec(
     })?;
 
     // Prevent accidental re-use.
-    field_id_override = None;
+    let field_id_override: ();
 
     use ArrowDataType as ADT;
 
