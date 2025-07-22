@@ -30,18 +30,6 @@ impl PhysicalExpr for CastExpr {
         self.finish(&column)
     }
 
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        self.inlined_eval
-            .get_or_init(|| {
-                let depth_limit = depth_limit.checked_sub(1)?;
-                self.input
-                    .evaluate_inline_impl(depth_limit)
-                    .filter(|x| x.len() == 1)
-                    .and_then(|x| self.finish(&x).ok())
-            })
-            .clone()
-    }
-
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
