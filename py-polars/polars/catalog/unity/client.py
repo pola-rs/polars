@@ -29,6 +29,7 @@ if TYPE_CHECKING:
         CredentialProviderFunctionReturn,
     )
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+    from polars.io.scan_options.cast_options import ScanCastOptions
     from polars.lazyframe import LazyFrame
 
 with contextlib.suppress(ImportError):
@@ -189,6 +190,7 @@ class Catalog:
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
         retries: int = 2,
+        cast_options: ScanCastOptions | None = None,
     ) -> LazyFrame:
         """
         Retrieve the metadata of the specified table.
@@ -257,6 +259,7 @@ class Catalog:
                 delta_table_options=delta_table_options,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
+                cast_options=cast_options,
             )
 
         if delta_table_version is not None:

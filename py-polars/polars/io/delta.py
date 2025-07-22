@@ -12,7 +12,6 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.cloud._utils import _get_path_scheme
 from polars.io.parquet import scan_parquet
 from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
-from polars.io.scan_options.cast_options import ScanCastOptions
 from polars.schema import Schema
 
 if TYPE_CHECKING:
@@ -22,6 +21,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, LazyFrame
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.scan_options.cast_options import ScanCastOptions
 
 
 def read_delta(
@@ -35,6 +35,7 @@ def read_delta(
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
+    cast_options: ScanCastOptions | None = None,
 ) -> DataFrame:
     """
     Reads into a DataFrame from a Delta lake table.
@@ -156,6 +157,7 @@ def read_delta(
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
         rechunk=rechunk,
+        cast_options=cast_options,
     )
 
     if columns is not None:
@@ -173,6 +175,7 @@ def scan_delta(
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     rechunk: bool | None = None,
+    cast_options: ScanCastOptions | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -407,7 +410,7 @@ def scan_delta(
         file_uris,
         schema=main_schema,
         hive_schema=hive_schema if len(partition_columns) > 0 else None,
-        cast_options=ScanCastOptions._default_iceberg(),
+        cast_options=cast_options,
         missing_columns="insert",
         extra_columns="ignore",
         hive_partitioning=len(partition_columns) > 0,
