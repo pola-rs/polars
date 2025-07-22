@@ -99,7 +99,7 @@ impl IcebergColumnType {
 
 fn arrow_field_to_iceberg_column_rec(
     field: &ArrowField,
-    mut field_id_override: Option<u32>,
+    field_id_override: Option<u32>,
 ) -> PolarsResult<IcebergColumn> {
     const PARQUET_FIELD_ID_KEY: &str = "PARQUET:field_id";
     const MAP_DEFAULT_ID: u32 = u32::MAX; // u32::MAX
