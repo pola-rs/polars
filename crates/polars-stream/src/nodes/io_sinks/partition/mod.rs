@@ -299,6 +299,7 @@ async fn open_new_sink(
     }
 
     let (mut sink_input_tx, sink_input_rx) = connector::connector();
+    node.initialize(state)?;
     node.spawn_sink(sink_input_rx, state, &mut join_handles);
     let mut join_handles =
         FuturesUnordered::from_iter(join_handles.into_iter().map(AbortOnDropHandle::new));

@@ -188,15 +188,22 @@ pub trait SinkNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 
-    /// Callback for when the query starts.
-    fn initialize(&mut self, state: &StreamingExecutionState) -> PolarsResult<()>;
+    /// Callback that gets called once before the sink is spawned.
+    fn initialize(&mut self, state: &StreamingExecutionState) -> PolarsResult<()> {
+        _ = state;
+        Ok(())
+    }
 
     /// Callback for when the query has finished successfully.
     ///
     /// This should only be called when the writing is finished and all the join handles have been
     /// awaited.
-    fn finish(&mut self) -> PolarsResult<()> {
-        Ok(())
+    fn finalize(
+        &mut self,
+        state: &StreamingExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        _ = (state, join_handles);
     }
 
     /// Fetch metrics for a specific sink.
@@ -248,6 +255,7 @@ impl ComputeNode for SinkComputeNode {
         _send: &mut [PortState],
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
+        // Ensure that initialize is only called once.
         if !self.initialized {
             self.sink.initialize(state)?;
             self.initialized = true;
@@ -331,8 +339,16 @@ impl ComputeNode for SinkComputeNode {
         }));
     }
 
+    fn finalize<'env, 's>(
+        &'env mut self,
+        _scope: &'s TaskScope<'s, 'env>,
+        state: &'s StreamingExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        self.sink.finalize(state, join_handles);
+    }
+
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
-        self.sink.finish()?;
         Ok(None)
     }
 }

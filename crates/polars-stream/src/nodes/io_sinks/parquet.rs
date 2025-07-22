@@ -331,10 +331,14 @@ impl SinkNode for ParquetSinkNode {
         }))
     }
 
-    fn finish(&mut self) -> PolarsResult<()> {
+    fn finalize(
+        &mut self,
+        _state: &StreamingExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
         // If we were never spawned, we need to make sure that the `tx` is taken. This signals to
         // the IO task that it is done and prevents deadlocks.
-        _ = self.io_tx.take();
+        drop(self.io_tx.take());
 
         let io_task = self
             .io_task
@@ -342,8 +346,10 @@ impl SinkNode for ParquetSinkNode {
             .expect("not initialized / finish called more than once");
 
         // Wait for the IO task to complete.
-        polars_io::pl_async::get_runtime()
-            .block_on(io_task)
-            .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
+        join_handles.push(spawn(TaskPriority::Low, async move {
+            io_task
+                .await
+                .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
+        }));
     }
 }

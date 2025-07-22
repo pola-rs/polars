@@ -123,14 +123,6 @@ impl SinkNode for PartitionByKeySinkNode {
         Ok(())
     }
 
-    fn finish(&mut self) -> PolarsResult<()> {
-        if let Some(finish_callback) = &self.finish_callback {
-            let df = self.written_partitions.get().unwrap();
-            finish_callback.call(df.clone())?;
-        }
-        Ok(())
-    }
-
     fn spawn_sink(
         &mut self,
         recv_port_rx: crate::async_primitives::connector::Receiver<(PhaseOutcome, SinkInputPort)>,
@@ -311,6 +303,7 @@ impl SinkNode for PartitionByKeySinkNode {
             };
             receive_and_pass().await?;
 
+            let mut join_handles_vec = Vec::new();
             let mut partition_metrics = Vec::with_capacity(file_idx);
 
             // At this point, we need to wait for all sinks to finish writing and close them. Also,
@@ -363,11 +356,32 @@ impl SinkNode for PartitionByKeySinkNode {
                     metrics.keys = Some(keys.into_iter().map(|c| c.get(0).unwrap().into_static()).collect());
                     partition_metrics.push(metrics);
                 }
-                node.finish()?;
+                node.finalize(&state, &mut join_handles_vec);
+                join_handles.extend(join_handles_vec.drain(..).map(AbortOnDropHandle::new));
+                while let Some(res) = join_handles.next().await {
+                    res?;
+                }
             }
 
             let df = WriteMetrics::collapse_to_df(partition_metrics, &sink_input_schema, Some(&input_schema.try_project(key_cols.iter()).unwrap()));
             output_written_partitions.set(df).unwrap();
+            Ok(())
+        }));
+    }
+
+    fn finalize(
+        &mut self,
+        _state: &StreamingExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        let finish_callback = self.finish_callback.clone();
+        let written_partitions = self.written_partitions.clone();
+
+        join_handles.push(spawn(TaskPriority::Low, async move {
+            if let Some(finish_callback) = &finish_callback {
+                let df = written_partitions.get().unwrap();
+                finish_callback.call(df.clone())?;
+            }
             Ok(())
         }));
     }
