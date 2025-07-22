@@ -117,12 +117,12 @@ pub struct AggregationContext<'a> {
 }
 
 impl<'a> AggregationContext<'a> {
-    pub(crate) fn dtype(&self) -> DataType {
+    pub(crate) fn dtype(&self) -> &DataType {
         match &self.state {
-            AggState::Literal(s) => s.dtype().clone(),
-            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype().clone(),
-            AggState::AggregatedScalar(s) => s.dtype().clone(),
-            AggState::NotAggregated(s) => s.dtype().clone(),
+            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype(),
+            AggState::Literal(s) | AggState::AggregatedScalar(s) | AggState::NotAggregated(s) => {
+                s.dtype()
+            },
         }
     }
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupPositions> {
