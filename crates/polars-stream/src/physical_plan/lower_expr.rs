@@ -1102,8 +1102,8 @@ fn lower_exprs_with_ctx(
             } => {
                 let out_name = unique_column_name();
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
-                let offset_expr_ir = ExprIR::from_node(offset, &ctx.expr_arena);
-                let length_expr_ir = ExprIR::from_node(length, &ctx.expr_arena);
+                let offset_expr_ir = ExprIR::from_node(offset, ctx.expr_arena);
+                let length_expr_ir = ExprIR::from_node(length, ctx.expr_arena);
                 let input_stream = build_select_stream_with_ctx(input, &[inner_expr_ir], ctx)?;
                 let offset_stream = build_select_stream_with_ctx(input, &[offset_expr_ir], ctx)?;
                 let length_stream = build_select_stream_with_ctx(input, &[length_expr_ir], ctx)?;
