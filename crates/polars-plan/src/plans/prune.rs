@@ -127,7 +127,7 @@ impl<'a> CopyContext<'a> {
         // If this is a cache, reset the hit count and store the dst node.
         if let IR::Cache { cache_hits, id, .. } = self.dst_ir.get_mut(dst_node) {
             *cache_hits = 0;
-            let prev = self.dst_caches.insert(id.clone(), dst_node);
+            let prev = self.dst_caches.insert(*id, dst_node);
             assert!(prev.is_none(), "cache {id} was traversed twice");
         }
 
@@ -340,7 +340,7 @@ mod tests {
 
             let cache = ir_arena.add(IR::Cache {
                 input: filter,
-                id: UniqueId::Plain(0),
+                id: UniqueId::new(),
                 cache_hits: 1,
             });
 

@@ -225,7 +225,7 @@ impl ExecutionState {
                 let mut guard = self.df_cache.write().unwrap();
 
                 guard
-                    .entry(key.clone())
+                    .entry(*key)
                     .or_insert_with(|| {
                         Arc::new((AtomicI64::new(cache_hits as i64), OnceLock::new()))
                     })

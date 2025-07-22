@@ -791,7 +791,7 @@ pub fn lower_ir(
             id,
             cache_hits: _,
         } => {
-            let id = id.clone();
+            let id = *id;
             if let Some(cached) = cache_nodes.get(&id) {
                 return Ok(*cached);
             }
