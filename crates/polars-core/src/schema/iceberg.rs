@@ -74,12 +74,14 @@ impl IcebergColumnType {
             FixedSizeList(inner, width) => {
                 DataType::Array(Box::new(inner.type_.to_polars_dtype()), *width)
             },
-            Struct(fields) => DataType::Struct(
-                fields
-                    .values()
-                    .map(|col| Field::new(col.name.clone(), col.type_.to_polars_dtype()))
-                    .collect(),
-            ),
+            Struct(fields) => feature_gated!("dtype-struct", {
+                DataType::Struct(
+                    fields
+                        .values()
+                        .map(|col| Field::new(col.name.clone(), col.type_.to_polars_dtype()))
+                        .collect(),
+                )
+            }),
         }
     }
 
