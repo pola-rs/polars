@@ -8,7 +8,13 @@ impl IR {
         match self {
             #[cfg(feature = "python")]
             PythonScan { options } => PythonScan {
-                options: options.clone(),
+                options: {
+                    let mut options = options.clone();
+                    if let PythonPredicate::Polars(pred) = &mut options.predicate {
+                        *pred = exprs.pop().unwrap();
+                    }
+                    options
+                },
             },
             Union { options, .. } => Union {
                 inputs,
@@ -203,7 +209,11 @@ impl IR {
             },
             DataFrameScan { .. } => {},
             #[cfg(feature = "python")]
-            PythonScan { .. } => {},
+            PythonScan { options } => {
+                if let PythonPredicate::Polars(pred) = &options.predicate {
+                    container.push(pred.clone())
+                }
+            },
             Sink { payload, .. } => {
                 if let SinkTypeIR::Partition(p) = payload {
                     match &p.variant {
