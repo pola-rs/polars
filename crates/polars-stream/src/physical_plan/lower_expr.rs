@@ -1095,9 +1095,32 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
+            AExpr::Slice {
+                input: inner,
+                offset,
+                length,
+            } => {
+                let out_name = unique_column_name();
+                let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
+                let offset_expr_ir = ExprIR::from_node(offset, ctx.expr_arena);
+                let length_expr_ir = ExprIR::from_node(length, ctx.expr_arena);
+                let input_stream = build_select_stream_with_ctx(input, &[inner_expr_ir], ctx)?;
+                let offset_stream = build_select_stream_with_ctx(input, &[offset_expr_ir], ctx)?;
+                let length_stream = build_select_stream_with_ctx(input, &[length_expr_ir], ctx)?;
+
+                let output_schema = ctx.phys_sm[input_stream.node].output_schema.clone();
+                let kind = PhysNodeKind::DynamicSlice {
+                    input: input_stream,
+                    offset: offset_stream,
+                    length: length_stream,
+                };
+                let slice_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(slice_node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
-            | AExpr::Slice { .. }
             | AExpr::Window { .. }
             | AExpr::Gather { .. } => {
                 let out_name = unique_column_name();

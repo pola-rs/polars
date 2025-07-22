@@ -143,6 +143,26 @@ fn to_graph_rec<'a>(
             )
         },
 
+        DynamicSlice {
+            input,
+            offset,
+            length,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let offset_key = to_graph_rec(offset.node, ctx)?;
+            let length_key = to_graph_rec(length.node, ctx)?;
+            let offset_schema = ctx.phys_sm[offset.node].output_schema.clone();
+            let length_schema = ctx.phys_sm[length.node].output_schema.clone();
+            ctx.graph.add_node(
+                nodes::dynamic_slice::DynamicSliceNode::new(offset_schema, length_schema),
+                [
+                    (input_key, input.port),
+                    (offset_key, offset.port),
+                    (length_key, length.port),
+                ],
+            )
+        },
+
         Filter { predicate, input } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
