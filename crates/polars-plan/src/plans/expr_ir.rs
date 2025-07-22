@@ -87,6 +87,12 @@ impl Borrow<Node> for ExprIR {
     }
 }
 
+impl Borrow<Node> for &ExprIR {
+    fn borrow(&self) -> &Node {
+        &self.node
+    }
+}
+
 impl ExprIR {
     pub fn new(node: Node, output_name: OutputName) -> Self {
         debug_assert!(!output_name.is_none());

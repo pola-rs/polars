@@ -70,7 +70,11 @@ impl ConversionOptimizer {
         });
     }
 
-    pub fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
+    pub fn fill_scratch<I, N>(&mut self, exprs: I, expr_arena: &Arena<AExpr>)
+    where
+        I: IntoIterator<Item = N>,
+        N: Borrow<Node>,
+    {
         for e in exprs {
             let node = *e.borrow();
             self.push_scratch(node, expr_arena);

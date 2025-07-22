@@ -253,8 +253,8 @@ impl<'a> IRDisplay<'a> {
             },
             ir_node => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
-                for input in ir_node.get_inputs().iter() {
-                    self.with_root(*input)._format(f, sub_indent)?;
+                for input in ir_node.inputs() {
+                    self.with_root(input)._format(f, sub_indent)?;
                 }
                 Ok(())
             },
