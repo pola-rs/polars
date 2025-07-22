@@ -1,4 +1,4 @@
-# Payment and billing via AWS Marketplace
+# Payment and Billing via AWS Marketplace
 
 All payments and billing for Polars Cloud are handled via the AWS Marketplace. This integration
 provides a secure, streamlined way to manage your subscription, payments, and billing using AWS's
@@ -7,6 +7,10 @@ trusted marketplace infrastructure.
 !!! tip "30-day Free Trial"
 
     New organizatoins get full access to explore Polars Cloud for 30 days. The trial activates automatically when connecting your first workspace to AWS. After the trial you can easily subscribe via the AWS Marketplace.
+
+## Pricing
+
+Polars Cloud uses usage-based pricing charged per vCPU hour of compute usage. Billing begins when instances are booted and ready to execute queries, and ends when users stop the instances or when we detect instances have been terminated externally. Instance startup time and shutdown time after stopping are not charged.
 
 ## Subscribe to Polars Cloud
 
@@ -36,16 +40,16 @@ All up to date data about Polars Cloud usage and costs can be found in the
 [AWS Cost Explorer](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/). You can find
 more information about usage per workspace in the Polars Cloud dashboard.
 
-## Manage your subscription
+## Manage Your Subscription
 
-### Cancelling your subscription
+### Cancelling Your Subscription
 
 Cancel through the AWS Marketplace subscription management interface.
 
-**Important**: Unsubscribing will instantly stop all running queries in your organization. Ensure no
+**Important**: Unsubscribing will instantly stop all active queries in your organization. Ensure no
 critical workflows are running before cancelling.
 
-### Reactivate subscription
+### Reactivate Subscription
 
 After cancelling your subscription, you can still access Polars Cloud but no workflows can be
 started. You can easily reactivate the subscription following the steps on the `Billing` page in
