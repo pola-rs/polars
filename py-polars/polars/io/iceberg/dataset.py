@@ -220,13 +220,13 @@ class IcebergDataset:
                 cast_options=ScanCastOptions._default_iceberg(),
                 missing_columns="insert",
                 extra_columns="ignore",
-                _deletion_files=("iceberg-position-delete", deletion_files),
                 _column_mapping=(
                     "iceberg-column-mapping",
                     # The arrow schema returned by `schema_to_pyarrow` will contain
                     # 'PARQUET:field_id'
                     schema_to_pyarrow(iceberg_schema),
                 ),
+                _deletion_files=("iceberg-position-delete", deletion_files),
             )
 
         elif reader_override == "native":
