@@ -142,7 +142,7 @@ fn arrow_field_to_iceberg_column_rec(
                 .then_some(MAP_DEFAULT_ID);
 
             IcebergColumnType::List(Box::new(arrow_field_to_iceberg_column_rec(
-                &field,
+                field,
                 field_id_override,
             )?))
         },
