@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrow::datatypes::{ArrowDataType, ArrowSchema, Field as ArrowField};
-use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::{DataType, Field, PlIndexMap};
@@ -72,7 +72,9 @@ impl IcebergColumnType {
             Primitive { dtype } => dtype.clone(),
             List(inner) => DataType::List(Box::new(inner.type_.to_polars_dtype())),
             FixedSizeList(inner, width) => {
-                DataType::Array(Box::new(inner.type_.to_polars_dtype()), *width)
+                feature_gated!("dtype-array", {
+                    DataType::Array(Box::new(inner.type_.to_polars_dtype()), *width)
+                })
             },
             Struct(fields) => feature_gated!("dtype-struct", {
                 DataType::Struct(
