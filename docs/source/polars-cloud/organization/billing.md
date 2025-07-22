@@ -10,7 +10,10 @@ trusted marketplace infrastructure.
 
 ## Pricing
 
-Polars Cloud uses usage-based pricing charged per vCPU hour of compute usage. Billing begins when instances are booted and ready to execute queries, and ends when users stop the instances or when we detect instances have been terminated externally. Instance startup time and shutdown time after stopping are not charged.
+Polars Cloud uses usage-based pricing charged per vCPU hour of compute usage. Billing begins when
+instances are booted and ready to execute queries, and ends when users stop the instances or when we
+detect instances have been terminated externally. Instance startup time and shutdown time after
+stopping are not charged.
 
 ## Subscribe to Polars Cloud
 
