@@ -292,7 +292,7 @@ def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
     return F.cum_fold(
-        F.lit(0).cast(F.dtype_of(F.sum_horizontal(exprs))),
+        F.lit(0).cast(F.dtype_of(F.sum_horizontal(list(exprs)))),
         lambda a, b: a + b,
         exprs_wrapped,
     ).alias("cum_sum")
