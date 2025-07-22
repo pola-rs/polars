@@ -496,7 +496,7 @@ impl Series {
     ///
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
-        debug_assert!(!self.dtype().is_logical());
+        debug_assert!(!self.dtype().is_logical(), "{:?}", self.dtype());
 
         if self.dtype() == dtype {
             return Ok(self.clone());
