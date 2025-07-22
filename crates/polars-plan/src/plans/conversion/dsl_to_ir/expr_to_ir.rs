@@ -474,18 +474,12 @@ pub(super) fn to_aexpr_impl(
             let (expr, _) = to_aexpr_impl(owned(expr), ctx)?;
             let name = ArenaExprIter::iter(ctx.arena, expr).find_map(|e| match e.1 {
                 AExpr::Column(name) => Some(name.clone()),
-                #[cfg(feature = "dtype-struct")]
-                AExpr::Function {
-                    input: _,
-                    function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
-                    options: _,
-                } => Some(name.clone()),
                 _ => None,
             });
             let Some(name) = name else {
                 polars_bail!(
                     InvalidOperation:
-                    "`name.keep_name` expected at least one column or struct.field"
+                    "`name.keep_name` expected at least one column name"
                 );
             };
             return Ok((expr, name));
