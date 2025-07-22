@@ -131,7 +131,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
         // Main Task.
         //
         // Takes the morsels coming in and passes them to underlying sink.
-        let state = state.clone();
+        let task_state = state.clone();
         let input_schema = self.input_schema.clone();
         let max_size = self.max_size;
         let base_path = self.base_path.clone();
@@ -176,7 +176,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     "max-size",
                                     ext.as_str(),
                                     verbose,
-                                    &state,
+                                    &task_state,
                                     per_partition_sort_by.as_ref(),
                                 )
                                 .await?;
@@ -267,8 +267,10 @@ impl SinkNode for MaxSizePartitionSinkNode {
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
             let global_partition_metrics = self.partition_metrics.clone();
             let has_error_occurred = has_error_occurred.clone();
+            let task_state = state.clone();
             spawn(TaskPriority::High, async move {
                 let mut partition_metrics = Vec::new();
+                let mut join_handles_vec = Vec::new();
 
                 while let Ok((mut join_handles, mut node)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
@@ -279,7 +281,13 @@ impl SinkNode for MaxSizePartitionSinkNode {
                     if let Some(metrics) = node.get_metrics()? {
                         partition_metrics.push(metrics);
                     }
-                    node.finish()?;
+                    node.finalize(&task_state, &mut join_handles_vec);
+                    join_handles.extend(join_handles_vec.drain(..).map(AbortOnDropHandle::new));
+                    while let Some(ret) = join_handles.next().await {
+                        ret.inspect_err(|_| {
+                            has_error_occurred.store(true);
+                        })?;
+                    }
                 }
 
                 {
@@ -288,23 +296,32 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         .unwrap()
                         .push(partition_metrics);
                 }
-
                 Ok(())
             })
         }));
     }
 
-    fn finish(&mut self) -> PolarsResult<()> {
-        if let Some(finish_callback) = &self.finish_callback {
-            let mut partition_metrics = self.partition_metrics.lock().unwrap();
-            let partition_metrics =
-                std::mem::take::<Vec<Vec<WriteMetrics>>>(partition_metrics.as_mut())
-                    .into_iter()
-                    .flatten()
-                    .collect();
-            let df = WriteMetrics::collapse_to_df(partition_metrics, &self.input_schema, None);
-            finish_callback.call(df)?;
-        }
-        Ok(())
+    fn finalize(
+        &mut self,
+        _state: &StreamingExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        let finish_callback = self.finish_callback.clone();
+        let partition_metrics = self.partition_metrics.clone();
+        let input_schema = self.input_schema.clone();
+
+        join_handles.push(spawn(TaskPriority::Low, async move {
+            if let Some(finish_callback) = &finish_callback {
+                let mut partition_metrics = partition_metrics.lock().unwrap();
+                let partition_metrics =
+                    std::mem::take::<Vec<Vec<WriteMetrics>>>(partition_metrics.as_mut())
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                let df = WriteMetrics::collapse_to_df(partition_metrics, &input_schema, None);
+                finish_callback.call(df)?;
+            }
+            Ok(())
+        }));
     }
 }
