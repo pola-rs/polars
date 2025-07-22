@@ -90,3 +90,21 @@ def test_when_then_keep_map_13858() -> None:
         ),
         df.with_columns(a_other=pl.int_range(3), b_other=pl.int_range(3)),
     )
+
+
+def test_keep_name_struct_field_23669() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("foo", [{"x": 1}], pl.Struct({"x": pl.Int64})),
+            pl.Series("bar", [{"x": 2}], pl.Struct({"x": pl.Int64})),
+        ]
+    )
+    assert_frame_equal(
+        df.select(pl.all().struct.field("x").name.keep()),
+        pl.DataFrame(
+            [
+                pl.Series("foo", [1], pl.Int64),
+                pl.Series("bar", [2], pl.Int64),
+            ]
+        ),
+    )
