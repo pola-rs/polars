@@ -112,6 +112,10 @@ impl SinkNode for MaxSizePartitionSinkNode {
         self.sink_options.maintain_order
     }
 
+    fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
+        Ok(())
+    }
+
     fn spawn_sink(
         &mut self,
         mut recv_port_recv: Receiver<(PhaseOutcome, SinkInputPort)>,
@@ -141,7 +145,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
                 num_remaining: IdxSize,
-                node: Box<dyn SinkNode + Send + Sync>,
+                node: Box<dyn SinkNode + Send>,
             }
 
             let verbose = config::verbose();
@@ -266,7 +270,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
             spawn(TaskPriority::High, async move {
                 let mut partition_metrics = Vec::new();
 
-                while let Ok((mut join_handles, node)) = retire_rx.recv().await {
+                while let Ok((mut join_handles, mut node)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
                         ret.inspect_err(|_| {
                             has_error_occurred.store(true);
@@ -290,7 +294,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
         }));
     }
 
-    fn finish(&self) -> PolarsResult<()> {
+    fn finish(&mut self) -> PolarsResult<()> {
         if let Some(finish_callback) = &self.finish_callback {
             let mut partition_metrics = self.partition_metrics.lock().unwrap();
             let partition_metrics =

@@ -16,6 +16,7 @@ use polars_utils::priority::Priority;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::async_primitives::connector::connector;
 use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
 use crate::nodes::io_sinks::metrics::WriteMetrics;
@@ -118,7 +119,11 @@ impl SinkNode for PartitionByKeySinkNode {
         self.sink_options.maintain_order
     }
 
-    fn finish(&self) -> PolarsResult<()> {
+    fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
+        Ok(())
+    }
+
+    fn finish(&mut self) -> PolarsResult<()> {
         if let Some(finish_callback) = &self.finish_callback {
             let df = self.written_partitions.get().unwrap();
             finish_callback.call(df.clone())?;
@@ -132,11 +137,13 @@ impl SinkNode for PartitionByKeySinkNode {
         state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<polars_error::PolarsResult<()>>>,
     ) {
-        let (pass_rxs, mut io_rx) = parallelize_receive_task::<Linearized>(
+        let (io_tx, mut io_rx) = connector();
+        let pass_rxs = parallelize_receive_task::<Linearized>(
             join_handles,
             recv_port_rx,
             state.num_pipelines,
             self.sink_options.maintain_order,
+            io_tx,
         );
 
         join_handles.extend(pass_rxs.into_iter().map(|mut pass_rx| {
@@ -217,7 +224,7 @@ impl SinkNode for PartitionByKeySinkNode {
                 Sink {
                     sender: SinkSender,
                     join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
-                    node: Box<dyn SinkNode + Send + Sync>,
+                    node: Box<dyn SinkNode + Send>,
                     keys: Vec<Column>,
                 },
                 Buffer {
@@ -309,7 +316,7 @@ impl SinkNode for PartitionByKeySinkNode {
             // At this point, we need to wait for all sinks to finish writing and close them. Also,
             // sinks that ended up buffering need to output their data.
             for open_partition in open_partitions.into_values() {
-                let (sender, mut join_handles, node, keys) = match open_partition {
+                let (sender, mut join_handles, mut node, keys) = match open_partition {
                     OpenPartition::Sink { sender, join_handles, node, keys } => (sender, join_handles, node, keys),
                     OpenPartition::Buffer { buffered, keys } => {
                         let result = open_new_sink(

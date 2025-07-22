@@ -133,20 +133,17 @@ fn buffer_and_distribute_columns_task(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
+pub fn parallelize_receive_task<T: Ord + Send + 'static>(
     join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     mut recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
     num_pipelines: usize,
     maintain_order: bool,
-) -> (
-    Vec<Receiver<(Receiver<Morsel>, Inserter<T>)>>,
-    Receiver<Linearizer<T>>,
-) {
+    mut io_tx: Sender<Linearizer<T>>,
+) -> Vec<Receiver<(Receiver<Morsel>, Inserter<T>)>> {
     // Phase Handling Task -> Encode Tasks.
     let (mut pass_txs, pass_rxs) = (0..num_pipelines)
         .map(|_| connector())
         .collect::<(Vec<_>, Vec<_>)>();
-    let (mut io_tx, io_rx) = connector();
 
     join_handles.push(spawn(TaskPriority::High, async move {
         while let Ok((outcome, port_rxs)) = recv_port_rx.recv().await {
@@ -172,7 +169,7 @@ pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
         Ok(())
     }));
 
-    (pass_rxs, io_rx)
+    pass_rxs
 }
 
 pub trait SinkNode {
@@ -191,11 +188,14 @@ pub trait SinkNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 
+    /// Callback for when the query starts.
+    fn initialize(&mut self, state: &StreamingExecutionState) -> PolarsResult<()>;
+
     /// Callback for when the query has finished successfully.
     ///
     /// This should only be called when the writing is finished and all the join handles have been
     /// awaited.
-    fn finish(&self) -> PolarsResult<()> {
+    fn finish(&mut self) -> PolarsResult<()> {
         Ok(())
     }
 
@@ -216,20 +216,22 @@ struct StartedSinkComputeNode {
 
 /// A [`ComputeNode`] to wrap a [`SinkNode`].
 pub struct SinkComputeNode {
-    sink: Box<dyn SinkNode + Send + Sync>,
+    sink: Box<dyn SinkNode + Send>,
     started: Option<StartedSinkComputeNode>,
+    initialized: bool,
 }
 
 impl SinkComputeNode {
-    pub fn new(sink: Box<dyn SinkNode + Send + Sync>) -> Self {
+    pub fn new(sink: Box<dyn SinkNode + Send>) -> Self {
         Self {
             sink,
             started: None,
+            initialized: false,
         }
     }
 }
 
-impl<T: SinkNode + Send + Sync + 'static> From<T> for SinkComputeNode {
+impl<T: SinkNode + Send + 'static> From<T> for SinkComputeNode {
     fn from(value: T) -> Self {
         Self::new(Box::new(value))
     }
@@ -244,8 +246,13 @@ impl ComputeNode for SinkComputeNode {
         &mut self,
         recv: &mut [PortState],
         _send: &mut [PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
+        if !self.initialized {
+            self.sink.initialize(state)?;
+            self.initialized = true;
+        }
+
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
         }

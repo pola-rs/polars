@@ -21,7 +21,7 @@ use super::{
     SinkNode, buffer_and_distribute_columns_task,
 };
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{Receiver, connector};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
@@ -35,6 +35,9 @@ pub struct IpcSinkNode {
     write_options: IpcWriterOptions,
     sink_options: SinkOptions,
     cloud_options: Option<CloudOptions>,
+
+    io_tx: Option<Sender<(Vec<EncodedData>, EncodedData)>>,
+    io_task: Option<tokio_util::task::AbortOnDropHandle<PolarsResult<()>>>,
 }
 
 impl IpcSinkNode {
@@ -52,6 +55,9 @@ impl IpcSinkNode {
             write_options,
             sink_options,
             cloud_options,
+
+            io_tx: None,
+            io_task: None,
         }
     }
 }
@@ -68,6 +74,50 @@ impl SinkNode for IpcSinkNode {
         self.sink_options.maintain_order
     }
 
+    fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
+        // Collect task -> IO task
+        let (io_tx, mut io_rx) = connector::<(Vec<EncodedData>, EncodedData)>();
+
+        // IO task.
+        //
+        // Task that will actually do write to the target file.
+        let target = self.target.clone();
+        let sink_options = self.sink_options.clone();
+        let write_options = self.write_options;
+        let cloud_options = self.cloud_options.clone();
+        let input_schema = self.input_schema.clone();
+        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
+            let mut file = target
+                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .await?;
+            let writer = BufWriter::new(&mut *file);
+            let mut writer = IpcWriter::new(writer)
+                .with_compression(write_options.compression)
+                .with_compat_level(write_options.compat_level)
+                .with_parallel(false)
+                .batched(&input_schema)?;
+
+            while let Ok((dicts, record_batch)) = io_rx.recv().await {
+                // @TODO: At the moment this is a sync write, this is not ideal because we can only
+                // have so many blocking threads in the tokio threadpool.
+                writer.write_encoded(dicts.as_slice(), &record_batch)?;
+            }
+
+            writer.finish()?;
+            drop(writer);
+
+            file.sync_on_close(sink_options.sync_on_close)?;
+            file.close()?;
+
+            PolarsResult::Ok(())
+        });
+
+        self.io_tx = Some(io_tx);
+        self.io_task = Some(tokio_util::task::AbortOnDropHandle::new(io_task));
+
+        Ok(())
+    }
+
     fn spawn_sink(
         &mut self,
         recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
@@ -81,7 +131,10 @@ impl SinkNode for IpcSinkNode {
         let (mut lin_rx, lin_txs) =
             Linearizer::new(state.num_pipelines, *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
         // Collect task -> IO task
-        let (mut io_tx, mut io_rx) = connector::<(Vec<EncodedData>, EncodedData)>();
+        let mut io_tx = self
+            .io_tx
+            .take()
+            .expect("not initialized / spawn called more than once");
 
         let options = WriteOptions {
             compression: self.write_options.compression.map(Into::into),
@@ -291,44 +344,21 @@ impl SinkNode for IpcSinkNode {
 
             Ok(())
         }));
+    }
 
-        // IO task.
-        //
-        // Task that will actually do write to the target file.
-        let target = self.target.clone();
-        let sink_options = self.sink_options.clone();
-        let write_options = self.write_options;
-        let cloud_options = self.cloud_options.clone();
-        let input_schema = self.input_schema.clone();
-        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
-                .await?;
-            let writer = BufWriter::new(&mut *file);
-            let mut writer = IpcWriter::new(writer)
-                .with_compression(write_options.compression)
-                .with_compat_level(write_options.compat_level)
-                .with_parallel(false)
-                .batched(&input_schema)?;
+    fn finish(&mut self) -> PolarsResult<()> {
+        // If we were never spawned, we need to make sure that the `tx` is taken. This signals to
+        // the IO task that it is done and prevents deadlocks.
+        _ = self.io_tx.take();
 
-            while let Ok((dicts, record_batch)) = io_rx.recv().await {
-                // @TODO: At the moment this is a sync write, this is not ideal because we can only
-                // have so many blocking threads in the tokio threadpool.
-                writer.write_encoded(dicts.as_slice(), &record_batch)?;
-            }
+        let io_task = self
+            .io_task
+            .take()
+            .expect("not initialized / finish called more than once");
 
-            writer.finish()?;
-            drop(writer);
-
-            file.sync_on_close(sink_options.sync_on_close)?;
-            file.close()?;
-
-            PolarsResult::Ok(())
-        });
-        join_handles.push(spawn(TaskPriority::Low, async move {
-            io_task
-                .await
-                .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
-        }));
+        // Wait for the IO task to complete.
+        polars_io::pl_async::get_runtime()
+            .block_on(io_task)
+            .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
     }
 }
