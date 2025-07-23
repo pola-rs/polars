@@ -516,6 +516,7 @@ enum CachedSourceKey {
         paths: Arc<[PlPath]>,
         schema: Option<SchemaRef>,
         schema_overwrite: Option<SchemaRef>,
+        sub_json_path: Option<Arc<[String]>>,
     },
 }
 
@@ -695,6 +696,7 @@ impl SourcesToFileInfo {
                     paths: paths.clone(),
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
+                    sub_json_path: None,
                 };
                 let v = self.inner.get(&key);
                 (key, v)
@@ -705,6 +707,7 @@ impl SourcesToFileInfo {
                     paths: paths.clone(),
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
+                    sub_json_path: options.sub_json_path.clone(),
                 };
                 let v = self.inner.get(&key);
                 (key, v)
