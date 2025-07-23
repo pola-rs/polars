@@ -523,9 +523,14 @@ impl PyExpr {
                 }
             })
         };
+        let output_type = if options.weights.is_some() {
+            GetOutput::float_type()
+        } else {
+            GetOutput::same_type()
+        };
         self.inner
             .clone()
-            .rolling_map(Arc::new(function), GetOutput::same_type(), options)
+            .rolling_map(Arc::new(function), output_type, options)
             .into()
     }
 }
