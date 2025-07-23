@@ -3,7 +3,6 @@ mod python_scan;
 
 use std::mem;
 
-use polars_plan::global::_set_n_rows_for_scan;
 use polars_utils::slice_enum::Slice;
 
 #[cfg(feature = "python")]
@@ -29,10 +28,7 @@ impl Executor for DataFrameExec {
             df = df.select(projection.iter().cloned())?;
         }
 
-        Ok(match _set_n_rows_for_scan(None) {
-            Some(limit) => df.head(Some(limit)),
-            None => df,
-        })
+        Ok(df)
     }
 }
 

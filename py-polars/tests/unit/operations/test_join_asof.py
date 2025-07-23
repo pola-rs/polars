@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 import warnings
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars._typing import AsofJoinStrategy, PolarsIntegerType
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import AsofJoinStrategy, PolarsIntegerType
 
 
 def test_asof_join_singular_right_11966() -> None:
@@ -1327,3 +1331,40 @@ def test_join_asof_large_int_21276(
         }
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("by", ["constant", None])
+def test_join_asof_slice_23583(by: str | None) -> None:
+    lhs = pl.LazyFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    rhs = pl.LazyFrame(
+        {
+            "index": [0, 1],
+            "constant": 0,
+            "date": [date(1970, 1, 1), date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    q = (
+        lhs.join_asof(rhs, on="date", by=by, check_sortedness=False)
+        .head(1)
+        .select(pl.exclude("constant_right"))
+    )
+
+    expect = pl.DataFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+            "index_right": [1],
+        },
+    )
+
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+    assert_frame_equal(q.collect(), expect)

@@ -21,7 +21,10 @@ pub(super) fn expand_expressions(
 ) -> PolarsResult<Vec<ExprIR>> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let exprs = rewrite_projections(exprs, &Default::default(), &schema, opt_flags)?;
-    to_expr_irs(exprs, expr_arena, &schema)
+    to_expr_irs(
+        exprs,
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, &schema, opt_flags),
+    )
 }
 
 pub(super) fn empty_df() -> IR {

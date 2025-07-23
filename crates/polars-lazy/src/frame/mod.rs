@@ -34,7 +34,6 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
-use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -501,19 +500,6 @@ impl LazyFrame {
         }])
     }
 
-    /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
-    /// operation. This is a utility that helps debug a query on a smaller number of rows.
-    ///
-    /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
-    /// Filter, join operations and a lower number of rows available in the scanned file influence
-    /// the final number of rows.
-    pub fn fetch(self, n_rows: usize) -> PolarsResult<DataFrame> {
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
-        let res = self.collect();
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
-        res
-    }
-
     pub fn optimize(
         self,
         lp_arena: &mut Arena<IR>,
@@ -709,10 +695,6 @@ impl LazyFrame {
                 );
                 result.map(|v| v.unwrap_single())
             }),
-            _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
-                InvalidOperation: "partition sinks are not supported on for the '{}' engine",
-                engine.into_static_str()
-            )),
             Engine::Gpu => {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
@@ -1955,8 +1937,6 @@ impl LazyFrame {
     }
 
     /// Limit the DataFrame to the first `n` rows.
-    ///
-    /// Note if you don't want the rows to be scanned, use [`fetch`](LazyFrame::fetch).
     pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
@@ -2490,10 +2470,14 @@ mod streaming_dispatch {
             _ => false,
         };
 
-        let node = ir_arena.add(IR::Sink {
-            input: node,
-            payload: SinkTypeIR::Memory,
-        });
+        let node = match ir_arena.get(node) {
+            IR::SinkMultiple { .. } => panic!("SinkMultiple not supported"),
+            IR::Sink { .. } => node,
+            _ => ir_arena.add(IR::Sink {
+                input: node,
+                payload: SinkTypeIR::Memory,
+            }),
+        };
 
         polars_stream::StreamingQuery::build(node, ir_arena, expr_arena)
             .map(Some)

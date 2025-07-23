@@ -260,7 +260,7 @@ impl GatherExpr {
         groups: &'b GroupsType,
     ) -> PolarsResult<AggregationContext<'b>> {
         let mut builder = get_list_builder(
-            &ac.dtype(),
+            ac.dtype(),
             idx.get_values().len(),
             groups.len(),
             ac.get_values().name().clone(),

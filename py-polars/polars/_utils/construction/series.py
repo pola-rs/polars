@@ -161,11 +161,11 @@ def sequence_to_pyseries(
             Datetime,
             Duration,
             Time,
-            Categorical,
             Boolean,
+            Categorical,
             Enum,
             Decimal,
-        ):
+        ) or isinstance(dtype, Categorical):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         return pyseries

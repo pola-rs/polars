@@ -79,6 +79,8 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
             | F::ConcatExpr(_)
             | F::MinHorizontal
             | F::MaxHorizontal
+            | F::FoldHorizontal { .. }
+            | F::ReduceHorizontal { .. }
             | F::SumHorizontal { .. }
             | F::MeanHorizontal { .. }
     );
@@ -94,6 +96,10 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
     {
         expand_into_inputs |= matches!(function, F::AsStruct);
         expand_into_inputs |= matches!(function, F::StructExpr(StructFunction::WithFields));
+        expand_into_inputs |= matches!(
+            function,
+            F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. }
+        );
     }
     #[cfg(feature = "ffi_plugin")]
     {
@@ -114,24 +120,20 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
     }
 }
 
-fn expand_expression_by_combination_with_schemas(
+fn expand_expression_by_combination(
     exprs: &[Expr],
     ignored_selector_columns: &PlHashSet<PlSmallStr>,
-    schemas: &[Schema],
+    schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
     f: impl Fn(&[Expr]) -> Expr,
 ) -> PolarsResult<usize> {
     let mut results = Vec::new();
 
+    // Expand expressions until we find one that expands to more than 1 expression.
     let mut expansion_size = 0;
     for (i, expr) in exprs.iter().enumerate() {
         let start_len = out.len();
-        let schema = if schemas.len() == 1 {
-            &schemas[0]
-        } else {
-            &schemas[i]
-        };
         let size = expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
         if size != 1 {
             results.reserve(exprs.len() + 1);
@@ -143,6 +145,7 @@ fn expand_expression_by_combination_with_schemas(
         assert_eq!(out.len(), start_len + 1);
     }
 
+    // Check if all expressions expanded to 1 expression.
     if results.is_empty() {
         let expr = f(&out[out.len() - exprs.len()..]);
         out.truncate(out.len() - exprs.len());
@@ -150,13 +153,10 @@ fn expand_expression_by_combination_with_schemas(
         return Ok(1);
     }
 
-    for (i, expr) in exprs.iter().skip(results.len()).enumerate() {
+    // Now do the remaining expression, and check if they match the size of the original expansion
+    // (or 1)
+    for expr in exprs.iter().skip(results.len()) {
         let start_len = out.len();
-        let schema = if schemas.len() == 1 {
-            &schemas[0]
-        } else {
-            &schemas[i]
-        };
         let size = expand_expression_rec(expr, ignored_selector_columns, schema, out, opt_flags)?;
         polars_ensure!(
             size == 1 || size == expansion_size,
@@ -166,6 +166,7 @@ fn expand_expression_by_combination_with_schemas(
     }
     results.push(out.len());
 
+    // Create actual output expressions.
     let mut scratch = Vec::with_capacity(exprs.len());
     let mut tmp_out = Vec::with_capacity(expansion_size);
     for i in 0..expansion_size {
@@ -188,24 +189,6 @@ fn expand_expression_by_combination_with_schemas(
     out.extend(tmp_out);
 
     Ok(size)
-}
-
-fn expand_expression_by_combination(
-    exprs: &[Expr],
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
-    schema: &Schema,
-    out: &mut Vec<Expr>,
-    opt_flags: &mut OptFlags,
-    f: impl Fn(&[Expr]) -> Expr,
-) -> PolarsResult<usize> {
-    expand_expression_by_combination_with_schemas(
-        exprs,
-        ignored_selector_columns,
-        std::slice::from_ref(schema),
-        out,
-        opt_flags,
-        f,
-    )
 }
 
 fn expand_single(
@@ -792,23 +775,44 @@ fn expand_expression_rec(
             evaluation,
             variant,
         } => {
-            let expr_dtype = expr.to_field(schema, Context::Default)?.dtype;
-            let element_dtype = variant.element_dtype(&expr_dtype)?;
-            let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
-            let schemas = &[schema.clone(), evaluation_schema];
+            // Perform this before schema resolution so that we can better error messages.
+            for e in evaluation.as_ref().into_iter() {
+                if let Expr::Column(name) = e {
+                    polars_ensure!(
+                        name.is_empty(),
+                        ComputeError:
+                        "named columns are not allowed in `eval` functions; consider using `element`"
+                    );
+                }
+            }
 
-            _ = expand_expression_by_combination_with_schemas(
-                &[expr.as_ref().clone(), evaluation.as_ref().clone()],
-                ignored_selector_columns,
-                schemas,
-                out,
-                opt_flags,
-                |e| Expr::Eval {
-                    expr: Arc::new(e[0].clone()),
-                    evaluation: Arc::new(e[1].clone()),
-                    variant: *variant,
-                },
-            )?
+            let mut tmp = Vec::with_capacity(1);
+            expand_expression_rec(expr, ignored_selector_columns, schema, &mut tmp, opt_flags)?;
+
+            for expr in tmp {
+                let expr = Arc::new(expr);
+                let expr_dtype = expr.to_field(schema, Context::Default)?.dtype;
+                let element_dtype = variant.element_dtype(&expr_dtype)?;
+                let evaluation_schema =
+                    Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+
+                let start_length = out.len();
+                expand_expression_rec(
+                    evaluation,
+                    &Default::default(),
+                    &evaluation_schema,
+                    out,
+                    opt_flags,
+                )?;
+
+                for e in out[start_length..].iter_mut() {
+                    *e = Expr::Eval {
+                        expr: expr.clone(),
+                        evaluation: Arc::new(std::mem::take(e)),
+                        variant: *variant,
+                    };
+                }
+            }
         },
         Expr::RenameAlias { expr, function } => {
             _ = expand_single(

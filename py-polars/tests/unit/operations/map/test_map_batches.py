@@ -66,12 +66,14 @@ def test_map_batches_group() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
-    assert df.group_by("id").agg(pl.col("t").map_batches(lambda s: s.sum())).sort(
-        "id"
-    ).to_dict(as_series=False) == {"id": [0, 1], "t": [[11], [35]]}
+    assert df.group_by("id").agg(
+        pl.col("t").map_batches(lambda s: s.sum(), return_dtype=pl.self_dtype())
+    ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "t": [[11], [35]]}
     # If returns_scalar is True, the result won't be wrapped in a list:
     assert df.group_by("id").agg(
-        pl.col("t").map_batches(lambda s: s.sum(), returns_scalar=True)
+        pl.col("t").map_batches(
+            lambda s: s.sum(), returns_scalar=True, return_dtype=pl.self_dtype()
+        )
     ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "t": [11, 35]}
 
 
@@ -121,6 +123,8 @@ def test_lazy_map_schema() -> None:
 
 def test_map_batches_collect_schema_17327() -> None:
     df = pl.LazyFrame({"a": [1, 1, 1], "b": [2, 3, 4]})
-    q = df.group_by("a").agg(pl.col("b").map_batches(lambda s: s))
-    expected = pl.Schema({"a": pl.Int64(), "b": pl.List(pl.Unknown)})
+    q = df.group_by("a").agg(
+        pl.col("b").map_batches(lambda s: s, return_dtype=pl.self_dtype())
+    )
+    expected = pl.Schema({"a": pl.Int64(), "b": pl.List(pl.Int64)})
     assert q.collect_schema() == expected

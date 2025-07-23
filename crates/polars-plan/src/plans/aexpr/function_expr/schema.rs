@@ -57,7 +57,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "trigonometry")]
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
-            Sign => mapper.with_dtype(DataType::Int64),
+            Sign => mapper.ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?.with_same_dtype(),
             FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr{function, ..} => {
@@ -83,6 +83,11 @@ impl IRFunctionExpr {
                     SumBy => mapper.sum_dtype(),
                 }
             },
+            Append { upcast } => if *upcast {
+                mapper.map_to_supertype()
+            } else {
+                mapper.with_same_dtype()
+            },
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
@@ -94,7 +99,18 @@ impl IRFunctionExpr {
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
-            ArgUnique => mapper.with_dtype(IDX_DTYPE),
+            ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            Product => mapper.map_dtype(|dtype| {
+                use DataType as T;
+                match dtype {
+                    T::Float32 => T::Float32,
+                    T::Float64 => T::Float64,
+                    T::UInt64 => T::UInt64,
+                    #[cfg(feature = "dtype-i128")]
+                    T::Int128 => T::Int128,
+                    _ => T::Int64,
+                }
+            }),
             Repeat => mapper.with_same_dtype(),
             #[cfg(feature = "rank")]
             Rank { options, .. } => mapper.with_dtype(match options.method {
@@ -235,9 +251,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "peaks")]
-            PeakMin => mapper.with_same_dtype(),
-            #[cfg(feature = "peaks")]
-            PeakMax => mapper.with_same_dtype(),
+            PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]
             Cut {
                 include_breaks: false,
@@ -336,6 +350,31 @@ impl IRFunctionExpr {
                 symbol,
                 kwargs,
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
+
+            FoldHorizontal { return_dtype, .. } => match return_dtype {
+                None => mapper.with_same_dtype(),
+                Some(dtype) => mapper.with_dtype(dtype.clone()),
+            },
+            ReduceHorizontal { return_dtype, .. } => match return_dtype {
+                // @2.0: This should probably map to `Unknown`.
+                None => mapper.map_to_supertype(),
+                Some(dtype) => mapper.with_dtype(dtype.clone()),
+            },
+            #[cfg(feature = "dtype-struct")]
+            CumReduceHorizontal {
+                return_dtype, ..
+            }=> match return_dtype {
+                // @2.0: This should probably map to `Unknown`.
+                None => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+                Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
+            },
+            #[cfg(feature = "dtype-struct")]
+            CumFoldHorizontal { return_dtype, include_init, .. } => match return_dtype {
+                // @2.0: This should probably map to `Unknown`.
+                None => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), fields[0].dtype().clone())).collect())),
+                Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
+            },
+
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {
@@ -437,12 +476,13 @@ impl<'a> FieldsMapper<'a> {
     pub fn var_dtype(&self) -> PolarsResult<Field> {
         if self.fields[0].dtype().leaf_dtype().is_duration() {
             let map_inner = |dt: &DataType| match dt {
-                #[cfg(feature = "dtype-duration")]
-                DataType::Duration(_) => DataType::Duration(TimeUnit::Milliseconds),
-                dt => dt.clone(),
+                dt if dt.is_temporal() => {
+                    polars_bail!(InvalidOperation: "variance of type {dt} is not supported")
+                },
+                dt => Ok(dt.clone()),
             };
 
-            self.map_dtype(|dt| match dt {
+            self.try_map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-array")]
                 DataType::Array(inner, _) => map_inner(inner),
                 DataType::List(inner) => map_inner(inner),
@@ -692,6 +732,23 @@ impl<'a> FieldsMapper<'a> {
             },
         };
         self.with_dtype(dtype)
+    }
+
+    fn ensure_satisfies(
+        self,
+        mut f: impl FnMut(usize, &DataType) -> bool,
+        op: &'static str,
+    ) -> PolarsResult<Self> {
+        for (i, field) in self.fields.iter().enumerate() {
+            polars_ensure!(
+                f(i, field.dtype()),
+                opidx = op,
+                idx = i,
+                self.fields[i].dtype()
+            );
+        }
+
+        Ok(self)
     }
 }
 

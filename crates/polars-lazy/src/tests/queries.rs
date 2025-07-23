@@ -586,10 +586,11 @@ fn test_simplify_expr() {
         &mut OptFlags::SIMPLIFY_EXPR,
     )
     .unwrap();
-    let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-    assert!(
-        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(2.0)))))
-    );
+
+    assert!(matches!(
+        lp_arena.get(lp_top),
+        IR::Select { expr, .. }  if matches!(expr_arena.get(expr[0].node()), AExpr::BinaryExpr{ left, ..} if matches!(expr_arena.get(*left), &AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(2.0)))))
+    ));
 }
 
 #[test]
@@ -666,13 +667,12 @@ fn test_type_coercion() {
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
     let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-    let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-    if let DslPlan::Select { expr, .. } = lp {
-        if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
-            assert!(matches!(&**left, Expr::Cast { .. }));
+    if let IR::Select { expr, .. } = lp_arena.get(lp_top) {
+        if let AExpr::BinaryExpr { left, right, .. } = expr_arena.get(expr[0].node()) {
+            assert!(matches!(expr_arena.get(*left), AExpr::Cast { .. }));
             // bar is already float, does not have to be coerced
-            assert!(matches!(&**right, Expr::Column { .. }));
+            assert!(matches!(expr_arena.get(*right), AExpr::Column { .. }));
         } else {
             panic!()
         }
@@ -1664,15 +1664,7 @@ fn test_single_group_result() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("a")
-            .arg_sort(SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .over([col("a")])])
+        .select([col("a").arg_sort(false, false).over([col("a")])])
         .collect()?;
 
     let a = out.column("a")?.idx()?;
