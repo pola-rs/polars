@@ -3689,7 +3689,13 @@ def test_join_cast_type_coercion_23236() -> None:
         ),
     ],
 )
-def test_join_i128_23688(how: str, expected: pl.DataFrame) -> None:
+@pytest.mark.parametrize(
+    ("sort_left", "sort_right"),
+    [(True, True), (True, False), (False, True), (False, False)],
+)
+def test_join_i128_23688(
+    how: str, expected: pl.DataFrame, sort_left: bool, sort_right: bool
+) -> None:
     lhs = pl.LazyFrame({"a": pl.Series([1, 1, 2], dtype=pl.Int128)})
 
     rhs = pl.LazyFrame(
@@ -3704,6 +3710,9 @@ def test_join_i128_23688(how: str, expected: pl.DataFrame) -> None:
             )
         }
     )
+
+    lhs = lhs.collect().sort("a").lazy() if sort_left else lhs
+    rhs = rhs.collect().sort("a").lazy() if sort_right else rhs
 
     q = lhs.join(rhs, on="a", how=how, coalesce=False)
 
