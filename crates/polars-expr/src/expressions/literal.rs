@@ -103,8 +103,13 @@ impl PhysicalExpr for LiteralExpr {
         let s = self.evaluate(df, state)?;
 
         if self.0.is_scalar() {
-            Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
+            Ok(AggregationContext::from_agg_state(
+                AggState::LiteralScalar(s),
+                Cow::Borrowed(groups),
+            ))
         } else {
+            // A non-scalar literal value expands to those values for every group.
+
             let lit_length = s.len() as IdxSize;
             polars_ensure!(
                 (groups.len() as IdxSize).checked_mul(lit_length).is_some(),
