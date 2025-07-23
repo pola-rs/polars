@@ -22,7 +22,11 @@ impl PhysicalExpr for CountExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
-        Ok(Series::new(PlSmallStr::from_static("len"), [df.height() as IdxSize]).into_column())
+        Ok(Column::new_scalar(
+            PlSmallStr::from_static(LEN),
+            Scalar::from(df.height() as IdxSize),
+            1,
+        ))
     }
 
     fn evaluate_on_groups<'a>(
