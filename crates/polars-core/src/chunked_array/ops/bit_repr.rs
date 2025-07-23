@@ -130,10 +130,10 @@ where
                 BitRepr::U64(reinterpret_chunked_array(self))
             },
 
-            _ => {
-                assert!(size_of::<T::Native>() <= 4);
+            byte_size => {
+                assert!(byte_size <= 4);
 
-                BitRepr::U32(if size_of::<T::Native>() == 4 {
+                BitRepr::U32(if byte_size == 4 {
                     if matches!(self.dtype(), DataType::UInt32) {
                         let ca = self.clone();
                         // Convince the compiler we are this type. This preserves flags.
