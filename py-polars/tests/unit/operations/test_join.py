@@ -3720,3 +3720,19 @@ def test_join_i128_23688(
         q.collect().sort(pl.all()),
         expected,
     )
+
+    q = (
+        lhs.with_columns(b=pl.col("a").cast(pl.String))
+        .join(
+            rhs.with_columns(b=pl.col("a").cast(pl.String)),
+            on=["a", "b"],
+            how=how,
+            coalesce=False,
+        )
+        .select(expected.columns)
+    )
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        expected,
+    )
