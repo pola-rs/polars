@@ -363,15 +363,15 @@ def test_gather_group_by_23696(maintain_order: bool) -> None:
 
     expected = pl.DataFrame(
         {
-            "a": [0, 1],
-            "get_first": [2, 1],
-            "get_last": [4, 3],
-            "normal": [[2, 4], [1, 3]],
-            "signed": [[2, 4], [1, 3]],
-            "drop_nulls": [[2, 4], [1, 3]],
-            "drop_nulls_signed": [[2, 4], [1, 3]],
-            "literal": [[2, 4], [1, 3]],
-            "literal_signed": [[2, 4], [1, 3]],
+            "a": [1, 0],
+            "get_first": [1, 2],
+            "get_last": [3, 4],
+            "normal": [[1, 3], [2, 4]],
+            "signed": [[1, 3], [2, 4]],
+            "drop_nulls": [[1, 3], [2, 4]],
+            "drop_nulls_signed": [[1, 3], [2, 4]],
+            "literal": [[1, 3], [2, 4]],
+            "literal_signed": [[1, 3], [2, 4]],
         }
     )
 
