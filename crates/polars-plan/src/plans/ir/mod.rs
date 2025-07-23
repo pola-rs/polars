@@ -63,15 +63,6 @@ pub enum IR {
         scan_type: Box<FileScanIR>,
         /// generic options that can be used for all file types.
         unified_scan_args: Box<UnifiedScanArgs>,
-        /// This used as part of a hack to prevent deadlocks when we run the in-memory engine with
-        /// scans dispatched to new-streaming. This ID is used as the ID of the CacheExec that
-        /// wraps this scan. It will not be needed once everything runs in new-streaming.
-        ///
-        /// We use this instead of the Arc-address of the ScanSources as it's possible to pass the
-        /// same set of ScanSources with different scan options.
-        ///
-        /// NOTE: This must be reset to a new ID during e.g. predicate / slice pushdown.
-        id: UniqueId,
     },
     DataFrameScan {
         df: Arc<DataFrame>,

@@ -408,7 +408,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             output_schema: _,
             scan_type,
             unified_scan_args,
-            id: _,
         } => {
             Scan {
                 paths: {

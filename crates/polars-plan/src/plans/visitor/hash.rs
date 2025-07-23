@@ -81,7 +81,6 @@ impl Hash for HashableEqLP<'_> {
                 output_schema: _,
                 scan_type,
                 unified_scan_args,
-                id: _,
             } => {
                 // We don't have to traverse the schema, hive partitions etc. as they are derivative from the paths.
                 scan_type.hash(state);
@@ -263,7 +262,6 @@ impl HashableEqLP<'_> {
                     output_schema: _,
                     scan_type: stl,
                     unified_scan_args: ol,
-                    id: _,
                 },
                 IR::Scan {
                     sources: pr,
@@ -273,7 +271,6 @@ impl HashableEqLP<'_> {
                     output_schema: _,
                     scan_type: str,
                     unified_scan_args: or,
-                    id: _,
                 },
             ) => {
                 pl == pr
