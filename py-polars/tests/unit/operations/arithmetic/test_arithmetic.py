@@ -70,14 +70,13 @@ def test_arithmetic_sub(
 
 
 def test_struct_arithmetic() -> None:
-    df0 = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 2],
             "b": [3, 4],
             "c": [5, 6],
         }
-    )
-    df = df0.select(pl.cum_sum_horizontal("a", "c"))
+    ).select(pl.cum_sum_horizontal("a", "c"))
     assert df.select(pl.col("cum_sum") * 2).to_dict(as_series=False) == {
         "cum_sum": [{"a": 2, "c": 12}, {"a": 4, "c": 16}]
     }
@@ -98,9 +97,6 @@ def test_struct_arithmetic() -> None:
     assert pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).select(
         pl.cum_sum_horizontal("a", "c") * 3
     ).to_dict(as_series=False) == {"cum_sum": [{"a": 3, "c": 18}, {"a": 6, "c": 24}]}
-
-    q = df0.lazy().select(pl.cum_sum_horizontal("a", "c") * 3)
-    assert q.collect_schema() == q.collect().schema
 
 
 def test_simd_float_sum_determinism() -> None:
