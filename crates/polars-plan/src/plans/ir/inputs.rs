@@ -102,7 +102,6 @@ impl IR {
                 predicate,
                 unified_scan_args,
                 scan_type,
-                id: _,
             } => Scan {
                 sources: sources.clone(),
                 file_info: file_info.clone(),
@@ -111,7 +110,6 @@ impl IR {
                 unified_scan_args: unified_scan_args.clone(),
                 predicate: predicate.is_some().then(|| exprs.pop().unwrap()),
                 scan_type: scan_type.clone(),
-                id: Default::default(),
             },
             DataFrameScan {
                 df,
