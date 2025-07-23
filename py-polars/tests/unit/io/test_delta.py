@@ -700,7 +700,9 @@ def test_scan_delta_storage_options_from_delta_table(
         },
     )
 
-    with warnings.catch_warnings(action="ignore", category=RuntimeWarning):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", RuntimeWarning)
+
         q = pl.scan_delta(
             tbl,
             storage_options={
