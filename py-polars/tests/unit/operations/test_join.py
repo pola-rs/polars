@@ -3722,9 +3722,9 @@ def test_join_i128_23688(
     )
 
     q = (
-        lhs.with_columns(b=pl.col("a").cast(pl.String))
+        lhs.with_columns(b=pl.col("a"))
         .join(
-            rhs.with_columns(b=pl.col("a").cast(pl.String)),
+            rhs.with_columns(b=pl.col("a")),
             on=["a", "b"],
             how=how,
             coalesce=False,
