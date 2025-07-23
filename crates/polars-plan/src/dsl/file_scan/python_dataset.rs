@@ -13,7 +13,7 @@ use crate::dsl::DslPlan;
 pub static DATASET_PROVIDER_VTABLE: OnceLock<PythonDatasetProviderVTable> = OnceLock::new();
 
 pub struct PythonDatasetProviderVTable {
-    pub reader_name: fn(dataset_object: &PythonObject) -> PlSmallStr,
+    pub name: fn(dataset_object: &PythonObject) -> PlSmallStr,
 
     pub schema: fn(dataset_object: &PythonObject) -> PolarsResult<SchemaRef>,
 
@@ -44,8 +44,8 @@ impl PythonDatasetProvider {
         Self { dataset_object }
     }
 
-    pub fn reader_name(&self) -> PlSmallStr {
-        (dataset_provider_vtable().unwrap().reader_name)(&self.dataset_object)
+    pub fn name(&self) -> PlSmallStr {
+        (dataset_provider_vtable().unwrap().name)(&self.dataset_object)
     }
 
     pub fn schema(&self) -> PolarsResult<SchemaRef> {

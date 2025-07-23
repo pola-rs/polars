@@ -9,19 +9,19 @@ use pyo3::conversion::FromPyObjectBound;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
-use pyo3::{PyResult, Python};
+use pyo3::{PyResult, Python, intern};
 
 use crate::interop::arrow::to_rust::field_to_rust;
 use crate::prelude::{Wrap, get_lf};
 
-pub fn reader_name(dataset_object: &PythonObject) -> PlSmallStr {
+pub fn name(dataset_object: &PythonObject) -> PlSmallStr {
     Python::with_gil(|py| {
-        let name: PyBackedStr = dataset_object
-            .getattr(py, "reader_name")?
-            .call0(py)?
-            .extract(py)?;
-
-        PyResult::Ok(PlSmallStr::from_str(&name))
+        PyResult::Ok(PlSmallStr::from_str(
+            &dataset_object
+                .getattr(py, intern!(py, "__class__"))?
+                .getattr(py, intern!(py, "__name__"))?
+                .extract::<PyBackedStr>(py)?,
+        ))
     })
     .unwrap()
 }

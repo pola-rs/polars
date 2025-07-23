@@ -6,6 +6,8 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
+pub mod iceberg;
+
 pub type SchemaRef = Arc<Schema>;
 pub type Schema = polars_schema::Schema<DataType>;
 
