@@ -1,5 +1,3 @@
-use std::fmt::LowerHex;
-
 use uuid::Uuid;
 
 /// Unique identifier.
@@ -22,11 +20,5 @@ impl UniqueId {
 impl std::fmt::Display for UniqueId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.as_hyphenated())
-    }
-}
-
-impl LowerHex for UniqueId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:x}", self.0.as_simple())
     }
 }
