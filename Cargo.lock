@@ -3684,6 +3684,7 @@ dependencies = [
  "slotmap",
  "stacker",
  "sysinfo",
+ "uuid",
  "version_check",
 ]
 

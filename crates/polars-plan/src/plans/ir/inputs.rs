@@ -79,7 +79,7 @@ impl IR {
             },
             Cache { id, cache_hits, .. } => Cache {
                 input: inputs[0],
-                id: id.clone(),
+                id: *id,
                 cache_hits: *cache_hits,
             },
             Distinct { options, .. } => Distinct {

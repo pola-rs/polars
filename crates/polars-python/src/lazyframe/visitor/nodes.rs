@@ -229,7 +229,7 @@ pub struct Cache {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    id_: usize,
+    id_: u128,
     #[pyo3(get)]
     cache_hits: u32,
 }
@@ -489,7 +489,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             cache_hits,
         } => Cache {
             input: input.0,
-            id_: id.to_usize(),
+            id_: id.as_u128(),
             cache_hits: *cache_hits,
         }
         .into_py_any(py),

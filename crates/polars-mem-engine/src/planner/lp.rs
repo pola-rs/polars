@@ -360,29 +360,23 @@ fn create_physical_plan_impl(
                         input, builder, root, lp_arena, expr_arena,
                     ));
 
-                    let cache_id = UniqueId::default();
-
-                    // TODO: remove when https://github.com/pola-rs/polars/issues/23674 is resolved
-                    assert!(
-                        !cache_nodes.contains_key(&cache_id),
-                        "generated duplicate unique ID"
-                    );
+                    let id = UniqueId::new();
 
                     // Use cache so that this runs during the cache pre-filling stage and not on the
                     // thread pool, it could deadlock since the streaming engine uses the thread
                     // pool internally.
                     cache_nodes.insert(
-                        cache_id.clone(),
+                        id,
                         Box::new(executors::CacheExec {
                             input: Some(executor),
-                            id: cache_id.clone(),
+                            id,
                             count: 0,
                             is_new_streaming_scan: false,
                         }),
                     );
 
                     Ok(Box::new(executors::CacheExec {
-                        id: cache_id,
+                        id,
                         // Rest of the fields don't matter - the actual node was inserted into
                         // `cache_nodes`.
                         input: None,
@@ -518,19 +512,13 @@ fn create_physical_plan_impl(
                     // If this property changes in the future, the same scan could be visited
                     // and executed multiple times. It is a responsibility of the caller to
                     // insert a cache if multiple executions are not desirable.
-                    let id = UniqueId::default();
-
-                    // TODO: remove when https://github.com/pola-rs/polars/issues/23674 is resolved
-                    assert!(
-                        !cache_nodes.contains_key(&id),
-                        "generated duplicate unique ID"
-                    );
+                    let id = UniqueId::new();
 
                     cache_nodes.insert(
-                        id.clone(),
+                        id,
                         Box::new(executors::CacheExec {
                             input: Some(executor),
-                            id: id.clone(),
+                            id,
                             // This is (n_hits - 1), because the drop logic is `fetch_sub(1) == 0`.
                             count: 0,
                             is_new_streaming_scan: true,
@@ -627,18 +615,13 @@ fn create_physical_plan_impl(
                 let input = recurse!(input, state)?;
 
                 let cache = Box::new(executors::CacheExec {
-                    id: id.clone(),
+                    id,
                     input: Some(input),
                     count: cache_hits,
                     is_new_streaming_scan: false,
                 });
 
-                cache_nodes.insert(id.clone(), cache);
-            } else {
-                // TODO: remove when https://github.com/pola-rs/polars/issues/23674 is resolved
-                if let Some(exec) = cache_nodes.get(&id) {
-                    assert!(!exec.is_new_streaming_scan, "generated duplicate unique ID");
-                }
+                cache_nodes.insert(id, cache);
             }
 
             Ok(Box::new(executors::CacheExec {
@@ -1116,7 +1099,7 @@ mod tests {
 
         let cache = ir.add(IR::Cache {
             input: scan,
-            id: UniqueId::default(),
+            id: UniqueId::new(),
             cache_hits: 1,
         });
 
