@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
 
 use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
@@ -25,7 +24,6 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     output_field: Field,
-    inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl ApplyExpr {
@@ -56,7 +54,6 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             output_field,
-            inlined_eval: Default::default(),
         }
     }
 
@@ -327,24 +324,6 @@ impl PhysicalExpr for ApplyExpr {
             let in_name = inputs[0].name().clone();
             Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
         }
-    }
-
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        // For predicate evaluation at I/O of:
-        // `lit("2024-01-01").str.strptime()`
-
-        self.inlined_eval
-            .get_or_init(|| {
-                let depth_limit = depth_limit.checked_sub(1)?;
-                let mut inputs = self
-                    .inputs
-                    .iter()
-                    .map(|x| x.evaluate_inline_impl(depth_limit).filter(|s| s.len() == 1))
-                    .collect::<Option<Vec<_>>>()?;
-
-                self.eval_and_flatten(&mut inputs).ok()
-            })
-            .clone()
     }
 
     #[allow(clippy::ptr_arg)]
