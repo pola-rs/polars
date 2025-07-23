@@ -701,7 +701,7 @@ def test_scan_delta_storage_options_from_delta_table(
     )
 
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", RuntimeWarning)
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
 
         q = pl.scan_delta(
             tbl,
