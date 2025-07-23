@@ -416,6 +416,15 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    pub fn aggregated_as_list(&mut self) -> Cow<ListChunked> {
+        self.aggregated();
+        let out = self.get_values();
+        match self.agg_state() {
+            AggState::AggregatedScalar(_) => Cow::Owned(out.as_list()),
+            _ => Cow::Borrowed(out.list().unwrap()),
+        }
+    }
+
     /// Get the aggregated version of the series.
     pub fn aggregated(&mut self) -> Column {
         // we clone, because we only want to call `self.groups()` if needed.

@@ -11,9 +11,11 @@ def test_negative_index() -> None:
     assert df.select(pl.col("a").gather([0, -1])).to_dict(as_series=False) == {
         "a": [1, 6]
     }
-    assert df.group_by(pl.col("a") % 2).agg(b=pl.col("a").gather([0, -1])).sort(
-        "a"
-    ).to_dict(as_series=False) == {"a": [0, 1], "b": [[2, 6], [1, 5]]}
+    assert_frame_equal(
+        df.group_by(pl.col("a") % 2).agg(b=pl.col("a").gather([0, -1])),
+        pl.DataFrame({"a": [0, 1], "b": [[2, 6], [1, 5]]}),
+        check_row_order=False,
+    )
 
 
 def test_gather_agg_schema() -> None:

@@ -13,7 +13,9 @@ mod sets;
 mod sum_mean;
 #[cfg(feature = "list_to_struct")]
 mod to_struct;
+mod get;
 
+pub use get::*;
 #[cfg(feature = "list_count")]
 pub use count::*;
 #[cfg(not(feature = "list_count"))]
