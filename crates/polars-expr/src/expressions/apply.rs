@@ -333,11 +333,6 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        polars_ensure!(
-            self.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
-            expr = self.expr,
-            ComputeError: "this expression cannot run in the group_by context",
-        );
         if self.inputs.len() == 1 {
             let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
