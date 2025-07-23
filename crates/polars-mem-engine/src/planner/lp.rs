@@ -363,7 +363,10 @@ fn create_physical_plan_impl(
                     let cache_id = UniqueId::default();
 
                     // TODO: remove when https://github.com/pola-rs/polars/issues/23674 is resolved
-                    assert!(!cache_nodes.contains_key(&cache_id));
+                    assert!(
+                        !cache_nodes.contains_key(&cache_id),
+                        "generated duplicate unique ID"
+                    );
 
                     // Use cache so that this runs during the cache pre-filling stage and not on the
                     // thread pool, it could deadlock since the streaming engine uses the thread
@@ -518,7 +521,10 @@ fn create_physical_plan_impl(
                     let id = UniqueId::default();
 
                     // TODO: remove when https://github.com/pola-rs/polars/issues/23674 is resolved
-                    assert!(!cache_nodes.contains_key(&id));
+                    assert!(
+                        !cache_nodes.contains_key(&id),
+                        "generated duplicate unique ID"
+                    );
 
                     cache_nodes.insert(
                         id.clone(),
