@@ -2,6 +2,7 @@ use std::hash::Hash;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
+use polars_core::schema::iceberg::IcebergSchemaRef;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -213,6 +214,13 @@ pub enum ExtraColumnsPolicy {
     Ignore,
 }
 
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum ColumnMapping {
+    Iceberg(IcebergSchemaRef),
+}
+
 /// Scan arguments shared across different scan types.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -239,6 +247,7 @@ pub struct UnifiedScanArgs {
     pub include_file_paths: Option<PlSmallStr>,
 
     pub deletion_files: Option<DeletionFilesList>,
+    pub column_mapping: Option<ColumnMapping>,
 }
 
 impl Default for UnifiedScanArgs {
@@ -258,6 +267,7 @@ impl Default for UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::default(),
             include_file_paths: None,
             deletion_files: None,
+            column_mapping: None,
         }
     }
 }

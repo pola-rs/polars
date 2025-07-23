@@ -16,8 +16,10 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
+use polars::prelude::ColumnMapping;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
+use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
@@ -39,6 +41,7 @@ use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
 use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
+use crate::interop::arrow::to_rust::field_to_rust_arrow;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
@@ -554,6 +557,49 @@ impl<'py> FromPyObject<'py> for Wrap<Schema> {
                 })
                 .collect::<PyResult<Schema>>()?,
         ))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ArrowSchema> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let py = ob.py();
+
+        let pyarrow_schema_cls = py
+            .import(intern!(py, "pyarrow"))?
+            .getattr(intern!(py, "Schema"))?;
+
+        if ob.is_none() {
+            return Err(PyValueError::new_err("arrow_schema() returned None").into());
+        }
+
+        let schema_cls = ob.getattr(intern!(py, "__class__"))?;
+
+        if !schema_cls.is(&pyarrow_schema_cls) {
+            return Err(PyTypeError::new_err(format!(
+                "expected pyarrow.Schema, got: {schema_cls}"
+            )));
+        }
+
+        let mut iter = ob.try_iter()?.map(|x| x.and_then(field_to_rust_arrow));
+
+        let mut last_err = None;
+
+        let schema =
+            ArrowSchema::from_iter_check_duplicates(std::iter::from_fn(|| match iter.next() {
+                Some(Ok(v)) => Some(v),
+                Some(Err(e)) => {
+                    last_err = Some(e);
+                    None
+                },
+                None => None,
+            }))
+            .map_err(to_py_err)?;
+
+        if let Some(last_err) = last_err {
+            return Err(last_err.into());
+        }
+
+        Ok(Wrap(schema))
     }
 }
 
@@ -1602,6 +1648,27 @@ impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ColumnMapping> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (column_mapping_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*column_mapping_type {
+            "iceberg-column-mapping" => {
+                let arrow_schema: Wrap<ArrowSchema> = ob.extract()?;
+                ColumnMapping::Iceberg(Arc::new(
+                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?,
+                ))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown column mapping type: {v}"
+                )));
+            },
+        }))
     }
 }
 

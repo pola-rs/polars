@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
-    CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
+    CastColumnsPolicy, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
     UnifiedScanArgs,
 };
 use polars_io::{HiveOptions, RowIndex};
@@ -47,6 +47,7 @@ impl PyScanOptions<'_> {
             credential_provider: Option<PyObject>,
             retries: usize,
             deletion_files: Option<Wrap<DeletionFilesList>>,
+            column_mapping: Option<Wrap<ColumnMapping>>,
         }
 
         let Extract {
@@ -66,6 +67,7 @@ impl PyScanOptions<'_> {
             credential_provider,
             retries,
             deletion_files,
+            column_mapping,
         } = self.0.extract()?;
 
         let cloud_options = storage_options;
@@ -129,6 +131,7 @@ impl PyScanOptions<'_> {
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
+            column_mapping: column_mapping.map(|x| x.0),
         };
 
         Ok(unified_scan_args)
