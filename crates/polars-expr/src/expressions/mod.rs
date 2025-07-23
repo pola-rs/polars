@@ -204,12 +204,8 @@ impl<'a> AggregationContext<'a> {
         groups: Cow<'a, GroupPositions>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
-        let series = match (aggregated, column.dtype()) {
-            (true, &DataType::List(_)) => {
-                assert_eq!(column.len(), groups.len());
-                AggState::AggregatedList(column)
-            },
-            (true, _) => {
+        let series = match aggregated {
+            true => {
                 assert_eq!(column.len(), groups.len());
                 AggState::AggregatedScalar(column)
             },
