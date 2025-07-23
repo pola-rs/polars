@@ -286,6 +286,7 @@ where
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
+                    #[cfg(feature = "dtype-i128")]
                     (B::I128(left_by), B::I128(right_by)) => {
                         asof_join_by_numeric::<T, Int128Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,

@@ -1,4 +1,5 @@
 use arrow::buffer::Buffer;
+use polars_error::feature_gated;
 
 use crate::prelude::*;
 use crate::series::BitRepr;
@@ -107,15 +108,17 @@ where
     fn to_bit_repr(&self) -> BitRepr {
         match size_of::<T::Native>() {
             16 => {
-                if matches!(self.dtype(), DataType::Int128) {
-                    let ca = self.clone();
-                    // Convince the compiler we are this type. This keeps flags.
-                    return BitRepr::I128(unsafe {
-                        std::mem::transmute::<ChunkedArray<T>, Int128Chunked>(ca)
-                    });
-                }
+                feature_gated!("dtype-i128", {
+                    if matches!(self.dtype(), DataType::Int128) {
+                        let ca = self.clone();
+                        // Convince the compiler we are this type. This keeps flags.
+                        return BitRepr::I128(unsafe {
+                            std::mem::transmute::<ChunkedArray<T>, Int128Chunked>(ca)
+                        });
+                    }
 
-                BitRepr::I128(reinterpret_chunked_array(self))
+                    BitRepr::I128(reinterpret_chunked_array(self))
+                })
             },
 
             8 => {

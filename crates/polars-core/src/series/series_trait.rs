@@ -34,6 +34,7 @@ impl IsSorted {
 pub enum BitRepr {
     U32(UInt32Chunked),
     U64(UInt64Chunked),
+    #[cfg(feature = "dtype-i128")]
     I128(Int128Chunked),
 }
 
