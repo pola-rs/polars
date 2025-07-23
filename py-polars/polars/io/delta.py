@@ -304,8 +304,6 @@ def scan_delta(
         _get_credentials_from_provider_expiry_aware,
     )
 
-    user_passed_delta_table = isinstance(source, DeltaTable)
-
     if not isinstance(source, DeltaTable):
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, source, storage_options, "scan_delta"
@@ -336,7 +334,7 @@ def scan_delta(
         delta_table_options=delta_table_options,
     )
 
-    if user_passed_delta_table and (
+    if isinstance(source, DeltaTable) and (
         source._storage_options is not None or storage_options is not None
     ):
         storage_options = {**(source._storage_options or {}), **(storage_options or {})}

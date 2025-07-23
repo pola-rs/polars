@@ -4,6 +4,7 @@ import os
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.fs
@@ -666,7 +667,7 @@ def test_scan_delta_storage_options_from_delta_table(
 
     storage_options_checked = False
 
-    def assert_scan_parquet_storage_options(*a, **kw):
+    def assert_scan_parquet_storage_options(*a: Any, **kw: Any) -> Any:
         nonlocal storage_options_checked
 
         assert kw["storage_options"] == {
