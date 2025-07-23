@@ -1306,8 +1306,8 @@ def test_join_asof_not_sorted() -> None:
         assert len(w) == 0  # no warnings caught
 
 
-@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64])
-@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64])
+@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64, pl.Int128])
+@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64, pl.Int128])
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 def test_join_asof_large_int_21276(
     left_dtype: PolarsIntegerType,

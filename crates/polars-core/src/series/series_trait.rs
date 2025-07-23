@@ -32,8 +32,9 @@ impl IsSorted {
 }
 
 pub enum BitRepr {
-    Small(UInt32Chunked),
-    Large(UInt64Chunked),
+    U32(UInt32Chunked),
+    U64(UInt64Chunked),
+    I128(Int128Chunked),
 }
 
 pub(crate) mod private {

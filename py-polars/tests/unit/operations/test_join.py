@@ -3629,3 +3629,85 @@ def test_join_cast_type_coercion_23236() -> None:
     q = lhs.join(rhs, left_on=pl.col("newname").cast(pl.String), right_on="name")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"newname": "a", "name": "a"}))
+
+
+@pytest.mark.parametrize(
+    ("how", "expected"),
+    [
+        (
+            "inner",
+            pl.DataFrame(schema={"a": pl.Int128, "a_right": pl.Int128}),
+        ),
+        (
+            "left",
+            pl.DataFrame(
+                {"a": [1, 1, 2], "a_right": None},
+                schema={"a": pl.Int128, "a_right": pl.Int128},
+            ),
+        ),
+        (
+            "right",
+            pl.DataFrame(
+                {
+                    "a": None,
+                    "a_right": [
+                        -9223372036854775808,
+                        -9223372036854775807,
+                        -9223372036854775806,
+                    ],
+                },
+                schema={"a": pl.Int128, "a_right": pl.Int128},
+            ),
+        ),
+        (
+            "full",
+            pl.DataFrame(
+                [
+                    pl.Series("a", [None, None, None, 1, 1, 2], dtype=pl.Int128),
+                    pl.Series(
+                        "a_right",
+                        [
+                            -9223372036854775808,
+                            -9223372036854775807,
+                            -9223372036854775806,
+                            None,
+                            None,
+                            None,
+                        ],
+                        dtype=pl.Int128,
+                    ),
+                ]
+            ),
+        ),
+        (
+            "semi",
+            pl.DataFrame([pl.Series("a", [], dtype=pl.Int128)]),
+        ),
+        (
+            "anti",
+            pl.DataFrame([pl.Series("a", [1, 1, 2], dtype=pl.Int128)]),
+        ),
+    ],
+)
+def test_join_i128_23688(how: str, expected: pl.DataFrame) -> None:
+    lhs = pl.LazyFrame({"a": pl.Series([1, 1, 2], dtype=pl.Int128)})
+
+    rhs = pl.LazyFrame(
+        {
+            "a": pl.Series(
+                [
+                    -9223372036854775808,
+                    -9223372036854775807,
+                    -9223372036854775806,
+                ],
+                dtype=pl.Int128,
+            )
+        }
+    )
+
+    q = lhs.join(rhs, on="a", how=how, coalesce=False)
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        expected,
+    )

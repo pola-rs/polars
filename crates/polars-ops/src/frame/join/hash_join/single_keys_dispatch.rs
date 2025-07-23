@@ -99,13 +99,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
+                    (B::U32(lhs), B::U32(rhs)) => {
                         // Turbofish: see #17137.
                         num_group_join_left::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
-                    (B::Large(lhs), B::Large(rhs)) => {
+                    (B::U64(lhs), B::U64(rhs)) => {
                         // Turbofish: see #17137.
                         num_group_join_left::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::I128(lhs), B::I128(rhs)) => {
+                        // Turbofish: see #17137.
+                        num_group_join_left::<Int128Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -194,13 +198,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
+                    (B::U32(lhs), B::U32(rhs)) => {
                         // Turbofish: see #17137.
                         num_group_join_anti_semi::<UInt32Type>(&lhs, &rhs, anti, nulls_equal)
                     },
-                    (B::Large(lhs), B::Large(rhs)) => {
+                    (B::U64(lhs), B::U64(rhs)) => {
                         // Turbofish: see #17137.
                         num_group_join_anti_semi::<UInt64Type>(&lhs, &rhs, anti, nulls_equal)
+                    },
+                    (B::I128(lhs), B::I128(rhs)) => {
+                        // Turbofish: see #17137.
+                        num_group_join_anti_semi::<Int128Type>(&lhs, &rhs, anti, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -312,13 +320,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
+                    (B::U32(lhs), B::U32(rhs)) => {
                         // Turbofish: see #17137.
                         group_join_inner::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
-                    (B::Large(lhs), BitRepr::Large(rhs)) => {
+                    (B::U64(lhs), BitRepr::U64(rhs)) => {
                         // Turbofish: see #17137.
                         group_join_inner::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::I128(lhs), BitRepr::I128(rhs)) => {
+                        // Turbofish: see #17137.
+                        group_join_inner::<Int128Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -396,13 +408,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::Small(lhs), B::Small(rhs)) => {
+                    (B::U32(lhs), B::U32(rhs)) => {
                         // Turbofish: see #17137.
                         hash_join_outer::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
-                    (B::Large(lhs), B::Large(rhs)) => {
+                    (B::U64(lhs), B::U64(rhs)) => {
                         // Turbofish: see #17137.
                         hash_join_outer::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::I128(lhs), B::I128(rhs)) => {
+                        // Turbofish: see #17137.
+                        hash_join_outer::<Int128Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
