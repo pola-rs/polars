@@ -3736,3 +3736,31 @@ def test_join_i128_23688(
         q.collect().sort(pl.all()),
         expected,
     )
+
+
+def test_join_asof_by_i128() -> None:
+    lhs = pl.LazyFrame({"a": pl.Series([1, 1, 2], dtype=pl.Int128), "i": 1})
+
+    rhs = pl.LazyFrame(
+        {
+            "a": pl.Series(
+                [
+                    -9223372036854775808,
+                    -9223372036854775807,
+                    -9223372036854775806,
+                ],
+                dtype=pl.Int128,
+            ),
+            "i": 1,
+        }
+    ).with_columns(b=pl.col("a"))
+
+    q = lhs.join_asof(rhs, on="i", by="a")
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        pl.DataFrame(
+            {"a": [1, 1, 2], "i": 1, "b": None},
+            schema={"a": pl.Int128, "i": pl.Int32, "b": pl.Int128},
+        ),
+    )
