@@ -103,10 +103,6 @@ pub struct AggregationContext<'a> {
     state: AggState,
     /// group tuples for AggState
     groups: Cow<'a, GroupPositions>,
-    /// if the group tuples are already used in a level above
-    /// and the series is exploded, the group tuples are sorted
-    /// e.g. the exploded Series is grouped per group.
-    sorted: bool,
     /// This is used to determined if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
@@ -219,7 +215,6 @@ impl<'a> AggregationContext<'a> {
         Self {
             state: series,
             groups,
-            sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
         }
@@ -236,7 +231,6 @@ impl<'a> AggregationContext<'a> {
         Self {
             state: agg_state,
             groups,
-            sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
         }
@@ -246,7 +240,6 @@ impl<'a> AggregationContext<'a> {
         Self {
             state: AggState::Literal(lit),
             groups,
-            sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
         }
@@ -448,7 +441,6 @@ impl<'a> AggregationContext<'a> {
                 let out = unsafe { s.agg_list(&self.groups) };
                 self.state = AggState::AggregatedList(out.clone());
 
-                self.sorted = true;
                 self.update_groups = UpdateGroups::WithGroupsLen;
                 out
             },
