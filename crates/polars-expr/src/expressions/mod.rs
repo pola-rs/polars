@@ -113,14 +113,6 @@ pub struct AggregationContext<'a> {
 }
 
 impl<'a> AggregationContext<'a> {
-    pub(crate) fn dtype(&self) -> &DataType {
-        match &self.state {
-            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype(),
-            AggState::Literal(s) | AggState::AggregatedScalar(s) | AggState::NotAggregated(s) => {
-                s.dtype()
-            },
-        }
-    }
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupPositions> {
         match self.update_groups {
             UpdateGroups::No => {},
@@ -416,7 +408,8 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub fn aggregated_as_list(&mut self) -> Cow<ListChunked> {
+    /// Aggregate into `ListChunked.
+    pub fn aggregated_as_list<'b>(&'b mut self) -> Cow<'b, ListChunked> {
         self.aggregated();
         let out = self.get_values();
         match self.agg_state() {

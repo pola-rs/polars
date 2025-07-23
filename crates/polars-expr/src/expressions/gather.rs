@@ -1,9 +1,6 @@
-use arrow::legacy::utils::CustomIterTools;
-use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
 use polars_ops::prelude::lst_get;
 use polars_ops::series::convert_to_unsigned_index;
 use polars_utils::index::ToIdx;
@@ -40,15 +37,15 @@ impl PhysicalExpr for GatherExpr {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
 
-        let mut ac_list = ac.aggregated_as_list();
+        let ac_list = ac.aggregated_as_list();
 
         if self.returns_scalar {
-            // For returns_scalar=true, we can dispatch to `list.get`.
             polars_ensure!(
                 !matches!(idx.agg_state(), AggState::AggregatedList(_) | AggState::NotAggregated(_)),
                 ComputeError: "expected single index"
             );
 
+            // For returns_scalar=true, we can dispatch to `list.get`.
             let idx = idx.flat_naive();
             let idx = idx.cast(&DataType::Int64)?;
             let idx = idx.i64().unwrap();
@@ -63,7 +60,7 @@ impl PhysicalExpr for GatherExpr {
         // - IdxSize, if the idx only contains positive integers.
         // - Int64,   if the idx contains negative numbers.
         // This may give false positives if there are masked out elements.
-        let mut idx = idx.aggregated_as_list();
+        let idx = idx.aggregated_as_list();
         let idx = idx.apply_to_inner(&|s| match s.dtype() {
             dtype if dtype == &IDX_DTYPE => Ok(s),
             dtype if dtype.is_unsigned_integer() => {

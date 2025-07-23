@@ -1,12 +1,6 @@
-use std::borrow::Cow;
-
-use num_traits::{Signed, Zero};
-use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::arity::unary_elementwise_values;
-use polars_core::prelude::{
-    ChunkCompareIneq, ChunkedArray, Column, DataType, IdxCa, Int64Chunked, ListChunked, PolarsIntegerType, Series, IDX_DTYPE
-};
+use polars_core::prelude::{ChunkedArray, DataType, IDX_DTYPE, IdxCa, PolarsIntegerType, Series};
 use polars_utils::index::ToIdx;
 
 fn convert<T>(ca: &ChunkedArray<T>, target_len: usize) -> PolarsResult<IdxCa>
