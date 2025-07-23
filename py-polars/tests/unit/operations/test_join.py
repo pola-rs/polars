@@ -3714,7 +3714,7 @@ def test_join_i128_23688(
     lhs = lhs.collect().sort("a").lazy() if sort_left else lhs
     rhs = rhs.collect().sort("a").lazy() if sort_right else rhs
 
-    q = lhs.join(rhs, on="a", how=how, coalesce=False)
+    q = lhs.join(rhs, on="a", how=how, coalesce=False)  # type: ignore[call-arg]
 
     assert_frame_equal(
         q.collect().sort(pl.all()),
@@ -3726,7 +3726,7 @@ def test_join_i128_23688(
         .join(
             rhs.with_columns(b=pl.col("a")),
             on=["a", "b"],
-            how=how,
+            how=how,  # type: ignore[call-arg]
             coalesce=False,
         )
         .select(expected.columns)
