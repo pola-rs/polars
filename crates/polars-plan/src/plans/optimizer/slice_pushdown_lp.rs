@@ -222,7 +222,6 @@ impl SlicePushDown {
                 mut unified_scan_args,
                 predicate,
                 scan_type,
-                id: _,
             }, Some(state)) if predicate.is_none() && match &*scan_type {
                 #[cfg(feature = "parquet")]
                 FileScanIR::Parquet { .. } => true,
@@ -252,7 +251,6 @@ impl SlicePushDown {
                     scan_type,
                     unified_scan_args,
                     predicate,
-                    id: Default::default(),
                 };
 
                 Ok(lp)

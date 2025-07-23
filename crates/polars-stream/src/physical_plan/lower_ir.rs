@@ -481,7 +481,6 @@ pub fn lower_ir(
                 scan_type,
                 predicate,
                 unified_scan_args,
-                id: _,
             } = v.clone()
             else {
                 unreachable!();
