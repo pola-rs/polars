@@ -355,7 +355,7 @@ def test_filter_group_by_23681(maintain_order: bool) -> None:
     expected = pl.DataFrame(
         {
             "b": [1, 2],
-            "a": [1, 3],
+            "a": [[1], [3]],
         }
     )
 
