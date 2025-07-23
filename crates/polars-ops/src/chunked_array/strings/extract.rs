@@ -48,12 +48,8 @@ pub(super) fn extract_groups(
     let reg = polars_utils::regex_cache::compile_regex(pat)?;
     let n_fields = reg.captures_len();
     if n_fields == 1 {
-        return StructChunked::from_series(
-            ca.name().clone(),
-            ca.len(),
-            [Series::new_null(ca.name().clone(), ca.len())].iter(),
-        )
-        .map(|ca| ca.into_series());
+        return StructChunked::from_series(ca.name().clone(), ca.len(), [].iter())
+            .map(|ca| ca.into_series());
     }
 
     let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
