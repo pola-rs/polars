@@ -180,7 +180,6 @@ impl PhysicalExpr for TernaryExpr {
                     return Ok(AggregationContext {
                         state: NotAggregated(out),
                         groups: ac_target.groups.clone(),
-                        sorted: ac_target.sorted,
                         update_groups: ac_target.update_groups,
                         original_len: ac_target.original_len,
                     });
@@ -323,7 +322,6 @@ impl PhysicalExpr for TernaryExpr {
         Ok(AggregationContext {
             state: agg_state_out,
             groups: ac_target.groups.clone(),
-            sorted: ac_target.sorted,
             update_groups: ac_target.update_groups,
             original_len: ac_target.original_len,
         })
