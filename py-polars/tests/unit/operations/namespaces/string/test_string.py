@@ -1497,7 +1497,10 @@ def test_extract_groups() -> None:
 
     assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
         as_series=False
-    ) == {"iso_code": [{"iso_code": None}, {"iso_code": None}]}
+    ) == {"iso_code": [{}, {}]}
+
+    q = df.lazy().select(pl.col("iso_code").str.extract_groups(""))
+    assert q.collect_schema() == q.collect().schema
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
