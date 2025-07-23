@@ -348,7 +348,7 @@ def test_gather_group_by_23696(maintain_order: bool) -> None:
                 "c": [0, 0, -1, -1],
             }
         )
-        .group_by(pl.col.a % 2)
+        .group_by(pl.col.a % 2, maintain_order=maintain_order)
         .agg(
             get_first=pl.col.a.get(pl.col.b.get(0)),
             get_last=pl.col.a.get(pl.col.b.get(1)),
