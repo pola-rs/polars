@@ -16,6 +16,7 @@ use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::JoinHandle;
 use crate::async_primitives::connector;
+use crate::execute::StreamingExecutionState;
 
 /// Interface to read a single file
 #[async_trait]
@@ -23,7 +24,7 @@ pub trait FileReader: Send + Sync {
     /// Initialize this FileReader. Intended to allow the reader to pre-fetch metadata.
     ///
     /// This must be called before calling any other functions of the FileReader.
-    async fn initialize(&mut self) -> PolarsResult<()>;
+    async fn initialize(&mut self, state: &StreamingExecutionState) -> PolarsResult<()>;
 
     /// Begin reading the file into morsels.
     fn begin_read(

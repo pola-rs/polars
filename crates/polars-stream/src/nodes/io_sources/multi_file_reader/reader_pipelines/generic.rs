@@ -97,7 +97,7 @@ impl MultiScanTaskInitializer {
                     }
                 }
 
-                resolve_to_positive_slice(&self.config).await?
+                resolve_to_positive_slice(&self.config, &self.exec_state).await?
             },
         };
 
@@ -203,6 +203,7 @@ impl MultiScanTaskInitializer {
 
                     let maybe_initialized = initialized_readers.pop_front();
                     let scan_source = sources.get(scan_source_idx).unwrap().into_owned();
+                    let exec_state = self.exec_state.clone();
 
                     AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
                         let (scan_source, reader, n_rows_in_file) = async {
@@ -226,7 +227,7 @@ impl MultiScanTaskInitializer {
                                 scan_source_idx,
                             );
 
-                            reader.initialize().await?;
+                            reader.initialize(&exec_state).await?;
                             let opt_n_rows = reader
                                 .fast_n_rows_in_file()
                                 .await?
@@ -245,6 +246,7 @@ impl MultiScanTaskInitializer {
                                     cloud_options,
                                     num_pipelines,
                                     verbose,
+                                    &exec_state,
                                 )
                             });
 

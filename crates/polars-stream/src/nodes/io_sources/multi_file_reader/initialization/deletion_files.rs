@@ -16,6 +16,7 @@ use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
     BeginReadArgs, FileReaderCallbacks,
@@ -75,6 +76,7 @@ impl DeletionFilesProvider {
         cloud_options: Option<Arc<CloudOptions>>,
         num_pipelines: usize,
         verbose: bool,
+        exec_state: &StreamingExecutionState,
     ) -> Option<RowDeletionsInit> {
         match self {
             Self::None => None,
@@ -115,10 +117,11 @@ impl DeletionFilesProvider {
                             )
                         }
 
+                        let exec_state = exec_state.clone();
                         AbortOnDropHandle::new(async_executor::spawn(
                             TaskPriority::Low,
                             async move {
-                                reader.initialize().await?;
+                                reader.initialize(&exec_state).await?;
                                 PolarsResult::Ok(reader)
                             },
                         ))

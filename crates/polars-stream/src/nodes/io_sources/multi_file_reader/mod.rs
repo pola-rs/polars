@@ -134,7 +134,7 @@ impl ComputeNode for MultiFileReader {
         &mut self,
         recv: &mut [crate::graph::PortState],
         send: &mut [crate::graph::PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> polars_error::PolarsResult<()> {
         use MultiScanState::*;
         assert!(recv.is_empty());
@@ -148,8 +148,9 @@ impl ComputeNode for MultiFileReader {
             // Refresh first - in case there is an error we end here instead of ending when we go
             // into spawn.
             async_executor::task_scope(|s| {
-                pl_async::get_runtime()
-                    .block_on(s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)))
+                pl_async::get_runtime().block_on(
+                    s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose, state)),
+                )
             })?;
 
             match self.state {
@@ -172,14 +173,14 @@ impl ComputeNode for MultiFileReader {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
 
         let phase_morsel_tx = send_ports[0].take().unwrap().serial();
-        let num_pipelines = state.num_pipelines;
         let verbose = self.verbose;
 
+        let state = state.clone();
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(num_pipelines);
-            self.state.refresh(verbose).await?;
+            self.state.initialize(&state);
+            self.state.refresh(verbose, &state).await?;
 
             match &mut self.state {
                 Uninitialized { .. } => unreachable!(),
@@ -220,14 +221,18 @@ impl ComputeNode for MultiFileReader {
                 },
             }
 
-            self.state.refresh(verbose).await
+            self.state.refresh(verbose, &state).await
         }));
     }
 }
 
 impl MultiScanState {
     /// Refresh the state. This checks the bridge state if `self` is initialized and updates accordingly.
-    async fn refresh(&mut self, verbose: bool) -> PolarsResult<()> {
+    async fn refresh(
+        &mut self,
+        verbose: bool,
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         use MultiScanState::*;
         use bridge::StopReason;
 
@@ -274,7 +279,7 @@ impl MultiScanState {
     }
 
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, num_pipelines: usize) {
+    fn initialize(&mut self, state: &StreamingExecutionState) {
         use MultiScanState::*;
 
         let slf = std::mem::replace(self, Finished);
@@ -284,18 +289,18 @@ impl MultiScanState {
             return;
         };
 
-        config.num_pipelines.store(num_pipelines);
+        config.num_pipelines.store(state.num_pipelines);
 
         config
             .n_readers_pre_init
-            .store(calc_n_readers_pre_init(num_pipelines, &config));
+            .store(calc_n_readers_pre_init(state.num_pipelines, &config));
 
         config
             .max_concurrent_scans
-            .store(calc_max_concurrent_scans(num_pipelines, &config));
+            .store(calc_max_concurrent_scans(state.num_pipelines, &config));
 
         let (join_handle, send_phase_tx_to_bridge, bridge_state) =
-            MultiScanTaskInitializer::new(config).spawn_background_tasks();
+            MultiScanTaskInitializer::new(config, state.clone()).spawn_background_tasks();
 
         let wait_group = WaitGroup::default();
 

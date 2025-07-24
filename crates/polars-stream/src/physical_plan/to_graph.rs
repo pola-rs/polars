@@ -1005,6 +1005,7 @@ fn to_graph_rec<'a>(
                 output_schema: validate_schema.then(|| output_schema.clone()),
                 get_batch_state: Some(GetBatchState::from(get_batch_fn)),
                 verbose: config::verbose(),
+                exec_state: None,
             };
 
             // Note: This will potentially override the output schema if `validate_schema` is `false`.
