@@ -10,7 +10,8 @@ use polars_utils::pl_str::PlSmallStr;
 use super::{
     ArrayDataTypeFunction, DataTypeFunction, DataTypeSelector, Expr, StructDataTypeFunction,
 };
-use crate::plans::{ExprToIRContext, to_expr_ir};
+use crate::frame::OptFlags;
+use crate::plans::{ExprToIRContext, expand_expression, to_expr_ir};
 
 #[derive(Clone, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -71,9 +72,23 @@ fn into_datatype_impl(
     let dtype = match dt_expr {
         D::Literal(dt) => dt,
         D::OfExpr(expr) => {
+            let mut out = Vec::with_capacity(1);
+            expand_expression(
+                expr.as_ref(),
+                &Default::default(),
+                schema,
+                &mut out,
+                &mut OptFlags::default(),
+            )?;
+            polars_ensure!(
+                out.len() == 1,
+                InvalidOperation: "DataType expression are not allowed to expand to more than 1 expression"
+            );
+
+            let expr = out.pop().unwrap();
             let mut arena = Arena::new();
             let mut ctx = ExprToIRContext::new(&mut arena, schema);
-            let e = to_expr_ir(*expr, &mut ctx)?;
+            let e = to_expr_ir(expr, &mut ctx)?;
             let dtype = arena
                 .get(e.node())
                 .to_dtype(schema, Default::default(), &arena)?;
