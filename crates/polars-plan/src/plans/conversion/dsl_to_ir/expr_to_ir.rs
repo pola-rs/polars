@@ -484,6 +484,7 @@ pub(super) fn to_aexpr_impl(
             };
             return Ok((expr, name));
         },
+        Expr::DataTypeFunction(f) => super::datatype_fn_to_ir::datatype_fn_to_aexpr(f, ctx)?,
         Expr::RenameAlias { expr, function } => {
             let (expr, name) = to_aexpr_impl(owned(expr), ctx)?;
             let name = function.call(&name)?;

@@ -373,7 +373,7 @@ fn duration_matches(stu: TimeUnitSet, dtype: &DataType) -> bool {
 }
 
 impl DataTypeSelector {
-    fn matches(&self, dtype: &DataType) -> bool {
+    pub fn matches(&self, dtype: &DataType) -> bool {
         match self {
             Self::Union(lhs, rhs) => lhs.matches(dtype) || rhs.matches(dtype),
             Self::Difference(lhs, rhs) => lhs.matches(dtype) && !rhs.matches(dtype),

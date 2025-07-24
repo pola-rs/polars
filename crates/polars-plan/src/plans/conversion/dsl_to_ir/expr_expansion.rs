@@ -770,6 +770,7 @@ fn expand_expression_rec(
                 )?;
             }
         },
+        Expr::DataTypeFunction(v) => out.push(Expr::DataTypeFunction(v.clone())),
         Expr::Eval {
             expr,
             evaluation,

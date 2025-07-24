@@ -122,6 +122,7 @@ elif BUILDING_SPHINX_DOCS:
 class Expr:
     """Expressions that can be used in various contexts."""
 
+    # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
     _pyexpr: PyExpr = None
     _accessors: ClassVar[set[str]] = {
         "arr",
