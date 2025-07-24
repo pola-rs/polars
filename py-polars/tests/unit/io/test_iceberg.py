@@ -282,13 +282,19 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(
-        q.collect(),
+        q.collect().with_columns(
+            # To pass Windows CI
+            pl.col("file_path").map_elements(
+                lambda x: str(Path(x).resolve()),
+                return_dtype=pl.String,
+            )
+        ),
         pl.DataFrame(
             {
                 "row_index": [3, 4, 5, 6, 7],
                 "row_index_in_file": [0, 1, 2, 3, 4],
                 "file_path_in_file": None,
-                "file_path": file_paths[0],
+                "file_path": str(Path(file_paths[0]).resolve()),
             },
             schema={
                 "row_index": pl.get_index_type(),
