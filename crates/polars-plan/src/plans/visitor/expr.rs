@@ -45,6 +45,7 @@ impl TreeWalker for Expr {
             Alias(l, r) => Alias(am(l, f)?, r),
             Column(_) => self,
             Literal(_) => self,
+            DataTypeFunction(_) => self,
             #[cfg(feature = "dtype-struct")]
             Field(_) => self,
             BinaryExpr { left, op, right } => {
