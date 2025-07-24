@@ -1382,3 +1382,16 @@ def test_group_by_filter_all_22955() -> None:
         ),
         check_row_order=False,
     )
+
+
+def group_by_having() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "B", "B", "C", "C"],
+            "value": [10, 15, 5, 15, 5, 10],
+        }
+    )
+
+    result = df.group_by("group").having(pl.col("value").mean() >= 10).agg()
+    expected = pl.DataFrame({"grp": ["A", "B"]})
+    assert_frame_equal(result, expected, check_row_order=False)
