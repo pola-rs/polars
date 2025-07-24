@@ -3,7 +3,7 @@ name = "polars-plan"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
-exclude = ["dsl-schema.sha256"]
+exclude = ["dsl-schema-hashes.json"]
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
@@ -48,6 +48,7 @@ sha2 = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
+sha2 = { workspace = true }
 version_check = { workspace = true }
 
 [features]
