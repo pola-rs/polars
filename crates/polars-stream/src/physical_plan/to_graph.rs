@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
@@ -20,6 +19,7 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
+use polars_utils::relaxed_cell::RelaxedCell;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
@@ -597,9 +597,9 @@ fn to_graph_rec<'a>(
                         cast_columns_policy,
                         deletion_files,
                         // Initialized later
-                        num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init: AtomicUsize::new(0),
-                        max_concurrent_scans: AtomicUsize::new(0),
+                        num_pipelines: RelaxedCell::new_usize(0),
+                        n_readers_pre_init: RelaxedCell::new_usize(0),
+                        max_concurrent_scans: RelaxedCell::new_usize(0),
                         verbose,
                     },
                 )),
@@ -854,6 +854,7 @@ fn to_graph_rec<'a>(
         PythonScan { options } => {
             use polars_plan::dsl::python_dsl::PythonScanSource as S;
             use polars_plan::plans::PythonPredicate;
+            use polars_utils::relaxed_cell::RelaxedCell;
             use pyo3::exceptions::PyStopIteration;
             use pyo3::prelude::*;
             use pyo3::types::{PyBytes, PyNone};
@@ -1050,9 +1051,9 @@ fn to_graph_rec<'a>(
                         cast_columns_policy,
                         deletion_files,
                         // Initialized later
-                        num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init: AtomicUsize::new(0),
-                        max_concurrent_scans: AtomicUsize::new(0),
+                        num_pipelines: RelaxedCell::new_usize(0),
+                        n_readers_pre_init: RelaxedCell::new_usize(0),
+                        max_concurrent_scans: RelaxedCell::new_usize(0),
                         verbose,
                     },
                 )),

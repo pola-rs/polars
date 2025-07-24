@@ -6,7 +6,6 @@ pub mod reader_interface;
 pub mod reader_pipelines;
 pub mod row_counter;
 
-use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 use bridge::BridgeState;
@@ -21,6 +20,7 @@ use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPoli
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::slice_enum::Slice;
 use reader_interface::builder::FileReaderBuilder;
 use reader_interface::capabilities::ReaderCapabilities;
@@ -58,29 +58,26 @@ pub struct MultiFileReaderConfig {
     pub cast_columns_policy: CastColumnsPolicy,
     pub deletion_files: Option<DeletionFilesList>,
 
-    pub num_pipelines: AtomicUsize,
+    pub num_pipelines: RelaxedCell<usize>,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
     /// step.
-    pub n_readers_pre_init: AtomicUsize,
-    pub max_concurrent_scans: AtomicUsize,
+    pub n_readers_pre_init: RelaxedCell<usize>,
+    pub max_concurrent_scans: RelaxedCell<usize>,
 
     pub verbose: bool,
 }
 
 impl MultiFileReaderConfig {
     fn num_pipelines(&self) -> usize {
-        self.num_pipelines
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.num_pipelines.load()
     }
 
     fn n_readers_pre_init(&self) -> usize {
-        self.n_readers_pre_init
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.n_readers_pre_init.load()
     }
 
     fn max_concurrent_scans(&self) -> usize {
-        self.max_concurrent_scans
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.max_concurrent_scans.load()
     }
 
     fn reader_capabilities(&self) -> ReaderCapabilities {
@@ -287,19 +284,15 @@ impl MultiScanState {
             return;
         };
 
+        config.num_pipelines.store(num_pipelines);
+
         config
-            .num_pipelines
-            .store(num_pipelines, std::sync::atomic::Ordering::Relaxed);
+            .n_readers_pre_init
+            .store(calc_n_readers_pre_init(num_pipelines, &config));
 
-        config.n_readers_pre_init.store(
-            calc_n_readers_pre_init(num_pipelines, &config),
-            std::sync::atomic::Ordering::Relaxed,
-        );
-
-        config.max_concurrent_scans.store(
-            calc_max_concurrent_scans(num_pipelines, &config),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        config
+            .max_concurrent_scans
+            .store(calc_max_concurrent_scans(num_pipelines, &config));
 
         let (join_handle, send_phase_tx_to_bridge, bridge_state) =
             MultiScanTaskInitializer::new(config).spawn_background_tasks();
