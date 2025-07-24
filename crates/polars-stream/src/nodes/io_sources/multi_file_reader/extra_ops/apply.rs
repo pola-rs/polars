@@ -320,7 +320,7 @@ impl ApplyExtraOps {
 
             let row_index_col = Column::new_row_index(ri.name.clone(), offset, df.height())?;
 
-            assert_eq!(df.get_columns()[*col_idx].name(), &ri.name);
+            debug_assert_eq!(df.get_columns()[*col_idx].name(), &ri.name);
 
             unsafe { *df.get_columns_mut().get_mut(*col_idx).unwrap() = row_index_col }
         }
