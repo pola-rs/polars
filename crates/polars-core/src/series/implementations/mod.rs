@@ -518,6 +518,6 @@ impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
             .unwrap()
             .clone();
 
-        Some(BitRepr::Small(repr))
+        Some(BitRepr::U32(repr))
     }
 }

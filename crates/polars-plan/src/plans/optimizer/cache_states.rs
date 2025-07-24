@@ -186,7 +186,7 @@ pub(super) fn set_cache_states(
                 // change the schema
 
                 let v = cache_schema_and_children
-                    .entry(id.clone())
+                    .entry(*id)
                     .or_insert_with(Value::default);
                 v.children.push(*input);
                 v.parents.push(frame.parent);
@@ -237,7 +237,7 @@ pub(super) fn set_cache_states(
                     v.names_union.extend(schema.iter_names_cloned());
                 }
             }
-            frame.cache_id = Some(id.clone());
+            frame.cache_id = Some(*id);
         };
 
         // Shift parents.

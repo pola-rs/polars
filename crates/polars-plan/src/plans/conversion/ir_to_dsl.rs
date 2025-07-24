@@ -101,6 +101,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 .into()
             },
 
+            IRAggExpr::Mean(expr) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::Mean(Arc::new(exp)).into()
+            },
             IRAggExpr::Median(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Median(Arc::new(exp)).into()
@@ -116,10 +120,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Last(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Arc::new(exp)).into()
-            },
-            IRAggExpr::Mean(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Mean(Arc::new(exp)).into()
             },
             IRAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -239,36 +239,6 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()
 }
 
-pub fn node_to_lp_cloned(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    mut lp_arena: &Arena<IR>,
-) -> DslPlan {
-    // we borrow again mutably only to make the types happy
-    // we want to initialize `to_lp` from a mutable and a immutable lp_arena
-    // by borrowing an immutable mutably, we still are immutable down the line.
-    let alp = lp_arena.get(node).clone();
-    alp.into_lp(
-        &|node, lp_arena: &mut &Arena<IR>| lp_arena.get(node).clone(),
-        &mut lp_arena,
-        expr_arena,
-    )
-}
-
-/// converts a node from the IR arena to a LogicalPlan
-pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR>) -> DslPlan {
-    let alp = lp_arena.get_mut(node);
-    let alp = std::mem::take(alp);
-    alp.into_lp(
-        &|node, lp_arena: &mut Arena<IR>| {
-            let lp = lp_arena.get_mut(node);
-            std::mem::take(lp)
-        },
-        lp_arena,
-        expr_arena,
-    )
-}
-
 pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
     use {FunctionExpr as F, IRFunctionExpr as IF};
 
@@ -287,6 +257,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::NUnique => A::NUnique,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),
+                IA::Mean => A::Mean,
                 IA::Median => A::Median,
                 #[cfg(feature = "array_any_all")]
                 IA::Any => A::Any,

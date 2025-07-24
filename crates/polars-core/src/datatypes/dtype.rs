@@ -853,7 +853,7 @@ impl DataType {
                 .try_to_arrow(compat_level)?
                 .to_fixed_size_list(*size, true)),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level),
+                dt.to_arrow_field(LIST_VALUES_NAME, compat_level),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]

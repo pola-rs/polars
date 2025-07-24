@@ -11,8 +11,7 @@ fn new_null_count(input: &[ExprIR]) -> AExpr {
     AExpr::Function {
         input: input.to_vec(),
         function: IRFunctionExpr::NullCount,
-        options: FunctionOptions::aggregation()
-            .with_flags(|f| f | FunctionFlags::ALLOW_GROUP_AWARE),
+        options: FunctionOptions::aggregation(),
     }
 }
 

@@ -128,7 +128,7 @@ impl ArrayChunked {
         let arr = FixedSizeListArray::new_null(
             ArrowDataType::FixedSizeList(
                 Box::new(ArrowField::new(
-                    PlSmallStr::from_static("item"),
+                    LIST_VALUES_NAME,
                     inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
                     true,
                 )),
@@ -154,7 +154,7 @@ impl ChunkFull<&Series> for ArrayChunked {
         let dtype = value.dtype();
         let arrow_dtype = ArrowDataType::FixedSizeList(
             Box::new(ArrowField::new(
-                PlSmallStr::from_static("item"),
+                LIST_VALUES_NAME,
                 dtype.to_physical().to_arrow(CompatLevel::newest()),
                 true,
             )),
@@ -189,7 +189,7 @@ impl ListChunked {
     ) -> ListChunked {
         let arr: ListArray<i64> = ListArray::new_null(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
-                PlSmallStr::from_static("item"),
+                LIST_VALUES_NAME,
                 inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
                 true,
             ))),

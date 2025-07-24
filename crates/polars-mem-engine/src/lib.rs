@@ -1,3 +1,7 @@
+#![cfg_attr(
+    feature = "allow_unused",
+    allow(unused, dead_code, irrefutable_let_patterns)
+)] // Maybe be caused by some feature
 mod executors;
 mod planner;
 mod predicate;

@@ -481,7 +481,6 @@ pub fn lower_ir(
                 scan_type,
                 predicate,
                 unified_scan_args,
-                id: _,
             } = v.clone()
             else {
                 unreachable!();
@@ -792,7 +791,7 @@ pub fn lower_ir(
             id,
             cache_hits: _,
         } => {
-            let id = id.clone();
+            let id = *id;
             if let Some(cached) = cache_nodes.get(&id) {
                 return Ok(*cached);
             }

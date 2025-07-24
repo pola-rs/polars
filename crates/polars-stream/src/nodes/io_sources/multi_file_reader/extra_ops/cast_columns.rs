@@ -65,22 +65,6 @@ impl CastColumns {
         }
     }
 
-    pub fn apply_cast(&self, df: &mut DataFrame) -> PolarsResult<()> {
-        // Should only be called if there's something to cast.
-        debug_assert!(!self.casting_list.is_empty());
-
-        df.clear_schema();
-
-        let columns = unsafe { df.get_columns_mut() };
-
-        for ColumnCast { index, dtype } in &self.casting_list {
-            *columns.get_mut(*index).unwrap() =
-                columns[*index].cast_with_options(dtype, CastOptions::Strict)?;
-        }
-
-        Ok(())
-    }
-
     /// `DataFrame` containing `{column_name}_min`, `{column_name}_max`.
     ///
     /// # Panics

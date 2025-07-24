@@ -77,7 +77,7 @@ impl OptimizationRule for ExpandDatasets {
                     if config::verbose() {
                         eprintln!(
                             "expand_datasets(): python[{}]: limit: {:?}, project: {}",
-                            dataset_object.reader_name(),
+                            dataset_object.name(),
                             limit,
                             projection.as_ref().map_or(
                                 PlSmallStr::from_static("all"),
@@ -108,7 +108,6 @@ impl OptimizationRule for ExpandDatasets {
                                 hive_parts: _,
                                 predicate: _,
                                 output_schema: _,
-                                id: _,
                             } = &mut ir
                             else {
                                 unreachable!()
@@ -131,6 +130,7 @@ impl OptimizationRule for ExpandDatasets {
                                 extra_columns_policy,
                                 include_file_paths: _include_file_paths @ None,
                                 deletion_files,
+                                column_mapping,
                             } = *resolved_unified_scan_args
                             else {
                                 panic!(
@@ -146,6 +146,7 @@ impl OptimizationRule for ExpandDatasets {
                             unified_scan_args.missing_columns_policy = missing_columns_policy;
                             unified_scan_args.extra_columns_policy = extra_columns_policy;
                             unified_scan_args.deletion_files = deletion_files;
+                            unified_scan_args.column_mapping = column_mapping;
 
                             *sources = resolved_sources;
                             *scan_type = Box::new(match *resolved_scan_type {
@@ -191,7 +192,7 @@ impl OptimizationRule for ExpandDatasets {
                             (
                                 ir.clone(),
                                 Some((
-                                    dataset_object.reader_name(),
+                                    dataset_object.name(),
                                     options.scan_fn.expect("scan_fn is required"),
                                     options.python_source,
                                 )),

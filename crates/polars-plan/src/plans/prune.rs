@@ -127,7 +127,7 @@ impl<'a> CopyContext<'a> {
         // If this is a cache, reset the hit count and store the dst node.
         if let IR::Cache { cache_hits, id, .. } = self.dst_ir.get_mut(dst_node) {
             *cache_hits = 0;
-            let prev = self.dst_caches.insert(id.clone(), dst_node);
+            let prev = self.dst_caches.insert(*id, dst_node);
             assert!(prev.is_none(), "cache {id} was traversed twice");
         }
 
@@ -165,7 +165,7 @@ mod tests {
 
     use super::*;
     use crate::dsl::{SinkTypeIR, col, lit};
-    use crate::plans::{ArenaLpIter as _, to_expr_ir};
+    use crate::plans::{ArenaLpIter as _, ExprToIRContext, to_expr_ir};
 
     //           SINK[right]
     //               |
@@ -328,10 +328,11 @@ mod tests {
                 output_schema: None,
             });
 
+            let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
+            ctx.allow_unknown = true;
             let filter = ir_arena.add(IR::Filter {
                 input: scan,
-                predicate: to_expr_ir(col("a").gt_eq(lit(10)), &mut expr_arena, &schema, true)
-                    .unwrap(),
+                predicate: to_expr_ir(col("a").gt_eq(lit(10)), &mut ctx).unwrap(),
             });
 
             // Throw in an unreachable node
@@ -339,7 +340,7 @@ mod tests {
 
             let cache = ir_arena.add(IR::Cache {
                 input: filter,
-                id: UniqueId::Plain(0),
+                id: UniqueId::new(),
                 cache_hits: 1,
             });
 
@@ -351,9 +352,11 @@ mod tests {
             // Throw in an unreachable node
             ir_arena.add(IR::Invalid);
 
+            let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
+            ctx.allow_unknown = true;
             let sort = ir_arena.add(IR::Sort {
                 input: cache,
-                by_column: vec![to_expr_ir(col("a"), &mut expr_arena, &schema, true).unwrap()],
+                by_column: vec![to_expr_ir(col("a"), &mut ctx).unwrap()],
                 slice: None,
                 sort_options: Default::default(),
             });

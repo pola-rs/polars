@@ -90,12 +90,17 @@ mod identifier_impl {
 }
 use identifier_impl::*;
 
-#[derive(Default)]
 struct IdentifierMap<V> {
     inner: PlHashMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
+    fn new() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+
     fn get(&self, id: &Identifier, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<&V> {
         self.inner
             .raw_entry()
@@ -122,6 +127,12 @@ impl<V> IdentifierMap<V> {
                 v
             },
         }
+    }
+}
+
+impl<V> Default for IdentifierMap<V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -332,15 +343,14 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let cache_id = self
+        let cache_id = *self
             .cache_id
-            .entry(id.clone(), UniqueId::default, &arena.0, &arena.1)
-            .clone();
+            .entry(id.clone(), UniqueId::new, &arena.0, &arena.1);
         let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
 
         let cache_node = IR::Cache {
             input: node.node(),
-            id: cache_id.clone(),
+            id: cache_id,
             cache_hits: cache_count - 1,
         };
         node.assign(cache_node, &mut arena.0);

@@ -43,7 +43,7 @@ impl NullChunked {
 }
 impl PrivateSeriesNumeric for NullChunked {
     fn bit_repr(&self) -> Option<BitRepr> {
-        Some(BitRepr::Small(UInt32Chunked::full_null(
+        Some(BitRepr::U32(UInt32Chunked::full_null(
             self.name.clone(),
             self.len(),
         )))

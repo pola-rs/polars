@@ -2,61 +2,28 @@ use super::functions::convert_functions;
 use super::*;
 use crate::plans::iterator::ArenaExprIter;
 
-pub fn to_expr_ir(
-    expr: Expr,
-    arena: &mut Arena<AExpr>,
-    schema: &Schema,
-    allow_unknown: bool,
-) -> PolarsResult<ExprIR> {
-    let mut ctx = ExprToIRContext {
-        with_fields: None,
-        arena,
-        schema,
-        allow_unknown,
-    };
-    to_expr_ir_with_context(expr, &mut ctx)
-}
-
-pub fn to_expr_ir_with_context(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
+pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl(expr, ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
-pub fn to_expr_ir_materialized_lit(
-    expr: Expr,
-    arena: &mut Arena<AExpr>,
-    schema: &Schema,
-    allow_unknown: bool,
-) -> PolarsResult<ExprIR> {
-    let mut ctx = ExprToIRContext {
-        with_fields: None,
-        arena,
-        schema,
-        allow_unknown,
-    };
-    let (node, output_name) = to_aexpr_impl_materialized_lit(expr, &mut ctx)?;
+pub fn to_expr_ir_materialized_lit(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
+    let (node, output_name) = to_aexpr_impl_materialized_lit(expr, ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
 pub(super) fn to_expr_irs(
     input: Vec<Expr>,
-    arena: &mut Arena<AExpr>,
-    schema: &Schema,
-    allow_unknown: bool,
-) -> PolarsResult<Vec<ExprIR>> {
-    input
-        .into_iter()
-        .map(|e| to_expr_ir(e, arena, schema, allow_unknown))
-        .collect()
-}
-
-pub(super) fn to_expr_irs_with_context(
-    input: Vec<Expr>,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<Vec<ExprIR>> {
+    let original_with_fields = ctx.with_fields.clone();
     input
         .into_iter()
-        .map(|e| to_expr_ir_with_context(e, ctx))
+        .map(|e| {
+            let e = to_expr_ir(e, ctx)?;
+            ctx.with_fields = original_with_fields.clone();
+            Ok(e)
+        })
         .collect()
 }
 
@@ -80,10 +47,42 @@ fn to_aexpr_impl_materialized_lit(
 }
 
 pub struct ExprToIRContext<'a> {
-    pub with_fields: Option<(Node, Schema)>,
+    pub(super) with_fields: Option<(Node, Schema)>,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
+
     pub allow_unknown: bool,
+    /// Check whether mentioned column names exist in the schema.
+    pub check_column_names: bool,
+}
+
+impl<'a> ExprToIRContext<'a> {
+    pub fn new(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
+        Self {
+            with_fields: None,
+            arena,
+            schema,
+            allow_unknown: false,
+            check_column_names: true,
+        }
+    }
+
+    pub fn new_with_opt_eager(
+        arena: &'a mut Arena<AExpr>,
+        schema: &'a Schema,
+        optflags: &OptFlags,
+    ) -> Self {
+        let mut ctx = Self::new(arena, schema);
+        ctx.allow_unknown = optflags.contains(OptFlags::EAGER);
+        ctx
+    }
+
+    pub fn new_no_verification(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
+        let mut ctx = Self::new(arena, schema);
+        ctx.allow_unknown = true;
+        ctx.check_column_names = false;
+        ctx
+    }
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
@@ -126,7 +125,12 @@ pub(super) fn to_aexpr_impl(
             let output_name = lv.output_column_name().clone();
             (AExpr::Literal(lv), output_name)
         },
-        Expr::Column(name) => (AExpr::Column(name.clone()), name),
+        Expr::Column(name) => {
+            if ctx.check_column_names {
+                ctx.schema.try_index_of(&name)?;
+            }
+            (AExpr::Column(name.clone()), name)
+        },
         Expr::BinaryExpr { left, op, right } => {
             let (l, output_name) = recurse_arc!(left)?;
             let (r, _) = recurse_arc!(right)?;
@@ -314,7 +318,7 @@ pub(super) fn to_aexpr_impl(
             options,
             fmt_str,
         } => {
-            let input = to_expr_irs_with_context(input, ctx)?;
+            let input = to_expr_irs(input, ctx)?;
             let output_name = if input.is_empty() {
                 fmt_str.as_ref().clone()
             } else {
@@ -424,27 +428,30 @@ pub(super) fn to_aexpr_impl(
                     .get(expr)
                     .to_dtype(ctx.schema, Context::Default, ctx.arena)?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
+
+            // Perform this before schema resolution so that we can better error messages.
+            for e in evaluation.as_ref().into_iter() {
+                if let Expr::Column(name) = e {
+                    polars_ensure!(
+                        name.is_empty(),
+                        ComputeError:
+                        "named columns are not allowed in `eval` functions; consider using `element`"
+                    );
+                }
+            }
+
             let evaluation_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: None,
                 schema: &evaluation_schema,
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
+                check_column_names: ctx.check_column_names,
             };
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
 
             match variant {
-                EvalVariant::List => {
-                    for (_, e) in ArenaExprIter::iter(ctx.arena, evaluation) {
-                        if let AExpr::Column(name) = e {
-                            polars_ensure!(
-                                name.is_empty(),
-                                ComputeError:
-                                "named columns are not allowed in `list.eval`; consider using `element` or `col(\"\")`"
-                            );
-                        }
-                    }
-                },
+                EvalVariant::List => {},
                 EvalVariant::Cumulative { .. } => {
                     polars_ensure!(
                         is_scalar_ae(evaluation, ctx.arena),
@@ -467,18 +474,12 @@ pub(super) fn to_aexpr_impl(
             let (expr, _) = to_aexpr_impl(owned(expr), ctx)?;
             let name = ArenaExprIter::iter(ctx.arena, expr).find_map(|e| match e.1 {
                 AExpr::Column(name) => Some(name.clone()),
-                #[cfg(feature = "dtype-struct")]
-                AExpr::Function {
-                    input: _,
-                    function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
-                    options: _,
-                } => Some(name.clone()),
                 _ => None,
             });
             let Some(name) = name else {
                 polars_bail!(
                     InvalidOperation:
-                    "`name.keep_name` expected at least one column or struct.field"
+                    "`name.keep_name` expected at least one column name"
                 );
             };
             return Ok((expr, name));

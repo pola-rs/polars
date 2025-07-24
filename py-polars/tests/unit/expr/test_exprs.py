@@ -286,6 +286,7 @@ def test_power_by_expression() -> None:
     assert out["pow_op_left"].to_list() == [2.0, 4.0, None, 16.0, None, 64.0]
 
 
+@pytest.mark.may_fail_cloud  # reason: chunking
 @pytest.mark.may_fail_auto_streaming
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
@@ -644,6 +645,7 @@ def test_slice() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
     assert_frame_equal(

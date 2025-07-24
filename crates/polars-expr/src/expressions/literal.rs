@@ -93,14 +93,6 @@ impl PhysicalExpr for LiteralExpr {
         self.as_column()
     }
 
-    fn evaluate_inline_impl(&self, _depth_limit: u8) -> Option<Column> {
-        use LiteralValue::*;
-        match &self.0 {
-            Range { .. } => None,
-            _ => self.as_column().ok(),
-        }
-    }
-
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,

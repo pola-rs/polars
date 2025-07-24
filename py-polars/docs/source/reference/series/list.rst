@@ -20,6 +20,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.drop_nulls
     Series.list.eval
     Series.list.explode
+    Series.list.filter
     Series.list.first
     Series.list.gather
     Series.list.gather_every

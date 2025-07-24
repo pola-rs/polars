@@ -944,3 +944,70 @@ def test_from_arrow_recorbatch() -> None:
             }
         ),
     )
+
+
+def test_from_arrow_map_containing_timestamp_23658() -> None:
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "column_1": [
+                [
+                    {
+                        "field_1": [
+                            {"key": 1, "value": datetime(2025, 1, 1)},
+                            {"key": 2, "value": datetime(2025, 1, 2)},
+                            {"key": 2, "value": None},
+                        ]
+                    },
+                    {"field_1": []},
+                    None,
+                ]
+            ],
+        },
+        schema=pa.schema(
+            [
+                (
+                    "column_1",
+                    pa.list_(
+                        pa.struct(
+                            [
+                                ("field_1", pa.map_(pa.int32(), pa.timestamp("ms"))),
+                            ]
+                        )
+                    ),
+                )
+            ]
+        ),
+    )
+
+    expect = pl.DataFrame(
+        {
+            "column_1": [
+                [
+                    {
+                        "field_1": [
+                            {"key": 1, "value": datetime(2025, 1, 1)},
+                            {"key": 2, "value": datetime(2025, 1, 2)},
+                            {"key": 2, "value": None},
+                        ]
+                    },
+                    {"field_1": []},
+                    None,
+                ]
+            ],
+        },
+        schema={
+            "column_1": pl.List(
+                pl.Struct(
+                    {
+                        "field_1": pl.List(
+                            pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")})
+                        )
+                    }
+                )
+            )
+        },
+    )
+
+    out = pl.DataFrame(arrow_tbl)
+
+    assert_frame_equal(out, expect)

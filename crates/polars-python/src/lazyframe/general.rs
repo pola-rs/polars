@@ -421,7 +421,7 @@ impl PyLazyFrame {
         use crate::dataset::dataset_provider_funcs;
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
-            reader_name: dataset_provider_funcs::reader_name,
+            name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });
@@ -978,11 +978,6 @@ impl PyLazyFrame {
         })
         .map(Into::into)
         .map_err(Into::into)
-    }
-
-    fn fetch(&self, py: Python<'_>, n_rows: usize) -> PyResult<PyDataFrame> {
-        let ldf = self.ldf.clone();
-        py.enter_polars_df(|| ldf.fetch(n_rows))
     }
 
     fn filter(&mut self, predicate: PyExpr) -> Self {

@@ -111,6 +111,24 @@ def _patched_cloud(
             s.seek(offset)
             return path
 
+        def prepare_scan_sources(src: Any) -> str | Path | list[str | Path]:
+            if isinstance(src, io.BytesIO):
+                src = io_to_path(src, ext)
+            elif isinstance(src, bytes):
+                src = io_to_path(io.BytesIO(src), ext)
+            elif isinstance(src, list):
+                for i in range(len(src)):
+                    if isinstance(src[i], io.BytesIO):
+                        src[i] = io_to_path(src[i], ext)
+                    elif isinstance(src[i], bytes):
+                        src[i] = io_to_path(io.BytesIO(src[i]), ext)
+
+            assert isinstance(src, (str, Path, list)) or (
+                isinstance(src, list) and all(isinstance(x, (str, Path)) for x in src)
+            )
+
+            return src
+
         def create_cloud_scan(ext: str) -> Callable[..., pl.LazyFrame]:
             prev_scan = getattr(pl, f"scan_{ext}")
             prev_scan = cast("Callable[..., pl.LazyFrame]", prev_scan)
@@ -118,19 +136,20 @@ def _patched_cloud(
             def _(
                 src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
-                if isinstance(src, io.BytesIO):
-                    src = io_to_path(src, ext)
-                elif isinstance(src, list):
-                    for i in range(len(src)):
-                        if isinstance(src, io.BytesIO):
-                            src[i] = io_to_path(src[i], ext)
-
-                assert isinstance(src, (str, Path, list)) or (
-                    isinstance(src, list)
-                    and all(isinstance(x, (str, Path)) for x in src)
-                )
-
+                src = prepare_scan_sources(src)  # type: ignore[assignment]
                 return prev_scan(src, *args, **kwargs)  # type: ignore[no-any-return]
+
+            return _
+
+        def create_read(ext: str) -> Callable[..., pl.DataFrame]:
+            prev_read = getattr(pl, f"read_{ext}")
+            prev_read = cast("Callable[..., pl.DataFrame]", prev_read)
+
+            def _(
+                src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
+            ) -> pl.DataFrame:
+                src = prepare_scan_sources(src)  # type: ignore[assignment]
+                return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
 
@@ -171,6 +190,9 @@ def _patched_cloud(
 
                 if lazy:
                     return query  # type: ignore[return-value]
+
+                # If the sink is not lazy, we are expected to collect it.
+                query.collect()
                 return None
 
             return _
@@ -184,6 +206,7 @@ def _patched_cloud(
             ("ndjson", []),
         ]:
             monkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
+            monkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
             monkeypatch.setattr(
                 f"polars.LazyFrame.sink_{ext}",
                 create_cloud_sink(ext, BASE_UNSUPPORTED + unsupported),

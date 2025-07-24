@@ -6,7 +6,7 @@ use polars_core::schema::Schema;
 use polars_utils::arena::Arena;
 
 use super::Expr;
-use crate::plans::to_expr_ir;
+use crate::plans::{ExprToIRContext, to_expr_ir};
 
 #[derive(Clone, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -35,7 +35,8 @@ fn into_datatype_impl(
         DataTypeExpr::Literal(dt) => dt,
         DataTypeExpr::OfExpr(expr) => {
             let mut arena = Arena::new();
-            let e = to_expr_ir(*expr, &mut arena, schema, false)?;
+            let mut ctx = ExprToIRContext::new(&mut arena, schema);
+            let e = to_expr_ir(*expr, &mut ctx)?;
             let dtype = arena
                 .get(e.node())
                 .to_dtype(schema, Default::default(), &arena)?;

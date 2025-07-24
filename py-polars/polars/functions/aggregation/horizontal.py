@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import polars.functions as F
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import UInt32
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -292,7 +291,8 @@ def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     pyexprs = parse_into_list_of_expressions(*exprs)
     exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
-    # (Expr): use u32 as that will not cast to float as eagerly
-    return F.cum_fold(F.lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
-        "cum_sum"
-    )
+    return F.cum_fold(
+        F.lit(0).cast(F.dtype_of(F.sum_horizontal(list(exprs)))),
+        lambda a, b: a + b,
+        exprs_wrapped,
+    ).alias("cum_sum")

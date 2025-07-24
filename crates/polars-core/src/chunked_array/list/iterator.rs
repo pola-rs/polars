@@ -50,7 +50,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                     // dtype is known
                     unsafe {
                         let s = Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::EMPTY,
+                            self.series_container.name().clone(),
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )

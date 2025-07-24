@@ -14,8 +14,8 @@
   <a href="https://www.npmjs.com/package/nodejs-polars">
     <img src="https://img.shields.io/npm/v/nodejs-polars.svg" alt="NPM Latest Release"/>
   </a>
-  <a href="https://rpolars.r-universe.dev">
-    <img src="https://rpolars.r-universe.dev/badges/polars" alt="R-universe Latest Release"/>
+  <a href="https://community.r-multiverse.org/polars">
+    <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fcommunity.r-multiverse.org%2Fapi%2Fpackages%2Fpolars&query=%24.Version&label=r-multiverse" alt="R-multiverse Latest Release"/>
   </a>
   <a href="https://doi.org/10.5281/zenodo.7697217">
     <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7697217.svg" alt="DOI Latest Release"/>

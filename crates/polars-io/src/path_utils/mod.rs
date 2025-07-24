@@ -12,6 +12,7 @@ mod hugging_face;
 
 use crate::cloud::CloudOptions;
 
+#[allow(clippy::bind_instead_of_map)]
 pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
     (|| {
         let verbose = config::verbose();

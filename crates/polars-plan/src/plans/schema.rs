@@ -308,7 +308,12 @@ pub fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
     inputs
 }
 
-pub fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
+/// Retrieves the schema of the first LP input, or that of the `lp_node` if there
+/// are no inputs.
+///
+/// # Panics
+/// Panics if this `lp_node` does not have inputs and is not a `Scan` or `PythonScan`.
+pub fn get_input_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
     let inputs = get_input(lp_arena, lp_node);
     if inputs.is_empty() {
         // Files don't have an input, so we must take their schema.

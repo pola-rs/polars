@@ -243,7 +243,7 @@ impl AExpr {
                     Var(expr, _) => {
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                         let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
+                        mapper.var_dtype()
                     },
                     NUnique(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
