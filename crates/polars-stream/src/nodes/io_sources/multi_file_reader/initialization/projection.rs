@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{InitHashMaps, PlIndexMap};
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_error::{PolarsResult, polars_err};
 use polars_plan::dsl::ColumnMapping;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
