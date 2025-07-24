@@ -108,20 +108,19 @@ impl<'a> CopyContext<'a> {
 
         let src_ir = self.src_ir.get(src_node);
 
+        let mut dst_ir = src_ir.clone();
+
         // Recurse into inputs
-        let mut inputs = src_ir.get_inputs_vec();
-        for input in &mut inputs {
-            *input = self.copy_ir(*input);
-        }
+        dst_ir = dst_ir.with_inputs(src_ir.inputs().map(|input| self.copy_ir(input)));
 
         // Recurse into expressions
-        let mut exprs = src_ir.get_exprs();
-        for expr in &mut exprs {
+        dst_ir = dst_ir.with_exprs(src_ir.exprs().map(|expr| {
+            let mut expr = expr.clone();
             expr.set_node(self.copy_expr(expr.node()));
-        }
+            expr
+        }));
 
-        // Copy this node
-        let dst_ir = src_ir.with_exprs_and_input(exprs, inputs);
+        // Add this node
         let dst_node = self.dst_ir.add(dst_ir);
 
         // If this is a cache, reset the hit count and store the dst node.
@@ -317,8 +316,7 @@ mod tests {
 
     fn exprs_equal(ir_a: &IR, arena_a: &Arena<AExpr>, ir_b: &IR, arena_b: &Arena<AExpr>) -> bool {
         let [a, b] = [(ir_a, arena_a), (ir_b, arena_b)].map(|(ir, arena)| {
-            ir.get_exprs()
-                .into_iter()
+            ir.exprs()
                 .map(|e| (e.output_name_inner().clone(), e.to_expr(arena)))
         });
         a.eq(b)
