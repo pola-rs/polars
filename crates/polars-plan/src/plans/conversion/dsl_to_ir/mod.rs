@@ -19,7 +19,7 @@ mod join;
 mod scans;
 mod utils;
 pub use expr_expansion::{is_regex_projection, prepare_projection};
-pub use expr_to_ir::{to_expr_ir, ExprToIRContext};
+pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
 use utils::DslConversionContext;
 
