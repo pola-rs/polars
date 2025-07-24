@@ -8442,6 +8442,7 @@ class DataFrame:
             Mapping[
                 ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
             ]
+            | Mapping[str, PolarsDataType | PythonDataType]
             | PolarsDataType
         ),
         *,

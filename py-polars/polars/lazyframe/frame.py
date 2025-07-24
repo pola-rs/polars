@@ -3560,6 +3560,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Mapping[
                 ColumnNameOrSelector | PolarsDataType, PolarsDataType | PythonDataType
             ]
+            | Mapping[str, PolarsDataType | PythonDataType]
             | PolarsDataType
             | pl.DataTypeExpr
         ),

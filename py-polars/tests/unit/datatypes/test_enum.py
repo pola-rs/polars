@@ -683,7 +683,10 @@ def test_read_enum_from_csv() -> None:
     df.write_csv(f)
     f.seek(0)
 
-    schema = {"foo": pl.Enum(["ham", "and", "such", "spam"]), "bar": pl.String()}
+    schema: dict[str, pl.DataType] = {
+        "foo": pl.Enum(["ham", "and", "such", "spam"]),
+        "bar": pl.String(),
+    }
     read = pl.read_csv(f, schema=schema)
     assert read.schema == schema
-    assert_frame_equal(df.cast(schema), read)  # type: ignore[arg-type]
+    assert_frame_equal(df.cast(schema), read)
