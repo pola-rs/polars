@@ -551,6 +551,7 @@ def test_series_to_list() -> None:
     assert a.to_list() == [1, None, 2]
 
 
+@pytest.mark.may_fail_cloud  # reason: list.to_struct is a eager operation
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
