@@ -276,3 +276,28 @@ def test_struct() -> None:
                 dtype_expr.struct["a"].collect_dtype({})
             with pytest.raises(pl.exceptions.InvalidOperationError):
                 pl.select(dtype_expr.struct.field_names())
+
+
+def test_dtype_of_with_selector_23719() -> None:
+    assert_frame_equal(
+        pl.select(x=1).select(pl.cum_sum_horizontal(pl.all())),
+        pl.select(x=1).select(cum_sum=pl.struct("x")),
+    )
+
+
+def test_dtype_of_with_multi_expr() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="DataType expression are not allowed to expand to more than 1 expression",
+    ):
+        pl.dtype_of(pl.all()).collect_dtype(
+            pl.Schema({"x": pl.Boolean, "y": pl.Boolean})
+        )
+
+
+def test_dtype_of_with_unknown_type() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="DataType expression is not allowed to instantiate",
+    ):
+        pl.dtype_of("x").collect_dtype(pl.Schema({"x": pl.Unknown}))
