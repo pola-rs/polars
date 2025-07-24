@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import glob
 from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -30,6 +31,8 @@ from polars.io.cloud.credential_provider._builder import (
 )
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
+from polars.io.parquet import read_parquet
+from polars.io.json import read_json
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
@@ -42,6 +45,81 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
+
+def read_valid_files_from_path(path_pattern, filetype='csv', **kwargs):
+    '''
+    Reads and concatenates multiple valid data files from a given path pattern using Polars.
+
+    This function searches for files that match a glob-style path pattern (e.g., "data/*.csv"),
+    attempts to read each file using the appropriate Polars reader (`read_csv`, `read_parquet`, or `read_json`),
+    and automatically skips files that are empty or cannot be read (e.g., due to format errors).
+
+    Supported file types:
+    - CSV (.csv)
+    - Parquet (.parquet)
+    - JSON (.json)
+
+    Parameters:
+    -----------
+    path_pattern : str
+        Glob pattern for matching input file paths (e.g., "data/*.csv").
+
+    filetype : str, default="csv"
+        File format to read. Must be one of {"csv", "parquet", "json"}.
+
+    **kwargs : dict
+        Additional keyword arguments passed to the underlying Polars read function
+        (e.g., `infer_schema_length` for CSV/JSON).
+
+    Returns:
+    --------
+    pl.DataFrame
+        A single concatenated Polars DataFrame containing all successfully read and non-empty files.
+        Returns an empty DataFrame if no valid files are found.
+
+    Example:
+    --------
+    >>> df = read_valid_files_from_path("data/*.csv")
+    >>> print(df.shape)
+    '''
+    df_list = []
+
+    # Glob to get file paths
+    files = glob.glob(path_pattern)
+
+    for file in files:
+        try:
+            # Skip if file is empty
+            if os.path.getsize(file) == 0:
+                print(f"Skipping empty file: {file}")
+                continue
+
+            # Try reading the file with polars
+            if filetype == 'csv':
+                df = read_csv(file, **kwargs)
+            elif filetype == 'parquet':
+                df = read_parquet(file, **kwargs)
+            elif filetype == 'json':
+                df = read_json(file, **kwargs)
+            else:
+                print(f"Unsupported file type for file: {file}")
+                continue
+
+            # Append only non-empty DataFrames
+            if df.height > 0:
+                df_list.append(df)
+            else:
+                print(f"Skipping file with no rows: {file}")
+
+        except Exception as e:
+            print(f"Failed to read {file}: {e}")
+            continue
+
+    if df_list:
+        return pl.concat(df_list, how='vertical')
+    else:
+        print("No valid files found.")
+        return pl.DataFrame()  # Return empty DataFrame if nothing valid
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
