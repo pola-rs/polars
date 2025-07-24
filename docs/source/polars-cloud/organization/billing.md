@@ -1,4 +1,4 @@
-# Payment and Billing via AWS Marketplace
+# Payment and billing
 
 All payments and billing for Polars Cloud are handled via the AWS Marketplace. This integration
 provides a secure, streamlined way to manage your subscription, payments, and billing using AWS's
