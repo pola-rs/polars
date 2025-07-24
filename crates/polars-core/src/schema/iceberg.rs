@@ -32,13 +32,12 @@ impl IcebergSchema {
         I: IntoIterator<Item = &'a ArrowField>,
     {
         let iter = iter.into_iter();
-        let hint = iter.size_hint();
+        let size_hint = iter.size_hint();
 
-        let mut out = PlIndexMap::with_capacity(hint.1.unwrap_or(hint.0));
+        let mut out = PlIndexMap::with_capacity(size_hint.1.unwrap_or(size_hint.0));
 
-        for x in iter {
-            let col = arrow_field_to_iceberg_column_rec(x, None)?;
-
+        for arrow_field in iter {
+            let col: IcebergColumn = arrow_field_to_iceberg_column_rec(arrow_field, None)?;
             let existing = out.insert(col.physical_id, col);
 
             if let Some(existing) = existing {
