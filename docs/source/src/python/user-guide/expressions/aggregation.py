@@ -77,12 +77,13 @@ def compute_age():
     return date.today().year - pl.col("birthday").dt.year()
 
 
-def avg_birthday(gender: str) -> pl.Expr:
+def avg_age(gender: str) -> pl.Expr:
     return (
         compute_age()
         .filter(pl.col("gender") == gender)
         .mean()
-        .alias(f"avg {gender} birthday")
+        .round(1)
+        .alias(f"avg {gender} age")
     )
 
 
@@ -90,8 +91,8 @@ q = (
     dataset.lazy()
     .group_by("state")
     .agg(
-        avg_birthday("M"),
-        avg_birthday("F"),
+        avg_age("M"),
+        avg_age("F"),
         (pl.col("gender") == "M").sum().alias("# male"),
         (pl.col("gender") == "F").sum().alias("# female"),
     )
@@ -108,8 +109,8 @@ q = (
     dataset.lazy()
     .group_by("state", "gender")
     .agg(
-        # The function `avg_birthday` is not needed:
-        compute_age().mean().alias("avg birthday"),
+        # The function `avg_age` is not needed:
+        compute_age().mean().round(1).alias("avg age"),
         pl.len().alias("#"),
     )
     .sort("#", descending=True)
