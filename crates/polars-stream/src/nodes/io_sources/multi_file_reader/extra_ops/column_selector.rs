@@ -94,7 +94,12 @@ impl ColumnTransform {
         use ColumnTransform as TF;
 
         let out = match self {
-            TF::Cast { dtype, options } => input.cast_with_options(dtype, *options)?,
+            TF::Cast { dtype, options } => {
+                // Recursion currently does not propagate NULLs across nesting levels.
+                debug_assert!(!matches!(options, CastOptions::Strict));
+
+                input.cast_with_options(dtype, *options)?
+            },
 
             TF::Rename { .. } => {
                 // TODO
