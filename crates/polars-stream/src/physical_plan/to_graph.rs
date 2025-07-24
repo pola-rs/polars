@@ -526,16 +526,16 @@ fn to_graph_rec<'a>(
             scan_sources,
             file_reader_builder,
             cloud_options,
-            projected_file_schema,
+            file_projection_builder,
             output_schema,
             row_index,
             pre_slice,
             predicate,
             hive_parts,
             missing_columns_policy,
-            extra_columns_policy,
             cast_columns_policy,
             include_file_paths,
+            forbid_extra_columns,
             deletion_files,
             file_schema,
         } => {
@@ -564,15 +564,14 @@ fn to_graph_rec<'a>(
             let cloud_options = cloud_options.clone();
 
             let final_output_schema = output_schema.clone();
-            let projected_file_schema = projected_file_schema.clone();
-            let full_file_schema = file_schema.clone();
+            let file_projection_builder = file_projection_builder.clone();
 
             let row_index = row_index.clone();
             let pre_slice = pre_slice.clone();
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
             let missing_columns_policy = *missing_columns_policy;
-            let extra_columns_policy = *extra_columns_policy;
+            let forbid_extra_columns = forbid_extra_columns.clone();
             let cast_columns_policy = cast_columns_policy.clone();
             let deletion_files = deletion_files.clone();
 
@@ -585,15 +584,14 @@ fn to_graph_rec<'a>(
                         file_reader_builder,
                         cloud_options,
                         final_output_schema,
-                        projected_file_schema,
-                        full_file_schema,
+                        file_projection_builder,
                         row_index,
                         pre_slice,
                         predicate,
                         hive_parts,
                         include_file_paths,
                         missing_columns_policy,
-                        extra_columns_policy,
+                        forbid_extra_columns,
                         cast_columns_policy,
                         deletion_files,
                         // Initialized later
@@ -992,10 +990,11 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
+            use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
+            use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
 
             let mut reader = BatchFnReader {
                 name: name.clone(),
@@ -1019,15 +1018,14 @@ fn to_graph_rec<'a>(
             let sources = ScanSources::Paths(Arc::from([PlPath::from_str("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
-            let projected_file_schema = output_schema.clone();
-            let full_file_schema = output_schema.clone();
+            let file_projection_builder = ProjectionBuilder::new(output_schema.clone(), None);
             let row_index = None;
             let pre_slice = None;
             let predicate = None;
             let hive_parts = None;
             let include_file_paths = None;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
-            let extra_columns_policy = ExtraColumnsPolicy::Ignore;
+            let forbid_extra_columns = None;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
             let deletion_files = None;
             let verbose = config::verbose();
@@ -1039,15 +1037,14 @@ fn to_graph_rec<'a>(
                         file_reader_builder,
                         cloud_options,
                         final_output_schema,
-                        projected_file_schema,
-                        full_file_schema,
+                        file_projection_builder,
                         row_index,
                         pre_slice,
                         predicate,
                         hive_parts,
                         include_file_paths,
                         missing_columns_policy,
-                        extra_columns_policy,
+                        forbid_extra_columns,
                         cast_columns_policy,
                         deletion_files,
                         // Initialized later

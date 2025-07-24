@@ -2,14 +2,30 @@
 from __future__ import annotations
 
 import contextlib
+import itertools
 import os
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
+import pyarrow as pa
 import pytest
+from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.schema import Schema as IcebergSchema
+from pyiceberg.types import (
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    StringType,
+    StructType,
+    TimestampType,
+)
 
 import polars as pl
 from polars.io.iceberg._utils import _convert_predicate, _to_ast
+from polars.io.iceberg.dataset import IcebergDataset
 from polars.testing import assert_frame_equal
 
 
@@ -195,8 +211,6 @@ class TestIcebergExpressions:
     "ignore:Iceberg does not have a dictionary type. <class 'pyarrow.lib.DictionaryType'> will be inferred as large_string on read."
 )
 def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
-    from pyiceberg.catalog.sql import SqlCatalog
-
     # time64[ns] type is currently not supported in pyiceberg.
     # https://github.com/apache/iceberg-python/issues/1169
     df = df.drop("time", "cat", "enum")
@@ -222,3 +236,779 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
     expected = df.vstack(df)
     actual = pl.scan_iceberg(table).collect()
     assert_frame_equal(expected, actual, check_dtypes=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "row_index", IntegerType()),
+            NestedField(2, "file_path", StringType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame(
+        {"row_index": [0, 1, 2, 3, 4], "file_path": None},
+        schema={"row_index": pl.Int32, "file_path": pl.String},
+    ).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("row_index", "row_index_in_file")
+        sch.rename_column("file_path", "file_path_in_file")
+
+    file_paths = [x.file.file_path for x in tbl.scan().plan_files()]
+    assert len(file_paths) == 1
+
+    q = pl.scan_parquet(
+        file_paths,
+        schema={
+            "row_index_in_file": pl.Int32,
+            "file_path_in_file": pl.String,
+        },
+        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        include_file_paths="file_path",
+        row_index_name="row_index",
+        row_index_offset=3,
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "row_index": [3, 4, 5, 6, 7],
+                "row_index_in_file": [0, 1, 2, 3, 4],
+                "file_path_in_file": None,
+                "file_path": file_paths[0],
+            },
+            schema={
+                "row_index": pl.get_index_type(),
+                "row_index_in_file": pl.Int32,
+                "file_path_in_file": pl.String,
+                "file_path": pl.String,
+            },
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "a", IntegerType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame(
+        {"a": [0, 1, 2, 3, 4]},
+        schema={"a": pl.Int32},
+    ).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.delete_column("a")
+        sch.add_column("a", IntegerType())
+
+    file_paths = [x.file.file_path for x in tbl.scan().plan_files()]
+    assert len(file_paths) == 1
+
+    q = pl.scan_parquet(
+        file_paths,
+        schema={"a": pl.Int32},
+        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+    )
+
+    # The original column is considered an extra column despite having the same
+    # name as the physical ID does not match.
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="extra column in file outside of expected schema: a",
+    ):
+        q.collect()
+
+    q = pl.scan_parquet(
+        file_paths,
+        schema={"a": pl.Int32},
+        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        extra_columns="ignore",
+        missing_columns="insert",
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": [None, None, None, None, None],
+            },
+            schema={"a": pl.Int32},
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "a", StructType(NestedField(1, "a", IntegerType()))),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame(
+        {"a": [{"a": 1}, {"a": 2}, {"a": 3}, {"a": 4}, {"a": 5}]},
+        schema={"a": pl.Struct({"a": pl.Int32})},
+    ).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.delete_column(("a", "a"))
+        sch.add_column(("a", "a"), IntegerType())
+
+    file_paths = [x.file.file_path for x in tbl.scan().plan_files()]
+    assert len(file_paths) == 1
+
+    q = pl.scan_parquet(
+        file_paths,
+        schema={"a": pl.Struct({"a": pl.Int32})},
+        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+    )
+
+    # The original column is considered an extra column despite having the same
+    # name as the physical ID does not match.
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="encountered extra struct field: a",
+    ):
+        q.collect()
+
+    q = pl.scan_parquet(
+        file_paths,
+        schema={"a": pl.Struct({"a": pl.Int32})},
+        _column_mapping=("iceberg-column-mapping", IcebergDataset(tbl).arrow_schema()),
+        cast_options=pl.ScanCastOptions(
+            extra_struct_fields="ignore", missing_struct_fields="insert"
+        ),
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": [
+                    {"a": None},
+                    {"a": None},
+                    {"a": None},
+                    {"a": None},
+                    {"a": None},
+                ],
+            },
+            schema={"a": pl.Struct({"a": pl.Int32})},
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_column_deletion(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "a", StructType(NestedField(0, "inner", StringType())))
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame({"a": [{"inner": "A"}]}).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.delete_column("a").add_column(
+            "a", StructType(NestedField(0, "inner", StringType()))
+        )
+
+    pl.DataFrame({"a": [{"inner": "A"}]}).write_iceberg(tbl, mode="append")
+
+    expect = pl.DataFrame({"a": [{"inner": "A"}, None]})
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(),
+        expect,
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        expect,
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count())
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(
+                field_id=next_field_id(),
+                name="column_1",
+                field_type=ListType(
+                    element_id=next_field_id(),
+                    element=StructType(
+                        NestedField(
+                            field_id=next_field_id(),
+                            name="field_1",
+                            field_type=MapType(
+                                key_id=next_field_id(),
+                                key_type=ListType(
+                                    element_id=next_field_id(), element=TimestampType(), element_required=False
+                                ),
+                                value_id=next_field_id(),
+                                value_type=ListType(
+                                    element_id=next_field_id(), element=IntegerType(), element_required=False
+                                ),
+                                value_required=False,
+                            ),
+                            required=False,
+                        ),
+                        NestedField(
+                            field_id=next_field_id(), name="field_2", field_type=IntegerType(), required=False
+                        ),
+                        NestedField(
+                            field_id=next_field_id(), name="field_3", field_type=StringType(), required=False
+                        ),
+                    ),
+                    element_required=False,
+                ),
+                required=False,
+            ),
+            NestedField(field_id=next_field_id(), name="column_2", field_type=StringType(), required=False),
+            NestedField(
+                field_id=next_field_id(),
+                name="column_3",
+                field_type=MapType(
+                    key_id=next_field_id(),
+                    key_type=StructType(
+                        NestedField(
+                            field_id=next_field_id(), name="field_1", field_type=IntegerType(), required=False
+                        ),
+                        NestedField(
+                            field_id=next_field_id(), name="field_2", field_type=IntegerType(), required=False
+                        ),
+                        NestedField(
+                            field_id=next_field_id(), name="field_3", field_type=IntegerType(), required=False
+                        ),
+                    ),
+                    value_id=next_field_id(),
+                    value_type=StructType(
+                        NestedField(
+                            field_id=next_field_id(), name="field_1", field_type=IntegerType(), required=False
+                        ),
+                        NestedField(
+                            field_id=next_field_id(), name="field_2", field_type=IntegerType(), required=False
+                        ),
+                        NestedField(
+                            field_id=next_field_id(), name="field_3", field_type=IntegerType(), required=False
+                        ),
+                    ),
+                    value_required=False,
+                ),
+                required=False,
+            ),
+        ),
+    )  # fmt: skip
+
+    tbl = catalog.load_table("namespace.table")
+
+    df_dict = {
+        "column_1": [
+            [
+                {
+                    "field_1": [
+                        {"key": [datetime(2025, 1, 1), None], "value": [1, 2, None]},
+                        {"key": [datetime(2025, 1, 1), None], "value": None},
+                    ],
+                    "field_2": 7,
+                    "field_3": "F3",
+                }
+            ],
+            [
+                {
+                    "field_1": [{"key": [datetime(2025, 1, 1), None], "value": None}],
+                    "field_2": 7,
+                    "field_3": "F3",
+                }
+            ],
+            [{"field_1": [], "field_2": None, "field_3": None}],
+            [None],
+            [],
+        ],
+        "column_2": ["1", "2", "3", "4", None],
+        "column_3": [
+            [
+                {
+                    "key": {"field_1": 1, "field_2": 2, "field_3": 3},
+                    "value": {"field_1": 7, "field_2": 8, "field_3": 9},
+                }
+            ],
+            [
+                {
+                    "key": {"field_1": 1, "field_2": 2, "field_3": 3},
+                    "value": {"field_1": 7, "field_2": 8, "field_3": 9},
+                }
+            ],
+            [
+                {
+                    "key": {"field_1": None, "field_2": None, "field_3": None},
+                    "value": {"field_1": None, "field_2": None, "field_3": None},
+                }
+            ],
+            [
+                {
+                    "key": {"field_1": None, "field_2": None, "field_3": None},
+                    "value": None,
+                }
+            ],
+            [],
+        ],
+    }
+
+    df = pl.DataFrame(
+        df_dict,
+        schema={
+            "column_1": pl.List(
+                pl.Struct(
+                    {
+                        "field_1": pl.List(
+                            pl.Struct({"key": pl.List(pl.Datetime("us")), "value": pl.List(pl.Int32)})
+                        ),
+                        "field_2": pl.Int32,
+                        "field_3": pl.String,
+                    }
+                )
+            ),
+            "column_2": pl.String,
+            "column_3": pl.List(
+                pl.Struct(
+                    {
+                        "key": pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
+                        "value": pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
+                    }
+                )
+            ),
+        },
+    )  # fmt: skip
+
+    # The Iceberg table schema has a `Map` type, whereas the polars DataFrame
+    # stores `list[struct{..}]` - directly using `write_iceberg()` causes the
+    # following error:
+    # * ValueError: PyArrow table contains more columns:
+    #   column_1.element.field_1.element
+    # We workaround this by constructing a pyarrow table an arrow schema.
+    arrow_tbl = pa.Table.from_pydict(
+        df_dict,
+        schema=pa.schema(
+            [
+                (
+                    "column_1",
+                    pa.large_list(
+                        pa.struct(
+                            [
+                                (
+                                    "field_1",
+                                    pa.map_(pa.large_list(pa.timestamp("us")), pa.large_list(pa.int32())),
+                                ),
+                                ("field_2", pa.int32()),
+                                ("field_3", pa.string()),
+                            ]
+                        )
+                    ),
+                ),
+                ("column_2", pa.string()),
+                (
+                    "column_3",
+                    pa.map_(
+                        pa.struct([("field_1", pa.int32()), ("field_2", pa.int32()), ("field_3", pa.int32())]),
+                        pa.struct([("field_1", pa.int32()), ("field_2", pa.int32()), ("field_3", pa.int32())]),
+                    ),
+                ),
+            ]
+        ),
+    )  # fmt: skip
+
+    assert_frame_equal(pl.DataFrame(arrow_tbl), df)
+
+    tbl.append(arrow_tbl)
+
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
+
+    # Change schema
+    # Note: Iceberg doesn't allow modifying the "key" part of the Map type.
+
+    # Promote types
+    with tbl.update_schema() as sch:
+        sch.update_column(("column_1", "field_2"), LongType())
+        sch.update_column(("column_3", "value", "field_1"), LongType())
+        sch.update_column(("column_3", "value", "field_2"), LongType())
+        sch.update_column(("column_3", "value", "field_3"), LongType())
+
+    # Delete/Rename:
+    # * Delete `*_2` fields
+    # * Rename:
+    #   * `{x}_1` -> `{x}_2`
+    #   * `{x}_3` -> `{x}_1`
+    #     * And move the field position to 1st
+
+    # Delete `*_2` fields/columns.
+    with tbl.update_schema() as sch:
+        sch.delete_column("column_2")
+        sch.delete_column(("column_3", "value", "field_2"))
+        sch.delete_column(("column_1", "field_2"))
+
+    # Shift nested fields in `column_1`
+    with tbl.update_schema() as sch:
+        sch.rename_column(("column_1", "field_1"), "field_2")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column(("column_1", "field_3"), "field_1")
+
+    with tbl.update_schema() as sch:
+        sch.move_first(("column_1", "field_1"))
+
+    # Shift nested fields in `column_2`
+    with tbl.update_schema() as sch:
+        sch.rename_column(("column_3", "value", "field_1"), "field_2")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column(("column_3", "value", "field_3"), "field_1")
+
+    with tbl.update_schema() as sch:
+        sch.move_first(("column_3", "value", "field_1"))
+
+    # Shift top-level columns
+    with tbl.update_schema() as sch:
+        sch.rename_column("column_1", "column_2")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("column_3", "column_1")
+
+    with tbl.update_schema() as sch:
+        sch.move_first("column_1")
+
+    expect = pl.DataFrame(
+        {
+            "column_2": [
+                [
+                    {
+                        "field_2": [
+                            {"key": [datetime(2025, 1, 1, 0, 0), None], "value": [1, 2, None]},
+                            {"key": [datetime(2025, 1, 1), None], "value": None},
+                        ],
+                        "field_1": "F3",
+                    }
+                ],
+                [{"field_2": [{"key": [datetime(2025, 1, 1, 0, 0), None], "value": None}], "field_1": "F3"}],
+                [{"field_2": [], "field_1": None}],
+                [None],
+                [],
+            ],
+            "column_1": [
+                [{"key": {"field_1": 1, "field_2": 2, "field_3": 3}, "value": {"field_2": 7, "field_1": 9}}],
+                [{"key": {"field_1": 1, "field_2": 2, "field_3": 3}, "value": {"field_2": 7, "field_1": 9}}],
+                [
+                    {
+                        "key": {"field_1": None, "field_2": None, "field_3": None},
+                        "value": {"field_2": None, "field_1": None},
+                    }
+                ],
+                [{"key": {"field_1": None, "field_2": None, "field_3": None}, "value": None}],
+                [],
+            ],
+        },
+        schema={
+            "column_1": pl.List(
+                pl.Struct(
+                    {
+                        "key": pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
+                        "value": pl.Struct({"field_1": pl.Int64, "field_2": pl.Int64}),
+                    }
+                )
+            ),
+            "column_2": pl.List(
+                pl.Struct(
+                    {
+                        "field_1": pl.String,
+                        "field_2": pl.List(
+                            pl.Struct(
+                                {
+                                    "key": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
+                                    "value": pl.List(pl.Int32),
+                                }
+                            )
+                        ),
+                    }
+                )
+            ),
+        },
+    )  # fmt: skip
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), expect
+    )
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
+
+
+@pytest.mark.write_disk
+@pytest.mark.xfail(
+    reason="""\
+[Upstream Issue]
+PyIceberg writes NULL as empty lists into the Parquet file.
+* Issue on Polars repo - https://github.com/pola-rs/polars/issues/23715
+* Issue on PyIceberg repo - https://github.com/apache/iceberg-python/issues/2246
+"""
+)
+def test_scan_iceberg_nulls_multiple_nesting(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count())
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(
+                field_id=next_field_id(),
+                name="column_1",
+                field_type=ListType(
+                    element_id=next_field_id(),
+                    element=StructType(
+                        NestedField(
+                            field_id=next_field_id(),
+                            name="field_1",
+                            field_type=ListType(
+                                element_id=next_field_id(),
+                                element=StructType(
+                                    NestedField(field_id=next_field_id(), name="key", field_type=ListType(
+                                        element_id=next_field_id(),
+                                        element=TimestampType(),
+                                        element_required=False,
+                                    ), required=True),
+                                    NestedField(field_id=next_field_id(), name="value", field_type=ListType(
+                                        element_id=next_field_id(),
+                                        element=IntegerType(),
+                                        element_required=False,
+                                    ), required=False),
+                                ),
+                                element_required=False
+                            ),
+                            required=False,
+                        ),
+                        NestedField(field_id=next_field_id(), name="field_2", field_type=IntegerType(), required=False),
+                        NestedField(field_id=next_field_id(), name="field_3", field_type=StringType(), required=False),
+                    ),
+                    element_required=False,
+                ),
+                required=False,
+            ),
+        ),
+    )  # fmt: skip
+
+    tbl = catalog.load_table("namespace.table")
+
+    df_dict = {
+        "column_1": [
+            [
+                {
+                    "field_1": [
+                        {"key": [datetime(2025, 1, 1), None], "value": [1, 2, None]}
+                    ],
+                    "field_2": 7,
+                    "field_3": "F3",
+                }
+            ],
+            [
+                {
+                    "field_1": [{"key": [datetime(2025, 1, 1), None], "value": None}],
+                    "field_2": 7,
+                    "field_3": "F3",
+                }
+            ],
+            [{"field_1": None, "field_2": None, "field_3": None}],
+            [None],
+            None,
+        ],
+    }
+
+    df = pl.DataFrame(
+        df_dict,
+        schema={
+            "column_1": pl.List(
+                pl.Struct(
+                    {
+                        "field_1": pl.List(
+                            pl.Struct(
+                                {
+                                    "key": pl.List(pl.Datetime("us")),
+                                    "value": pl.List(pl.Int32),
+                                }
+                            )
+                        ),
+                        "field_2": pl.Int32,
+                        "field_3": pl.String,
+                    }
+                )
+            ),
+        },
+    )
+
+    arrow_tbl = pa.Table.from_pydict(
+        df_dict,
+        schema=pa.schema(
+            [
+                (
+                    "column_1",
+                    pa.large_list(
+                        pa.struct(
+                            [
+                                (
+                                    "field_1",
+                                    pa.large_list(
+                                        pa.struct(
+                                            [
+                                                pa.field(
+                                                    "key",
+                                                    pa.large_list(pa.timestamp("us")),
+                                                    nullable=False,
+                                                ),
+                                                ("value", pa.large_list(pa.int32())),
+                                            ]
+                                        )
+                                    ),
+                                ),
+                                ("field_2", pa.int32()),
+                                ("field_3", pa.string()),
+                            ]
+                        )
+                    ),
+                )
+            ]
+        ),
+    )
+
+    assert_frame_equal(pl.DataFrame(arrow_tbl), df)
+
+    tbl.append(arrow_tbl)
+
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count())
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(
+                field_id=next_field_id(),
+                name="column_1",
+                field_type=ListType(
+                    element_id=next_field_id(),
+                    element=IntegerType(),
+                    element_required=False,
+                ),
+                required=False,
+            ),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    df = pl.DataFrame(
+        {
+            "column_1": [
+                [1, 2],
+                [None],
+                None,
+            ],
+        },
+        schema={
+            "column_1": pl.List(pl.Int32),
+        },
+    )
+
+    df_dict = df.to_dict(as_series=False)
+
+    assert_frame_equal(pl.DataFrame(df_dict, schema=df.schema), df)
+
+    arrow_tbl = pa.Table.from_pydict(
+        df_dict,
+        schema=pa.schema(
+            [
+                (
+                    "column_1",
+                    pa.large_list(pa.int32()),
+                )
+            ]
+        ),
+    )
+
+    assert_frame_equal(pl.DataFrame(arrow_tbl), df)
+
+    tbl.append(arrow_tbl)
+
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)

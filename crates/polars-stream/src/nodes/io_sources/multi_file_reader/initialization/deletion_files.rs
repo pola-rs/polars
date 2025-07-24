@@ -133,13 +133,16 @@ impl DeletionFilesProvider {
                 //
                 // This does mean deletion file loads are tied to `NUM_READERS_PRE_INIT`, but this
                 // should be fine as the size of the data should not be too big.
-                let handle =
-                    AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
+                let handle = AbortOnDropHandle::new(async_executor::spawn(
+                    TaskPriority::Low,
+                    async move {
                         let handles = file_readers
                             .into_iter()
                             .map(|init_fut| {
+                                use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
+
                                 let begin_read_args = BeginReadArgs {
-                                    projected_schema: projected_schema.clone(),
+                                    projection: Projection::Plain(projected_schema.clone()),
                                     row_index: None,
                                     pre_slice: None,
                                     predicate: None,
@@ -237,7 +240,8 @@ impl DeletionFilesProvider {
                         }
 
                         Ok(mask)
-                    }));
+                    },
+                ));
 
                 Some(RowDeletionsInit::Initializing(handle))
             },

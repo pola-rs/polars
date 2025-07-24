@@ -27,6 +27,7 @@ use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::nodes::io_sources::multi_file_reader;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{
     ExprCache, build_length_preserving_select_stream, build_select_stream,
@@ -568,7 +569,7 @@ pub fn lower_ir(
                     let cloud_options = cloud_options.clone().map(Arc::new);
                     let file_schema = file_info.schema.clone();
 
-                    let (projected_file_schema, file_schema) =
+                    let (file_projection_builder, file_schema) =
                         multi_file_reader::initialization::projection::resolve_projections(
                             &output_schema,
                             &file_schema,
@@ -581,6 +582,7 @@ pub fn lower_ir(
                                 .include_file_paths
                                 .as_ref()
                                 .map(|x| x.as_str()),
+                            unified_scan_args.column_mapping.as_ref(),
                         );
 
                     // TODO: We ignore the parameter for some scan types to maintain old behavior,
@@ -598,11 +600,17 @@ pub fn lower_ir(
                         },
                     };
 
+                    let forbid_extra_columns = ForbidExtraColumns::opt_new(
+                        &extra_columns_policy,
+                        &file_schema,
+                        unified_scan_args.column_mapping.as_ref(),
+                    );
+
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
                         file_reader_builder,
                         cloud_options,
-                        projected_file_schema,
+                        file_projection_builder,
                         output_schema: output_schema.clone(),
                         row_index: None,
                         pre_slice: None,
@@ -610,7 +618,7 @@ pub fn lower_ir(
                         hive_parts,
                         cast_columns_policy: unified_scan_args.cast_columns_policy,
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
-                        extra_columns_policy,
+                        forbid_extra_columns,
                         include_file_paths: unified_scan_args.include_file_paths,
                         // Set to None if empty for performance.
                         deletion_files: DeletionFilesList::filter_empty(

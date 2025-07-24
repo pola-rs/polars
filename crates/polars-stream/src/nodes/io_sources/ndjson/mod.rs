@@ -28,6 +28,7 @@ use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
 mod chunk_reader;
@@ -60,7 +61,7 @@ impl FileReader for NDJsonFileReader {
         let verbose = self.verbose;
 
         let BeginReadArgs {
-            projected_schema,
+            projection: Projection::Plain(projected_schema),
             mut row_index,
             pre_slice,
 
