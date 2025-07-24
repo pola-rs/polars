@@ -263,7 +263,7 @@ impl AExpr {
                     Quantile { expr, .. } => {
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                         let mapper = FieldsMapper::new(&field);
-                        mapper.map_numeric_to_float_dtype()
+                        mapper.map_numeric_to_float_dtype(true)
                     },
                 }
             },
