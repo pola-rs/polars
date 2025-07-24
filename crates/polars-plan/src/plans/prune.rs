@@ -155,7 +155,15 @@ impl<'a> CopyContext<'a> {
         }
         inputs.reverse();
 
-        self.dst_expr.add(expr.clone().replace_inputs(&inputs))
+        let mut dst_expr = expr.clone().replace_inputs(&inputs);
+
+        // Fix up eval, the evaluation subtree is not treated as an input,
+        // so it needs to be copied manually.
+        if let AExpr::Eval { evaluation, .. } = &mut dst_expr {
+            *evaluation = self.copy_expr(*evaluation);
+        }
+
+        self.dst_expr.add(dst_expr)
     }
 }
 

@@ -8,7 +8,13 @@ impl IR {
         match self {
             #[cfg(feature = "python")]
             PythonScan { options } => PythonScan {
-                options: options.clone(),
+                options: {
+                    let mut options = options.clone();
+                    if let PythonPredicate::Polars(pred) = &mut options.predicate {
+                        *pred = exprs.pop().unwrap();
+                    }
+                    options
+                },
             },
             Union { options, .. } => Union {
                 inputs,
@@ -57,6 +63,7 @@ impl IR {
             Join {
                 schema,
                 left_on,
+                right_on,
                 options,
                 ..
             } => Join {
@@ -64,8 +71,16 @@ impl IR {
                 input_right: inputs[1],
                 schema: schema.clone(),
                 left_on: exprs[..left_on.len()].to_vec(),
-                right_on: exprs[left_on.len()..].to_vec(),
-                options: options.clone(),
+                right_on: exprs[left_on.len()..][..right_on.len()].to_vec(),
+                options: {
+                    let mut options = options.clone();
+                    if let Some(JoinTypeOptionsIR::Cross { predicate }) =
+                        &mut Arc::make_mut(&mut options).options
+                    {
+                        *predicate = exprs[left_on.len() + right_on.len()].clone();
+                    }
+                    options
+                },
             },
             Sort {
                 slice,
@@ -190,10 +205,16 @@ impl IR {
                 container.extend(iter)
             },
             Join {
-                left_on, right_on, ..
+                left_on,
+                right_on,
+                options,
+                ..
             } => {
                 let iter = left_on.iter().cloned().chain(right_on.iter().cloned());
-                container.extend(iter)
+                container.extend(iter);
+                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                    container.push(predicate.clone());
+                }
             },
             HStack { exprs, .. } => container.extend_from_slice(exprs),
             Scan { predicate, .. } => {
@@ -203,7 +224,11 @@ impl IR {
             },
             DataFrameScan { .. } => {},
             #[cfg(feature = "python")]
-            PythonScan { .. } => {},
+            PythonScan { options } => {
+                if let PythonPredicate::Polars(pred) = &options.predicate {
+                    container.push(pred.clone())
+                }
+            },
             Sink { payload, .. } => {
                 if let SinkTypeIR::Partition(p) = payload {
                     match &p.variant {
