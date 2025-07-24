@@ -396,8 +396,7 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(root);
-    let mut exprs = lp.get_exprs();
-    let e = exprs.pop().unwrap();
+    let e = lp.exprs().next().unwrap();
     if let AExpr::Function { input, .. } = expr_arena.get(e.node()) {
         // the concat_str has the 4 expressions as input
         assert_eq!(input.len(), 4);

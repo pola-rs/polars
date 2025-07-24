@@ -1,3 +1,5 @@
+use polars_utils::idx_vec::UnitVec;
+
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
@@ -9,14 +11,14 @@ pub(super) fn process_generic(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
     let inputs = lp.get_inputs();
-    let exprs = lp.get_exprs();
+    let input_count = inputs.len();
 
     // let mut first_schema = None;
     // let mut names = None;
 
     let new_inputs = inputs
-        .iter()
-        .map(|&node| {
+        .into_iter()
+        .map(|node| {
             let alp = lp_arena.take(node);
             let mut alp = proj_pd.push_down(alp, ctx.clone(), lp_arena, expr_arena)?;
 
@@ -35,7 +37,7 @@ pub(super) fn process_generic(
             // df3 => a, b
             // df1 => a
             // so we ensure we do the 'a' projection again before we concatenate
-            if !ctx.acc_projections.is_empty() && inputs.len() > 1 {
+            if !ctx.acc_projections.is_empty() && input_count > 1 {
                 alp = IRBuilder::from_lp(alp, expr_arena, lp_arena)
                     .project_simple_nodes(ctx.acc_projections.iter().map(|e| e.0))
                     .unwrap()
@@ -44,7 +46,7 @@ pub(super) fn process_generic(
             lp_arena.replace(node, alp);
             Ok(node)
         })
-        .collect::<PolarsResult<Vec<_>>>()?;
+        .collect::<PolarsResult<UnitVec<_>>>()?;
 
-    Ok(lp.with_exprs_and_input(exprs, new_inputs))
+    Ok(lp.with_inputs(new_inputs))
 }
