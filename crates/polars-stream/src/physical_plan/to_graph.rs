@@ -996,22 +996,21 @@ fn to_graph_rec<'a>(
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
             use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
 
-            let mut reader = BatchFnReader {
+            let reader = BatchFnReader {
                 name: name.clone(),
                 // If validate_schema is false, the schema of the morsels may not match the
                 // configured schema. In this case we set this to `None` and the reader will
                 // retrieve the schema from the first morsel.
                 output_schema: validate_schema.then(|| output_schema.clone()),
                 get_batch_state: Some(GetBatchState::from(get_batch_fn)),
+                execution_state: None,
                 verbose: config::verbose(),
             };
-
-            // Note: This will potentially override the output schema if `validate_schema` is `false`.
-            let output_schema = reader._file_schema()?;
 
             let file_reader_builder = Arc::new(BatchFnReaderBuilder {
                 name,
                 reader: std::sync::Mutex::new(Some(reader)),
+                execution_state: Default::default(),
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).

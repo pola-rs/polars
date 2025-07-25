@@ -1,7 +1,8 @@
 use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
+use std::time::Duration;
 
 use polars_core::POOL;
 use polars_core::config::{self, verbose};

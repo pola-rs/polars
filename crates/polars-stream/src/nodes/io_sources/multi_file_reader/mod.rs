@@ -166,19 +166,18 @@ impl ComputeNode for MultiFileReader {
         scope: &'s crate::async_executor::TaskScope<'s, 'env>,
         recv_ports: &mut [Option<crate::pipe::RecvPort<'_>>],
         send_ports: &mut [Option<crate::pipe::SendPort<'_>>],
-        state: &StreamingExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<crate::async_executor::JoinHandle<polars_error::PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
 
         let phase_morsel_tx = send_ports[0].take().unwrap().serial();
-        let num_pipelines = state.num_pipelines;
         let verbose = self.verbose;
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(num_pipelines);
+            self.state.initialize(state);
             self.state.refresh(verbose).await?;
 
             match &mut self.state {
@@ -274,7 +273,7 @@ impl MultiScanState {
     }
 
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, num_pipelines: usize) {
+    fn initialize(&mut self, execution_state: &StreamingExecutionState) {
         use MultiScanState::*;
 
         let slf = std::mem::replace(self, Finished);
@@ -283,6 +282,12 @@ impl MultiScanState {
             *self = slf;
             return;
         };
+
+        config
+            .file_reader_builder
+            .set_execution_state(execution_state);
+
+        let num_pipelines = execution_state.num_pipelines;
 
         config.num_pipelines.store(num_pipelines);
 
