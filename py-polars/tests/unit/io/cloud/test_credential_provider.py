@@ -440,7 +440,10 @@ def test_credential_provider_python_builder_cache(
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
         builder = _init_credential_provider_builder(
-            "auto", "s3://.../...", None, "test"
+            "auto",
+            "s3://.../...",
+            None,
+            "test",
         )
         assert builder is not None
 
@@ -456,8 +459,10 @@ def test_credential_provider_python_builder_cache(
 
         pickle.loads(pickle.dumps(builder)).build_credential_provider()
 
+        capture = capfd.readouterr().err
+
         # Ensure cache key is not serialized
-        assert capture.count("AutoInit cache key") == 2
+        assert capture.count("AutoInit cache key") == 1
 
 
 @pytest.mark.slow
