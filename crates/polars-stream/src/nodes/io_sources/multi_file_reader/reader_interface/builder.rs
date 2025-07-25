@@ -16,7 +16,7 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
     fn reader_capabilities(&self) -> ReaderCapabilities;
 
     /// Used by readers that need access to `StreamingExecutionState`.
-    fn set_execution_state(&self, _execution_state: &StreamingExecutionState) {}
+    fn set_execution_state(&self, _execution_state: &Arc<StreamingExecutionState>) {}
 
     fn build_file_reader(
         &self,

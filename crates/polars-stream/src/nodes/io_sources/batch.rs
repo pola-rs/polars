@@ -1,5 +1,7 @@
 //! Reads batches from a `dyn Fn`
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
@@ -31,7 +33,7 @@ pub mod builder {
     pub struct BatchFnReaderBuilder {
         pub name: PlSmallStr,
         pub reader: Mutex<Option<BatchFnReader>>,
-        pub execution_state: Mutex<Option<StreamingExecutionState>>,
+        pub execution_state: Mutex<Option<Arc<StreamingExecutionState>>>,
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
@@ -43,7 +45,7 @@ pub mod builder {
             ReaderCapabilities::empty()
         }
 
-        fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
+        fn set_execution_state(&self, execution_state: &Arc<StreamingExecutionState>) {
             *self.execution_state.lock().unwrap() = Some(execution_state.clone());
         }
 
@@ -115,7 +117,7 @@ pub struct BatchFnReader {
     pub name: PlSmallStr,
     pub output_schema: Option<SchemaRef>,
     pub get_batch_state: Option<GetBatchState>,
-    pub execution_state: Option<StreamingExecutionState>,
+    pub execution_state: Option<Arc<StreamingExecutionState>>,
     pub verbose: bool,
 }
 
@@ -221,7 +223,7 @@ impl BatchFnReader {
     /// # Panics
     /// Panics if `self.execution_state` is `None`.
     fn execution_state(&self) -> &StreamingExecutionState {
-        self.execution_state.as_ref().unwrap()
+        self.execution_state.as_deref().unwrap()
     }
 
     fn _file_schema(

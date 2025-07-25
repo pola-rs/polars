@@ -283,9 +283,13 @@ impl MultiScanState {
             return;
         };
 
+        let execution_state = Arc::new(execution_state.clone());
+
+        std::mem::forget(execution_state.clone());
+
         config
             .file_reader_builder
-            .set_execution_state(execution_state);
+            .set_execution_state(&execution_state);
 
         let num_pipelines = execution_state.num_pipelines;
 
