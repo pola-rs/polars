@@ -17,7 +17,7 @@ class NoPickleOption[T]:
     def __init__(self, opt_value: T | None = None) -> None:
         self._opt_value = opt_value
 
-    def __call__(self) -> T | None:
+    def get(self) -> T | None:
         return self._opt_value
 
     def __getstate__(self) -> tuple:
@@ -25,7 +25,7 @@ class NoPickleOption[T]:
         return ()
 
     def __setstate__(self, _state: tuple) -> None:
-        self.__init__(None)
+        self.__init__()
 
 
 class ZeroHashWrap[T]:
@@ -34,7 +34,7 @@ class ZeroHashWrap[T]:
     def __init__(self, value: T) -> None:
         self._value = value
 
-    def __call__(self) -> T:
+    def get(self) -> T:
         return self._value
 
     def __hash__(self) -> int:

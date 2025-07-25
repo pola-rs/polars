@@ -162,42 +162,25 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         return repr(self.credential_provider)
 
 
-@lru_cache(maxsize=int(os.getenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", 8)))
-def _auto_init_with_cache(
-    _cache_key: bytes,
-    build_func: ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]],
-) -> CredentialProviderBuilderReturn:
-    return build_func()()
-
-
 # Represents an automatic initialization configuration. This is created for
 # credential_provider="auto".
 class AutoInit(CredentialProviderBuilderImpl):
     def __init__(self, cls: Any, **kw: Any) -> None:
         self.cls = cls
         self.kw = kw
-        self._cache_key: NoPickleOption[bytes] = NoPickleOption()
+        self._cache_key: NoPickleOption[CredentialProviderFunction] = NoPickleOption()
 
-    def __call__(self) -> Any:
+    def __call__(self) -> CredentialProviderFunction | None:
         # This is used for credential_provider="auto", which allows for
         # ImportErrors.
-        try:
-            return _auto_init_with_cache(
-                self.cache_key(), ZeroHashWrap(lambda: self.cls(**self.kw))
-            )
-        except ImportError as e:
-            if verbose():
-                eprint(f"failed to auto-initialize {self.provider_repr}: {e!r}")
+        if self._cache_key.get() is None:
+            try:
+                self._cache_key = NoPickleOption(self.cls(**self.kw))
+            except ImportError as e:
+                if verbose():
+                    eprint(f"failed to auto-initialize {self.provider_repr}: {e!r}")
 
-        return None
-
-    def cache_key(self) -> bytes:
-        if self._cache_key() is None:
-            import pickle
-
-            self._cache_key = NoPickleOption(pickle.dumps(self))
-
-        return self._cache_key()
+        return self._cache_key.get()
 
     @property
     def provider_repr(self) -> str:
