@@ -433,11 +433,11 @@ impl<C: Clone> FetchedCredentialsCache<C> {
 
         // Ensure the credential is valid for at least this many seconds to
         // accommodate for latency.
-        const REQUEST_TIME_BUFFER: u64 = 3;
+        const MIN_REMAINING_TIME: u64 = 3;
 
         let remaining = last_fetched_expiry.saturating_sub(current_time);
 
-        if remaining < REQUEST_TIME_BUFFER {
+        if remaining < MIN_REMAINING_TIME {
             tokio::time::sleep(Duration::from_secs(1 + remaining)).await;
 
             if verbose {
