@@ -44,7 +44,8 @@ pub mod builder {
         }
 
         fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
-            *self.execution_state.lock().unwrap() = Some(execution_state.clone());
+            *self.execution_state.lock().unwrap() = Some(StreamingExecutionState::new());
+            // *self.execution_state.lock().unwrap() = Some(execution_state.clone());
         }
 
         fn build_file_reader(
