@@ -1,4 +1,5 @@
 mod builder;
+mod equality;
 mod evaluate;
 mod function_expr;
 #[cfg(feature = "cse")]
