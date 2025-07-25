@@ -2,7 +2,7 @@ use polars_dtype::categorical::{CategoricalPhysical, Categories, FrozenCategorie
 use polars_utils::pl_str::PlSmallStr;
 use proptest::prelude::*;
 
-use super::{DataType, Field, TimeUnit, TimeZone};
+use super::{DataType, Field, TimeUnit};
 
 // Simple DataTypes that don't take any parameters
 const SIMPLE_DTYPES: &[DataType] = &[
@@ -31,7 +31,31 @@ const CATEGORIES_LIMIT: usize = 3;
 const ARRAY_WIDTH_LIMIT: usize = 3;
 const STRUCT_FIELDS_LIMIT: usize = 3;
 
-// Strategy for generating non-nested Polars DataTypes
+// Main strategy function with recursion
+// https://docs.rs/proptest/latest/proptest/strategy/trait.Strategy.html#method.prop_recursive
+pub fn dtypes(nesting_level: u32) -> impl Strategy<Value = DataType> {
+    // `flat_dtype_strategy()` is the base/leaf strategy
+    flat_dtype_strategy().prop_recursive(
+        nesting_level, // Maximum recursive depth; 0 means just the base strategy/leaves
+        // Adding more depth means increasing the pool of possiblities
+        // depth 1 would include 1 level of nesting as a possibility (List(Int64))
+        // depth 2 would include 2 levels of nesting as a possibility (List(List(Int64)))
+        // etc.
+        // Seems that depth = maximum possibility, not a guarantee of nesting
+        // Even with a high depth, selecting a base case with no nesting is still possible
+        // From documentation: "Generated structures will have a depth between 0 and depth..."
+        256, // desired_size: Target total number of elements in the generated structure
+        // (influences how big arrays/lists/structs become to reach this target)
+        10, // expected_branch_size: Expected number of items per collection/container
+        // (controls how many fields in structs, items in arrays/lists, etc.)
+        // `nested_dtype_strategy()` is the recursive strategy
+        nested_dtype_strategy,
+    )
+}
+// **Note:** Can make `desired_size` and `expected_branch_size` configurable
+// by the end-user or set it to sensible defaults.
+
+// Sub-strategy for generating non-nested Polars DataTypes
 fn flat_dtype_strategy() -> impl Strategy<Value = DataType> {
     prop_oneof![
         prop::sample::select(SIMPLE_DTYPES.to_vec()),
@@ -73,36 +97,36 @@ fn duration_strategy() -> impl Strategy<Value = DataType> {
         Just(TimeUnit::Microseconds),
         Just(TimeUnit::Milliseconds),
     ]
-    .prop_map(|time_unit| DataType::Duration(time_unit))
+    .prop_map(DataType::Duration)
 }
 
 // Sub-strategy for Categorical DataType
 fn categorical_strategy() -> impl Strategy<Value = DataType> {
     (
         proptest::prop_oneof![
-        Just(CategoricalPhysical::U8),
-        Just(CategoricalPhysical::U16),
-        Just(CategoricalPhysical::U32),
-    ],
-    1usize..=CATEGORIES_LIMIT
+            Just(CategoricalPhysical::U8),
+            Just(CategoricalPhysical::U16),
+            Just(CategoricalPhysical::U32),
+        ],
+        1usize..=CATEGORIES_LIMIT,
     )
-    .prop_map(|(physical, n_categories)|{
-        let name = PlSmallStr::from_static("test_category");
-        let namespace = PlSmallStr::from_static("test_namespace");
-        
-        // **Note:** The Rust API documentation has a different definition of Categories::new(),
-        // taking `name`, `physical`, and `gc`, whereas the codebase has the implementation that I used,
-        // which takes `name`, `namespace`, and `physical`.
-        let categories = Categories::new(name, namespace, physical);
-        let mapping = categories.mapping();
+        .prop_map(|(physical, n_categories)| {
+            let name = PlSmallStr::from_static("test_category");
+            let namespace = PlSmallStr::from_static("test_namespace");
 
-        for i in 0..n_categories {
-            let category_name = format!("category{i}");
-            mapping.insert_cat(&category_name).unwrap();
-        }
+            // **Note:** The Rust API documentation has a different definition of Categories::new(),
+            // taking `name`, `physical`, and `gc`, whereas the codebase has the implementation that I used,
+            // which takes `name`, `namespace`, and `physical`.
+            let categories = Categories::new(name, namespace, physical);
+            let mapping = categories.mapping();
 
-        DataType::Categorical(categories, mapping)
-    })
+            for i in 0..n_categories {
+                let category_name = format!("category{i}");
+                mapping.insert_cat(&category_name).unwrap();
+            }
+
+            DataType::Categorical(categories, mapping)
+        })
 }
 
 // Sub-strategy for Enum DataType
@@ -130,33 +154,40 @@ fn object_strategy() -> impl Strategy<Value = DataType> {
     Just(DataType::Object("test_object"))
 }
 
+// Sub-strategy for generating nested Polars DataTypes
+fn nested_dtype_strategy(
+    inner: impl Strategy<Value = DataType> + Clone,
+) -> impl Strategy<Value = DataType> {
+    proptest::prop_oneof![
+        list_strategy(inner.clone()),
+        array_strategy(inner.clone()),
+        struct_strategy(inner.clone()),
+    ]
+}
+
 // Sub-strategy for List DataType
 fn list_strategy(inner: impl Strategy<Value = DataType>) -> impl Strategy<Value = DataType> {
-    inner.prop_map(|inner | DataType::List(Box::new(inner)))
+    inner.prop_map(|inner| DataType::List(Box::new(inner)))
 }
 
 // Sub-strategy for Array DataType
 fn array_strategy(inner: impl Strategy<Value = DataType>) -> impl Strategy<Value = DataType> {
-    (inner, 1usize..=ARRAY_WIDTH_LIMIT).prop_map(|(inner, width)| {
-        DataType::Array(Box::new(inner), width)
-    })
+    (inner, 1usize..=ARRAY_WIDTH_LIMIT)
+        .prop_map(|(inner, width)| DataType::Array(Box::new(inner), width))
 }
 
 // Sub-strategy for Struct DataType
 fn struct_strategy(inner: impl Strategy<Value = DataType>) -> impl Strategy<Value = DataType> {
-    prop::collection::vec(inner, 1usize..=STRUCT_FIELDS_LIMIT)
-        .prop_map(|datatypes_vec| {
-            let fields_vec: Vec<Field> = datatypes_vec
-                .into_iter()
-                .enumerate()
-                .map(|(i, datatype)| {
-                    let field_name = format!("field{i}");
-                    Field::new(field_name.into(), datatype)
-                })
-                .collect();
+    prop::collection::vec(inner, 1usize..=STRUCT_FIELDS_LIMIT).prop_map(|datatypes_vec| {
+        let fields_vec: Vec<Field> = datatypes_vec
+            .into_iter()
+            .enumerate()
+            .map(|(i, datatype)| {
+                let field_name = format!("field{i}");
+                Field::new(field_name.into(), datatype)
+            })
+            .collect();
 
-            DataType::Struct(fields_vec)
-        })  
+        DataType::Struct(fields_vec)
+    })
 }
-
-// TODO: Main strategy function with recursion
