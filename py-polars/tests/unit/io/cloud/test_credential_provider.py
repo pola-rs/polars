@@ -578,6 +578,8 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
         "aws_session_token": "789",
     }
 
+    assert expiry is not None
+
     assert datetime.fromtimestamp(expiry, tz=timezone.utc) == datetime.fromisoformat(
         "2099-01-01T00:00:00+00:00"
     )
