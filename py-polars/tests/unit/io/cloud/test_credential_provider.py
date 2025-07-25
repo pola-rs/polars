@@ -1,5 +1,6 @@
 import io
 import pickle
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
+from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
 
 
 @pytest.mark.parametrize(
@@ -340,3 +342,27 @@ def _set_default_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 aws_access_key_id=Z
 aws_secret_access_key=Z
 """)
+
+
+def test_no_pickle_option() -> None:
+    v = NoPickleOption(3)
+    assert v.get() == 3
+
+    out = pickle.loads(pickle.dumps(v))
+
+    assert out.get() is None
+
+
+def test_zero_hash_wrap() -> None:
+    v = ZeroHashWrap(3)
+    assert v.get() == 3
+
+    assert ZeroHashWrap(3) == ZeroHashWrap("7")
+
+    @lru_cache
+    def cache(value: ZeroHashWrap[Any]) -> int:
+        return value.get()
+
+    assert cache(ZeroHashWrap(3)) == 3
+    assert cache(ZeroHashWrap(7)) == 3
+    assert cache(ZeroHashWrap("A")) == 3
