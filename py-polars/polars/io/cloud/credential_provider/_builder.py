@@ -15,6 +15,7 @@ from polars.io.cloud.credential_provider._providers import (
     CredentialProviderAzure,
     CredentialProviderFunction,
     CredentialProviderGCP,
+    UserProvidedGCPToken,
 )
 
 if TYPE_CHECKING:
@@ -253,20 +254,6 @@ class AutoInit(CredentialProviderBuilderImpl):
     @property
     def provider_repr(self) -> str:
         return self.cls.__name__
-
-
-class UserProvidedGCPToken(CredentialProvider):
-    """User-provided GCP token in storage_options."""
-
-    def __init__(self, token: str) -> None:
-        self.token = token
-
-    def __call__(self) -> CredentialProviderFunctionReturn:
-        return self.retrieve_credentials_impl()
-
-    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
-        """Fetches the credentials."""
-        return {"bearer_token": self.token}, None
 
 
 def _init_credential_provider_builder(
