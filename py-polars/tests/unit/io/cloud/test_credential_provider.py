@@ -361,7 +361,7 @@ def test_zero_hash_wrap() -> None:
 
     @lru_cache
     def cache(value: ZeroHashWrap[Any]) -> int:
-        return value.get()
+        return value.get()  # type: ignore[no-any-return]
 
     assert cache(ZeroHashWrap(3)) == 3
     assert cache(ZeroHashWrap(7)) == 3

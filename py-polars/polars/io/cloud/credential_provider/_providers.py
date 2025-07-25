@@ -14,7 +14,6 @@ from typing import (
     Callable,
     Optional,
     TypedDict,
-    TypeVar,
     Union,
 )
 
@@ -54,9 +53,6 @@ class AWSAssumeRoleKWArgs(TypedDict):
     TokenCode: str
     SourceIdentity: str
     ProvidedContexts: list[dict[str, str]]
-
-
-T = TypeVar("T")
 
 
 class CredentialProvider(abc.ABC):
