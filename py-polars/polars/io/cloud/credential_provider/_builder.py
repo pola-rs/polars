@@ -4,7 +4,7 @@ import abc
 import os
 import sys
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
@@ -52,9 +52,9 @@ OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
     ]
 )
 
-CredentialProviderBuilderReturn: TypeAlias = (
+CredentialProviderBuilderReturn: TypeAlias = Union[
     CredentialProvider | CredentialProviderFunction | None
-)
+]
 
 
 class CredentialProviderBuilder:
