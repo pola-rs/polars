@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Generic, TypeVar
 
 from polars._utils.various import is_path_or_str_sequence
 from polars.io.partition import PartitionMaxSize
@@ -9,7 +9,7 @@ from polars.io.partition import PartitionMaxSize
 T = TypeVar("T")
 
 
-class NoPickleOption[T]:
+class NoPickleOption(Generic[T]):
     """
     Wrapper that does not pickle the wrapped value.
 

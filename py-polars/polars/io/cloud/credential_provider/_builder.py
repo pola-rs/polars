@@ -176,14 +176,14 @@ def _auto_init_with_cache(
 ) -> CredentialProviderBuilderReturn:
     global AUTO_INIT_LRU_CACHE
 
-    if AUTO_INIT_LRU_CACHE is None:
-        if (
-            maxsize := int(
-                os.getenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", 8)
-            )
-        ) <= 0:
-            return build_provider_func.get()()
+    if (
+        maxsize := int(os.getenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", 8))
+    ) <= 0:
+        AUTO_INIT_LRU_CACHE = None
 
+        return build_provider_func.get()()
+
+    if AUTO_INIT_LRU_CACHE is None:
         if verbose():
             eprint(f"Create credential provider AutoInit LRU cache ({maxsize = })")
 
