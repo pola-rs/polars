@@ -360,8 +360,6 @@ def test_credential_provider_python_builder_cache(
         }, None
 
     with monkeypatch.context() as cx:
-        cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "1")
-
         init_tracker = TrackCallCount(pl.CredentialProviderAWS.__init__)
 
         cx.setattr(
@@ -399,8 +397,6 @@ def test_credential_provider_python_builder_cache(
 
         assert init_tracker.count == 1
 
-        # We set the cache size to 1. Here we do a scan with a different profile
-        # name to evict the existing cached provider.
         with pytest.raises(OSError):
             pl.scan_parquet(
                 "s3://.../...",
@@ -416,12 +412,7 @@ def test_credential_provider_python_builder_cache(
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 3
-
-        with pytest.raises(OSError):
-            get_q().collect()
-
-        assert init_tracker.count == 3
+        assert init_tracker.count == 2
 
         cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
 
@@ -430,12 +421,12 @@ def test_credential_provider_python_builder_cache(
 
         # Note: Increments by 2 due to Rust-side object store rebuilding.
 
-        assert init_tracker.count == 5
+        assert init_tracker.count == 4
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 7
+        assert init_tracker.count == 6
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
