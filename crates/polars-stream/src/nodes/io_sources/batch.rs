@@ -18,7 +18,7 @@ use crate::nodes::io_sources::multi_file_reader::reader_interface::{
 };
 
 pub mod builder {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, OnceLock};
 
     use polars_utils::pl_str::PlSmallStr;
 
@@ -31,7 +31,7 @@ pub mod builder {
     pub struct BatchFnReaderBuilder {
         pub name: PlSmallStr,
         pub reader: Mutex<Option<BatchFnReader>>,
-        pub execution_state: Mutex<Option<StreamingExecutionState>>,
+        pub execution_state: OnceLock<StreamingExecutionState>,
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
@@ -44,7 +44,7 @@ pub mod builder {
         }
 
         fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
-            *self.execution_state.lock().unwrap() = Some(execution_state.clone());
+            self.execution_state.get_or_init(|| execution_state.clone());
         }
 
         fn build_file_reader(
@@ -62,7 +62,7 @@ pub mod builder {
                 .take()
                 .expect("BatchFnReaderBuilder called more than once");
 
-            reader.execution_state = Some(self.execution_state.lock().unwrap().clone().unwrap());
+            reader.execution_state = Some(self.execution_state.get().unwrap().clone());
 
             Box::new(reader) as Box<dyn FileReader>
         }
