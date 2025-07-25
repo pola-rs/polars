@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
@@ -12,6 +12,7 @@ from polars.io.cloud.credential_provider._providers import (
     CredentialProviderAzure,
     CredentialProviderGCP,
 )
+from functools import lru_cache
 
 if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._providers import (
@@ -41,6 +42,17 @@ OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
         "user_agent",
     ]
 )
+
+CredentialProviderBuilderReturn: TypeAlias = (
+    CredentialProvider | CredentialProviderFunction | None
+)
+
+
+@lru_cache(maxsize=8)
+def _build_with_cache(
+    cache_key: bytes, build_func: Callable[[],]
+) -> CredentialProvider | CredentialProviderFunction | None:
+    pass
 
 
 class CredentialProviderBuilder:
