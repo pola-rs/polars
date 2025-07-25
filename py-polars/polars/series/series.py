@@ -6361,7 +6361,7 @@ class Series:
 
         Create another series to apply the window mask:
 
-        >>> d = pl.Series("date", pl.datetime_range(start, stop, "2h", eager=True))
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
         >>> d
         shape: (25,)
         Series: 'date' [datetime[μs]]
