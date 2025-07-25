@@ -5,14 +5,15 @@ use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType};
 use polars_core::series::{IntoSeries, Series};
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
-use polars_error::{PolarsResult, polars_bail};
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
+use polars_error::{PolarsResult, feature_gated, polars_bail};
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
-use crate::nodes::io_sources::multi_file_reader::extra_ops::apply_extra_columns_policy_impl;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_column_err;
 
 /// This is a physical expression that is specialized for performing positional column selections,
 /// column renaming, as well as type-casting.
@@ -63,6 +64,17 @@ impl ColumnSelector {
             },
         })
     }
+
+    /// Replaces the leaf selector with the given `input` selector.
+    pub fn replace_input(&mut self, input: ColumnSelector) {
+        let mut current = self;
+
+        while let Self::Transformed(v) = current {
+            current = &mut v.as_mut().0;
+        }
+
+        *current = input;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -73,7 +85,6 @@ pub enum ColumnTransform {
         options: CastOptions,
     },
     /// Set the name of the column.
-    #[expect(unused)]
     Rename { name: PlSmallStr },
     /// Construct a struct column by applying column selectors onto the field arrays.
     StructFieldsMapping {
@@ -101,11 +112,7 @@ impl ColumnTransform {
                 input.cast_with_options(dtype, *options)?
             },
 
-            TF::Rename { .. } => {
-                // TODO
-                // Will be used for Iceberg column mapping.
-                unreachable!()
-            },
+            TF::Rename { name } => input.with_name(name.clone()),
 
             TF::StructFieldsMapping { field_selectors } => {
                 use polars_core::prelude::StructChunked;
@@ -297,11 +304,7 @@ impl ColumnSelectorBuilder {
                     target_name.clone(),
                     Scalar::null(target_dtype.clone()),
                 ))),
-                MissingColumnsPolicy::Raise => polars_bail!(
-                    ColumnNotFound:
-                    "did not find column {}, consider passing `missing_columns='insert'`",
-                    target_name,
-                ),
+                MissingColumnsPolicy::Raise => return Err(missing_column_err(target_name)),
             }
         };
 
@@ -370,11 +373,20 @@ impl ColumnSelectorBuilder {
                 incoming_fields_lookup.insert(field.name.as_str(), i);
             }
 
-            apply_extra_columns_policy_impl(
+            if matches!(
                 &self.cast_columns_policy.extra_struct_fields,
-                &|x| target_fields_lookup.contains_key(x),
-                &mut incoming_fields.iter().map(|x| x.name.as_str()),
-            )?;
+                ExtraColumnsPolicy::Raise
+            ) && let Some(extra_field) = incoming_fields
+                .iter()
+                .find(|x| !target_fields_lookup.contains_key(x.name().as_str()))
+            {
+                return mismatch_err(&format!(
+                    "encountered extra struct field: {}, \
+                    hint: specify this field in the schema, or pass \
+                    cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
+                    extra_field.name(),
+                ));
+            }
 
             let mut field_selectors: Vec<ColumnSelector> = Vec::with_capacity(target_fields.len());
             let mut is_input_passthrough = incoming_fields.len() == target_fields.len();
@@ -590,5 +602,196 @@ impl ColumnSelectorBuilder {
         }
 
         mismatch_err("")
+    }
+
+    /// Adds transforms on top of the `input_selector` if necessary.
+    pub fn attach_iceberg_transforms(
+        &self,
+        input_selector: ColumnSelector,
+        incoming_column: &IcebergColumn,
+        target_column: &IcebergColumn,
+    ) -> PolarsResult<ColumnSelector> {
+        let selector = (|| {
+            let target_dtype = &target_column.type_;
+            let incoming_dtype = &incoming_column.type_;
+
+            let mismatch_err = |hint: &str| {
+                let hint_spacing = if hint.is_empty() { "" } else { ", " };
+                let target_name = &target_column.name;
+
+                polars_bail!(
+                    SchemaMismatch:
+                    "data type mismatch for column {}: incoming: {:?} != target: {:?}{}{}",
+                    target_name,
+                    incoming_column,
+                    target_column,
+                    hint_spacing,
+                    hint,
+                )
+            };
+
+            use IcebergColumnType as ICT;
+
+            let out = match target_dtype {
+                ICT::Struct(target_fields) => {
+                    let ICT::Struct(incoming_fields) = incoming_dtype else {
+                        return mismatch_err("");
+                    };
+
+                    if matches!(
+                        &self.cast_columns_policy.extra_struct_fields,
+                        ExtraColumnsPolicy::Raise
+                    ) && let Some(extra_col) =
+                        incoming_fields
+                            .iter()
+                            .find_map(|(physical_id, iceberg_column)| {
+                                (!target_fields.contains_key(physical_id)).then_some(iceberg_column)
+                            })
+                    {
+                        return mismatch_err(&format!(
+                            "encountered extra struct field: {}, \
+                            hint: specify this field in the schema, or pass \
+                            cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
+                            &extra_col.name,
+                        ));
+                    }
+
+                    let mut field_selectors: Vec<ColumnSelector> =
+                        Vec::with_capacity(target_fields.len());
+                    let mut is_input_passthrough = incoming_fields.len() == target_fields.len();
+
+                    for (output_index, (physical_id, output_column)) in
+                        target_fields.iter().enumerate()
+                    {
+                        let selector = if let Some((incoming_index, _, incoming_column)) =
+                            incoming_fields.get_full(physical_id)
+                        {
+                            self.attach_iceberg_transforms(
+                                ColumnSelector::Position(incoming_index),
+                                incoming_column,
+                                output_column,
+                            )?
+                        } else {
+                            match &self.cast_columns_policy.missing_struct_fields {
+                                MissingColumnsPolicy::Insert => {
+                                    ColumnSelector::Constant(Box::new((
+                                        output_column.name.clone(),
+                                        Scalar::null(output_column.type_.to_polars_dtype()),
+                                    )))
+                                },
+                                MissingColumnsPolicy::Raise => {
+                                    return mismatch_err(&format!(
+                                        "encountered missing struct field: {}, \
+                                    hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
+                                        &output_column.name,
+                                    ));
+                                },
+                            }
+                        };
+
+                        is_input_passthrough &= match &selector {
+                            ColumnSelector::Position(input_index) => *input_index == output_index,
+                            _ => false,
+                        };
+
+                        field_selectors.push(selector);
+                    }
+
+                    if is_input_passthrough {
+                        input_selector
+                    } else {
+                        ColumnTransform::StructFieldsMapping {
+                            field_selectors: field_selectors.into_boxed_slice(),
+                        }
+                        .into_selector(input_selector)
+                    }
+                },
+
+                ICT::List(target_inner) => {
+                    let ICT::List(incoming_inner) = incoming_dtype else {
+                        return mismatch_err("");
+                    };
+
+                    if incoming_inner.physical_id != target_inner.physical_id {
+                        return mismatch_err("physical ID mismatch for list values column");
+                    }
+
+                    match self.attach_iceberg_transforms(
+                        ColumnSelector::Position(0),
+                        incoming_inner,
+                        target_inner,
+                    )? {
+                        ColumnSelector::Position(0) => input_selector,
+                        values_selector => ColumnTransform::ListValuesMapping { values_selector }
+                            .into_selector(input_selector),
+                    }
+                },
+
+                ICT::FixedSizeList(target_inner, target_width) => {
+                    feature_gated!("dtype-array", {
+                        let ICT::FixedSizeList(incoming_inner, incoming_width) = incoming_dtype
+                        else {
+                            return mismatch_err("");
+                        };
+
+                        if incoming_width != target_width {
+                            return mismatch_err("");
+                        }
+
+                        if incoming_inner.physical_id != target_inner.physical_id {
+                            return mismatch_err(
+                                "physical ID mismatch for fixed size list values column",
+                            );
+                        }
+
+                        match self.attach_iceberg_transforms(
+                            ColumnSelector::Position(0),
+                            incoming_inner,
+                            target_inner,
+                        )? {
+                            ColumnSelector::Position(0) => input_selector,
+                            values_selector => {
+                                ColumnTransform::FixedSizeListValuesMapping { values_selector }
+                                    .into_selector(input_selector)
+                            },
+                        }
+                    })
+                },
+
+                ICT::Primitive {
+                    dtype: target_dtype,
+                } => {
+                    let ICT::Primitive {
+                        dtype: incoming_dtype,
+                    } = incoming_dtype
+                    else {
+                        return mismatch_err("");
+                    };
+
+                    // Primitive type defers to the native `attach_transforms()` function.
+                    self.attach_transforms(
+                        input_selector,
+                        incoming_dtype,
+                        target_dtype,
+                        &target_column.name,
+                    )?
+                },
+            };
+
+            Ok(out)
+        })()?;
+
+        let selector = if incoming_column.name != target_column.name {
+            ColumnSelector::Transformed(Box::new((
+                selector,
+                ColumnTransform::Rename {
+                    name: target_column.name.clone(),
+                },
+            )))
+        } else {
+            selector
+        };
+
+        Ok(selector)
     }
 }

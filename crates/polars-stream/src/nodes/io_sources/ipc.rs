@@ -28,7 +28,7 @@ use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
-    FileReader, FileReaderCallbacks,
+    FileReader, FileReaderCallbacks, Projection,
 };
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
@@ -196,7 +196,7 @@ impl FileReader for IpcFileReader {
         } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
-            projected_schema,
+            projection: Projection::Plain(projected_schema),
             row_index,
             pre_slice: pre_slice_arg,
             predicate: None,
