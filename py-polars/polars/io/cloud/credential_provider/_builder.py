@@ -240,11 +240,13 @@ class AutoInit(CredentialProviderBuilderImpl):
             import hashlib
             import pickle
 
-            self._cache_key = NoPickleOption(
-                hashlib.sha256(pickle.dumps(self)).digest()
-            )
+            hash = hashlib.sha256(pickle.dumps(self))
+            self._cache_key.set(hash.digest())
             cache_key = self._cache_key.get()
             assert isinstance(cache_key, bytes)
+
+            if verbose():
+                eprint(f"{self!r}: AutoInit cache key: {hash.hexdigest()}")
 
         return cache_key
 

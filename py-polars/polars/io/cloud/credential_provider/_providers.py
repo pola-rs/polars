@@ -77,7 +77,8 @@ class CredentialProvider(abc.ABC):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
-        if os.getenv("POLARS_DISABLE_CREDENTIAL_PROVIDER_CACHE") == "1":
+        if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
+            self._cached_credentials.set(None)
             return self.retrieve_credentials_impl()
 
         if not isinstance(getattr(self, "_cached_credentials", None), NoPickleOption):
@@ -94,7 +95,7 @@ class CredentialProvider(abc.ABC):
             (expiry := cached[1]) is not None
             and expiry <= int(datetime.now().timestamp())
         ):
-            self._cached_credentials = NoPickleOption(self.retrieve_credentials_impl())
+            self._cached_credentials.set(self.retrieve_credentials_impl())
             self._has_logged_use_cache = False
             cached = self._cached_credentials.get()
             assert cached is not None

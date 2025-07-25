@@ -9,6 +9,9 @@ import pytest
 import polars as pl
 import polars.io.cloud.credential_provider
 from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 
 
 @pytest.mark.parametrize(
@@ -345,25 +348,32 @@ aws_secret_access_key=Z
 
 
 @pytest.mark.slow
-def test_credential_provider_python_cache(
+def test_credential_provider_python_builder_cache(
     monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
 ) -> None:
+    # Tests caching of building credential providers.
     def dummy_static_aws_credentials(*a: Any, **kw: Any) -> Any:
         return {
             "aws_access_key_id": "...",
             "aws_secret_access_key": "...",
         }, None
 
-    # Test the Python-side caching of credentials / credential providers.
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "1")
 
-        tracker = TrackCallCount(dummy_static_aws_credentials)
+        init_tracker = TrackCallCount(pl.CredentialProviderAWS.__init__)
+
+        cx.setattr(
+            pl.CredentialProviderAWS,
+            "__init__",
+            init_tracker.get_function(),
+        )
 
         cx.setattr(
             pl.CredentialProviderAWS,
             "retrieve_credentials_impl",
-            tracker.get_function(),
+            dummy_static_aws_credentials,
         )
 
         # Ensure we are building a new query every time.
@@ -377,17 +387,17 @@ def test_credential_provider_python_cache(
                 credential_provider="auto",
             )
 
-        assert tracker.count == 0
+        assert init_tracker.count == 0
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert tracker.count == 1
+        assert init_tracker.count == 1
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert tracker.count == 1
+        assert init_tracker.count == 1
 
         # We set the cache size to 1. Here we do a scan with a different profile
         # name to evict the existing cached provider.
@@ -401,17 +411,93 @@ def test_credential_provider_python_cache(
                 credential_provider="auto",
             ).collect()
 
-        assert tracker.count == 2
+        assert init_tracker.count == 2
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert tracker.count == 3
+        assert init_tracker.count == 3
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert tracker.count == 3
+        assert init_tracker.count == 3
+
+        cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        # Note: Increments by 2 due to Rust-side object store rebuilding.
+
+        assert init_tracker.count == 5
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert init_tracker.count == 7
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        builder = _init_credential_provider_builder(
+            "auto", "s3://.../...", None, "test"
+        )
+        assert builder is not None
+
+        capfd.readouterr()
+
+        builder.build_credential_provider()
+        builder.build_credential_provider()
+
+        capture = capfd.readouterr().err
+
+        # Ensure cache key is memoized on generation
+        assert capture.count("AutoInit cache key") == 1
+
+
+@pytest.mark.slow
+def test_credential_provider_python_credentials_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def dummy_static_aws_credentials(*a: Any, **kw: Any) -> Any:
+        return {
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+        }, None
+
+    tracker = TrackCallCount(dummy_static_aws_credentials)
+
+    monkeypatch.setattr(
+        pl.CredentialProviderAWS,
+        "retrieve_credentials_impl",
+        tracker.get_function(),
+    )
+
+    assert tracker.count == 0
+
+    provider = pl.CredentialProviderAWS()
+
+    provider()
+    assert tracker.count == 1
+
+    provider()
+    assert tracker.count == 1
+
+    monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
+
+    provider()
+    assert tracker.count == 2
+
+    provider()
+    assert tracker.count == 3
+
+    monkeypatch.delenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING")
+
+    provider()
+    assert tracker.count == 4
+
+    provider()
+    assert tracker.count == 4
 
 
 class TrackCallCount:  # noqa: D101

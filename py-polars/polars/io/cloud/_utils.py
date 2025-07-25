@@ -22,6 +22,9 @@ class NoPickleOption(Generic[T]):
     def get(self) -> T | None:
         return self._opt_value
 
+    def set(self, value: T | None) -> None:
+        self._opt_value = value
+
     def __getstate__(self) -> tuple[()]:
         # Needs to return not-None for `__setstate__()` to be called
         return ()
