@@ -7,6 +7,40 @@ from polars._utils.various import is_path_or_str_sequence
 from polars.io.partition import PartitionMaxSize
 
 
+class NoPickleOption[T]:
+    """
+    Wrapper that does not pickle the wrapped value.
+
+    This wrapper will unpickle to contain a None. Used for cached values.
+    """
+
+    def __init__(self, opt_value: T | None = None) -> None:
+        self._opt_value = opt_value
+
+    def __call__(self) -> T | None:
+        return self._opt_value
+
+    def __getstate__(self) -> tuple:
+        # Needs to return not-None for `__setstate__()` to be called
+        return ()
+
+    def __setstate__(self, _state: tuple) -> None:
+        self.__init__(None)
+
+
+class ZeroHashWrap[T]:
+    """Wrapper that always hashes to 0."""
+
+    def __init__(self, value: T) -> None:
+        self._value = value
+
+    def __call__(self) -> T:
+        return self._value
+
+    def __hash__(self) -> int:
+        return 0
+
+
 def _first_scan_path(
     source: Any,
 ) -> str | Path | None:

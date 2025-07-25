@@ -12,15 +12,15 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Literal,
     Optional,
-    TypeVar,
     TypedDict,
+    TypeVar,
     Union,
 )
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
+from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 10):
@@ -59,27 +59,6 @@ class AWSAssumeRoleKWArgs(TypedDict):
 T = TypeVar("T")
 
 
-class NoPickleOption[T]:
-    """
-    Wrapper to avoid serializing cached values.
-
-    Deserialization will return a None.
-    """
-
-    def __init__(self, opt_value: T | None) -> None:
-        self._opt_value = opt_value
-
-    def __call__(self) -> T | None:
-        return self._opt_value
-
-    def __getstate__(self) -> tuple:
-        # Needs to return not-None for `__setstate__()` to be called
-        return ()
-
-    def __setstate__(self, _state: tuple) -> None:
-        self.__init__(None)
-
-
 class CredentialProvider(abc.ABC):
     """
     Base class for credential providers.
@@ -91,13 +70,21 @@ class CredentialProvider(abc.ABC):
 
     def __init__(self) -> None:
         self._cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] = (
-            NoPickleOption(None)
+            NoPickleOption()
         )
         self._verbose = verbose()
         self._has_logged_use_cache = False
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
+        if not isinstance(getattr(self, "_cached_credentials", None), NoPickleOption):
+            msg = (
+                "(self @ CredentialProvider)._cached_credentials attribute "
+                "not found. This can happen if a subclass forgets to call "
+                f"super().__init__() ({type(self) = })"
+            )
+            raise AttributeError(msg)
+
         if self._cached_credentials() is None or (
             self._cached_credentials()[1] is not None
             and self._cached_credentials()[1] <= int(datetime.now().timestamp())
@@ -149,6 +136,8 @@ class CredentialProviderAWS(CredentialProvider):
         """
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
+
+        super().__init__()
 
         self._ensure_module_availability()
         self.profile_name = profile_name
@@ -307,6 +296,8 @@ class CredentialProviderAzure(CredentialProvider):
         """
         msg = "`CredentialProviderAzure` functionality is considered unstable"
         issue_unstable_warning(msg)
+
+        super().__init__()
 
         self.account_name = _storage_account
         self.scopes = (
@@ -492,6 +483,8 @@ class CredentialProviderGCP(CredentialProvider):
         """
         msg = "`CredentialProviderGCP` functionality is considered unstable"
         issue_unstable_warning(msg)
+
+        super().__init__()
 
         self._ensure_module_availability()
 

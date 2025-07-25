@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 import abc
+import os
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
+from polars.io.cloud._utils import ZeroHashWrap
 from polars.io.cloud.credential_provider._providers import (
     CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
+    CredentialProviderFunction,
     CredentialProviderGCP,
+    NoPickleOption,
 )
-from functools import lru_cache
 
 if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._providers import (
-        CredentialProviderFunction,
         CredentialProviderFunctionReturn,
     )
 
@@ -48,13 +51,6 @@ CredentialProviderBuilderReturn: TypeAlias = (
 )
 
 
-@lru_cache(maxsize=8)
-def _build_with_cache(
-    cache_key: bytes, build_func: Callable[[],]
-) -> CredentialProvider | CredentialProviderFunction | None:
-    pass
-
-
 class CredentialProviderBuilder:
     """
     Builds credential providers.
@@ -82,7 +78,7 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
-    ) -> CredentialProvider | CredentialProviderFunction | None:
+    ) -> CredentialProviderBuilderReturn:
         """Instantiate a credential provider from configuration."""
         verbose = polars._utils.logging.verbose()
 
@@ -166,23 +162,42 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         return repr(self.credential_provider)
 
 
+@lru_cache(maxsize=int(os.getenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", 8)))
+def _auto_init_with_cache(
+    _cache_key: bytes,
+    build_func: ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]],
+) -> CredentialProviderBuilderReturn:
+    return build_func()()
+
+
 # Represents an automatic initialization configuration. This is created for
 # credential_provider="auto".
 class AutoInit(CredentialProviderBuilderImpl):
     def __init__(self, cls: Any, **kw: Any) -> None:
         self.cls = cls
         self.kw = kw
+        self._cache_key: NoPickleOption[bytes] = NoPickleOption()
 
     def __call__(self) -> Any:
         # This is used for credential_provider="auto", which allows for
         # ImportErrors.
         try:
-            return self.cls(**self.kw)
+            return _auto_init_with_cache(
+                self.cache_key(), ZeroHashWrap(lambda: self.cls(**self.kw))
+            )
         except ImportError as e:
             if verbose():
                 eprint(f"failed to auto-initialize {self.provider_repr}: {e!r}")
 
         return None
+
+    def cache_key(self) -> bytes:
+        if self._cache_key() is None:
+            import pickle
+
+            self._cache_key = NoPickleOption(pickle.dumps(self))
+
+        return self._cache_key()
 
     @property
     def provider_repr(self) -> str:
