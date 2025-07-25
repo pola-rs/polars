@@ -92,8 +92,7 @@ impl IRTemporalFunction {
             TotalDays | TotalHours | TotalMinutes | TotalSeconds | TotalMilliseconds
             | TotalMicroseconds | TotalNanoseconds => mapper.with_dtype(DataType::Int64),
             ToString(_) => mapper.with_dtype(DataType::String),
-            WithTimeUnit(_) => mapper.with_same_dtype(),
-            CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
+            WithTimeUnit(tu) | CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
                 dtype => polars_bail!(ComputeError: "expected duration or datetime, got {}", dtype),
