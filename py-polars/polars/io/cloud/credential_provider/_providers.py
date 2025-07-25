@@ -8,10 +8,18 @@ import subprocess
 import sys
 import zoneinfo
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Optional,
+    TypedDict,
+    Union,
+)
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
+from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 10):
@@ -56,9 +64,53 @@ class CredentialProvider(abc.ABC):
             at any point without it being considered a breaking change.
     """
 
-    @abc.abstractmethod
+    def __init__(self) -> None:
+        self._cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] = (
+            NoPickleOption()
+        )
+        self._has_logged_use_cache = False
+
+        if verbose():
+            eprint(
+                f"[{type(self).__name__} @ {hex(id(self))}]: CredentialProvider.__init__()"
+            )
+
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
+        if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
+            self._cached_credentials.set(None)
+            return self.retrieve_credentials_impl()
+
+        if not isinstance(getattr(self, "_cached_credentials", None), NoPickleOption):
+            msg = (
+                f"[{type(self).__name__} @ {hex(id(self))}]: `_cached_credentials` attribute "
+                "not found. This can happen if a subclass forgets to call "
+                f"super().__init__() ({type(self) = })"
+            )
+            raise AttributeError(msg)  # noqa: TRY004
+
+        cached = self._cached_credentials.get()
+
+        if cached is None or (
+            (expiry := cached[1]) is not None
+            and expiry <= int(datetime.now().timestamp())
+        ):
+            self._cached_credentials.set(self.retrieve_credentials_impl())
+            self._has_logged_use_cache = False
+            cached = self._cached_credentials.get()
+            assert cached is not None
+
+        elif verbose() and not self._has_logged_use_cache:
+            expiry = cached[1]
+            eprint(
+                f"[{type(self).__name__} @ {hex(id(self))}]: Using cached credentials ({expiry = })"
+            )
+            self._has_logged_use_cache = True
+
+        return cached
+
+    @abc.abstractmethod
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
 
 
 class CredentialProviderAWS(CredentialProvider):
@@ -95,6 +147,8 @@ class CredentialProviderAWS(CredentialProvider):
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
+        super().__init__()
+
         self._ensure_module_availability()
         self.profile_name = profile_name
         self.region_name = region_name
@@ -102,7 +156,7 @@ class CredentialProviderAWS(CredentialProvider):
         self._auto_init_unhandled_key = _auto_init_unhandled_key
         self._storage_options_has_endpoint_url = _storage_options_has_endpoint_url
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
         assert not self._auto_init_unhandled_key
 
@@ -253,6 +307,8 @@ class CredentialProviderAzure(CredentialProvider):
         msg = "`CredentialProviderAzure` functionality is considered unstable"
         issue_unstable_warning(msg)
 
+        super().__init__()
+
         self.account_name = _storage_account
         self.scopes = (
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
@@ -283,7 +339,7 @@ class CredentialProviderAzure(CredentialProvider):
                 f"{self.scopes = } "
             )
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         if (
             v := self._try_get_azure_storage_account_credential_if_permitted()
@@ -438,6 +494,8 @@ class CredentialProviderGCP(CredentialProvider):
         msg = "`CredentialProviderGCP` functionality is considered unstable"
         issue_unstable_warning(msg)
 
+        super().__init__()
+
         self._ensure_module_availability()
 
         import google.auth
@@ -462,7 +520,7 @@ class CredentialProviderGCP(CredentialProvider):
         )
         self.creds = creds
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         import google.auth.transport.requests
 
@@ -485,6 +543,20 @@ class CredentialProviderGCP(CredentialProvider):
         if importlib.util.find_spec("google.auth") is None:
             msg = "google-auth must be installed to use `CredentialProviderGCP`"
             raise ImportError(msg)
+
+
+class UserProvidedGCPToken(CredentialProvider):
+    """User-provided GCP token in storage_options."""
+
+    def __init__(self, token: str) -> None:
+        self.token = token
+
+    def __call__(self) -> CredentialProviderFunctionReturn:
+        return self.retrieve_credentials_impl()
+
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
+        """Fetches the credentials."""
+        return {"bearer_token": self.token}, None
 
 
 def _get_credentials_from_provider_expiry_aware(
