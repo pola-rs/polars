@@ -166,7 +166,7 @@ impl ComputeNode for MultiFileReader {
         scope: &'s crate::async_executor::TaskScope<'s, 'env>,
         recv_ports: &mut [Option<crate::pipe::RecvPort<'_>>],
         send_ports: &mut [Option<crate::pipe::SendPort<'_>>],
-        state: &'s StreamingExecutionState,
+        ___state: &'s StreamingExecutionState,
         join_handles: &mut Vec<crate::async_executor::JoinHandle<polars_error::PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
@@ -177,7 +177,7 @@ impl ComputeNode for MultiFileReader {
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(state);
+            self.state.initialize(&StreamingExecutionState::new());
             self.state.refresh(verbose).await?;
 
             match &mut self.state {

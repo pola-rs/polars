@@ -21,6 +21,15 @@ pub struct StreamingExecutionState {
     pub in_memory_exec_state: ExecutionState,
 }
 
+impl StreamingExecutionState {
+    pub fn new() -> Self {
+        StreamingExecutionState {
+            num_pipelines: 1,
+            in_memory_exec_state: ExecutionState::default(),
+        }
+    }
+}
+
 /// Finds all runnable pipeline blockers in the graph, that is, nodes which:
 ///  - Only have blocked output ports.
 ///  - Have at least one ready input port connected to a ready output port.
