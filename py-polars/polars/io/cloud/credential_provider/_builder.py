@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import abc
 import os
+import sys
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
@@ -16,6 +17,12 @@ from polars.io.cloud.credential_provider._providers import (
     CredentialProviderFunction,
     CredentialProviderGCP,
 )
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
+
 
 if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._providers import (
