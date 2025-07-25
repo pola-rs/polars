@@ -6026,7 +6026,7 @@ class Series:
         shape: (25,)
         Series: 'index' [f64]
         [
-                0
+            0
             0
             0
             1
