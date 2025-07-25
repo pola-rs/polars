@@ -8,7 +8,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
@@ -16,7 +16,9 @@ use super::ExtraOperations;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::column_selector::{
     ColumnSelector, ColumnSelectorBuilder,
 };
+use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_column_err;
 use crate::nodes::io_sources::multi_file_reader::initialization::deletion_files::ExternalFilterMask;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 
 /// Apply extra operations onto morsels originating from a reader. This should be initialized
@@ -28,7 +30,7 @@ pub enum ApplyExtraOps {
     /// in Arc.
     Uninitialized {
         final_output_schema: SchemaRef,
-        projected_file_schema: SchemaRef,
+        projection: Projection,
         extra_ops: ExtraOperations,
         /// This here so that we can get the include file path name if needed.
         scan_source: ScanSource,
@@ -43,7 +45,8 @@ pub enum ApplyExtraOps {
         /// Physical - i.e. applied before `external_filter_mask`. This is calculated in `initialize()` if needed.
         physical_pre_slice: Option<Slice>,
         external_filter_mask: Option<ExternalFilterMask>,
-        row_index: Option<RowIndex>,
+        /// `(_, insertion_position)`
+        row_index: Option<(RowIndex, usize)>,
         /// This will have include_file_paths, hive columns, missing columns.
         column_selectors: Option<Vec<ColumnSelector>>,
         predicate: Option<ScanIOPredicate>,
@@ -74,15 +77,16 @@ impl ApplyExtraOps {
 
             Uninitialized {
                 final_output_schema,
-                #[expect(unused)]
-                projected_file_schema, // TODO: This can maybe be removed
+                projection,
                 extra_ops:
                     ExtraOperations {
                         row_index,
+                        row_index_col_idx,
                         pre_slice,
                         cast_columns_policy,
                         missing_columns_policy,
                         include_file_paths,
+                        file_path_col_idx,
                         predicate,
                     },
                 scan_source,
@@ -95,45 +99,13 @@ impl ApplyExtraOps {
                     panic!("impl error: negative pre_slice at post")
                 }
 
-                let mut slf = Self::Initialized {
-                    physical_pre_slice: pre_slice,
-                    external_filter_mask,
-                    row_index,
-
-                    // Initialized below
-                    column_selectors: None,
-                    predicate: None,
-                };
-
-                let schema_before_selection = if incoming_schema.len() == final_output_schema.len()
-                {
-                    // Incoming schema already has all of the columns, either because no extra columns were needed, or
-                    // the extra columns were attached by the reader (which is just Parquet when it has a predicate).
-                    incoming_schema.clone()
-                } else {
-                    // We use a trick to determine our schema state before reordering by applying onto an empty DataFrame.
-                    // This is much less error prone compared determining it separately.
-                    //
-                    // This schema may contain an additional row index column.
-                    let mut df = DataFrame::empty_with_schema(incoming_schema);
-                    slf.apply_to_df(&mut df, RowCounter::MAX)?;
-                    df.schema().clone()
-                };
-
                 let mut column_selectors = Vec::with_capacity(final_output_schema.len());
                 let selector_builder = ColumnSelectorBuilder {
                     cast_columns_policy,
                     missing_columns_policy,
                 };
                 // Tracks if the input already has all columns in the right order and type.
-                let mut is_input_passthrough =
-                    schema_before_selection.len() == final_output_schema.len();
-
-                let file_path_col_idx = include_file_paths.as_ref().map_or(
-                    // Default usize::MAX as it is not a valid index
-                    usize::MAX,
-                    |name| final_output_schema.index_of(name).unwrap(),
-                );
+                let mut is_input_passthrough = incoming_schema.len() == final_output_schema.len();
 
                 for (output_index, (output_name, output_dtype)) in
                     final_output_schema.iter().enumerate()
@@ -151,6 +123,21 @@ impl ApplyExtraOps {
                                 ),
                             ),
                         )))
+                    } else if output_index == row_index_col_idx {
+                        if let Some(ri) = &row_index {
+                            // Row index is done by us (ApplyExtraOps). Insert a placeholder column.
+                            ColumnSelector::Constant(Box::new((
+                                ri.name.clone(),
+                                Scalar::null(DataType::Null),
+                            )))
+                        } else {
+                            debug_assert_eq!(
+                                incoming_schema.get(output_name),
+                                Some(&DataType::IDX_DTYPE)
+                            );
+
+                            ColumnSelector::Position(incoming_schema.index_of(output_name).unwrap())
+                        }
                     } else if let Some(hive_parts) = &hive_parts
                         && let Ok(hive_column) = hive_parts.df().column(output_name)
                     {
@@ -161,12 +148,40 @@ impl ApplyExtraOps {
                                 hive_column.get(scan_source_idx)?.into_static(),
                             ),
                         )))
+                    } else if let Some((mapped_projection, incoming_idx, incoming_dtype)) = (|| {
+                        let mapped_projection =
+                            projection.get_mapped_projection_ref_by_output_name(output_name)?;
+
+                        let (incoming_idx, _, incoming_dtype) =
+                            incoming_schema.get_full(mapped_projection.source_name)?;
+
+                        Some((mapped_projection, incoming_idx, incoming_dtype))
+                    })(
+                    ) {
+                        debug_assert_eq!(mapped_projection.output_dtype, output_dtype);
+
+                        if let Some(resolved_transform) = mapped_projection.resolved_transform {
+                            debug_assert_eq!(resolved_transform.source_dtype, incoming_dtype);
+
+                            resolved_transform
+                                .attach_transforms(ColumnSelector::Position(incoming_idx))
+                        } else {
+                            selector_builder.build_column_selector(
+                                incoming_schema,
+                                output_name,
+                                output_dtype,
+                            )?
+                        }
                     } else {
-                        selector_builder.build_column_selector(
-                            &schema_before_selection,
-                            output_name,
-                            output_dtype,
-                        )?
+                        match &selector_builder.missing_columns_policy {
+                            MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new((
+                                output_name.clone(),
+                                Scalar::null(output_dtype.clone()),
+                            ))),
+                            MissingColumnsPolicy::Raise => {
+                                return Err(missing_column_err(output_name));
+                            },
+                        }
                     };
 
                     is_input_passthrough &= match &selector {
@@ -183,21 +198,17 @@ impl ApplyExtraOps {
                     Some(column_selectors)
                 };
 
-                let Self::Initialized {
-                    column_selectors: slf_column_selectors,
-                    predicate: slf_predicate,
-                    ..
-                } = &mut slf
-                else {
-                    unreachable!()
+                let out = Self::Initialized {
+                    physical_pre_slice: pre_slice,
+                    external_filter_mask,
+                    row_index: row_index.map(|ri| (ri, row_index_col_idx)),
+                    column_selectors,
+                    predicate,
                 };
-
-                *slf_column_selectors = column_selectors;
-                *slf_predicate = predicate;
 
                 // Return a `Noop` if our initialized state does not have any operations. Downstream
                 // can see the `Noop` and avoid running through an extra distributor pipeline.
-                let slf = match slf {
+                let out = match out {
                     Initialized {
                         physical_pre_slice: None,
                         external_filter_mask: None,
@@ -206,12 +217,12 @@ impl ApplyExtraOps {
                         predicate: None,
                     } => Self::Noop,
 
-                    Initialized { .. } => slf,
+                    Initialized { .. } => out,
 
                     _ => unreachable!(),
                 };
 
-                Ok(slf)
+                Ok(out)
             },
         }
     }
@@ -276,9 +287,16 @@ impl ApplyExtraOps {
             local_filter_mask.filter_df(df)?;
         };
 
+        if let Some(column_selectors) = column_selectors.as_deref() {
+            *df = column_selectors
+                .iter()
+                .map(|x| x.select_from_columns(df.get_columns(), df.height()))
+                .collect::<PolarsResult<DataFrame>>()?;
+        }
+
         // Note: This branch is hit if we have negative slice or predicate + row index and the reader
         // does not support them.
-        if let Some(ri) = row_index {
+        if let Some((ri, col_idx)) = row_index {
             // Adjustment needed for `current_row_position`.
             let local_offset_adjustment = RowCounter::new(
                 // Number of physical rows skipped in the current function
@@ -300,20 +318,11 @@ impl ApplyExtraOps {
                     .num_rows_idxsize_saturating()?,
             );
 
-            unsafe {
-                df.with_column_unchecked(Column::new_row_index(
-                    ri.name.clone(),
-                    offset,
-                    df.height(),
-                )?)
-            };
-        }
+            let row_index_col = Column::new_row_index(ri.name.clone(), offset, df.height())?;
 
-        if let Some(column_selectors) = column_selectors.as_deref() {
-            *df = column_selectors
-                .iter()
-                .map(|x| x.select_from_columns(df.get_columns(), df.height()))
-                .collect::<PolarsResult<DataFrame>>()?;
+            debug_assert_eq!(df.get_columns()[*col_idx].name(), &ri.name);
+
+            unsafe { *df.get_columns_mut().get_mut(*col_idx).unwrap() = row_index_col }
         }
 
         if let Some(predicate) = predicate {
