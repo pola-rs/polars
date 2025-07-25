@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import abc
 import os
-import sys
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
@@ -18,8 +17,9 @@ from polars.io.cloud.credential_provider._providers import (
     CredentialProviderGCP,
 )
 
-
 if TYPE_CHECKING:
+    import sys
+
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunctionReturn,
     )
@@ -53,7 +53,7 @@ OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
 )
 
 CredentialProviderBuilderReturn: TypeAlias = Union[
-    CredentialProvider | CredentialProviderFunction | None
+    CredentialProvider, CredentialProviderFunction, None
 ]
 
 

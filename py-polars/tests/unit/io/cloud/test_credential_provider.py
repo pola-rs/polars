@@ -344,6 +344,89 @@ aws_secret_access_key=Z
 """)
 
 
+@pytest.mark.slow
+def test_credential_provider_python_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def dummy_static_aws_credentials(*a: Any, **kw: Any) -> Any:
+        return {
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+        }, None
+
+    # Test the Python-side caching of credentials / credential providers.
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "1")
+
+        tracker = TrackCallCount(dummy_static_aws_credentials)
+
+        cx.setattr(
+            pl.CredentialProviderAWS,
+            "retrieve_credentials_impl",
+            tracker.get_function(),
+        )
+
+        # Ensure we are building a new query every time.
+        def get_q() -> pl.LazyFrame:
+            return pl.scan_parquet(
+                "s3://.../...",
+                storage_options={
+                    "aws_profile": "A",
+                    "aws_endpoint_url": "http://localhost",
+                },
+                credential_provider="auto",
+            )
+
+        assert tracker.count == 0
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert tracker.count == 1
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert tracker.count == 1
+
+        # We set the cache size to 1. Here we do a scan with a different profile
+        # name to evict the existing cached provider.
+        with pytest.raises(OSError):
+            pl.scan_parquet(
+                "s3://.../...",
+                storage_options={
+                    "aws_profile": "B",
+                    "aws_endpoint_url": "http://localhost",
+                },
+                credential_provider="auto",
+            ).collect()
+
+        assert tracker.count == 2
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert tracker.count == 3
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert tracker.count == 3
+
+
+class TrackCallCount:  # noqa: D101
+    def __init__(self, func: Any) -> None:
+        self.func = func
+        self.count = 0
+
+    def get_function(self) -> Any:
+        def f(*a: Any, **kw: Any) -> Any:
+            self.count += 1
+            return self.func(*a, **kw)
+
+        return f
+
+
 def test_no_pickle_option() -> None:
     v = NoPickleOption(3)
     assert v.get() == 3
