@@ -253,7 +253,7 @@ class CredentialProviderAWS(CredentialProvider):
 
         return True
 
-    def _session(self) -> boto3.Session:
+    def _session(self) -> "boto3.Session":
         # Note: boto3 automatically sources the AWS_PROFILE env var
         import boto3
 
