@@ -8,7 +8,7 @@ import subprocess
 import sys
 import zoneinfo
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
@@ -47,6 +47,25 @@ class AWSAssumeRoleKWArgs(TypedDict):
     ProvidedContexts: list[dict[str, str]]
 
 
+class CachedCredentialReturn:
+    """Wrapper to avoid pickling cached credentials."""
+
+    def __init__(self, cached: CredentialProviderFunctionReturn | None) -> None:
+        self._cached = cached
+
+    def __getstate__(self) -> tuple:
+        # Needs to return not-None for `__setstate__()` to be called
+        return ()
+
+    def __setstate__(self, _state: tuple) -> None:
+        self.__init__(None)
+
+    def __getitem__(
+        self, _index: Literal[0]
+    ) -> CredentialProviderFunctionReturn | None:
+        return self._cached
+
+
 class CredentialProvider(abc.ABC):
     """
     Base class for credential providers.
@@ -56,9 +75,30 @@ class CredentialProvider(abc.ABC):
             at any point without it being considered a breaking change.
     """
 
-    @abc.abstractmethod
+    def __init__(self) -> None:
+        self._cached_credentials: CachedCredentialReturn = CachedCredentialReturn(None)
+        self._verbose = verbose()
+        self._has_logged_use_cache = False
+
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
+        cached = self._cached_credentials[0]
+
+        if cached is None or (
+            cached[1] is not None and cached[1] <= int(datetime.now().timestamp())
+        ):
+            cached = self._retrieve_credentials()
+            self._has_logged_use_cache = False
+
+        elif self._verbose and not self._has_logged_use_cache:
+            expiry = cached[0][1]
+            eprint(f"[CredentialProvider]: Using cached credentials ({expiry = })")
+            self._has_logged_use_cache = True
+
+        return cached
+
+    @abc.abstractmethod
+    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn: ...
 
 
 class CredentialProviderAWS(CredentialProvider):
@@ -102,7 +142,7 @@ class CredentialProviderAWS(CredentialProvider):
         self._auto_init_unhandled_key = _auto_init_unhandled_key
         self._storage_options_has_endpoint_url = _storage_options_has_endpoint_url
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
         assert not self._auto_init_unhandled_key
 
@@ -283,7 +323,7 @@ class CredentialProviderAzure(CredentialProvider):
                 f"{self.scopes = } "
             )
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         if (
             v := self._try_get_azure_storage_account_credential_if_permitted()
@@ -462,7 +502,7 @@ class CredentialProviderGCP(CredentialProvider):
         )
         self.creds = creds
 
-    def __call__(self) -> CredentialProviderFunctionReturn:
+    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         import google.auth.transport.requests
 
