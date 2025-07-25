@@ -1,5 +1,6 @@
 import io
 import pickle
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,10 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
+from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 
 
 @pytest.mark.parametrize(
@@ -105,7 +110,7 @@ def test_credential_provider_serialization_custom_provider() -> None:
     err_magic = "err_magic_3"
 
     class ErrCredentialProvider(pl.CredentialProvider):
-        def __call__(self) -> pl.CredentialProviderFunctionReturn:
+        def retrieve_credentials_impl(self) -> pl.CredentialProviderFunctionReturn:
             raise AssertionError(err_magic)
 
     lf = pl.scan_parquet(
@@ -340,3 +345,197 @@ def _set_default_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 aws_access_key_id=Z
 aws_secret_access_key=Z
 """)
+
+
+@pytest.mark.slow
+def test_credential_provider_python_builder_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Tests caching of building credential providers.
+    def dummy_static_aws_credentials(*a: Any, **kw: Any) -> Any:
+        return {
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+        }, None
+
+    with monkeypatch.context() as cx:
+        init_tracker = TrackCallCount(pl.CredentialProviderAWS.__init__)
+
+        cx.setattr(
+            pl.CredentialProviderAWS,
+            "__init__",
+            init_tracker.get_function(),
+        )
+
+        cx.setattr(
+            pl.CredentialProviderAWS,
+            "retrieve_credentials_impl",
+            dummy_static_aws_credentials,
+        )
+
+        # Ensure we are building a new query every time.
+        def get_q() -> pl.LazyFrame:
+            return pl.scan_parquet(
+                "s3://.../...",
+                storage_options={
+                    "aws_profile": "A",
+                    "aws_endpoint_url": "http://localhost",
+                },
+                credential_provider="auto",
+            )
+
+        assert init_tracker.count == 0
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert init_tracker.count == 1
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert init_tracker.count == 1
+
+        with pytest.raises(OSError):
+            pl.scan_parquet(
+                "s3://.../...",
+                storage_options={
+                    "aws_profile": "B",
+                    "aws_endpoint_url": "http://localhost",
+                },
+                credential_provider="auto",
+            ).collect()
+
+        assert init_tracker.count == 2
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert init_tracker.count == 2
+
+        cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        # Note: Increments by 2 due to Rust-side object store rebuilding.
+
+        assert init_tracker.count == 4
+
+        with pytest.raises(OSError):
+            get_q().collect()
+
+        assert init_tracker.count == 6
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        builder = _init_credential_provider_builder(
+            "auto",
+            "s3://.../...",
+            None,
+            "test",
+        )
+        assert builder is not None
+
+        capfd.readouterr()
+
+        builder.build_credential_provider()
+        builder.build_credential_provider()
+
+        capture = capfd.readouterr().err
+
+        # Ensure cache key is memoized on generation
+        assert capture.count("AutoInit cache key") == 1
+
+        pickle.loads(pickle.dumps(builder)).build_credential_provider()
+
+        capture = capfd.readouterr().err
+
+        # Ensure cache key is not serialized
+        assert capture.count("AutoInit cache key") == 1
+
+
+@pytest.mark.slow
+def test_credential_provider_python_credentials_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def dummy_static_aws_credentials(*a: Any, **kw: Any) -> Any:
+        return {
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+        }, None
+
+    tracker = TrackCallCount(dummy_static_aws_credentials)
+
+    monkeypatch.setattr(
+        pl.CredentialProviderAWS,
+        "retrieve_credentials_impl",
+        tracker.get_function(),
+    )
+
+    assert tracker.count == 0
+
+    provider = pl.CredentialProviderAWS()
+
+    provider()
+    assert tracker.count == 1
+
+    provider()
+    assert tracker.count == 1
+
+    monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
+
+    provider()
+    assert tracker.count == 2
+
+    provider()
+    assert tracker.count == 3
+
+    monkeypatch.delenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING")
+
+    provider()
+    assert tracker.count == 4
+
+    provider()
+    assert tracker.count == 4
+
+    assert provider._cached_credentials.get() is not None
+    assert pickle.loads(pickle.dumps(provider))._cached_credentials.get() is None
+
+
+class TrackCallCount:  # noqa: D101
+    def __init__(self, func: Any) -> None:
+        self.func = func
+        self.count = 0
+
+    def get_function(self) -> Any:
+        def f(*a: Any, **kw: Any) -> Any:
+            self.count += 1
+            return self.func(*a, **kw)
+
+        return f
+
+
+def test_no_pickle_option() -> None:
+    v = NoPickleOption(3)
+    assert v.get() == 3
+
+    out = pickle.loads(pickle.dumps(v))
+
+    assert out.get() is None
+
+
+def test_zero_hash_wrap() -> None:
+    v = ZeroHashWrap(3)
+    assert v.get() == 3
+
+    assert ZeroHashWrap(3) == ZeroHashWrap("7")
+
+    @lru_cache
+    def cache(value: ZeroHashWrap[Any]) -> int:
+        return value.get()  # type: ignore[no-any-return]
+
+    assert cache(ZeroHashWrap(3)) == 3
+    assert cache(ZeroHashWrap(7)) == 3
+    assert cache(ZeroHashWrap("A")) == 3
