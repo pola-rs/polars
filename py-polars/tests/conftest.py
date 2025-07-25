@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import PosixPath
 from typing import Any, Callable, TypeVar, cast
 
 import pytest
@@ -92,33 +93,46 @@ def _patched_cloud(
                 self.path = path
 
             def collect(self) -> pl.DataFrame:
-                lf = with_timeout(lambda: self.query.await_result().lazy())
-                res = prev_collect(lf)
+                # 1. Actually execute the query.
+                with_timeout(lambda: self.query.await_result())
+
+                # 2. If our target was different, write the result into our target
+                #    transparently.
                 if self.prev_tgt is not None:
-                    with Path.open(self.path, "rb") as f:
-                        self.prev_tgt.write(f.read())
+                    is_string = isinstance(self.prev_tgt, (io.StringIO, io.TextIOBase))
+
+                    if is_string:
+                        with Path.open(self.path, "r") as f:
+                            self.prev_tgt.write(f.read())
+                    else:
+                        with Path.open(self.path, "rb") as f:
+                            self.prev_tgt.write(f.read())
 
                     # delete the temporary file
                     Path(self.path).unlink()
-                return res
 
-        def io_to_path(s: io.BytesIO, ext: str) -> Path:
+                # Sinks always return an empty DataFrame.
+                return pl.DataFrame({})
+
+        def io_to_path(s: io.IOBase, ext: str) -> Path:
             path = Path(f"/tmp/pc-{uuid.uuid4()!s}.{ext}")
 
-            offset = s.seek(0, 1)
             with Path.open(path, "wb") as f:
-                f.write(s.read())
-            s.seek(offset)
+                bs = s.read()
+                if isinstance(bs, str):
+                    bs = bytes(bs, encoding="utf-8")
+                f.write(bs)
+            s.seek(0, 2)
             return path
 
         def prepare_scan_sources(src: Any) -> str | Path | list[str | Path]:
-            if isinstance(src, io.BytesIO):
+            if isinstance(src, io.IOBase):
                 src = io_to_path(src, ext)
             elif isinstance(src, bytes):
                 src = io_to_path(io.BytesIO(src), ext)
             elif isinstance(src, list):
                 for i in range(len(src)):
-                    if isinstance(src[i], io.BytesIO):
+                    if isinstance(src[i], io.IOBase):
                         src[i] = io_to_path(src[i], ext)
                     elif isinstance(src[i], bytes):
                         src[i] = io_to_path(io.BytesIO(src[i]), ext)
@@ -134,10 +148,10 @@ def _patched_cloud(
             prev_scan = cast("Callable[..., pl.LazyFrame]", prev_scan)
 
             def _(
-                src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
+                source: io.BytesIO | io.String | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
-                src = prepare_scan_sources(src)  # type: ignore[assignment]
-                return prev_scan(src, *args, **kwargs)  # type: ignore[no-any-return]
+                source = prepare_scan_sources(source)  # type: ignore[assignment]
+                return prev_scan(source, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
 
@@ -146,9 +160,9 @@ def _patched_cloud(
             prev_read = cast("Callable[..., pl.DataFrame]", prev_read)
 
             def _(
-                src: io.BytesIO | str | Path, *args: Any, **kwargs: Any
+                source: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.DataFrame:
-                src = prepare_scan_sources(src)  # type: ignore[assignment]
+                src = prepare_scan_sources(source)  # type: ignore[assignment]
                 return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
@@ -167,9 +181,13 @@ def _patched_cloud(
                     return prev_sink(lf, *args, **kwargs)  # type: ignore[no-any-return]
 
                 prev_tgt = None
-                if isinstance(args[0], io.BytesIO):
+                if isinstance(
+                    args[0], (io.BytesIO, io.StringIO, io.TextIOBase)
+                ) or callable(getattr(args[0], "write", None)):
                     prev_tgt = args[0]
                     args = (f"/tmp/pc-{uuid.uuid4()!s}.{ext}",) + args[1:]
+                elif isinstance(args[0], PosixPath):
+                    args = (str(args[0]),) + args[1:]
 
                 lazy = kwargs.pop("lazy", False)
 
