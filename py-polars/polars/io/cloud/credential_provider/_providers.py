@@ -87,26 +87,30 @@ class CredentialProvider(abc.ABC):
                 "not found. This can happen if a subclass forgets to call "
                 f"super().__init__() ({type(self) = })"
             )
-            raise AttributeError(msg)
+            raise AttributeError(msg)  # noqa: TRY004
 
-        if self._cached_credentials.get() is None or (
-            self._cached_credentials.get()[1] is not None
-            and self._cached_credentials.get()[1] <= int(datetime.now().timestamp())
+        cached = self._cached_credentials.get()
+
+        if cached is None or (
+            (expiry := cached[1]) is not None
+            and expiry <= int(datetime.now().timestamp())
         ):
-            self._cached_credentials = NoPickleOption(self._retrieve_credentials())
+            self._cached_credentials = NoPickleOption(self.retrieve_credentials_impl())
             self._has_logged_use_cache = False
+            cached = self._cached_credentials.get()
+            assert cached is not None
 
         elif verbose() and not self._has_logged_use_cache:
-            expiry = self._cached_credentials.get()[1]
+            expiry = cached[1]
             eprint(
                 f"[{type(self).__name__} @ {hex(id(self))}]: Using cached credentials ({expiry = })"
             )
             self._has_logged_use_cache = True
 
-        return self._cached_credentials.get()
+        return cached
 
     @abc.abstractmethod
-    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn: ...
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
 
 
 class CredentialProviderAWS(CredentialProvider):
@@ -152,7 +156,7 @@ class CredentialProviderAWS(CredentialProvider):
         self._auto_init_unhandled_key = _auto_init_unhandled_key
         self._storage_options_has_endpoint_url = _storage_options_has_endpoint_url
 
-    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
         assert not self._auto_init_unhandled_key
 
@@ -335,7 +339,7 @@ class CredentialProviderAzure(CredentialProvider):
                 f"{self.scopes = } "
             )
 
-    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         if (
             v := self._try_get_azure_storage_account_credential_if_permitted()
@@ -516,7 +520,7 @@ class CredentialProviderGCP(CredentialProvider):
         )
         self.creds = creds
 
-    def _retrieve_credentials(self) -> CredentialProviderFunctionReturn:
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         import google.auth.transport.requests
 

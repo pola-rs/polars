@@ -105,7 +105,7 @@ def test_credential_provider_serialization_custom_provider() -> None:
     err_magic = "err_magic_3"
 
     class ErrCredentialProvider(pl.CredentialProvider):
-        def __call__(self) -> pl.CredentialProviderFunctionReturn:
+        def retrieve_credentials_impl(self) -> pl.CredentialProviderFunctionReturn:
             raise AssertionError(err_magic)
 
     lf = pl.scan_parquet(

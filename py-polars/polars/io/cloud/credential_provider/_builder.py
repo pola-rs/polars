@@ -8,14 +8,13 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
-from polars.io.cloud._utils import ZeroHashWrap
+from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
 from polars.io.cloud.credential_provider._providers import (
     CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
     CredentialProviderFunction,
     CredentialProviderGCP,
-    NoPickleOption,
 )
 
 if TYPE_CHECKING:
@@ -162,10 +161,13 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         return repr(self.credential_provider)
 
 
-AUTO_INIT_LRU_CACHE: Callable[
-    [bytes, ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]]],
-    CredentialProviderBuilderReturn,
-] = None
+AUTO_INIT_LRU_CACHE: (
+    Callable[
+        [bytes, ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]]],
+        CredentialProviderBuilderReturn,
+    ]
+    | None
+) = None
 
 
 def _auto_init_with_cache(
@@ -180,7 +182,7 @@ def _auto_init_with_cache(
                 os.getenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", 8)
             )
         ) <= 0:
-            return build_provider_func()
+            return build_provider_func.get()()
 
         if verbose():
             eprint(f"Create credential provider AutoInit LRU cache ({maxsize = })")
@@ -225,15 +227,19 @@ class AutoInit(CredentialProviderBuilderImpl):
         return None
 
     def get_or_init_cache_key(self) -> bytes:
-        if self._cache_key.get() is None:
-            import pickle
+        cache_key = self._cache_key.get()
+
+        if cache_key is None:
             import hashlib
+            import pickle
 
             self._cache_key = NoPickleOption(
-                hashlib.sha256(pickle.dumps(self)).hexdigest()
+                hashlib.sha256(pickle.dumps(self)).digest()
             )
+            cache_key = self._cache_key.get()
+            assert isinstance(cache_key, bytes)
 
-        return self._cache_key.get()
+        return cache_key
 
     @property
     def provider_repr(self) -> str:
@@ -247,6 +253,9 @@ class UserProvidedGCPToken(CredentialProvider):
         self.token = token
 
     def __call__(self) -> CredentialProviderFunctionReturn:
+        return self.retrieve_credentials_impl()
+
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
         return {"bearer_token": self.token}, None
 
