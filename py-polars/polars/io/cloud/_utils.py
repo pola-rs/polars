@@ -30,7 +30,7 @@ class NoPickleOption(Generic[T]):
         NoPickleOption.__init__(self)
 
 
-class ZeroHashWrap[T]:
+class ZeroHashWrap(Generic[T]):
     """Wrapper that always hashes to 0 and always returns True for __eq__."""
 
     def __init__(self, value: T) -> None:
