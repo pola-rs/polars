@@ -454,6 +454,11 @@ def test_credential_provider_python_builder_cache(
         # Ensure cache key is memoized on generation
         assert capture.count("AutoInit cache key") == 1
 
+        pickle.loads(pickle.dumps(builder)).build_credential_provider()
+
+        # Ensure cache key is not serialized
+        assert capture.count("AutoInit cache key") == 2
+
 
 @pytest.mark.slow
 def test_credential_provider_python_credentials_cache(
@@ -498,6 +503,9 @@ def test_credential_provider_python_credentials_cache(
 
     provider()
     assert tracker.count == 4
+
+    assert provider._cached_credentials.get() is not None
+    assert pickle.loads(pickle.dumps(provider))._cached_credentials.get() is None
 
 
 class TrackCallCount:  # noqa: D101
