@@ -3,7 +3,7 @@ use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 #[cfg(feature = "aws")]
@@ -433,16 +433,22 @@ impl<C: Clone> FetchedCredentialsCache<C> {
 
         // Ensure the credential is valid for at least this many seconds to
         // accommodate for latency.
-        const REQUEST_TIME_BUFFER: u64 = 7;
+        const REQUEST_TIME_BUFFER: u64 = 3;
 
-        if last_fetched_expiry.saturating_sub(current_time) < REQUEST_TIME_BUFFER {
+        let remaining = last_fetched_expiry.saturating_sub(current_time);
+
+        if remaining < REQUEST_TIME_BUFFER {
+            tokio::time::sleep(Duration::from_secs(1 + remaining)).await;
+
             if verbose {
                 eprintln!(
-                    "[FetchedCredentialsCache]: Call update_func: current_time = {}\
-                     , last_fetched_expiry = {}",
+                    "[FetchedCredentialsCache]: \
+                    Call update_func: current_time = {}, \
+                     last_fetched_expiry = {}",
                     current_time, *last_fetched_expiry
                 )
             }
+
             let (credentials, expiry) = update_func.await?;
 
             *last_fetched_credentials = credentials;
