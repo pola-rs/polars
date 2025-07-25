@@ -177,7 +177,7 @@ impl ComputeNode for MultiFileReader {
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(&StreamingExecutionState::new());
+            self.state.initialize(StreamingExecutionState::new());
             self.state.refresh(verbose).await?;
 
             match &mut self.state {
@@ -273,7 +273,7 @@ impl MultiScanState {
     }
 
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, execution_state: &StreamingExecutionState) {
+    fn initialize(&mut self, execution_state: StreamingExecutionState) {
         use MultiScanState::*;
 
         let slf = std::mem::replace(self, Finished);
@@ -283,11 +283,11 @@ impl MultiScanState {
             return;
         };
 
+        let num_pipelines = execution_state.num_pipelines;
+
         config
             .file_reader_builder
             .set_execution_state(execution_state);
-
-        let num_pipelines = execution_state.num_pipelines;
 
         config.num_pipelines.store(num_pipelines);
 
