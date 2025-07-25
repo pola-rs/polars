@@ -8,7 +8,16 @@ import subprocess
 import sys
 import zoneinfo
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Literal,
+    Optional,
+    TypeVar,
+    TypedDict,
+    Union,
+)
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
@@ -47,11 +56,21 @@ class AWSAssumeRoleKWArgs(TypedDict):
     ProvidedContexts: list[dict[str, str]]
 
 
-class CachedCredentialReturn:
-    """Wrapper to avoid pickling cached credentials."""
+T = TypeVar("T")
 
-    def __init__(self, cached: CredentialProviderFunctionReturn | None) -> None:
-        self._cached = cached
+
+class NoPickleOption[T]:
+    """
+    Wrapper to avoid serializing cached values.
+
+    Deserialization will return a None.
+    """
+
+    def __init__(self, opt_value: T | None) -> None:
+        self._opt_value = opt_value
+
+    def __call__(self) -> T | None:
+        return self._opt_value
 
     def __getstate__(self) -> tuple:
         # Needs to return not-None for `__setstate__()` to be called
@@ -59,11 +78,6 @@ class CachedCredentialReturn:
 
     def __setstate__(self, _state: tuple) -> None:
         self.__init__(None)
-
-    def __getitem__(
-        self, _index: Literal[0]
-    ) -> CredentialProviderFunctionReturn | None:
-        return self._cached
 
 
 class CredentialProvider(abc.ABC):
@@ -76,26 +90,27 @@ class CredentialProvider(abc.ABC):
     """
 
     def __init__(self) -> None:
-        self._cached_credentials: CachedCredentialReturn = CachedCredentialReturn(None)
+        self._cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] = (
+            NoPickleOption(None)
+        )
         self._verbose = verbose()
         self._has_logged_use_cache = False
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
-        cached = self._cached_credentials[0]
-
-        if cached is None or (
-            cached[1] is not None and cached[1] <= int(datetime.now().timestamp())
+        if self._cached_credentials() is None or (
+            self._cached_credentials()[1] is not None
+            and self._cached_credentials()[1] <= int(datetime.now().timestamp())
         ):
-            cached = self._retrieve_credentials()
+            self._cached_credentials = NoPickleOption(self._retrieve_credentials())
             self._has_logged_use_cache = False
 
         elif self._verbose and not self._has_logged_use_cache:
-            expiry = cached[0][1]
+            expiry = self._cached_credentials()[1]
             eprint(f"[CredentialProvider]: Using cached credentials ({expiry = })")
             self._has_logged_use_cache = True
 
-        return cached
+        return self._cached_credentials()
 
     @abc.abstractmethod
     def _retrieve_credentials(self) -> CredentialProviderFunctionReturn: ...
