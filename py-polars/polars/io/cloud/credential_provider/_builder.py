@@ -18,16 +18,16 @@ from polars.io.cloud.credential_provider._providers import (
     CredentialProviderGCP,
 )
 
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-else:
-    from typing_extensions import TypeAlias
-
 
 if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunctionReturn,
     )
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
 OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
