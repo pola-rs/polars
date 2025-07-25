@@ -119,15 +119,11 @@ pub struct ExecutionState {
 
 impl ExecutionState {
     pub fn new() -> Self {
-        fn f<T: Send + Sync>(t: T) -> T {
-            t
-        }
-
         let mut flags: StateFlags = Default::default();
         if verbose() {
             flags |= StateFlags::VERBOSE;
         }
-        let out = Self {
+        Self {
             df_cache: Default::default(),
             schema_cache: Default::default(),
             window_cache: Default::default(),
@@ -136,17 +132,8 @@ impl ExecutionState {
             ext_contexts: Default::default(),
             node_timer: None,
             stop: Arc::new(RelaxedCell::from(false)),
-        };
-
-        f(out)
+        }
     }
-
-    pub async fn test(&self) {
-        let guard = self.schema_cache.read().unwrap();
-        Self::test2().await;
-    }
-
-    pub async fn test2() {}
 
     /// Toggle this to measure execution times.
     pub fn time_nodes(&mut self, start: std::time::Instant) {
