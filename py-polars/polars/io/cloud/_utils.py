@@ -29,13 +29,16 @@ class NoPickleOption[T]:
 
 
 class ZeroHashWrap[T]:
-    """Wrapper that always hashes to 0."""
+    """Wrapper that always hashes to 0 and always returns True for __eq__."""
 
     def __init__(self, value: T) -> None:
         self._value = value
 
     def get(self) -> T:
         return self._value
+
+    def __eq__(self, _other: Any) -> bool:
+        return True
 
     def __hash__(self) -> int:
         return 0

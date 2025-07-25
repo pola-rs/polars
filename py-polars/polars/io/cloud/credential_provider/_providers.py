@@ -72,32 +72,38 @@ class CredentialProvider(abc.ABC):
         self._cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] = (
             NoPickleOption()
         )
-        self._verbose = verbose()
         self._has_logged_use_cache = False
+
+        if verbose():
+            eprint(
+                f"[{type(self).__name__} @ {hex(id(self))}]: CredentialProvider.__init__()"
+            )
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
         if not isinstance(getattr(self, "_cached_credentials", None), NoPickleOption):
             msg = (
-                "(self @ CredentialProvider)._cached_credentials attribute "
+                f"[{type(self).__name__} @ {hex(id(self))}]: `_cached_credentials` attribute "
                 "not found. This can happen if a subclass forgets to call "
                 f"super().__init__() ({type(self) = })"
             )
             raise AttributeError(msg)
 
-        if self._cached_credentials() is None or (
-            self._cached_credentials()[1] is not None
-            and self._cached_credentials()[1] <= int(datetime.now().timestamp())
+        if self._cached_credentials.get() is None or (
+            self._cached_credentials.get()[1] is not None
+            and self._cached_credentials.get()[1] <= int(datetime.now().timestamp())
         ):
             self._cached_credentials = NoPickleOption(self._retrieve_credentials())
             self._has_logged_use_cache = False
 
-        elif self._verbose and not self._has_logged_use_cache:
-            expiry = self._cached_credentials()[1]
-            eprint(f"[CredentialProvider]: Using cached credentials ({expiry = })")
+        elif verbose() and not self._has_logged_use_cache:
+            expiry = self._cached_credentials.get()[1]
+            eprint(
+                f"[{type(self).__name__} @ {hex(id(self))}]: Using cached credentials ({expiry = })"
+            )
             self._has_logged_use_cache = True
 
-        return self._cached_credentials()
+        return self._cached_credentials.get()
 
     @abc.abstractmethod
     def _retrieve_credentials(self) -> CredentialProviderFunctionReturn: ...
