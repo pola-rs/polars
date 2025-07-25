@@ -444,7 +444,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
                 eprintln!(
                     "[FetchedCredentialsCache]: \
                     Call update_func: current_time = {}, \
-                     last_fetched_expiry = {}",
+                    last_fetched_expiry = {}",
                     current_time, *last_fetched_expiry
                 )
             }
