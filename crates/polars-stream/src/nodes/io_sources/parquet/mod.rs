@@ -25,6 +25,7 @@ use super::multi_file_reader::reader_interface::{
 };
 use crate::async_executor::{self};
 use crate::nodes::compute_node_prelude::*;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::{TaskPriority, io_sources};
 use crate::utils::task_handles_ext;
 
@@ -130,7 +131,7 @@ impl FileReader for ParquetFileReader {
         } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
-            projected_schema,
+            projection: Projection::Plain(projected_schema),
             row_index,
             pre_slice: pre_slice_arg,
             mut predicate,
@@ -142,7 +143,10 @@ impl FileReader for ParquetFileReader {
                     n_rows_in_file_tx,
                     row_position_on_end_tx,
                 },
-        } = args;
+        } = args
+        else {
+            panic!("unsupported args: {:?}", &args)
+        };
 
         let n_rows_in_file = self._n_rows_in_file()?;
 
@@ -286,6 +290,10 @@ impl FileReader for ParquetFileReader {
         Ok(self._file_schema())
     }
 
+    async fn file_arrow_schema(&mut self) -> PolarsResult<Option<ArrowSchemaRef>> {
+        Ok(Some(self._file_arrow_schema()))
+    }
+
     async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
         self._n_rows_in_file()
     }
@@ -315,6 +323,11 @@ impl ParquetFileReader {
         }
 
         file_schema_pl.clone().unwrap()
+    }
+
+    fn _file_arrow_schema(&mut self) -> ArrowSchemaRef {
+        let InitializedState { file_schema, .. } = self.init_data.as_mut().unwrap();
+        file_schema.clone()
     }
 
     fn _n_rows_in_file(&self) -> PolarsResult<IdxSize> {

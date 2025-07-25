@@ -16,7 +16,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::{RowIndex, pl_async};
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSources};
+use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -32,6 +32,8 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
 
 // Some parts are called MultiFileReader for now to avoid conflict with existing MultiScan.
 
@@ -43,9 +45,7 @@ pub struct MultiFileReaderConfig {
     /// Final output schema of MultiScan node. Includes all e.g. row index / missing columns / file paths / hive etc.
     pub final_output_schema: SchemaRef,
     /// Columns to be projected from the file.
-    pub projected_file_schema: SchemaRef,
-    /// Full schema of the file. Used for complaining about extra columns.
-    pub full_file_schema: SchemaRef,
+    pub file_projection_builder: ProjectionBuilder,
 
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
@@ -54,8 +54,8 @@ pub struct MultiFileReaderConfig {
     pub hive_parts: Option<Arc<HivePartitionsDf>>,
     pub include_file_paths: Option<PlSmallStr>,
     pub missing_columns_policy: MissingColumnsPolicy,
-    pub extra_columns_policy: ExtraColumnsPolicy,
     pub cast_columns_policy: CastColumnsPolicy,
+    pub forbid_extra_columns: Option<ForbidExtraColumns>,
     pub deletion_files: Option<DeletionFilesList>,
 
     pub num_pipelines: RelaxedCell<usize>,

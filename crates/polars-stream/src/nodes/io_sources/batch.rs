@@ -121,7 +121,7 @@ impl FileReader for BatchFnReader {
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
         let BeginReadArgs {
-            projected_schema: _,
+            projection: _,
             row_index: None,
             pre_slice: None,
             predicate: None,

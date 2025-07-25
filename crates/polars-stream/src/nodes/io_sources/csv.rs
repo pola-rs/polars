@@ -29,6 +29,7 @@ use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::{self, distributor_channel};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
 
@@ -132,7 +133,7 @@ impl FileReader for CsvFileReader {
         let memslice = self.get_bytes_maybe_decompress()?;
 
         let BeginReadArgs {
-            projected_schema,
+            projection: Projection::Plain(projected_schema),
             // Because we currently only support PRE_SLICE we don't need to handle row index here.
             row_index,
             pre_slice,
