@@ -21,10 +21,6 @@ from polars.io.cloud.credential_provider._providers import (
 if TYPE_CHECKING:
     import sys
 
-    from polars.io.cloud.credential_provider._providers import (
-        CredentialProviderFunctionReturn,
-    )
-
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
