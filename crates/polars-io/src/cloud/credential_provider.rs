@@ -438,7 +438,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
         let remaining = last_fetched_expiry.saturating_sub(current_time);
 
         if remaining < MIN_REMAINING_TIME {
-            tokio::time::sleep(Duration::from_secs(1 + remaining)).await;
+            tokio::time::sleep(Duration::from_secs(MIN_REMAINING_TIME)).await;
 
             if verbose {
                 eprintln!(
