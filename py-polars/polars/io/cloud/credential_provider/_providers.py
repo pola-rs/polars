@@ -81,6 +81,9 @@ class CredentialProvider(abc.ABC):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
+        if os.getenv("POLARS_DISABLE_CREDENTIAL_PROVIDER_CACHE") == "1":
+            return self.retrieve_credentials_impl()
+
         if not isinstance(getattr(self, "_cached_credentials", None), NoPickleOption):
             msg = (
                 f"[{type(self).__name__} @ {hex(id(self))}]: `_cached_credentials` attribute "
