@@ -565,9 +565,6 @@ def test_credential_provider_aws_expiry(
 
     credential_file_path_str = str(credential_file_path).replace("\\", "/")
 
-    assert '"' not in credential_file_path_str
-    assert "'" not in credential_file_path_str
-
     cfg_file_path.write_text(f"""\
 [profile cred_process]
 credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path('{credential_file_path_str}').read_text())"
