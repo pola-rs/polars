@@ -18,12 +18,12 @@ use crate::nodes::io_sources::multi_file_reader::reader_interface::{
 };
 
 pub mod builder {
-
     use std::sync::{Arc, Mutex};
 
     use polars_utils::pl_str::PlSmallStr;
 
     use super::BatchFnReader;
+    use crate::execute::StreamingExecutionState;
     use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
     use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
     use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
@@ -31,6 +31,7 @@ pub mod builder {
     pub struct BatchFnReaderBuilder {
         pub name: PlSmallStr,
         pub reader: Mutex<Option<BatchFnReader>>,
+        pub execution_state: Mutex<Option<StreamingExecutionState>>,
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
@@ -42,6 +43,10 @@ pub mod builder {
             ReaderCapabilities::empty()
         }
 
+        fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
+            *self.execution_state.lock().unwrap() = Some(execution_state.clone());
+        }
+
         fn build_file_reader(
             &self,
             _source: polars_plan::prelude::ScanSource,
@@ -50,13 +55,16 @@ pub mod builder {
         ) -> Box<dyn FileReader> {
             assert_eq!(scan_source_idx, 0);
 
-            Box::new(
-                self.reader
-                    .try_lock()
-                    .unwrap()
-                    .take()
-                    .expect("BatchFnReaderBuilder called more than once"),
-            ) as Box<dyn FileReader>
+            let mut reader = self
+                .reader
+                .try_lock()
+                .unwrap()
+                .take()
+                .expect("BatchFnReaderBuilder called more than once");
+
+            reader.execution_state = Some(self.execution_state.lock().unwrap().clone().unwrap());
+
+            Box::new(reader) as Box<dyn FileReader>
         }
     }
 
@@ -107,6 +115,7 @@ pub struct BatchFnReader {
     pub name: PlSmallStr,
     pub output_schema: Option<SchemaRef>,
     pub get_batch_state: Option<GetBatchState>,
+    pub execution_state: Option<StreamingExecutionState>,
     pub verbose: bool,
 }
 
@@ -138,9 +147,11 @@ impl FileReader for BatchFnReader {
             panic!("unsupported args: {:?}", &args)
         };
 
+        let execution_state = self.execution_state().clone();
+
         // Must send this first before we `take()` the GetBatchState.
         if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(self._file_schema()?);
+            _ = file_schema_tx.try_send(self._file_schema(&execution_state)?);
         }
 
         let mut get_batch_state = self
@@ -148,9 +159,6 @@ impl FileReader for BatchFnReader {
             .take()
             // If this is ever needed we can buffer
             .expect("unimplemented: BatchFnReader called more than once");
-
-        // FIXME: Propagate this from BeginReadArgs.
-        let exec_state = StreamingExecutionState::default();
 
         let verbose = self.verbose;
 
@@ -167,7 +175,7 @@ impl FileReader for BatchFnReader {
 
             let mut n_rows_seen: usize = 0;
 
-            while let Some(df) = get_batch_state.next(&exec_state)? {
+            while let Some(df) = get_batch_state.next(&execution_state)? {
                 n_rows_seen = n_rows_seen.saturating_add(df.height());
 
                 if morsel_sender
@@ -192,7 +200,7 @@ impl FileReader for BatchFnReader {
                     eprintln!("[BatchFnReader]: read to end for full row count");
                 }
 
-                while let Some(df) = get_batch_state.next(&exec_state)? {
+                while let Some(df) = get_batch_state.next(&execution_state)? {
                     n_rows_seen = n_rows_seen.saturating_add(df.height());
                 }
 
@@ -210,16 +218,27 @@ impl FileReader for BatchFnReader {
 }
 
 impl BatchFnReader {
-    pub fn _file_schema(&mut self) -> PolarsResult<SchemaRef> {
-        if self.output_schema.is_none() {
-            let exec_state = StreamingExecutionState::default();
+    /// # Panics
+    /// Panics if `self.execution_state` is `None`.
+    fn execution_state(&self) -> &StreamingExecutionState {
+        self.execution_state.as_ref().unwrap()
+    }
 
-            let schema =
-                if let Some(df) = self.get_batch_state.as_mut().unwrap().peek(&exec_state)? {
-                    df.schema().clone()
-                } else {
-                    SchemaRef::default()
-                };
+    fn _file_schema(
+        &mut self,
+        execution_state: &StreamingExecutionState,
+    ) -> PolarsResult<SchemaRef> {
+        if self.output_schema.is_none() {
+            let schema = if let Some(df) = self
+                .get_batch_state
+                .as_mut()
+                .unwrap()
+                .peek(execution_state)?
+            {
+                df.schema().clone()
+            } else {
+                SchemaRef::default()
+            };
 
             self.output_schema = Some(schema);
         }

@@ -541,17 +541,13 @@ pub fn lower_ir(
                         use crate::physical_plan::io::python_dataset::python_dataset_scan_to_reader_builder;
                         let guard = cached_ir.lock().unwrap();
 
-                        let (scan_name, scan_fn, python_source_type) = guard
+                        let expanded_scan = guard
                             .as_ref()
                             .expect("python dataset should be resolved")
                             .python_scan()
                             .expect("should be python scan");
 
-                        python_dataset_scan_to_reader_builder(
-                            scan_name,
-                            scan_fn.clone(),
-                            python_source_type,
-                        )
+                        python_dataset_scan_to_reader_builder(expanded_scan)
                     },
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),

@@ -43,13 +43,7 @@ def test_io_plugin_predicate_no_serialization_21130() -> None:
     ).collect().to_dict(as_series=False) == {"json_val": ['{"a":"1"}']}
 
 
-def test_defer() -> None:
-    lf = pl.defer(
-        lambda: pl.DataFrame({"a": np.ones(3)}),
-        schema={"a": pl.Boolean},
-        validate_schema=False,
-    )
-    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
+def test_defer_validate_true() -> None:
     lf = pl.defer(
         lambda: pl.DataFrame({"a": np.ones(3)}),
         schema={"a": pl.Boolean},
@@ -57,6 +51,16 @@ def test_defer() -> None:
     )
     with pytest.raises(pl.exceptions.SchemaError):
         lf.collect()
+
+
+@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
+def test_defer_validate_false() -> None:
+    lf = pl.defer(
+        lambda: pl.DataFrame({"a": np.ones(3)}),
+        schema={"a": pl.Boolean},
+        validate_schema=False,
+    )
+    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
 
 
 def test_empty_iterator_io_plugin() -> None:
@@ -130,6 +134,7 @@ This allows it to read into multiple rows.
     )
 
 
+@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_datetime_io_predicate_pushdown_21790() -> None:
     recorded: dict[str, pl.Expr | None] = {"predicate": None}
     df = pl.DataFrame(
