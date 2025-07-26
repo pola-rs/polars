@@ -4,6 +4,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: @serialize-stack-overflow
 @pytest.mark.slow
 def test_concat_expressions_stack_overflow() -> None:
     n = 10000
@@ -13,6 +14,7 @@ def test_concat_expressions_stack_overflow() -> None:
     assert df.shape == (n, 1)
 
 
+@pytest.mark.may_fail_cloud  # reason: @serialize-stack-overflow
 @pytest.mark.slow
 def test_concat_lf_stack_overflow() -> None:
     n = 1000

@@ -217,6 +217,7 @@ def test_when_then_edge_cases_3994() -> None:
     ).to_dict(as_series=False) == {"id": [], "type": []}
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_object_when_then_4702() -> None:
     # please don't ever do this
     x = pl.DataFrame({"Row": [1, 2], "Type": [pl.Date, pl.UInt8]})
@@ -304,10 +305,12 @@ def test_predicate_broadcast() -> None:
         pl.col("x"),
     ],
 )
+@pytest.mark.parametrize("maintain_order", [False, True])
 def test_single_element_broadcast(
     mask_expr: pl.Expr,
     truthy_expr: pl.Expr,
     falsy_expr: pl.Expr,
+    maintain_order: bool,
 ) -> None:
     df = (
         pl.Series("x", 5 * [1], dtype=pl.Int32)
@@ -330,13 +333,13 @@ def test_single_element_broadcast(
     assert_frame_equal(result, expected)
 
     result = (
-        df.group_by(pl.lit(True).alias("key"))
+        df.group_by(pl.lit(True).alias("key"), maintain_order=maintain_order)
         .agg(pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr))
         .drop("key")
     )
     if expected.height > 1:
         result = result.explode(cs.all())
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
 @pytest.mark.parametrize(
@@ -360,7 +363,8 @@ def test_mismatched_height_should_raise(
         df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
 
 
-def test_when_then_output_name_12380() -> None:
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_when_then_output_name_12380(maintain_order: bool) -> None:
     df = pl.DataFrame(
         {"x": range(5), "y": range(5, 10)}, schema={"x": pl.Int8, "y": pl.Int64}
     ).with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
@@ -375,15 +379,12 @@ def test_when_then_output_name_12380() -> None:
             actual,
         )
         actual = (
-            df.group_by(pl.lit(True).alias("key"))
+            df.group_by(pl.lit(True).alias("key"), maintain_order=maintain_order)
             .agg(ternary_expr)
             .drop("key")
             .explode(cs.all())
         )
-        assert_frame_equal(
-            expect,
-            actual,
-        )
+        assert_frame_equal(expect, actual, check_row_order=maintain_order)
 
     expect = df.select(pl.col("y").alias("x"))
     for false_expr in (
@@ -551,7 +552,13 @@ def test_when_then_null_broadcast() -> None:
             [{"foo": 0, "bar": "1"}, {"foo": 1, "bar": "2"}],
             id="Struct",
         ),
-        pytest.param(pl.Object, ["x", "y"], id="Object"),
+        pytest.param(
+            pl.Object,
+            ["x", "y"],
+            id="Object",
+            marks=pytest.mark.may_fail_cloud,
+            # reason: objects are not allowed in cloud
+        ),
     ],
 )
 @pytest.mark.parametrize("broadcast", list(itertools.product([False, True], repeat=3)))
@@ -739,6 +746,7 @@ def test_struct_when_then_broadcasting_combinations_19122(
     )
 
 
+@pytest.mark.may_fail_cloud  # reason str.to_decimal is an eager construct
 def test_when_then_to_decimal_18375() -> None:
     df = pl.DataFrame({"a": ["1.23", "4.56"]})
 

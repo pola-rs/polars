@@ -522,6 +522,7 @@ def test_overflow_diff() -> None:
     }
 
 
+@pytest.mark.may_fail_cloud  # reason: unknown type
 def test_fill_null_unknown_output_type() -> None:
     df = pl.DataFrame({"a": [None, 2, 3, 4, 5]})
     assert df.with_columns(
