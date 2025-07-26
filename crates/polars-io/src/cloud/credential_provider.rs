@@ -555,17 +555,7 @@ mod python_impl {
                         let build_fn =
                             py_object.getattr(py, intern!(py, "build_credential_provider"))?;
 
-                        let v = build_fn.call(
-                            py,
-                            (),
-                            clear_cached_credentials
-                                .then(|| {
-                                    let dict = PyDict::new(py);
-                                    dict.set_item(intern!(py, "clear_cached_credentials"), true);
-                                    dict
-                                })
-                                .as_ref(),
-                        )?;
+                        let v = build_fn.call1(py, (clear_cached_credentials,))?;
                         let v = (!v.is_none(py)).then_some(v);
 
                         pyo3::PyResult::Ok(v)

@@ -81,7 +81,7 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
-        clear_cached_credentials: bool = False,
+        clear_cached_credentials: bool = False,  # noqa: FBT001
     ) -> CredentialProviderBuilderReturn:
         """
         Instantiate a credential provider from configuration.

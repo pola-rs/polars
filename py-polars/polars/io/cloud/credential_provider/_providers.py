@@ -97,7 +97,7 @@ class CredentialProvider(abc.ABC):
                 "not found. This can happen if a subclass forgets to call "
                 f"super().__init__() ({type(self) = })"
             )
-            raise AttributeError(msg)  # noqa: TRY004
+            raise AttributeError(msg)
 
         cached = self._cached_credentials.get()
 

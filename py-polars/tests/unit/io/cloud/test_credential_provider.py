@@ -6,7 +6,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from polars.io.cloud.credential_provider._providers import UserProvidedGCPToken
 import pytest
 
 import polars as pl
@@ -15,6 +14,7 @@ from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
+from polars.io.cloud.credential_provider._providers import UserProvidedGCPToken
 
 
 @pytest.mark.parametrize(
@@ -383,7 +383,7 @@ def test_credential_provider_python_builder_cache(
             return pl.scan_parquet(
                 "s3://.../...",
                 storage_options={
-                    "aws_profile": "initial_value",
+                    "aws_profile": "A",
                     "aws_endpoint_url": "http://localhost",
                 },
                 credential_provider="auto",
@@ -542,7 +542,7 @@ def test_zero_hash_wrap() -> None:
 
     assert cache(ZeroHashWrap(3)) == 3
     assert cache(ZeroHashWrap(7)) == 3
-    assert cache(ZeroHashWrap("initial_value")) == 3
+    assert cache(ZeroHashWrap("A")) == 3
 
 
 @pytest.mark.write_disk
@@ -662,7 +662,7 @@ def test_credential_provider_rebuild_clears_cache(
     )
 
     # This provider object should be reused from the LRU cache.
-    provider_at_scan = builder.build_credential_provider(False)
+    provider_at_scan = builder.build_credential_provider()
     # This is a separate one for testing local to this function.
     provider_local = credential_provider_class()
 
