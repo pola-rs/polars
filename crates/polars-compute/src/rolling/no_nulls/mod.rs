@@ -81,9 +81,10 @@ pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     det_offsets_fn: Fo,
     aggregator: Fa,
     weights: &[T],
+    normalize: bool,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType,
+    T: NativeType + num_traits::Zero + std::ops::Div<Output = T> + Copy,
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Fa: Fn(&[T], &[T]) -> T,
 {
@@ -93,8 +94,32 @@ where
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
+            let win_len = end - start;
+            let weights_slice = if start == 0 {
+                // Truncated at the start: take the last win_len weights
+                &weights[weights.len() - win_len..]
+            } else if end == len {
+                // Truncated at the end: take the first win_len weights
+                &weights[..win_len]
+            } else {
+                // Full window
+                weights
+            };
 
-            aggregator(vals, weights)
+            if normalize && win_len != window_size {
+                // Renormalize weights so they sum to 1
+                let wsum = weights_slice
+                    .iter()
+                    .copied()
+                    .fold(T::zero(), |acc, x| acc + x);
+                if wsum == T::zero() {
+                    panic!("Weighted mean is undefined if weights sum to 0");
+                }
+                let normed_weights: Vec<T> = weights_slice.iter().map(|&w| w / wsum).collect();
+                aggregator(vals, &normed_weights)
+            } else {
+                aggregator(vals, weights_slice)
+            }
         })
         .collect_trusted::<Vec<T>>();
 
