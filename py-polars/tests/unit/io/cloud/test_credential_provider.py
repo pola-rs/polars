@@ -661,8 +661,12 @@ def test_credential_provider_rebuild_clears_cache(
         caller_name="test",
     )
 
+    assert builder is not None
+
     # This provider object should be reused from the LRU cache.
     provider_at_scan = builder.build_credential_provider()
+    assert provider_at_scan is not None
+
     # This is a separate one for testing local to this function.
     provider_local = credential_provider_class()
 
@@ -670,14 +674,16 @@ def test_credential_provider_rebuild_clears_cache(
     provider_local()
     provider_at_scan()
 
+    # Now update the the retrieval function to return updated credentials.
     monkeypatch.setattr(
         credential_provider_class,
         "retrieve_credentials_impl",
         lambda *_: (updated_credentials, None),
     )
 
-    # Even though the config file changed, the credential providers never refresh
-    # due to having a cached value with expiration of None (never expires).
+    # Despite "retrieve_credentials_impl" being updated, the providers should
+    # still return the initial credentials, as they were cached with an expiry
+    # of None.
     assert provider_local() == (initial_credentials, None)
     assert provider_at_scan() == (initial_credentials, None)
 
@@ -687,7 +693,7 @@ def test_credential_provider_rebuild_clears_cache(
         q.collect()
 
     # The provider object used by the scan should have its cached cleared when
-    # rebuilding.
+    # the Rust-side object store is rebuilt due to an error.
     assert provider_at_scan() == (updated_credentials, None)
 
     # This is a separate object so it shouldn't be updated
