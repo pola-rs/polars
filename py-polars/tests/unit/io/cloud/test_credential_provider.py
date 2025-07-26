@@ -1,5 +1,7 @@
 import io
 import pickle
+import sys
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -539,3 +541,68 @@ def test_zero_hash_wrap() -> None:
     assert cache(ZeroHashWrap(3)) == 3
     assert cache(ZeroHashWrap(7)) == 3
     assert cache(ZeroHashWrap("A")) == 3
+
+
+@pytest.mark.write_disk
+def test_credential_provider_aws_expiry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    credential_file_path = tmp_path / "credentials.json"
+
+    credential_file_path.write_text(
+        """\
+{
+    "Version": 1,
+    "AccessKeyId": "123",
+    "SecretAccessKey": "456",
+    "SessionToken": "789",
+    "Expiration": "2099-01-01T00:00:00+00:00"
+}
+"""
+    )
+
+    cfg_file_path = tmp_path / "config"
+
+    credential_file_path_str = str(credential_file_path).replace("\\", "/")
+
+    cfg_file_path.write_text(f"""\
+[profile cred_process]
+credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path('{credential_file_path_str}').read_text())"
+""")
+
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+
+    creds, expiry = pl.CredentialProviderAWS(profile_name="cred_process")()
+
+    assert creds == {
+        "aws_access_key_id": "123",
+        "aws_secret_access_key": "456",
+        "aws_session_token": "789",
+    }
+
+    assert expiry is not None
+
+    assert datetime.fromtimestamp(expiry, tz=timezone.utc) == datetime.fromisoformat(
+        "2099-01-01T00:00:00+00:00"
+    )
+
+    credential_file_path.write_text(
+        """\
+{
+    "Version": 1,
+    "AccessKeyId": "...",
+    "SecretAccessKey": "...",
+    "SessionToken": "..."
+}
+"""
+    )
+
+    creds, expiry = pl.CredentialProviderAWS(profile_name="cred_process")()
+
+    assert creds == {
+        "aws_access_key_id": "...",
+        "aws_secret_access_key": "...",
+        "aws_session_token": "...",
+    }
+
+    assert expiry is None
