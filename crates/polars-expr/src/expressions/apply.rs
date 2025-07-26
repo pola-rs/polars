@@ -422,7 +422,7 @@ fn apply_multiple_elementwise<'a>(
             Ok(ac)
         },
         first_as => {
-            let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
+            let check_lengths = check_lengths && !matches!(first_as, AggState::LiteralScalar(_));
             let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal())
                 && acs.iter().any(|ac| ac.is_aggregated());
             let mut c = acs

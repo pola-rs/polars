@@ -1,9 +1,6 @@
-use num_traits::{Signed, Zero};
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::arity::unary_elementwise_values;
-use polars_core::prelude::{
-    ChunkedArray, Column, DataType, IDX_DTYPE, IdxCa, PolarsIntegerType, Series,
-};
+use polars_core::prelude::{ChunkedArray, DataType, IDX_DTYPE, IdxCa, PolarsIntegerType, Series};
 use polars_utils::index::ToIdx;
 
 fn convert<T>(ca: &ChunkedArray<T>, target_len: usize) -> PolarsResult<IdxCa>
@@ -45,64 +42,4 @@ pub fn convert_to_unsigned_index(s: &Series, target_len: usize) -> PolarsResult<
         },
         _ => unreachable!(),
     }
-}
-
-/// May give false negatives because it ignores the null values.
-fn is_positive_idx_uncertain_impl<T>(ca: &ChunkedArray<T>) -> bool
-where
-    T: PolarsIntegerType,
-    T::Native: Signed,
-{
-    ca.downcast_iter().all(|v| {
-        let values = v.values();
-        let mut all_positive = true;
-
-        // process chunks to autovec but still have early return
-        for chunk in values.chunks(1024) {
-            for v in chunk.iter() {
-                all_positive &= v.is_positive() | v.is_zero()
-            }
-            if !all_positive {
-                return all_positive;
-            }
-        }
-        all_positive
-    })
-}
-
-/// May give false negatives because it ignores the null values.
-pub fn is_positive_idx_uncertain(s: &Series) -> bool {
-    let dtype = s.dtype();
-    debug_assert!(dtype.is_integer(), "expected integers as index");
-    if dtype.is_unsigned_integer() {
-        return true;
-    }
-    match dtype {
-        DataType::Int64 => {
-            let ca = s.i64().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        DataType::Int32 => {
-            let ca = s.i32().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        #[cfg(feature = "dtype-i16")]
-        DataType::Int16 => {
-            let ca = s.i16().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        #[cfg(feature = "dtype-i8")]
-        DataType::Int8 => {
-            let ca = s.i8().unwrap();
-            is_positive_idx_uncertain_impl(ca)
-        },
-        _ => unreachable!(),
-    }
-}
-
-/// May give false negatives because it ignores the null values.
-pub fn is_positive_idx_uncertain_col(c: &Column) -> bool {
-    // @scalar-opt
-    // @partition-opt
-    is_positive_idx_uncertain(c.as_materialized_series())
 }

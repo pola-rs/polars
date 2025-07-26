@@ -328,7 +328,7 @@ impl WindowExpr {
             },
             (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
-            (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
+            (_, AggState::LiteralScalar(_)) => Ok(MapStrategy::Nothing),
         }
     }
 }

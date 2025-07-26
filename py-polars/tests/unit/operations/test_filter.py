@@ -338,3 +338,25 @@ def test_filter_expand_20014() -> None:
         .count("FILTER")
         == 3
     )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_filter_group_by_23681(maintain_order: bool) -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3, 300],
+                "b": [1, 1, 2, 2],
+            }
+        )
+        .group_by("b", maintain_order=maintain_order)
+        .agg(pl.col.a.filter(pl.Series([True, False])))
+    )
+    expected = pl.DataFrame(
+        {
+            "b": [1, 2],
+            "a": [[1], [3]],
+        }
+    )
+
+    assert_frame_equal(df, expected, check_row_order=maintain_order)
