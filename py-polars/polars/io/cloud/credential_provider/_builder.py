@@ -81,7 +81,7 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
-        clear_cached_credentials: bool,  # noqa: FBT001
+        clear_cached_credentials: bool = False,
     ) -> CredentialProviderBuilderReturn:
         """Instantiate a credential provider from configuration."""
         verbose = polars._utils.logging.verbose()
