@@ -18,6 +18,8 @@ mod fused;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
+#[cfg(feature = "python")]
+pub use expand_datasets::ExpandedPythonScan;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod set_order;

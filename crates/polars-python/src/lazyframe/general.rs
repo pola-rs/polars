@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
@@ -443,7 +442,7 @@ impl PyLazyFrame {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
         Ok(LazyFrame::scan_from_python_function(
-            Either::Right(schema),
+            python_dsl::SchemaProvider::Plain(schema),
             scan_fn,
             pyarrow,
             validate_schema,
@@ -464,7 +463,7 @@ impl PyLazyFrame {
                 .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
         ));
         Ok(LazyFrame::scan_from_python_function(
-            Either::Right(schema),
+            python_dsl::SchemaProvider::Plain(schema),
             scan_fn,
             pyarrow,
             validate_schema,
@@ -479,7 +478,7 @@ impl PyLazyFrame {
         validate_schema: bool,
     ) -> PyResult<Self> {
         Ok(LazyFrame::scan_from_python_function(
-            Either::Left(schema_fn),
+            python_dsl::SchemaProvider::Function(schema_fn.into()),
             scan_fn,
             false,
             validate_schema,

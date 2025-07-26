@@ -102,10 +102,11 @@ impl From<u8> for StateFlags {
 type CachedValue = Arc<(AtomicI64, OnceLock<DataFrame>)>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
+#[derive(Clone)]
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<RwLock<PlHashMap<UniqueId, CachedValue>>>,
-    pub schema_cache: RwLock<Option<SchemaRef>>,
+    pub schema_cache: Arc<RwLock<Option<SchemaRef>>>,
     /// Used by Window Expressions to cache intermediate state
     pub window_cache: Arc<WindowCache>,
     // every join/union split gets an increment to distinguish between schema state
@@ -293,21 +294,5 @@ impl ExecutionState {
 impl Default for ExecutionState {
     fn default() -> Self {
         ExecutionState::new()
-    }
-}
-
-impl Clone for ExecutionState {
-    /// clones, but clears no state.
-    fn clone(&self) -> Self {
-        Self {
-            df_cache: self.df_cache.clone(),
-            schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            window_cache: self.window_cache.clone(),
-            branch_idx: self.branch_idx,
-            flags: self.flags.clone(),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
-            stop: self.stop.clone(),
-        }
     }
 }
