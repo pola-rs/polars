@@ -74,14 +74,20 @@ mod inner {
         ) -> PolarsResult<Arc<dyn ObjectStore>> {
             let mut current_store = self.inner.store.lock().await;
 
-            self.rebuilt.store(true);
-
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
-                *current_store = self.inner.builder.clone().build_impl().await.map_err(|e| {
-                    e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
-                })?;
+                *current_store =
+                    self.inner
+                        .builder
+                        .clone()
+                        .build_impl(true)
+                        .await
+                        .map_err(|e| {
+                            e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
+                        })?;
             }
+
+            self.rebuilt.store(true);
 
             Ok((*current_store).clone())
         }

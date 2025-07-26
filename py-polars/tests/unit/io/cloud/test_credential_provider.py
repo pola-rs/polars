@@ -14,6 +14,7 @@ from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
+from polars.io.cloud.credential_provider._providers import UserProvidedGCPToken
 
 
 @pytest.mark.parametrize(
@@ -340,13 +341,14 @@ endpoint_url = http://localhost:333
 
 def _set_default_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     creds_file_path = tmp_path / "credentials"
-    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
     creds_file_path.write_text("""\
 [default]
 aws_access_key_id=Z
 aws_secret_access_key=Z
 """)
+
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
 
 @pytest.mark.slow
@@ -606,3 +608,116 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
     }
 
     assert expiry is None
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    (
+        "credential_provider_class",
+        "scan_path",
+        "initial_credentials",
+        "updated_credentials",
+    ),
+    [
+        (
+            pl.CredentialProviderAWS,
+            "s3://.../...",
+            {"aws_access_key_id": "initial", "aws_secret_access_key": "initial"},
+            {"aws_access_key_id": "updated", "aws_secret_access_key": "updated"},
+        ),
+        (
+            pl.CredentialProviderAzure,
+            "abfss://container@storage_account.dfs.core.windows.net/bucket",
+            {"bearer_token": "initial"},
+            {"bearer_token": "updated"},
+        ),
+        (
+            pl.CredentialProviderGCP,
+            "gs://.../...",
+            {"bearer_token": "initial"},
+            {"bearer_token": "updated"},
+        ),
+    ],
+)
+def test_credential_provider_rebuild_clears_cache(
+    credential_provider_class: type[pl.CredentialProvider],
+    scan_path: str,
+    initial_credentials: dict[str, str],
+    updated_credentials: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert initial_credentials != updated_credentials
+
+    monkeypatch.setattr(
+        credential_provider_class,
+        "retrieve_credentials_impl",
+        lambda *_: (initial_credentials, None),
+    )
+
+    storage_options = (
+        {"aws_endpoint_url": "http://localhost:333"}
+        if credential_provider_class == pl.CredentialProviderAWS
+        else None
+    )
+
+    builder = _init_credential_provider_builder(
+        "auto",
+        scan_path,
+        storage_options=storage_options,
+        caller_name="test",
+    )
+
+    assert builder is not None
+
+    # This provider object should be reused from the LRU cache.
+    provider_at_scan = builder.build_credential_provider()
+    assert provider_at_scan is not None
+
+    # This is a separate one for testing local to this function.
+    provider_local = credential_provider_class()
+
+    # Set the caches
+    provider_local()
+    provider_at_scan()
+
+    # Now update the the retrieval function to return updated credentials.
+    monkeypatch.setattr(
+        credential_provider_class,
+        "retrieve_credentials_impl",
+        lambda *_: (updated_credentials, None),
+    )
+
+    # Despite "retrieve_credentials_impl" being updated, the providers should
+    # still return the initial credentials, as they were cached with an expiry
+    # of None.
+    assert provider_local() == (initial_credentials, None)
+    assert provider_at_scan() == (initial_credentials, None)
+
+    q = pl.scan_parquet(
+        scan_path,
+        storage_options=storage_options,
+        credential_provider="auto",
+    )
+
+    with pytest.raises(OSError):
+        q.collect()
+
+    # The provider object used by the scan should have its cached cleared when
+    # the Rust-side object store is rebuilt due to an error.
+    assert provider_at_scan() == (updated_credentials, None)
+
+    # This is a separate object so it shouldn't be updated
+    assert provider_local() == (initial_credentials, None)
+
+    provider_local.clear_cached_credentials()
+
+    assert provider_local() == (updated_credentials, None)
+
+
+def test_credential_provider_subclass_cache_no_super_init(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = UserProvidedGCPToken("A")
+    assert provider() == ({"bearer_token": "A"}, None)
+    monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
+    assert provider() == ({"bearer_token": "A"}, None)

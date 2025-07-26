@@ -81,8 +81,17 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
+        clear_cached_credentials: bool = False,  # noqa: FBT001
     ) -> CredentialProviderBuilderReturn:
-        """Instantiate a credential provider from configuration."""
+        """
+        Instantiate a credential provider from configuration.
+
+        Parameters
+        ----------
+        clear_cached_credentials
+            If the built provider is an instance of `pl.CredentialProvider`,
+            clears any cached credentials on that object.
+        """
         verbose = polars._utils.logging.verbose()
 
         if verbose:
@@ -103,6 +112,14 @@ class CredentialProviderBuilder:
                 eprint(
                     f"[CredentialProviderBuilder]: No provider initialized "
                     f"from {self.credential_provider_init!r}"
+                )
+
+        if isinstance(v, CredentialProvider) and clear_cached_credentials:
+            v.clear_cached_credentials()
+
+            if verbose:
+                eprint(
+                    f"[CredentialProviderBuilder]: Clear cached credentials for {v!r}"
                 )
 
         return v
