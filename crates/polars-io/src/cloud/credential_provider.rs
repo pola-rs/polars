@@ -509,10 +509,10 @@ mod python_impl {
     use polars_error::{PolarsError, PolarsResult};
     use polars_utils::pl_str::PlSmallStr;
     use polars_utils::python_function::PythonObject;
-    use pyo3::Python;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+    use pyo3::{Python, intern};
 
     use super::IntoCredentialProvider;
 
@@ -552,9 +552,23 @@ mod python_impl {
             match self {
                 Self::Builder(py_object) => {
                     let opt_initialized_py_object = Python::with_gil(|py| {
-                        let build_fn = py_object.getattr(py, "build_credential_provider")?;
+                        let build_fn =
+                            py_object.getattr(py, intern!(py, "build_credential_provider"))?;
 
-                        let v = build_fn.call1(py, (clear_cached_credentials,))?;
+                        let v = build_fn.call(
+                            py,
+                            (),
+                            clear_cached_credentials
+                                .then(|| {
+                                    let dict = PyDict::new(py);
+                                    dict.set_item(
+                                        intern!(py, "clear_cached_credentials"),
+                                        clear_cached_credentials,
+                                    );
+                                    dict
+                                })
+                                .as_ref(),
+                        )?;
                         let v = (!v.is_none(py)).then_some(v);
 
                         pyo3::PyResult::Ok(v)
