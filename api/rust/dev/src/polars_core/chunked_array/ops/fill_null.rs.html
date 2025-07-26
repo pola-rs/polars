@@ -1,0 +1,378 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-core/src/chunked_array/ops/fill_null.rs`."><title>fill_null.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="polars_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-4e99c027.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_core/chunked_array/ops/</div>fill_null.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>arrow::bitmap::{Bitmap, BitmapBuilder};
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>arrow::legacy::kernels::set::set_at_nulls;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>bytemuck::Zeroable;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>num_traits::{NumCast, One, Zero};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>polars_utils::itertools::Itertools;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><span class="kw">crate</span>::prelude::<span class="kw-2">*</span>;
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">fn </span>err_fill_null() -&gt; PolarsError {
+<a href=#10 id=10 data-nosnippet>10</a>    <span class="macro">polars_err!</span>(ComputeError: <span class="string">"could not determine the fill value"</span>)
+<a href=#11 id=11 data-nosnippet>11</a>}
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">impl </span>Series {
+<a href=#14 id=14 data-nosnippet>14</a>    <span class="doccomment">/// Replace None values with one of the following strategies:
+<a href=#15 id=15 data-nosnippet>15</a>    /// * Forward fill (replace None with the previous value)
+<a href=#16 id=16 data-nosnippet>16</a>    /// * Backward fill (replace None with the next value)
+<a href=#17 id=17 data-nosnippet>17</a>    /// * Mean fill (replace None with the mean of the whole array)
+<a href=#18 id=18 data-nosnippet>18</a>    /// * Min fill (replace None with the minimum of the whole array)
+<a href=#19 id=19 data-nosnippet>19</a>    /// * Max fill (replace None with the maximum of the whole array)
+<a href=#20 id=20 data-nosnippet>20</a>    /// * Zero fill (replace None with the value zero)
+<a href=#21 id=21 data-nosnippet>21</a>    /// * One fill (replace None with the value one)
+<a href=#22 id=22 data-nosnippet>22</a>    ///
+<a href=#23 id=23 data-nosnippet>23</a>    /// *NOTE: If you want to fill the Nones with a value use the
+<a href=#24 id=24 data-nosnippet>24</a>    /// [`fill_null` operation on `ChunkedArray&lt;T&gt;`](crate::chunked_array::ops::ChunkFillNullValue)*.
+<a href=#25 id=25 data-nosnippet>25</a>    ///
+<a href=#26 id=26 data-nosnippet>26</a>    /// # Example
+<a href=#27 id=27 data-nosnippet>27</a>    ///
+<a href=#28 id=28 data-nosnippet>28</a>    /// ```rust
+<a href=#29 id=29 data-nosnippet>29</a>    /// # use polars_core::prelude::*;
+<a href=#30 id=30 data-nosnippet>30</a>    /// fn example() -&gt; PolarsResult&lt;()&gt; {
+<a href=#31 id=31 data-nosnippet>31</a>    ///     let s = Column::new("some_missing".into(), &amp;[Some(1), None, Some(2)]);
+<a href=#32 id=32 data-nosnippet>32</a>    ///
+<a href=#33 id=33 data-nosnippet>33</a>    ///     let filled = s.fill_null(FillNullStrategy::Forward(None))?;
+<a href=#34 id=34 data-nosnippet>34</a>    ///     assert_eq!(Vec::from(filled.i32()?), &amp;[Some(1), Some(1), Some(2)]);
+<a href=#35 id=35 data-nosnippet>35</a>    ///
+<a href=#36 id=36 data-nosnippet>36</a>    ///     let filled = s.fill_null(FillNullStrategy::Backward(None))?;
+<a href=#37 id=37 data-nosnippet>37</a>    ///     assert_eq!(Vec::from(filled.i32()?), &amp;[Some(1), Some(2), Some(2)]);
+<a href=#38 id=38 data-nosnippet>38</a>    ///
+<a href=#39 id=39 data-nosnippet>39</a>    ///     let filled = s.fill_null(FillNullStrategy::Min)?;
+<a href=#40 id=40 data-nosnippet>40</a>    ///     assert_eq!(Vec::from(filled.i32()?), &amp;[Some(1), Some(1), Some(2)]);
+<a href=#41 id=41 data-nosnippet>41</a>    ///
+<a href=#42 id=42 data-nosnippet>42</a>    ///     let filled = s.fill_null(FillNullStrategy::Max)?;
+<a href=#43 id=43 data-nosnippet>43</a>    ///     assert_eq!(Vec::from(filled.i32()?), &amp;[Some(1), Some(2), Some(2)]);
+<a href=#44 id=44 data-nosnippet>44</a>    ///
+<a href=#45 id=45 data-nosnippet>45</a>    ///     let filled = s.fill_null(FillNullStrategy::Mean)?;
+<a href=#46 id=46 data-nosnippet>46</a>    ///     assert_eq!(Vec::from(filled.i32()?), &amp;[Some(1), Some(1), Some(2)]);
+<a href=#47 id=47 data-nosnippet>47</a>    ///
+<a href=#48 id=48 data-nosnippet>48</a>    ///     let filled = s.fill_null(FillNullStrategy::Zero)?;
+<a href=#49 id=49 data-nosnippet>49</a>    ///     assert_eq!(Vec::from(filled.i32()?), &amp;[Some(1), Some(0), Some(2)]);
+<a href=#50 id=50 data-nosnippet>50</a>    ///
+<a href=#51 id=51 data-nosnippet>51</a>    ///     let filled = s.fill_null(FillNullStrategy::One)?;
+<a href=#52 id=52 data-nosnippet>52</a>    ///     assert_eq!(Vec::from(filled.i32()?), &amp;[Some(1), Some(1), Some(2)]);
+<a href=#53 id=53 data-nosnippet>53</a>    ///
+<a href=#54 id=54 data-nosnippet>54</a>    ///     Ok(())
+<a href=#55 id=55 data-nosnippet>55</a>    /// }
+<a href=#56 id=56 data-nosnippet>56</a>    /// example();
+<a href=#57 id=57 data-nosnippet>57</a>    /// ```
+<a href=#58 id=58 data-nosnippet>58</a>    </span><span class="kw">pub fn </span>fill_null(<span class="kw-2">&amp;</span><span class="self">self</span>, strategy: FillNullStrategy) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#59 id=59 data-nosnippet>59</a>        <span class="comment">// Nothing to fill.
+<a href=#60 id=60 data-nosnippet>60</a>        </span><span class="kw">let </span>nc = <span class="self">self</span>.null_count();
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="kw">if </span>nc == <span class="number">0
+<a href=#62 id=62 data-nosnippet>62</a>            </span>|| (nc == <span class="self">self</span>.len()
+<a href=#63 id=63 data-nosnippet>63</a>                &amp;&amp; <span class="macro">matches!</span>(
+<a href=#64 id=64 data-nosnippet>64</a>                    strategy,
+<a href=#65 id=65 data-nosnippet>65</a>                    FillNullStrategy::Forward(<span class="kw">_</span>)
+<a href=#66 id=66 data-nosnippet>66</a>                        | FillNullStrategy::Backward(<span class="kw">_</span>)
+<a href=#67 id=67 data-nosnippet>67</a>                        | FillNullStrategy::Max
+<a href=#68 id=68 data-nosnippet>68</a>                        | FillNullStrategy::Min
+<a href=#69 id=69 data-nosnippet>69</a>                        | FillNullStrategy::Mean
+<a href=#70 id=70 data-nosnippet>70</a>                ))
+<a href=#71 id=71 data-nosnippet>71</a>        {
+<a href=#72 id=72 data-nosnippet>72</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="self">self</span>.clone());
+<a href=#73 id=73 data-nosnippet>73</a>        }
+<a href=#74 id=74 data-nosnippet>74</a>
+<a href=#75 id=75 data-nosnippet>75</a>        <span class="kw">let </span>physical_type = <span class="self">self</span>.dtype().to_physical();
+<a href=#76 id=76 data-nosnippet>76</a>
+<a href=#77 id=77 data-nosnippet>77</a>        <span class="kw">match </span>strategy {
+<a href=#78 id=78 data-nosnippet>78</a>            FillNullStrategy::Forward(<span class="prelude-val">None</span>) <span class="kw">if </span>!physical_type.is_primitive_numeric() =&gt; {
+<a href=#79 id=79 data-nosnippet>79</a>                fill_forward_gather(<span class="self">self</span>)
+<a href=#80 id=80 data-nosnippet>80</a>            },
+<a href=#81 id=81 data-nosnippet>81</a>            FillNullStrategy::Forward(<span class="prelude-val">Some</span>(limit)) =&gt; fill_forward_gather_limit(<span class="self">self</span>, limit),
+<a href=#82 id=82 data-nosnippet>82</a>            FillNullStrategy::Backward(<span class="prelude-val">None</span>) <span class="kw">if </span>!physical_type.is_primitive_numeric() =&gt; {
+<a href=#83 id=83 data-nosnippet>83</a>                fill_backward_gather(<span class="self">self</span>)
+<a href=#84 id=84 data-nosnippet>84</a>            },
+<a href=#85 id=85 data-nosnippet>85</a>            FillNullStrategy::Backward(<span class="prelude-val">Some</span>(limit)) =&gt; fill_backward_gather_limit(<span class="self">self</span>, limit),
+<a href=#86 id=86 data-nosnippet>86</a>            <span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#87 id=87 data-nosnippet>87</a>            </span>FillNullStrategy::One <span class="kw">if </span><span class="self">self</span>.dtype().is_decimal() =&gt; {
+<a href=#88 id=88 data-nosnippet>88</a>                <span class="kw">let </span>ca = <span class="self">self</span>.decimal().unwrap();
+<a href=#89 id=89 data-nosnippet>89</a>                <span class="kw">let </span>precision = ca.precision();
+<a href=#90 id=90 data-nosnippet>90</a>                <span class="kw">let </span>scale = ca.scale();
+<a href=#91 id=91 data-nosnippet>91</a>                <span class="kw">let </span>fill_value = <span class="number">10i128</span>.pow(scale <span class="kw">as </span>u32);
+<a href=#92 id=92 data-nosnippet>92</a>                <span class="kw">let </span>phys = ca.physical().fill_null_with_values(fill_value)<span class="question-mark">?</span>;
+<a href=#93 id=93 data-nosnippet>93</a>                <span class="prelude-val">Ok</span>(phys.into_decimal_unchecked(precision, scale).into_series())
+<a href=#94 id=94 data-nosnippet>94</a>            },
+<a href=#95 id=95 data-nosnippet>95</a>            <span class="kw">_ </span>=&gt; {
+<a href=#96 id=96 data-nosnippet>96</a>                <span class="kw">let </span>logical_type = <span class="self">self</span>.dtype();
+<a href=#97 id=97 data-nosnippet>97</a>                <span class="kw">let </span>s = <span class="self">self</span>.to_physical_repr();
+<a href=#98 id=98 data-nosnippet>98</a>                <span class="kw">use </span>DataType::<span class="kw-2">*</span>;
+<a href=#99 id=99 data-nosnippet>99</a>                <span class="kw">let </span>out = <span class="kw">match </span>s.dtype() {
+<a href=#100 id=100 data-nosnippet>100</a>                    Boolean =&gt; fill_null_bool(s.bool().unwrap(), strategy),
+<a href=#101 id=101 data-nosnippet>101</a>                    String =&gt; {
+<a href=#102 id=102 data-nosnippet>102</a>                        <span class="kw">let </span>s = <span class="kw">unsafe </span>{ s.cast_unchecked(<span class="kw-2">&amp;</span>Binary)<span class="question-mark">? </span>};
+<a href=#103 id=103 data-nosnippet>103</a>                        <span class="kw">let </span>out = s.fill_null(strategy)<span class="question-mark">?</span>;
+<a href=#104 id=104 data-nosnippet>104</a>                        <span class="kw">return unsafe </span>{ out.cast_unchecked(<span class="kw-2">&amp;</span>String) };
+<a href=#105 id=105 data-nosnippet>105</a>                    },
+<a href=#106 id=106 data-nosnippet>106</a>                    Binary =&gt; {
+<a href=#107 id=107 data-nosnippet>107</a>                        <span class="kw">let </span>ca = s.binary().unwrap();
+<a href=#108 id=108 data-nosnippet>108</a>                        fill_null_binary(ca, strategy).map(|ca| ca.into_series())
+<a href=#109 id=109 data-nosnippet>109</a>                    },
+<a href=#110 id=110 data-nosnippet>110</a>                    dt <span class="kw">if </span>dt.is_primitive_numeric() =&gt; {
+<a href=#111 id=111 data-nosnippet>111</a>                        <span class="macro">with_match_physical_numeric_polars_type!</span>(dt, |<span class="macro-nonterminal">$T</span>| {
+<a href=#112 id=112 data-nosnippet>112</a>                            <span class="kw">let </span>ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;<span class="macro-nonterminal">$T</span>&gt; = s.as_ref().as_ref().as_ref();
+<a href=#113 id=113 data-nosnippet>113</a>                                fill_null_numeric(ca, strategy).map(|ca| ca.into_series())
+<a href=#114 id=114 data-nosnippet>114</a>                        })
+<a href=#115 id=115 data-nosnippet>115</a>                    },
+<a href=#116 id=116 data-nosnippet>116</a>                    dt =&gt; {
+<a href=#117 id=117 data-nosnippet>117</a>                        <span class="macro">polars_bail!</span>(InvalidOperation: <span class="string">"fill null strategy not yet supported for dtype: {}"</span>, dt)
+<a href=#118 id=118 data-nosnippet>118</a>                    },
+<a href=#119 id=119 data-nosnippet>119</a>                }<span class="question-mark">?</span>;
+<a href=#120 id=120 data-nosnippet>120</a>                <span class="kw">unsafe </span>{ out.from_physical_unchecked(logical_type) }
+<a href=#121 id=121 data-nosnippet>121</a>            },
+<a href=#122 id=122 data-nosnippet>122</a>        }
+<a href=#123 id=123 data-nosnippet>123</a>    }
+<a href=#124 id=124 data-nosnippet>124</a>}
+<a href=#125 id=125 data-nosnippet>125</a>
+<a href=#126 id=126 data-nosnippet>126</a><span class="kw">fn </span>fill_forward_numeric&lt;<span class="lifetime">'a</span>, T, I&gt;(ca: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ChunkedArray&lt;T&gt;) -&gt; ChunkedArray&lt;T&gt;
+<a href=#127 id=127 data-nosnippet>127</a><span class="kw">where
+<a href=#128 id=128 data-nosnippet>128</a>    </span>T: PolarsDataType,
+<a href=#129 id=129 data-nosnippet>129</a>    <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ChunkedArray&lt;T&gt;: IntoIterator&lt;IntoIter = I&gt;,
+<a href=#130 id=130 data-nosnippet>130</a>    I: TrustedLen + Iterator&lt;Item = <span class="prelude-ty">Option</span>&lt;T::Physical&lt;<span class="lifetime">'a</span>&gt;&gt;&gt;,
+<a href=#131 id=131 data-nosnippet>131</a>    T::ZeroablePhysical&lt;<span class="lifetime">'a</span>&gt;: Copy,
+<a href=#132 id=132 data-nosnippet>132</a>{
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="comment">// Compute values.
+<a href=#134 id=134 data-nosnippet>134</a>    </span><span class="kw">let </span>values: Vec&lt;T::ZeroablePhysical&lt;<span class="lifetime">'a</span>&gt;&gt; = ca
+<a href=#135 id=135 data-nosnippet>135</a>        .into_iter()
+<a href=#136 id=136 data-nosnippet>136</a>        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
+<a href=#137 id=137 data-nosnippet>137</a>            <span class="kw-2">*</span>prev = v.map(|v| v.into()).unwrap_or(<span class="kw-2">*</span>prev);
+<a href=#138 id=138 data-nosnippet>138</a>            <span class="prelude-val">Some</span>(<span class="kw-2">*</span>prev)
+<a href=#139 id=139 data-nosnippet>139</a>        })
+<a href=#140 id=140 data-nosnippet>140</a>        .collect_trusted();
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="comment">// Compute bitmask.
+<a href=#143 id=143 data-nosnippet>143</a>    </span><span class="kw">let </span>num_start_nulls = ca.first_non_null().unwrap_or(ca.len());
+<a href=#144 id=144 data-nosnippet>144</a>    <span class="kw">let </span><span class="kw-2">mut </span>bm = BitmapBuilder::with_capacity(ca.len());
+<a href=#145 id=145 data-nosnippet>145</a>    bm.extend_constant(num_start_nulls, <span class="bool-val">false</span>);
+<a href=#146 id=146 data-nosnippet>146</a>    bm.extend_constant(ca.len() - num_start_nulls, <span class="bool-val">true</span>);
+<a href=#147 id=147 data-nosnippet>147</a>    ChunkedArray::from_chunk_iter_like(
+<a href=#148 id=148 data-nosnippet>148</a>        ca,
+<a href=#149 id=149 data-nosnippet>149</a>        [
+<a href=#150 id=150 data-nosnippet>150</a>            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
+<a href=#151 id=151 data-nosnippet>151</a>                .with_validity_typed(bm.into_opt_validity()),
+<a href=#152 id=152 data-nosnippet>152</a>        ],
+<a href=#153 id=153 data-nosnippet>153</a>    )
+<a href=#154 id=154 data-nosnippet>154</a>}
+<a href=#155 id=155 data-nosnippet>155</a>
+<a href=#156 id=156 data-nosnippet>156</a><span class="kw">fn </span>fill_backward_numeric&lt;<span class="lifetime">'a</span>, T, I&gt;(ca: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ChunkedArray&lt;T&gt;) -&gt; ChunkedArray&lt;T&gt;
+<a href=#157 id=157 data-nosnippet>157</a><span class="kw">where
+<a href=#158 id=158 data-nosnippet>158</a>    </span>T: PolarsDataType,
+<a href=#159 id=159 data-nosnippet>159</a>    <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ChunkedArray&lt;T&gt;: IntoIterator&lt;IntoIter = I&gt;,
+<a href=#160 id=160 data-nosnippet>160</a>    I: TrustedLen + Iterator&lt;Item = <span class="prelude-ty">Option</span>&lt;T::Physical&lt;<span class="lifetime">'a</span>&gt;&gt;&gt; + DoubleEndedIterator,
+<a href=#161 id=161 data-nosnippet>161</a>    T::ZeroablePhysical&lt;<span class="lifetime">'a</span>&gt;: Copy,
+<a href=#162 id=162 data-nosnippet>162</a>{
+<a href=#163 id=163 data-nosnippet>163</a>    <span class="comment">// Compute values.
+<a href=#164 id=164 data-nosnippet>164</a>    </span><span class="kw">let </span>values: Vec&lt;T::ZeroablePhysical&lt;<span class="lifetime">'a</span>&gt;&gt; = ca
+<a href=#165 id=165 data-nosnippet>165</a>        .into_iter()
+<a href=#166 id=166 data-nosnippet>166</a>        .rev()
+<a href=#167 id=167 data-nosnippet>167</a>        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
+<a href=#168 id=168 data-nosnippet>168</a>            <span class="kw-2">*</span>prev = v.map(|v| v.into()).unwrap_or(<span class="kw-2">*</span>prev);
+<a href=#169 id=169 data-nosnippet>169</a>            <span class="prelude-val">Some</span>(<span class="kw-2">*</span>prev)
+<a href=#170 id=170 data-nosnippet>170</a>        })
+<a href=#171 id=171 data-nosnippet>171</a>        .collect_reversed();
+<a href=#172 id=172 data-nosnippet>172</a>
+<a href=#173 id=173 data-nosnippet>173</a>    <span class="comment">// Compute bitmask.
+<a href=#174 id=174 data-nosnippet>174</a>    </span><span class="kw">let </span>num_end_nulls = ca
+<a href=#175 id=175 data-nosnippet>175</a>        .last_non_null()
+<a href=#176 id=176 data-nosnippet>176</a>        .map(|i| ca.len() - <span class="number">1 </span>- i)
+<a href=#177 id=177 data-nosnippet>177</a>        .unwrap_or(ca.len());
+<a href=#178 id=178 data-nosnippet>178</a>    <span class="kw">let </span><span class="kw-2">mut </span>bm = BitmapBuilder::with_capacity(ca.len());
+<a href=#179 id=179 data-nosnippet>179</a>    bm.extend_constant(ca.len() - num_end_nulls, <span class="bool-val">true</span>);
+<a href=#180 id=180 data-nosnippet>180</a>    bm.extend_constant(num_end_nulls, <span class="bool-val">false</span>);
+<a href=#181 id=181 data-nosnippet>181</a>    ChunkedArray::from_chunk_iter_like(
+<a href=#182 id=182 data-nosnippet>182</a>        ca,
+<a href=#183 id=183 data-nosnippet>183</a>        [
+<a href=#184 id=184 data-nosnippet>184</a>            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
+<a href=#185 id=185 data-nosnippet>185</a>                .with_validity_typed(bm.into_opt_validity()),
+<a href=#186 id=186 data-nosnippet>186</a>        ],
+<a href=#187 id=187 data-nosnippet>187</a>    )
+<a href=#188 id=188 data-nosnippet>188</a>}
+<a href=#189 id=189 data-nosnippet>189</a>
+<a href=#190 id=190 data-nosnippet>190</a><span class="kw">fn </span>fill_null_numeric&lt;T&gt;(
+<a href=#191 id=191 data-nosnippet>191</a>    ca: <span class="kw-2">&amp;</span>ChunkedArray&lt;T&gt;,
+<a href=#192 id=192 data-nosnippet>192</a>    strategy: FillNullStrategy,
+<a href=#193 id=193 data-nosnippet>193</a>) -&gt; PolarsResult&lt;ChunkedArray&lt;T&gt;&gt;
+<a href=#194 id=194 data-nosnippet>194</a><span class="kw">where
+<a href=#195 id=195 data-nosnippet>195</a>    </span>T: PolarsNumericType,
+<a href=#196 id=196 data-nosnippet>196</a>    ChunkedArray&lt;T&gt;: ChunkAgg&lt;T::Native&gt;,
+<a href=#197 id=197 data-nosnippet>197</a>{
+<a href=#198 id=198 data-nosnippet>198</a>    <span class="comment">// Nothing to fill.
+<a href=#199 id=199 data-nosnippet>199</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>out = <span class="kw">match </span>strategy {
+<a href=#200 id=200 data-nosnippet>200</a>        FillNullStrategy::Min =&gt; {
+<a href=#201 id=201 data-nosnippet>201</a>            ca.fill_null_with_values(ChunkAgg::min(ca).ok_or_else(err_fill_null)<span class="question-mark">?</span>)<span class="question-mark">?
+<a href=#202 id=202 data-nosnippet>202</a>        </span>},
+<a href=#203 id=203 data-nosnippet>203</a>        FillNullStrategy::Max =&gt; {
+<a href=#204 id=204 data-nosnippet>204</a>            ca.fill_null_with_values(ChunkAgg::max(ca).ok_or_else(err_fill_null)<span class="question-mark">?</span>)<span class="question-mark">?
+<a href=#205 id=205 data-nosnippet>205</a>        </span>},
+<a href=#206 id=206 data-nosnippet>206</a>        FillNullStrategy::Mean =&gt; ca.fill_null_with_values(
+<a href=#207 id=207 data-nosnippet>207</a>            ca.mean()
+<a href=#208 id=208 data-nosnippet>208</a>                .map(|v| NumCast::from(v).unwrap())
+<a href=#209 id=209 data-nosnippet>209</a>                .ok_or_else(err_fill_null)<span class="question-mark">?</span>,
+<a href=#210 id=210 data-nosnippet>210</a>        )<span class="question-mark">?</span>,
+<a href=#211 id=211 data-nosnippet>211</a>        FillNullStrategy::One =&gt; <span class="kw">return </span>ca.fill_null_with_values(One::one()),
+<a href=#212 id=212 data-nosnippet>212</a>        FillNullStrategy::Zero =&gt; <span class="kw">return </span>ca.fill_null_with_values(Zero::zero()),
+<a href=#213 id=213 data-nosnippet>213</a>        FillNullStrategy::Forward(<span class="prelude-val">None</span>) =&gt; fill_forward_numeric(ca),
+<a href=#214 id=214 data-nosnippet>214</a>        FillNullStrategy::Backward(<span class="prelude-val">None</span>) =&gt; fill_backward_numeric(ca),
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="comment">// Handled earlier
+<a href=#216 id=216 data-nosnippet>216</a>        </span>FillNullStrategy::Forward(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
+<a href=#217 id=217 data-nosnippet>217</a>        FillNullStrategy::Backward(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
+<a href=#218 id=218 data-nosnippet>218</a>    };
+<a href=#219 id=219 data-nosnippet>219</a>    out.rename(ca.name().clone());
+<a href=#220 id=220 data-nosnippet>220</a>    <span class="prelude-val">Ok</span>(out)
+<a href=#221 id=221 data-nosnippet>221</a>}
+<a href=#222 id=222 data-nosnippet>222</a>
+<a href=#223 id=223 data-nosnippet>223</a><span class="kw">fn </span>fill_with_gather&lt;F: Fn(<span class="kw-2">&amp;</span>Bitmap) -&gt; Vec&lt;IdxSize&gt;&gt;(
+<a href=#224 id=224 data-nosnippet>224</a>    s: <span class="kw-2">&amp;</span>Series,
+<a href=#225 id=225 data-nosnippet>225</a>    bits_to_idx: F,
+<a href=#226 id=226 data-nosnippet>226</a>) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#227 id=227 data-nosnippet>227</a>    <span class="kw">let </span>s = s.rechunk();
+<a href=#228 id=228 data-nosnippet>228</a>    <span class="kw">let </span>arr = s.chunks()[<span class="number">0</span>].clone();
+<a href=#229 id=229 data-nosnippet>229</a>    <span class="kw">let </span>validity = arr.validity().expect(<span class="string">"nulls"</span>);
+<a href=#230 id=230 data-nosnippet>230</a>
+<a href=#231 id=231 data-nosnippet>231</a>    <span class="kw">let </span>idx = bits_to_idx(validity);
+<a href=#232 id=232 data-nosnippet>232</a>
+<a href=#233 id=233 data-nosnippet>233</a>    <span class="prelude-val">Ok</span>(<span class="kw">unsafe </span>{ s.take_slice_unchecked(<span class="kw-2">&amp;</span>idx) })
+<a href=#234 id=234 data-nosnippet>234</a>}
+<a href=#235 id=235 data-nosnippet>235</a>
+<a href=#236 id=236 data-nosnippet>236</a><span class="kw">fn </span>fill_forward_gather(s: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#237 id=237 data-nosnippet>237</a>    fill_with_gather(s, |validity| {
+<a href=#238 id=238 data-nosnippet>238</a>        <span class="kw">let </span><span class="kw-2">mut </span>last_valid = <span class="number">0</span>;
+<a href=#239 id=239 data-nosnippet>239</a>        validity
+<a href=#240 id=240 data-nosnippet>240</a>            .iter()
+<a href=#241 id=241 data-nosnippet>241</a>            .enumerate_idx()
+<a href=#242 id=242 data-nosnippet>242</a>            .map(|(i, v)| {
+<a href=#243 id=243 data-nosnippet>243</a>                <span class="kw">if </span>v {
+<a href=#244 id=244 data-nosnippet>244</a>                    last_valid = i;
+<a href=#245 id=245 data-nosnippet>245</a>                    i
+<a href=#246 id=246 data-nosnippet>246</a>                } <span class="kw">else </span>{
+<a href=#247 id=247 data-nosnippet>247</a>                    last_valid
+<a href=#248 id=248 data-nosnippet>248</a>                }
+<a href=#249 id=249 data-nosnippet>249</a>            })
+<a href=#250 id=250 data-nosnippet>250</a>            .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;()
+<a href=#251 id=251 data-nosnippet>251</a>    })
+<a href=#252 id=252 data-nosnippet>252</a>}
+<a href=#253 id=253 data-nosnippet>253</a>
+<a href=#254 id=254 data-nosnippet>254</a><span class="kw">fn </span>fill_forward_gather_limit(s: <span class="kw-2">&amp;</span>Series, limit: IdxSize) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#255 id=255 data-nosnippet>255</a>    fill_with_gather(s, |validity| {
+<a href=#256 id=256 data-nosnippet>256</a>        <span class="kw">let </span><span class="kw-2">mut </span>last_valid = <span class="number">0</span>;
+<a href=#257 id=257 data-nosnippet>257</a>        <span class="kw">let </span><span class="kw-2">mut </span>conseq_invalid_count = <span class="number">0</span>;
+<a href=#258 id=258 data-nosnippet>258</a>        validity
+<a href=#259 id=259 data-nosnippet>259</a>            .iter()
+<a href=#260 id=260 data-nosnippet>260</a>            .enumerate_idx()
+<a href=#261 id=261 data-nosnippet>261</a>            .map(|(i, v)| {
+<a href=#262 id=262 data-nosnippet>262</a>                <span class="kw">if </span>v {
+<a href=#263 id=263 data-nosnippet>263</a>                    last_valid = i;
+<a href=#264 id=264 data-nosnippet>264</a>                    conseq_invalid_count = <span class="number">0</span>;
+<a href=#265 id=265 data-nosnippet>265</a>                    i
+<a href=#266 id=266 data-nosnippet>266</a>                } <span class="kw">else if </span>conseq_invalid_count &lt; limit {
+<a href=#267 id=267 data-nosnippet>267</a>                    conseq_invalid_count += <span class="number">1</span>;
+<a href=#268 id=268 data-nosnippet>268</a>                    last_valid
+<a href=#269 id=269 data-nosnippet>269</a>                } <span class="kw">else </span>{
+<a href=#270 id=270 data-nosnippet>270</a>                    i
+<a href=#271 id=271 data-nosnippet>271</a>                }
+<a href=#272 id=272 data-nosnippet>272</a>            })
+<a href=#273 id=273 data-nosnippet>273</a>            .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;()
+<a href=#274 id=274 data-nosnippet>274</a>    })
+<a href=#275 id=275 data-nosnippet>275</a>}
+<a href=#276 id=276 data-nosnippet>276</a>
+<a href=#277 id=277 data-nosnippet>277</a><span class="kw">fn </span>fill_backward_gather(s: <span class="kw-2">&amp;</span>Series) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#278 id=278 data-nosnippet>278</a>    fill_with_gather(s, |validity| {
+<a href=#279 id=279 data-nosnippet>279</a>        <span class="kw">let </span>last = validity.len() <span class="kw">as </span>IdxSize - <span class="number">1</span>;
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="kw">let </span><span class="kw-2">mut </span>last_valid = last;
+<a href=#281 id=281 data-nosnippet>281</a>        <span class="kw">unsafe </span>{
+<a href=#282 id=282 data-nosnippet>282</a>            validity
+<a href=#283 id=283 data-nosnippet>283</a>                .iter()
+<a href=#284 id=284 data-nosnippet>284</a>                .rev()
+<a href=#285 id=285 data-nosnippet>285</a>                .enumerate_idx()
+<a href=#286 id=286 data-nosnippet>286</a>                .map(|(i, v)| {
+<a href=#287 id=287 data-nosnippet>287</a>                    <span class="kw">if </span>v {
+<a href=#288 id=288 data-nosnippet>288</a>                        last_valid = last - i;
+<a href=#289 id=289 data-nosnippet>289</a>                        last - i
+<a href=#290 id=290 data-nosnippet>290</a>                    } <span class="kw">else </span>{
+<a href=#291 id=291 data-nosnippet>291</a>                        last_valid
+<a href=#292 id=292 data-nosnippet>292</a>                    }
+<a href=#293 id=293 data-nosnippet>293</a>                })
+<a href=#294 id=294 data-nosnippet>294</a>                .trust_my_length((last + <span class="number">1</span>) <span class="kw">as </span>usize)
+<a href=#295 id=295 data-nosnippet>295</a>                .collect_reversed::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;()
+<a href=#296 id=296 data-nosnippet>296</a>        }
+<a href=#297 id=297 data-nosnippet>297</a>    })
+<a href=#298 id=298 data-nosnippet>298</a>}
+<a href=#299 id=299 data-nosnippet>299</a>
+<a href=#300 id=300 data-nosnippet>300</a><span class="kw">fn </span>fill_backward_gather_limit(s: <span class="kw-2">&amp;</span>Series, limit: IdxSize) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#301 id=301 data-nosnippet>301</a>    fill_with_gather(s, |validity| {
+<a href=#302 id=302 data-nosnippet>302</a>        <span class="kw">let </span>last = validity.len() <span class="kw">as </span>IdxSize - <span class="number">1</span>;
+<a href=#303 id=303 data-nosnippet>303</a>        <span class="kw">let </span><span class="kw-2">mut </span>last_valid = last;
+<a href=#304 id=304 data-nosnippet>304</a>        <span class="kw">let </span><span class="kw-2">mut </span>conseq_invalid_count = <span class="number">0</span>;
+<a href=#305 id=305 data-nosnippet>305</a>        <span class="kw">unsafe </span>{
+<a href=#306 id=306 data-nosnippet>306</a>            validity
+<a href=#307 id=307 data-nosnippet>307</a>                .iter()
+<a href=#308 id=308 data-nosnippet>308</a>                .rev()
+<a href=#309 id=309 data-nosnippet>309</a>                .enumerate_idx()
+<a href=#310 id=310 data-nosnippet>310</a>                .map(|(i, v)| {
+<a href=#311 id=311 data-nosnippet>311</a>                    <span class="kw">if </span>v {
+<a href=#312 id=312 data-nosnippet>312</a>                        last_valid = last - i;
+<a href=#313 id=313 data-nosnippet>313</a>                        conseq_invalid_count = <span class="number">0</span>;
+<a href=#314 id=314 data-nosnippet>314</a>                        last - i
+<a href=#315 id=315 data-nosnippet>315</a>                    } <span class="kw">else if </span>conseq_invalid_count &lt; limit {
+<a href=#316 id=316 data-nosnippet>316</a>                        conseq_invalid_count += <span class="number">1</span>;
+<a href=#317 id=317 data-nosnippet>317</a>                        last_valid
+<a href=#318 id=318 data-nosnippet>318</a>                    } <span class="kw">else </span>{
+<a href=#319 id=319 data-nosnippet>319</a>                        last - i
+<a href=#320 id=320 data-nosnippet>320</a>                    }
+<a href=#321 id=321 data-nosnippet>321</a>                })
+<a href=#322 id=322 data-nosnippet>322</a>                .trust_my_length((last + <span class="number">1</span>) <span class="kw">as </span>usize)
+<a href=#323 id=323 data-nosnippet>323</a>                .collect_reversed()
+<a href=#324 id=324 data-nosnippet>324</a>        }
+<a href=#325 id=325 data-nosnippet>325</a>    })
+<a href=#326 id=326 data-nosnippet>326</a>}
+<a href=#327 id=327 data-nosnippet>327</a>
+<a href=#328 id=328 data-nosnippet>328</a><span class="kw">fn </span>fill_null_bool(ca: <span class="kw-2">&amp;</span>BooleanChunked, strategy: FillNullStrategy) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#329 id=329 data-nosnippet>329</a>    <span class="kw">match </span>strategy {
+<a href=#330 id=330 data-nosnippet>330</a>        FillNullStrategy::Min =&gt; ca
+<a href=#331 id=331 data-nosnippet>331</a>            .fill_null_with_values(ca.min().ok_or_else(err_fill_null)<span class="question-mark">?</span>)
+<a href=#332 id=332 data-nosnippet>332</a>            .map(|ca| ca.into_series()),
+<a href=#333 id=333 data-nosnippet>333</a>        FillNullStrategy::Max =&gt; ca
+<a href=#334 id=334 data-nosnippet>334</a>            .fill_null_with_values(ca.max().ok_or_else(err_fill_null)<span class="question-mark">?</span>)
+<a href=#335 id=335 data-nosnippet>335</a>            .map(|ca| ca.into_series()),
+<a href=#336 id=336 data-nosnippet>336</a>        FillNullStrategy::Mean =&gt; <span class="macro">polars_bail!</span>(opq = mean, <span class="string">"Boolean"</span>),
+<a href=#337 id=337 data-nosnippet>337</a>        FillNullStrategy::One =&gt; ca.fill_null_with_values(<span class="bool-val">true</span>).map(|ca| ca.into_series()),
+<a href=#338 id=338 data-nosnippet>338</a>        FillNullStrategy::Zero =&gt; ca.fill_null_with_values(<span class="bool-val">false</span>).map(|ca| ca.into_series()),
+<a href=#339 id=339 data-nosnippet>339</a>        FillNullStrategy::Forward(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
+<a href=#340 id=340 data-nosnippet>340</a>        FillNullStrategy::Backward(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
+<a href=#341 id=341 data-nosnippet>341</a>    }
+<a href=#342 id=342 data-nosnippet>342</a>}
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a><span class="kw">fn </span>fill_null_binary(ca: <span class="kw-2">&amp;</span>BinaryChunked, strategy: FillNullStrategy) -&gt; PolarsResult&lt;BinaryChunked&gt; {
+<a href=#345 id=345 data-nosnippet>345</a>    <span class="kw">match </span>strategy {
+<a href=#346 id=346 data-nosnippet>346</a>        FillNullStrategy::Min =&gt; {
+<a href=#347 id=347 data-nosnippet>347</a>            ca.fill_null_with_values(ca.min_binary().ok_or_else(err_fill_null)<span class="question-mark">?</span>)
+<a href=#348 id=348 data-nosnippet>348</a>        },
+<a href=#349 id=349 data-nosnippet>349</a>        FillNullStrategy::Max =&gt; {
+<a href=#350 id=350 data-nosnippet>350</a>            ca.fill_null_with_values(ca.max_binary().ok_or_else(err_fill_null)<span class="question-mark">?</span>)
+<a href=#351 id=351 data-nosnippet>351</a>        },
+<a href=#352 id=352 data-nosnippet>352</a>        FillNullStrategy::Zero =&gt; ca.fill_null_with_values(<span class="kw-2">&amp;</span>[]),
+<a href=#353 id=353 data-nosnippet>353</a>        FillNullStrategy::Forward(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
+<a href=#354 id=354 data-nosnippet>354</a>        FillNullStrategy::Backward(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
+<a href=#355 id=355 data-nosnippet>355</a>        strat =&gt; <span class="macro">polars_bail!</span>(InvalidOperation: <span class="string">"fill-null strategy {:?} is not supported"</span>, strat),
+<a href=#356 id=356 data-nosnippet>356</a>    }
+<a href=#357 id=357 data-nosnippet>357</a>}
+<a href=#358 id=358 data-nosnippet>358</a>
+<a href=#359 id=359 data-nosnippet>359</a><span class="kw">impl</span>&lt;T&gt; ChunkFillNullValue&lt;T::Native&gt; <span class="kw">for </span>ChunkedArray&lt;T&gt;
+<a href=#360 id=360 data-nosnippet>360</a><span class="kw">where
+<a href=#361 id=361 data-nosnippet>361</a>    </span>T: PolarsNumericType,
+<a href=#362 id=362 data-nosnippet>362</a>{
+<a href=#363 id=363 data-nosnippet>363</a>    <span class="kw">fn </span>fill_null_with_values(<span class="kw-2">&amp;</span><span class="self">self</span>, value: T::Native) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#364 id=364 data-nosnippet>364</a>        <span class="prelude-val">Ok</span>(<span class="self">self</span>.apply_kernel(<span class="kw-2">&amp;</span>|arr| Box::new(set_at_nulls(arr, value))))
+<a href=#365 id=365 data-nosnippet>365</a>    }
+<a href=#366 id=366 data-nosnippet>366</a>}
+<a href=#367 id=367 data-nosnippet>367</a>
+<a href=#368 id=368 data-nosnippet>368</a><span class="kw">impl </span>ChunkFillNullValue&lt;bool&gt; <span class="kw">for </span>BooleanChunked {
+<a href=#369 id=369 data-nosnippet>369</a>    <span class="kw">fn </span>fill_null_with_values(<span class="kw-2">&amp;</span><span class="self">self</span>, value: bool) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#370 id=370 data-nosnippet>370</a>        <span class="self">self</span>.set(<span class="kw-2">&amp;</span><span class="self">self</span>.is_null(), <span class="prelude-val">Some</span>(value))
+<a href=#371 id=371 data-nosnippet>371</a>    }
+<a href=#372 id=372 data-nosnippet>372</a>}
+<a href=#373 id=373 data-nosnippet>373</a>
+<a href=#374 id=374 data-nosnippet>374</a><span class="kw">impl </span>ChunkFillNullValue&lt;<span class="kw-2">&amp;</span>[u8]&gt; <span class="kw">for </span>BinaryChunked {
+<a href=#375 id=375 data-nosnippet>375</a>    <span class="kw">fn </span>fill_null_with_values(<span class="kw-2">&amp;</span><span class="self">self</span>, value: <span class="kw-2">&amp;</span>[u8]) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#376 id=376 data-nosnippet>376</a>        <span class="self">self</span>.set(<span class="kw-2">&amp;</span><span class="self">self</span>.is_null(), <span class="prelude-val">Some</span>(value))
+<a href=#377 id=377 data-nosnippet>377</a>    }
+<a href=#378 id=378 data-nosnippet>378</a>}</code></pre></div></section></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["USE_CLOUDPICKLE"],"fn":["deserialize_from_reader","deserialize_impl","deserialize_map_bytes","python_object_deserialize","python_object_serialize","serialize_into_writer","serialize_to_bytes"],"struct":["SerializeOptions"]};

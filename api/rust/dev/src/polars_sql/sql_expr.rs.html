@@ -1,0 +1,1351 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-sql/src/sql_expr.rs`."><title>sql_expr.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="polars_sql" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../static.files/storage-4e99c027.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_sql/</div>sql_expr.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Expressions that are supported by the Polars SQL interface.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! This is useful for syntax highlighting
+<a href=#4 id=4 data-nosnippet>4</a>//!
+<a href=#5 id=5 data-nosnippet>5</a>//! This module defines:
+<a href=#6 id=6 data-nosnippet>6</a>//! - all Polars SQL keywords [`all_keywords`]
+<a href=#7 id=7 data-nosnippet>7</a>//! - all of polars SQL functions [`all_functions`]
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a></span><span class="kw">use </span>std::fmt::Display;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>std::ops::Div;
+<a href=#11 id=11 data-nosnippet>11</a>
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>polars_core::prelude::<span class="kw-2">*</span>;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>polars_lazy::prelude::<span class="kw-2">*</span>;
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>polars_plan::plans::DynLiteralValue;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>polars_plan::prelude::typed_lit;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>polars_time::Duration;
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span>rand::Rng;
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>rand::distr::Alphanumeric;
+<a href=#19 id=19 data-nosnippet>19</a><span class="attr">#[cfg(feature = <span class="string">"serde"</span>)]
+<a href=#20 id=20 data-nosnippet>20</a></span><span class="kw">use </span>serde::{Deserialize, Serialize};
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>sqlparser::ast::{
+<a href=#22 id=22 data-nosnippet>22</a>    BinaryOperator <span class="kw">as </span>SQLBinaryOperator, CastFormat, CastKind, DataType <span class="kw">as </span>SQLDataType,
+<a href=#23 id=23 data-nosnippet>23</a>    DateTimeField, Expr <span class="kw">as </span>SQLExpr, Function <span class="kw">as </span>SQLFunction, Ident, Interval, Query <span class="kw">as </span>Subquery,
+<a href=#24 id=24 data-nosnippet>24</a>    SelectItem, Subscript, TimezoneInfo, TrimWhereField, UnaryOperator, Value <span class="kw">as </span>SQLValue,
+<a href=#25 id=25 data-nosnippet>25</a>};
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">use </span>sqlparser::dialect::GenericDialect;
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">use </span>sqlparser::parser::{Parser, ParserOptions};
+<a href=#28 id=28 data-nosnippet>28</a>
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">use </span><span class="kw">crate</span>::SQLContext;
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">use </span><span class="kw">crate</span>::functions::SQLFunctionVisitor;
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span><span class="kw">crate</span>::types::{
+<a href=#32 id=32 data-nosnippet>32</a>    bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
+<a href=#33 id=33 data-nosnippet>33</a>};
+<a href=#34 id=34 data-nosnippet>34</a>
+<a href=#35 id=35 data-nosnippet>35</a><span class="attr">#[inline]
+<a href=#36 id=36 data-nosnippet>36</a>#[cold]
+<a href=#37 id=37 data-nosnippet>37</a>#[must_use]
+<a href=#38 id=38 data-nosnippet>38</a></span><span class="doccomment">/// Convert a Display-able error to PolarsError::SQLInterface
+<a href=#39 id=39 data-nosnippet>39</a></span><span class="kw">pub fn </span>to_sql_interface_err(err: <span class="kw">impl </span>Display) -&gt; PolarsError {
+<a href=#40 id=40 data-nosnippet>40</a>    PolarsError::SQLInterface(err.to_string().into())
+<a href=#41 id=41 data-nosnippet>41</a>}
+<a href=#42 id=42 data-nosnippet>42</a>
+<a href=#43 id=43 data-nosnippet>43</a><span class="attr">#[cfg_attr(feature = <span class="string">"serde"</span>, derive(Serialize, Deserialize))]
+<a href=#44 id=44 data-nosnippet>44</a>#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+<a href=#45 id=45 data-nosnippet>45</a></span><span class="doccomment">/// Categorises the type of (allowed) subquery constraint
+<a href=#46 id=46 data-nosnippet>46</a></span><span class="kw">pub enum </span>SubqueryRestriction {
+<a href=#47 id=47 data-nosnippet>47</a>    <span class="doccomment">/// Subquery must return a single column
+<a href=#48 id=48 data-nosnippet>48</a>    </span>SingleColumn,
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="comment">// SingleRow,
+<a href=#50 id=50 data-nosnippet>50</a>    // SingleValue,
+<a href=#51 id=51 data-nosnippet>51</a>    // Any
+<a href=#52 id=52 data-nosnippet>52</a></span>}
+<a href=#53 id=53 data-nosnippet>53</a>
+<a href=#54 id=54 data-nosnippet>54</a><span class="doccomment">/// Recursively walks a SQL Expr to create a polars Expr
+<a href=#55 id=55 data-nosnippet>55</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>SQLExprVisitor&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#56 id=56 data-nosnippet>56</a>    ctx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>SQLContext,
+<a href=#57 id=57 data-nosnippet>57</a>    active_schema: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span>Schema&gt;,
+<a href=#58 id=58 data-nosnippet>58</a>}
+<a href=#59 id=59 data-nosnippet>59</a>
+<a href=#60 id=60 data-nosnippet>60</a><span class="kw">impl </span>SQLExprVisitor&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="kw">fn </span>array_expr_to_series(<span class="kw-2">&amp;mut </span><span class="self">self</span>, elements: <span class="kw-2">&amp;</span>[SQLExpr]) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="kw">let </span><span class="kw-2">mut </span>array_elements = Vec::with_capacity(elements.len());
+<a href=#63 id=63 data-nosnippet>63</a>        <span class="kw">for </span>e <span class="kw">in </span>elements {
+<a href=#64 id=64 data-nosnippet>64</a>            <span class="kw">let </span>val = <span class="kw">match </span>e {
+<a href=#65 id=65 data-nosnippet>65</a>                SQLExpr::Value(v) =&gt; <span class="self">self</span>.visit_any_value(v, <span class="prelude-val">None</span>),
+<a href=#66 id=66 data-nosnippet>66</a>                SQLExpr::UnaryOp { op, expr } =&gt; <span class="kw">match </span>expr.as_ref() {
+<a href=#67 id=67 data-nosnippet>67</a>                    SQLExpr::Value(v) =&gt; <span class="self">self</span>.visit_any_value(v, <span class="prelude-val">Some</span>(op)),
+<a href=#68 id=68 data-nosnippet>68</a>                    <span class="kw">_ </span>=&gt; <span class="prelude-val">Err</span>(<span class="macro">polars_err!</span>(SQLInterface: <span class="string">"array element {:?} is not supported"</span>, e)),
+<a href=#69 id=69 data-nosnippet>69</a>                },
+<a href=#70 id=70 data-nosnippet>70</a>                SQLExpr::Array(values) =&gt; {
+<a href=#71 id=71 data-nosnippet>71</a>                    <span class="kw">let </span>srs = <span class="self">self</span>.array_expr_to_series(<span class="kw-2">&amp;</span>values.elem)<span class="question-mark">?</span>;
+<a href=#72 id=72 data-nosnippet>72</a>                    <span class="prelude-val">Ok</span>(AnyValue::List(srs))
+<a href=#73 id=73 data-nosnippet>73</a>                },
+<a href=#74 id=74 data-nosnippet>74</a>                <span class="kw">_ </span>=&gt; <span class="prelude-val">Err</span>(<span class="macro">polars_err!</span>(SQLInterface: <span class="string">"array element {:?} is not supported"</span>, e)),
+<a href=#75 id=75 data-nosnippet>75</a>            }<span class="question-mark">?
+<a href=#76 id=76 data-nosnippet>76</a>            </span>.into_static();
+<a href=#77 id=77 data-nosnippet>77</a>            array_elements.push(val);
+<a href=#78 id=78 data-nosnippet>78</a>        }
+<a href=#79 id=79 data-nosnippet>79</a>        Series::from_any_values(PlSmallStr::EMPTY, <span class="kw-2">&amp;</span>array_elements, <span class="bool-val">true</span>)
+<a href=#80 id=80 data-nosnippet>80</a>    }
+<a href=#81 id=81 data-nosnippet>81</a>
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="kw">fn </span>visit_expr(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#83 id=83 data-nosnippet>83</a>        <span class="kw">match </span>expr {
+<a href=#84 id=84 data-nosnippet>84</a>            SQLExpr::AllOp {
+<a href=#85 id=85 data-nosnippet>85</a>                left,
+<a href=#86 id=86 data-nosnippet>86</a>                compare_op,
+<a href=#87 id=87 data-nosnippet>87</a>                right,
+<a href=#88 id=88 data-nosnippet>88</a>            } =&gt; <span class="self">self</span>.visit_all(left, compare_op, right),
+<a href=#89 id=89 data-nosnippet>89</a>            SQLExpr::AnyOp {
+<a href=#90 id=90 data-nosnippet>90</a>                left,
+<a href=#91 id=91 data-nosnippet>91</a>                compare_op,
+<a href=#92 id=92 data-nosnippet>92</a>                right,
+<a href=#93 id=93 data-nosnippet>93</a>                is_some: <span class="kw">_</span>,
+<a href=#94 id=94 data-nosnippet>94</a>            } =&gt; <span class="self">self</span>.visit_any(left, compare_op, right),
+<a href=#95 id=95 data-nosnippet>95</a>            SQLExpr::Array(arr) =&gt; <span class="self">self</span>.visit_array_expr(<span class="kw-2">&amp;</span>arr.elem, <span class="bool-val">true</span>, <span class="prelude-val">None</span>),
+<a href=#96 id=96 data-nosnippet>96</a>            SQLExpr::Between {
+<a href=#97 id=97 data-nosnippet>97</a>                expr,
+<a href=#98 id=98 data-nosnippet>98</a>                negated,
+<a href=#99 id=99 data-nosnippet>99</a>                low,
+<a href=#100 id=100 data-nosnippet>100</a>                high,
+<a href=#101 id=101 data-nosnippet>101</a>            } =&gt; <span class="self">self</span>.visit_between(expr, <span class="kw-2">*</span>negated, low, high),
+<a href=#102 id=102 data-nosnippet>102</a>            SQLExpr::BinaryOp { left, op, right } =&gt; <span class="self">self</span>.visit_binary_op(left, op, right),
+<a href=#103 id=103 data-nosnippet>103</a>            SQLExpr::Cast {
+<a href=#104 id=104 data-nosnippet>104</a>                kind,
+<a href=#105 id=105 data-nosnippet>105</a>                expr,
+<a href=#106 id=106 data-nosnippet>106</a>                data_type,
+<a href=#107 id=107 data-nosnippet>107</a>                format,
+<a href=#108 id=108 data-nosnippet>108</a>            } =&gt; <span class="self">self</span>.visit_cast(expr, data_type, format, kind),
+<a href=#109 id=109 data-nosnippet>109</a>            SQLExpr::Ceil { expr, .. } =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.ceil()),
+<a href=#110 id=110 data-nosnippet>110</a>            SQLExpr::CompoundIdentifier(idents) =&gt; <span class="self">self</span>.visit_compound_identifier(idents),
+<a href=#111 id=111 data-nosnippet>111</a>            SQLExpr::Extract {
+<a href=#112 id=112 data-nosnippet>112</a>                field,
+<a href=#113 id=113 data-nosnippet>113</a>                syntax: <span class="kw">_</span>,
+<a href=#114 id=114 data-nosnippet>114</a>                expr,
+<a href=#115 id=115 data-nosnippet>115</a>            } =&gt; parse_extract_date_part(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>, field),
+<a href=#116 id=116 data-nosnippet>116</a>            SQLExpr::Floor { expr, .. } =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.floor()),
+<a href=#117 id=117 data-nosnippet>117</a>            SQLExpr::Function(function) =&gt; <span class="self">self</span>.visit_function(function),
+<a href=#118 id=118 data-nosnippet>118</a>            SQLExpr::Identifier(ident) =&gt; <span class="self">self</span>.visit_identifier(ident),
+<a href=#119 id=119 data-nosnippet>119</a>            SQLExpr::InList {
+<a href=#120 id=120 data-nosnippet>120</a>                expr,
+<a href=#121 id=121 data-nosnippet>121</a>                list,
+<a href=#122 id=122 data-nosnippet>122</a>                negated,
+<a href=#123 id=123 data-nosnippet>123</a>            } =&gt; {
+<a href=#124 id=124 data-nosnippet>124</a>                <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#125 id=125 data-nosnippet>125</a>                <span class="kw">let </span>elems = <span class="self">self</span>.visit_array_expr(list, <span class="bool-val">true</span>, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>expr))<span class="question-mark">?</span>;
+<a href=#126 id=126 data-nosnippet>126</a>                <span class="kw">let </span>is_in = expr.is_in(elems, <span class="bool-val">false</span>);
+<a href=#127 id=127 data-nosnippet>127</a>                <span class="prelude-val">Ok</span>(<span class="kw">if </span><span class="kw-2">*</span>negated { is_in.not() } <span class="kw">else </span>{ is_in })
+<a href=#128 id=128 data-nosnippet>128</a>            },
+<a href=#129 id=129 data-nosnippet>129</a>            SQLExpr::InSubquery {
+<a href=#130 id=130 data-nosnippet>130</a>                expr,
+<a href=#131 id=131 data-nosnippet>131</a>                subquery,
+<a href=#132 id=132 data-nosnippet>132</a>                negated,
+<a href=#133 id=133 data-nosnippet>133</a>            } =&gt; <span class="self">self</span>.visit_in_subquery(expr, subquery, <span class="kw-2">*</span>negated),
+<a href=#134 id=134 data-nosnippet>134</a>            SQLExpr::Interval(interval) =&gt; <span class="prelude-val">Ok</span>(lit(interval_to_duration(interval, <span class="bool-val">true</span>)<span class="question-mark">?</span>)),
+<a href=#135 id=135 data-nosnippet>135</a>            SQLExpr::IsDistinctFrom(e1, e2) =&gt; {
+<a href=#136 id=136 data-nosnippet>136</a>                <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(e1)<span class="question-mark">?</span>.neq_missing(<span class="self">self</span>.visit_expr(e2)<span class="question-mark">?</span>))
+<a href=#137 id=137 data-nosnippet>137</a>            },
+<a href=#138 id=138 data-nosnippet>138</a>            SQLExpr::IsFalse(expr) =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.eq(lit(<span class="bool-val">false</span>))),
+<a href=#139 id=139 data-nosnippet>139</a>            SQLExpr::IsNotDistinctFrom(e1, e2) =&gt; {
+<a href=#140 id=140 data-nosnippet>140</a>                <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(e1)<span class="question-mark">?</span>.eq_missing(<span class="self">self</span>.visit_expr(e2)<span class="question-mark">?</span>))
+<a href=#141 id=141 data-nosnippet>141</a>            },
+<a href=#142 id=142 data-nosnippet>142</a>            SQLExpr::IsNotFalse(expr) =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.eq(lit(<span class="bool-val">false</span>)).not()),
+<a href=#143 id=143 data-nosnippet>143</a>            SQLExpr::IsNotNull(expr) =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.is_not_null()),
+<a href=#144 id=144 data-nosnippet>144</a>            SQLExpr::IsNotTrue(expr) =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.eq(lit(<span class="bool-val">true</span>)).not()),
+<a href=#145 id=145 data-nosnippet>145</a>            SQLExpr::IsNull(expr) =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.is_null()),
+<a href=#146 id=146 data-nosnippet>146</a>            SQLExpr::IsTrue(expr) =&gt; <span class="prelude-val">Ok</span>(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>.eq(lit(<span class="bool-val">true</span>))),
+<a href=#147 id=147 data-nosnippet>147</a>            SQLExpr::Like {
+<a href=#148 id=148 data-nosnippet>148</a>                negated,
+<a href=#149 id=149 data-nosnippet>149</a>                any,
+<a href=#150 id=150 data-nosnippet>150</a>                expr,
+<a href=#151 id=151 data-nosnippet>151</a>                pattern,
+<a href=#152 id=152 data-nosnippet>152</a>                escape_char,
+<a href=#153 id=153 data-nosnippet>153</a>            } =&gt; {
+<a href=#154 id=154 data-nosnippet>154</a>                <span class="kw">if </span><span class="kw-2">*</span>any {
+<a href=#155 id=155 data-nosnippet>155</a>                    <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"LIKE ANY is not a supported syntax"</span>)
+<a href=#156 id=156 data-nosnippet>156</a>                }
+<a href=#157 id=157 data-nosnippet>157</a>                <span class="self">self</span>.visit_like(<span class="kw-2">*</span>negated, expr, pattern, escape_char, <span class="bool-val">false</span>)
+<a href=#158 id=158 data-nosnippet>158</a>            },
+<a href=#159 id=159 data-nosnippet>159</a>            SQLExpr::ILike {
+<a href=#160 id=160 data-nosnippet>160</a>                negated,
+<a href=#161 id=161 data-nosnippet>161</a>                any,
+<a href=#162 id=162 data-nosnippet>162</a>                expr,
+<a href=#163 id=163 data-nosnippet>163</a>                pattern,
+<a href=#164 id=164 data-nosnippet>164</a>                escape_char,
+<a href=#165 id=165 data-nosnippet>165</a>            } =&gt; {
+<a href=#166 id=166 data-nosnippet>166</a>                <span class="kw">if </span><span class="kw-2">*</span>any {
+<a href=#167 id=167 data-nosnippet>167</a>                    <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"ILIKE ANY is not a supported syntax"</span>)
+<a href=#168 id=168 data-nosnippet>168</a>                }
+<a href=#169 id=169 data-nosnippet>169</a>                <span class="self">self</span>.visit_like(<span class="kw-2">*</span>negated, expr, pattern, escape_char, <span class="bool-val">true</span>)
+<a href=#170 id=170 data-nosnippet>170</a>            },
+<a href=#171 id=171 data-nosnippet>171</a>            SQLExpr::Nested(expr) =&gt; <span class="self">self</span>.visit_expr(expr),
+<a href=#172 id=172 data-nosnippet>172</a>            SQLExpr::Position { expr, r#in } =&gt; <span class="prelude-val">Ok</span>(
+<a href=#173 id=173 data-nosnippet>173</a>                <span class="comment">// note: SQL is 1-indexed
+<a href=#174 id=174 data-nosnippet>174</a>                </span>(<span class="self">self
+<a href=#175 id=175 data-nosnippet>175</a>                    </span>.visit_expr(r#in)<span class="question-mark">?
+<a href=#176 id=176 data-nosnippet>176</a>                    </span>.str()
+<a href=#177 id=177 data-nosnippet>177</a>                    .find(<span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>, <span class="bool-val">true</span>)
+<a href=#178 id=178 data-nosnippet>178</a>                    + typed_lit(<span class="number">1u32</span>))
+<a href=#179 id=179 data-nosnippet>179</a>                .fill_null(typed_lit(<span class="number">0u32</span>)),
+<a href=#180 id=180 data-nosnippet>180</a>            ),
+<a href=#181 id=181 data-nosnippet>181</a>            SQLExpr::RLike {
+<a href=#182 id=182 data-nosnippet>182</a>                <span class="comment">// note: parses both RLIKE and REGEXP
+<a href=#183 id=183 data-nosnippet>183</a>                </span>negated,
+<a href=#184 id=184 data-nosnippet>184</a>                expr,
+<a href=#185 id=185 data-nosnippet>185</a>                pattern,
+<a href=#186 id=186 data-nosnippet>186</a>                regexp: <span class="kw">_</span>,
+<a href=#187 id=187 data-nosnippet>187</a>            } =&gt; {
+<a href=#188 id=188 data-nosnippet>188</a>                <span class="kw">let </span>matches = <span class="self">self
+<a href=#189 id=189 data-nosnippet>189</a>                    </span>.visit_expr(expr)<span class="question-mark">?
+<a href=#190 id=190 data-nosnippet>190</a>                    </span>.str()
+<a href=#191 id=191 data-nosnippet>191</a>                    .contains(<span class="self">self</span>.visit_expr(pattern)<span class="question-mark">?</span>, <span class="bool-val">true</span>);
+<a href=#192 id=192 data-nosnippet>192</a>                <span class="prelude-val">Ok</span>(<span class="kw">if </span><span class="kw-2">*</span>negated { matches.not() } <span class="kw">else </span>{ matches })
+<a href=#193 id=193 data-nosnippet>193</a>            },
+<a href=#194 id=194 data-nosnippet>194</a>            SQLExpr::Subscript { expr, subscript } =&gt; <span class="self">self</span>.visit_subscript(expr, subscript),
+<a href=#195 id=195 data-nosnippet>195</a>            SQLExpr::Subquery(<span class="kw">_</span>) =&gt; <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"unexpected subquery"</span>),
+<a href=#196 id=196 data-nosnippet>196</a>            SQLExpr::Trim {
+<a href=#197 id=197 data-nosnippet>197</a>                expr,
+<a href=#198 id=198 data-nosnippet>198</a>                trim_where,
+<a href=#199 id=199 data-nosnippet>199</a>                trim_what,
+<a href=#200 id=200 data-nosnippet>200</a>                trim_characters,
+<a href=#201 id=201 data-nosnippet>201</a>            } =&gt; <span class="self">self</span>.visit_trim(expr, trim_where, trim_what, trim_characters),
+<a href=#202 id=202 data-nosnippet>202</a>            SQLExpr::TypedString { data_type, value } =&gt; <span class="kw">match </span>data_type {
+<a href=#203 id=203 data-nosnippet>203</a>                SQLDataType::Date =&gt; {
+<a href=#204 id=204 data-nosnippet>204</a>                    <span class="kw">if </span>is_iso_date(value) {
+<a href=#205 id=205 data-nosnippet>205</a>                        <span class="prelude-val">Ok</span>(lit(value.as_str()).cast(DataType::Date))
+<a href=#206 id=206 data-nosnippet>206</a>                    } <span class="kw">else </span>{
+<a href=#207 id=207 data-nosnippet>207</a>                        <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid DATE literal '{}'"</span>, value)
+<a href=#208 id=208 data-nosnippet>208</a>                    }
+<a href=#209 id=209 data-nosnippet>209</a>                },
+<a href=#210 id=210 data-nosnippet>210</a>                SQLDataType::Time(<span class="prelude-val">None</span>, TimezoneInfo::None) =&gt; {
+<a href=#211 id=211 data-nosnippet>211</a>                    <span class="kw">if </span>is_iso_time(value) {
+<a href=#212 id=212 data-nosnippet>212</a>                        <span class="prelude-val">Ok</span>(lit(value.as_str()).str().to_time(StrptimeOptions {
+<a href=#213 id=213 data-nosnippet>213</a>                            strict: <span class="bool-val">true</span>,
+<a href=#214 id=214 data-nosnippet>214</a>                            ..Default::default()
+<a href=#215 id=215 data-nosnippet>215</a>                        }))
+<a href=#216 id=216 data-nosnippet>216</a>                    } <span class="kw">else </span>{
+<a href=#217 id=217 data-nosnippet>217</a>                        <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid TIME literal '{}'"</span>, value)
+<a href=#218 id=218 data-nosnippet>218</a>                    }
+<a href=#219 id=219 data-nosnippet>219</a>                },
+<a href=#220 id=220 data-nosnippet>220</a>                SQLDataType::Timestamp(<span class="prelude-val">None</span>, TimezoneInfo::None) | SQLDataType::Datetime(<span class="prelude-val">None</span>) =&gt; {
+<a href=#221 id=221 data-nosnippet>221</a>                    <span class="kw">if </span>is_iso_datetime(value) {
+<a href=#222 id=222 data-nosnippet>222</a>                        <span class="prelude-val">Ok</span>(lit(value.as_str()).str().to_datetime(
+<a href=#223 id=223 data-nosnippet>223</a>                            <span class="prelude-val">None</span>,
+<a href=#224 id=224 data-nosnippet>224</a>                            <span class="prelude-val">None</span>,
+<a href=#225 id=225 data-nosnippet>225</a>                            StrptimeOptions {
+<a href=#226 id=226 data-nosnippet>226</a>                                strict: <span class="bool-val">true</span>,
+<a href=#227 id=227 data-nosnippet>227</a>                                ..Default::default()
+<a href=#228 id=228 data-nosnippet>228</a>                            },
+<a href=#229 id=229 data-nosnippet>229</a>                            lit(<span class="string">"latest"</span>),
+<a href=#230 id=230 data-nosnippet>230</a>                        ))
+<a href=#231 id=231 data-nosnippet>231</a>                    } <span class="kw">else </span>{
+<a href=#232 id=232 data-nosnippet>232</a>                        <span class="kw">let </span>fn_name = <span class="kw">match </span>data_type {
+<a href=#233 id=233 data-nosnippet>233</a>                            SQLDataType::Timestamp(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; <span class="string">"TIMESTAMP"</span>,
+<a href=#234 id=234 data-nosnippet>234</a>                            SQLDataType::Datetime(<span class="kw">_</span>) =&gt; <span class="string">"DATETIME"</span>,
+<a href=#235 id=235 data-nosnippet>235</a>                            <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#236 id=236 data-nosnippet>236</a>                        };
+<a href=#237 id=237 data-nosnippet>237</a>                        <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid {} literal '{}'"</span>, fn_name, value)
+<a href=#238 id=238 data-nosnippet>238</a>                    }
+<a href=#239 id=239 data-nosnippet>239</a>                },
+<a href=#240 id=240 data-nosnippet>240</a>                <span class="kw">_ </span>=&gt; {
+<a href=#241 id=241 data-nosnippet>241</a>                    <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})"</span>, data_type)
+<a href=#242 id=242 data-nosnippet>242</a>                },
+<a href=#243 id=243 data-nosnippet>243</a>            },
+<a href=#244 id=244 data-nosnippet>244</a>            SQLExpr::UnaryOp { op, expr } =&gt; <span class="self">self</span>.visit_unary_op(op, expr),
+<a href=#245 id=245 data-nosnippet>245</a>            SQLExpr::Value(value) =&gt; <span class="self">self</span>.visit_literal(value),
+<a href=#246 id=246 data-nosnippet>246</a>            SQLExpr::Wildcard(<span class="kw">_</span>) =&gt; <span class="prelude-val">Ok</span>(all().as_expr()),
+<a href=#247 id=247 data-nosnippet>247</a>            e @ SQLExpr::Case { .. } =&gt; <span class="self">self</span>.visit_case_when_then(e),
+<a href=#248 id=248 data-nosnippet>248</a>            other =&gt; {
+<a href=#249 id=249 data-nosnippet>249</a>                <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"expression {:?} is not currently supported"</span>, other)
+<a href=#250 id=250 data-nosnippet>250</a>            },
+<a href=#251 id=251 data-nosnippet>251</a>        }
+<a href=#252 id=252 data-nosnippet>252</a>    }
+<a href=#253 id=253 data-nosnippet>253</a>
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="kw">fn </span>visit_subquery(
+<a href=#255 id=255 data-nosnippet>255</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#256 id=256 data-nosnippet>256</a>        subquery: <span class="kw-2">&amp;</span>Subquery,
+<a href=#257 id=257 data-nosnippet>257</a>        restriction: SubqueryRestriction,
+<a href=#258 id=258 data-nosnippet>258</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#259 id=259 data-nosnippet>259</a>        <span class="kw">if </span>subquery.with.is_some() {
+<a href=#260 id=260 data-nosnippet>260</a>            <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"SQL subquery cannot be a CTE 'WITH' clause"</span>);
+<a href=#261 id=261 data-nosnippet>261</a>        }
+<a href=#262 id=262 data-nosnippet>262</a>        <span class="kw">let </span><span class="kw-2">mut </span>lf = <span class="self">self</span>.ctx.execute_query_no_ctes(subquery)<span class="question-mark">?</span>;
+<a href=#263 id=263 data-nosnippet>263</a>        <span class="kw">let </span>schema = <span class="self">self</span>.ctx.get_frame_schema(<span class="kw-2">&amp;mut </span>lf)<span class="question-mark">?</span>;
+<a href=#264 id=264 data-nosnippet>264</a>
+<a href=#265 id=265 data-nosnippet>265</a>        <span class="kw">if </span>restriction == SubqueryRestriction::SingleColumn {
+<a href=#266 id=266 data-nosnippet>266</a>            <span class="kw">if </span>schema.len() != <span class="number">1 </span>{
+<a href=#267 id=267 data-nosnippet>267</a>                <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"SQL subquery returns more than one column"</span>);
+<a href=#268 id=268 data-nosnippet>268</a>            }
+<a href=#269 id=269 data-nosnippet>269</a>            <span class="kw">let </span>rand_string: String = rand::rng()
+<a href=#270 id=270 data-nosnippet>270</a>                .sample_iter(<span class="kw-2">&amp;</span>Alphanumeric)
+<a href=#271 id=271 data-nosnippet>271</a>                .take(<span class="number">16</span>)
+<a href=#272 id=272 data-nosnippet>272</a>                .map(char::from)
+<a href=#273 id=273 data-nosnippet>273</a>                .collect();
+<a href=#274 id=274 data-nosnippet>274</a>
+<a href=#275 id=275 data-nosnippet>275</a>            <span class="kw">let </span>schema_entry = schema.get_at_index(<span class="number">0</span>);
+<a href=#276 id=276 data-nosnippet>276</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>((old_name, <span class="kw">_</span>)) = schema_entry {
+<a href=#277 id=277 data-nosnippet>277</a>                <span class="kw">let </span>new_name = String::from(old_name.as_str()) + rand_string.as_str();
+<a href=#278 id=278 data-nosnippet>278</a>                lf = lf.rename([old_name.to_string()], [new_name.clone()], <span class="bool-val">true</span>);
+<a href=#279 id=279 data-nosnippet>279</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(Expr::SubPlan(
+<a href=#280 id=280 data-nosnippet>280</a>                    SpecialEq::new(Arc::new(lf.logical_plan)),
+<a href=#281 id=281 data-nosnippet>281</a>                    <span class="macro">vec!</span>[new_name],
+<a href=#282 id=282 data-nosnippet>282</a>                ));
+<a href=#283 id=283 data-nosnippet>283</a>            }
+<a href=#284 id=284 data-nosnippet>284</a>        };
+<a href=#285 id=285 data-nosnippet>285</a>        <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"subquery type not supported"</span>);
+<a href=#286 id=286 data-nosnippet>286</a>    }
+<a href=#287 id=287 data-nosnippet>287</a>
+<a href=#288 id=288 data-nosnippet>288</a>    <span class="doccomment">/// Visit a single SQL identifier.
+<a href=#289 id=289 data-nosnippet>289</a>    ///
+<a href=#290 id=290 data-nosnippet>290</a>    /// e.g. column
+<a href=#291 id=291 data-nosnippet>291</a>    </span><span class="kw">fn </span>visit_identifier(<span class="kw-2">&amp;</span><span class="self">self</span>, ident: <span class="kw-2">&amp;</span>Ident) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#292 id=292 data-nosnippet>292</a>        <span class="prelude-val">Ok</span>(col(ident.value.as_str()))
+<a href=#293 id=293 data-nosnippet>293</a>    }
+<a href=#294 id=294 data-nosnippet>294</a>
+<a href=#295 id=295 data-nosnippet>295</a>    <span class="doccomment">/// Visit a compound SQL identifier
+<a href=#296 id=296 data-nosnippet>296</a>    ///
+<a href=#297 id=297 data-nosnippet>297</a>    /// e.g. tbl.column, struct.field, tbl.struct.field (inc. nested struct fields)
+<a href=#298 id=298 data-nosnippet>298</a>    </span><span class="kw">fn </span>visit_compound_identifier(<span class="kw-2">&amp;mut </span><span class="self">self</span>, idents: <span class="kw-2">&amp;</span>[Ident]) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#299 id=299 data-nosnippet>299</a>        <span class="prelude-val">Ok</span>(resolve_compound_identifier(<span class="self">self</span>.ctx, idents, <span class="self">self</span>.active_schema)<span class="question-mark">?</span>[<span class="number">0</span>].clone())
+<a href=#300 id=300 data-nosnippet>300</a>    }
+<a href=#301 id=301 data-nosnippet>301</a>
+<a href=#302 id=302 data-nosnippet>302</a>    <span class="kw">fn </span>visit_like(
+<a href=#303 id=303 data-nosnippet>303</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#304 id=304 data-nosnippet>304</a>        negated: bool,
+<a href=#305 id=305 data-nosnippet>305</a>        expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#306 id=306 data-nosnippet>306</a>        pattern: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#307 id=307 data-nosnippet>307</a>        escape_char: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#308 id=308 data-nosnippet>308</a>        case_insensitive: bool,
+<a href=#309 id=309 data-nosnippet>309</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#310 id=310 data-nosnippet>310</a>        <span class="kw">if </span>escape_char.is_some() {
+<a href=#311 id=311 data-nosnippet>311</a>            <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'"</span>, escape_char.clone().unwrap());
+<a href=#312 id=312 data-nosnippet>312</a>        }
+<a href=#313 id=313 data-nosnippet>313</a>        <span class="kw">let </span>pat = <span class="kw">match </span><span class="self">self</span>.visit_expr(pattern) {
+<a href=#314 id=314 data-nosnippet>314</a>            <span class="prelude-val">Ok</span>(Expr::Literal(lv)) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#315 id=315 data-nosnippet>315</a>                PlSmallStr::from_str(lv.extract_str().unwrap())
+<a href=#316 id=316 data-nosnippet>316</a>            },
+<a href=#317 id=317 data-nosnippet>317</a>            <span class="kw">_ </span>=&gt; {
+<a href=#318 id=318 data-nosnippet>318</a>                <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"LIKE/ILIKE pattern must be a string literal; found {}"</span>, pattern)
+<a href=#319 id=319 data-nosnippet>319</a>            },
+<a href=#320 id=320 data-nosnippet>320</a>        };
+<a href=#321 id=321 data-nosnippet>321</a>        <span class="kw">if </span>pat.is_empty() || (!case_insensitive &amp;&amp; pat.chars().all(|c| !<span class="macro">matches!</span>(c, <span class="string">'%' </span>| <span class="string">'_'</span>))) {
+<a href=#322 id=322 data-nosnippet>322</a>            <span class="comment">// empty string or other exact literal match (eg: no wildcard chars)
+<a href=#323 id=323 data-nosnippet>323</a>            </span><span class="kw">let </span>op = <span class="kw">if </span>negated {
+<a href=#324 id=324 data-nosnippet>324</a>                SQLBinaryOperator::NotEq
+<a href=#325 id=325 data-nosnippet>325</a>            } <span class="kw">else </span>{
+<a href=#326 id=326 data-nosnippet>326</a>                SQLBinaryOperator::Eq
+<a href=#327 id=327 data-nosnippet>327</a>            };
+<a href=#328 id=328 data-nosnippet>328</a>            <span class="self">self</span>.visit_binary_op(expr, <span class="kw-2">&amp;</span>op, pattern)
+<a href=#329 id=329 data-nosnippet>329</a>        } <span class="kw">else </span>{
+<a href=#330 id=330 data-nosnippet>330</a>            <span class="comment">// create regex from pattern containing SQL wildcard chars ('%' =&gt; '.*', '_' =&gt; '.')
+<a href=#331 id=331 data-nosnippet>331</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>rx = regex::escape(pat.as_str())
+<a href=#332 id=332 data-nosnippet>332</a>                .replace(<span class="string">'%'</span>, <span class="string">".*"</span>)
+<a href=#333 id=333 data-nosnippet>333</a>                .replace(<span class="string">'_'</span>, <span class="string">"."</span>);
+<a href=#334 id=334 data-nosnippet>334</a>
+<a href=#335 id=335 data-nosnippet>335</a>            rx = <span class="macro">format!</span>(
+<a href=#336 id=336 data-nosnippet>336</a>                <span class="string">"^{}{}$"</span>,
+<a href=#337 id=337 data-nosnippet>337</a>                <span class="kw">if </span>case_insensitive { <span class="string">"(?is)" </span>} <span class="kw">else </span>{ <span class="string">"(?s)" </span>},
+<a href=#338 id=338 data-nosnippet>338</a>                rx
+<a href=#339 id=339 data-nosnippet>339</a>            );
+<a href=#340 id=340 data-nosnippet>340</a>
+<a href=#341 id=341 data-nosnippet>341</a>            <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#342 id=342 data-nosnippet>342</a>            <span class="kw">let </span>matches = expr.str().contains(lit(rx), <span class="bool-val">true</span>);
+<a href=#343 id=343 data-nosnippet>343</a>            <span class="prelude-val">Ok</span>(<span class="kw">if </span>negated { matches.not() } <span class="kw">else </span>{ matches })
+<a href=#344 id=344 data-nosnippet>344</a>        }
+<a href=#345 id=345 data-nosnippet>345</a>    }
+<a href=#346 id=346 data-nosnippet>346</a>
+<a href=#347 id=347 data-nosnippet>347</a>    <span class="kw">fn </span>visit_subscript(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span>SQLExpr, subscript: <span class="kw-2">&amp;</span>Subscript) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#348 id=348 data-nosnippet>348</a>        <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#349 id=349 data-nosnippet>349</a>        <span class="prelude-val">Ok</span>(<span class="kw">match </span>subscript {
+<a href=#350 id=350 data-nosnippet>350</a>            Subscript::Index { index } =&gt; {
+<a href=#351 id=351 data-nosnippet>351</a>                <span class="kw">let </span>idx = adjust_one_indexed_param(<span class="self">self</span>.visit_expr(index)<span class="question-mark">?</span>, <span class="bool-val">true</span>);
+<a href=#352 id=352 data-nosnippet>352</a>                expr.list().get(idx, <span class="bool-val">true</span>)
+<a href=#353 id=353 data-nosnippet>353</a>            },
+<a href=#354 id=354 data-nosnippet>354</a>            Subscript::Slice { .. } =&gt; {
+<a href=#355 id=355 data-nosnippet>355</a>                <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"array slice syntax is not currently supported"</span>)
+<a href=#356 id=356 data-nosnippet>356</a>            },
+<a href=#357 id=357 data-nosnippet>357</a>        })
+<a href=#358 id=358 data-nosnippet>358</a>    }
+<a href=#359 id=359 data-nosnippet>359</a>
+<a href=#360 id=360 data-nosnippet>360</a>    <span class="doccomment">/// Handle implicit temporal string comparisons.
+<a href=#361 id=361 data-nosnippet>361</a>    ///
+<a href=#362 id=362 data-nosnippet>362</a>    /// eg: clauses such as -
+<a href=#363 id=363 data-nosnippet>363</a>    ///   "dt &gt;= '2024-04-30'"
+<a href=#364 id=364 data-nosnippet>364</a>    ///   "dt = '2077-10-10'::date"
+<a href=#365 id=365 data-nosnippet>365</a>    ///   "dtm::date = '2077-10-10'
+<a href=#366 id=366 data-nosnippet>366</a>    </span><span class="kw">fn </span>convert_temporal_strings(<span class="kw-2">&amp;mut </span><span class="self">self</span>, left: <span class="kw-2">&amp;</span>Expr, right: <span class="kw-2">&amp;</span>Expr) -&gt; Expr {
+<a href=#367 id=367 data-nosnippet>367</a>        <span class="kw">if let </span>(<span class="prelude-val">Some</span>(name), <span class="prelude-val">Some</span>(s), expr_dtype) = <span class="kw">match </span>(left, right) {
+<a href=#368 id=368 data-nosnippet>368</a>            <span class="comment">// identify "col &lt;op&gt; string" expressions
+<a href=#369 id=369 data-nosnippet>369</a>            </span>(Expr::Column(name), Expr::Literal(lv)) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#370 id=370 data-nosnippet>370</a>                (<span class="prelude-val">Some</span>(name.clone()), <span class="prelude-val">Some</span>(lv.extract_str().unwrap()), <span class="prelude-val">None</span>)
+<a href=#371 id=371 data-nosnippet>371</a>            },
+<a href=#372 id=372 data-nosnippet>372</a>            <span class="comment">// identify "CAST(expr AS type) &lt;op&gt; string" and/or "expr::type &lt;op&gt; string" expressions
+<a href=#373 id=373 data-nosnippet>373</a>            </span>(Expr::Cast { expr, dtype, .. }, Expr::Literal(lv)) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#374 id=374 data-nosnippet>374</a>                <span class="kw">let </span>s = lv.extract_str().unwrap();
+<a href=#375 id=375 data-nosnippet>375</a>                <span class="kw">match </span><span class="kw-2">&amp;**</span>expr {
+<a href=#376 id=376 data-nosnippet>376</a>                    Expr::Column(name) =&gt; (<span class="prelude-val">Some</span>(name.clone()), <span class="prelude-val">Some</span>(s), <span class="prelude-val">Some</span>(dtype)),
+<a href=#377 id=377 data-nosnippet>377</a>                    <span class="kw">_ </span>=&gt; (<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(s), <span class="prelude-val">Some</span>(dtype)),
+<a href=#378 id=378 data-nosnippet>378</a>                }
+<a href=#379 id=379 data-nosnippet>379</a>            },
+<a href=#380 id=380 data-nosnippet>380</a>            <span class="kw">_ </span>=&gt; (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>),
+<a href=#381 id=381 data-nosnippet>381</a>        } {
+<a href=#382 id=382 data-nosnippet>382</a>            <span class="kw">if </span>expr_dtype.is_none() &amp;&amp; <span class="self">self</span>.active_schema.is_none() {
+<a href=#383 id=383 data-nosnippet>383</a>                right.clone()
+<a href=#384 id=384 data-nosnippet>384</a>            } <span class="kw">else </span>{
+<a href=#385 id=385 data-nosnippet>385</a>                <span class="kw">let </span>left_dtype = expr_dtype.map_or_else(
+<a href=#386 id=386 data-nosnippet>386</a>                    || {
+<a href=#387 id=387 data-nosnippet>387</a>                        <span class="self">self</span>.active_schema
+<a href=#388 id=388 data-nosnippet>388</a>                            .as_ref()
+<a href=#389 id=389 data-nosnippet>389</a>                            .and_then(|schema| schema.get(<span class="kw-2">&amp;</span>name))
+<a href=#390 id=390 data-nosnippet>390</a>                    },
+<a href=#391 id=391 data-nosnippet>391</a>                    |dt| dt.as_literal(),
+<a href=#392 id=392 data-nosnippet>392</a>                );
+<a href=#393 id=393 data-nosnippet>393</a>                <span class="kw">match </span>left_dtype {
+<a href=#394 id=394 data-nosnippet>394</a>                    <span class="prelude-val">Some</span>(DataType::Time) <span class="kw">if </span>is_iso_time(s) =&gt; {
+<a href=#395 id=395 data-nosnippet>395</a>                        right.clone().str().to_time(StrptimeOptions {
+<a href=#396 id=396 data-nosnippet>396</a>                            strict: <span class="bool-val">true</span>,
+<a href=#397 id=397 data-nosnippet>397</a>                            ..Default::default()
+<a href=#398 id=398 data-nosnippet>398</a>                        })
+<a href=#399 id=399 data-nosnippet>399</a>                    },
+<a href=#400 id=400 data-nosnippet>400</a>                    <span class="prelude-val">Some</span>(DataType::Date) <span class="kw">if </span>is_iso_date(s) =&gt; {
+<a href=#401 id=401 data-nosnippet>401</a>                        right.clone().str().to_date(StrptimeOptions {
+<a href=#402 id=402 data-nosnippet>402</a>                            strict: <span class="bool-val">true</span>,
+<a href=#403 id=403 data-nosnippet>403</a>                            ..Default::default()
+<a href=#404 id=404 data-nosnippet>404</a>                        })
+<a href=#405 id=405 data-nosnippet>405</a>                    },
+<a href=#406 id=406 data-nosnippet>406</a>                    <span class="prelude-val">Some</span>(DataType::Datetime(tu, tz)) <span class="kw">if </span>is_iso_datetime(s) || is_iso_date(s) =&gt; {
+<a href=#407 id=407 data-nosnippet>407</a>                        <span class="kw">if </span>s.len() == <span class="number">10 </span>{
+<a href=#408 id=408 data-nosnippet>408</a>                            <span class="comment">// handle upcast from ISO date string (10 chars) to datetime
+<a href=#409 id=409 data-nosnippet>409</a>                            </span>lit(<span class="macro">format!</span>(<span class="string">"{s}T00:00:00"</span>))
+<a href=#410 id=410 data-nosnippet>410</a>                        } <span class="kw">else </span>{
+<a href=#411 id=411 data-nosnippet>411</a>                            lit(s.replacen(<span class="string">' '</span>, <span class="string">"T"</span>, <span class="number">1</span>))
+<a href=#412 id=412 data-nosnippet>412</a>                        }
+<a href=#413 id=413 data-nosnippet>413</a>                        .str()
+<a href=#414 id=414 data-nosnippet>414</a>                        .to_datetime(
+<a href=#415 id=415 data-nosnippet>415</a>                            <span class="prelude-val">Some</span>(<span class="kw-2">*</span>tu),
+<a href=#416 id=416 data-nosnippet>416</a>                            tz.clone(),
+<a href=#417 id=417 data-nosnippet>417</a>                            StrptimeOptions {
+<a href=#418 id=418 data-nosnippet>418</a>                                strict: <span class="bool-val">true</span>,
+<a href=#419 id=419 data-nosnippet>419</a>                                ..Default::default()
+<a href=#420 id=420 data-nosnippet>420</a>                            },
+<a href=#421 id=421 data-nosnippet>421</a>                            lit(<span class="string">"latest"</span>),
+<a href=#422 id=422 data-nosnippet>422</a>                        )
+<a href=#423 id=423 data-nosnippet>423</a>                    },
+<a href=#424 id=424 data-nosnippet>424</a>                    <span class="kw">_ </span>=&gt; right.clone(),
+<a href=#425 id=425 data-nosnippet>425</a>                }
+<a href=#426 id=426 data-nosnippet>426</a>            }
+<a href=#427 id=427 data-nosnippet>427</a>        } <span class="kw">else </span>{
+<a href=#428 id=428 data-nosnippet>428</a>            right.clone()
+<a href=#429 id=429 data-nosnippet>429</a>        }
+<a href=#430 id=430 data-nosnippet>430</a>    }
+<a href=#431 id=431 data-nosnippet>431</a>
+<a href=#432 id=432 data-nosnippet>432</a>    <span class="kw">fn </span>struct_field_access_expr(
+<a href=#433 id=433 data-nosnippet>433</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#434 id=434 data-nosnippet>434</a>        expr: <span class="kw-2">&amp;</span>Expr,
+<a href=#435 id=435 data-nosnippet>435</a>        path: <span class="kw-2">&amp;</span>str,
+<a href=#436 id=436 data-nosnippet>436</a>        infer_index: bool,
+<a href=#437 id=437 data-nosnippet>437</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#438 id=438 data-nosnippet>438</a>        <span class="kw">let </span>path_elems = <span class="kw">if </span>path.starts_with(<span class="string">'{'</span>) &amp;&amp; path.ends_with(<span class="string">'}'</span>) {
+<a href=#439 id=439 data-nosnippet>439</a>            path.trim_matches(|c| c == <span class="string">'{' </span>|| c == <span class="string">'}'</span>)
+<a href=#440 id=440 data-nosnippet>440</a>        } <span class="kw">else </span>{
+<a href=#441 id=441 data-nosnippet>441</a>            path
+<a href=#442 id=442 data-nosnippet>442</a>        }
+<a href=#443 id=443 data-nosnippet>443</a>        .split(<span class="string">','</span>);
+<a href=#444 id=444 data-nosnippet>444</a>
+<a href=#445 id=445 data-nosnippet>445</a>        <span class="kw">let </span><span class="kw-2">mut </span>expr = expr.clone();
+<a href=#446 id=446 data-nosnippet>446</a>        <span class="kw">for </span>p <span class="kw">in </span>path_elems {
+<a href=#447 id=447 data-nosnippet>447</a>            <span class="kw">let </span>p = p.trim();
+<a href=#448 id=448 data-nosnippet>448</a>            expr = <span class="kw">if </span>infer_index {
+<a href=#449 id=449 data-nosnippet>449</a>                <span class="kw">match </span>p.parse::&lt;i64&gt;() {
+<a href=#450 id=450 data-nosnippet>450</a>                    <span class="prelude-val">Ok</span>(idx) =&gt; expr.list().get(lit(idx), <span class="bool-val">true</span>),
+<a href=#451 id=451 data-nosnippet>451</a>                    <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; expr.struct_().field_by_name(p),
+<a href=#452 id=452 data-nosnippet>452</a>                }
+<a href=#453 id=453 data-nosnippet>453</a>            } <span class="kw">else </span>{
+<a href=#454 id=454 data-nosnippet>454</a>                expr.struct_().field_by_name(p)
+<a href=#455 id=455 data-nosnippet>455</a>            }
+<a href=#456 id=456 data-nosnippet>456</a>        }
+<a href=#457 id=457 data-nosnippet>457</a>        <span class="prelude-val">Ok</span>(expr)
+<a href=#458 id=458 data-nosnippet>458</a>    }
+<a href=#459 id=459 data-nosnippet>459</a>
+<a href=#460 id=460 data-nosnippet>460</a>    <span class="doccomment">/// Visit a SQL binary operator.
+<a href=#461 id=461 data-nosnippet>461</a>    ///
+<a href=#462 id=462 data-nosnippet>462</a>    /// e.g. "column + 1", "column1 &lt;= column2"
+<a href=#463 id=463 data-nosnippet>463</a>    </span><span class="kw">fn </span>visit_binary_op(
+<a href=#464 id=464 data-nosnippet>464</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#465 id=465 data-nosnippet>465</a>        left: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#466 id=466 data-nosnippet>466</a>        op: <span class="kw-2">&amp;</span>SQLBinaryOperator,
+<a href=#467 id=467 data-nosnippet>467</a>        right: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#468 id=468 data-nosnippet>468</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#469 id=469 data-nosnippet>469</a>        <span class="comment">// need special handling for interval offsets and comparisons
+<a href=#470 id=470 data-nosnippet>470</a>        </span><span class="kw">let </span>(lhs, <span class="kw-2">mut </span>rhs) = <span class="kw">match </span>(left, op, right) {
+<a href=#471 id=471 data-nosnippet>471</a>            (<span class="kw">_</span>, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) =&gt; {
+<a href=#472 id=472 data-nosnippet>472</a>                <span class="kw">let </span>duration = interval_to_duration(v, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#473 id=473 data-nosnippet>473</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="self">self
+<a href=#474 id=474 data-nosnippet>474</a>                    </span>.visit_expr(left)<span class="question-mark">?
+<a href=#475 id=475 data-nosnippet>475</a>                    </span>.dt()
+<a href=#476 id=476 data-nosnippet>476</a>                    .offset_by(lit(<span class="macro">format!</span>(<span class="string">"-{duration}"</span>))));
+<a href=#477 id=477 data-nosnippet>477</a>            },
+<a href=#478 id=478 data-nosnippet>478</a>            (<span class="kw">_</span>, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) =&gt; {
+<a href=#479 id=479 data-nosnippet>479</a>                <span class="kw">let </span>duration = interval_to_duration(v, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#480 id=480 data-nosnippet>480</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="self">self
+<a href=#481 id=481 data-nosnippet>481</a>                    </span>.visit_expr(left)<span class="question-mark">?
+<a href=#482 id=482 data-nosnippet>482</a>                    </span>.dt()
+<a href=#483 id=483 data-nosnippet>483</a>                    .offset_by(lit(<span class="macro">format!</span>(<span class="string">"{duration}"</span>))));
+<a href=#484 id=484 data-nosnippet>484</a>            },
+<a href=#485 id=485 data-nosnippet>485</a>            (SQLExpr::Interval(v1), <span class="kw">_</span>, SQLExpr::Interval(v2)) =&gt; {
+<a href=#486 id=486 data-nosnippet>486</a>                <span class="comment">// shortcut interval comparison evaluation (-&gt; bool)
+<a href=#487 id=487 data-nosnippet>487</a>                </span><span class="kw">let </span>d1 = interval_to_duration(v1, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#488 id=488 data-nosnippet>488</a>                <span class="kw">let </span>d2 = interval_to_duration(v2, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#489 id=489 data-nosnippet>489</a>                <span class="kw">let </span>res = <span class="kw">match </span>op {
+<a href=#490 id=490 data-nosnippet>490</a>                    SQLBinaryOperator::Gt =&gt; <span class="prelude-val">Ok</span>(lit(d1 &gt; d2)),
+<a href=#491 id=491 data-nosnippet>491</a>                    SQLBinaryOperator::Lt =&gt; <span class="prelude-val">Ok</span>(lit(d1 &lt; d2)),
+<a href=#492 id=492 data-nosnippet>492</a>                    SQLBinaryOperator::GtEq =&gt; <span class="prelude-val">Ok</span>(lit(d1 &gt;= d2)),
+<a href=#493 id=493 data-nosnippet>493</a>                    SQLBinaryOperator::LtEq =&gt; <span class="prelude-val">Ok</span>(lit(d1 &lt;= d2)),
+<a href=#494 id=494 data-nosnippet>494</a>                    SQLBinaryOperator::NotEq =&gt; <span class="prelude-val">Ok</span>(lit(d1 != d2)),
+<a href=#495 id=495 data-nosnippet>495</a>                    SQLBinaryOperator::Eq | SQLBinaryOperator::Spaceship =&gt; <span class="prelude-val">Ok</span>(lit(d1 == d2)),
+<a href=#496 id=496 data-nosnippet>496</a>                    <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"invalid interval comparison operator"</span>),
+<a href=#497 id=497 data-nosnippet>497</a>                };
+<a href=#498 id=498 data-nosnippet>498</a>                <span class="kw">if </span>res.is_ok() {
+<a href=#499 id=499 data-nosnippet>499</a>                    <span class="kw">return </span>res;
+<a href=#500 id=500 data-nosnippet>500</a>                }
+<a href=#501 id=501 data-nosnippet>501</a>                (<span class="self">self</span>.visit_expr(left)<span class="question-mark">?</span>, <span class="self">self</span>.visit_expr(right)<span class="question-mark">?</span>)
+<a href=#502 id=502 data-nosnippet>502</a>            },
+<a href=#503 id=503 data-nosnippet>503</a>            <span class="kw">_ </span>=&gt; (<span class="self">self</span>.visit_expr(left)<span class="question-mark">?</span>, <span class="self">self</span>.visit_expr(right)<span class="question-mark">?</span>),
+<a href=#504 id=504 data-nosnippet>504</a>        };
+<a href=#505 id=505 data-nosnippet>505</a>        rhs = <span class="self">self</span>.convert_temporal_strings(<span class="kw-2">&amp;</span>lhs, <span class="kw-2">&amp;</span>rhs);
+<a href=#506 id=506 data-nosnippet>506</a>
+<a href=#507 id=507 data-nosnippet>507</a>        <span class="prelude-val">Ok</span>(<span class="kw">match </span>op {
+<a href=#508 id=508 data-nosnippet>508</a>            <span class="comment">// ----
+<a href=#509 id=509 data-nosnippet>509</a>            // Bitwise operators
+<a href=#510 id=510 data-nosnippet>510</a>            // ----
+<a href=#511 id=511 data-nosnippet>511</a>            </span>SQLBinaryOperator::BitwiseAnd =&gt; lhs.and(rhs),  <span class="comment">// "x &amp; y"
+<a href=#512 id=512 data-nosnippet>512</a>            </span>SQLBinaryOperator::BitwiseOr =&gt; lhs.or(rhs),  <span class="comment">// "x | y"
+<a href=#513 id=513 data-nosnippet>513</a>            </span>SQLBinaryOperator::Xor =&gt; lhs.xor(rhs),  <span class="comment">// "x XOR y"
+<a href=#514 id=514 data-nosnippet>514</a>
+<a href=#515 id=515 data-nosnippet>515</a>            // ----
+<a href=#516 id=516 data-nosnippet>516</a>            // General operators
+<a href=#517 id=517 data-nosnippet>517</a>            // ----
+<a href=#518 id=518 data-nosnippet>518</a>            </span>SQLBinaryOperator::And =&gt; lhs.and(rhs),  <span class="comment">// "x AND y"
+<a href=#519 id=519 data-nosnippet>519</a>            </span>SQLBinaryOperator::Divide =&gt; lhs / rhs,  <span class="comment">// "x / y"
+<a href=#520 id=520 data-nosnippet>520</a>            </span>SQLBinaryOperator::DuckIntegerDivide =&gt; lhs.floor_div(rhs).cast(DataType::Int64),  <span class="comment">// "x // y"
+<a href=#521 id=521 data-nosnippet>521</a>            </span>SQLBinaryOperator::Eq =&gt; lhs.eq(rhs),  <span class="comment">// "x = y"
+<a href=#522 id=522 data-nosnippet>522</a>            </span>SQLBinaryOperator::Gt =&gt; lhs.gt(rhs),  <span class="comment">// "x &gt; y"
+<a href=#523 id=523 data-nosnippet>523</a>            </span>SQLBinaryOperator::GtEq =&gt; lhs.gt_eq(rhs),  <span class="comment">// "x &gt;= y"
+<a href=#524 id=524 data-nosnippet>524</a>            </span>SQLBinaryOperator::Lt =&gt; lhs.lt(rhs),  <span class="comment">// "x &lt; y"
+<a href=#525 id=525 data-nosnippet>525</a>            </span>SQLBinaryOperator::LtEq =&gt; lhs.lt_eq(rhs),  <span class="comment">// "x &lt;= y"
+<a href=#526 id=526 data-nosnippet>526</a>            </span>SQLBinaryOperator::Minus =&gt; lhs - rhs,  <span class="comment">// "x - y"
+<a href=#527 id=527 data-nosnippet>527</a>            </span>SQLBinaryOperator::Modulo =&gt; lhs % rhs,  <span class="comment">// "x % y"
+<a href=#528 id=528 data-nosnippet>528</a>            </span>SQLBinaryOperator::Multiply =&gt; lhs * rhs,  <span class="comment">// "x * y"
+<a href=#529 id=529 data-nosnippet>529</a>            </span>SQLBinaryOperator::NotEq =&gt; lhs.eq(rhs).not(),  <span class="comment">// "x != y"
+<a href=#530 id=530 data-nosnippet>530</a>            </span>SQLBinaryOperator::Or =&gt; lhs.or(rhs),  <span class="comment">// "x OR y"
+<a href=#531 id=531 data-nosnippet>531</a>            </span>SQLBinaryOperator::Plus =&gt; lhs + rhs,  <span class="comment">// "x + y"
+<a href=#532 id=532 data-nosnippet>532</a>            </span>SQLBinaryOperator::Spaceship =&gt; lhs.eq_missing(rhs),  <span class="comment">// "x &lt;=&gt; y"
+<a href=#533 id=533 data-nosnippet>533</a>            </span>SQLBinaryOperator::StringConcat =&gt; {  <span class="comment">// "x || y"
+<a href=#534 id=534 data-nosnippet>534</a>                </span>lhs.cast(DataType::String) + rhs.cast(DataType::String)
+<a href=#535 id=535 data-nosnippet>535</a>            },
+<a href=#536 id=536 data-nosnippet>536</a>            SQLBinaryOperator::PGStartsWith =&gt; lhs.str().starts_with(rhs),  <span class="comment">// "x ^@ y"
+<a href=#537 id=537 data-nosnippet>537</a>            // ----
+<a href=#538 id=538 data-nosnippet>538</a>            // Regular expression operators
+<a href=#539 id=539 data-nosnippet>539</a>            // ----
+<a href=#540 id=540 data-nosnippet>540</a>            </span>SQLBinaryOperator::PGRegexMatch =&gt; <span class="kw">match </span>rhs {  <span class="comment">// "x ~ y"
+<a href=#541 id=541 data-nosnippet>541</a>                </span>Expr::Literal(<span class="kw-2">ref </span>lv) <span class="kw">if </span>lv.extract_str().is_some() =&gt; lhs.str().contains(rhs, <span class="bool-val">true</span>),
+<a href=#542 id=542 data-nosnippet>542</a>                <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid pattern for '~' operator: {:?}"</span>, rhs),
+<a href=#543 id=543 data-nosnippet>543</a>            },
+<a href=#544 id=544 data-nosnippet>544</a>            SQLBinaryOperator::PGRegexNotMatch =&gt; <span class="kw">match </span>rhs {  <span class="comment">// "x !~ y"
+<a href=#545 id=545 data-nosnippet>545</a>                </span>Expr::Literal(<span class="kw-2">ref </span>lv) <span class="kw">if </span>lv.extract_str().is_some() =&gt; lhs.str().contains(rhs, <span class="bool-val">true</span>).not(),
+<a href=#546 id=546 data-nosnippet>546</a>                <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid pattern for '!~' operator: {:?}"</span>, rhs),
+<a href=#547 id=547 data-nosnippet>547</a>            },
+<a href=#548 id=548 data-nosnippet>548</a>            SQLBinaryOperator::PGRegexIMatch =&gt; <span class="kw">match </span>rhs {  <span class="comment">// "x ~* y"
+<a href=#549 id=549 data-nosnippet>549</a>                </span>Expr::Literal(<span class="kw-2">ref </span>lv) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#550 id=550 data-nosnippet>550</a>                    <span class="kw">let </span>pat = lv.extract_str().unwrap();
+<a href=#551 id=551 data-nosnippet>551</a>                    lhs.str().contains(lit(<span class="macro">format!</span>(<span class="string">"(?i){pat}"</span>)), <span class="bool-val">true</span>)
+<a href=#552 id=552 data-nosnippet>552</a>                },
+<a href=#553 id=553 data-nosnippet>553</a>                <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid pattern for '~*' operator: {:?}"</span>, rhs),
+<a href=#554 id=554 data-nosnippet>554</a>            },
+<a href=#555 id=555 data-nosnippet>555</a>            SQLBinaryOperator::PGRegexNotIMatch =&gt; <span class="kw">match </span>rhs {  <span class="comment">// "x !~* y"
+<a href=#556 id=556 data-nosnippet>556</a>                </span>Expr::Literal(<span class="kw-2">ref </span>lv) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#557 id=557 data-nosnippet>557</a>                    <span class="kw">let </span>pat = lv.extract_str().unwrap();
+<a href=#558 id=558 data-nosnippet>558</a>                    lhs.str().contains(lit(<span class="macro">format!</span>(<span class="string">"(?i){pat}"</span>)), <span class="bool-val">true</span>).not()
+<a href=#559 id=559 data-nosnippet>559</a>                },
+<a href=#560 id=560 data-nosnippet>560</a>                <span class="kw">_ </span>=&gt; {
+<a href=#561 id=561 data-nosnippet>561</a>                    <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid pattern for '!~*' operator: {:?}"</span>, rhs)
+<a href=#562 id=562 data-nosnippet>562</a>                },
+<a href=#563 id=563 data-nosnippet>563</a>            },
+<a href=#564 id=564 data-nosnippet>564</a>            <span class="comment">// ----
+<a href=#565 id=565 data-nosnippet>565</a>            // LIKE/ILIKE operators
+<a href=#566 id=566 data-nosnippet>566</a>            // ----
+<a href=#567 id=567 data-nosnippet>567</a>            </span>SQLBinaryOperator::PGLikeMatch  <span class="comment">// "x ~~ y"
+<a href=#568 id=568 data-nosnippet>568</a>            </span>| SQLBinaryOperator::PGNotLikeMatch  <span class="comment">// "x !~~ y"
+<a href=#569 id=569 data-nosnippet>569</a>            </span>| SQLBinaryOperator::PGILikeMatch  <span class="comment">// "x ~~* y"
+<a href=#570 id=570 data-nosnippet>570</a>            </span>| SQLBinaryOperator::PGNotILikeMatch =&gt; {  <span class="comment">// "x !~~* y"
+<a href=#571 id=571 data-nosnippet>571</a>                </span><span class="kw">let </span>expr = <span class="kw">if </span><span class="macro">matches!</span>(
+<a href=#572 id=572 data-nosnippet>572</a>                    op,
+<a href=#573 id=573 data-nosnippet>573</a>                    SQLBinaryOperator::PGLikeMatch | SQLBinaryOperator::PGNotLikeMatch
+<a href=#574 id=574 data-nosnippet>574</a>                ) {
+<a href=#575 id=575 data-nosnippet>575</a>                    SQLExpr::Like {
+<a href=#576 id=576 data-nosnippet>576</a>                        negated: <span class="macro">matches!</span>(op, SQLBinaryOperator::PGNotLikeMatch),
+<a href=#577 id=577 data-nosnippet>577</a>                        any: <span class="bool-val">false</span>,
+<a href=#578 id=578 data-nosnippet>578</a>                        expr: Box::new(left.clone()),
+<a href=#579 id=579 data-nosnippet>579</a>                        pattern: Box::new(right.clone()),
+<a href=#580 id=580 data-nosnippet>580</a>                        escape_char: <span class="prelude-val">None</span>,
+<a href=#581 id=581 data-nosnippet>581</a>                    }
+<a href=#582 id=582 data-nosnippet>582</a>                } <span class="kw">else </span>{
+<a href=#583 id=583 data-nosnippet>583</a>                    SQLExpr::ILike {
+<a href=#584 id=584 data-nosnippet>584</a>                        negated: <span class="macro">matches!</span>(op, SQLBinaryOperator::PGNotILikeMatch),
+<a href=#585 id=585 data-nosnippet>585</a>                        any: <span class="bool-val">false</span>,
+<a href=#586 id=586 data-nosnippet>586</a>                        expr: Box::new(left.clone()),
+<a href=#587 id=587 data-nosnippet>587</a>                        pattern: Box::new(right.clone()),
+<a href=#588 id=588 data-nosnippet>588</a>                        escape_char: <span class="prelude-val">None</span>,
+<a href=#589 id=589 data-nosnippet>589</a>                    }
+<a href=#590 id=590 data-nosnippet>590</a>                };
+<a href=#591 id=591 data-nosnippet>591</a>                <span class="self">self</span>.visit_expr(<span class="kw-2">&amp;</span>expr)<span class="question-mark">?
+<a href=#592 id=592 data-nosnippet>592</a>            </span>},
+<a href=#593 id=593 data-nosnippet>593</a>            <span class="comment">// ----
+<a href=#594 id=594 data-nosnippet>594</a>            // JSON/Struct field access operators
+<a href=#595 id=595 data-nosnippet>595</a>            // ----
+<a href=#596 id=596 data-nosnippet>596</a>            </span>SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow =&gt; <span class="kw">match </span>rhs {  <span class="comment">// "x -&gt; y", "x -&gt;&gt; y"
+<a href=#597 id=597 data-nosnippet>597</a>                </span>Expr::Literal(lv) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#598 id=598 data-nosnippet>598</a>                    <span class="kw">let </span>path = lv.extract_str().unwrap();
+<a href=#599 id=599 data-nosnippet>599</a>                    <span class="kw">let </span><span class="kw-2">mut </span>expr = <span class="self">self</span>.struct_field_access_expr(<span class="kw-2">&amp;</span>lhs, path, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#600 id=600 data-nosnippet>600</a>                    <span class="kw">if let </span>SQLBinaryOperator::LongArrow = op {
+<a href=#601 id=601 data-nosnippet>601</a>                        expr = expr.cast(DataType::String);
+<a href=#602 id=602 data-nosnippet>602</a>                    }
+<a href=#603 id=603 data-nosnippet>603</a>                    expr
+<a href=#604 id=604 data-nosnippet>604</a>                },
+<a href=#605 id=605 data-nosnippet>605</a>                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(idx))) =&gt; {
+<a href=#606 id=606 data-nosnippet>606</a>                    <span class="kw">let </span><span class="kw-2">mut </span>expr = <span class="self">self</span>.struct_field_access_expr(<span class="kw-2">&amp;</span>lhs, <span class="kw-2">&amp;</span>idx.to_string(), <span class="bool-val">true</span>)<span class="question-mark">?</span>;
+<a href=#607 id=607 data-nosnippet>607</a>                    <span class="kw">if let </span>SQLBinaryOperator::LongArrow = op {
+<a href=#608 id=608 data-nosnippet>608</a>                        expr = expr.cast(DataType::String);
+<a href=#609 id=609 data-nosnippet>609</a>                    }
+<a href=#610 id=610 data-nosnippet>610</a>                    expr
+<a href=#611 id=611 data-nosnippet>611</a>                },
+<a href=#612 id=612 data-nosnippet>612</a>                <span class="kw">_ </span>=&gt; {
+<a href=#613 id=613 data-nosnippet>613</a>                    <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid json/struct path-extract definition: {:?}"</span>, right)
+<a href=#614 id=614 data-nosnippet>614</a>                },
+<a href=#615 id=615 data-nosnippet>615</a>            },
+<a href=#616 id=616 data-nosnippet>616</a>            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow =&gt; {  <span class="comment">// "x #&gt; y", "x #&gt;&gt; y"
+<a href=#617 id=617 data-nosnippet>617</a>                </span><span class="kw">match </span>rhs {
+<a href=#618 id=618 data-nosnippet>618</a>                    Expr::Literal(lv) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#619 id=619 data-nosnippet>619</a>                        <span class="kw">let </span>path = lv.extract_str().unwrap();
+<a href=#620 id=620 data-nosnippet>620</a>                        <span class="kw">let </span><span class="kw-2">mut </span>expr = <span class="self">self</span>.struct_field_access_expr(<span class="kw-2">&amp;</span>lhs, path, <span class="bool-val">true</span>)<span class="question-mark">?</span>;
+<a href=#621 id=621 data-nosnippet>621</a>                        <span class="kw">if let </span>SQLBinaryOperator::HashLongArrow = op {
+<a href=#622 id=622 data-nosnippet>622</a>                            expr = expr.cast(DataType::String);
+<a href=#623 id=623 data-nosnippet>623</a>                        }
+<a href=#624 id=624 data-nosnippet>624</a>                        expr
+<a href=#625 id=625 data-nosnippet>625</a>                    },
+<a href=#626 id=626 data-nosnippet>626</a>                    <span class="kw">_ </span>=&gt; {
+<a href=#627 id=627 data-nosnippet>627</a>                        <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid json/struct path-extract definition: {:?}"</span>, rhs)
+<a href=#628 id=628 data-nosnippet>628</a>                    }
+<a href=#629 id=629 data-nosnippet>629</a>                }
+<a href=#630 id=630 data-nosnippet>630</a>            },
+<a href=#631 id=631 data-nosnippet>631</a>            other =&gt; {
+<a href=#632 id=632 data-nosnippet>632</a>                <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"operator {:?} is not currently supported"</span>, other)
+<a href=#633 id=633 data-nosnippet>633</a>            },
+<a href=#634 id=634 data-nosnippet>634</a>        })
+<a href=#635 id=635 data-nosnippet>635</a>    }
+<a href=#636 id=636 data-nosnippet>636</a>
+<a href=#637 id=637 data-nosnippet>637</a>    <span class="doccomment">/// Visit a SQL unary operator.
+<a href=#638 id=638 data-nosnippet>638</a>    ///
+<a href=#639 id=639 data-nosnippet>639</a>    /// e.g. +column or -column
+<a href=#640 id=640 data-nosnippet>640</a>    </span><span class="kw">fn </span>visit_unary_op(<span class="kw-2">&amp;mut </span><span class="self">self</span>, op: <span class="kw-2">&amp;</span>UnaryOperator, expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#641 id=641 data-nosnippet>641</a>        <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#642 id=642 data-nosnippet>642</a>        <span class="prelude-val">Ok</span>(<span class="kw">match </span>(op, expr.clone()) {
+<a href=#643 id=643 data-nosnippet>643</a>            <span class="comment">// simplify the parse tree by special-casing common unary +/- ops
+<a href=#644 id=644 data-nosnippet>644</a>            </span>(UnaryOperator::Plus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) =&gt; {
+<a href=#645 id=645 data-nosnippet>645</a>                lit(n)
+<a href=#646 id=646 data-nosnippet>646</a>            },
+<a href=#647 id=647 data-nosnippet>647</a>            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n)))) =&gt; {
+<a href=#648 id=648 data-nosnippet>648</a>                lit(n)
+<a href=#649 id=649 data-nosnippet>649</a>            },
+<a href=#650 id=650 data-nosnippet>650</a>            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) =&gt; {
+<a href=#651 id=651 data-nosnippet>651</a>                lit(-n)
+<a href=#652 id=652 data-nosnippet>652</a>            },
+<a href=#653 id=653 data-nosnippet>653</a>            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n)))) =&gt; {
+<a href=#654 id=654 data-nosnippet>654</a>                lit(-n)
+<a href=#655 id=655 data-nosnippet>655</a>            },
+<a href=#656 id=656 data-nosnippet>656</a>            <span class="comment">// general case
+<a href=#657 id=657 data-nosnippet>657</a>            </span>(UnaryOperator::Plus, <span class="kw">_</span>) =&gt; lit(<span class="number">0</span>) + expr,
+<a href=#658 id=658 data-nosnippet>658</a>            (UnaryOperator::Minus, <span class="kw">_</span>) =&gt; lit(<span class="number">0</span>) - expr,
+<a href=#659 id=659 data-nosnippet>659</a>            (UnaryOperator::Not, <span class="kw">_</span>) =&gt; expr.not(),
+<a href=#660 id=660 data-nosnippet>660</a>            other =&gt; <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"unary operator {:?} is not supported"</span>, other),
+<a href=#661 id=661 data-nosnippet>661</a>        })
+<a href=#662 id=662 data-nosnippet>662</a>    }
+<a href=#663 id=663 data-nosnippet>663</a>
+<a href=#664 id=664 data-nosnippet>664</a>    <span class="doccomment">/// Visit a SQL function.
+<a href=#665 id=665 data-nosnippet>665</a>    ///
+<a href=#666 id=666 data-nosnippet>666</a>    /// e.g. SUM(column) or COUNT(*)
+<a href=#667 id=667 data-nosnippet>667</a>    ///
+<a href=#668 id=668 data-nosnippet>668</a>    /// See [SQLFunctionVisitor] for more details
+<a href=#669 id=669 data-nosnippet>669</a>    </span><span class="kw">fn </span>visit_function(<span class="kw-2">&amp;mut </span><span class="self">self</span>, function: <span class="kw-2">&amp;</span>SQLFunction) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#670 id=670 data-nosnippet>670</a>        <span class="kw">let </span><span class="kw-2">mut </span>visitor = SQLFunctionVisitor {
+<a href=#671 id=671 data-nosnippet>671</a>            func: function,
+<a href=#672 id=672 data-nosnippet>672</a>            ctx: <span class="self">self</span>.ctx,
+<a href=#673 id=673 data-nosnippet>673</a>            active_schema: <span class="self">self</span>.active_schema,
+<a href=#674 id=674 data-nosnippet>674</a>        };
+<a href=#675 id=675 data-nosnippet>675</a>        visitor.visit_function()
+<a href=#676 id=676 data-nosnippet>676</a>    }
+<a href=#677 id=677 data-nosnippet>677</a>
+<a href=#678 id=678 data-nosnippet>678</a>    <span class="doccomment">/// Visit a SQL `ALL` expression.
+<a href=#679 id=679 data-nosnippet>679</a>    ///
+<a href=#680 id=680 data-nosnippet>680</a>    /// e.g. `a &gt; ALL(y)`
+<a href=#681 id=681 data-nosnippet>681</a>    </span><span class="kw">fn </span>visit_all(
+<a href=#682 id=682 data-nosnippet>682</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#683 id=683 data-nosnippet>683</a>        left: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#684 id=684 data-nosnippet>684</a>        compare_op: <span class="kw-2">&amp;</span>SQLBinaryOperator,
+<a href=#685 id=685 data-nosnippet>685</a>        right: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#686 id=686 data-nosnippet>686</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#687 id=687 data-nosnippet>687</a>        <span class="kw">let </span>left = <span class="self">self</span>.visit_expr(left)<span class="question-mark">?</span>;
+<a href=#688 id=688 data-nosnippet>688</a>        <span class="kw">let </span>right = <span class="self">self</span>.visit_expr(right)<span class="question-mark">?</span>;
+<a href=#689 id=689 data-nosnippet>689</a>
+<a href=#690 id=690 data-nosnippet>690</a>        <span class="kw">match </span>compare_op {
+<a href=#691 id=691 data-nosnippet>691</a>            SQLBinaryOperator::Gt =&gt; <span class="prelude-val">Ok</span>(left.gt(right.max())),
+<a href=#692 id=692 data-nosnippet>692</a>            SQLBinaryOperator::Lt =&gt; <span class="prelude-val">Ok</span>(left.lt(right.min())),
+<a href=#693 id=693 data-nosnippet>693</a>            SQLBinaryOperator::GtEq =&gt; <span class="prelude-val">Ok</span>(left.gt_eq(right.max())),
+<a href=#694 id=694 data-nosnippet>694</a>            SQLBinaryOperator::LtEq =&gt; <span class="prelude-val">Ok</span>(left.lt_eq(right.min())),
+<a href=#695 id=695 data-nosnippet>695</a>            SQLBinaryOperator::Eq =&gt; <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"ALL cannot be used with ="</span>),
+<a href=#696 id=696 data-nosnippet>696</a>            SQLBinaryOperator::NotEq =&gt; <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"ALL cannot be used with !="</span>),
+<a href=#697 id=697 data-nosnippet>697</a>            <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"invalid comparison operator"</span>),
+<a href=#698 id=698 data-nosnippet>698</a>        }
+<a href=#699 id=699 data-nosnippet>699</a>    }
+<a href=#700 id=700 data-nosnippet>700</a>
+<a href=#701 id=701 data-nosnippet>701</a>    <span class="doccomment">/// Visit a SQL `ANY` expression.
+<a href=#702 id=702 data-nosnippet>702</a>    ///
+<a href=#703 id=703 data-nosnippet>703</a>    /// e.g. `a != ANY(y)`
+<a href=#704 id=704 data-nosnippet>704</a>    </span><span class="kw">fn </span>visit_any(
+<a href=#705 id=705 data-nosnippet>705</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#706 id=706 data-nosnippet>706</a>        left: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#707 id=707 data-nosnippet>707</a>        compare_op: <span class="kw-2">&amp;</span>SQLBinaryOperator,
+<a href=#708 id=708 data-nosnippet>708</a>        right: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#709 id=709 data-nosnippet>709</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#710 id=710 data-nosnippet>710</a>        <span class="kw">let </span>left = <span class="self">self</span>.visit_expr(left)<span class="question-mark">?</span>;
+<a href=#711 id=711 data-nosnippet>711</a>        <span class="kw">let </span>right = <span class="self">self</span>.visit_expr(right)<span class="question-mark">?</span>;
+<a href=#712 id=712 data-nosnippet>712</a>
+<a href=#713 id=713 data-nosnippet>713</a>        <span class="kw">match </span>compare_op {
+<a href=#714 id=714 data-nosnippet>714</a>            SQLBinaryOperator::Gt =&gt; <span class="prelude-val">Ok</span>(left.gt(right.min())),
+<a href=#715 id=715 data-nosnippet>715</a>            SQLBinaryOperator::Lt =&gt; <span class="prelude-val">Ok</span>(left.lt(right.max())),
+<a href=#716 id=716 data-nosnippet>716</a>            SQLBinaryOperator::GtEq =&gt; <span class="prelude-val">Ok</span>(left.gt_eq(right.min())),
+<a href=#717 id=717 data-nosnippet>717</a>            SQLBinaryOperator::LtEq =&gt; <span class="prelude-val">Ok</span>(left.lt_eq(right.max())),
+<a href=#718 id=718 data-nosnippet>718</a>            SQLBinaryOperator::Eq =&gt; <span class="prelude-val">Ok</span>(left.is_in(right, <span class="bool-val">false</span>)),
+<a href=#719 id=719 data-nosnippet>719</a>            SQLBinaryOperator::NotEq =&gt; <span class="prelude-val">Ok</span>(left.is_in(right, <span class="bool-val">false</span>).not()),
+<a href=#720 id=720 data-nosnippet>720</a>            <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"invalid comparison operator"</span>),
+<a href=#721 id=721 data-nosnippet>721</a>        }
+<a href=#722 id=722 data-nosnippet>722</a>    }
+<a href=#723 id=723 data-nosnippet>723</a>
+<a href=#724 id=724 data-nosnippet>724</a>    <span class="doccomment">/// Visit a SQL `ARRAY` list (including `IN` values).
+<a href=#725 id=725 data-nosnippet>725</a>    </span><span class="kw">fn </span>visit_array_expr(
+<a href=#726 id=726 data-nosnippet>726</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#727 id=727 data-nosnippet>727</a>        elements: <span class="kw-2">&amp;</span>[SQLExpr],
+<a href=#728 id=728 data-nosnippet>728</a>        result_as_element: bool,
+<a href=#729 id=729 data-nosnippet>729</a>        dtype_expr_match: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Expr&gt;,
+<a href=#730 id=730 data-nosnippet>730</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#731 id=731 data-nosnippet>731</a>        <span class="kw">let </span><span class="kw-2">mut </span>elems = <span class="self">self</span>.array_expr_to_series(elements)<span class="question-mark">?</span>;
+<a href=#732 id=732 data-nosnippet>732</a>
+<a href=#733 id=733 data-nosnippet>733</a>        <span class="comment">// handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
+<a href=#734 id=734 data-nosnippet>734</a>        // (not yet as versatile as the temporal string conversions in visit_binary_op)
+<a href=#735 id=735 data-nosnippet>735</a>        </span><span class="kw">if let </span>(<span class="prelude-val">Some</span>(Expr::Column(name)), <span class="prelude-val">Some</span>(schema)) =
+<a href=#736 id=736 data-nosnippet>736</a>            (dtype_expr_match, <span class="self">self</span>.active_schema.as_ref())
+<a href=#737 id=737 data-nosnippet>737</a>        {
+<a href=#738 id=738 data-nosnippet>738</a>            <span class="kw">if </span>elems.dtype() == <span class="kw-2">&amp;</span>DataType::String {
+<a href=#739 id=739 data-nosnippet>739</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(dtype) = schema.get(name) {
+<a href=#740 id=740 data-nosnippet>740</a>                    <span class="kw">if </span><span class="macro">matches!</span>(
+<a href=#741 id=741 data-nosnippet>741</a>                        dtype,
+<a href=#742 id=742 data-nosnippet>742</a>                        DataType::Date | DataType::Time | DataType::Datetime(<span class="kw">_</span>, <span class="kw">_</span>)
+<a href=#743 id=743 data-nosnippet>743</a>                    ) {
+<a href=#744 id=744 data-nosnippet>744</a>                        elems = elems.strict_cast(dtype)<span class="question-mark">?</span>;
+<a href=#745 id=745 data-nosnippet>745</a>                    }
+<a href=#746 id=746 data-nosnippet>746</a>                }
+<a href=#747 id=747 data-nosnippet>747</a>            }
+<a href=#748 id=748 data-nosnippet>748</a>        }
+<a href=#749 id=749 data-nosnippet>749</a>
+<a href=#750 id=750 data-nosnippet>750</a>        <span class="comment">// if we are parsing the list as an element in a series, implode.
+<a href=#751 id=751 data-nosnippet>751</a>        // otherwise, return the series as-is.
+<a href=#752 id=752 data-nosnippet>752</a>        </span><span class="kw">let </span>res = <span class="kw">if </span>result_as_element {
+<a href=#753 id=753 data-nosnippet>753</a>            elems.implode()<span class="question-mark">?</span>.into_series()
+<a href=#754 id=754 data-nosnippet>754</a>        } <span class="kw">else </span>{
+<a href=#755 id=755 data-nosnippet>755</a>            elems
+<a href=#756 id=756 data-nosnippet>756</a>        };
+<a href=#757 id=757 data-nosnippet>757</a>        <span class="prelude-val">Ok</span>(lit(res))
+<a href=#758 id=758 data-nosnippet>758</a>    }
+<a href=#759 id=759 data-nosnippet>759</a>
+<a href=#760 id=760 data-nosnippet>760</a>    <span class="doccomment">/// Visit a SQL `CAST` or `TRY_CAST` expression.
+<a href=#761 id=761 data-nosnippet>761</a>    ///
+<a href=#762 id=762 data-nosnippet>762</a>    /// e.g. `CAST(col AS INT)`, `col::int4`, or `TRY_CAST(col AS VARCHAR)`,
+<a href=#763 id=763 data-nosnippet>763</a>    </span><span class="kw">fn </span>visit_cast(
+<a href=#764 id=764 data-nosnippet>764</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#765 id=765 data-nosnippet>765</a>        expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#766 id=766 data-nosnippet>766</a>        dtype: <span class="kw-2">&amp;</span>SQLDataType,
+<a href=#767 id=767 data-nosnippet>767</a>        format: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;CastFormat&gt;,
+<a href=#768 id=768 data-nosnippet>768</a>        cast_kind: <span class="kw-2">&amp;</span>CastKind,
+<a href=#769 id=769 data-nosnippet>769</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#770 id=770 data-nosnippet>770</a>        <span class="kw">if </span>format.is_some() {
+<a href=#771 id=771 data-nosnippet>771</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(
+<a href=#772 id=772 data-nosnippet>772</a>                <span class="macro">polars_err!</span>(SQLInterface: <span class="string">"use of FORMAT is not currently supported in CAST"</span>),
+<a href=#773 id=773 data-nosnippet>773</a>            );
+<a href=#774 id=774 data-nosnippet>774</a>        }
+<a href=#775 id=775 data-nosnippet>775</a>        <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#776 id=776 data-nosnippet>776</a>
+<a href=#777 id=777 data-nosnippet>777</a>        <span class="attr">#[cfg(feature = <span class="string">"json"</span>)]
+<a href=#778 id=778 data-nosnippet>778</a>        </span><span class="kw">if </span>dtype == <span class="kw-2">&amp;</span>SQLDataType::JSON {
+<a href=#779 id=779 data-nosnippet>779</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(expr.str().json_decode(&lt;<span class="prelude-ty">Option</span>&lt;DataTypeExpr&gt;&gt;::None, <span class="prelude-val">None</span>));
+<a href=#780 id=780 data-nosnippet>780</a>        }
+<a href=#781 id=781 data-nosnippet>781</a>        <span class="kw">let </span>polars_type = map_sql_dtype_to_polars(dtype)<span class="question-mark">?</span>;
+<a href=#782 id=782 data-nosnippet>782</a>        <span class="prelude-val">Ok</span>(<span class="kw">match </span>cast_kind {
+<a href=#783 id=783 data-nosnippet>783</a>            CastKind::Cast | CastKind::DoubleColon =&gt; expr.strict_cast(polars_type),
+<a href=#784 id=784 data-nosnippet>784</a>            CastKind::TryCast | CastKind::SafeCast =&gt; expr.cast(polars_type),
+<a href=#785 id=785 data-nosnippet>785</a>        })
+<a href=#786 id=786 data-nosnippet>786</a>    }
+<a href=#787 id=787 data-nosnippet>787</a>
+<a href=#788 id=788 data-nosnippet>788</a>    <span class="doccomment">/// Visit a SQL literal.
+<a href=#789 id=789 data-nosnippet>789</a>    ///
+<a href=#790 id=790 data-nosnippet>790</a>    /// e.g. 1, 'foo', 1.0, NULL
+<a href=#791 id=791 data-nosnippet>791</a>    ///
+<a href=#792 id=792 data-nosnippet>792</a>    /// See [SQLValue] and [LiteralValue] for more details
+<a href=#793 id=793 data-nosnippet>793</a>    </span><span class="kw">fn </span>visit_literal(<span class="kw-2">&amp;</span><span class="self">self</span>, value: <span class="kw-2">&amp;</span>SQLValue) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#794 id=794 data-nosnippet>794</a>        <span class="comment">// note: double-quoted strings will be parsed as identifiers, not literals
+<a href=#795 id=795 data-nosnippet>795</a>        </span><span class="prelude-val">Ok</span>(<span class="kw">match </span>value {
+<a href=#796 id=796 data-nosnippet>796</a>            SQLValue::Boolean(b) =&gt; lit(<span class="kw-2">*</span>b),
+<a href=#797 id=797 data-nosnippet>797</a>            SQLValue::DollarQuotedString(s) =&gt; lit(s.value.clone()),
+<a href=#798 id=798 data-nosnippet>798</a>            <span class="attr">#[cfg(feature = <span class="string">"binary_encoding"</span>)]
+<a href=#799 id=799 data-nosnippet>799</a>            </span>SQLValue::HexStringLiteral(x) =&gt; {
+<a href=#800 id=800 data-nosnippet>800</a>                <span class="kw">if </span>x.len() % <span class="number">2 </span>!= <span class="number">0 </span>{
+<a href=#801 id=801 data-nosnippet>801</a>                    <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"hex string literal must have an even number of digits; found '{}'"</span>, x)
+<a href=#802 id=802 data-nosnippet>802</a>                };
+<a href=#803 id=803 data-nosnippet>803</a>                lit(hex::decode(x.clone()).unwrap())
+<a href=#804 id=804 data-nosnippet>804</a>            },
+<a href=#805 id=805 data-nosnippet>805</a>            SQLValue::Null =&gt; Expr::Literal(LiteralValue::untyped_null()),
+<a href=#806 id=806 data-nosnippet>806</a>            SQLValue::Number(s, <span class="kw">_</span>) =&gt; {
+<a href=#807 id=807 data-nosnippet>807</a>                <span class="comment">// Check for existence of decimal separator dot
+<a href=#808 id=808 data-nosnippet>808</a>                </span><span class="kw">if </span>s.contains(<span class="string">'.'</span>) {
+<a href=#809 id=809 data-nosnippet>809</a>                    s.parse::&lt;f64&gt;().map(lit).map_err(|<span class="kw">_</span>| ())
+<a href=#810 id=810 data-nosnippet>810</a>                } <span class="kw">else </span>{
+<a href=#811 id=811 data-nosnippet>811</a>                    s.parse::&lt;i64&gt;().map(lit).map_err(|<span class="kw">_</span>| ())
+<a href=#812 id=812 data-nosnippet>812</a>                }
+<a href=#813 id=813 data-nosnippet>813</a>                .map_err(|<span class="kw">_</span>| <span class="macro">polars_err!</span>(SQLInterface: <span class="string">"cannot parse literal: {:?}"</span>, s))<span class="question-mark">?
+<a href=#814 id=814 data-nosnippet>814</a>            </span>},
+<a href=#815 id=815 data-nosnippet>815</a>            SQLValue::SingleQuotedByteStringLiteral(b) =&gt; {
+<a href=#816 id=816 data-nosnippet>816</a>                <span class="comment">// note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
+<a href=#817 id=817 data-nosnippet>817</a>                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser-rs
+<a href=#818 id=818 data-nosnippet>818</a>                // patterned the token name after BigQuery (where b'str' really IS a byte string)
+<a href=#819 id=819 data-nosnippet>819</a>                </span>bitstring_to_bytes_literal(b)<span class="question-mark">?
+<a href=#820 id=820 data-nosnippet>820</a>            </span>},
+<a href=#821 id=821 data-nosnippet>821</a>            SQLValue::SingleQuotedString(s) =&gt; lit(s.clone()),
+<a href=#822 id=822 data-nosnippet>822</a>            other =&gt; {
+<a href=#823 id=823 data-nosnippet>823</a>                <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"value {:?} is not a supported literal type"</span>, other)
+<a href=#824 id=824 data-nosnippet>824</a>            },
+<a href=#825 id=825 data-nosnippet>825</a>        })
+<a href=#826 id=826 data-nosnippet>826</a>    }
+<a href=#827 id=827 data-nosnippet>827</a>
+<a href=#828 id=828 data-nosnippet>828</a>    <span class="doccomment">/// Visit a SQL literal (like [visit_literal]), but return AnyValue instead of Expr.
+<a href=#829 id=829 data-nosnippet>829</a>    </span><span class="kw">fn </span>visit_any_value(
+<a href=#830 id=830 data-nosnippet>830</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#831 id=831 data-nosnippet>831</a>        value: <span class="kw-2">&amp;</span>SQLValue,
+<a href=#832 id=832 data-nosnippet>832</a>        op: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>UnaryOperator&gt;,
+<a href=#833 id=833 data-nosnippet>833</a>    ) -&gt; PolarsResult&lt;AnyValue&lt;<span class="lifetime">'_</span>&gt;&gt; {
+<a href=#834 id=834 data-nosnippet>834</a>        <span class="prelude-val">Ok</span>(<span class="kw">match </span>value {
+<a href=#835 id=835 data-nosnippet>835</a>            SQLValue::Boolean(b) =&gt; AnyValue::Boolean(<span class="kw-2">*</span>b),
+<a href=#836 id=836 data-nosnippet>836</a>            SQLValue::DollarQuotedString(s) =&gt; AnyValue::StringOwned(s.clone().value.into()),
+<a href=#837 id=837 data-nosnippet>837</a>            <span class="attr">#[cfg(feature = <span class="string">"binary_encoding"</span>)]
+<a href=#838 id=838 data-nosnippet>838</a>            </span>SQLValue::HexStringLiteral(x) =&gt; {
+<a href=#839 id=839 data-nosnippet>839</a>                <span class="kw">if </span>x.len() % <span class="number">2 </span>!= <span class="number">0 </span>{
+<a href=#840 id=840 data-nosnippet>840</a>                    <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"hex string literal must have an even number of digits; found '{}'"</span>, x)
+<a href=#841 id=841 data-nosnippet>841</a>                };
+<a href=#842 id=842 data-nosnippet>842</a>                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
+<a href=#843 id=843 data-nosnippet>843</a>            },
+<a href=#844 id=844 data-nosnippet>844</a>            SQLValue::Null =&gt; AnyValue::Null,
+<a href=#845 id=845 data-nosnippet>845</a>            SQLValue::Number(s, <span class="kw">_</span>) =&gt; {
+<a href=#846 id=846 data-nosnippet>846</a>                <span class="kw">let </span>negate = <span class="kw">match </span>op {
+<a href=#847 id=847 data-nosnippet>847</a>                    <span class="prelude-val">Some</span>(UnaryOperator::Minus) =&gt; <span class="bool-val">true</span>,
+<a href=#848 id=848 data-nosnippet>848</a>                    <span class="comment">// no op should be taken as plus.
+<a href=#849 id=849 data-nosnippet>849</a>                    </span><span class="prelude-val">Some</span>(UnaryOperator::Plus) | <span class="prelude-val">None </span>=&gt; <span class="bool-val">false</span>,
+<a href=#850 id=850 data-nosnippet>850</a>                    <span class="prelude-val">Some</span>(op) =&gt; {
+<a href=#851 id=851 data-nosnippet>851</a>                        <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"unary op {:?} not supported for numeric SQL value"</span>, op)
+<a href=#852 id=852 data-nosnippet>852</a>                    },
+<a href=#853 id=853 data-nosnippet>853</a>                };
+<a href=#854 id=854 data-nosnippet>854</a>                <span class="comment">// Check for existence of decimal separator dot
+<a href=#855 id=855 data-nosnippet>855</a>                </span><span class="kw">if </span>s.contains(<span class="string">'.'</span>) {
+<a href=#856 id=856 data-nosnippet>856</a>                    s.parse::&lt;f64&gt;()
+<a href=#857 id=857 data-nosnippet>857</a>                        .map(|n: f64| AnyValue::Float64(<span class="kw">if </span>negate { -n } <span class="kw">else </span>{ n }))
+<a href=#858 id=858 data-nosnippet>858</a>                        .map_err(|<span class="kw">_</span>| ())
+<a href=#859 id=859 data-nosnippet>859</a>                } <span class="kw">else </span>{
+<a href=#860 id=860 data-nosnippet>860</a>                    s.parse::&lt;i64&gt;()
+<a href=#861 id=861 data-nosnippet>861</a>                        .map(|n: i64| AnyValue::Int64(<span class="kw">if </span>negate { -n } <span class="kw">else </span>{ n }))
+<a href=#862 id=862 data-nosnippet>862</a>                        .map_err(|<span class="kw">_</span>| ())
+<a href=#863 id=863 data-nosnippet>863</a>                }
+<a href=#864 id=864 data-nosnippet>864</a>                .map_err(|<span class="kw">_</span>| <span class="macro">polars_err!</span>(SQLInterface: <span class="string">"cannot parse literal: {:?}"</span>, s))<span class="question-mark">?
+<a href=#865 id=865 data-nosnippet>865</a>            </span>},
+<a href=#866 id=866 data-nosnippet>866</a>            SQLValue::SingleQuotedByteStringLiteral(b) =&gt; {
+<a href=#867 id=867 data-nosnippet>867</a>                <span class="comment">// note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
+<a href=#868 id=868 data-nosnippet>868</a>                </span><span class="kw">let </span>bytes_literal = bitstring_to_bytes_literal(b)<span class="question-mark">?</span>;
+<a href=#869 id=869 data-nosnippet>869</a>                <span class="kw">match </span>bytes_literal {
+<a href=#870 id=870 data-nosnippet>870</a>                    Expr::Literal(lv) <span class="kw">if </span>lv.extract_binary().is_some() =&gt; {
+<a href=#871 id=871 data-nosnippet>871</a>                        AnyValue::BinaryOwned(lv.extract_binary().unwrap().to_vec())
+<a href=#872 id=872 data-nosnippet>872</a>                    },
+<a href=#873 id=873 data-nosnippet>873</a>                    <span class="kw">_ </span>=&gt; {
+<a href=#874 id=874 data-nosnippet>874</a>                        <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"failed to parse bitstring literal: {:?}"</span>, b)
+<a href=#875 id=875 data-nosnippet>875</a>                    },
+<a href=#876 id=876 data-nosnippet>876</a>                }
+<a href=#877 id=877 data-nosnippet>877</a>            },
+<a href=#878 id=878 data-nosnippet>878</a>            SQLValue::SingleQuotedString(s) =&gt; AnyValue::StringOwned(s.as_str().into()),
+<a href=#879 id=879 data-nosnippet>879</a>            other =&gt; <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"value {:?} is not currently supported"</span>, other),
+<a href=#880 id=880 data-nosnippet>880</a>        })
+<a href=#881 id=881 data-nosnippet>881</a>    }
+<a href=#882 id=882 data-nosnippet>882</a>
+<a href=#883 id=883 data-nosnippet>883</a>    <span class="doccomment">/// Visit a SQL `BETWEEN` expression.
+<a href=#884 id=884 data-nosnippet>884</a>    /// See [sqlparser::ast::Expr::Between] for more details
+<a href=#885 id=885 data-nosnippet>885</a>    </span><span class="kw">fn </span>visit_between(
+<a href=#886 id=886 data-nosnippet>886</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#887 id=887 data-nosnippet>887</a>        expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#888 id=888 data-nosnippet>888</a>        negated: bool,
+<a href=#889 id=889 data-nosnippet>889</a>        low: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#890 id=890 data-nosnippet>890</a>        high: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#891 id=891 data-nosnippet>891</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#892 id=892 data-nosnippet>892</a>        <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#893 id=893 data-nosnippet>893</a>        <span class="kw">let </span>low = <span class="self">self</span>.visit_expr(low)<span class="question-mark">?</span>;
+<a href=#894 id=894 data-nosnippet>894</a>        <span class="kw">let </span>high = <span class="self">self</span>.visit_expr(high)<span class="question-mark">?</span>;
+<a href=#895 id=895 data-nosnippet>895</a>
+<a href=#896 id=896 data-nosnippet>896</a>        <span class="kw">let </span>low = <span class="self">self</span>.convert_temporal_strings(<span class="kw-2">&amp;</span>expr, <span class="kw-2">&amp;</span>low);
+<a href=#897 id=897 data-nosnippet>897</a>        <span class="kw">let </span>high = <span class="self">self</span>.convert_temporal_strings(<span class="kw-2">&amp;</span>expr, <span class="kw-2">&amp;</span>high);
+<a href=#898 id=898 data-nosnippet>898</a>        <span class="prelude-val">Ok</span>(<span class="kw">if </span>negated {
+<a href=#899 id=899 data-nosnippet>899</a>            expr.clone().lt(low).or(expr.gt(high))
+<a href=#900 id=900 data-nosnippet>900</a>        } <span class="kw">else </span>{
+<a href=#901 id=901 data-nosnippet>901</a>            expr.clone().gt_eq(low).and(expr.lt_eq(high))
+<a href=#902 id=902 data-nosnippet>902</a>        })
+<a href=#903 id=903 data-nosnippet>903</a>    }
+<a href=#904 id=904 data-nosnippet>904</a>
+<a href=#905 id=905 data-nosnippet>905</a>    <span class="doccomment">/// Visit a SQL `TRIM` function.
+<a href=#906 id=906 data-nosnippet>906</a>    /// See [sqlparser::ast::Expr::Trim] for more details
+<a href=#907 id=907 data-nosnippet>907</a>    </span><span class="kw">fn </span>visit_trim(
+<a href=#908 id=908 data-nosnippet>908</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#909 id=909 data-nosnippet>909</a>        expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#910 id=910 data-nosnippet>910</a>        trim_where: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;TrimWhereField&gt;,
+<a href=#911 id=911 data-nosnippet>911</a>        trim_what: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;Box&lt;SQLExpr&gt;&gt;,
+<a href=#912 id=912 data-nosnippet>912</a>        trim_characters: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;Vec&lt;SQLExpr&gt;&gt;,
+<a href=#913 id=913 data-nosnippet>913</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#914 id=914 data-nosnippet>914</a>        <span class="kw">if </span>trim_characters.is_some() {
+<a href=#915 id=915 data-nosnippet>915</a>            <span class="comment">// TODO: allow compact snowflake/bigquery syntax?
+<a href=#916 id=916 data-nosnippet>916</a>            </span><span class="kw">return </span><span class="prelude-val">Err</span>(<span class="macro">polars_err!</span>(SQLSyntax: <span class="string">"unsupported TRIM syntax (custom chars)"</span>));
+<a href=#917 id=917 data-nosnippet>917</a>        };
+<a href=#918 id=918 data-nosnippet>918</a>        <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#919 id=919 data-nosnippet>919</a>        <span class="kw">let </span>trim_what = trim_what.as_ref().map(|e| <span class="self">self</span>.visit_expr(e)).transpose()<span class="question-mark">?</span>;
+<a href=#920 id=920 data-nosnippet>920</a>        <span class="kw">let </span>trim_what = <span class="kw">match </span>trim_what {
+<a href=#921 id=921 data-nosnippet>921</a>            <span class="prelude-val">Some</span>(Expr::Literal(lv)) <span class="kw">if </span>lv.extract_str().is_some() =&gt; {
+<a href=#922 id=922 data-nosnippet>922</a>                <span class="prelude-val">Some</span>(PlSmallStr::from_str(lv.extract_str().unwrap()))
+<a href=#923 id=923 data-nosnippet>923</a>            },
+<a href=#924 id=924 data-nosnippet>924</a>            <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#925 id=925 data-nosnippet>925</a>            <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="self">self</span>.err(<span class="kw-2">&amp;</span>expr),
+<a href=#926 id=926 data-nosnippet>926</a>        };
+<a href=#927 id=927 data-nosnippet>927</a>        <span class="prelude-val">Ok</span>(<span class="kw">match </span>(trim_where, trim_what) {
+<a href=#928 id=928 data-nosnippet>928</a>            (<span class="prelude-val">None </span>| <span class="prelude-val">Some</span>(TrimWhereField::Both), <span class="prelude-val">None</span>) =&gt; {
+<a href=#929 id=929 data-nosnippet>929</a>                expr.str().strip_chars(lit(LiteralValue::untyped_null()))
+<a href=#930 id=930 data-nosnippet>930</a>            },
+<a href=#931 id=931 data-nosnippet>931</a>            (<span class="prelude-val">None </span>| <span class="prelude-val">Some</span>(TrimWhereField::Both), <span class="prelude-val">Some</span>(val)) =&gt; expr.str().strip_chars(lit(val)),
+<a href=#932 id=932 data-nosnippet>932</a>            (<span class="prelude-val">Some</span>(TrimWhereField::Leading), <span class="prelude-val">None</span>) =&gt; expr
+<a href=#933 id=933 data-nosnippet>933</a>                .str()
+<a href=#934 id=934 data-nosnippet>934</a>                .strip_chars_start(lit(LiteralValue::untyped_null())),
+<a href=#935 id=935 data-nosnippet>935</a>            (<span class="prelude-val">Some</span>(TrimWhereField::Leading), <span class="prelude-val">Some</span>(val)) =&gt; expr.str().strip_chars_start(lit(val)),
+<a href=#936 id=936 data-nosnippet>936</a>            (<span class="prelude-val">Some</span>(TrimWhereField::Trailing), <span class="prelude-val">None</span>) =&gt; expr
+<a href=#937 id=937 data-nosnippet>937</a>                .str()
+<a href=#938 id=938 data-nosnippet>938</a>                .strip_chars_end(lit(LiteralValue::untyped_null())),
+<a href=#939 id=939 data-nosnippet>939</a>            (<span class="prelude-val">Some</span>(TrimWhereField::Trailing), <span class="prelude-val">Some</span>(val)) =&gt; expr.str().strip_chars_end(lit(val)),
+<a href=#940 id=940 data-nosnippet>940</a>        })
+<a href=#941 id=941 data-nosnippet>941</a>    }
+<a href=#942 id=942 data-nosnippet>942</a>
+<a href=#943 id=943 data-nosnippet>943</a>    <span class="doccomment">/// Visit a SQL subquery inside and `IN` expression.
+<a href=#944 id=944 data-nosnippet>944</a>    </span><span class="kw">fn </span>visit_in_subquery(
+<a href=#945 id=945 data-nosnippet>945</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#946 id=946 data-nosnippet>946</a>        expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#947 id=947 data-nosnippet>947</a>        subquery: <span class="kw-2">&amp;</span>Subquery,
+<a href=#948 id=948 data-nosnippet>948</a>        negated: bool,
+<a href=#949 id=949 data-nosnippet>949</a>    ) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#950 id=950 data-nosnippet>950</a>        <span class="kw">let </span>subquery_result = <span class="self">self</span>.visit_subquery(subquery, SubqueryRestriction::SingleColumn)<span class="question-mark">?</span>;
+<a href=#951 id=951 data-nosnippet>951</a>        <span class="kw">let </span>expr = <span class="self">self</span>.visit_expr(expr)<span class="question-mark">?</span>;
+<a href=#952 id=952 data-nosnippet>952</a>        <span class="prelude-val">Ok</span>(<span class="kw">if </span>negated {
+<a href=#953 id=953 data-nosnippet>953</a>            expr.is_in(subquery_result, <span class="bool-val">false</span>).not()
+<a href=#954 id=954 data-nosnippet>954</a>        } <span class="kw">else </span>{
+<a href=#955 id=955 data-nosnippet>955</a>            expr.is_in(subquery_result, <span class="bool-val">false</span>)
+<a href=#956 id=956 data-nosnippet>956</a>        })
+<a href=#957 id=957 data-nosnippet>957</a>    }
+<a href=#958 id=958 data-nosnippet>958</a>
+<a href=#959 id=959 data-nosnippet>959</a>    <span class="doccomment">/// Visit `CASE` control flow expression.
+<a href=#960 id=960 data-nosnippet>960</a>    </span><span class="kw">fn </span>visit_case_when_then(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#961 id=961 data-nosnippet>961</a>        <span class="kw">if let </span>SQLExpr::Case {
+<a href=#962 id=962 data-nosnippet>962</a>            operand,
+<a href=#963 id=963 data-nosnippet>963</a>            conditions,
+<a href=#964 id=964 data-nosnippet>964</a>            results,
+<a href=#965 id=965 data-nosnippet>965</a>            else_result,
+<a href=#966 id=966 data-nosnippet>966</a>        } = expr
+<a href=#967 id=967 data-nosnippet>967</a>        {
+<a href=#968 id=968 data-nosnippet>968</a>            <span class="macro">polars_ensure!</span>(
+<a href=#969 id=969 data-nosnippet>969</a>                conditions.len() == results.len(),
+<a href=#970 id=970 data-nosnippet>970</a>                SQLSyntax: <span class="string">"WHEN and THEN expressions must have the same length"
+<a href=#971 id=971 data-nosnippet>971</a>            </span>);
+<a href=#972 id=972 data-nosnippet>972</a>            <span class="macro">polars_ensure!</span>(
+<a href=#973 id=973 data-nosnippet>973</a>                !conditions.is_empty(),
+<a href=#974 id=974 data-nosnippet>974</a>                SQLSyntax: <span class="string">"WHEN and THEN expressions must have at least one element"
+<a href=#975 id=975 data-nosnippet>975</a>            </span>);
+<a href=#976 id=976 data-nosnippet>976</a>
+<a href=#977 id=977 data-nosnippet>977</a>            <span class="kw">let </span><span class="kw-2">mut </span>when_thens = conditions.iter().zip(results.iter());
+<a href=#978 id=978 data-nosnippet>978</a>            <span class="kw">let </span>first = when_thens.next();
+<a href=#979 id=979 data-nosnippet>979</a>            <span class="kw">if </span>first.is_none() {
+<a href=#980 id=980 data-nosnippet>980</a>                <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"WHEN and THEN expressions must have at least one element"</span>);
+<a href=#981 id=981 data-nosnippet>981</a>            }
+<a href=#982 id=982 data-nosnippet>982</a>            <span class="kw">let </span>else_res = <span class="kw">match </span>else_result {
+<a href=#983 id=983 data-nosnippet>983</a>                <span class="prelude-val">Some</span>(else_res) =&gt; <span class="self">self</span>.visit_expr(else_res)<span class="question-mark">?</span>,
+<a href=#984 id=984 data-nosnippet>984</a>                <span class="prelude-val">None </span>=&gt; lit(LiteralValue::untyped_null()), <span class="comment">// ELSE clause is optional; when omitted, it is implicitly NULL
+<a href=#985 id=985 data-nosnippet>985</a>            </span>};
+<a href=#986 id=986 data-nosnippet>986</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(operand_expr) = operand {
+<a href=#987 id=987 data-nosnippet>987</a>                <span class="kw">let </span>first_operand_expr = <span class="self">self</span>.visit_expr(operand_expr)<span class="question-mark">?</span>;
+<a href=#988 id=988 data-nosnippet>988</a>
+<a href=#989 id=989 data-nosnippet>989</a>                <span class="kw">let </span>first = first.unwrap();
+<a href=#990 id=990 data-nosnippet>990</a>                <span class="kw">let </span>first_cond = first_operand_expr.eq(<span class="self">self</span>.visit_expr(first.<span class="number">0</span>)<span class="question-mark">?</span>);
+<a href=#991 id=991 data-nosnippet>991</a>                <span class="kw">let </span>first_then = <span class="self">self</span>.visit_expr(first.<span class="number">1</span>)<span class="question-mark">?</span>;
+<a href=#992 id=992 data-nosnippet>992</a>                <span class="kw">let </span>expr = when(first_cond).then(first_then);
+<a href=#993 id=993 data-nosnippet>993</a>                <span class="kw">let </span>next = when_thens.next();
+<a href=#994 id=994 data-nosnippet>994</a>
+<a href=#995 id=995 data-nosnippet>995</a>                <span class="kw">let </span><span class="kw-2">mut </span>when_then = <span class="kw">if let </span><span class="prelude-val">Some</span>((cond, res)) = next {
+<a href=#996 id=996 data-nosnippet>996</a>                    <span class="kw">let </span>second_operand_expr = <span class="self">self</span>.visit_expr(operand_expr)<span class="question-mark">?</span>;
+<a href=#997 id=997 data-nosnippet>997</a>                    <span class="kw">let </span>cond = second_operand_expr.eq(<span class="self">self</span>.visit_expr(cond)<span class="question-mark">?</span>);
+<a href=#998 id=998 data-nosnippet>998</a>                    <span class="kw">let </span>res = <span class="self">self</span>.visit_expr(res)<span class="question-mark">?</span>;
+<a href=#999 id=999 data-nosnippet>999</a>                    expr.when(cond).then(res)
+<a href=#1000 id=1000 data-nosnippet>1000</a>                } <span class="kw">else </span>{
+<a href=#1001 id=1001 data-nosnippet>1001</a>                    <span class="kw">return </span><span class="prelude-val">Ok</span>(expr.otherwise(else_res));
+<a href=#1002 id=1002 data-nosnippet>1002</a>                };
+<a href=#1003 id=1003 data-nosnippet>1003</a>                <span class="kw">for </span>(cond, res) <span class="kw">in </span>when_thens {
+<a href=#1004 id=1004 data-nosnippet>1004</a>                    <span class="kw">let </span>new_operand_expr = <span class="self">self</span>.visit_expr(operand_expr)<span class="question-mark">?</span>;
+<a href=#1005 id=1005 data-nosnippet>1005</a>                    <span class="kw">let </span>cond = new_operand_expr.eq(<span class="self">self</span>.visit_expr(cond)<span class="question-mark">?</span>);
+<a href=#1006 id=1006 data-nosnippet>1006</a>                    <span class="kw">let </span>res = <span class="self">self</span>.visit_expr(res)<span class="question-mark">?</span>;
+<a href=#1007 id=1007 data-nosnippet>1007</a>                    when_then = when_then.when(cond).then(res);
+<a href=#1008 id=1008 data-nosnippet>1008</a>                }
+<a href=#1009 id=1009 data-nosnippet>1009</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(when_then.otherwise(else_res));
+<a href=#1010 id=1010 data-nosnippet>1010</a>            }
+<a href=#1011 id=1011 data-nosnippet>1011</a>
+<a href=#1012 id=1012 data-nosnippet>1012</a>            <span class="kw">let </span>first = first.unwrap();
+<a href=#1013 id=1013 data-nosnippet>1013</a>            <span class="kw">let </span>first_cond = <span class="self">self</span>.visit_expr(first.<span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#1014 id=1014 data-nosnippet>1014</a>            <span class="kw">let </span>first_then = <span class="self">self</span>.visit_expr(first.<span class="number">1</span>)<span class="question-mark">?</span>;
+<a href=#1015 id=1015 data-nosnippet>1015</a>            <span class="kw">let </span>expr = when(first_cond).then(first_then);
+<a href=#1016 id=1016 data-nosnippet>1016</a>            <span class="kw">let </span>next = when_thens.next();
+<a href=#1017 id=1017 data-nosnippet>1017</a>
+<a href=#1018 id=1018 data-nosnippet>1018</a>            <span class="kw">let </span><span class="kw-2">mut </span>when_then = <span class="kw">if let </span><span class="prelude-val">Some</span>((cond, res)) = next {
+<a href=#1019 id=1019 data-nosnippet>1019</a>                <span class="kw">let </span>cond = <span class="self">self</span>.visit_expr(cond)<span class="question-mark">?</span>;
+<a href=#1020 id=1020 data-nosnippet>1020</a>                <span class="kw">let </span>res = <span class="self">self</span>.visit_expr(res)<span class="question-mark">?</span>;
+<a href=#1021 id=1021 data-nosnippet>1021</a>                expr.when(cond).then(res)
+<a href=#1022 id=1022 data-nosnippet>1022</a>            } <span class="kw">else </span>{
+<a href=#1023 id=1023 data-nosnippet>1023</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(expr.otherwise(else_res));
+<a href=#1024 id=1024 data-nosnippet>1024</a>            };
+<a href=#1025 id=1025 data-nosnippet>1025</a>            <span class="kw">for </span>(cond, res) <span class="kw">in </span>when_thens {
+<a href=#1026 id=1026 data-nosnippet>1026</a>                <span class="kw">let </span>cond = <span class="self">self</span>.visit_expr(cond)<span class="question-mark">?</span>;
+<a href=#1027 id=1027 data-nosnippet>1027</a>                <span class="kw">let </span>res = <span class="self">self</span>.visit_expr(res)<span class="question-mark">?</span>;
+<a href=#1028 id=1028 data-nosnippet>1028</a>                when_then = when_then.when(cond).then(res);
+<a href=#1029 id=1029 data-nosnippet>1029</a>            }
+<a href=#1030 id=1030 data-nosnippet>1030</a>            <span class="prelude-val">Ok</span>(when_then.otherwise(else_res))
+<a href=#1031 id=1031 data-nosnippet>1031</a>        } <span class="kw">else </span>{
+<a href=#1032 id=1032 data-nosnippet>1032</a>            <span class="macro">unreachable!</span>()
+<a href=#1033 id=1033 data-nosnippet>1033</a>        }
+<a href=#1034 id=1034 data-nosnippet>1034</a>    }
+<a href=#1035 id=1035 data-nosnippet>1035</a>
+<a href=#1036 id=1036 data-nosnippet>1036</a>    <span class="kw">fn </span>err(<span class="kw-2">&amp;</span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span>Expr) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#1037 id=1037 data-nosnippet>1037</a>        <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"expression {:?} is not currently supported"</span>, expr);
+<a href=#1038 id=1038 data-nosnippet>1038</a>    }
+<a href=#1039 id=1039 data-nosnippet>1039</a>}
+<a href=#1040 id=1040 data-nosnippet>1040</a>
+<a href=#1041 id=1041 data-nosnippet>1041</a><span class="doccomment">/// parse a SQL expression to a polars expression
+<a href=#1042 id=1042 data-nosnippet>1042</a>/// # Example
+<a href=#1043 id=1043 data-nosnippet>1043</a>/// ```rust
+<a href=#1044 id=1044 data-nosnippet>1044</a>/// # use polars_sql::{SQLContext, sql_expr};
+<a href=#1045 id=1045 data-nosnippet>1045</a>/// # use polars_core::prelude::*;
+<a href=#1046 id=1046 data-nosnippet>1046</a>/// # use polars_lazy::prelude::*;
+<a href=#1047 id=1047 data-nosnippet>1047</a>/// # fn main() {
+<a href=#1048 id=1048 data-nosnippet>1048</a>///
+<a href=#1049 id=1049 data-nosnippet>1049</a>/// let mut ctx = SQLContext::new();
+<a href=#1050 id=1050 data-nosnippet>1050</a>/// let df = df! {
+<a href=#1051 id=1051 data-nosnippet>1051</a>///    "a" =&gt;  [1, 2, 3],
+<a href=#1052 id=1052 data-nosnippet>1052</a>/// }
+<a href=#1053 id=1053 data-nosnippet>1053</a>/// .unwrap();
+<a href=#1054 id=1054 data-nosnippet>1054</a>/// let expr = sql_expr("MAX(a)").unwrap();
+<a href=#1055 id=1055 data-nosnippet>1055</a>/// df.lazy().select(vec![expr]).collect().unwrap();
+<a href=#1056 id=1056 data-nosnippet>1056</a>/// # }
+<a href=#1057 id=1057 data-nosnippet>1057</a>/// ```
+<a href=#1058 id=1058 data-nosnippet>1058</a></span><span class="kw">pub fn </span>sql_expr&lt;S: AsRef&lt;str&gt;&gt;(s: S) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#1059 id=1059 data-nosnippet>1059</a>    <span class="kw">let </span><span class="kw-2">mut </span>ctx = SQLContext::new();
+<a href=#1060 id=1060 data-nosnippet>1060</a>
+<a href=#1061 id=1061 data-nosnippet>1061</a>    <span class="kw">let </span><span class="kw-2">mut </span>parser = Parser::new(<span class="kw-2">&amp;</span>GenericDialect);
+<a href=#1062 id=1062 data-nosnippet>1062</a>    parser = parser.with_options(ParserOptions {
+<a href=#1063 id=1063 data-nosnippet>1063</a>        trailing_commas: <span class="bool-val">true</span>,
+<a href=#1064 id=1064 data-nosnippet>1064</a>        ..Default::default()
+<a href=#1065 id=1065 data-nosnippet>1065</a>    });
+<a href=#1066 id=1066 data-nosnippet>1066</a>
+<a href=#1067 id=1067 data-nosnippet>1067</a>    <span class="kw">let </span><span class="kw-2">mut </span>ast = parser
+<a href=#1068 id=1068 data-nosnippet>1068</a>        .try_with_sql(s.as_ref())
+<a href=#1069 id=1069 data-nosnippet>1069</a>        .map_err(to_sql_interface_err)<span class="question-mark">?</span>;
+<a href=#1070 id=1070 data-nosnippet>1070</a>    <span class="kw">let </span>expr = ast.parse_select_item().map_err(to_sql_interface_err)<span class="question-mark">?</span>;
+<a href=#1071 id=1071 data-nosnippet>1071</a>
+<a href=#1072 id=1072 data-nosnippet>1072</a>    <span class="prelude-val">Ok</span>(<span class="kw">match </span><span class="kw-2">&amp;</span>expr {
+<a href=#1073 id=1073 data-nosnippet>1073</a>        SelectItem::ExprWithAlias { expr, alias } =&gt; {
+<a href=#1074 id=1074 data-nosnippet>1074</a>            <span class="kw">let </span>expr = parse_sql_expr(expr, <span class="kw-2">&amp;mut </span>ctx, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+<a href=#1075 id=1075 data-nosnippet>1075</a>            expr.alias(alias.value.as_str())
+<a href=#1076 id=1076 data-nosnippet>1076</a>        },
+<a href=#1077 id=1077 data-nosnippet>1077</a>        SelectItem::UnnamedExpr(expr) =&gt; parse_sql_expr(expr, <span class="kw-2">&amp;mut </span>ctx, <span class="prelude-val">None</span>)<span class="question-mark">?</span>,
+<a href=#1078 id=1078 data-nosnippet>1078</a>        <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"unable to parse '{}' as Expr"</span>, s.as_ref()),
+<a href=#1079 id=1079 data-nosnippet>1079</a>    })
+<a href=#1080 id=1080 data-nosnippet>1080</a>}
+<a href=#1081 id=1081 data-nosnippet>1081</a>
+<a href=#1082 id=1082 data-nosnippet>1082</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>interval_to_duration(interval: <span class="kw-2">&amp;</span>Interval, fixed: bool) -&gt; PolarsResult&lt;Duration&gt; {
+<a href=#1083 id=1083 data-nosnippet>1083</a>    <span class="kw">if </span>interval.last_field.is_some()
+<a href=#1084 id=1084 data-nosnippet>1084</a>        || interval.leading_field.is_some()
+<a href=#1085 id=1085 data-nosnippet>1085</a>        || interval.leading_precision.is_some()
+<a href=#1086 id=1086 data-nosnippet>1086</a>        || interval.fractional_seconds_precision.is_some()
+<a href=#1087 id=1087 data-nosnippet>1087</a>    {
+<a href=#1088 id=1088 data-nosnippet>1088</a>        <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"unsupported interval syntax ('{}')"</span>, interval)
+<a href=#1089 id=1089 data-nosnippet>1089</a>    }
+<a href=#1090 id=1090 data-nosnippet>1090</a>    <span class="kw">let </span>s = <span class="kw">match </span><span class="kw-2">&amp;*</span>interval.value {
+<a href=#1091 id=1091 data-nosnippet>1091</a>        SQLExpr::UnaryOp { .. } =&gt; {
+<a href=#1092 id=1092 data-nosnippet>1092</a>            <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"unary ops are not valid on interval strings; found {}"</span>, interval.value)
+<a href=#1093 id=1093 data-nosnippet>1093</a>        },
+<a href=#1094 id=1094 data-nosnippet>1094</a>        SQLExpr::Value(SQLValue::SingleQuotedString(s)) =&gt; <span class="prelude-val">Some</span>(s),
+<a href=#1095 id=1095 data-nosnippet>1095</a>        <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#1096 id=1096 data-nosnippet>1096</a>    };
+<a href=#1097 id=1097 data-nosnippet>1097</a>    <span class="kw">match </span>s {
+<a href=#1098 id=1098 data-nosnippet>1098</a>        <span class="prelude-val">Some</span>(s) <span class="kw">if </span>s.contains(<span class="string">'-'</span>) =&gt; {
+<a href=#1099 id=1099 data-nosnippet>1099</a>            <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"minus signs are not yet supported in interval strings; found '{}'"</span>, s)
+<a href=#1100 id=1100 data-nosnippet>1100</a>        },
+<a href=#1101 id=1101 data-nosnippet>1101</a>        <span class="prelude-val">Some</span>(s) =&gt; {
+<a href=#1102 id=1102 data-nosnippet>1102</a>            <span class="comment">// years, quarters, and months do not have a fixed duration; these
+<a href=#1103 id=1103 data-nosnippet>1103</a>            // interval parts can only be used with respect to a reference point
+<a href=#1104 id=1104 data-nosnippet>1104</a>            </span><span class="kw">let </span>duration = Duration::parse_interval(s);
+<a href=#1105 id=1105 data-nosnippet>1105</a>            <span class="kw">if </span>fixed &amp;&amp; duration.months() != <span class="number">0 </span>{
+<a href=#1106 id=1106 data-nosnippet>1106</a>                <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"fixed-duration interval cannot contain years, quarters, or months; found {}"</span>, s)
+<a href=#1107 id=1107 data-nosnippet>1107</a>            };
+<a href=#1108 id=1108 data-nosnippet>1108</a>            <span class="prelude-val">Ok</span>(duration)
+<a href=#1109 id=1109 data-nosnippet>1109</a>        },
+<a href=#1110 id=1110 data-nosnippet>1110</a>        <span class="prelude-val">None </span>=&gt; <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"invalid interval {:?}"</span>, interval),
+<a href=#1111 id=1111 data-nosnippet>1111</a>    }
+<a href=#1112 id=1112 data-nosnippet>1112</a>}
+<a href=#1113 id=1113 data-nosnippet>1113</a>
+<a href=#1114 id=1114 data-nosnippet>1114</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>parse_sql_expr(
+<a href=#1115 id=1115 data-nosnippet>1115</a>    expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#1116 id=1116 data-nosnippet>1116</a>    ctx: <span class="kw-2">&amp;mut </span>SQLContext,
+<a href=#1117 id=1117 data-nosnippet>1117</a>    active_schema: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Schema&gt;,
+<a href=#1118 id=1118 data-nosnippet>1118</a>) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#1119 id=1119 data-nosnippet>1119</a>    <span class="kw">let </span><span class="kw-2">mut </span>visitor = SQLExprVisitor { ctx, active_schema };
+<a href=#1120 id=1120 data-nosnippet>1120</a>    visitor.visit_expr(expr)
+<a href=#1121 id=1121 data-nosnippet>1121</a>}
+<a href=#1122 id=1122 data-nosnippet>1122</a>
+<a href=#1123 id=1123 data-nosnippet>1123</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>parse_sql_array(expr: <span class="kw-2">&amp;</span>SQLExpr, ctx: <span class="kw-2">&amp;mut </span>SQLContext) -&gt; PolarsResult&lt;Series&gt; {
+<a href=#1124 id=1124 data-nosnippet>1124</a>    <span class="kw">match </span>expr {
+<a href=#1125 id=1125 data-nosnippet>1125</a>        SQLExpr::Array(arr) =&gt; {
+<a href=#1126 id=1126 data-nosnippet>1126</a>            <span class="kw">let </span><span class="kw-2">mut </span>visitor = SQLExprVisitor {
+<a href=#1127 id=1127 data-nosnippet>1127</a>                ctx,
+<a href=#1128 id=1128 data-nosnippet>1128</a>                active_schema: <span class="prelude-val">None</span>,
+<a href=#1129 id=1129 data-nosnippet>1129</a>            };
+<a href=#1130 id=1130 data-nosnippet>1130</a>            visitor.array_expr_to_series(arr.elem.as_slice())
+<a href=#1131 id=1131 data-nosnippet>1131</a>        },
+<a href=#1132 id=1132 data-nosnippet>1132</a>        <span class="kw">_ </span>=&gt; <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"Expected array expression, found {:?}"</span>, expr),
+<a href=#1133 id=1133 data-nosnippet>1133</a>    }
+<a href=#1134 id=1134 data-nosnippet>1134</a>}
+<a href=#1135 id=1135 data-nosnippet>1135</a>
+<a href=#1136 id=1136 data-nosnippet>1136</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>parse_extract_date_part(expr: Expr, field: <span class="kw-2">&amp;</span>DateTimeField) -&gt; PolarsResult&lt;Expr&gt; {
+<a href=#1137 id=1137 data-nosnippet>1137</a>    <span class="kw">let </span>field = <span class="kw">match </span>field {
+<a href=#1138 id=1138 data-nosnippet>1138</a>        <span class="comment">// handle 'DATE_PART' and all valid abbreviations/alternates
+<a href=#1139 id=1139 data-nosnippet>1139</a>        </span>DateTimeField::Custom(Ident { value, .. }) =&gt; {
+<a href=#1140 id=1140 data-nosnippet>1140</a>            <span class="kw">let </span>value = value.to_ascii_lowercase();
+<a href=#1141 id=1141 data-nosnippet>1141</a>            <span class="kw">match </span>value.as_str() {
+<a href=#1142 id=1142 data-nosnippet>1142</a>                <span class="string">"millennium" </span>| <span class="string">"millennia" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Millennium,
+<a href=#1143 id=1143 data-nosnippet>1143</a>                <span class="string">"century" </span>| <span class="string">"centuries" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Century,
+<a href=#1144 id=1144 data-nosnippet>1144</a>                <span class="string">"decade" </span>| <span class="string">"decades" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Decade,
+<a href=#1145 id=1145 data-nosnippet>1145</a>                <span class="string">"isoyear" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Isoyear,
+<a href=#1146 id=1146 data-nosnippet>1146</a>                <span class="string">"year" </span>| <span class="string">"years" </span>| <span class="string">"y" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Year,
+<a href=#1147 id=1147 data-nosnippet>1147</a>                <span class="string">"quarter" </span>| <span class="string">"quarters" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Quarter,
+<a href=#1148 id=1148 data-nosnippet>1148</a>                <span class="string">"month" </span>| <span class="string">"months" </span>| <span class="string">"mon" </span>| <span class="string">"mons" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Month,
+<a href=#1149 id=1149 data-nosnippet>1149</a>                <span class="string">"dayofyear" </span>| <span class="string">"doy" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::DayOfYear,
+<a href=#1150 id=1150 data-nosnippet>1150</a>                <span class="string">"dayofweek" </span>| <span class="string">"dow" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::DayOfWeek,
+<a href=#1151 id=1151 data-nosnippet>1151</a>                <span class="string">"isoweek" </span>| <span class="string">"week" </span>| <span class="string">"weeks" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::IsoWeek,
+<a href=#1152 id=1152 data-nosnippet>1152</a>                <span class="string">"isodow" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Isodow,
+<a href=#1153 id=1153 data-nosnippet>1153</a>                <span class="string">"day" </span>| <span class="string">"days" </span>| <span class="string">"d" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Day,
+<a href=#1154 id=1154 data-nosnippet>1154</a>                <span class="string">"hour" </span>| <span class="string">"hours" </span>| <span class="string">"h" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Hour,
+<a href=#1155 id=1155 data-nosnippet>1155</a>                <span class="string">"minute" </span>| <span class="string">"minutes" </span>| <span class="string">"mins" </span>| <span class="string">"min" </span>| <span class="string">"m" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Minute,
+<a href=#1156 id=1156 data-nosnippet>1156</a>                <span class="string">"second" </span>| <span class="string">"seconds" </span>| <span class="string">"sec" </span>| <span class="string">"secs" </span>| <span class="string">"s" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Second,
+<a href=#1157 id=1157 data-nosnippet>1157</a>                <span class="string">"millisecond" </span>| <span class="string">"milliseconds" </span>| <span class="string">"ms" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Millisecond,
+<a href=#1158 id=1158 data-nosnippet>1158</a>                <span class="string">"microsecond" </span>| <span class="string">"microseconds" </span>| <span class="string">"us" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Microsecond,
+<a href=#1159 id=1159 data-nosnippet>1159</a>                <span class="string">"nanosecond" </span>| <span class="string">"nanoseconds" </span>| <span class="string">"ns" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Nanosecond,
+<a href=#1160 id=1160 data-nosnippet>1160</a>                <span class="attr">#[cfg(feature = <span class="string">"timezones"</span>)]
+<a href=#1161 id=1161 data-nosnippet>1161</a>                </span><span class="string">"timezone" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Timezone,
+<a href=#1162 id=1162 data-nosnippet>1162</a>                <span class="string">"time" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Time,
+<a href=#1163 id=1163 data-nosnippet>1163</a>                <span class="string">"epoch" </span>=&gt; <span class="kw-2">&amp;</span>DateTimeField::Epoch,
+<a href=#1164 id=1164 data-nosnippet>1164</a>                <span class="kw">_ </span>=&gt; {
+<a href=#1165 id=1165 data-nosnippet>1165</a>                    <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"EXTRACT/DATE_PART does not support '{}' part"</span>, value)
+<a href=#1166 id=1166 data-nosnippet>1166</a>                },
+<a href=#1167 id=1167 data-nosnippet>1167</a>            }
+<a href=#1168 id=1168 data-nosnippet>1168</a>        },
+<a href=#1169 id=1169 data-nosnippet>1169</a>        <span class="kw">_ </span>=&gt; field,
+<a href=#1170 id=1170 data-nosnippet>1170</a>    };
+<a href=#1171 id=1171 data-nosnippet>1171</a>    <span class="prelude-val">Ok</span>(<span class="kw">match </span>field {
+<a href=#1172 id=1172 data-nosnippet>1172</a>        DateTimeField::Millennium =&gt; expr.dt().millennium(),
+<a href=#1173 id=1173 data-nosnippet>1173</a>        DateTimeField::Century =&gt; expr.dt().century(),
+<a href=#1174 id=1174 data-nosnippet>1174</a>        DateTimeField::Decade =&gt; expr.dt().year() / typed_lit(<span class="number">10i32</span>),
+<a href=#1175 id=1175 data-nosnippet>1175</a>        DateTimeField::Isoyear =&gt; expr.dt().iso_year(),
+<a href=#1176 id=1176 data-nosnippet>1176</a>        DateTimeField::Year =&gt; expr.dt().year(),
+<a href=#1177 id=1177 data-nosnippet>1177</a>        DateTimeField::Quarter =&gt; expr.dt().quarter(),
+<a href=#1178 id=1178 data-nosnippet>1178</a>        DateTimeField::Month =&gt; expr.dt().month(),
+<a href=#1179 id=1179 data-nosnippet>1179</a>        DateTimeField::Week(weekday) =&gt; {
+<a href=#1180 id=1180 data-nosnippet>1180</a>            <span class="kw">if </span>weekday.is_some() {
+<a href=#1181 id=1181 data-nosnippet>1181</a>                <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"EXTRACT/DATE_PART does not support '{}' part"</span>, field)
+<a href=#1182 id=1182 data-nosnippet>1182</a>            }
+<a href=#1183 id=1183 data-nosnippet>1183</a>            expr.dt().week()
+<a href=#1184 id=1184 data-nosnippet>1184</a>        },
+<a href=#1185 id=1185 data-nosnippet>1185</a>        DateTimeField::IsoWeek =&gt; expr.dt().week(),
+<a href=#1186 id=1186 data-nosnippet>1186</a>        DateTimeField::DayOfYear | DateTimeField::Doy =&gt; expr.dt().ordinal_day(),
+<a href=#1187 id=1187 data-nosnippet>1187</a>        DateTimeField::DayOfWeek | DateTimeField::Dow =&gt; {
+<a href=#1188 id=1188 data-nosnippet>1188</a>            <span class="kw">let </span>w = expr.dt().weekday();
+<a href=#1189 id=1189 data-nosnippet>1189</a>            when(w.clone().eq(typed_lit(<span class="number">7i8</span>)))
+<a href=#1190 id=1190 data-nosnippet>1190</a>                .then(typed_lit(<span class="number">0i8</span>))
+<a href=#1191 id=1191 data-nosnippet>1191</a>                .otherwise(w)
+<a href=#1192 id=1192 data-nosnippet>1192</a>        },
+<a href=#1193 id=1193 data-nosnippet>1193</a>        DateTimeField::Isodow =&gt; expr.dt().weekday(),
+<a href=#1194 id=1194 data-nosnippet>1194</a>        DateTimeField::Day =&gt; expr.dt().day(),
+<a href=#1195 id=1195 data-nosnippet>1195</a>        DateTimeField::Hour =&gt; expr.dt().hour(),
+<a href=#1196 id=1196 data-nosnippet>1196</a>        DateTimeField::Minute =&gt; expr.dt().minute(),
+<a href=#1197 id=1197 data-nosnippet>1197</a>        DateTimeField::Second =&gt; expr.dt().second(),
+<a href=#1198 id=1198 data-nosnippet>1198</a>        DateTimeField::Millisecond | DateTimeField::Milliseconds =&gt; {
+<a href=#1199 id=1199 data-nosnippet>1199</a>            (expr.clone().dt().second() * typed_lit(<span class="number">1_000f64</span>))
+<a href=#1200 id=1200 data-nosnippet>1200</a>                + expr.dt().nanosecond().div(typed_lit(<span class="number">1_000_000f64</span>))
+<a href=#1201 id=1201 data-nosnippet>1201</a>        },
+<a href=#1202 id=1202 data-nosnippet>1202</a>        DateTimeField::Microsecond | DateTimeField::Microseconds =&gt; {
+<a href=#1203 id=1203 data-nosnippet>1203</a>            (expr.clone().dt().second() * typed_lit(<span class="number">1_000_000f64</span>))
+<a href=#1204 id=1204 data-nosnippet>1204</a>                + expr.dt().nanosecond().div(typed_lit(<span class="number">1_000f64</span>))
+<a href=#1205 id=1205 data-nosnippet>1205</a>        },
+<a href=#1206 id=1206 data-nosnippet>1206</a>        DateTimeField::Nanosecond | DateTimeField::Nanoseconds =&gt; {
+<a href=#1207 id=1207 data-nosnippet>1207</a>            (expr.clone().dt().second() * typed_lit(<span class="number">1_000_000_000f64</span>)) + expr.dt().nanosecond()
+<a href=#1208 id=1208 data-nosnippet>1208</a>        },
+<a href=#1209 id=1209 data-nosnippet>1209</a>        DateTimeField::Time =&gt; expr.dt().time(),
+<a href=#1210 id=1210 data-nosnippet>1210</a>        <span class="attr">#[cfg(feature = <span class="string">"timezones"</span>)]
+<a href=#1211 id=1211 data-nosnippet>1211</a>        </span>DateTimeField::Timezone =&gt; expr.dt().base_utc_offset().dt().total_seconds(),
+<a href=#1212 id=1212 data-nosnippet>1212</a>        DateTimeField::Epoch =&gt; {
+<a href=#1213 id=1213 data-nosnippet>1213</a>            expr.clone()
+<a href=#1214 id=1214 data-nosnippet>1214</a>                .dt()
+<a href=#1215 id=1215 data-nosnippet>1215</a>                .timestamp(TimeUnit::Nanoseconds)
+<a href=#1216 id=1216 data-nosnippet>1216</a>                .div(typed_lit(<span class="number">1_000_000_000i64</span>))
+<a href=#1217 id=1217 data-nosnippet>1217</a>                + expr.dt().nanosecond().div(typed_lit(<span class="number">1_000_000_000f64</span>))
+<a href=#1218 id=1218 data-nosnippet>1218</a>        },
+<a href=#1219 id=1219 data-nosnippet>1219</a>        <span class="kw">_ </span>=&gt; {
+<a href=#1220 id=1220 data-nosnippet>1220</a>            <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"EXTRACT/DATE_PART does not support '{}' part"</span>, field)
+<a href=#1221 id=1221 data-nosnippet>1221</a>        },
+<a href=#1222 id=1222 data-nosnippet>1222</a>    })
+<a href=#1223 id=1223 data-nosnippet>1223</a>}
+<a href=#1224 id=1224 data-nosnippet>1224</a>
+<a href=#1225 id=1225 data-nosnippet>1225</a><span class="doccomment">/// Allow an expression that represents a 1-indexed parameter to
+<a href=#1226 id=1226 data-nosnippet>1226</a>/// be adjusted from 1-indexed (SQL) to 0-indexed (Rust/Polars)
+<a href=#1227 id=1227 data-nosnippet>1227</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -&gt; Expr {
+<a href=#1228 id=1228 data-nosnippet>1228</a>    <span class="kw">match </span>idx {
+<a href=#1229 id=1229 data-nosnippet>1229</a>        Expr::Literal(sc) <span class="kw">if </span>sc.is_null() =&gt; lit(LiteralValue::untyped_null()),
+<a href=#1230 id=1230 data-nosnippet>1230</a>        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(<span class="number">0</span>))) =&gt; {
+<a href=#1231 id=1231 data-nosnippet>1231</a>            <span class="kw">if </span>null_if_zero {
+<a href=#1232 id=1232 data-nosnippet>1232</a>                lit(LiteralValue::untyped_null())
+<a href=#1233 id=1233 data-nosnippet>1233</a>            } <span class="kw">else </span>{
+<a href=#1234 id=1234 data-nosnippet>1234</a>                idx
+<a href=#1235 id=1235 data-nosnippet>1235</a>            }
+<a href=#1236 id=1236 data-nosnippet>1236</a>        },
+<a href=#1237 id=1237 data-nosnippet>1237</a>        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) <span class="kw">if </span>n &lt; <span class="number">0 </span>=&gt; idx,
+<a href=#1238 id=1238 data-nosnippet>1238</a>        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) =&gt; lit(n - <span class="number">1</span>),
+<a href=#1239 id=1239 data-nosnippet>1239</a>        <span class="comment">// TODO: when 'saturating_sub' is available, should be able
+<a href=#1240 id=1240 data-nosnippet>1240</a>        //  to streamline the when/then/otherwise block below -
+<a href=#1241 id=1241 data-nosnippet>1241</a>        </span><span class="kw">_ </span>=&gt; when(idx.clone().gt(lit(<span class="number">0</span>)))
+<a href=#1242 id=1242 data-nosnippet>1242</a>            .then(idx.clone() - lit(<span class="number">1</span>))
+<a href=#1243 id=1243 data-nosnippet>1243</a>            .otherwise(<span class="kw">if </span>null_if_zero {
+<a href=#1244 id=1244 data-nosnippet>1244</a>                when(idx.clone().eq(lit(<span class="number">0</span>)))
+<a href=#1245 id=1245 data-nosnippet>1245</a>                    .then(lit(LiteralValue::untyped_null()))
+<a href=#1246 id=1246 data-nosnippet>1246</a>                    .otherwise(idx.clone())
+<a href=#1247 id=1247 data-nosnippet>1247</a>            } <span class="kw">else </span>{
+<a href=#1248 id=1248 data-nosnippet>1248</a>                idx.clone()
+<a href=#1249 id=1249 data-nosnippet>1249</a>            }),
+<a href=#1250 id=1250 data-nosnippet>1250</a>    }
+<a href=#1251 id=1251 data-nosnippet>1251</a>}
+<a href=#1252 id=1252 data-nosnippet>1252</a>
+<a href=#1253 id=1253 data-nosnippet>1253</a><span class="kw">fn </span>resolve_column&lt;<span class="lifetime">'a</span>&gt;(
+<a href=#1254 id=1254 data-nosnippet>1254</a>    ctx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>SQLContext,
+<a href=#1255 id=1255 data-nosnippet>1255</a>    ident_root: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Ident,
+<a href=#1256 id=1256 data-nosnippet>1256</a>    name: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>str,
+<a href=#1257 id=1257 data-nosnippet>1257</a>    dtype: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>DataType,
+<a href=#1258 id=1258 data-nosnippet>1258</a>) -&gt; PolarsResult&lt;(Expr, <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span>DataType&gt;)&gt; {
+<a href=#1259 id=1259 data-nosnippet>1259</a>    <span class="kw">let </span>resolved = ctx.resolve_name(<span class="kw-2">&amp;</span>ident_root.value, name);
+<a href=#1260 id=1260 data-nosnippet>1260</a>    <span class="kw">let </span>resolved = resolved.as_str();
+<a href=#1261 id=1261 data-nosnippet>1261</a>    <span class="prelude-val">Ok</span>((
+<a href=#1262 id=1262 data-nosnippet>1262</a>        <span class="kw">if </span>name != resolved {
+<a href=#1263 id=1263 data-nosnippet>1263</a>            col(resolved).alias(name)
+<a href=#1264 id=1264 data-nosnippet>1264</a>        } <span class="kw">else </span>{
+<a href=#1265 id=1265 data-nosnippet>1265</a>            col(name)
+<a href=#1266 id=1266 data-nosnippet>1266</a>        },
+<a href=#1267 id=1267 data-nosnippet>1267</a>        <span class="prelude-val">Some</span>(dtype),
+<a href=#1268 id=1268 data-nosnippet>1268</a>    ))
+<a href=#1269 id=1269 data-nosnippet>1269</a>}
+<a href=#1270 id=1270 data-nosnippet>1270</a>
+<a href=#1271 id=1271 data-nosnippet>1271</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>resolve_compound_identifier(
+<a href=#1272 id=1272 data-nosnippet>1272</a>    ctx: <span class="kw-2">&amp;mut </span>SQLContext,
+<a href=#1273 id=1273 data-nosnippet>1273</a>    idents: <span class="kw-2">&amp;</span>[Ident],
+<a href=#1274 id=1274 data-nosnippet>1274</a>    active_schema: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Schema&gt;,
+<a href=#1275 id=1275 data-nosnippet>1275</a>) -&gt; PolarsResult&lt;Vec&lt;Expr&gt;&gt; {
+<a href=#1276 id=1276 data-nosnippet>1276</a>    <span class="comment">// inference priority: table &gt; struct &gt; column
+<a href=#1277 id=1277 data-nosnippet>1277</a>    </span><span class="kw">let </span>ident_root = <span class="kw-2">&amp;</span>idents[<span class="number">0</span>];
+<a href=#1278 id=1278 data-nosnippet>1278</a>    <span class="kw">let </span><span class="kw-2">mut </span>remaining_idents = idents.iter().skip(<span class="number">1</span>);
+<a href=#1279 id=1279 data-nosnippet>1279</a>    <span class="kw">let </span><span class="kw-2">mut </span>lf = ctx.get_table_from_current_scope(<span class="kw-2">&amp;</span>ident_root.value);
+<a href=#1280 id=1280 data-nosnippet>1280</a>
+<a href=#1281 id=1281 data-nosnippet>1281</a>    <span class="kw">let </span>schema = <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>lf) = lf {
+<a href=#1282 id=1282 data-nosnippet>1282</a>        lf.schema_with_arenas(<span class="kw-2">&amp;mut </span>ctx.lp_arena, <span class="kw-2">&amp;mut </span>ctx.expr_arena)
+<a href=#1283 id=1283 data-nosnippet>1283</a>    } <span class="kw">else </span>{
+<a href=#1284 id=1284 data-nosnippet>1284</a>        <span class="prelude-val">Ok</span>(Arc::new(<span class="kw">if let </span><span class="prelude-val">Some</span>(active_schema) = active_schema {
+<a href=#1285 id=1285 data-nosnippet>1285</a>            active_schema.clone()
+<a href=#1286 id=1286 data-nosnippet>1286</a>        } <span class="kw">else </span>{
+<a href=#1287 id=1287 data-nosnippet>1287</a>            Schema::default()
+<a href=#1288 id=1288 data-nosnippet>1288</a>        }))
+<a href=#1289 id=1289 data-nosnippet>1289</a>    }<span class="question-mark">?</span>;
+<a href=#1290 id=1290 data-nosnippet>1290</a>
+<a href=#1291 id=1291 data-nosnippet>1291</a>    <span class="kw">let </span>col_dtype: PolarsResult&lt;(Expr, <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>DataType&gt;)&gt; = <span class="kw">if </span>lf.is_none() &amp;&amp; schema.is_empty() {
+<a href=#1292 id=1292 data-nosnippet>1292</a>        <span class="prelude-val">Ok</span>((col(ident_root.value.as_str()), <span class="prelude-val">None</span>))
+<a href=#1293 id=1293 data-nosnippet>1293</a>    } <span class="kw">else </span>{
+<a href=#1294 id=1294 data-nosnippet>1294</a>        <span class="kw">let </span>name = <span class="kw-2">&amp;</span>remaining_idents.next().unwrap().value;
+<a href=#1295 id=1295 data-nosnippet>1295</a>        <span class="kw">if </span>lf.is_some() &amp;&amp; name == <span class="string">"*" </span>{
+<a href=#1296 id=1296 data-nosnippet>1296</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(schema
+<a href=#1297 id=1297 data-nosnippet>1297</a>                .iter_names_and_dtypes()
+<a href=#1298 id=1298 data-nosnippet>1298</a>                .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).unwrap().<span class="number">0</span>)
+<a href=#1299 id=1299 data-nosnippet>1299</a>                .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;());
+<a href=#1300 id=1300 data-nosnippet>1300</a>        };
+<a href=#1301 id=1301 data-nosnippet>1301</a>        <span class="kw">let </span>root_is_field = schema.get(<span class="kw-2">&amp;</span>ident_root.value).is_some();
+<a href=#1302 id=1302 data-nosnippet>1302</a>        <span class="kw">if </span>lf.is_none() &amp;&amp; root_is_field {
+<a href=#1303 id=1303 data-nosnippet>1303</a>            remaining_idents = idents.iter().skip(<span class="number">1</span>);
+<a href=#1304 id=1304 data-nosnippet>1304</a>            <span class="prelude-val">Ok</span>((
+<a href=#1305 id=1305 data-nosnippet>1305</a>                col(ident_root.value.as_str()),
+<a href=#1306 id=1306 data-nosnippet>1306</a>                schema.get(<span class="kw-2">&amp;</span>ident_root.value),
+<a href=#1307 id=1307 data-nosnippet>1307</a>            ))
+<a href=#1308 id=1308 data-nosnippet>1308</a>        } <span class="kw">else if </span>lf.is_none() &amp;&amp; !root_is_field {
+<a href=#1309 id=1309 data-nosnippet>1309</a>            <span class="macro">polars_bail!</span>(
+<a href=#1310 id=1310 data-nosnippet>1310</a>                SQLInterface: <span class="string">"no table or struct column named '{}' found"</span>,
+<a href=#1311 id=1311 data-nosnippet>1311</a>                ident_root
+<a href=#1312 id=1312 data-nosnippet>1312</a>            )
+<a href=#1313 id=1313 data-nosnippet>1313</a>        } <span class="kw">else if let </span><span class="prelude-val">Some</span>((<span class="kw">_</span>, name, dtype)) = schema.get_full(name) {
+<a href=#1314 id=1314 data-nosnippet>1314</a>            resolve_column(ctx, ident_root, name, dtype)
+<a href=#1315 id=1315 data-nosnippet>1315</a>        } <span class="kw">else </span>{
+<a href=#1316 id=1316 data-nosnippet>1316</a>            <span class="macro">polars_bail!</span>(
+<a href=#1317 id=1317 data-nosnippet>1317</a>                SQLInterface: <span class="string">"no column named '{}' found in table '{}'"</span>,
+<a href=#1318 id=1318 data-nosnippet>1318</a>                name,
+<a href=#1319 id=1319 data-nosnippet>1319</a>                ident_root
+<a href=#1320 id=1320 data-nosnippet>1320</a>            )
+<a href=#1321 id=1321 data-nosnippet>1321</a>        }
+<a href=#1322 id=1322 data-nosnippet>1322</a>    };
+<a href=#1323 id=1323 data-nosnippet>1323</a>
+<a href=#1324 id=1324 data-nosnippet>1324</a>    <span class="comment">// additional ident levels index into struct fields
+<a href=#1325 id=1325 data-nosnippet>1325</a>    </span><span class="kw">let </span>(<span class="kw-2">mut </span>column, <span class="kw-2">mut </span>dtype) = col_dtype<span class="question-mark">?</span>;
+<a href=#1326 id=1326 data-nosnippet>1326</a>    <span class="kw">for </span>ident <span class="kw">in </span>remaining_idents {
+<a href=#1327 id=1327 data-nosnippet>1327</a>        <span class="kw">let </span>name = ident.value.as_str();
+<a href=#1328 id=1328 data-nosnippet>1328</a>        <span class="kw">match </span>dtype {
+<a href=#1329 id=1329 data-nosnippet>1329</a>            <span class="prelude-val">Some</span>(DataType::Struct(fields)) <span class="kw">if </span>name == <span class="string">"*" </span>=&gt; {
+<a href=#1330 id=1330 data-nosnippet>1330</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(fields
+<a href=#1331 id=1331 data-nosnippet>1331</a>                    .iter()
+<a href=#1332 id=1332 data-nosnippet>1332</a>                    .map(|fld| column.clone().struct_().field_by_name(<span class="kw-2">&amp;</span>fld.name))
+<a href=#1333 id=1333 data-nosnippet>1333</a>                    .collect());
+<a href=#1334 id=1334 data-nosnippet>1334</a>            },
+<a href=#1335 id=1335 data-nosnippet>1335</a>            <span class="prelude-val">Some</span>(DataType::Struct(fields)) =&gt; {
+<a href=#1336 id=1336 data-nosnippet>1336</a>                dtype = fields
+<a href=#1337 id=1337 data-nosnippet>1337</a>                    .iter()
+<a href=#1338 id=1338 data-nosnippet>1338</a>                    .find(|fld| fld.name == name)
+<a href=#1339 id=1339 data-nosnippet>1339</a>                    .map(|fld| <span class="kw-2">&amp;</span>fld.dtype);
+<a href=#1340 id=1340 data-nosnippet>1340</a>            },
+<a href=#1341 id=1341 data-nosnippet>1341</a>            <span class="prelude-val">Some</span>(dtype) <span class="kw">if </span>name == <span class="string">"*" </span>=&gt; {
+<a href=#1342 id=1342 data-nosnippet>1342</a>                <span class="macro">polars_bail!</span>(SQLSyntax: <span class="string">"cannot expand '*' on non-Struct dtype; found {:?}"</span>, dtype)
+<a href=#1343 id=1343 data-nosnippet>1343</a>            },
+<a href=#1344 id=1344 data-nosnippet>1344</a>            <span class="kw">_ </span>=&gt; {
+<a href=#1345 id=1345 data-nosnippet>1345</a>                dtype = <span class="prelude-val">None</span>;
+<a href=#1346 id=1346 data-nosnippet>1346</a>            },
+<a href=#1347 id=1347 data-nosnippet>1347</a>        }
+<a href=#1348 id=1348 data-nosnippet>1348</a>        column = column.struct_().field_by_name(name);
+<a href=#1349 id=1349 data-nosnippet>1349</a>    }
+<a href=#1350 id=1350 data-nosnippet>1350</a>    <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[column])
+<a href=#1351 id=1351 data-nosnippet>1351</a>}</code></pre></div></section></main></body></html>

@@ -1,0 +1,38 @@
+﻿polars.List
+===========
+
+.. currentmodule:: polars
+
+.. autoclass:: List
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~List.__init__
+      ~List.base_type
+      ~List.is_
+      ~List.is_float
+      ~List.is_integer
+      ~List.is_not
+      ~List.is_numeric
+      ~List.is_signed_integer
+      ~List.is_temporal
+      ~List.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~List.inner
+      ~List.is_nested
+   
+   
