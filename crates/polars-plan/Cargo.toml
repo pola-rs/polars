@@ -3,7 +3,6 @@ name = "polars-plan"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
-exclude = ["dsl-schema-hashes.json"]
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
