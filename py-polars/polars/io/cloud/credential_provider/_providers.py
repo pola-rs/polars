@@ -371,7 +371,7 @@ class CredentialProviderAzure(CredentialProvider):
         ) is not None:
             return v
 
-        import azure.identity
+        import azure.identity  # type: ignore[import-not-found]
 
         credential = self.credential or azure.identity.DefaultAzureCredential()
         token = credential.get_token(*self.scopes, tenant_id=self.tenant_id)
