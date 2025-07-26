@@ -65,11 +65,16 @@ impl PlCredentialProvider {
     /// credential provider.
     ///
     /// This returns `Option` as the auto-initialization case is fallible and falls back to None.
-    pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+    pub(crate) fn try_into_initialized(
+        self,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Option<Self>> {
         match self {
             Self::Function(_) => Ok(Some(self)),
             #[cfg(feature = "python")]
-            Self::Python(v) => Ok(v.try_into_initialized()?.map(Self::Python)),
+            Self::Python(v) => Ok(v
+                .try_into_initialized(clear_cached_credentials)?
+                .map(Self::Python)),
         }
     }
 }
@@ -540,7 +545,10 @@ mod python_impl {
         /// This exists as a separate step that must be called beforehand. This approach is easier
         /// as the alternative is to refactor the `IntoCredentialProvider` trait to return
         /// `PolarsResult<Option<T>>` for every single function.
-        pub(super) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+        pub(super) fn try_into_initialized(
+            self,
+            clear_cached_credentials: bool,
+        ) -> PolarsResult<Option<Self>> {
             match self {
                 Self::Builder(py_object) => {
                     let opt_initialized_py_object = Python::with_gil(|py| {

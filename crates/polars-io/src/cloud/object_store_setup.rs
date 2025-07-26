@@ -101,7 +101,11 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
-    pub(super) async fn build_impl(&self) -> PolarsResult<Arc<dyn ObjectStore>> {
+    pub(super) async fn build_impl(
+        &self,
+        // Whether to clear cached credentials for Python credential providers.
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Arc<dyn ObjectStore>> {
         let options = self
             .options
             .as_ref()
@@ -111,7 +115,9 @@ impl PolarsObjectStoreBuilder {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
-                    let store = options.build_aws(&self.url).await?;
+                    let store = options
+                        .build_aws(&self.url, clear_cached_credentials)
+                        .await?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
                 #[cfg(not(feature = "aws"))]
@@ -120,7 +126,7 @@ impl PolarsObjectStoreBuilder {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    let store = options.build_gcp(&self.url)?;
+                    let store = options.build_gcp(&self.url, clear_cached_credentials)?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
                 #[cfg(not(feature = "gcp"))]
@@ -130,7 +136,7 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "azure")]
                     {
-                        let store = options.build_azure(&self.url)?;
+                        let store = options.build_azure(&self.url, clear_cached_credentials)?;
                         Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }
@@ -188,7 +194,7 @@ impl PolarsObjectStoreBuilder {
             None
         };
 
-        let store = self.build_impl().await?;
+        let store = self.build_impl(false).await?;
         let store = PolarsObjectStore::new_from_inner(store, self);
 
         if let Some(mut cache) = opt_cache_write_guard {
