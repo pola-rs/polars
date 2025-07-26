@@ -609,38 +609,53 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
     assert expiry is None
 
 
-@pytest.mark.write_disk
 @pytest.mark.slow
+@pytest.mark.parametrize(
+    (
+        "credential_provider_class",
+        "scan_path",
+        "initial_credentials",
+        "updated_credentials",
+    ),
+    [
+        (
+            pl.CredentialProviderAWS,
+            "s3://.../...",
+            {"aws_access_key_id": "initial", "aws_secret_access_key": "initial"},
+            {"aws_access_key_id": "updated", "aws_secret_access_key": "updated"},
+        ),
+        (
+            pl.CredentialProviderAzure,
+            "abfss://container@storage_account.dfs.core.windows.net/bucket",
+            {"bearer_token": "initial"},
+            {"bearer_token": "updated"},
+        ),
+        (
+            pl.CredentialProviderGCP,
+            "gs://.../...",
+            {"bearer_token": "initial"},
+            {"bearer_token": "updated"},
+        ),
+    ],
+)
 def test_credential_provider_rebuild_clears_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    credential_provider_class: type[pl.CredentialProvider],
+    scan_path: str,
+    initial_credentials: dict[str, str],
+    updated_credentials: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential_file_path = tmp_path / "credentials.json"
+    assert initial_credentials != updated_credentials
 
-    credential_file_path.write_text(
-        """\
-{
-    "Version": 1,
-    "AccessKeyId": "initial_value",
-    "SecretAccessKey": "initial_value"
-}
-"""
+    monkeypatch.setattr(
+        credential_provider_class,
+        "retrieve_credentials_impl",
+        lambda *_: (initial_credentials, None),
     )
-
-    cfg_file_path = tmp_path / "config"
-
-    credential_file_path_str = str(credential_file_path).replace("\\", "/")
-
-    cfg_file_path.write_text(f"""\
-[profile default]
-endpoint_url = http://localhost:333
-credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path('{credential_file_path_str}').read_text())"
-""")
-
-    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
 
     builder = _init_credential_provider_builder(
         "auto",
-        "s3://.../...",
+        scan_path,
         storage_options=None,
         caller_name="test",
     )
@@ -648,70 +663,35 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
     # This provider object should be reused from the LRU cache.
     provider_at_scan = builder.build_credential_provider(False)
     # This is a separate one for testing local to this function.
-    provider_local = pl.CredentialProviderAWS()
+    provider_local = credential_provider_class()
 
     # Set the caches
     provider_local()
     provider_at_scan()
 
-    credential_file_path.write_text(
-        """\
-{
-    "Version": 1,
-    "AccessKeyId": "updated_value",
-    "SecretAccessKey": "updated_value"
-}
-"""
+    monkeypatch.setattr(
+        credential_provider_class,
+        "retrieve_credentials_impl",
+        lambda *_: (updated_credentials, None),
     )
 
     # Even though the config file changed, the credential providers never refresh
     # due to having a cached value with expiration of None (never expires).
-    assert provider_local() == (
-        {
-            "aws_access_key_id": "initial_value",
-            "aws_secret_access_key": "initial_value",
-        },
-        None,
-    )
+    assert provider_local() == (initial_credentials, None)
+    assert provider_at_scan() == (initial_credentials, None)
 
-    assert provider_at_scan() == (
-        {
-            "aws_access_key_id": "initial_value",
-            "aws_secret_access_key": "initial_value",
-        },
-        None,
-    )
-
-    q = pl.scan_parquet("s3://.../...", credential_provider="auto")
+    q = pl.scan_parquet(scan_path, credential_provider="auto")
 
     with pytest.raises(OSError):
         q.collect()
 
     # The provider object used by the scan should have its cached cleared when
     # rebuilding.
-    assert provider_at_scan() == (
-        {
-            "aws_access_key_id": "updated_value",
-            "aws_secret_access_key": "updated_value",
-        },
-        None,
-    )
+    assert provider_at_scan() == (updated_credentials, None)
 
     # This is a separate object so it shouldn't be updated
-    assert provider_local() == (
-        {
-            "aws_access_key_id": "initial_value",
-            "aws_secret_access_key": "initial_value",
-        },
-        None,
-    )
+    assert provider_local() == (initial_credentials, None)
 
     provider_local.clear_cached_credentials()
 
-    assert provider_local() == (
-        {
-            "aws_access_key_id": "updated_value",
-            "aws_secret_access_key": "updated_value",
-        },
-        None,
-    )
+    assert provider_local() == (updated_credentials, None)
