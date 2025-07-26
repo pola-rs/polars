@@ -83,7 +83,15 @@ class CredentialProviderBuilder:
         self,
         clear_cached_credentials: bool = False,
     ) -> CredentialProviderBuilderReturn:
-        """Instantiate a credential provider from configuration."""
+        """
+        Instantiate a credential provider from configuration.
+
+        Parameters
+        ----------
+        clear_cached_credentials
+            If the built provider is an instance of `pl.CredentialProvider`,
+            clears any cached credentials on that object.
+        """
         verbose = polars._utils.logging.verbose()
 
         if verbose:

@@ -561,10 +561,7 @@ mod python_impl {
                             clear_cached_credentials
                                 .then(|| {
                                     let dict = PyDict::new(py);
-                                    dict.set_item(
-                                        intern!(py, "clear_cached_credentials"),
-                                        clear_cached_credentials,
-                                    );
+                                    dict.set_item(intern!(py, "clear_cached_credentials"), true);
                                     dict
                                 })
                                 .as_ref(),

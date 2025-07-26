@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from polars.io.cloud.credential_provider._providers import UserProvidedGCPToken
 import pytest
 
 import polars as pl
@@ -695,3 +696,12 @@ def test_credential_provider_rebuild_clears_cache(
     provider_local.clear_cached_credentials()
 
     assert provider_local() == (updated_credentials, None)
+
+
+def test_credential_provider_subclass_cache_no_super_init(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = UserProvidedGCPToken("A")
+    assert provider() == ({"bearer_token": "A"}, None)
+    monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
+    assert provider() == ({"bearer_token": "A"}, None)

@@ -79,11 +79,19 @@ class CredentialProvider(abc.ABC):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetches the credentials."""
+        cached_credentials: NoPickleOption | None = (
+            self._cached_credentials
+            if isinstance(getattr(self, "_cached_credentials", None), NoPickleOption)
+            else None
+        )
+
         if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
-            self._cached_credentials.set(None)
+            if cached_credentials is not None:
+                cached_credentials.set(None)
+
             return self.retrieve_credentials_impl()
 
-        if not isinstance(getattr(self, "_cached_credentials", None), NoPickleOption):
+        if cached_credentials is None:
             msg = (
                 f"[{type(self).__name__} @ {hex(id(self))}]: `_cached_credentials` attribute "
                 "not found. This can happen if a subclass forgets to call "
