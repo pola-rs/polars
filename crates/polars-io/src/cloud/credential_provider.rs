@@ -554,7 +554,7 @@ mod python_impl {
                     let opt_initialized_py_object = Python::with_gil(|py| {
                         let build_fn = py_object.getattr(py, "build_credential_provider")?;
 
-                        let v = build_fn.call0(py)?;
+                        let v = build_fn.call1(py, (clear_cached_credentials,))?;
                         let v = (!v.is_none(py)).then_some(v);
 
                         pyo3::PyResult::Ok(v)

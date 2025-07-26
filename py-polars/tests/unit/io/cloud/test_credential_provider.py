@@ -340,13 +340,14 @@ endpoint_url = http://localhost:333
 
 def _set_default_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     creds_file_path = tmp_path / "credentials"
-    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
     creds_file_path.write_text("""\
 [default]
 aws_access_key_id=Z
 aws_secret_access_key=Z
 """)
+
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
 
 @pytest.mark.slow
@@ -381,7 +382,7 @@ def test_credential_provider_python_builder_cache(
             return pl.scan_parquet(
                 "s3://.../...",
                 storage_options={
-                    "aws_profile": "A",
+                    "aws_profile": "initial_value",
                     "aws_endpoint_url": "http://localhost",
                 },
                 credential_provider="auto",
@@ -540,7 +541,7 @@ def test_zero_hash_wrap() -> None:
 
     assert cache(ZeroHashWrap(3)) == 3
     assert cache(ZeroHashWrap(7)) == 3
-    assert cache(ZeroHashWrap("A")) == 3
+    assert cache(ZeroHashWrap("initial_value")) == 3
 
 
 @pytest.mark.write_disk
@@ -606,3 +607,111 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
     }
 
     assert expiry is None
+
+
+@pytest.mark.write_disk
+@pytest.mark.slow
+def test_credential_provider_rebuild_clears_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    credential_file_path = tmp_path / "credentials.json"
+
+    credential_file_path.write_text(
+        """\
+{
+    "Version": 1,
+    "AccessKeyId": "initial_value",
+    "SecretAccessKey": "initial_value"
+}
+"""
+    )
+
+    cfg_file_path = tmp_path / "config"
+
+    credential_file_path_str = str(credential_file_path).replace("\\", "/")
+
+    cfg_file_path.write_text(f"""\
+[profile default]
+endpoint_url = http://localhost:333
+credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path('{credential_file_path_str}').read_text())"
+""")
+
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+
+    builder = _init_credential_provider_builder(
+        "auto",
+        "s3://.../...",
+        storage_options=None,
+        caller_name="test",
+    )
+
+    # This provider object should be reused from the LRU cache.
+    provider_at_scan = builder.build_credential_provider(False)
+    # This is a separate one for testing local to this function.
+    provider_local = pl.CredentialProviderAWS()
+
+    # Set the caches
+    provider_local()
+    provider_at_scan()
+
+    credential_file_path.write_text(
+        """\
+{
+    "Version": 1,
+    "AccessKeyId": "updated_value",
+    "SecretAccessKey": "updated_value"
+}
+"""
+    )
+
+    # Even though the config file changed, the credential providers never refresh
+    # due to having a cached value with expiration of None (never expires).
+    assert provider_local() == (
+        {
+            "aws_access_key_id": "initial_value",
+            "aws_secret_access_key": "initial_value",
+        },
+        None,
+    )
+
+    assert provider_at_scan() == (
+        {
+            "aws_access_key_id": "initial_value",
+            "aws_secret_access_key": "initial_value",
+        },
+        None,
+    )
+
+    q = pl.scan_parquet("s3://.../...", credential_provider="auto")
+
+    with pytest.raises(OSError):
+        q.collect()
+
+    # The provider object used by the scan should have its cached cleared when
+    # rebuilding.
+    assert provider_at_scan() == (
+        {
+            "aws_access_key_id": "updated_value",
+            "aws_secret_access_key": "updated_value",
+        },
+        None,
+    )
+
+    # This is a separate object so it shouldn't be updated
+    assert provider_local() == (
+        {
+            "aws_access_key_id": "initial_value",
+            "aws_secret_access_key": "initial_value",
+        },
+        None,
+    )
+
+    provider_local.clear_cached_credentials()
+
+    assert provider_local() == (
+        {
+            "aws_access_key_id": "updated_value",
+            "aws_secret_access_key": "updated_value",
+        },
+        None,
+    )
