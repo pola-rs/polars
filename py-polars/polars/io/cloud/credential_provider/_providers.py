@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+from functools import partial
 import importlib.util
 import json
 import os
@@ -370,13 +371,9 @@ class CredentialProviderAzure(CredentialProvider):
         ) is not None:
             return v
 
-        # Done like this to bypass mypy, we don't have stubs for azure.identity
-        credential = (
-            self.credential
-            or importlib.import_module("azure.identity").__dict__[
-                "DefaultAzureCredential"
-            ]()
-        )
+        import azure.identity
+
+        credential = self.credential or azure.identity.DefaultAzureCredential()
         token = credential.get_token(*self.scopes, tenant_id=self.tenant_id)
 
         return {
@@ -524,15 +521,9 @@ class CredentialProviderGCP(CredentialProvider):
 
         import google.auth
 
-        # CI runs with both `mypy` and `mypy --allow-untyped-calls` depending on
-        # Python version. If we add a `type: ignore[no-untyped-call]`, then the
-        # check that runs with `--allow-untyped-calls` will complain about an
-        # unused "type: ignore" comment. And if we don't add the ignore, then
-        # he check that runs `mypy` will complain.
-        #
-        # So we just bypass it with a __dict__[] (because ruff complains about
-        # getattr) :|
-        creds, _ = google.auth.__dict__["default"](
+        self._creds = None
+        self._init_creds = partial(
+            google.auth.default,
             scopes=(
                 scopes
                 if scopes is not None
@@ -542,15 +533,15 @@ class CredentialProviderGCP(CredentialProvider):
             quota_project_id=quota_project_id,
             default_scopes=default_scopes,
         )
-        self.creds = creds
 
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         import google.auth.transport.requests
 
-        self.creds.refresh(google.auth.transport.requests.__dict__["Request"]())
+        creds = self._get_or_init_creds()
+        creds.refresh(google.auth.transport.requests.Request())
 
-        return {"bearer_token": self.creds.token}, (
+        return {"bearer_token": creds.token}, (
             int(
                 (
                     expiry.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
@@ -558,9 +549,16 @@ class CredentialProviderGCP(CredentialProvider):
                     else expiry
                 ).timestamp()
             )
-            if (expiry := self.creds.expiry) is not None
+            if (expiry := creds.expiry) is not None
             else None
         )
+
+    def _get_or_init_creds(self) -> Any:
+        if self._creds is None:
+            creds, _project_id = self._init_creds()
+            self._creds = creds
+
+        return self._creds
 
     @classmethod
     def _ensure_module_availability(cls) -> None:
