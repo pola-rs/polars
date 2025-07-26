@@ -22,6 +22,8 @@ from polars._utils.logging import eprint, verbose
 from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
+    from polars.dependencies import boto3
+
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
@@ -171,11 +173,17 @@ class CredentialProviderAWS(CredentialProvider):
             msg = "did not receive any credentials from boto3.Session.get_credentials()"
             raise self.EmptyCredentialError(msg)
 
+        expiry = (
+            int(expiry.timestamp())
+            if isinstance(expiry := getattr(creds, "_expiry_time", None), datetime)
+            else None
+        )
+
         return {
             "aws_access_key_id": creds.access_key,
             "aws_secret_access_key": creds.secret_key,
             **({"aws_session_token": creds.token} if creds.token is not None else {}),
-        }, None
+        }, expiry
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
         client = session.client("sts")
@@ -245,7 +253,7 @@ class CredentialProviderAWS(CredentialProvider):
 
         return True
 
-    def _session(self) -> Any:
+    def _session(self) -> boto3.Session:
         # Note: boto3 automatically sources the AWS_PROFILE env var
         import boto3
 
