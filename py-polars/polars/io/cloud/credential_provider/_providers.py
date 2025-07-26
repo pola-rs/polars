@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import abc
-from functools import partial
 import importlib.util
 import json
 import os
@@ -9,6 +8,7 @@ import subprocess
 import sys
 import zoneinfo
 from datetime import datetime
+from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
