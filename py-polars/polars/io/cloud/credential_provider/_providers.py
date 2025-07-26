@@ -539,7 +539,7 @@ class CredentialProviderGCP(CredentialProvider):
         import google.auth.transport.requests
 
         creds = self._get_or_init_creds()
-        creds.refresh(google.auth.transport.requests.Request())
+        creds.refresh(google.auth.transport.requests.Request())  # type: ignore[no-untyped-call, unused-ignore]
 
         return {"bearer_token": creds.token}, (
             int(
