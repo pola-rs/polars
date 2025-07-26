@@ -5,6 +5,7 @@
 <!-- dprint-ignore-start -->
 
 !!! tip "Polars Cloud is in alpha stage"
+
     Polars Cloud is currently available to a select group of individuals and companies for early-stage testing. You can learn more about Polars Cloud and its goals in [our recent announcement post](https://pola.rs/posts/polars-cloud-what-we-are-building/).
 
 <!-- dprint-ignore-end-->
