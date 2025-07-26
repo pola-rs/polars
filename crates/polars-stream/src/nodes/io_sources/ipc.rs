@@ -25,6 +25,7 @@ use super::multi_file_reader::reader_interface::{BeginReadArgs, calc_row_positio
 use crate::async_executor::{AbortOnDropHandle, JoinHandle, TaskPriority, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
+use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
@@ -147,7 +148,7 @@ fn get_max_morsel_size() -> usize {
 
 #[async_trait]
 impl FileReader for IpcFileReader {
-    async fn initialize(&mut self) -> PolarsResult<()> {
+    async fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
         if self.init_data.is_some() {
             return Ok(());
         }

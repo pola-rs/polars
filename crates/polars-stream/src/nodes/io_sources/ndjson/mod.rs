@@ -50,7 +50,7 @@ pub struct NDJsonFileReader {
 
 #[async_trait]
 impl FileReader for NDJsonFileReader {
-    async fn initialize(&mut self) -> PolarsResult<()> {
+    async fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
         Ok(())
     }
 

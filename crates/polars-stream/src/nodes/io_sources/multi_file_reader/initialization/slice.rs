@@ -8,6 +8,7 @@ use polars_utils::slice_enum::Slice;
 
 use super::deletion_files::{DeletionFilesProvider, ExternalFilterMask};
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
@@ -32,6 +33,7 @@ pub struct ResolvedSliceInfo {
 
 pub async fn resolve_to_positive_slice(
     config: &MultiFileReaderConfig,
+    exec_state: &StreamingExecutionState,
 ) -> PolarsResult<ResolvedSliceInfo> {
     match config.pre_slice.clone() {
         None => Ok(ResolvedSliceInfo {
@@ -50,12 +52,15 @@ pub async fn resolve_to_positive_slice(
             row_deletions: Default::default(),
         }),
 
-        Some(_) => resolve_negative_slice(config).await,
+        Some(_) => resolve_negative_slice(config, exec_state).await,
     }
 }
 
 /// Translates a negative slice to positive slice.
-async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<ResolvedSliceInfo> {
+async fn resolve_negative_slice(
+    config: &MultiFileReaderConfig,
+    exec_state: &StreamingExecutionState,
+) -> PolarsResult<ResolvedSliceInfo> {
     let verbose = config.verbose;
 
     let pre_slice @ Slice::Negative {
@@ -106,6 +111,7 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
             let cloud_options = config.cloud_options.clone();
             let file_reader_builder = config.file_reader_builder.clone();
             let deletion_files_provider = deletion_files_provider.clone();
+            let exec_state = exec_state.clone();
 
             AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
                 let mut reader =
@@ -130,9 +136,10 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
                     cloud_options,
                     num_pipelines,
                     verbose,
+                    &exec_state,
                 );
 
-                reader.initialize().await?;
+                reader.initialize(&exec_state).await?;
                 PolarsResult::Ok((scan_source_idx, reader, row_deletions))
             }))
         })

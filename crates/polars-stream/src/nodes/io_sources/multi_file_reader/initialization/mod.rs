@@ -12,16 +12,21 @@ use super::bridge::BridgeState;
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
 use crate::async_primitives::wait_group::WaitToken;
+use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_file_reader::bridge::spawn_bridge;
 
 pub struct MultiScanTaskInitializer {
     pub(super) config: Arc<MultiFileReaderConfig>,
+    pub(super) exec_state: StreamingExecutionState,
 }
 
 impl MultiScanTaskInitializer {
-    pub fn new(config: Arc<MultiFileReaderConfig>) -> Self {
-        Self { config }
+    pub fn new(config: Arc<MultiFileReaderConfig>, state: StreamingExecutionState) -> Self {
+        Self {
+            config,
+            exec_state: state,
+        }
     }
 
     #[expect(clippy::type_complexity)]

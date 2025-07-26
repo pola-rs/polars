@@ -57,6 +57,7 @@ pub fn python_dataset_scan_to_reader_builder(
         output_schema: None,
         get_batch_state: Some(GetBatchState::from(get_batch_fn)),
         verbose: config::verbose(),
+        exec_state: None,
     };
 
     Arc::new(BatchFnReaderBuilder {

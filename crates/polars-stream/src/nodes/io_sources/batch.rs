@@ -108,11 +108,13 @@ pub struct BatchFnReader {
     pub output_schema: Option<SchemaRef>,
     pub get_batch_state: Option<GetBatchState>,
     pub verbose: bool,
+    pub exec_state: Option<StreamingExecutionState>,
 }
 
 #[async_trait]
 impl FileReader for BatchFnReader {
-    async fn initialize(&mut self) -> PolarsResult<()> {
+    async fn initialize(&mut self, state: &StreamingExecutionState) -> PolarsResult<()> {
+        self.exec_state = Some(state.clone());
         Ok(())
     }
 
@@ -149,9 +151,6 @@ impl FileReader for BatchFnReader {
             // If this is ever needed we can buffer
             .expect("unimplemented: BatchFnReader called more than once");
 
-        // FIXME: Propagate this from BeginReadArgs.
-        let exec_state = StreamingExecutionState::default();
-
         let verbose = self.verbose;
 
         if verbose {
@@ -160,6 +159,7 @@ impl FileReader for BatchFnReader {
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
+        let exec_state = self.exec_state.as_ref().unwrap().clone();
         let handle = spawn(TaskPriority::Low, async move {
             let mut seq: u64 = 0;
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
@@ -212,14 +212,16 @@ impl FileReader for BatchFnReader {
 impl BatchFnReader {
     pub fn _file_schema(&mut self) -> PolarsResult<SchemaRef> {
         if self.output_schema.is_none() {
-            let exec_state = StreamingExecutionState::default();
-
-            let schema =
-                if let Some(df) = self.get_batch_state.as_mut().unwrap().peek(&exec_state)? {
-                    df.schema().clone()
-                } else {
-                    SchemaRef::default()
-                };
+            let schema = if let Some(df) = self
+                .get_batch_state
+                .as_mut()
+                .unwrap()
+                .peek(self.exec_state.as_ref().unwrap())?
+            {
+                df.schema().clone()
+            } else {
+                SchemaRef::default()
+            };
 
             self.output_schema = Some(schema);
         }

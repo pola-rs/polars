@@ -58,7 +58,7 @@ struct InitializedState {
 
 #[async_trait]
 impl FileReader for ParquetFileReader {
-    async fn initialize(&mut self) -> PolarsResult<()> {
+    async fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
         let verbose = self.verbose;
 
         if self.init_data.is_some() {

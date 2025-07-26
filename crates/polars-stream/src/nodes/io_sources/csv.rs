@@ -112,7 +112,7 @@ struct CsvFileReader {
 
 #[async_trait]
 impl FileReader for CsvFileReader {
-    async fn initialize(&mut self) -> PolarsResult<()> {
+    async fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
         let memslice = self
             .scan_source
             .as_scan_source_ref()
