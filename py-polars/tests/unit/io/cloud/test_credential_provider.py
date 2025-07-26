@@ -654,10 +654,16 @@ def test_credential_provider_rebuild_clears_cache(
         lambda *_: (initial_credentials, None),
     )
 
+    storage_options = (
+        {"aws_endpoint_url": "http://localhost:333"}
+        if credential_provider_class == pl.CredentialProviderAWS
+        else None
+    )
+
     builder = _init_credential_provider_builder(
         "auto",
         scan_path,
-        storage_options=None,
+        storage_options=storage_options,
         caller_name="test",
     )
 
@@ -687,7 +693,11 @@ def test_credential_provider_rebuild_clears_cache(
     assert provider_local() == (initial_credentials, None)
     assert provider_at_scan() == (initial_credentials, None)
 
-    q = pl.scan_parquet(scan_path, credential_provider="auto")
+    q = pl.scan_parquet(
+        scan_path,
+        storage_options=storage_options,
+        credential_provider="auto",
+    )
 
     with pytest.raises(OSError):
         q.collect()
