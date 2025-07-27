@@ -658,6 +658,9 @@ def test_lru_cache() -> None:
     cache.set_max_items(2)
     _test(cache)
 
+    with pytest.raises(ValueError):
+        cache.set_max_items(-1)
+
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
