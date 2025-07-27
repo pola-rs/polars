@@ -14,7 +14,10 @@ from polars.io.cloud.credential_provider._builder import (
     AutoInit,
     _init_credential_provider_builder,
 )
-from polars.io.cloud.credential_provider._providers import UserProvidedGCPToken
+from polars.io.cloud.credential_provider._providers import (
+    CachedCredentialProvider,
+    UserProvidedGCPToken,
+)
 
 
 @pytest.mark.parametrize(
@@ -113,7 +116,7 @@ def test_credential_provider_serialization_custom_provider() -> None:
     err_magic = "err_magic_3"
 
     class ErrCredentialProvider(pl.CredentialProvider):
-        def retrieve_credentials_impl(self) -> pl.CredentialProviderFunctionReturn:
+        def __call__(self) -> pl.CredentialProviderFunctionReturn:
             raise AssertionError(err_magic)
 
     lf = pl.scan_parquet(
@@ -686,7 +689,7 @@ def test_lru_cache() -> None:
     ],
 )
 def test_credential_provider_rebuild_clears_cache(
-    credential_provider_class: type[pl.CredentialProvider],
+    credential_provider_class: type[CachedCredentialProvider],
     scan_path: str,
     initial_credentials: dict[str, str],
     updated_credentials: dict[str, str],
