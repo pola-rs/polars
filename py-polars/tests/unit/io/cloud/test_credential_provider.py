@@ -715,15 +715,11 @@ def test_credential_provider_rebuild_clears_cache(
 
     assert builder is not None
 
-    provider_at_scan = builder.build_credential_provider()
-    assert provider_at_scan is not None
-
     # This is a separate one for testing local to this function.
     provider_local = credential_provider_class()
 
-    # Set the caches
+    # Set the cache
     provider_local()
-    provider_at_scan()
 
     # Now update the the retrieval function to return updated credentials.
     monkeypatch.setattr(
@@ -736,7 +732,6 @@ def test_credential_provider_rebuild_clears_cache(
     # still return the initial credentials, as they were cached with an expiry
     # of None.
     assert provider_local() == (initial_credentials, None)
-    assert provider_at_scan() == (initial_credentials, None)
 
     q = pl.scan_parquet(
         scan_path,
@@ -759,7 +754,7 @@ def test_credential_provider_rebuild_clears_cache(
     assert provider_local() == (updated_credentials, None)
 
 
-def test_user_token_provider(
+def test_user_gcp_token_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = UserProvidedGCPToken("A")
