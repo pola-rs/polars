@@ -170,11 +170,6 @@ pub fn collect_all_with_callback(
 }
 
 #[pyfunction]
-pub fn cols(names: Vec<String>) -> PyExpr {
-    dsl::cols(names).as_expr().into()
-}
-
-#[pyfunction]
 pub fn concat_lf(
     seq: &Bound<'_, PyAny>,
     rechunk: bool,
