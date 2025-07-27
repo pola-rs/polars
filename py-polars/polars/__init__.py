@@ -209,6 +209,7 @@ from polars.io import (
     scan_pyarrow_dataset,
 )
 from polars.io.cloud import (
+    CachedCredentialProvider,
     CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
@@ -321,6 +322,7 @@ __all__ = [
     "scan_pyarrow_dataset",
     "Catalog",
     # polars.io.cloud
+    "CachedCredentialProvider",
     "CredentialProvider",
     "CredentialProviderAWS",
     "CredentialProviderAzure",
