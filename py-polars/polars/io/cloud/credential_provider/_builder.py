@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import abc
 import os
-from functools import lru_cache
+from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
-from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
+from polars.io.cloud._utils import LRUCache, NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
     CredentialProvider,
     CredentialProviderAWS,
@@ -81,8 +81,17 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
+        clear_cached_credentials: bool = False,  # noqa: FBT001
     ) -> CredentialProviderBuilderReturn:
-        """Instantiate a credential provider from configuration."""
+        """
+        Instantiate a credential provider from configuration.
+
+        Parameters
+        ----------
+        clear_cached_credentials
+            If the built provider is an instance of `pl.CredentialProvider`,
+            clears any cached credentials on that object.
+        """
         verbose = polars._utils.logging.verbose()
 
         if verbose:
@@ -91,7 +100,9 @@ class CredentialProviderBuilder:
                 f"{self.credential_provider_init!r}"
             )
 
-        v = self.credential_provider_init()
+        v = self.credential_provider_init(
+            clear_cached_credentials=clear_cached_credentials
+        )
 
         if verbose:
             if v is not None:
@@ -103,6 +114,14 @@ class CredentialProviderBuilder:
                 eprint(
                     f"[CredentialProviderBuilder]: No provider initialized "
                     f"from {self.credential_provider_init!r}"
+                )
+
+        if isinstance(v, CredentialProvider) and clear_cached_credentials:
+            v.clear_cached_credentials()
+
+            if verbose:
+                eprint(
+                    f"[CredentialProviderBuilder]: Clear cached credentials for {v!r}"
                 )
 
         return v
@@ -134,7 +153,9 @@ class CredentialProviderBuilder:
 
 class CredentialProviderBuilderImpl(abc.ABC):
     @abc.abstractmethod
-    def __call__(self) -> CredentialProviderFunction | None:
+    def __call__(
+        self, *, clear_cached_credentials: bool
+    ) -> CredentialProviderFunction | None:
         pass
 
     @property
@@ -157,7 +178,9 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
     def __init__(self, credential_provider: CredentialProviderFunction | None) -> None:
         self.credential_provider = credential_provider
 
-    def __call__(self) -> CredentialProviderFunction | None:
+    def __call__(
+        self, *, clear_cached_credentials: bool
+    ) -> CredentialProviderFunction | None:
         return self.credential_provider
 
     @property
@@ -165,47 +188,67 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         return repr(self.credential_provider)
 
 
-AUTO_INIT_LRU_CACHE: (
-    Callable[
-        [bytes, ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]]],
-        CredentialProviderBuilderReturn,
-    ]
-    | None
-) = None
+AUTO_INIT_LRU_CACHE: LRUCache[bytes, CredentialProviderBuilderReturn] | None = None
+AUTO_INIT_LRU_CACHE_LOCK: RLock = RLock()
 
 
 def _auto_init_with_cache(
     get_cache_key_func: Callable[[], bytes],
-    build_provider_func: ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]],
+    build_provider_func: Callable[[], CredentialProviderBuilderReturn],
+    *,
+    clear_cached_credentials: bool,
 ) -> CredentialProviderBuilderReturn:
     global AUTO_INIT_LRU_CACHE
 
     if (
-        maxsize := int(os.getenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", 8))
+        max_items := int(
+            os.getenv(
+                "POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE",
+                8,
+            )
+        )
     ) <= 0:
-        AUTO_INIT_LRU_CACHE = None
+        if AUTO_INIT_LRU_CACHE_LOCK.acquire(blocking=False):
+            AUTO_INIT_LRU_CACHE = None
+            AUTO_INIT_LRU_CACHE_LOCK.release()
 
-        return build_provider_func.get()()
+        return build_provider_func()
 
-    if AUTO_INIT_LRU_CACHE is None:
-        if verbose():
-            eprint(f"Create credential provider AutoInit LRU cache ({maxsize = })")
+    verbose = polars._utils.logging.verbose()
 
-        @lru_cache(maxsize=maxsize)
-        def cache(
-            _cache_key: bytes,
-            build_provider_func: ZeroHashWrap[
-                Callable[[], CredentialProviderBuilderReturn]
-            ],
-        ) -> CredentialProviderBuilderReturn:
-            return build_provider_func.get()()
+    with AUTO_INIT_LRU_CACHE_LOCK:
+        if AUTO_INIT_LRU_CACHE is None:
+            if verbose:
+                eprint(
+                    f"Create credential provider AutoInit LRU cache ({max_items = })"
+                )
 
-        AUTO_INIT_LRU_CACHE = cache
+            AUTO_INIT_LRU_CACHE = LRUCache(max_items)
 
-    return AUTO_INIT_LRU_CACHE(
-        get_cache_key_func(),
-        build_provider_func,
-    )
+        cache_key = get_cache_key_func()
+
+        if clear_cached_credentials:
+            try:
+                AUTO_INIT_LRU_CACHE.remove(cache_key)
+
+                if verbose:
+                    eprint(
+                        "[AutoInit]: Removed cached credential provider: "
+                        f"{cache_key.hex()}"
+                    )
+
+            except KeyError:
+                pass
+
+        if not AUTO_INIT_LRU_CACHE.contains(cache_key):
+            AUTO_INIT_LRU_CACHE.insert(cache_key, build_provider_func())
+
+        provider = AUTO_INIT_LRU_CACHE.get(cache_key)
+
+        if clear_cached_credentials and isinstance(provider, CredentialProvider):
+            provider.clear_cached_credentials()
+
+        return provider
 
 
 # Represents an automatic initialization configuration. This is created for
@@ -216,13 +259,16 @@ class AutoInit(CredentialProviderBuilderImpl):
         self.kw = kw
         self._cache_key: NoPickleOption[bytes] = NoPickleOption()
 
-    def __call__(self) -> CredentialProviderFunction | None:
+    def __call__(
+        self, *, clear_cached_credentials: bool
+    ) -> CredentialProviderFunction | None:
         # This is used for credential_provider="auto", which allows for
         # ImportErrors.
         try:
             return _auto_init_with_cache(
                 self.get_or_init_cache_key,
-                ZeroHashWrap(lambda: self.cls(**self.kw)),
+                lambda: self.cls(**self.kw),
+                clear_cached_credentials=clear_cached_credentials,
             )
         except ImportError as e:
             if verbose():
@@ -243,7 +289,7 @@ class AutoInit(CredentialProviderBuilderImpl):
             assert isinstance(cache_key, bytes)
 
             if verbose():
-                eprint(f"{self!r}: AutoInit cache key: {hash.hexdigest()}")
+                eprint(f"{self!r}: AutoInit cache key: {cache_key.hex()}")
 
         return cache_key
 

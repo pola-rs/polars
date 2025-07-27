@@ -32,6 +32,7 @@ aiosqlite
 connectorx
 kuzu
 # Cloud
+azure-identity
 cloudpickle
 fsspec
 s3fs[boto3]
