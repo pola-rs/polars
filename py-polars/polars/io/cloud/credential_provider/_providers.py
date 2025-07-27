@@ -83,7 +83,8 @@ class CredentialProvider(abc.ABC):
         cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] | None = (
             v
             if isinstance(
-                v := getattr(self, "_cached_credentials", None), NoPickleOption
+                v := getattr(self, "_cached_credentials", None),
+                NoPickleOption,
             )
             else None
         )
