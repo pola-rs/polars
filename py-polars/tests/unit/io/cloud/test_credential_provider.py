@@ -600,6 +600,9 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
 
 def test_lru_cache() -> None:
     def _test(cache: LRUCache[int, str]) -> None:
+        with pytest.raises(ValueError):
+            cache.set_max_items(-1)
+
         assert len(cache) == 0
         assert cache.max_items() == 2
 
@@ -657,9 +660,6 @@ def test_lru_cache() -> None:
 
     cache.set_max_items(2)
     _test(cache)
-
-    with pytest.raises(ValueError):
-        cache.set_max_items(-1)
 
 
 @pytest.mark.slow
