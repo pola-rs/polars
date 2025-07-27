@@ -3881,6 +3881,7 @@ dependencies = [
  "polars",
  "polars-arrow",
  "polars-core",
+ "polars-error",
  "polars-ffi",
  "polars-lazy",
  "polars-plan",
