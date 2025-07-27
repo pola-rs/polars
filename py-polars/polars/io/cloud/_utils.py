@@ -66,7 +66,7 @@ class LRUCache(Generic[K, V]):
             return
 
         while len(self) >= self.max_items():
-            self._remove_oldest()
+            self._remove_lru()
 
         self._dict[key] = value
 
@@ -88,11 +88,11 @@ class LRUCache(Generic[K, V]):
             raise ValueError(msg)
 
         while len(self) > max_items:
-            self._remove_oldest()
+            self._remove_lru()
 
         self._max_items = max_items
 
-    def _remove_oldest(self) -> tuple[K, V]:
+    def _remove_lru(self) -> tuple[K, V]:
         return self._dict.popitem(last=False)
 
 
