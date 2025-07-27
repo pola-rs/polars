@@ -282,6 +282,18 @@ impl AExpr {
                 let st = if let DataType::Null = *truthy.dtype() {
                     falsy.dtype().clone()
                 } else {
+                    // Special handling for Categorical types to preserve them over String
+                    #[cfg(feature = "dtype-categorical")]
+                    match (truthy.dtype(), falsy.dtype()) {
+                        (DataType::Categorical(categories, mapping), DataType::String) => {
+                            DataType::Categorical(categories.clone(), mapping.clone())
+                        },
+                        (DataType::String, DataType::Categorical(categories, mapping)) => {
+                            DataType::Categorical(categories.clone(), mapping.clone())
+                        },
+                        _ => try_get_supertype(truthy.dtype(), falsy.dtype())?,
+                    }
+                    #[cfg(not(feature = "dtype-categorical"))]
                     try_get_supertype(truthy.dtype(), falsy.dtype())?
                 };
 

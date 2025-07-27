@@ -825,3 +825,92 @@ def test_when_then_in_group_by_aggregated_22922() -> None:
     )
     expected = pl.DataFrame({"group": ["x", "y"], "expr": [3, None]})
     assert_frame_equal(out, expected)
+
+
+def test_categorical_when_then_schema_consistency() -> None:
+    """Test that when-then expressions preserve Categorical types and have consistent schemas.
+    
+    Regression test for issue #23733: df.collect_schema() and df.collect().schema
+    should return the same schema when using when-then with Categorical columns.
+    """
+    df = pl.DataFrame(
+        data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
+        schema=[("column", pl.Categorical), ("values", pl.Int32)],
+    )
+
+    df_lazy = df.lazy().with_columns(
+        pl.when(pl.col("column") == "e")
+        .then(pl.lit("d"))
+        .otherwise(pl.col("column"))
+        .alias("column")
+    )
+    
+    # Check schema inference vs actual execution consistency
+    planner_schema = df_lazy.collect_schema()
+    actual_schema = df_lazy.collect().schema
+    
+    # Both should be Categorical and consistent
+    assert planner_schema["column"] == pl.Categorical
+    assert actual_schema["column"] == pl.Categorical
+    assert planner_schema["column"] == actual_schema["column"]
+
+
+def test_when_then_schema_consistency_across_types() -> None:
+    """Test that when-then expressions have consistent schemas across different data types.
+    
+    Regression test to ensure no schema inconsistencies exist for any data type
+    when mixed with String in when-then expressions.
+    """
+    from datetime import date, datetime
+    
+    test_cases = [
+        ("Int64", [1, 2, 3]),
+        ("Float64", [1.1, 2.2, 3.3]),
+        ("Boolean", [True, False, True]),
+        ("Date", [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)]),
+        ("Datetime", [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 3)]),
+        ("String", ["a", "b", "c"]),
+        ("Categorical", pl.Series(["a", "b", "c"], dtype=pl.Categorical)),
+    ]
+    
+    for type_name, data in test_cases:
+        if isinstance(data, pl.Series):
+            df = pl.DataFrame({"col": data, "values": [1, 2, 3]})
+        else:
+            df = pl.DataFrame({"col": data, "values": [1, 2, 3]})
+        
+        # Test: logical_type.then(string).otherwise(logical_type)
+        df_lazy = df.lazy().with_columns(
+            pl.when(pl.col("values") == 2)
+            .then(pl.lit("string_value"))
+            .otherwise(pl.col("col"))
+            .alias("result")
+        )
+        
+        planner_schema = df_lazy.collect_schema()
+        actual_schema = df_lazy.collect().schema
+        
+        # Should always be consistent
+        assert planner_schema["result"] == actual_schema["result"], (
+            f"{type_name}: Schema mismatch! "
+            f"Planner: {planner_schema['result']}, "
+            f"Actual: {actual_schema['result']}"
+        )
+        
+        # Test reverse: string.then(logical_type).otherwise(string) 
+        df_lazy_reverse = df.lazy().with_columns(
+            pl.when(pl.col("values") == 2)
+            .then(pl.col("col"))
+            .otherwise(pl.lit("string_value"))
+            .alias("result")
+        )
+        
+        planner_schema_rev = df_lazy_reverse.collect_schema()
+        actual_schema_rev = df_lazy_reverse.collect().schema
+        
+        # Should always be consistent
+        assert planner_schema_rev["result"] == actual_schema_rev["result"], (
+            f"{type_name} (reverse): Schema mismatch! "
+            f"Planner: {planner_schema_rev['result']}, "
+            f"Actual: {actual_schema_rev['result']}"
+        )
