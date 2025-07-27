@@ -72,7 +72,7 @@ class CredentialProvider(abc.ABC):
         """Fetches the credentials."""
 
 
-class CachedCredentialProvider(CredentialProvider):
+class CachedCredentialProvider(CredentialProvider, abc.ABC):
     """
     Base class for credential providers with caching.
 
