@@ -1,9 +1,13 @@
 mod binary;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+mod datetime;
 mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
 use binary::process_binary;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use datetime::coerce_dt;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -351,6 +355,57 @@ impl OptimizationRule for TypeCoercionRule {
                     input,
                     options,
                 })
+            },
+            // IRFunctionExpr::Hist temporal types must be upcast if time units and/or time zones do not match
+            #[cfg(feature = "hist")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::Hist {
+                        bin_count,
+                        include_category,
+                        include_breakpoint,
+                    },
+                ref input,
+                options,
+            } => {
+                // Bin count provided, no casts required
+                if bin_count.is_some() || input.len() == 1 {
+                    return Ok(None);
+                }
+
+                let (_, type_val) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+
+                match type_val {
+                    #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+                    _ if type_val.is_temporal() => {
+                        let (_, type_bins) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                        // Values and bins may have same dtype, return early if so.
+                        unpack!(early_escape(&type_val, &type_bins));
+
+                        // Replace values or bins node with upcast node.
+                        let supertype = unpack!(get_supertype(&type_val, &type_bins));
+                        if type_val == supertype && type_bins == supertype {
+                            return Ok(None);
+                        }
+
+                        let mut input = input.clone();
+                        coerce_dt(&type_val, &supertype, &mut input[0], expr_arena)?;
+                        coerce_dt(&type_bins, &supertype, &mut input[1], expr_arena)?;
+
+                        Some(AExpr::Function {
+                            function: IRFunctionExpr::Hist {
+                                bin_count,
+                                include_category,
+                                include_breakpoint,
+                            },
+                            input,
+                            options,
+                        })
+                    },
+                    _ => return Ok(None),
+                }
             },
             // generic type coercion of any function.
             AExpr::Function {

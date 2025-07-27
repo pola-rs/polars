@@ -2562,7 +2562,7 @@ class Series:
     @unstable()
     def hist(
         self,
-        bins: list[float] | None = None,
+        bins: Iterable[int | float | TemporalLiteral] | None = None,
         *,
         bin_count: int | None = None,
         include_category: bool = True,
@@ -2606,6 +2606,26 @@ class Series:
         │ 6.25       ┆ (4.5, 6.25] ┆ 0     │
         │ 8.0        ┆ (6.25, 8.0] ┆ 2     │
         └────────────┴─────────────┴───────┘
+
+        >>> from datetime import date
+        >>> a = pl.date_range(
+        ...     start=date(2025, 1, 1),
+        ...     end=date(2026, 1, 1),
+        ...     interval="1mo",
+        ...     eager=True,
+        ... )
+        >>> a.hist(bin_count=4)
+        shape: (4, 3)
+        ┌────────────┬──────────────────────────┬───────┐
+        │ breakpoint ┆ category                 ┆ count │
+        │ ---        ┆ ---                      ┆ ---   │
+        │ date       ┆ cat                      ┆ u32   │
+        ╞════════════╪══════════════════════════╪═══════╡
+        │ 2025-04-02 ┆ [2025-01-01, 2025-04-02] ┆ 4     │
+        │ 2025-07-02 ┆ (2025-04-02, 2025-07-02] ┆ 3     │
+        │ 2025-10-01 ┆ (2025-07-02, 2025-10-01] ┆ 3     │
+        │ 2026-01-01 ┆ (2025-10-01, 2026-01-01] ┆ 3     │
+        └────────────┴──────────────────────────┴───────┘
         """
         out = (
             self.to_frame()

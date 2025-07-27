@@ -10341,7 +10341,7 @@ Consider using {self}.implode() instead"""
     @unstable()
     def hist(
         self,
-        bins: IntoExpr | None = None,
+        bins: IntoExpr | Iterable[int | float | TemporalLiteral] | None = None,
         *,
         bin_count: int | None = None,
         include_category: bool = False,
@@ -10397,11 +10397,34 @@ Consider using {self}.implode() instead"""
         │ {2.0,"[1.0, 2.0]",3} │
         │ {3.0,"(2.0, 3.0]",2} │
         └──────────────────────┘
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": pl.date_range(
+        ...             start=date(2025, 1, 1),
+        ...             end=date(2026, 1, 1),
+        ...             interval="1mo",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").hist(bin_count=4, include_category=True))
+        shape: (4, 1)
+        ┌────────────────────────────────┐
+        │ a                              │
+        │ ---                            │
+        │ struct[2]                      │
+        ╞════════════════════════════════╡
+        │ {"[2025-01-01, 2025-04-02]",4} │
+        │ {"(2025-04-02, 2025-07-02]",3} │
+        │ {"(2025-07-02, 2025-10-01]",3} │
+        │ {"(2025-10-01, 2026-01-01]",3} │
+        └────────────────────────────────┘
         """
         if bins is not None:
             if isinstance(bins, list):
                 bins = pl.Series(bins)
-            bins = parse_into_expression(bins)
+            bins = parse_into_expression(bins)  # type: ignore[arg-type]
         return wrap_expr(
             self._pyexpr.hist(bins, bin_count, include_category, include_breakpoint)
         )

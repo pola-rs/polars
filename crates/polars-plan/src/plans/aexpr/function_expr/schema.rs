@@ -169,24 +169,39 @@ impl IRFunctionExpr {
             Hist {
                 include_category,
                 include_breakpoint,
-                ..
+                bin_count,
             } => {
                 if *include_breakpoint || *include_category {
-                    let mut fields = Vec::with_capacity(3);
+                    let mut hist_fields: Vec<Field> = Vec::with_capacity(3);
                     if *include_breakpoint {
-                        fields.push(Field::new(
+                        let dt = if bin_count.is_none() {
+                            let dt_out = args_to_supertype(fields)?;
+                            if dt_out.is_temporal() {
+                                dt_out
+                            } else {
+                                DataType::Float64
+                            }
+                        } else {
+                            let dt_out = &fields[0].dtype;
+                            if dt_out.is_temporal() {
+                                dt_out.clone()
+                            } else {
+                                DataType::Float64
+                            }
+                        };
+                        hist_fields.push(Field::new(
                             PlSmallStr::from_static("breakpoint"),
-                            DataType::Float64,
+                            dt
                         ));
                     }
                     if *include_category {
-                        fields.push(Field::new(
+                        hist_fields.push(Field::new(
                             PlSmallStr::from_static("category"),
                             DataType::from_categories(Categories::global()),
                         ));
                     }
-                    fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
-                    mapper.with_dtype(DataType::Struct(fields))
+                    hist_fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
+                    mapper.with_dtype(DataType::Struct(hist_fields))
                 } else {
                     mapper.with_dtype(IDX_DTYPE)
                 }

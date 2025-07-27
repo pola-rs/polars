@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import TimeUnit
 
 inf = float("inf")
 
@@ -517,3 +523,477 @@ def test_hist_ulp_edge_22234() -> None:
     # Manual path
     result = s.hist(bins=[-1, 0, 1])
     assert result["count"].to_list() == [1, 3]
+
+
+def test_hist_temporal_date_bins() -> None:
+    s = pl.Series(
+        [
+            date(2024, 12, 26),  # -5
+            date(2025, 1, 2),  # 2
+            date(2024, 12, 31),  # 0
+            date(2025, 1, 1),  # 1
+            date(2025, 4, 10),  # 99
+        ],
+        dtype=pl.Date,
+    )
+    result = s.hist(
+        bins=[
+            date(2024, 12, 27),  # -4
+            date(2024, 12, 31),  # 0
+            date(2025, 4, 10),  # 99
+            date(2025, 4, 11),  # 100
+        ]
+    )
+    expected = pl.DataFrame(
+        {
+            "breakpoint": [date(2024, 12, 31), date(2025, 4, 10), date(2025, 4, 11)],
+            "category": pl.Series(
+                [
+                    "[2024-12-27, 2024-12-31]",
+                    "(2024-12-31, 2025-04-10]",
+                    "(2025-04-10, 2025-04-11]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_temporal_date_bin_count() -> None:
+    s = pl.Series(
+        [
+            date(2025, 1, 1),
+            date(2025, 1, 2),
+            date(2025, 1, 4),
+            date(2025, 1, 8),
+            date(2025, 1, 9),
+        ]
+    )
+    result = s.hist(bin_count=4)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [date(2025, 1, 3), date(2025, 1, 5), date(2025, 1, 7), date(2025, 1, 9)]
+            ),
+            "category": pl.Series(
+                [
+                    "[2025-01-01, 2025-01-03]",
+                    "(2025-01-03, 2025-01-05]",
+                    "(2025-01-05, 2025-01-07]",
+                    "(2025-01-07, 2025-01-09]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([2, 1, 0, 2], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_temporal_datetime_bins() -> None:
+    s = pl.Series(
+        [
+            datetime(2024, 12, 26),  # -5
+            datetime(2025, 1, 2),  # 2
+            datetime(2024, 12, 31),  # 0
+            datetime(2025, 1, 1),  # 1
+            datetime(2025, 4, 10),  # 99
+        ],
+        dtype=pl.Datetime(time_unit="ms", time_zone="EST"),
+    )
+    result = s.hist(
+        bins=pl.Series(
+            [
+                datetime(2024, 12, 27),  # -4
+                datetime(2024, 12, 31),  # 0
+                datetime(2025, 4, 10),  # 99
+                datetime(2025, 4, 11),  # 100
+            ],
+            dtype=pl.Datetime(time_unit="ns", time_zone="EST"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [datetime(2024, 12, 31), datetime(2025, 4, 10), datetime(2025, 4, 11)],
+                dtype=pl.Datetime(time_unit="ms", time_zone="EST"),
+            ),
+            "category": pl.Series(
+                [
+                    "[2024-12-26 19:00:00 EST, 2024-12-30 19:00:00 EST]",
+                    "(2024-12-30 19:00:00 EST, 2025-04-09 19:00:00 EST]",
+                    "(2025-04-09 19:00:00 EST, 2025-04-10 19:00:00 EST]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_hist_temporal_datetime_bin_count(tu: TimeUnit) -> None:
+    s = pl.Series(
+        [
+            datetime(2025, 1, 1),
+            datetime(2025, 1, 2),
+            datetime(2025, 1, 4),
+            datetime(2025, 1, 8),
+            datetime(2025, 1, 9),
+        ],
+        dtype=pl.Datetime(time_unit=tu),
+    )
+    result = s.hist(bin_count=4)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [
+                    datetime(2025, 1, 3),
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 7),
+                    datetime(2025, 1, 9),
+                ],
+                dtype=pl.Datetime(time_unit=tu),
+            ),
+            "category": pl.Series(
+                [
+                    "[2025-01-01 00:00:00, 2025-01-03 00:00:00]",
+                    "(2025-01-03 00:00:00, 2025-01-05 00:00:00]",
+                    "(2025-01-05 00:00:00, 2025-01-07 00:00:00]",
+                    "(2025-01-07 00:00:00, 2025-01-09 00:00:00]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([2, 1, 0, 2], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_hist_temporal_duration_bins(tu: TimeUnit) -> None:
+    s = pl.Series(
+        [
+            timedelta(days=-5),
+            timedelta(days=2),
+            timedelta(days=0),
+            timedelta(days=1),
+            timedelta(days=99),
+        ],
+        dtype=pl.Duration(time_unit=tu),
+    )
+    result = s.hist(
+        bins=pl.Series(
+            [
+                timedelta(days=-4),
+                timedelta(days=0),
+                timedelta(days=99),
+                timedelta(days=100),
+            ],
+            dtype=pl.Duration(time_unit=tu),
+        )
+    )
+    # The rust side always outputs the 'µ' character.
+    units = "µs" if tu == "us" else tu
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [timedelta(days=0), timedelta(days=99), timedelta(days=100)],
+                dtype=pl.Duration(time_unit=tu),
+            ),
+            "category": pl.Series(
+                [
+                    f"[-4d, 0{units}]",
+                    f"(0{units}, 99d]",
+                    "(99d, 100d]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+def test_hist_temporal_duration_bin_count(tu: TimeUnit) -> None:
+    s = pl.Series(
+        [
+            timedelta(days=1),
+            timedelta(days=2),
+            timedelta(days=4),
+            timedelta(days=8),
+            timedelta(days=9),
+        ],
+        dtype=pl.Duration(time_unit=tu),
+    )
+    result = s.hist(bin_count=4)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [
+                    timedelta(days=3),
+                    timedelta(days=5),
+                    timedelta(days=7),
+                    timedelta(days=9),
+                ],
+                dtype=pl.Duration(time_unit=tu),
+            ),
+            "category": pl.Series(
+                [
+                    "[1d, 3d]",
+                    "(3d, 5d]",
+                    "(5d, 7d]",
+                    "(7d, 9d]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([2, 1, 0, 2], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_temporal_time_bins() -> None:
+    s = pl.Series(
+        [
+            time(minute=0),
+            time(minute=2),
+            time(minute=0),
+            time(minute=1),
+            time(minute=58),
+        ]
+    )
+    result = s.hist(bins=[time(minute=0), time(minute=10), time(minute=15)])
+    expected = pl.DataFrame(
+        {
+            "breakpoint": [time(minute=10), time(minute=15)],
+            "category": pl.Series(
+                [
+                    "[00:00:00, 00:10:00]",
+                    "(00:10:00, 00:15:00]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([4, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_temporal_time_bin_count() -> None:
+    s = pl.Series(
+        [
+            time(minute=1),
+            time(minute=2),
+            time(minute=4),
+            time(minute=8),
+            time(minute=9),
+        ],
+    )
+    result = s.hist(bin_count=4)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [time(minute=3), time(minute=5), time(minute=7), time(minute=9)]
+            ),
+            "category": pl.Series(
+                [
+                    "[00:01:00, 00:03:00]",
+                    "(00:03:00, 00:05:00]",
+                    "(00:05:00, 00:07:00]",
+                    "(00:07:00, 00:09:00]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([2, 1, 0, 2], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_temporal_values_upcast() -> None:
+    s = pl.Series(
+        [
+            datetime(2024, 12, 26),  # -5
+            datetime(2025, 1, 2),  # 2
+            datetime(2024, 12, 31),  # 0
+            datetime(2025, 1, 1),  # 1
+            datetime(2025, 4, 10),  # 99
+        ],
+        dtype=pl.Datetime(time_unit="ns", time_zone="EST"),
+    )
+    result = s.hist(
+        bins=pl.Series(
+            [
+                datetime(2024, 12, 27),  # -4
+                datetime(2024, 12, 31),  # 0
+                datetime(2025, 4, 10),  # 99
+                datetime(2025, 4, 11),  # 100
+            ],
+            dtype=pl.Datetime(time_unit="ms", time_zone="EST"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series(
+                [datetime(2024, 12, 31), datetime(2025, 4, 10), datetime(2025, 4, 11)],
+                dtype=pl.Datetime(time_unit="ms", time_zone="EST"),
+            ),
+            "category": pl.Series(
+                [
+                    "[2024-12-26 19:00:00 EST, 2024-12-30 19:00:00 EST]",
+                    "(2024-12-30 19:00:00 EST, 2025-04-09 19:00:00 EST]",
+                    "(2025-04-09 19:00:00 EST, 2025-04-10 19:00:00 EST]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_temporal_too_many_bins() -> None:
+    s = pl.Series([date(2025, 1, 1), date(2025, 1, 8)])
+    with pytest.raises(
+        ComputeError,
+        match="data type is too coarse to create 8 bins in specified data range",
+    ):
+        s.hist(bin_count=8)
+
+    s = pl.Series(
+        [datetime(2025, 1, 1), datetime(2025, 1, 1, 0, 0, 1)], dtype=pl.Datetime("ms")
+    )
+    with pytest.raises(
+        ComputeError,
+        match="data type is too coarse to create 1001 bins in specified data range",
+    ):
+        s.hist(bin_count=1_001)
+
+    s = pl.Series(
+        [datetime(2025, 1, 1), datetime(2025, 1, 1, 0, 0, 0, 100)],
+        dtype=pl.Datetime("us"),
+    )
+    with pytest.raises(
+        ComputeError,
+        match="data type is too coarse to create 101 bins in specified data range",
+    ):
+        s.hist(bin_count=101)
+
+    s = pl.Series([timedelta(0), timedelta(seconds=1)], dtype=pl.Duration("ms"))
+    with pytest.raises(
+        ComputeError,
+        match="data type is too coarse to create 1001 bins in specified data range",
+    ):
+        s.hist(bin_count=1001)
+
+    s = pl.Series([time(0), time(microsecond=1)], dtype=pl.Time)
+    with pytest.raises(
+        ComputeError,
+        match="data type is too coarse to create 1001 bins in specified data range",
+    ):
+        s.hist(bin_count=1001)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("tz", [None, "Asia/Kathmandu"])
+def test_hist_temporal_date_upcast_values(tu: TimeUnit, tz: str | None) -> None:
+    s = pl.Series(
+        [
+            date(2024, 12, 26),  # -5
+            date(2025, 1, 2),  # 2
+            date(2024, 12, 31),  # 0
+            date(2025, 1, 1),  # 1
+            date(2025, 4, 10),  # 99
+        ],
+        dtype=pl.Date,
+    )
+    bins = pl.Series(
+        [
+            date(2024, 12, 27),  # -4
+            date(2024, 12, 31),  # 0
+            date(2025, 4, 10),  # 99
+            date(2025, 4, 11),  # 100
+        ],
+        dtype=pl.Datetime(tu),
+    )
+    expected_breakpoint = pl.Series(
+        [date(2024, 12, 31), date(2025, 4, 10), date(2025, 4, 11)],
+        dtype=pl.Datetime(tu),
+    )
+    if tz is not None:
+        bins = bins.dt.replace_time_zone(tz)
+        expected_breakpoint = expected_breakpoint.dt.replace_time_zone(tz)
+        tz_str = " +0545"
+    else:
+        tz_str = ""
+    result = s.hist(bins=bins)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": expected_breakpoint,
+            "category": pl.Series(
+                [
+                    f"[2024-12-27 00:00:00{tz_str}, 2024-12-31 00:00:00{tz_str}]",
+                    f"(2024-12-31 00:00:00{tz_str}, 2025-04-10 00:00:00{tz_str}]",
+                    f"(2025-04-10 00:00:00{tz_str}, 2025-04-11 00:00:00{tz_str}]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("tz", [None, "Asia/Kathmandu"])
+def test_hist_temporal_date_upcast_bins(tu: TimeUnit, tz: str | None) -> None:
+    s = pl.Series(
+        [
+            date(2024, 12, 26),  # -5
+            date(2025, 1, 2),  # 2
+            date(2024, 12, 31),  # 0
+            date(2025, 1, 1),  # 1
+            date(2025, 4, 10),  # 99
+        ],
+        dtype=pl.Datetime(tu),
+    )
+    bins = pl.Series(
+        [
+            date(2024, 12, 27),  # -4
+            date(2024, 12, 31),  # 0
+            date(2025, 4, 10),  # 99
+            date(2025, 4, 11),  # 100
+        ],
+        dtype=pl.Date,
+    )
+    expected_breakpoint = pl.Series(
+        [date(2024, 12, 31), date(2025, 4, 10), date(2025, 4, 11)],
+        dtype=pl.Datetime(tu),
+    )
+    if tz is not None:
+        s = s.dt.replace_time_zone(tz)
+        expected_breakpoint = expected_breakpoint.dt.replace_time_zone(tz)
+        tz_str = " +0545"
+    else:
+        tz_str = ""
+    result = s.hist(bins=bins)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": expected_breakpoint,
+            "category": pl.Series(
+                [
+                    f"[2024-12-27 00:00:00{tz_str}, 2024-12-31 00:00:00{tz_str}]",
+                    f"(2024-12-31 00:00:00{tz_str}, 2025-04-10 00:00:00{tz_str}]",
+                    f"(2025-04-10 00:00:00{tz_str}, 2025-04-11 00:00:00{tz_str}]",
+                ],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 3, 0], dtype=pl.UInt32),
+        }
+    )
+    assert_frame_equal(result, expected)
