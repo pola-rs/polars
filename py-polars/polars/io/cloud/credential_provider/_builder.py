@@ -100,9 +100,7 @@ class CredentialProviderBuilder:
                 f"{self.credential_provider_init!r}"
             )
 
-        v = self.credential_provider_init(
-            clear_cached_credentials=clear_cached_credentials
-        )
+        v = self.credential_provider_init()
 
         if verbose:
             if v is not None:
@@ -153,9 +151,7 @@ class CredentialProviderBuilder:
 
 class CredentialProviderBuilderImpl(abc.ABC):
     @abc.abstractmethod
-    def __call__(
-        self, *, clear_cached_credentials: bool
-    ) -> CredentialProviderFunction | None:
+    def __call__(self) -> CredentialProviderFunction | None:
         pass
 
     @property
@@ -178,9 +174,7 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
     def __init__(self, credential_provider: CredentialProviderFunction | None) -> None:
         self.credential_provider = credential_provider
 
-    def __call__(
-        self, *, clear_cached_credentials: bool
-    ) -> CredentialProviderFunction | None:
+    def __call__(self) -> CredentialProviderFunction | None:
         return self.credential_provider
 
     @property
@@ -195,8 +189,6 @@ AUTO_INIT_LRU_CACHE_LOCK: threading.RLock = threading.RLock()
 def _auto_init_with_cache(
     get_cache_key_func: Callable[[], bytes],
     build_provider_func: Callable[[], CredentialProviderBuilderReturn],
-    *,
-    clear_cached_credentials: bool,
 ) -> CredentialProviderBuilderReturn:
     global AUTO_INIT_LRU_CACHE
 
@@ -233,9 +225,6 @@ def _auto_init_with_cache(
             provider = build_provider_func()
             AUTO_INIT_LRU_CACHE.insert(cache_key, provider)
 
-        if clear_cached_credentials and isinstance(provider, CredentialProvider):
-            provider.clear_cached_credentials()
-
         return provider
 
 
@@ -247,16 +236,13 @@ class AutoInit(CredentialProviderBuilderImpl):
         self.kw = kw
         self._cache_key: NoPickleOption[bytes] = NoPickleOption()
 
-    def __call__(
-        self, *, clear_cached_credentials: bool
-    ) -> CredentialProviderFunction | None:
+    def __call__(self) -> CredentialProviderFunction | None:
         # This is used for credential_provider="auto", which allows for
         # ImportErrors.
         try:
             return _auto_init_with_cache(
                 self.get_or_init_cache_key,
                 lambda: self.cls(**self.kw),
-                clear_cached_credentials=clear_cached_credentials,
             )
         except ImportError as e:
             if verbose():
