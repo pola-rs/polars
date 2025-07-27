@@ -233,7 +233,7 @@ def _auto_init_with_cache(
             provider = build_provider_func()
             AUTO_INIT_LRU_CACHE.insert(cache_key, provider)
 
-        if clear_cached_credentials:
+        if clear_cached_credentials and isinstance(provider, CredentialProvider):
             provider.clear_cached_credentials()
 
         return provider
