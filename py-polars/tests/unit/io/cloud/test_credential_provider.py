@@ -393,14 +393,12 @@ def test_credential_provider_python_builder_cache(
         with pytest.raises(OSError):
             get_q().collect()
 
-        # Note: Incremented by 2 on first call due to Rust-side object store
-        # rebuilding.
-        assert init_tracker.count == 2
+        assert init_tracker.count == 1
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 3
+        assert init_tracker.count == 1
 
         with pytest.raises(OSError):
             pl.scan_parquet(
@@ -412,24 +410,26 @@ def test_credential_provider_python_builder_cache(
                 credential_provider="auto",
             ).collect()
 
-        assert init_tracker.count == 5
+        assert init_tracker.count == 2
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 6
+        assert init_tracker.count == 2
 
         cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 8
+        # Note: Increments by 2 due to Rust-side object store rebuilding.
+
+        assert init_tracker.count == 4
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 10
+        assert init_tracker.count == 6
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")

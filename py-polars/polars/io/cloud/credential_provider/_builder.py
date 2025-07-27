@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 import os
-from threading import RLock
+import threading
 from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
 import polars._utils.logging
@@ -189,7 +189,7 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
 
 
 AUTO_INIT_LRU_CACHE: LRUCache[bytes, CredentialProviderBuilderReturn] | None = None
-AUTO_INIT_LRU_CACHE_LOCK: RLock = RLock()
+AUTO_INIT_LRU_CACHE_LOCK: threading.RLock = threading.RLock()
 
 
 def _auto_init_with_cache(
@@ -227,23 +227,14 @@ def _auto_init_with_cache(
 
         cache_key = get_cache_key_func()
 
+        try:
+            provider = AUTO_INIT_LRU_CACHE.get(cache_key)
+        except KeyError:
+            provider = build_provider_func()
+            AUTO_INIT_LRU_CACHE.insert(cache_key, provider)
+
         if clear_cached_credentials:
-            try:
-                AUTO_INIT_LRU_CACHE.remove(cache_key)
-
-                if verbose:
-                    eprint(
-                        "[AutoInit]: Removed cached credential provider: "
-                        f"{cache_key.hex()}"
-                    )
-
-            except KeyError:
-                pass
-
-        if not AUTO_INIT_LRU_CACHE.contains(cache_key):
-            AUTO_INIT_LRU_CACHE.insert(cache_key, build_provider_func())
-
-        provider = AUTO_INIT_LRU_CACHE.get(cache_key)
+            provider.clear_cached_credentials()
 
         return provider
 

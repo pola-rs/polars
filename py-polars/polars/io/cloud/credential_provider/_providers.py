@@ -100,25 +100,24 @@ class CredentialProvider(abc.ABC):
             )
             raise AttributeError(msg)
 
-        cached = self._cached_credentials.get()
+        credentials = self._cached_credentials.get()
 
-        if cached is None or (
-            (expiry := cached[1]) is not None
+        if credentials is None or (
+            (expiry := credentials[1]) is not None
             and expiry <= int(datetime.now().timestamp())
         ):
-            self._cached_credentials.set(self.retrieve_credentials_impl())
+            credentials = self.retrieve_credentials_impl()
+            self._cached_credentials.set(credentials)
             self._has_logged_use_cache = False
-            cached = self._cached_credentials.get()
-            assert cached is not None
 
         elif verbose() and not self._has_logged_use_cache:
-            expiry = cached[1]
+            expiry = credentials[1]
             eprint(
                 f"[{type(self).__name__} @ {hex(id(self))}]: Using cached credentials ({expiry = })"
             )
             self._has_logged_use_cache = True
 
-        return cached
+        return credentials
 
     @abc.abstractmethod
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
