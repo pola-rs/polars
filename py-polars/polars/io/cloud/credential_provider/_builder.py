@@ -114,7 +114,7 @@ class CredentialProviderBuilder:
                     f"from {self.credential_provider_init!r}"
                 )
 
-        if isinstance(v, CredentialProvider) and clear_cached_credentials:
+        if clear_cached_credentials and isinstance(v, CredentialProvider):
             v.clear_cached_credentials()
 
             if verbose:
