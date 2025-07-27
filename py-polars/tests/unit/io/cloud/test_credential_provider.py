@@ -772,7 +772,7 @@ def test_auto_init_cache_key_memoize(monkeypatch: pytest.MonkeyPatch) -> None:
     tracker = TrackCallCount(AutoInit.get_cache_key_impl)
     monkeypatch.setattr(AutoInit, "get_cache_key_impl", tracker.get_function())
 
-    v = AutoInit(int, x=1)
+    v = AutoInit(int)
 
     assert tracker.count == 0
 
