@@ -159,7 +159,6 @@ Configuration for cloud credential provisioning.
 .. autosummary::
    :toctree: api/
 
-   CachedCredentialProvider
    CredentialProvider
    CredentialProviderAWS
    CredentialProviderAzure

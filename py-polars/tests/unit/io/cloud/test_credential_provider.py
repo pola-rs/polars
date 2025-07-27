@@ -15,7 +15,7 @@ from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
 from polars.io.cloud.credential_provider._providers import (
-    CachedCredentialProvider,
+    CachingCredentialProvider,
     UserProvidedGCPToken,
 )
 
@@ -692,7 +692,7 @@ def test_lru_cache() -> None:
     ],
 )
 def test_credential_provider_rebuild_clears_cache(
-    credential_provider_class: type[CachedCredentialProvider],
+    credential_provider_class: type[CachingCredentialProvider],
     scan_path: str,
     initial_credentials: dict[str, str],
     updated_credentials: dict[str, str],

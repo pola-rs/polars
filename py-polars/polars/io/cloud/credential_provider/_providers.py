@@ -72,7 +72,7 @@ class CredentialProvider(abc.ABC):
         """Fetches the credentials."""
 
 
-class CachedCredentialProvider(CredentialProvider, abc.ABC):
+class CachingCredentialProvider(CredentialProvider, abc.ABC):
     """
     Base class for credential providers with caching.
 
@@ -146,7 +146,7 @@ class CachedCredentialProvider(CredentialProvider, abc.ABC):
             cached.set(None)
 
 
-class CredentialProviderAWS(CachedCredentialProvider):
+class CredentialProviderAWS(CachingCredentialProvider):
     """
     AWS Credential Provider.
 
@@ -309,7 +309,7 @@ class CredentialProviderAWS(CachedCredentialProvider):
         """
 
 
-class CredentialProviderAzure(CachedCredentialProvider):
+class CredentialProviderAzure(CachingCredentialProvider):
     """
     Azure Credential Provider.
 
@@ -501,7 +501,7 @@ class CredentialProviderAzure(CachedCredentialProvider):
         )
 
 
-class CredentialProviderGCP(CachedCredentialProvider):
+class CredentialProviderGCP(CachingCredentialProvider):
     """
     GCP Credential Provider.
 
