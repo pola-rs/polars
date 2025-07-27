@@ -93,7 +93,6 @@ class CachedCredentialProvider(abc.ABC, CredentialProvider):
             )
 
     def __call__(self) -> CredentialProviderFunctionReturn:
-        """Fetches the credentials."""
         cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] | None = (
             v
             if isinstance(
