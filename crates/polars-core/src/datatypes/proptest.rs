@@ -4,6 +4,92 @@ use proptest::prelude::*;
 
 use super::{DataType, Field, TimeUnit};
 
+// This code creates a struct that acts like a smart integer for representing sets of data types
+// It is essentially a fancy 32-bit integer where each bit represents whether a specific data type is selected or not
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct DataTypeArbitrarySelection: u32 {
+        // Simple DataTypes that don't take any parameters
+        const BOOLEAN = 1;              // bit 0
+        const UINT8 = 1 << 1;          // bit 1
+        const UINT16 = 1 << 2;         // bit 2 
+        const UINT32 = 1 << 3;         // bit 3
+        const UINT64 = 1 << 4;         // bit 4
+        const INT8 = 1 << 5;           // bit 5
+        const INT16 = 1 << 6;          // bit 6
+        const INT32 = 1 << 7;          // bit 7
+        const INT64 = 1 << 8;          // bit 8
+        const INT128 = 1 << 9;         // bit 9
+        const FLOAT32 = 1 << 10;       // bit 10
+        const FLOAT64 = 1 << 11;       // bit 11
+        const STRING = 1 << 12;        // bit 12
+        const BINARY = 1 << 13;        // bit 13
+        const BINARY_OFFSET = 1 << 14; // bit 14
+        const DATE = 1 << 15;          // bit 15
+        const TIME = 1 << 16;          // bit 16
+        const NULL = 1 << 17;          // bit 17
+
+        // Complex DataTypes that do take parameters
+        const DECIMAL = 1 << 18;       // bit 18
+        const DATETIME = 1 << 19;      // bit 19
+        const DURATION = 1 << 20;      // bit 20
+        const CATEGORICAL = 1 << 21;   // bit 21
+        const ENUM = 1 << 22;          // bit 22
+        const OBJECT = 1 << 23;        // bit 23
+
+        // Nested DataTypes
+        const LIST = 1 << 24;          // bit 24
+        const ARRAY = 1 << 25;         // bit 25
+        const STRUCT = 1 << 26;        // bit 26
+    }
+}
+
+// Adding convenience methods to select different groups of DataTypes
+// This is a static method (associated function) - it doesn't need an existing instance to work
+// it's creating and returning a new instance, as opposed to instance methods
+// Static methods are functions that belong to the type but don't need an existing instance to work
+impl DataTypeArbitrarySelection {
+    pub fn simple() -> Self {
+        Self::BOOLEAN | Self::UINT8 | Self::UINT16 | Self::UINT32 | 
+        Self::UINT64 | Self::INT8 | Self::INT16 | Self::INT32 | 
+        Self::INT64 | Self::INT128 | Self::FLOAT32 | Self::FLOAT64 | 
+        Self::STRING | Self::BINARY | Self::BINARY_OFFSET | 
+        Self::DATE | Self::TIME | Self::NULL
+    }
+
+    pub fn complex() -> Self {
+        Self::DECIMAL | Self::DATETIME | Self::DURATION | 
+        Self::CATEGORICAL | Self::ENUM | Self::OBJECT
+    }
+
+    pub fn nested() -> Self {
+        Self::LIST | Self::ARRAY | Self::STRUCT
+    }
+}
+
+#[derive(Clone)]
+pub struct DataTypeArbitraryOptions {
+    pub allowed_dtypes: DataTypeArbitrarySelection,
+    pub decimal_precision_limit: usize,
+    pub categories_limit: usize,
+    pub array_width_limit: usize,
+    pub struct_fields_limit: usize,
+    pub max_nesting_level: usize,
+}
+
+impl Default for DataTypeArbitraryOptions {
+    fn default() -> Self {
+        Self {
+            allowed_dtypes: DataTypeArbitrarySelection::all(),
+            decimal_precision_limit: 38,
+            categories_limit: 3,
+            array_width_limit: 3,
+            struct_fields_limit: 3,
+            max_nesting_level: 3,
+        }
+    }
+}
+
 // Simple DataTypes that don't take any parameters
 const SIMPLE_DTYPES: &[DataType] = &[
     DataType::Boolean,
