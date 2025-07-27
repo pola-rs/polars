@@ -10,6 +10,7 @@ from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
 from polars.io.cloud._utils import LRUCache, NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
+    CachedCredentialProvider,
     CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
@@ -114,7 +115,7 @@ class CredentialProviderBuilder:
                     f"from {self.credential_provider_init!r}"
                 )
 
-        if clear_cached_credentials and isinstance(v, CredentialProvider):
+        if clear_cached_credentials and isinstance(v, CachedCredentialProvider):
             v.clear_cached_credentials()
 
             if verbose:

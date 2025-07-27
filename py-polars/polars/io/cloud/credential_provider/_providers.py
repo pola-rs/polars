@@ -67,6 +67,20 @@ class CredentialProvider(abc.ABC):
             at any point without it being considered a breaking change.
     """
 
+    @abc.abstractmethod
+    def __call__(self) -> CredentialProviderFunctionReturn:
+        """Fetches the credentials."""
+
+
+class CachedCredentialProvider(abc.ABC, CredentialProvider):
+    """
+    Base class for credential providers with caching.
+
+    .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+    """
+
     def __init__(self) -> None:
         self._cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] = (
             NoPickleOption()
@@ -134,7 +148,7 @@ class CredentialProvider(abc.ABC):
             cached.set(None)
 
 
-class CredentialProviderAWS(CredentialProvider):
+class CredentialProviderAWS(CachedCredentialProvider):
     """
     AWS Credential Provider.
 
@@ -297,7 +311,7 @@ class CredentialProviderAWS(CredentialProvider):
         """
 
 
-class CredentialProviderAzure(CredentialProvider):
+class CredentialProviderAzure(CachedCredentialProvider):
     """
     Azure Credential Provider.
 
@@ -489,7 +503,7 @@ class CredentialProviderAzure(CredentialProvider):
         )
 
 
-class CredentialProviderGCP(CredentialProvider):
+class CredentialProviderGCP(CachedCredentialProvider):
     """
     GCP Credential Provider.
 
@@ -562,7 +576,7 @@ class CredentialProviderGCP(CredentialProvider):
             raise ImportError(msg)
 
 
-class UserProvidedGCPToken:
+class UserProvidedGCPToken(CredentialProvider):
     """User-provided GCP token in storage_options."""
 
     def __init__(self, token: str) -> None:
