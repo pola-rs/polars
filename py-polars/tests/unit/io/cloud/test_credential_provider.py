@@ -758,11 +758,10 @@ def test_credential_provider_rebuild_clears_cache(
     assert provider_local() == (updated_credentials, None)
 
 
-def test_credential_provider_subclass_cache_no_super_init(
+def test_user_token_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = UserProvidedGCPToken("A")
-    provider.clear_cached_credentials()
     assert provider() == ({"bearer_token": "A"}, None)
     monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
     assert provider() == ({"bearer_token": "A"}, None)

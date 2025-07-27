@@ -559,17 +559,13 @@ class CredentialProviderGCP(CredentialProvider):
             raise ImportError(msg)
 
 
-class UserProvidedGCPToken(CredentialProvider):
+class UserProvidedGCPToken:
     """User-provided GCP token in storage_options."""
 
     def __init__(self, token: str) -> None:
         self.token = token
 
     def __call__(self) -> CredentialProviderFunctionReturn:
-        return self.retrieve_credentials_impl()
-
-    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
-        """Fetches the credentials."""
         return {"bearer_token": self.token}, None
 
 
