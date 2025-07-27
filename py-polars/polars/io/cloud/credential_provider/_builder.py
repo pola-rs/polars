@@ -268,18 +268,20 @@ class AutoInit(CredentialProviderBuilderImpl):
         cache_key = self._cache_key.get()
 
         if cache_key is None:
-            import hashlib
-            import pickle
-
-            hash = hashlib.sha256(pickle.dumps(self))
-            self._cache_key.set(hash.digest())
-            cache_key = self._cache_key.get()
-            assert isinstance(cache_key, bytes)
+            cache_key = self.get_cache_key_impl()
+            self._cache_key.set(cache_key)
 
             if verbose():
                 eprint(f"{self!r}: AutoInit cache key: {cache_key.hex()}")
 
         return cache_key
+
+    def get_cache_key_impl(self) -> bytes:
+        import hashlib
+        import pickle
+
+        hash = hashlib.sha256(pickle.dumps(self))
+        return hash.digest()
 
     @property
     def provider_repr(self) -> str:

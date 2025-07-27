@@ -11,6 +11,7 @@ import polars as pl
 import polars.io.cloud.credential_provider
 from polars.io.cloud._utils import LRUCache, NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
+    AutoInit,
     _init_credential_provider_builder,
 )
 from polars.io.cloud.credential_provider._providers import UserProvidedGCPToken
@@ -765,3 +766,18 @@ def test_user_token_provider(
     assert provider() == ({"bearer_token": "A"}, None)
     monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
     assert provider() == ({"bearer_token": "A"}, None)
+
+
+def test_auto_init_cache_key_memoize(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracker = TrackCallCount(AutoInit.get_cache_key_impl)
+    monkeypatch.setattr(AutoInit, "get_cache_key_impl", tracker.get_function())
+
+    v = AutoInit(int, x=1)
+
+    assert tracker.count == 0
+
+    v.get_or_init_cache_key()
+    assert tracker.count == 1
+
+    v.get_or_init_cache_key()
+    assert tracker.count == 1
