@@ -138,7 +138,6 @@ class CachedCredentialProvider(abc.ABC, CredentialProvider):
     @abc.abstractmethod
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
 
-    # Called from Rust when object store is rebuilt.
     def clear_cached_credentials(self) -> None:
         if isinstance(
             cached := getattr(self, "_cached_credentials", None),
