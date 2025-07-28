@@ -859,7 +859,7 @@ pub(super) fn zip(s: &[Column], pad: bool) -> PolarsResult<Column> {
     );
     let first = s[0].list()?;
     let second = s[1].list()?;
-    
+
     first
         .lst_zip(&[second.clone().into_column()], pad)
         .map(|ca| ca.into_column())
