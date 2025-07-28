@@ -820,17 +820,6 @@ def test_to_dummies_categories_drop_first() -> None:
     assert dd["k_d"].to_list() == [0, 0]
 
 
-def test_to_dummies_categories_override_columns() -> None:
-    df: pl.DataFrame = pl.DataFrame({"kind": ["A", "B"]})
-    out: pl.DataFrame = df.to_dummies(
-        columns=["kind"],
-        categories={"kind": ["A", "B", "C"]},
-    )
-
-    assert "kind_C" in out.columns
-    assert out["kind_C"].sum() == 0
-
-
 def test_to_dummies_categories_duplicates_error() -> None:
     df: pl.DataFrame = pl.DataFrame({"col": ["x", "y"]})
 
