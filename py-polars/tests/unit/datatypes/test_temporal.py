@@ -729,24 +729,31 @@ def test_asof_join() -> None:
         1464183000048,
         1464183000048,
     ]
-    assert trades.join_asof(quotes, on="dates", strategy="forward")[
-        "bid_right"
-    ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
+    assert_series_equal(
+        trades.join_asof(quotes, on="dates", strategy="forward")["bid_right"],
+        pl.Series("bid_right", [720.5, 51.99, 720.5, 720.5, 720.5]),
+    )
 
     out = trades.join_asof(quotes, on="dates", by="ticker")
     assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
 
     out = quotes.join_asof(trades, on="dates", by="ticker")
-    assert out["bid_right"].to_list() == [
-        None,
-        51.95,
-        51.95,
-        51.95,
-        720.92,
-        98.0,
-        720.92,
-        51.95,
-    ]
+    assert_series_equal(
+        out["bid_right"],
+        pl.Series(
+            "bid_right",
+            [
+                None,
+                51.95,
+                51.95,
+                51.95,
+                720.92,
+                98.0,
+                720.92,
+                51.95,
+            ],
+        ),
+    )
     assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
         "bid_right"
     ].to_list() == [51.95, 51.95, None, 51.95, 98.0, 98.0, None, None]
