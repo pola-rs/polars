@@ -5,7 +5,7 @@ use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
-use polars_core::utils::{get_numeric_upcast_supertype_lossless, split_and_flatten};
+use polars_core::utils::split_and_flatten;
 use polars_core::{POOL, with_match_physical_float_polars_type};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
