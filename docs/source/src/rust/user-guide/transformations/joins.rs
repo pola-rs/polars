@@ -60,7 +60,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:join-key-expression]
     let result = props_groups2
-        
         .lazy()
         .join(
             props_prices2.lazy(),
@@ -182,7 +181,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:anti-join]
     let result = props_groups
-        
         .lazy()
         .join(
             props_prices.clone().lazy(),
@@ -279,7 +277,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = players
-        
         .lazy()
         .select([col("name")])
         .cross_join(tokens.lazy(), None)

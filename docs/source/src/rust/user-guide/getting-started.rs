@@ -187,11 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
 
-    let result = concat(
-        [df.clone().lazy(), df3.lazy()],
-        UnionArgs::default(),
-    )?
-    .collect()?;
+    let result = concat([df.clone().lazy(), df3.lazy()], UnionArgs::default())?.collect()?;
     println!("{result}");
     // --8<-- [end:concat]
 

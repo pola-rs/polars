@@ -21,7 +21,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:group_by]
     let annual_average_df = df
-        
         .lazy()
         .group_by_dynamic(
             col("Date"),
@@ -66,7 +65,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let out = df
-        
         .lazy()
         .group_by_dynamic(
             col("time"),
@@ -130,7 +128,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:group_by_dyn2]
     let out = df
-        
         .lazy()
         .group_by_dynamic(
             col("time"),

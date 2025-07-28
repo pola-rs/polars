@@ -341,7 +341,6 @@ fn test_cse_prune_scan_filter_difference() -> PolarsResult<()> {
     let q = lf
         .clone()
         .filter(col("fats_g").gt(2.0))
-        
         .left_join(
             lf.filter(col("fats_g").gt(1.0)),
             col("fats_g"),

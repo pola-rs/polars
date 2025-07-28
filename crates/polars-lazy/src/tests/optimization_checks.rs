@@ -85,7 +85,6 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     // Check if we pass hstack.
     let q = df
-        
         .lazy()
         .with_columns([col("A").alias("C"), col("B")])
         .filter(col("B").gt(lit(1)));

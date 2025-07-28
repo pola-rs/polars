@@ -584,9 +584,7 @@ impl PhysicalExpr for WindowExpr {
                                 jt
                             } else {
                                 let jt = get_join_tuples()?;
-                                state
-                                    .window_cache
-                                    .insert_join(cache_key, jt.clone());
+                                state.window_cache.insert_join(cache_key, jt.clone());
                                 jt
                             }
                         } else {
