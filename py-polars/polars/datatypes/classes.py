@@ -790,6 +790,14 @@ class Categorical(DataType):
             assert len(kwargs) == 0
             return
 
+        if ordering == "physical":
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "the physical Categorical ordering is deprecated. The ordering is now always lexical.",
+                version="1.32.0",
+            )
+
         self.ordering = "lexical"
         if kwargs.get("categories") is not None:
             assert len(kwargs) == 1
