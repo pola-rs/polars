@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
+use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -324,6 +325,22 @@ pub trait AsofJoin: IntoDf {
                 join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy, allow_eq)
             },
             _ => {
+                let lhs_phys_dtype = left_key.dtype().to_physical();
+                let rhs_phys_dtype = right_key.dtype().to_physical();
+
+                assert!(lhs_phys_dtype.is_integer());
+                assert!(
+                    lhs_phys_dtype == DataType::Int32
+                        || get_numeric_upcast_supertype_lossless(&lhs_phys_dtype, &DataType::Int32)
+                            == Some(DataType::Int32)
+                );
+                assert!(rhs_phys_dtype.is_integer());
+                assert!(
+                    rhs_phys_dtype == DataType::Int32
+                        || get_numeric_upcast_supertype_lossless(&rhs_phys_dtype, &DataType::Int32)
+                            == Some(DataType::Int32)
+                );
+
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
                 let ca = left_key.i32().unwrap();

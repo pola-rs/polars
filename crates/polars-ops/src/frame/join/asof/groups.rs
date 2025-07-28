@@ -5,7 +5,7 @@ use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
-use polars_core::utils::split_and_flatten;
+use polars_core::utils::{get_numeric_upcast_supertype_lossless, split_and_flatten};
 use polars_core::{POOL, with_match_physical_float_polars_type};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
@@ -464,6 +464,22 @@ fn dispatch_join_type(
             )
         },
         _ => {
+            let lhs_phys_dtype = left_asof.dtype().to_physical();
+            let rhs_phys_dtype = right_asof.dtype().to_physical();
+
+            assert!(lhs_phys_dtype.is_integer());
+            assert!(
+                lhs_phys_dtype == DataType::Int32
+                    || get_numeric_upcast_supertype_lossless(&lhs_phys_dtype, &DataType::Int32)
+                        == Some(DataType::Int32)
+            );
+            assert!(rhs_phys_dtype.is_integer());
+            assert!(
+                rhs_phys_dtype == DataType::Int32
+                    || get_numeric_upcast_supertype_lossless(&rhs_phys_dtype, &DataType::Int32)
+                        == Some(DataType::Int32)
+            );
+
             let left_asof = left_asof.cast(&DataType::Int32).unwrap();
             let right_asof = right_asof.cast(&DataType::Int32).unwrap();
             let ca = left_asof.i32().unwrap();
