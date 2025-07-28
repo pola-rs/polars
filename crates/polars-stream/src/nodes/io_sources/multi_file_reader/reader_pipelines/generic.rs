@@ -132,7 +132,7 @@ impl MultiScanTaskInitializer {
         if verbose {
             eprintln!(
                 "[MultiScanTaskInitializer]: \
-                scan_source_idx: {} \
+                scan_source_idx: {}, \
                 extra_ops: {:?} \
                 ",
                 scan_source_idx, &extra_ops,

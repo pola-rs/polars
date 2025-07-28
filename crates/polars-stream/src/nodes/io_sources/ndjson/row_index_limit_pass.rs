@@ -33,7 +33,7 @@ impl ApplyRowIndexOrLimit {
         if verbose {
             eprintln!(
                 "[NDJSON ApplyRowIndexOrLimit]: init: \
-                limit: {:?} \
+                limit: {:?}, \
                 row_index: {:?}",
                 &limit, &row_index
             );

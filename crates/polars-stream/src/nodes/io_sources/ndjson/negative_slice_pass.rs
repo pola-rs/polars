@@ -153,8 +153,8 @@ impl MorselStreamReverser {
                 n_rows: {}, \
                 n_chunks: {}, \
                 chunk_size: {}, \
-                num_pipelines: {} \
-                n_tasks: {} \
+                num_pipelines: {}, \
+                n_tasks: {}, \
                 row_index: {:?} \
                 ",
                 combined_df.height(),
