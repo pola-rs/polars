@@ -463,23 +463,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
-        _ => {
-            let lhs_phys_dtype = left_asof.dtype().to_physical();
-            let rhs_phys_dtype = right_asof.dtype().to_physical();
-
-            assert!(lhs_phys_dtype.is_integer());
-            assert!(
-                lhs_phys_dtype == DataType::Int32
-                    || get_numeric_upcast_supertype_lossless(&lhs_phys_dtype, &DataType::Int32)
-                        == Some(DataType::Int32)
-            );
-            assert!(rhs_phys_dtype.is_integer());
-            assert!(
-                rhs_phys_dtype == DataType::Int32
-                    || get_numeric_upcast_supertype_lossless(&rhs_phys_dtype, &DataType::Int32)
-                        == Some(DataType::Int32)
-            );
-
+        DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
             let left_asof = left_asof.cast(&DataType::Int32).unwrap();
             let right_asof = right_asof.cast(&DataType::Int32).unwrap();
             let ca = left_asof.i32().unwrap();
@@ -493,6 +477,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
+        dt => panic!("{:?}", dt),
     }
 }
 

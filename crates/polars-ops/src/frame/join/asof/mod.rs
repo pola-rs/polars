@@ -324,28 +324,13 @@ pub trait AsofJoin: IntoDf {
                 let right_binary = right_key.cast(&DataType::Binary).unwrap();
                 join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy, allow_eq)
             },
-            _ => {
-                let lhs_phys_dtype = left_key.dtype().to_physical();
-                let rhs_phys_dtype = right_key.dtype().to_physical();
-
-                assert!(lhs_phys_dtype.is_integer());
-                assert!(
-                    lhs_phys_dtype == DataType::Int32
-                        || get_numeric_upcast_supertype_lossless(&lhs_phys_dtype, &DataType::Int32)
-                            == Some(DataType::Int32)
-                );
-                assert!(rhs_phys_dtype.is_integer());
-                assert!(
-                    rhs_phys_dtype == DataType::Int32
-                        || get_numeric_upcast_supertype_lossless(&rhs_phys_dtype, &DataType::Int32)
-                            == Some(DataType::Int32)
-                );
-
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
                 let ca = left_key.i32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
+            dt => panic!("{:?}", dt),
         }?;
         try_raise_keyboard_interrupt();
 
