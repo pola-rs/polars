@@ -236,12 +236,11 @@ def test_reordered_columns_22731(validate: bool) -> None:
 
 
 def test_io_plugin_reentrant_deadlock() -> None:
-    try:
-        out = subprocess.check_output(
-            [
-                sys.executable,
-                "-c",
-                """\
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
 from __future__ import annotations
 
 import os
@@ -279,13 +278,9 @@ register_io_source(io_source=reentrant, schema={"x": pl.Int64}).collect()
 
 print("OK", end="", file=sys.stderr)
 """,
-            ],
-            stderr=subprocess.STDOUT,
-            timeout=7,
-        )
-    except subprocess.CalledProcessError as e:
-        print((e.stdout or b"").decode())
-        print((e.stderr or b"").decode())
-        raise
+        ],
+        stderr=subprocess.STDOUT,
+        timeout=7,
+    )
 
     assert out == b"OK"
