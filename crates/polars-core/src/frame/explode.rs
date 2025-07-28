@@ -209,7 +209,7 @@ mod test {
 
         let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
         let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
+        let df = DataFrame::new(vec![list, s0, s1]).unwrap();
         let exploded = df.explode(["foo"]).unwrap();
         assert_eq!(exploded.shape(), (9, 3));
         assert_eq!(

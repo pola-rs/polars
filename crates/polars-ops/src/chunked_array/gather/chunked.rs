@@ -356,7 +356,7 @@ where
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
                 let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                arr.value_unchecked(array_idx as usize).clone()
+                arr.value_unchecked(array_idx as usize)
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);

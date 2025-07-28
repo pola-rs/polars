@@ -913,7 +913,7 @@ impl SQLContext {
                     .map(|e| {
                         let expr = parse_sql_expr(e, self, schema.as_deref())?;
                         if let Expr::Column(name) = expr {
-                            Ok(name.clone())
+                            Ok(name)
                         } else {
                             Err(polars_err!(SQLSyntax:"DISTINCT ON only supports column names"))
                         }
@@ -1183,9 +1183,9 @@ impl SQLContext {
                         .zip(column_names)
                         .map(|(s, name)| {
                             if let Some(name) = name {
-                                s.clone().with_name(name)
+                                s.with_name(name)
                             } else {
-                                s.clone()
+                                s
                             }
                         })
                         .map(Column::from)
@@ -1200,7 +1200,7 @@ impl SQLContext {
                     }
                     let table_name = alias.name.value.clone();
                     self.table_map.insert(table_name.clone(), lf.clone());
-                    Ok((table_name.clone(), lf))
+                    Ok((table_name, lf))
                 } else {
                     polars_bail!(SQLSyntax: "UNNEST table must have an alias");
                 }

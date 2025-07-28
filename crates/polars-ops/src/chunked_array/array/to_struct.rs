@@ -32,7 +32,7 @@ pub trait ToStruct: AsArray {
                         true,
                     )
                     .and_then(|mut s| {
-                        s.rename(name_generator(i)?.clone());
+                        s.rename(name_generator(i)?);
                         Ok(s)
                     })
                 })

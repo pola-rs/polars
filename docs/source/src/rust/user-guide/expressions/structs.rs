@@ -65,7 +65,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:struct_ranking]
     let result = ratings
-        .clone()
         .lazy()
         .with_columns([as_struct(vec![col("Count"), col("Avg_Rating")])
             .rank(

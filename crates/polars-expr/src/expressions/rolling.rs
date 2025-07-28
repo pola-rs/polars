@@ -23,7 +23,7 @@ impl PhysicalExpr for RollingExpr {
 
         let groups = {
             // Groups must be set by expression runner.
-            state.window_cache.get_groups(&groups_key).clone()
+            state.window_cache.get_groups(&groups_key)
         };
 
         // There can be multiple rolling expressions in a single expr.
