@@ -63,8 +63,8 @@ class CredentialProvider(abc.ABC):
     Base class for credential providers.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     @abc.abstractmethod
@@ -77,8 +77,8 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
     Base class for credential providers that has built-in caching.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(self) -> None:
@@ -131,8 +131,8 @@ class CredentialProviderAWS(CachingCredentialProvider):
     Using this requires the `boto3` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -294,8 +294,8 @@ class CredentialProviderAzure(CachingCredentialProvider):
     Using this requires the `azure-identity` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -486,8 +486,8 @@ class CredentialProviderGCP(CachingCredentialProvider):
     Using this requires the `google-auth` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
