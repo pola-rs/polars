@@ -103,7 +103,7 @@ def _patched_cloud(
 
                     if is_string:
                         with Path.open(self.path, "r") as f:
-                            self.prev_tgt.write(f.read())
+                            self.prev_tgt.write(f.read())  # type: ignore[arg-type]
                     else:
                         with Path.open(self.path, "rb") as f:
                             self.prev_tgt.write(f.read())
@@ -148,9 +148,9 @@ def _patched_cloud(
             prev_scan = cast("Callable[..., pl.LazyFrame]", prev_scan)
 
             def _(
-                source: io.BytesIO | io.String | str | Path, *args: Any, **kwargs: Any
+                source: io.BytesIO | io.StringIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
-                source = prepare_scan_sources(source)  # type: ignore[assignment]
+                source = prepare_scan_sources(source)
                 return prev_scan(source, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
@@ -162,7 +162,7 @@ def _patched_cloud(
             def _(
                 source: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.DataFrame:
-                src = prepare_scan_sources(source)  # type: ignore[assignment]
+                src = prepare_scan_sources(source)
                 return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
