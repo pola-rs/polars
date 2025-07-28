@@ -107,7 +107,9 @@ pub trait DataFrameOps: IntoDf {
 
         let set: PlHashSet<&str> = match (columns, categories.as_ref()) {
             // categories override columns if both are provided
-            (Some(_), Some(cats)) => PlHashSet::from_iter(cats.keys().map(|k| k.as_str())),
+            (Some(_), Some(_)) => {
+                polars_bail!(ComputeError: "cannot provide both `columns` and `categories` to `to_dummies`")
+            },
             (Some(cols), None) => PlHashSet::from_iter(cols),
             (None, Some(cats)) => PlHashSet::from_iter(cats.keys().map(|k| k.as_str())),
             (None, None) => PlHashSet::from_iter(df.iter().map(|s| s.name().as_str())),

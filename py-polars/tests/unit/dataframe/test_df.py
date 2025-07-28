@@ -840,6 +840,19 @@ def test_to_dummies_categories_duplicates_error() -> None:
         _ = df.to_dummies(categories={"col": ["x", "x"]})
 
 
+def test_to_dummies_columns_and_categories_error() -> None:
+    df: pl.DataFrame = pl.DataFrame({"col": ["x", "y"]})
+
+    with pytest.raises(
+        ComputeError,
+        match="cannot provide both `columns` and `categories` to `to_dummies`",
+    ):
+        _ = df.to_dummies(
+            columns=["col"],
+            categories={"col": ["x", "y"]},
+        )
+
+
 def test_to_dummies_drop_nulls() -> None:
     df = pl.DataFrame(
         {
