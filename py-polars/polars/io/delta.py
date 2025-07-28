@@ -334,6 +334,11 @@ def scan_delta(
         delta_table_options=delta_table_options,
     )
 
+    if isinstance(source, DeltaTable) and (
+        source._storage_options is not None or storage_options is not None
+    ):
+        storage_options = {**(source._storage_options or {}), **(storage_options or {})}
+
     if use_pyarrow:
         pyarrow_options = pyarrow_options or {}
         pa_ds = dl_tbl.to_pyarrow_dataset(**pyarrow_options)

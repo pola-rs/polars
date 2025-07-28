@@ -80,10 +80,9 @@ polars_utils::regex_cache::cached_regex! {
                 )?
             )?
             (?:
-                # offset (e.g. +01:00)
+                # offset (e.g. +01:00, +0100, or +01)
                 [+-](?:\d{2})
-                :?
-                (?:\d{2})
+                (?::?\d{2})?
                 # or Zulu suffix
                 |Z
             )

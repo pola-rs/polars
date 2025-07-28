@@ -6,16 +6,15 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
-    Categorical,
     Datetime,
     Duration,
     is_polars_dtype,
     parse_into_dtype,
 )
 from polars.datatypes.group import (
-    CATEGORICAL_DTYPES,
     DATETIME_DTYPES,
     DURATION_DTYPES,
     FLOAT_DTYPES,
@@ -51,11 +50,11 @@ def _create_col(
         if isinstance(name, str):
             names_str = [name]
             names_str.extend(more_names)  # type: ignore[arg-type]
-            return wrap_expr(plr.cols(names_str))
+            return pl.Selector._by_name(names_str, strict=True).as_expr()
         elif is_polars_dtype(name):
             dtypes = [name]
             dtypes.extend(more_names)  # type: ignore[arg-type]
-            return wrap_expr(plr.dtype_cols(dtypes))
+            return pl.Selector._by_dtype(dtypes).as_expr()  # type: ignore[arg-type]
         else:
             msg = (
                 "invalid input for `col`"
@@ -67,28 +66,28 @@ def _create_col(
         return wrap_expr(plr.col(name))
     elif is_polars_dtype(name):
         dtypes = _polars_dtype_match(name)
-        return wrap_expr(plr.dtype_cols(dtypes))
+        return pl.Selector._by_dtype(dtypes).as_expr()  # type: ignore[arg-type]
     elif isinstance(name, type):
         dtypes = _python_dtype_match(name)
-        return wrap_expr(plr.dtype_cols(dtypes))
+        return pl.Selector._by_dtype(dtypes).as_expr()  # type: ignore[arg-type]
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
-            return wrap_expr(plr.cols(names))
+            return pl.Selector._by_name(names, strict=True).as_expr()  # type: ignore[arg-type]
 
         item = names[0]
         if isinstance(item, str):
-            return wrap_expr(plr.cols(names))
+            return pl.Selector._by_name(names, strict=True).as_expr()  # type: ignore[arg-type]
         elif is_polars_dtype(item):
             dtypes = []
             for nm in names:
                 dtypes.extend(_polars_dtype_match(nm))  # type: ignore[arg-type]
-            return wrap_expr(plr.dtype_cols(dtypes))
+            return pl.Selector._by_dtype(dtypes).as_expr()  # type: ignore[arg-type]
         elif isinstance(item, type):
             dtypes = []
             for nm in names:
                 dtypes.extend(_python_dtype_match(nm))  # type: ignore[arg-type]
-            return wrap_expr(plr.dtype_cols(dtypes))
+            return pl.Selector._by_dtype(dtypes).as_expr()  # type: ignore[arg-type]
         else:
             msg = (
                 "invalid input for `col`"
@@ -121,8 +120,6 @@ def _polars_dtype_match(tp: PolarsDataType) -> list[PolarsDataType]:
         return list(DATETIME_DTYPES)
     elif Duration.is_(tp):
         return list(DURATION_DTYPES)
-    elif Categorical.is_(tp):
-        return list(CATEGORICAL_DTYPES)
     return [tp]
 
 

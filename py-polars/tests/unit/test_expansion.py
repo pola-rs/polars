@@ -197,3 +197,17 @@ def test_struct_field_exclude_and_wildcard_expansion() -> None:
         "i": [3],
         "j": [4],
     }
+
+
+def test_err_on_multiple_column_expansion() -> None:
+    assert_frame_equal(
+        pl.DataFrame(
+            {
+                "a": [1],
+                "b": [2],
+                "c": [3],
+                "d": [4],
+            }
+        ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])]),
+        pl.DataFrame({"a": [4], "b": [6]}),
+    )

@@ -212,16 +212,25 @@ impl ExprPushdownGroup {
                     } => {
                         debug_assert!(input.len() <= 2);
 
-                        // `ambiguous` parameter to `to_datetime()`. Should always be a literal.
-                        debug_assert!(matches!(
-                            input.get(1).map(|x| expr_arena.get(x.node())),
-                            Some(AExpr::Literal(_)) | None
-                        ));
-
-                        match input.first().map(|x| expr_arena.get(x.node())) {
-                            Some(AExpr::Literal(_)) | None => false,
-                            _ => strptime_options.strict,
-                        }
+                        strptime_options.strict
+                            || input
+                                .get(1)
+                                .map(|x| expr_arena.get(x.node()))
+                                .is_some_and(|ae| match ae {
+                                    AExpr::Literal(lv) => {
+                                        lv.extract_str().is_some_and(|ambiguous| match ambiguous {
+                                            "raise" => true,
+                                            "earliest" | "latest" | "null" => false,
+                                            v => {
+                                                if cfg!(debug_assertions) {
+                                                    panic!("unhandled parameter to ambiguous: {v}")
+                                                }
+                                                true
+                                            },
+                                        })
+                                    },
+                                    _ => true,
+                                })
                     },
                     AExpr::Cast {
                         expr,

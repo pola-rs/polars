@@ -63,112 +63,111 @@ def test_eager_struct() -> None:
 
 def test_struct_from_schema_only() -> None:
     # Workaround for new streaming engine.
-    with pl.StringCache():
-        # we create a dataframe with default types
-        df = pl.DataFrame(
-            {
-                "str": ["a", "b", "c", "d", "e"],
-                "u8": [1, 2, 3, 4, 5],
-                "i32": [1, 2, 3, 4, 5],
-                "f64": [1, 2, 3, 4, 5],
-                "cat": ["a", "b", "c", "d", "e"],
-                "datetime": pl.Series(
-                    [
-                        date(2023, 1, 1),
-                        date(2023, 1, 2),
-                        date(2023, 1, 3),
-                        date(2023, 1, 4),
-                        date(2023, 1, 5),
-                    ]
-                ),
-                "bool": [1, 0, 1, 1, 0],
-                "list[u8]": [[1], [2], [3], [4], [5]],
+    # we create a dataframe with default types
+    df = pl.DataFrame(
+        {
+            "str": ["a", "b", "c", "d", "e"],
+            "u8": [1, 2, 3, 4, 5],
+            "i32": [1, 2, 3, 4, 5],
+            "f64": [1, 2, 3, 4, 5],
+            "cat": ["a", "b", "c", "d", "e"],
+            "datetime": pl.Series(
+                [
+                    date(2023, 1, 1),
+                    date(2023, 1, 2),
+                    date(2023, 1, 3),
+                    date(2023, 1, 4),
+                    date(2023, 1, 5),
+                ]
+            ),
+            "bool": [1, 0, 1, 1, 0],
+            "list[u8]": [[1], [2], [3], [4], [5]],
+        }
+    )
+
+    # specify a schema with specific dtypes
+    s = df.select(
+        pl.struct(
+            schema={
+                "str": pl.String,
+                "u8": pl.UInt8,
+                "i32": pl.Int32,
+                "f64": pl.Float64,
+                "cat": pl.Categorical,
+                "datetime": pl.Datetime("ms"),
+                "bool": pl.Boolean,
+                "list[u8]": pl.List(pl.UInt8),
             }
-        )
+        ).alias("s")
+    )["s"]
 
-        # specify a schema with specific dtypes
-        s = df.select(
-            pl.struct(
-                schema={
-                    "str": pl.String,
-                    "u8": pl.UInt8,
-                    "i32": pl.Int32,
-                    "f64": pl.Float64,
-                    "cat": pl.Categorical,
-                    "datetime": pl.Datetime("ms"),
-                    "bool": pl.Boolean,
-                    "list[u8]": pl.List(pl.UInt8),
-                }
-            ).alias("s")
-        )["s"]
-
-        # check dtypes
-        assert s.dtype == pl.Struct(
-            [
-                pl.Field("str", pl.String),
-                pl.Field("u8", pl.UInt8),
-                pl.Field("i32", pl.Int32),
-                pl.Field("f64", pl.Float64),
-                pl.Field("cat", pl.Categorical),
-                pl.Field("datetime", pl.Datetime("ms")),
-                pl.Field("bool", pl.Boolean),
-                pl.Field("list[u8]", pl.List(pl.UInt8)),
-            ]
-        )
-
-        # check values
-        assert s.to_list() == [
-            {
-                "str": "a",
-                "u8": 1,
-                "i32": 1,
-                "f64": 1.0,
-                "cat": "a",
-                "datetime": datetime(2023, 1, 1, 0, 0),
-                "bool": True,
-                "list[u8]": [1],
-            },
-            {
-                "str": "b",
-                "u8": 2,
-                "i32": 2,
-                "f64": 2.0,
-                "cat": "b",
-                "datetime": datetime(2023, 1, 2, 0, 0),
-                "bool": False,
-                "list[u8]": [2],
-            },
-            {
-                "str": "c",
-                "u8": 3,
-                "i32": 3,
-                "f64": 3.0,
-                "cat": "c",
-                "datetime": datetime(2023, 1, 3, 0, 0),
-                "bool": True,
-                "list[u8]": [3],
-            },
-            {
-                "str": "d",
-                "u8": 4,
-                "i32": 4,
-                "f64": 4.0,
-                "cat": "d",
-                "datetime": datetime(2023, 1, 4, 0, 0),
-                "bool": True,
-                "list[u8]": [4],
-            },
-            {
-                "str": "e",
-                "u8": 5,
-                "i32": 5,
-                "f64": 5.0,
-                "cat": "e",
-                "datetime": datetime(2023, 1, 5, 0, 0),
-                "bool": False,
-                "list[u8]": [5],
-            },
+    # check dtypes
+    assert s.dtype == pl.Struct(
+        [
+            pl.Field("str", pl.String),
+            pl.Field("u8", pl.UInt8),
+            pl.Field("i32", pl.Int32),
+            pl.Field("f64", pl.Float64),
+            pl.Field("cat", pl.Categorical),
+            pl.Field("datetime", pl.Datetime("ms")),
+            pl.Field("bool", pl.Boolean),
+            pl.Field("list[u8]", pl.List(pl.UInt8)),
         ]
+    )
+
+    # check values
+    assert s.to_list() == [
+        {
+            "str": "a",
+            "u8": 1,
+            "i32": 1,
+            "f64": 1.0,
+            "cat": "a",
+            "datetime": datetime(2023, 1, 1, 0, 0),
+            "bool": True,
+            "list[u8]": [1],
+        },
+        {
+            "str": "b",
+            "u8": 2,
+            "i32": 2,
+            "f64": 2.0,
+            "cat": "b",
+            "datetime": datetime(2023, 1, 2, 0, 0),
+            "bool": False,
+            "list[u8]": [2],
+        },
+        {
+            "str": "c",
+            "u8": 3,
+            "i32": 3,
+            "f64": 3.0,
+            "cat": "c",
+            "datetime": datetime(2023, 1, 3, 0, 0),
+            "bool": True,
+            "list[u8]": [3],
+        },
+        {
+            "str": "d",
+            "u8": 4,
+            "i32": 4,
+            "f64": 4.0,
+            "cat": "d",
+            "datetime": datetime(2023, 1, 4, 0, 0),
+            "bool": True,
+            "list[u8]": [4],
+        },
+        {
+            "str": "e",
+            "u8": 5,
+            "i32": 5,
+            "f64": 5.0,
+            "cat": "e",
+            "datetime": datetime(2023, 1, 5, 0, 0),
+            "bool": False,
+            "list[u8]": [5],
+        },
+    ]
 
 
 def test_struct_broadcasting() -> None:
@@ -275,3 +274,22 @@ def test_error_on_duplicate_field_name_22959() -> None:
                 pl.lit(2),
             )
         )
+
+
+def test_struct_nested_naming_in_group_by_23701() -> None:
+    df = pl.LazyFrame({"ID": [1], "SOURCE_FIELD": ["some value"]})
+
+    expr_inner_struct = pl.struct(
+        pl.col("SOURCE_FIELD").alias("INNER_FIELD"),
+    )
+
+    expr_outer_struct = pl.struct(
+        pl.lit(date(2026, 1, 1))
+        .dt.offset_by(pl.int_ranges(0, 3).list.last().cast(pl.String) + "d")
+        .alias("OUTER_FIELD"),
+        expr_inner_struct.alias("INNER_STRUCT"),
+    ).alias("OUTER_STRUCT")
+
+    agg_df = df.group_by("ID").agg(expr_outer_struct)
+
+    assert agg_df.collect_schema() == agg_df.collect().schema

@@ -144,10 +144,10 @@ fix:
 	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
 	cargo fmt --all
 
-.PHONY: update-dsl-schema-hash
-update-dsl-schema-hash:  ## Update the DSL schema hash file
+.PHONY: update-dsl-schema-hashes
+update-dsl-schema-hashes:  ## Update the DSL schema hashes file
 	cargo build --all-features
-	./target/debug/dsl-schema update-hash
+	./target/debug/dsl-schema update-hashes
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks

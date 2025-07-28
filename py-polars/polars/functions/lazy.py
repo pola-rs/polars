@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
+import polars.selectors as cs
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -19,19 +19,21 @@ from polars._utils.parse import (
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
-from polars._utils.wrap import wrap_df, wrap_expr
+from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.datatypes._parse import parse_into_datatype_expr
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
 )
+from polars.meta.index_type import get_index_type
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Collection, Iterable
+    from collections.abc import Awaitable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -605,7 +607,7 @@ def first(*columns: str) -> Expr:
 
     """
     if not columns:
-        return wrap_expr(plr.first())
+        return cs.first().as_expr()
 
     return F.col(*columns).first()
 
@@ -670,12 +672,12 @@ def last(*columns: str) -> Expr:
 
     """
     if not columns:
-        return wrap_expr(plr.last())
+        return cs.last().as_expr()
 
     return F.col(*columns).last()
 
 
-def nth(*indices: int | Sequence[int]) -> Expr:
+def nth(*indices: int | Sequence[int], strict: bool = True) -> Expr:
     """
     Get the nth column(s) of the context.
 
@@ -716,10 +718,7 @@ def nth(*indices: int | Sequence[int]) -> Expr:
     │ baz ┆ 3   │
     └─────┴─────┘
     """
-    if len(indices) == 1 and isinstance(indices[0], Sequence):
-        indices = indices[0]  # type: ignore[assignment]
-
-    return wrap_expr(plr.index_cols(indices))
+    return cs.by_index(*indices, require_all=strict).as_expr()
 
 
 def head(column: str, n: int = 10) -> Expr:
@@ -1197,13 +1196,23 @@ def map_groups(
     )
 
 
+def _wrap_acc_lamba(
+    function: Callable[[Series, Series], Series],
+) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
+    def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
+        a, b = t
+        return function(wrap_s(a), wrap_s(b))._s
+
+    return wrapper
+
+
 def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
     *,
     returns_scalar: bool = False,
-    return_dtype: PolarsDataType | None = None,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1222,9 +1231,9 @@ def fold(
         Whether or not `function` applied returns a scalar. This must be set correctly
         by the user.
     return_dtype
-            Output datatype.
-            If not set, the dtype will be inferred based on the dtype
-            of the accumulator.
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype
+        of the accumulator.
 
     Notes
     -----
@@ -1311,14 +1320,18 @@ def fold(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.fold(
             acc,
-            function,
+            _wrap_acc_lamba(function),
             exprs,
             returns_scalar=returns_scalar,
-            return_dtype=return_dtype,
+            return_dtype=rt,
         )
     )
 
@@ -1326,6 +1339,9 @@ def fold(
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1337,6 +1353,13 @@ def reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expressions.
 
     Notes
     -----
@@ -1381,8 +1404,19 @@ def reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.reduce(function, exprs))
+    return wrap_expr(
+        plr.reduce(
+            _wrap_acc_lamba(function),
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        )
+    )
 
 
 def cum_fold(
@@ -1390,6 +1424,8 @@ def cum_fold(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
     *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
     include_init: bool = False,
 ) -> Expr:
     """
@@ -1407,6 +1443,12 @@ def cum_fold(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the accumulator.
     include_init
         Include the initial accumulator state as struct field.
 
@@ -1443,13 +1485,29 @@ def cum_fold(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
+    return wrap_expr(
+        plr.cum_fold(
+            acc,
+            _wrap_acc_lamba(function),
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+            include_init=include_init,
+        ).alias("cum_fold")
+    )
 
 
 def cum_reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: pl.DataTypeExpr | PolarsDataType | None = None,
 ) -> Expr:
     """
     Cumulatively reduce horizontally across columns with a left fold.
@@ -1463,6 +1521,12 @@ def cum_reduce(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    return_dtype
+        Output datatype.
+        If not set, the dtype will be inferred based on the dtype of the input
+        expressions.
+    include_init
+        Include the initial accumulator state as struct field.
 
     Examples
     --------
@@ -1489,8 +1553,19 @@ def cum_reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
+    rt: plr.PyDataTypeExpr | None = None
+    if return_dtype is not None:
+        rt = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
+    return wrap_expr(
+        plr.cum_reduce(
+            _wrap_acc_lamba(function),
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=rt,
+        ).alias("cum_reduce")
+    )
 
 
 def arctan2(y: str | Expr, x: str | Expr) -> Expr:
@@ -2477,3 +2552,82 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
+
+
+@unstable()
+def row_index(name: str = "index") -> pl.Expr:
+    """
+    Generates a sequence of integers.
+
+    The length of the returned sequence will match the context length, and the
+    datatype will match the one returned by `get_index_dtype()`.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    If you would like to generate sequences with custom offsets / length /
+    step size / datatypes, it is recommended to use `int_range` instead.
+
+    Parameters
+    ----------
+    name
+        Name of the returned column.
+
+    Returns
+    -------
+    Expr
+        Column of integers.
+
+    See Also
+    --------
+    int_range : Generate a range of integers.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": ["A", "A", "B", "B", "B"]})
+    >>> df.with_columns(pl.row_index(), pl.row_index("another_index"))
+    shape: (5, 3)
+    ┌─────┬───────┬───────────────┐
+    │ x   ┆ index ┆ another_index │
+    │ --- ┆ ---   ┆ ---           │
+    │ str ┆ u32   ┆ u32           │
+    ╞═════╪═══════╪═══════════════╡
+    │ A   ┆ 0     ┆ 0             │
+    │ A   ┆ 1     ┆ 1             │
+    │ B   ┆ 2     ┆ 2             │
+    │ B   ┆ 3     ┆ 3             │
+    │ B   ┆ 4     ┆ 4             │
+    └─────┴───────┴───────────────┘
+    >>> df.group_by("x").agg(pl.row_index()).sort("x")
+    shape: (2, 2)
+    ┌─────┬───────────┐
+    │ x   ┆ index     │
+    │ --- ┆ ---       │
+    │ str ┆ list[u32] │
+    ╞═════╪═══════════╡
+    │ A   ┆ [0, 1]    │
+    │ B   ┆ [0, 1, 2] │
+    └─────┴───────────┘
+    >>> df.select(pl.row_index())
+    shape: (5, 1)
+    ┌───────┐
+    │ index │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 0     │
+    │ 1     │
+    │ 2     │
+    │ 3     │
+    │ 4     │
+    └───────┘
+    """
+    # Notes
+    # * Dispatching to `int_range` means that we cannot accept an offset
+    #   parameter, as unlike `DataFrame.with_row_index()`, `int_range` will simply
+    #   truncate instead of raising an error.
+    return F.int_range(
+        F.len(),
+        dtype=get_index_type(),
+    ).alias(name)

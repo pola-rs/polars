@@ -19,24 +19,23 @@ pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_categoricals_5921() -> None:
-    with pl.StringCache():
-        out_lazy = (
-            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .lazy()
-            .with_columns(pl.col("X").cast(pl.Categorical))
-            .group_by("X")
-            .agg(pl.col("Y").min())
-            .sort("Y", descending=True)
-            .collect(engine="streaming")
-        )
+    out_lazy = (
+        pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+        .lazy()
+        .with_columns(pl.col("X").cast(pl.Categorical))
+        .group_by("X")
+        .agg(pl.col("Y").min())
+        .sort("Y", descending=True)
+        .collect(engine="streaming")
+    )
 
-        out_eager = (
-            pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .with_columns(pl.col("X").cast(pl.Categorical))
-            .group_by("X")
-            .agg(pl.col("Y").min())
-            .sort("Y", descending=True)
-        )
+    out_eager = (
+        pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
+        .with_columns(pl.col("X").cast(pl.Categorical))
+        .group_by("X")
+        .agg(pl.col("Y").min())
+        .sort("Y", descending=True)
+    )
 
     for out in [out_eager, out_lazy]:
         assert out.dtypes == [pl.Categorical, pl.Int64]

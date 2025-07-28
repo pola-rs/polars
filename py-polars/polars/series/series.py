@@ -255,6 +255,7 @@ class Series:
     ]
     """
 
+    # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
     _s: PySeries = None
     _accessors: ClassVar[set[str]] = {
         "arr",

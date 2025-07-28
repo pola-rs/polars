@@ -118,7 +118,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                 {
                     Ok(Some(Cache {
                         input: *prev_input,
-                        id: id.clone(),
+                        id: *id,
                         // ensure the counts are updated
                         cache_hits: cache_hits.saturating_add(*outer_cache_hits),
                     }))

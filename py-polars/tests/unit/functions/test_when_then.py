@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -232,7 +233,6 @@ def test_object_when_then_4702() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_comp_categorical_lit_dtype() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
@@ -335,7 +335,7 @@ def test_single_element_broadcast(
         .drop("key")
     )
     if expected.height > 1:
-        result = result.explode(pl.all())
+        result = result.explode(cs.all())
     assert_frame_equal(result, expected)
 
 
@@ -378,7 +378,7 @@ def test_when_then_output_name_12380() -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(pl.all())
+            .explode(cs.all())
         )
         assert_frame_equal(
             expect,
@@ -405,7 +405,7 @@ def test_when_then_output_name_12380() -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(pl.all())
+            .explode(cs.all())
         )
         assert_frame_equal(
             expect,
@@ -816,3 +816,12 @@ def test_when_then_simplification() -> None:
             lf.select(pl.when(False).then(pl.col("a")).otherwise(pl.col("a") * 2))
         ).explain()
     )
+
+
+def test_when_then_in_group_by_aggregated_22922() -> None:
+    df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
+    out = df.group_by("group", maintain_order=True).agg(
+        expr=pl.when(group="x").then(pl.col.value.max()).first()
+    )
+    expected = pl.DataFrame({"group": ["x", "y"], "expr": [3, None]})
+    assert_frame_equal(out, expected)

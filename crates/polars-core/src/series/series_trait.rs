@@ -32,8 +32,10 @@ impl IsSorted {
 }
 
 pub enum BitRepr {
-    Small(UInt32Chunked),
-    Large(UInt64Chunked),
+    U32(UInt32Chunked),
+    U64(UInt64Chunked),
+    #[cfg(feature = "dtype-i128")]
+    I128(Int128Chunked),
 }
 
 pub(crate) mod private {
@@ -89,16 +91,12 @@ pub(crate) mod private {
             &self,
             _build_hasher: PlSeedableRandomStateQuality,
             _buf: &mut Vec<u64>,
-        ) -> PolarsResult<()> {
-            polars_bail!(opq = vec_hash, self._dtype());
-        }
+        ) -> PolarsResult<()>;
         fn vec_hash_combine(
             &self,
             _build_hasher: PlSeedableRandomStateQuality,
             _hashes: &mut [u64],
-        ) -> PolarsResult<()> {
-            polars_bail!(opq = vec_hash_combine, self._dtype());
-        }
+        ) -> PolarsResult<()>;
 
         /// # Safety
         ///

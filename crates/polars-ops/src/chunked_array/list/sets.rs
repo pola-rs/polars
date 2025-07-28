@@ -279,9 +279,6 @@ fn binary(
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
     offsets.push(0i64);
 
-    if broadcast_rhs {
-        set2.extend(b);
-    }
     let offsets_slice = if offsets_a.len() > offsets_b.len() {
         offsets_a
     } else {
@@ -291,6 +288,16 @@ fn binary(
     let second_a = offsets_a[1];
     let first_b = offsets_b[0];
     let second_b = offsets_b[1];
+
+    if broadcast_rhs {
+        // set2.extend(b_iter)
+        set2.extend(
+            b.into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize),
+        );
+    }
+
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;

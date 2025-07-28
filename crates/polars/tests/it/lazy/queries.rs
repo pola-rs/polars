@@ -26,7 +26,7 @@ fn test_drop() -> PolarsResult<()> {
         "a" => [1],
     ]?
     .lazy()
-    .drop(["a"])
+    .drop(by_name(["a"], true))
     .collect()?;
     assert_eq!(out.width(), 0);
     Ok(())
@@ -122,7 +122,7 @@ fn test_alias_before_cast() -> PolarsResult<()> {
     ]?
     .lazy()
     .select([col("a").alias("d").cast(DataType::Int32)])
-    .select([all()])
+    .select([all().as_expr()])
     .collect()?;
     assert_eq!(
         Vec::from(out.column("d")?.i32()?),
@@ -143,7 +143,7 @@ fn test_sorted_path() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_row_index("index", None)
-        .explode(["a"])
+        .explode(by_name(["a"], true))
         .group_by(["index"])
         .agg([col("a").count().alias("count")])
         .collect()?;

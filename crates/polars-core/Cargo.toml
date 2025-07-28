@@ -146,6 +146,7 @@ dsl-schema = [
   "polars-schema/dsl-schema",
   "polars-utils/dsl-schema",
 ]
+allow_unused = []
 
 docs-selection = [
   "ndarray",

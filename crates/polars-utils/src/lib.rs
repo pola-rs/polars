@@ -30,6 +30,7 @@ pub mod pl_str;
 pub mod plpath;
 pub mod priority;
 pub mod regex_cache;
+pub mod relaxed_cell;
 pub mod select;
 pub mod slice;
 pub mod slice_enum;
@@ -49,6 +50,7 @@ pub mod fixedringbuffer;
 pub mod fmt;
 pub mod itertools;
 pub mod macros;
+pub mod option;
 pub mod vec;
 #[cfg(target_family = "wasm")]
 pub mod wasm;

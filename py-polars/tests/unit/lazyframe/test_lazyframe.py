@@ -358,7 +358,8 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
 
 @pytest.mark.may_fail_auto_streaming
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().select("*")._fetch(2)
+    with pytest.warns(DeprecationWarning):
+        res = fruits_cars.lazy().select("*").fetch(2)
     assert_frame_equal(res, res[:2])
 
 
@@ -433,7 +434,7 @@ def test_head_group_by() -> None:
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(pl.col("*").exclude(keys))
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.collect().rows() == [

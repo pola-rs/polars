@@ -28,6 +28,7 @@ pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         },
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Min<Float64Type>>::new())),
+        Null => Box::new(NullGroupedReduction::default()),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMinReducer)),
         _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
@@ -59,6 +60,7 @@ pub fn new_max_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn Group
         },
         Float32 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float32Type>>::new())),
         Float64 => Box::new(VMGR::new(dtype, NumReducer::<Max<Float64Type>>::new())),
+        Null => Box::new(NullGroupedReduction::default()),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMaxReducer)),
         _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
             with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
@@ -386,16 +388,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -508,16 +502,8 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze())
-            .with_validity(Some(m.freeze()))
-            .boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -656,5 +642,84 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
                     .into_series(),
             )
         }
+    }
+}
+
+#[derive(Default)]
+pub struct NullGroupedReduction {
+    length: usize,
+    num_evictions: usize,
+}
+
+impl GroupedReduction for NullGroupedReduction {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self::default())
+    }
+
+    fn reserve(&mut self, _additional: usize) {}
+
+    fn resize(&mut self, num_groups: IdxSize) {
+        self.length = num_groups as usize;
+    }
+
+    fn update_group(
+        &mut self,
+        values: &Column,
+        _group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype() == &DataType::Null);
+
+        // no-op
+        Ok(())
+    }
+
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype() == &DataType::Null);
+        assert!(subset.len() == group_idxs.len());
+
+        for g in group_idxs {
+            self.num_evictions += g.should_evict() as usize;
+        }
+        Ok(())
+    }
+
+    unsafe fn combine_subset(
+        &mut self,
+        _other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        assert!(subset.len() == group_idxs.len());
+
+        // no-op
+        Ok(())
+    }
+
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        let out = Box::new(Self {
+            length: self.num_evictions,
+            num_evictions: 0,
+        });
+        self.num_evictions = 0;
+        out
+    }
+
+    fn finalize(&mut self) -> PolarsResult<Series> {
+        Ok(Series::full_null(
+            PlSmallStr::EMPTY,
+            self.length,
+            &DataType::Null,
+        ))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

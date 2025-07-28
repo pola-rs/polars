@@ -1,9 +1,11 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
+use polars_core::chunked_array::ops::FillNullStrategy;
 use polars_core::series::IsSorted;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
+use polars_ops::prelude::RankMethod;
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
@@ -19,7 +21,7 @@ use polars_time::{Duration, DynamicGroupOptions};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyInt, PyTuple};
 
 use crate::Wrap;
 use crate::series::PySeries;
@@ -272,14 +274,12 @@ impl PyTemporalFunction {
 #[pyclass(name = "StructFunction", eq)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
-    FieldByIndex,
     FieldByName,
     RenameFields,
     PrefixFields,
     SuffixFields,
     JsonEncode,
     WithFields,
-    MultipleFields,
     MapFieldNames,
 }
 
@@ -914,9 +914,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                 },
                 IRFunctionExpr::StructExpr(fun) => match fun {
-                    IRStructFunction::FieldByIndex(index) => {
-                        (PyStructFunction::FieldByIndex, index).into_py_any(py)
-                    },
                     IRStructFunction::FieldByName(name) => {
                         (PyStructFunction::FieldByName, name.as_str()).into_py_any(py)
                     },
@@ -933,9 +930,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
                     IRStructFunction::WithFields => {
                         return Err(PyNotImplementedError::new_err("with_fields"));
-                    },
-                    IRStructFunction::MultipleFields(_) => {
-                        return Err(PyNotImplementedError::new_err("multiple_fields"));
                     },
                     IRStructFunction::MapFieldNames(_) => {
                         return Err(PyNotImplementedError::new_err("map_field_names"));
@@ -1181,6 +1175,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         return Err(PyNotImplementedError::new_err("rolling std by"));
                     },
                 },
+                IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),
@@ -1196,11 +1191,25 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "repeat_by")]
                 IRFunctionExpr::RepeatBy => ("repeat_by",).into_py_any(py),
                 IRFunctionExpr::ArgUnique => ("arg_unique",).into_py_any(py),
+                IRFunctionExpr::ArgMin => ("arg_min",).into_py_any(py),
+                IRFunctionExpr::ArgMax => ("arg_max",).into_py_any(py),
+                IRFunctionExpr::ArgSort {
+                    descending,
+                    nulls_last,
+                } => ("arg_max", descending, nulls_last).into_py_any(py),
+                IRFunctionExpr::Product => ("product",).into_py_any(py),
                 IRFunctionExpr::Repeat => ("repeat",).into_py_any(py),
-                IRFunctionExpr::Rank {
-                    options: _,
-                    seed: _,
-                } => return Err(PyNotImplementedError::new_err("rank")),
+                IRFunctionExpr::Rank { options, seed } => {
+                    let method = match options.method {
+                        RankMethod::Average => "average",
+                        RankMethod::Min => "min",
+                        RankMethod::Max => "max",
+                        RankMethod::Dense => "dense",
+                        RankMethod::Ordinal => "ordinal",
+                        RankMethod::Random => "random",
+                    };
+                    ("rank", method, options.descending, seed.map(|s| s as i64)).into_py_any(py)
+                },
                 IRFunctionExpr::Clip { has_min, has_max } => {
                     ("clip", has_min, has_max).into_py_any(py)
                 },
@@ -1295,6 +1304,18 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));
                 },
+                IRFunctionExpr::FoldHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("fold"))
+                },
+                IRFunctionExpr::ReduceHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("reduce"))
+                },
+                IRFunctionExpr::CumReduceHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("cum_reduce"))
+                },
+                IRFunctionExpr::CumFoldHorizontal { .. } => {
+                    Err(PyNotImplementedError::new_err("cum_fold"))
+                },
                 IRFunctionExpr::SumHorizontal { ignore_nulls } => {
                     ("sum_horizontal", ignore_nulls).into_py_any(py)
                 },
@@ -1318,8 +1339,28 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     ("replace_strict",).into_py_any(py)
                 },
                 IRFunctionExpr::Negate => ("negate",).into_py_any(py),
-                IRFunctionExpr::FillNullWithStrategy(_) => {
-                    return Err(PyNotImplementedError::new_err("fill null with strategy"));
+                IRFunctionExpr::FillNullWithStrategy(strategy) => {
+                    let (strategy_str, py_limit): (&str, PyObject) = match strategy {
+                        FillNullStrategy::Forward(limit) => {
+                            let py_limit = limit
+                                .map(|v| PyInt::new(py, v).into())
+                                .unwrap_or_else(|| py.None());
+                            ("forward", py_limit)
+                        },
+                        FillNullStrategy::Backward(limit) => {
+                            let py_limit = limit
+                                .map(|v| PyInt::new(py, v).into())
+                                .unwrap_or_else(|| py.None());
+                            ("backward", py_limit)
+                        },
+                        FillNullStrategy::Min => ("min", py.None()),
+                        FillNullStrategy::Max => ("max", py.None()),
+                        FillNullStrategy::Mean => ("mean", py.None()),
+                        FillNullStrategy::Zero => ("zero", py.None()),
+                        FillNullStrategy::One => ("one", py.None()),
+                    };
+
+                    ("fill_null_with_strategy", strategy_str, py_limit).into_py_any(py)
                 },
                 IRFunctionExpr::GatherEvery { n, offset } => {
                     ("gather_every", offset, n).into_py_any(py)

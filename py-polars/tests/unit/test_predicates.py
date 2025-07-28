@@ -165,11 +165,11 @@ def test_is_in_join_blocked() -> None:
         {"Groups": ["A", "B", "C", "D", "E", "F"], "values0": [1, 2, 3, 4, 5, 6]}
     )
     lf2 = pl.LazyFrame(
-        {"values22": [1, 2, None, 4, 5, 6], "values20": [1, 2, 3, 4, 5, 6]}
+        {"values_22": [1, 2, None, 4, 5, 6], "values_20": [1, 2, 3, 4, 5, 6]}
     )
     lf_all = lf2.join(
         lf1,
-        left_on="values20",
+        left_on="values_20",
         right_on="values0",
         how="left",
         maintain_order="right_left",
@@ -181,8 +181,8 @@ def test_is_in_join_blocked() -> None:
     ):
         expected = pl.LazyFrame(
             {
-                "values22": [None, 4, 5],
-                "values20": [3, 4, 5],
+                "values_22": [None, 4, 5],
+                "values_20": [3, 4, 5],
                 "Groups": ["C", "D", "E"],
             }
         )
@@ -1149,7 +1149,7 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
 
     q = register_io_source(
         io_source=generator, schema={"x": pl.Int64, "y": pl.Int64}
-    ).filter(pl.col("y").map_elements(bool))
+    ).filter(pl.col("y").map_elements(bool, return_dtype=pl.Boolean))
 
     plan = q.explain()
     assert plan.index("SELECTION") > plan.index("PYTHON SCAN")

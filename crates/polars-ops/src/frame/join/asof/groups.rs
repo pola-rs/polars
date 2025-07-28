@@ -276,13 +276,19 @@ where
 
                 use BitRepr as B;
                 match (left_by, right_by) {
-                    (B::Small(left_by), B::Small(right_by)) => {
+                    (B::U32(left_by), B::U32(right_by)) => {
                         asof_join_by_numeric::<T, UInt32Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
-                    (B::Large(left_by), B::Large(right_by)) => {
+                    (B::U64(left_by), B::U64(right_by)) => {
                         asof_join_by_numeric::<T, UInt64Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
+                    #[cfg(feature = "dtype-i128")]
+                    (B::I128(left_by), B::I128(right_by)) => {
+                        asof_join_by_numeric::<T, Int128Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
@@ -414,6 +420,13 @@ fn dispatch_join_type(
                 ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
             )
         },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            let ca = left_asof.i128().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
         DataType::Float32 => {
             let ca = left_asof.f32().unwrap();
             dispatch_join_strategy_numeric(
@@ -485,17 +498,15 @@ pub trait AsofJoinBy: IntoDf {
         allow_eq: bool,
         check_sortedness: bool,
     ) -> PolarsResult<DataFrame> {
-        let (self_sliced_slot, other_sliced_slot, left_slice_s, right_slice_s); // Keeps temporaries alive.
+        let (self_sliced_slot, left_slice_s); // Keeps temporaries alive.
         let (self_df, other_df, left_key, right_key);
         if let Some((offset, len)) = slice {
             self_sliced_slot = self.to_df().slice(offset, len);
-            other_sliced_slot = other.slice(offset, len);
             left_slice_s = left_on.slice(offset, len);
-            right_slice_s = right_on.slice(offset, len);
             left_key = &left_slice_s;
-            right_key = &right_slice_s;
+            right_key = right_on;
             self_df = &self_sliced_slot;
-            other_df = &other_sliced_slot;
+            other_df = other;
         } else {
             self_df = self.to_df();
             other_df = other;

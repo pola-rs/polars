@@ -363,7 +363,6 @@ def test_date_agg() -> None:
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
     ],
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
     assert s.min() == min
     assert s.max() == max
@@ -552,6 +551,7 @@ def test_series_to_list() -> None:
     assert a.to_list() == [1, None, 2]
 
 
+@pytest.mark.may_fail_cloud  # reason: list.to_struct is a eager operation
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
@@ -777,7 +777,6 @@ def test_init_nested_tuple() -> None:
     assert s3.dtype == pl.List(pl.Int32)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))
@@ -1626,11 +1625,10 @@ def test_cast_datetime_to_time(unit: TimeUnit) -> None:
 
 
 def test_init_categorical() -> None:
-    with pl.StringCache():
-        for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
-            expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
-            a = pl.Series("a", values, dtype=pl.Categorical)
-            assert_series_equal(a, expected)
+    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+        expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
+        a = pl.Series("a", values, dtype=pl.Categorical)
+        assert_series_equal(a, expected)
 
 
 def test_iter_nested_list() -> None:

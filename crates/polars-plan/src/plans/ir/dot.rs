@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::unique_id::UniqueId;
 
 use super::format::ExprIRSliceDisplay;
 use crate::constants::UNLIMITED_CACHE;
@@ -18,7 +19,7 @@ const INDENT: &str = "  ";
 #[derive(Clone, Copy)]
 enum DotNode {
     Plain(usize),
-    Cache(usize),
+    Cache(UniqueId),
 }
 
 impl fmt::Display for DotNode {
@@ -79,7 +80,7 @@ impl<'a> IRDotDisplay<'a> {
 
         let root = self.lp.root();
         let id = if let IR::Cache { id, .. } = root {
-            DotNode::Cache(id.to_usize())
+            DotNode::Cache(*id)
         } else {
             *last += 1;
             DotNode::Plain(*last)
@@ -215,7 +216,6 @@ impl<'a> IRDotDisplay<'a> {
                 scan_type,
                 unified_scan_args,
                 output_schema: _,
-                id: _,
             } => {
                 let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);

@@ -10,6 +10,7 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) cache_file_info: SourcesToFileInfo,
     pub(super) pushdown_maintain_errors: bool,
     pub(super) verbose: bool,
+    pub(super) cache_id_for_arc_ptr: PlHashMap<usize, UniqueId>,
 }
 
 pub(super) fn expand_expressions(
@@ -20,8 +21,11 @@ pub(super) fn expand_expressions(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<ExprIR>> {
     let schema = lp_arena.get(input).schema(lp_arena);
-    let exprs = rewrite_projections(exprs, &schema, &[], opt_flags)?;
-    to_expr_irs(exprs, expr_arena, &schema)
+    let exprs = rewrite_projections(exprs, &Default::default(), &schema, opt_flags)?;
+    to_expr_irs(
+        exprs,
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, &schema, opt_flags),
+    )
 }
 
 pub(super) fn empty_df() -> IR {

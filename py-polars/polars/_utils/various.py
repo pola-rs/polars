@@ -665,7 +665,9 @@ def display_dot_graph(
         # we do not show a graph, nor save a graph to disk
         return dot
 
-    output_type = "svg" if _in_notebook() else "png"
+    output_type = (
+        "svg" if _in_notebook() or "POLARS_DOT_SVG_VIEWER" in os.environ else "png"
+    )
 
     try:
         graph = subprocess.check_output(
@@ -689,6 +691,16 @@ def display_dot_graph(
 
         return display(SVG(graph))
     else:
+        if (cmd := os.environ.get("POLARS_DOT_SVG_VIEWER", None)) is not None:
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".svg") as file:
+                file.write(graph)
+                file.flush()
+                cmd = cmd.replace("%file%", file.name)
+                subprocess.run(cmd, shell=True)
+            return None
+
         import_optional(
             "matplotlib",
             err_prefix="",

@@ -1,223 +1,282 @@
+use std::iter;
+
 use super::*;
 
 impl IR {
-    /// Takes the expressions of an LP node and the inputs of that node and reconstruct
-    pub fn with_exprs_and_input(&self, mut exprs: Vec<ExprIR>, mut inputs: Vec<Node>) -> IR {
-        use IR::*;
+    /// Returns a node with updated expressions.
+    ///
+    /// Panics if the expression count doesn't match
+    /// [`Self::exprs`]/[`Self::exprs_mut`]/[`Self::copy_exprs`].
+    pub fn with_exprs<E>(mut self, exprs: E) -> Self
+    where
+        E: IntoIterator<Item = ExprIR>,
+    {
+        let mut exprs_mut = self.exprs_mut();
+        let mut new_exprs = exprs.into_iter();
 
+        for (expr, new_expr) in exprs_mut.by_ref().zip(new_exprs.by_ref()) {
+            *expr = new_expr;
+        }
+
+        assert!(exprs_mut.next().is_none(), "not enough exprs");
+        assert!(new_exprs.next().is_none(), "too many exprs");
+
+        drop(exprs_mut);
+
+        self
+    }
+
+    /// Returns a node with updated inputs.
+    ///
+    /// Panics if the input count doesn't match
+    /// [`Self::inputs`]/[`Self::inputs_mut`]/[`Self::copy_inputs`]/[`Self::get_inputs`].
+    pub fn with_inputs<I>(mut self, inputs: I) -> Self
+    where
+        I: IntoIterator<Item = Node>,
+    {
+        let mut inputs_mut = self.inputs_mut();
+        let mut new_inputs = inputs.into_iter();
+
+        for (input, new_input) in inputs_mut.by_ref().zip(new_inputs.by_ref()) {
+            *input = new_input;
+        }
+
+        assert!(inputs_mut.next().is_none(), "not enough inputs");
+        assert!(new_inputs.next().is_none(), "too many inputs");
+
+        drop(inputs_mut);
+
+        self
+    }
+
+    pub fn exprs(&'_ self) -> Exprs<'_> {
+        use IR::*;
         match self {
+            Slice { .. } => Exprs::Empty,
+            Cache { .. } => Exprs::Empty,
+            Distinct { .. } => Exprs::Empty,
+            Union { .. } => Exprs::Empty,
+            MapFunction { .. } => Exprs::Empty,
+            DataFrameScan { .. } => Exprs::Empty,
+            HConcat { .. } => Exprs::Empty,
+            ExtContext { .. } => Exprs::Empty,
+            SimpleProjection { .. } => Exprs::Empty,
+            SinkMultiple { .. } => Exprs::Empty,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => Exprs::Empty,
+
             #[cfg(feature = "python")]
-            PythonScan { options } => PythonScan {
-                options: options.clone(),
+            PythonScan { options } => match &options.predicate {
+                PythonPredicate::Polars(predicate) => Exprs::single(predicate),
+                _ => Exprs::Empty,
             },
-            Union { options, .. } => Union {
-                inputs,
-                options: *options,
+
+            Scan { predicate, .. } => match predicate {
+                Some(predicate) => Exprs::single(predicate),
+                _ => Exprs::Empty,
             },
-            HConcat {
-                schema, options, ..
-            } => HConcat {
-                inputs,
-                schema: schema.clone(),
-                options: *options,
-            },
-            Slice { offset, len, .. } => Slice {
-                input: inputs[0],
-                offset: *offset,
-                len: *len,
-            },
-            Filter { .. } => Filter {
-                input: inputs[0],
-                predicate: exprs.pop().unwrap(),
-            },
-            Select {
-                schema, options, ..
-            } => Select {
-                input: inputs[0],
-                expr: exprs,
-                schema: schema.clone(),
-                options: *options,
-            },
-            GroupBy {
-                keys,
-                schema,
-                apply,
-                maintain_order,
-                options: dynamic_options,
-                ..
-            } => GroupBy {
-                input: inputs[0],
-                keys: exprs[..keys.len()].to_vec(),
-                aggs: exprs[keys.len()..].to_vec(),
-                schema: schema.clone(),
-                apply: apply.clone(),
-                maintain_order: *maintain_order,
-                options: dynamic_options.clone(),
-            },
+
+            Filter { predicate, .. } => Exprs::single(predicate),
+
+            Sort { by_column, .. } => Exprs::slice(by_column),
+            Select { expr, .. } => Exprs::slice(expr),
+            HStack { exprs, .. } => Exprs::slice(exprs),
+
+            GroupBy { keys, aggs, .. } => Exprs::double_slice(keys, aggs),
+
             Join {
-                schema,
                 left_on,
+                right_on,
                 options,
                 ..
-            } => Join {
-                input_left: inputs[0],
-                input_right: inputs[1],
-                schema: schema.clone(),
-                left_on: exprs[..left_on.len()].to_vec(),
-                right_on: exprs[left_on.len()..].to_vec(),
-                options: options.clone(),
+            } => match &options.options {
+                Some(JoinTypeOptionsIR::Cross { predicate }) => Exprs::Boxed(Box::new(
+                    left_on
+                        .iter()
+                        .chain(right_on.iter())
+                        .chain(iter::once(predicate)),
+                )),
+                _ => Exprs::double_slice(left_on, right_on),
             },
-            Sort {
-                by_column,
-                slice,
-                sort_options,
-                ..
-            } => Sort {
-                input: inputs[0],
-                by_column: by_column.clone(),
-                slice: *slice,
-                sort_options: sort_options.clone(),
-            },
-            Cache { id, cache_hits, .. } => Cache {
-                input: inputs[0],
-                id: id.clone(),
-                cache_hits: *cache_hits,
-            },
-            Distinct { options, .. } => Distinct {
-                input: inputs[0],
-                options: options.clone(),
-            },
-            HStack {
-                schema, options, ..
-            } => HStack {
-                input: inputs[0],
-                exprs,
-                schema: schema.clone(),
-                options: *options,
-            },
-            Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                predicate,
-                unified_scan_args,
-                scan_type,
-                id: _,
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
 
-                Scan {
-                    sources: sources.clone(),
-                    file_info: file_info.clone(),
-                    hive_parts: hive_parts.clone(),
-                    output_schema: output_schema.clone(),
-                    unified_scan_args: unified_scan_args.clone(),
-                    predicate: new_predicate,
-                    scan_type: scan_type.clone(),
-                    id: Default::default(),
-                }
+            Sink { payload, .. } => match payload {
+                SinkTypeIR::Memory => Exprs::Empty,
+                SinkTypeIR::File(_) => Exprs::Empty,
+                SinkTypeIR::Partition(p) => {
+                    let key_iter = match &p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter(),
+                        _ => [].iter(),
+                    };
+                    let sort_by_iter = match &p.per_partition_sort_by {
+                        Some(sort_by) => sort_by.iter(),
+                        _ => [].iter(),
+                    }
+                    .map(|s| &s.expr);
+                    Exprs::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+                },
             },
-            DataFrameScan {
-                df,
-                schema,
-                output_schema,
-            } => DataFrameScan {
-                df: df.clone(),
-                schema: schema.clone(),
-                output_schema: output_schema.clone(),
-            },
-            MapFunction { function, .. } => MapFunction {
-                input: inputs[0],
-                function: function.clone(),
-            },
-            ExtContext { schema, .. } => ExtContext {
-                input: inputs.pop().unwrap(),
-                contexts: inputs,
-                schema: schema.clone(),
-            },
-            Sink { payload, .. } => Sink {
-                input: inputs.pop().unwrap(),
-                payload: payload.clone(),
-            },
-            SinkMultiple { .. } => SinkMultiple { inputs },
-            SimpleProjection { columns, .. } => SimpleProjection {
-                input: inputs.pop().unwrap(),
-                columns: columns.clone(),
-            },
+
+            Invalid => unreachable!(),
+        }
+    }
+
+    pub fn exprs_mut(&'_ mut self) -> ExprsMut<'_> {
+        use IR::*;
+        match self {
+            Slice { .. } => ExprsMut::Empty,
+            Cache { .. } => ExprsMut::Empty,
+            Distinct { .. } => ExprsMut::Empty,
+            Union { .. } => ExprsMut::Empty,
+            MapFunction { .. } => ExprsMut::Empty,
+            DataFrameScan { .. } => ExprsMut::Empty,
+            HConcat { .. } => ExprsMut::Empty,
+            ExtContext { .. } => ExprsMut::Empty,
+            SimpleProjection { .. } => ExprsMut::Empty,
+            SinkMultiple { .. } => ExprsMut::Empty,
             #[cfg(feature = "merge_sorted")]
-            MergeSorted {
-                input_left: _,
-                input_right: _,
-                key,
-            } => MergeSorted {
-                input_left: inputs[0],
-                input_right: inputs[1],
-                key: key.clone(),
+            MergeSorted { .. } => ExprsMut::Empty,
+
+            #[cfg(feature = "python")]
+            PythonScan { options } => match &mut options.predicate {
+                PythonPredicate::Polars(predicate) => ExprsMut::single(predicate),
+                _ => ExprsMut::Empty,
             },
+
+            Scan { predicate, .. } => match predicate {
+                Some(predicate) => ExprsMut::single(predicate),
+                _ => ExprsMut::Empty,
+            },
+
+            Filter { predicate, .. } => ExprsMut::single(predicate),
+
+            Sort { by_column, .. } => ExprsMut::slice(by_column),
+            Select { expr, .. } => ExprsMut::slice(expr),
+            HStack { exprs, .. } => ExprsMut::slice(exprs),
+
+            GroupBy { keys, aggs, .. } => ExprsMut::double_slice(keys, aggs),
+
+            Join {
+                left_on,
+                right_on,
+                options,
+                ..
+            } => match Arc::make_mut(options).options.as_mut() {
+                Some(JoinTypeOptionsIR::Cross { predicate }) => ExprsMut::Boxed(Box::new(
+                    left_on
+                        .iter_mut()
+                        .chain(right_on.iter_mut())
+                        .chain(iter::once(predicate)),
+                )),
+                _ => ExprsMut::double_slice(left_on, right_on),
+            },
+
+            Sink { payload, .. } => match payload {
+                SinkTypeIR::Memory => ExprsMut::Empty,
+                SinkTypeIR::File(_) => ExprsMut::Empty,
+                SinkTypeIR::Partition(p) => {
+                    let key_iter = match &mut p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter_mut(),
+                        _ => [].iter_mut(),
+                    };
+                    let sort_by_iter = match &mut p.per_partition_sort_by {
+                        Some(sort_by) => sort_by.iter_mut(),
+                        _ => [].iter_mut(),
+                    }
+                    .map(|s| &mut s.expr);
+                    ExprsMut::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+                },
+            },
+
             Invalid => unreachable!(),
         }
     }
 
     /// Copy the exprs in this LP node to an existing container.
-    pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
+    pub fn copy_exprs<T>(&self, container: &mut T)
+    where
+        T: Extend<ExprIR>,
+    {
+        container.extend(self.exprs().cloned())
+    }
+
+    pub fn inputs(&'_ self) -> Inputs<'_> {
         use IR::*;
         match self {
-            Slice { .. }
-            | Cache { .. }
-            | Distinct { .. }
-            | Union { .. }
-            | MapFunction { .. }
-            | SinkMultiple { .. } => {},
-            Sort { by_column, .. } => container.extend_from_slice(by_column),
-            Filter { predicate, .. } => container.push(predicate.clone()),
-            Select { expr, .. } => container.extend_from_slice(expr),
-            GroupBy { keys, aggs, .. } => {
-                let iter = keys.iter().cloned().chain(aggs.iter().cloned());
-                container.extend(iter)
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
+                Inputs::slice(inputs)
             },
+            Slice { input, .. } => Inputs::single(*input),
+            Filter { input, .. } => Inputs::single(*input),
+            Select { input, .. } => Inputs::single(*input),
+            SimpleProjection { input, .. } => Inputs::single(*input),
+            Sort { input, .. } => Inputs::single(*input),
+            Cache { input, .. } => Inputs::single(*input),
+            GroupBy { input, .. } => Inputs::single(*input),
             Join {
-                left_on, right_on, ..
-            } => {
-                let iter = left_on.iter().cloned().chain(right_on.iter().cloned());
-                container.extend(iter)
-            },
-            HStack { exprs, .. } => container.extend_from_slice(exprs),
-            Scan { predicate, .. } => {
-                if let Some(pred) = predicate {
-                    container.push(pred.clone())
-                }
-            },
-            DataFrameScan { .. } => {},
+                input_left,
+                input_right,
+                ..
+            } => Inputs::double(*input_left, *input_right),
+            HStack { input, .. } => Inputs::single(*input),
+            Distinct { input, .. } => Inputs::single(*input),
+            MapFunction { input, .. } => Inputs::single(*input),
+            Sink { input, .. } => Inputs::single(*input),
+            ExtContext {
+                input, contexts, ..
+            } => Inputs::Boxed(Box::new(iter::once(*input).chain(contexts.iter().copied()))),
+            Scan { .. } => Inputs::Empty,
+            DataFrameScan { .. } => Inputs::Empty,
             #[cfg(feature = "python")]
-            PythonScan { .. } => {},
-            Sink { payload, .. } => {
-                if let SinkTypeIR::Partition(p) = payload {
-                    match &p.variant {
-                        PartitionVariantIR::Parted { key_exprs, .. }
-                        | PartitionVariantIR::ByKey { key_exprs, .. } => {
-                            container.extend_from_slice(key_exprs)
-                        },
-                        _ => (),
-                    }
-                }
-            },
-            HConcat { .. } => {},
-            ExtContext { .. } | SimpleProjection { .. } => {},
+            PythonScan { .. } => Inputs::Empty,
             #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => {},
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => Inputs::double(*input_left, *input_right),
             Invalid => unreachable!(),
         }
     }
 
-    /// Get expressions in this node.
-    pub fn get_exprs(&self) -> Vec<ExprIR> {
-        let mut exprs = Vec::new();
-        self.copy_exprs(&mut exprs);
-        exprs
+    pub fn inputs_mut(&'_ mut self) -> InputsMut<'_> {
+        use IR::*;
+        match self {
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
+                InputsMut::slice(inputs)
+            },
+            Slice { input, .. } => InputsMut::single(input),
+            Filter { input, .. } => InputsMut::single(input),
+            Select { input, .. } => InputsMut::single(input),
+            SimpleProjection { input, .. } => InputsMut::single(input),
+            Sort { input, .. } => InputsMut::single(input),
+            Cache { input, .. } => InputsMut::single(input),
+            GroupBy { input, .. } => InputsMut::single(input),
+            Join {
+                input_left,
+                input_right,
+                ..
+            } => InputsMut::double(input_left, input_right),
+            HStack { input, .. } => InputsMut::single(input),
+            Distinct { input, .. } => InputsMut::single(input),
+            MapFunction { input, .. } => InputsMut::single(input),
+            Sink { input, .. } => InputsMut::single(input),
+            ExtContext {
+                input, contexts, ..
+            } => InputsMut::Boxed(Box::new(iter::once(input).chain(contexts.iter_mut()))),
+            Scan { .. } => InputsMut::Empty,
+            DataFrameScan { .. } => InputsMut::Empty,
+            #[cfg(feature = "python")]
+            PythonScan { .. } => InputsMut::Empty,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => InputsMut::double(input_left, input_right),
+            Invalid => unreachable!(),
+        }
     }
 
     /// Push inputs of the LP in of this node to an existing container.
@@ -227,70 +286,158 @@ impl IR {
     where
         T: Extend<Node>,
     {
-        use IR::*;
-        let input = match self {
-            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
-                container.extend(inputs.iter().cloned());
-                return;
-            },
-            Slice { input, .. } => *input,
-            Filter { input, .. } => *input,
-            Select { input, .. } => *input,
-            SimpleProjection { input, .. } => *input,
-            Sort { input, .. } => *input,
-            Cache { input, .. } => *input,
-            GroupBy { input, .. } => *input,
-            Join {
-                input_left,
-                input_right,
-                ..
-            } => {
-                container.extend([*input_left, *input_right]);
-                return;
-            },
-            HStack { input, .. } => *input,
-            Distinct { input, .. } => *input,
-            MapFunction { input, .. } => *input,
-            Sink { input, .. } => *input,
-            ExtContext {
-                input, contexts, ..
-            } => {
-                container.extend(contexts.iter().cloned());
-                *input
-            },
-            Scan { .. } => return,
-            DataFrameScan { .. } => return,
-            #[cfg(feature = "python")]
-            PythonScan { .. } => return,
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted {
-                input_left,
-                input_right,
-                ..
-            } => {
-                container.extend([*input_left, *input_right]);
-                return;
-            },
-            Invalid => unreachable!(),
-        };
-        container.extend([input])
+        container.extend(self.inputs())
     }
 
     pub fn get_inputs(&self) -> UnitVec<Node> {
-        let mut inputs: UnitVec<Node> = unitvec!();
-        self.copy_inputs(&mut inputs);
-        inputs
-    }
-
-    pub fn get_inputs_vec(&self) -> Vec<Node> {
-        let mut inputs = vec![];
-        self.copy_inputs(&mut inputs);
-        inputs
+        self.inputs().collect()
     }
 
     pub(crate) fn get_input(&self) -> Option<Node> {
-        let mut inputs: UnitVec<Node> = unitvec!();
-        self.copy_inputs(&mut inputs);
-        inputs.first().copied()
+        self.inputs().next()
+    }
+}
+
+pub enum Inputs<'a> {
+    Empty,
+    Single(iter::Once<Node>),
+    Double(std::array::IntoIter<Node, 2>),
+    Slice(iter::Copied<std::slice::Iter<'a, Node>>),
+    Boxed(Box<dyn Iterator<Item = Node> + 'a>),
+}
+
+impl<'a> Inputs<'a> {
+    fn single(node: Node) -> Self {
+        Self::Single(iter::once(node))
+    }
+
+    fn double(left: Node, right: Node) -> Self {
+        Self::Double([left, right].into_iter())
+    }
+
+    fn slice(inputs: &'a [Node]) -> Self {
+        Self::Slice(inputs.iter().copied())
+    }
+}
+
+impl<'a> Iterator for Inputs<'a> {
+    type Item = Node;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.next(),
+            Self::Double(it) => it.next(),
+            Self::Slice(it) => it.next(),
+            Self::Boxed(it) => it.next(),
+        }
+    }
+}
+
+pub enum InputsMut<'a> {
+    Empty,
+    Single(iter::Once<&'a mut Node>),
+    Double(std::array::IntoIter<&'a mut Node, 2>),
+    Slice(std::slice::IterMut<'a, Node>),
+    Boxed(Box<dyn Iterator<Item = &'a mut Node> + 'a>),
+}
+
+impl<'a> InputsMut<'a> {
+    fn single(node: &'a mut Node) -> Self {
+        Self::Single(iter::once(node))
+    }
+
+    fn double(left: &'a mut Node, right: &'a mut Node) -> Self {
+        Self::Double([left, right].into_iter())
+    }
+
+    fn slice(inputs: &'a mut [Node]) -> Self {
+        Self::Slice(inputs.iter_mut())
+    }
+}
+
+impl<'a> Iterator for InputsMut<'a> {
+    type Item = &'a mut Node;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.next(),
+            Self::Double(it) => it.next(),
+            Self::Slice(it) => it.next(),
+            Self::Boxed(it) => it.next(),
+        }
+    }
+}
+
+pub enum Exprs<'a> {
+    Empty,
+    Single(iter::Once<&'a ExprIR>),
+    Slice(std::slice::Iter<'a, ExprIR>),
+    DoubleSlice(iter::Chain<std::slice::Iter<'a, ExprIR>, std::slice::Iter<'a, ExprIR>>),
+    Boxed(Box<dyn Iterator<Item = &'a ExprIR> + 'a>),
+}
+
+impl<'a> Exprs<'a> {
+    fn single(expr: &'a ExprIR) -> Self {
+        Self::Single(iter::once(expr))
+    }
+
+    fn slice(inputs: &'a [ExprIR]) -> Self {
+        Self::Slice(inputs.iter())
+    }
+
+    fn double_slice(left: &'a [ExprIR], right: &'a [ExprIR]) -> Self {
+        Self::DoubleSlice(left.iter().chain(right.iter()))
+    }
+}
+
+impl<'a> Iterator for Exprs<'a> {
+    type Item = &'a ExprIR;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.next(),
+            Self::Slice(it) => it.next(),
+            Self::DoubleSlice(it) => it.next(),
+            Self::Boxed(it) => it.next(),
+        }
+    }
+}
+
+pub enum ExprsMut<'a> {
+    Empty,
+    Single(iter::Once<&'a mut ExprIR>),
+    Slice(std::slice::IterMut<'a, ExprIR>),
+    DoubleSlice(iter::Chain<std::slice::IterMut<'a, ExprIR>, std::slice::IterMut<'a, ExprIR>>),
+    Boxed(Box<dyn Iterator<Item = &'a mut ExprIR> + 'a>),
+}
+
+impl<'a> ExprsMut<'a> {
+    fn single(expr: &'a mut ExprIR) -> Self {
+        Self::Single(iter::once(expr))
+    }
+
+    fn slice(inputs: &'a mut [ExprIR]) -> Self {
+        Self::Slice(inputs.iter_mut())
+    }
+
+    fn double_slice(left: &'a mut [ExprIR], right: &'a mut [ExprIR]) -> Self {
+        Self::DoubleSlice(left.iter_mut().chain(right.iter_mut()))
+    }
+}
+
+impl<'a> Iterator for ExprsMut<'a> {
+    type Item = &'a mut ExprIR;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.next(),
+            Self::Slice(it) => it.next(),
+            Self::DoubleSlice(it) => it.next(),
+            Self::Boxed(it) => it.next(),
+        }
     }
 }

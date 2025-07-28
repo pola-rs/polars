@@ -44,10 +44,8 @@ impl TreeWalker for Expr {
         let ret = match self {
             Alias(l, r) => Alias(am(l, f)?, r),
             Column(_) => self,
-            Columns(_) => self,
-            DtypeColumn(_) => self,
-            IndexColumn(_) => self,
             Literal(_) => self,
+            DataTypeFunction(_) => self,
             #[cfg(feature = "dtype-struct")]
             Field(_) => self,
             BinaryExpr { left, op, right } => {
@@ -81,12 +79,9 @@ impl TreeWalker for Expr {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
                 Window { function: am(function, f)?, partition_by, order_by, options }
             },
-            Wildcard => Wildcard,
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
-            Exclude(expr, excluded) => Exclude(am(expr, f)?, excluded),
             KeepName(expr) => KeepName(am(expr, f)?),
             Len => Len,
-            Nth(_) => self,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
             AnonymousFunction { input, function, output_type, options, fmt_str } => {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options, fmt_str }

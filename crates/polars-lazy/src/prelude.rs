@@ -14,8 +14,8 @@ pub use polars_ops::prelude::{RankMethod, RankOptions};
 pub use polars_plan::client::prepare_cloud_plan;
 pub use polars_plan::dsl::AnonymousScanOptions;
 pub use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, Literal, LiteralValue, NULL, Null};
-pub use polars_plan::prelude::UnionArgs;
 pub(crate) use polars_plan::prelude::*;
+pub use polars_plan::prelude::{PlanCallback, UnionArgs};
 #[cfg(feature = "rolling_window_by")]
 pub use polars_time::Duration;
 #[cfg(feature = "dynamic_group_by")]

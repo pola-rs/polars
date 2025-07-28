@@ -98,6 +98,7 @@ def test_struct_hashes() -> None:
     assert len({hash(tp) for tp in (dtypes)}) == 3
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct (map_elements)
 def test_struct_unnesting() -> None:
     df_base = pl.DataFrame({"a": [1, 2]})
     df = df_base.select(
@@ -122,18 +123,13 @@ def test_struct_unnesting() -> None:
         out_lazy = df.lazy().unnest(cols)
         assert_frame_equal(out_lazy, expected.lazy())
 
-    out = (
-        df_base.lazy()
-        .select(
-            pl.all().alias("a_original"),
-            pl.col("a")
-            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
-            .struct.rename_fields(["a", "a_squared", "mod2eq0"])
-            .alias("foo"),
-        )
-        .unnest("foo")
-        .collect()
-    )
+    out = df_base.select(
+        pl.all().alias("a_original"),
+        pl.col("a")
+        .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+        .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+        .alias("foo"),
+    ).unnest("foo")
     assert_frame_equal(out, expected)
 
 
@@ -262,6 +258,7 @@ def test_from_dicts_struct() -> None:
     ]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
@@ -878,16 +875,15 @@ def test_struct_field_recognized_as_renaming_expr_16480() -> None:
 
 
 def test_struct_filter_chunked_16498() -> None:
-    with pl.StringCache():
-        N = 5
-        df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
+    N = 5
+    df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
 
-        df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
+    df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
 
-        df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
-        df = df.select(pl.struct(pl.all()).alias("s"))
-        df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
-        assert df.shape == (5, 1)
+    df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
+    df = df.select(pl.struct(pl.all()).alias("s"))
+    df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
+    assert df.shape == (5, 1)
 
 
 def test_struct_field_dynint_nullable_16243() -> None:
@@ -930,6 +926,7 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
         ).collect()
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 def test_struct_chunked_gather_17603() -> None:
     df = pl.DataFrame(
         {
@@ -1050,12 +1047,14 @@ def test_struct_null_zip() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
 def test_zfs_construction(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))
     assert a.len() == size
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_unnest(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).struct.unnest()
@@ -1076,6 +1075,7 @@ def test_zfs_equality(size: int) -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 def test_zfs_nullable_when_otherwise() -> None:
     a = pl.Series("a", [{}, None, {}, {}, None], pl.Struct([]))
     b = pl.Series("b", [None, {}, None, {}, None], pl.Struct([]))
@@ -1093,6 +1093,7 @@ def test_zfs_nullable_when_otherwise() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 def test_zfs_struct_fns() -> None:
     a = pl.Series("a", [{}], pl.Struct([]))
 
@@ -1120,6 +1121,7 @@ def test_zfs_serialization_roundtrip(format: pl.SerializationFormat, size: int) 
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
 def test_zfs_row_encoding(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([]))
@@ -1132,6 +1134,7 @@ def test_zfs_row_encoding(size: int) -> None:
     assert_frame_equal(gb, df, check_row_order=False)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager construct
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct_19208() -> None:
     df = pl.DataFrame(
@@ -1220,6 +1223,7 @@ def test_leaf_list_eq_19613(data: Any) -> None:
     assert not pl.DataFrame([data]).equals(pl.DataFrame([[data]]))
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_nested_object_raises_15237() -> None:
     obj = object()
     df = pl.DataFrame({"a": [obj]})
@@ -1288,3 +1292,13 @@ def test_struct_cast_string_multiple_chunks_21650() -> None:
     result = df.select(pl.col("a").cast(pl.String))
     expected = pl.DataFrame({"a": ["{1,2}", "{1,2}"]})
     assert_frame_equal(result, expected)
+
+
+def test_struct_nulls_in_equality_23527() -> None:
+    df = pl.DataFrame({"a": [False, False, False, None, True, True]})
+    df_struct = df.with_columns(pl.struct(["a"]).alias("a"))
+    out = df_struct.with_columns(
+        (pl.col("a") == pl.col("a").shift(1)).fill_null(False).alias("a")
+    )
+    expected = pl.DataFrame({"a": [False, True, True, False, False, True]})
+    assert_frame_equal(out, expected)

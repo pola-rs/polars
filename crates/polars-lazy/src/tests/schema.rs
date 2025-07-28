@@ -11,8 +11,8 @@ fn test_schema_update_after_projection_pd() -> PolarsResult<()> {
     let q = df
         .lazy()
         .with_column(col("a").implode())
-        .explode([col("a")])
-        .select([cols(["a", "b"])]);
+        .explode(by_name(["a"], true))
+        .select([cols(["a", "b"]).as_expr()]);
 
     // run optimizations
     // Get the explode node

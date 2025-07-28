@@ -267,6 +267,8 @@ pub fn get_supertype_with_options(
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
 
+            (Float32, Float64) => Some(Float64),
+
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
             #[cfg(feature = "dtype-u16")]
@@ -333,7 +335,7 @@ pub fn get_supertype_with_options(
             (Time, Float64) => Some(Float64),
 
             // Every known type can be cast to a string except binary
-            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
+            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any | UnknownKind::Ufunc)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
             (String, Binary) => Some(Binary),
             (dt, Null) => Some(dt.clone()),
 

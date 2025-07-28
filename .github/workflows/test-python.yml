@@ -122,6 +122,7 @@ jobs:
         run: |
           pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
           pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_scan_row_deletion.py
+          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_iceberg.py
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.13' || matrix.python-version == '3.13t')

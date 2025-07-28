@@ -14,8 +14,10 @@ use polars_python::catalog::unity::PyCatalogClient;
 use polars_python::cloud_client;
 #[cfg(feature = "polars_cloud_server")]
 use polars_python::cloud_server;
+use polars_python::conversion::PyCategories;
 use polars_python::dataframe::PyDataFrame;
 use polars_python::expr::datatype::PyDataTypeExpr;
+use polars_python::expr::selector::PySelector;
 use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
@@ -100,12 +102,14 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyDataTypeExpr>().unwrap();
+    m.add_class::<PySelector>().unwrap();
     m.add_class::<PyPartitioning>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "csv")]
     m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
+    m.add_class::<PyCategories>().unwrap();
 
     // Submodules
     // LogicalPlan objects
@@ -182,7 +186,6 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all_with_callback))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_arr))
@@ -207,18 +210,11 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf_horizontal))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::index_cols))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::duration))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::first)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::nth)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))

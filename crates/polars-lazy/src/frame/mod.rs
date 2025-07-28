@@ -34,7 +34,6 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
-use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -421,45 +420,12 @@ impl LazyFrame {
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
     ///
-    /// If `strict` is `true`, then any given columns that are not in the schema will
-    /// give a [`PolarsError::ColumnNotFound`] error while materializing the [`LazyFrame`].
-    fn _drop<I, T>(self, columns: I, strict: bool) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<Selector>,
-    {
-        let to_drop = columns.into_iter().map(|c| c.into()).collect();
-
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop(to_drop, strict).build();
-        Self::from_logical_plan(lp, opt_state)
-    }
-
-    /// Removes columns from the DataFrame.
-    /// Note that it's better to only select the columns you need
-    /// and let the projection pushdown optimize away the unneeded columns.
-    ///
     /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
     /// error while materializing the [`LazyFrame`].
-    pub fn drop<I, T>(self, columns: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<Selector>,
-    {
-        self._drop(columns, true)
-    }
-
-    /// Removes columns from the DataFrame.
-    /// Note that it's better to only select the columns you need
-    /// and let the projection pushdown optimize away the unneeded columns.
-    ///
-    /// If a column name does not exist in the schema, it will quietly be ignored.
-    pub fn drop_no_validate<I, T>(self, columns: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<Selector>,
-    {
-        self._drop(columns, false)
+    pub fn drop(self, columns: Selector) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop(columns).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -532,19 +498,6 @@ impl LazyFrame {
         } else {
             col(PlSmallStr::from_static("*")).cast(dtype)
         }])
-    }
-
-    /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
-    /// operation. This is a utility that helps debug a query on a smaller number of rows.
-    ///
-    /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
-    /// Filter, join operations and a lower number of rows available in the scanned file influence
-    /// the final number of rows.
-    pub fn fetch(self, n_rows: usize) -> PolarsResult<DataFrame> {
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
-        let res = self.collect();
-        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
-        res
     }
 
     pub fn optimize(
@@ -742,10 +695,6 @@ impl LazyFrame {
                 );
                 result.map(|v| v.unwrap_single())
             }),
-            _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
-                InvalidOperation: "partition sinks are not supported on for the '{}' engine",
-                engine.into_static_str()
-            )),
             Engine::Gpu => {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
@@ -1243,7 +1192,7 @@ impl LazyFrame {
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select([col(PlSmallStr::from_static("*")).exclude(["foo"])])
+    ///         .select([all().exclude_cols(["foo"]).as_expr()])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -1848,21 +1797,12 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(self, columns: E) -> LazyFrame {
+    pub fn explode(self, columns: Selector) -> LazyFrame {
         self.explode_impl(columns, false)
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    fn explode_impl<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(
-        self,
-        columns: E,
-        allow_empty: bool,
-    ) -> LazyFrame {
-        let columns = columns
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<_>>();
+    fn explode_impl(self, columns: Selector, allow_empty: bool) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
@@ -1882,28 +1822,17 @@ impl LazyFrame {
     /// `None`, all columns are considered.
     pub fn unique_stable(
         self,
-        subset: Option<Vec<PlSmallStr>>,
+        subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         self.unique_stable_generic(subset, keep_strategy)
     }
 
-    pub fn unique_stable_generic<E, IE>(
+    pub fn unique_stable_generic(
         self,
-        subset: Option<E>,
+        subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
-    ) -> LazyFrame
-    where
-        E: AsRef<[IE]>,
-        IE: Into<Selector> + Clone,
-    {
-        let subset = subset.map(|s| {
-            s.as_ref()
-                .iter()
-                .map(|e| e.clone().into())
-                .collect::<Vec<_>>()
-        });
-
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let options = DistinctOptionsDSL {
             subset,
@@ -1921,25 +1850,15 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for uniqueness; if None,
     /// all columns are considered.
-    pub fn unique(
-        self,
-        subset: Option<Vec<String>>,
-        keep_strategy: UniqueKeepStrategy,
-    ) -> LazyFrame {
+    pub fn unique(self, subset: Option<Selector>, keep_strategy: UniqueKeepStrategy) -> LazyFrame {
         self.unique_generic(subset, keep_strategy)
     }
 
-    pub fn unique_generic<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(
+    pub fn unique_generic(
         self,
-        subset: Option<E>,
+        subset: Option<Selector>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
-        let subset = subset.map(|s| {
-            s.as_ref()
-                .iter()
-                .map(|e| e.clone().into())
-                .collect::<Vec<_>>()
-        });
         let opt_state = self.get_opt_state();
         let options = DistinctOptionsDSL {
             subset,
@@ -1954,7 +1873,7 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for NaNs; if None, all
     /// floating point columns are considered.
-    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> LazyFrame {
+    pub fn drop_nans(self, subset: Option<Selector>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop_nans(subset).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1964,7 +1883,7 @@ impl LazyFrame {
     ///
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.
-    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
+    pub fn drop_nulls(self, subset: Option<Selector>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop_nulls(subset).build();
         Self::from_logical_plan(lp, opt_state)
@@ -2018,8 +1937,6 @@ impl LazyFrame {
     }
 
     /// Limit the DataFrame to the first `n` rows.
-    ///
-    /// Note if you don't want the rows to be scanned, use [`fetch`](LazyFrame::fetch).
     pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
@@ -2135,16 +2052,7 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest<E, IE>(self, cols: E) -> Self
-    where
-        E: AsRef<[IE]>,
-        IE: Into<Selector> + Clone,
-    {
-        let cols = cols
-            .as_ref()
-            .iter()
-            .map(|ie| ie.clone().into())
-            .collect::<Vec<_>>();
+    pub fn unnest(self, cols: Selector) -> Self {
         self.map_private(DslFunction::Unnest(cols))
     }
 
@@ -2237,13 +2145,8 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col(PlSmallStr::from_static("*"))
-            .exclude(keys.iter().cloned())
-            .head(n)])
-            .explode_impl(
-                [col(PlSmallStr::from_static("*")).exclude(keys.iter().cloned())],
-                true,
-            )
+        self.agg([all().as_expr().head(n).explode()])
+            .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 
     /// Return last n rows of each group
@@ -2254,13 +2157,8 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col(PlSmallStr::from_static("*"))
-            .exclude(keys.iter().cloned())
-            .tail(n)])
-            .explode_impl(
-                [col(PlSmallStr::from_static("*")).exclude(keys.iter().cloned())],
-                true,
-            )
+        self.agg([all().as_expr().tail(n).explode()])
+            .explode_impl(all() - by_name(keys.iter().cloned(), false), true)
     }
 
     /// Apply a function over the groups as a new DataFrame.
@@ -2572,10 +2470,14 @@ mod streaming_dispatch {
             _ => false,
         };
 
-        let node = ir_arena.add(IR::Sink {
-            input: node,
-            payload: SinkTypeIR::Memory,
-        });
+        let node = match ir_arena.get(node) {
+            IR::SinkMultiple { .. } => panic!("SinkMultiple not supported"),
+            IR::Sink { .. } => node,
+            _ => ir_arena.add(IR::Sink {
+                input: node,
+                payload: SinkTypeIR::Memory,
+            }),
+        };
 
         polars_stream::StreamingQuery::build(node, ir_arena, expr_arena)
             .map(Some)

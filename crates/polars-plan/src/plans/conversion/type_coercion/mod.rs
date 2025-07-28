@@ -411,10 +411,25 @@ impl OptimizationRule for TypeCoercionRule {
                                     }
                                 }
                             }
+                            if super_type.is_categorical() || super_type.is_enum() {
+                                for other in &input[1..] {
+                                    let other =
+                                        other.dtype(schema, Context::Default, expr_arena)?;
+                                    if !(other.is_string()
+                                        || other.is_null()
+                                        || *other == super_type)
+                                    {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
+                                    }
+                                }
+                            }
                         },
                     }
 
-                    if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
+                    if matches!(
+                        super_type,
+                        DataType::Unknown(UnknownKind::Any | UnknownKind::Ufunc)
+                    ) {
                         raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
                     }
@@ -428,19 +443,7 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     for (e, dtype) in input.iter_mut().zip(dtypes) {
-                        match super_type {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) if dtype.is_string() => {
-                                // pass
-                            },
-                            _ => cast_expr_ir(
-                                e,
-                                &dtype,
-                                &super_type,
-                                expr_arena,
-                                CastOptions::NonStrict,
-                            )?,
-                        }
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, CastOptions::NonStrict)?;
                     }
                 }
 
@@ -1013,60 +1016,4 @@ fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Opt
     };
 
     Ok(out)
-}
-
-#[cfg(test)]
-#[cfg(feature = "dtype-categorical")]
-mod test {
-    use polars_core::prelude::*;
-
-    use super::*;
-
-    #[test]
-    fn test_categorical_string() {
-        let mut expr_arena = Arena::new();
-        let mut lp_arena = Arena::new();
-        let optimizer = StackOptimizer {};
-        let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
-
-        let df = DataFrame::new(Vec::from([Column::new_empty(
-            PlSmallStr::from_static("fruits"),
-            &DataType::from_categories(Categories::global()),
-        )]))
-        .unwrap();
-
-        let expr_in = vec![col("fruits").eq(lit("somestr"))];
-        let lp = DslBuilder::from_existing_df(df.clone())
-            .project(expr_in.clone(), Default::default())
-            .build();
-
-        let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-        lp_top = optimizer
-            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-            .unwrap();
-        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-
-        // we test that the fruits column is not cast to string for the comparison
-        if let DslPlan::Select { expr, .. } = lp {
-            assert_eq!(expr, expr_in);
-        };
-
-        let expr_in = vec![col("fruits") + (lit("somestr"))];
-        let lp = DslBuilder::from_existing_df(df)
-            .project(expr_in, Default::default())
-            .build();
-        let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
-        lp_top = optimizer
-            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-            .unwrap();
-        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
-
-        // we test that the fruits column is cast to string for the addition
-        let expected = vec![col("fruits").cast(DataType::String) + lit("somestr")];
-        if let DslPlan::Select { expr, .. } = lp {
-            assert_eq!(expr, expected);
-        };
-    }
 }

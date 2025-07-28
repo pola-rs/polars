@@ -1,3 +1,4 @@
+use polars::prelude::ColumnMapping;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
@@ -151,6 +152,18 @@ impl PyFileOptions {
             },
         })
     }
+
+    /// One of:
+    /// * None
+    /// * ("iceberg-column-mapping", <unimplemented>)
+    #[getter]
+    fn column_mapping(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(match &self.inner.column_mapping {
+            None => py.None().into_any(),
+
+            Some(ColumnMapping::Iceberg { .. }) => unimplemented!(),
+        })
+    }
 }
 
 #[pyclass]
@@ -216,7 +229,7 @@ pub struct Cache {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    id_: usize,
+    id_: u128,
     #[pyo3(get)]
     cache_hits: u32,
 }
@@ -395,7 +408,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             output_schema: _,
             scan_type,
             unified_scan_args,
-            id: _,
         } => {
             Scan {
                 paths: {
@@ -477,7 +489,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             cache_hits,
         } => Cache {
             input: input.0,
-            id_: id.to_usize(),
+            id_: id.as_u128(),
             cache_hits: *cache_hits,
         }
         .into_py_any(py),

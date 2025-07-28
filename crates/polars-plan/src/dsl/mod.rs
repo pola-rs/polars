@@ -69,10 +69,9 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::try_get_supertype;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
-pub use selector::Selector;
+pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -220,26 +219,7 @@ impl Expr {
 
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
-        let output_type = if upcast {
-            GetOutput::super_type()
-        } else {
-            GetOutput::same_type()
-        };
-
-        apply_binary(
-            self,
-            other.into(),
-            move |mut a, mut b| {
-                if upcast {
-                    let dtype = try_get_supertype(a.dtype(), b.dtype())?;
-                    a = a.cast(&dtype)?;
-                    b = b.cast(&dtype)?;
-                }
-                a.append(&b)?;
-                Ok(Some(a))
-            },
-            output_type,
-        )
+        self.map_binary(FunctionExpr::Append { upcast }, other.into())
     }
 
     /// Get the first `n` elements of the Expr result.
@@ -271,47 +251,20 @@ impl Expr {
 
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
-        self.agg_with_fmt_str(
-            move |c: Column| {
-                Ok(Some(Column::new(
-                    c.name().clone(),
-                    &[c.as_materialized_series().arg_min().map(|idx| idx as u32)],
-                )))
-            },
-            GetOutput::from_type(IDX_DTYPE),
-            "arg_min",
-        )
+        self.map_unary(FunctionExpr::ArgMin)
     }
 
     /// Get the index value that has the maximum value.
     pub fn arg_max(self) -> Self {
-        self.agg_with_fmt_str(
-            move |c: Column| {
-                Ok(Some(Column::new(
-                    c.name().clone(),
-                    &[c.as_materialized_series()
-                        .arg_max()
-                        .map(|idx| idx as IdxSize)],
-                )))
-            },
-            GetOutput::from_type(IDX_DTYPE),
-            "arg_max",
-        )
+        self.map_unary(FunctionExpr::ArgMax)
     }
 
     /// Get the index values that would sort this expression.
-    pub fn arg_sort(self, sort_options: SortOptions) -> Self {
-        self.apply_with_fmt_str(
-            move |c: Column| {
-                Ok(Some(
-                    c.as_materialized_series()
-                        .arg_sort(sort_options)
-                        .into_column(),
-                ))
-            },
-            GetOutput::from_type(IDX_DTYPE),
-            "arg_sort",
-        )
+    pub fn arg_sort(self, descending: bool, nulls_last: bool) -> Self {
+        self.map_unary(FunctionExpr::ArgSort {
+            descending,
+            nulls_last,
+        })
     }
 
     #[cfg(feature = "index_of")]
@@ -701,27 +654,7 @@ impl Expr {
 
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
-        self.agg_with_fmt_str(
-            move |c: Column| {
-                Some(
-                    c.product()
-                        .map(|sc| sc.into_series(c.name().clone()).into_column()),
-                )
-                .transpose()
-            },
-            GetOutput::map_dtype(|dt| {
-                use DataType as T;
-                Ok(match dt {
-                    T::Float32 => T::Float32,
-                    T::Float64 => T::Float64,
-                    T::UInt64 => T::UInt64,
-                    #[cfg(feature = "dtype-i128")]
-                    T::Int128 => T::Int128,
-                    _ => T::Int64,
-                })
-            }),
-            "product",
-        )
+        self.map_unary(FunctionExpr::Product)
     }
 
     /// Round underlying floating point array to given decimal numbers.
@@ -1016,9 +949,6 @@ impl Expr {
     /// Should be used in aggregation context. If you want to filter on a
     /// DataFrame level, use `LazyFrame::filter`.
     pub fn filter<E: Into<Expr>>(self, predicate: E) -> Self {
-        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
-            panic!("filter '*' not allowed, use LazyFrame::filter")
-        };
         Expr::Filter {
             input: Arc::new(self),
             by: Arc::new(predicate.into()),
@@ -1111,23 +1041,6 @@ impl Expr {
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
         self.map_unary(FunctionExpr::Mode)
-    }
-
-    /// Exclude a column from a wildcard/regex selection.
-    ///
-    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
-    pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Expr {
-        let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
-        Expr::Exclude(Arc::new(self), v)
-    }
-
-    pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Expr {
-        let v = dtypes
-            .as_ref()
-            .iter()
-            .map(|dt| Excluded::Dtype(dt.clone()))
-            .collect();
-        Expr::Exclude(Arc::new(self), v)
     }
 
     #[cfg(feature = "interpolate")]
@@ -1805,16 +1718,19 @@ pub fn len() -> Expr {
 }
 
 /// First column in a DataFrame.
-pub fn first() -> Expr {
-    Expr::Nth(0)
+pub fn first() -> Selector {
+    nth(0)
 }
 
 /// Last column in a DataFrame.
-pub fn last() -> Expr {
-    Expr::Nth(-1)
+pub fn last() -> Selector {
+    nth(-1)
 }
 
 /// Nth column in a DataFrame.
-pub fn nth(n: i64) -> Expr {
-    Expr::Nth(n)
+pub fn nth(n: i64) -> Selector {
+    Selector::ByIndex {
+        indices: [n].into(),
+        strict: true,
+    }
 }

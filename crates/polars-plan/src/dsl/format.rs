@@ -37,7 +37,7 @@ impl fmt::Debug for Expr {
                     }
                 },
             },
-            Nth(i) => write!(f, "nth({i})"),
+            DataTypeFunction(dtype_fn) => fmt::Debug::fmt(dtype_fn, f),
             Len => write!(f, "len()"),
             Explode {
                 input: expr,
@@ -181,16 +181,19 @@ impl fmt::Debug for Expr {
                 offset,
                 length,
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
-            Wildcard => write!(f, "*"),
-            Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
-            RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
-            Columns(names) => write!(f, "cols({names:?})"),
-            DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),
-            IndexColumn(idxs) => write!(f, "index_columns({idxs:?})"),
-            Selector(_) => write!(f, "selector"),
+            RenameAlias { expr, function } => match function {
+                RenameAliasFn::Prefix(s) => write!(f, "{expr:?}.prefix({s})"),
+                RenameAliasFn::Suffix(s) => write!(f, "{expr:?}.suffix({s})"),
+                RenameAliasFn::ToLowercase => write!(f, "{expr:?}.to_lowercase()"),
+                RenameAliasFn::ToUppercase => write!(f, "{expr:?}.to_uppercase()"),
+                #[cfg(feature = "python")]
+                RenameAliasFn::Python(_) => write!(f, "{expr:?}.rename_alias()"),
+                RenameAliasFn::Rust(_) => write!(f, "{expr:?}.rename_alias()"),
+            },
+            Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
-            Field(names) => write!(f, ".field({names:?})"),
+            Field(names) => write!(f, "pl.field({names:?})"),
         }
     }
 }

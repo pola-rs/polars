@@ -1,8 +1,8 @@
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 
 use polars_core::POOL;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::*;
 
@@ -45,13 +45,13 @@ impl LazyFrame {
 #[derive(Clone)]
 pub struct InProcessQuery {
     rx: Arc<Mutex<Receiver<PolarsResult<DataFrame>>>>,
-    token: Arc<AtomicBool>,
+    token: Arc<RelaxedCell<bool>>,
 }
 
 impl InProcessQuery {
     /// Cancel the query at earliest convenience.
     pub fn cancel(&self) {
-        self.token.store(true, Ordering::Relaxed)
+        self.token.store(true)
     }
 
     /// Fetch the result.
@@ -72,6 +72,6 @@ impl InProcessQuery {
 
 impl Drop for InProcessQuery {
     fn drop(&mut self) {
-        self.token.store(true, Ordering::Relaxed);
+        self.token.store(true);
     }
 }

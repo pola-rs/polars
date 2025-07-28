@@ -19,6 +19,7 @@ use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{ToSeries, call_lambda_with_series};
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
+use crate::series::PySeries;
 
 fn python_function_caller_series(
     s: Column,
@@ -143,10 +144,18 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                         ) as _)
                     })
                 }),
+                series: Arc::new(|py_f| {
+                    Python::with_gil(|py| Ok(Box::new(py_f.extract::<PySeries>(py)?.series) as _))
+                }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
                     Python::with_gil(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
+                }),
+                series: Arc::new(|series| {
+                    Python::with_gil(|py| {
+                        PySeries::new(*series.downcast().unwrap()).into_py_any(py)
+                    })
                 }),
             },
         });

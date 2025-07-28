@@ -1036,7 +1036,7 @@ def test_head_group_by() -> None:
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(pl.col("*").exclude(keys))
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.shape == (5, 4)
@@ -1999,14 +1999,10 @@ def test_select_by_dtype(df: pl.DataFrame) -> None:
     out = df.select(pl.col(INTEGER_DTYPES))
     assert out.columns == ["int", "int_nulls"]
 
-    with pl.Config() as cfg:
-        cfg.set_auto_structify(True)
-        out = df.select(ints=pl.col(INTEGER_DTYPES))
-        assert out.schema == {
-            "ints": pl.Struct(
-                [pl.Field("int", pl.Int64), pl.Field("int_nulls", pl.Int64)]
-            )
-        }
+    out = df.select(ints=pl.struct(pl.col(INTEGER_DTYPES)))
+    assert out.schema == {
+        "ints": pl.Struct([pl.Field("int", pl.Int64), pl.Field("int_nulls", pl.Int64)])
+    }
 
 
 def test_with_row_index() -> None:
@@ -2180,7 +2176,6 @@ def test_empty_projection() -> None:
     assert empty_df.shape == (0, 0)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert_frame_equal(df.fill_null(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
@@ -2660,35 +2655,31 @@ def test_selection_regex_and_multicol() -> None:
         "c": [81, 100, 121, 144],
     }
 
-    # kwargs
-    with pl.Config() as cfg:
-        cfg.set_auto_structify(True)
-
-        df = test_df.select(
-            pl.col("^\\w$").alias("re"),
-            odd=(pl.col(INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
-            maxes=pl.all().max().name.suffix("_max"),
-        ).head(2)
-        # ┌───────────┬───────────┬─────────────┐
-        # │ re        ┆ odd       ┆ maxes       │
-        # │ ---       ┆ ---       ┆ ---         │
-        # │ struct[3] ┆ struct[4] ┆ struct[4]   │
-        # ╞═══════════╪═══════════╪═════════════╡
-        # │ {1,5,9}   ┆ {1,1,1,1} ┆ {4,8,12,16} │
-        # │ {2,6,10}  ┆ {0,0,0,0} ┆ {4,8,12,16} │
-        # └───────────┴───────────┴─────────────┘
-        assert df.rows() == [
-            (
-                {"a": 1, "b": 5, "c": 9},
-                {"a_is_odd": 1, "b_is_odd": 1, "c_is_odd": 1, "foo_is_odd": 1},
-                {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
-            ),
-            (
-                {"a": 2, "b": 6, "c": 10},
-                {"a_is_odd": 0, "b_is_odd": 0, "c_is_odd": 0, "foo_is_odd": 0},
-                {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
-            ),
-        ]
+    df = test_df.select(
+        re=pl.struct(pl.col("^\\w$")),
+        odd=pl.struct((pl.col(INTEGER_DTYPES) % 2).name.suffix("_is_odd")),
+        maxes=pl.struct(pl.all().max().name.suffix("_max")),
+    ).head(2)
+    # ┌───────────┬───────────┬─────────────┐
+    # │ re        ┆ odd       ┆ maxes       │
+    # │ ---       ┆ ---       ┆ ---         │
+    # │ struct[3] ┆ struct[4] ┆ struct[4]   │
+    # ╞═══════════╪═══════════╪═════════════╡
+    # │ {1,5,9}   ┆ {1,1,1,1} ┆ {4,8,12,16} │
+    # │ {2,6,10}  ┆ {0,0,0,0} ┆ {4,8,12,16} │
+    # └───────────┴───────────┴─────────────┘
+    assert df.rows() == [
+        (
+            {"a": 1, "b": 5, "c": 9},
+            {"a_is_odd": 1, "b_is_odd": 1, "c_is_odd": 1, "foo_is_odd": 1},
+            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+        ),
+        (
+            {"a": 2, "b": 6, "c": 10},
+            {"a_is_odd": 0, "b_is_odd": 0, "c_is_odd": 0, "foo_is_odd": 0},
+            {"a_max": 4, "b_max": 8, "c_max": 12, "foo_max": 16},
+        ),
+    ]
 
 
 @pytest.mark.parametrize("subset", ["a", cs.starts_with("x", "a")])
@@ -3010,10 +3001,11 @@ def test_floordiv_truediv(divop: Callable[..., Any]) -> None:
     )
 
     # scalar
-    for n in (3, 3.0, -3, -3.0):
-        py_div = [tuple(divop(elem, n) for elem in row) for row in df1.rows()]
-        df_div = divop(df1, n).rows()
-        assert py_div == df_div
+    for df in [df1, df1.slice(0, 0)]:
+        for n in (3, 3.0, -3, -3.0):
+            py_div = [tuple(divop(elem, n) for elem in row) for row in df.rows()]
+            df_div = divop(df, n).rows()
+            assert py_div == df_div
 
     # series
     xdf, s = df1["x"].to_frame(), pl.Series([2] * 4)

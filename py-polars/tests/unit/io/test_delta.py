@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.fs
@@ -466,7 +468,6 @@ def test_unsupported_dtypes(tmp_path: Path) -> None:
     reason="upstream bug in delta-rs causing categorical to be written as categorical in parquet"
 )
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_becomes_string(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
     df.write_delta(tmp_path)
@@ -656,3 +657,60 @@ def test_scan_delta_schema_evolution_nested_struct_field_19915(tmp_path: Path) -
     )
 
     assert_frame_equal(q.sort("a").collect(), expect)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_storage_options_from_delta_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.delta
+
+    storage_options_checked = False
+
+    def assert_scan_parquet_storage_options(*a: Any, **kw: Any) -> Any:
+        nonlocal storage_options_checked
+
+        assert kw["storage_options"] == {
+            "aws_endpoint_url": "http://localhost:777",
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+            "aws_session_token": "...",
+            "endpoint_url": "...",
+        }
+
+        storage_options_checked = True
+
+        return pl.scan_parquet(*a, **kw)
+
+    monkeypatch.setattr(
+        polars.io.delta, "scan_parquet", assert_scan_parquet_storage_options
+    )
+
+    df = pl.DataFrame({"a": ["test"], "properties": [{"property_key": {"item": 1}}]})
+
+    df.write_delta(tmp_path)
+
+    tbl = DeltaTable(
+        tmp_path,
+        storage_options={
+            "aws_endpoint_url": "http://localhost:333",
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+            "aws_session_token": "...",
+        },
+    )
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+        q = pl.scan_delta(
+            tbl,
+            storage_options={
+                "aws_endpoint_url": "http://localhost:777",
+                "endpoint_url": "...",
+            },
+        )
+
+        assert_frame_equal(q.collect(), df)
+
+    assert storage_options_checked
