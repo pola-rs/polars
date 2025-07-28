@@ -6,7 +6,6 @@ use std::cmp::Ordering;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
-use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
