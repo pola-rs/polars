@@ -1247,7 +1247,6 @@ def test_list_zip_basic() -> None:
         {
             "a": [[1, 2, 3], [4, 5], [6]],
             "b": [["x", "y", "z"], ["a", "b"], ["c"]],
-            "c": [[1.1, 2.2, 3.3], [4.4, 5.5], [6.6]],
         }
     )
 
@@ -1266,27 +1265,6 @@ def test_list_zip_basic() -> None:
         }
     )
     assert_frame_equal(result, expected)
-
-    result_three = df.select(
-        pl.col("a").list.zip(pl.col("b"), pl.col("c")).alias("zipped_abc")
-    )
-    expected_three = pl.DataFrame(
-        {
-            "zipped_abc": [
-                [
-                    {"field_0": 1, "field_1": "x", "field_2": 1.1},
-                    {"field_0": 2, "field_1": "y", "field_2": 2.2},
-                    {"field_0": 3, "field_1": "z", "field_2": 3.3},
-                ],
-                [
-                    {"field_0": 4, "field_1": "a", "field_2": 4.4},
-                    {"field_0": 5, "field_1": "b", "field_2": 5.5},
-                ],
-                [{"field_0": 6, "field_1": "c", "field_2": 6.6}],
-            ]
-        }
-    )
-    assert_frame_equal(result_three, expected_three)
 
 
 def test_list_zip_with_nulls() -> None:
@@ -1390,25 +1368,21 @@ def test_list_zip_mixed_types() -> None:
         {
             "integers": [[1, 2], [3]],
             "strings": [["a", "b"], ["c"]],
-            "floats": [[1.5, 2.5], [3.5]],
-            "booleans": [[True, False], [True]],
         }
     )
 
     result = df.select(
-        pl.col("integers")
-        .list.zip(pl.col("strings"), pl.col("floats"), pl.col("booleans"))
-        .alias("mixed_zip")
+        pl.col("integers").list.zip(pl.col("strings")).alias("mixed_zip")
     )
 
     expected = pl.DataFrame(
         {
             "mixed_zip": [
                 [
-                    {"field_0": 1, "field_1": "a", "field_2": 1.5, "field_3": True},
-                    {"field_0": 2, "field_1": "b", "field_2": 2.5, "field_3": False},
+                    {"field_0": 1, "field_1": "a"},
+                    {"field_0": 2, "field_1": "b"},
                 ],
-                [{"field_0": 3, "field_1": "c", "field_2": 3.5, "field_3": True}],
+                [{"field_0": 3, "field_1": "c"}],
             ]
         }
     )
@@ -1512,3 +1486,18 @@ def test_list_zip_error_non_list_input() -> None:
         ComputeError, match="All inputs to lst_zip must be list columns"
     ):
         s_list.list.zip(s_not_list)
+
+
+def test_list_zip_error_too_many_columns() -> None:
+    """Test that zip now only accepts exactly one other column."""
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3]],
+            "b": [["x", "y"], ["z"]],
+            "c": [[1.1, 2.2], [3.3]],
+        }
+    )
+
+    # This should now raise a TypeError since zip only accepts one 'other' parameter
+    with pytest.raises(TypeError):
+        df.select(pl.col("a").list.zip(pl.col("b"), pl.col("c")))

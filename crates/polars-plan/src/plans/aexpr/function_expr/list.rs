@@ -852,8 +852,14 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "list_zip")]
 pub(super) fn zip(s: &[Column]) -> PolarsResult<Column> {
+    polars_ensure!(
+        s.len() == 2,
+        ComputeError: "zip expects exactly 2 columns, got {}",
+        s.len()
+    );
     let first = s[0].list()?;
+    let second = s[1].list()?;
     first
-        .lst_zip(&s[s.len().min(1)..])
+        .lst_zip(&[second.clone().into_column()])
         .map(|ca| ca.into_column())
 }

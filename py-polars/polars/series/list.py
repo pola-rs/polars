@@ -1090,19 +1090,19 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def zip(self, *others: IntoExpr) -> Series:
+    def zip(self, other: IntoExpr) -> Series:
         """
-        Zip lists together element-wise into structs.
+        Zip this list with another list element-wise into structs.
 
-        This combines elements from multiple lists position-wise into struct values.
+        This combines elements from two lists position-wise into struct values.
         Lists are aligned element-by-element, and the resulting list length is
-        determined by the shortest input list.
+        determined by the shorter input list.
 
         Parameters
         ----------
-        *others
-            Other list expressions to zip with. Can be list columns or expressions
-            that evaluate to lists.
+        other
+            Another list expression to zip with. Must be a list column or expression
+            that evaluates to a list.
 
         Examples
         --------
@@ -1117,17 +1117,9 @@ class ListNameSpace:
             null
             [{null,35}]
         ]
-
-        Zip with multiple lists:
-
-        >>> s1 = pl.Series("a", [[1, 2], [3]])
-        >>> s2 = pl.Series("b", [[10, 20], [30]])
-        >>> s3 = pl.Series("c", [[100, 200], [300]])
-        >>> s1.list.zip(s2, s3)
-        shape: (2,)
-        Series: 'a' [list[struct[3]]]
-        [
-            [{1,10,100}, {2,20,200}]
-            [{3,30,300}]
-        ]
         """
+        import polars as pl
+
+        return (
+            self._s.to_frame().select(pl.col(self._s.name).list.zip(other)).to_series()
+        )
