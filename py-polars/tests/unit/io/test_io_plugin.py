@@ -236,12 +236,11 @@ def test_reordered_columns_22731(validate: bool) -> None:
 
 
 def test_io_plugin_reentrant_deadlock() -> None:
-    try:
-        out = subprocess.check_output(
-            [
-                sys.executable,
-                "-c",
-                """\
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
 from __future__ import annotations
 
 import os
@@ -259,31 +258,28 @@ i = 0
 
 
 def reentrant(
-    with_columns: list[str] | None,
-    predicate: pl.Expr | None,
-    n_rows: int | None,
-    batch_size: int | None,
+with_columns: list[str] | None,
+predicate: pl.Expr | None,
+n_rows: int | None,
+batch_size: int | None,
 ):
-    global i
+global i
 
-    df = pl.DataFrame({"x": 1})
+df = pl.DataFrame({"x": 1})
 
-    if i < n:
-        i += 1
-        yield register_io_source(io_source=reentrant, schema={"x": pl.Int64}).collect()
+if i < n:
+    i += 1
+    yield register_io_source(io_source=reentrant, schema={"x": pl.Int64}).collect()
 
-    yield df
+yield df
 
 
 register_io_source(io_source=reentrant, schema={"x": pl.Int64}).collect()
 print("OK", end="", file=sys.stderr)
 """,
-            ],
-            stderr=subprocess.STDOUT,
-            timeout=7,
-        )
-    except subprocess.CalledProcessError as e:
-        print(e.stdout.decode())
-        raise
+        ],
+        stderr=subprocess.STDOUT,
+        timeout=7,
+    )
 
     assert out == b"OK"
