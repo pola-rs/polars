@@ -186,18 +186,14 @@ impl OptimizationRule for ExpandDatasets {
                             (ir, None)
                         },
 
-                        DslPlan::PythonScan { options } => {
-                            assert!(options.scan_fn.is_some());
-
-                            (
-                                ir.clone(),
-                                Some((
-                                    dataset_object.name(),
-                                    options.scan_fn.expect("scan_fn is required"),
-                                    options.python_source,
-                                )),
-                            )
-                        },
+                        DslPlan::PythonScan { options } => (
+                            ir.clone(),
+                            Some(ExpandedPythonScan {
+                                name: dataset_object.name(),
+                                scan_fn: options.scan_fn.unwrap(),
+                                variant: options.python_source,
+                            }),
+                        ),
 
                         dsl => {
                             polars_bail!(
@@ -237,13 +233,21 @@ pub struct ExpandedDataset {
 
     /// Fallback python scan
     #[cfg(feature = "python")]
-    python_scan: Option<(PlSmallStr, PythonObject, PythonScanSource)>,
+    python_scan: Option<ExpandedPythonScan>,
+}
+
+#[cfg(feature = "python")]
+#[derive(Clone)]
+pub struct ExpandedPythonScan {
+    pub name: PlSmallStr,
+    pub scan_fn: PythonObject,
+    pub variant: PythonScanSource,
 }
 
 impl ExpandedDataset {
     #[cfg(feature = "python")]
-    pub fn python_scan(&self) -> Option<(&PlSmallStr, &PythonObject, &PythonScanSource)> {
-        self.python_scan.as_ref().map(|(a, b, c)| (a, b, c))
+    pub fn python_scan(&self) -> Option<&ExpandedPythonScan> {
+        self.python_scan.as_ref()
     }
 }
 
@@ -264,9 +268,15 @@ impl Debug for ExpandedDataset {
             resolved_ir,
 
             #[cfg(feature = "python")]
-            python_scan: python_scan.as_ref().map(|(name, _, scan_type)| {
-                format_pl_smallstr!("python-scan[{} @ {:?}]", name, scan_type)
-            }),
+            python_scan: python_scan.as_ref().map(
+                |ExpandedPythonScan {
+                     name,
+                     scan_fn: _,
+                     variant,
+                 }| {
+                    format_pl_smallstr!("python-scan[{} @ {:?}]", name, variant)
+                },
+            ),
         }
         .fmt(f);
 
