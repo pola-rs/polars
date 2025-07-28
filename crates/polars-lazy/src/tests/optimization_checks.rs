@@ -85,7 +85,6 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     // Check if we pass hstack.
     let q = df
-        .clone()
         .lazy()
         .with_columns([col("A").alias("C"), col("B")])
         .filter(col("B").gt(lit(1)));
@@ -535,7 +534,7 @@ fn test_cluster_with_columns() -> Result<(), Box<dyn std::error::Error>> {
         .with_columns([col("bar") / lit(1.5)]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();
@@ -567,7 +566,7 @@ fn test_cluster_with_columns_dependency() -> Result<(), Box<dyn std::error::Erro
         .with_columns([col("buzz")]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();
@@ -599,7 +598,7 @@ fn test_cluster_with_columns_partial() -> Result<(), Box<dyn std::error::Error>>
         .with_columns([col("buzz"), col("foo") * lit(2.0)]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();
@@ -635,7 +634,7 @@ fn test_cluster_with_columns_chain() -> Result<(), Box<dyn std::error::Error>> {
         .with_columns([col("foo").alias("foo4")]);
 
     let unoptimized = df.clone().to_alp().unwrap();
-    let optimized = df.clone().to_alp_optimized().unwrap();
+    let optimized = df.to_alp_optimized().unwrap();
 
     let unoptimized = unoptimized.describe();
     let optimized = optimized.describe();

@@ -229,7 +229,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             };
             let predicate_ae = to_expr_ir(
-                predicate.clone(),
+                predicate,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,

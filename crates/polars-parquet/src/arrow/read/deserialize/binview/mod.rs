@@ -284,7 +284,7 @@ pub fn decode_plain(
             max_num_values,
             values,
             target,
-            &filter_from_range(rng.clone()),
+            &filter_from_range(rng),
             verify_utf8,
         ),
         (Some(Filter::Range(rng)), Some(page_validity)) => optional_masked::decode(
@@ -292,7 +292,7 @@ pub fn decode_plain(
             values,
             target,
             &page_validity,
-            &filter_from_range(rng.clone()),
+            &filter_from_range(rng),
             verify_utf8,
         ),
         (Some(Filter::Predicate(_)), _) => unreachable!(),

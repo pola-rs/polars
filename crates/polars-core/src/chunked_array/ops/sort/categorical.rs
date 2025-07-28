@@ -136,8 +136,7 @@ mod test {
             PlSmallStr::EMPTY,
             CategoricalPhysical::U8,
         );
-        let s =
-            Series::new(PlSmallStr::EMPTY, init).cast(&DataType::from_categories(cats.clone()))?;
+        let s = Series::new(PlSmallStr::EMPTY, init).cast(&DataType::from_categories(cats))?;
         let ca = s.cat8()?;
 
         let out = ca.sort(false);
@@ -161,8 +160,7 @@ mod test {
             PlSmallStr::EMPTY,
             CategoricalPhysical::U8,
         );
-        let series =
-            Series::new(PlSmallStr::EMPTY, init).cast(&DataType::from_categories(cats.clone()))?;
+        let series = Series::new(PlSmallStr::EMPTY, init).cast(&DataType::from_categories(cats))?;
 
         let df = df![
             "cat" => &series,

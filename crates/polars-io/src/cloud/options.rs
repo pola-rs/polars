@@ -556,7 +556,7 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = credential_provider.clone() {
+        let builder = if let Some(v) = credential_provider {
             builder.with_credentials(v.into_gcp_provider())
         } else {
             builder

@@ -260,19 +260,19 @@ impl FileReader for ParquetFileReader {
             predicate_apply_mode,
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
-            byte_source: byte_source.clone(),
+            byte_source,
             normalized_pre_slice: normalized_pre_slice.map(|x| match x {
                 Slice::Positive { offset, len } => (offset, len),
                 Slice::Negative { .. } => unreachable!(),
             }),
-            metadata: file_metadata.clone(),
+            metadata: file_metadata,
             config: io_sources::parquet::Config {
                 num_pipelines,
                 row_group_prefetch_size,
                 min_values_per_thread,
             },
             verbose,
-            schema: file_schema.clone(),
+            schema: file_schema,
             projected_arrow_schema,
             memory_prefetch_func,
             row_index,

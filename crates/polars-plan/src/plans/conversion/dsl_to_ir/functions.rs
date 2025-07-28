@@ -991,7 +991,7 @@ pub(super) fn convert_functions(
 
     // Handles special case functions like `struct.field`.
     let output_name = match ir_function.output_name().and_then(|v| v.into_inner()) {
-        Some(name) => name.clone(),
+        Some(name) => name,
         None if e.is_empty() => format_pl_smallstr!("{}", &ir_function),
         None => e[0].output_name().clone(),
     };

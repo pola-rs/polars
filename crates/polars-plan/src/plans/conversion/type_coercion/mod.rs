@@ -336,7 +336,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_node_fill_value = if type_fill_value != super_type {
                     expr_arena.add(AExpr::Cast {
                         expr: fill_value_node,
-                        dtype: super_type.clone(),
+                        dtype: super_type,
                         options: CastOptions::NonStrict,
                     })
                 } else {

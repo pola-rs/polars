@@ -211,7 +211,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:sort3]
     let df = dataset
-        .clone()
         .lazy()
         .sort(
             ["birthday"],
