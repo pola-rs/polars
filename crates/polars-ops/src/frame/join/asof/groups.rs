@@ -477,7 +477,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
-        dt => panic!("{dt:?}"),
+        dt => polars_bail!(opq = asof_join, dt),
     }
 }
 

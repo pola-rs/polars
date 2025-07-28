@@ -329,7 +329,7 @@ pub trait AsofJoin: IntoDf {
                 let ca = left_key.i32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
-            dt => panic!("{dt:?}"),
+            dt => polars_bail!(opq = asof_join, dt),
         }?;
         try_raise_keyboard_interrupt();
 
