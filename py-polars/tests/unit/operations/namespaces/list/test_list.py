@@ -1312,8 +1312,8 @@ def test_list_zip_different_lengths() -> None:
 def test_list_zip_series() -> None:
     s1 = pl.Series("a", [[1, 2, 3], [4, 5], [6]])
     s2 = pl.Series("b", [["x", "y", "z"], ["a", "b"], ["c"]])
-    s3 = pl.Series("c", [[1.1, 2.2, 3.3], [4.4, 5.5], [6.6]])
 
+    # Test basic 2-column zip
     result = s1.list.zip(s2)
     expected = pl.Series(
         "a",
@@ -1329,23 +1329,44 @@ def test_list_zip_series() -> None:
     )
     assert_series_equal(result, expected)
 
-    result_three = s1.list.zip(s2, s3)
-    expected_three = pl.Series(
+    s3 = pl.Series("a", [[1, 2, 3], [4, 5], [6]])
+    s4 = pl.Series("b", [["x", "y"], ["a"], ["c", "d", "e"]])
+
+    result_no_pad = s3.list.zip(s4)
+    expected_no_pad = pl.Series(
         "a",
         [
             [
-                {"field_0": 1, "field_1": "x", "field_2": 1.1},
-                {"field_0": 2, "field_1": "y", "field_2": 2.2},
-                {"field_0": 3, "field_1": "z", "field_2": 3.3},
+                {"field_0": 1, "field_1": "x"},
+                {"field_0": 2, "field_1": "y"},
             ],
-            [
-                {"field_0": 4, "field_1": "a", "field_2": 4.4},
-                {"field_0": 5, "field_1": "b", "field_2": 5.5},
-            ],
-            [{"field_0": 6, "field_1": "c", "field_2": 6.6}],
+            [{"field_0": 4, "field_1": "a"}],
+            [{"field_0": 6, "field_1": "c"}],
         ],
     )
-    assert_series_equal(result_three, expected_three)
+    assert_series_equal(result_no_pad, expected_no_pad)
+
+    result_with_pad = s3.list.zip(s4, pad=True)
+    expected_with_pad = pl.Series(
+        "a",
+        [
+            [
+                {"field_0": 1, "field_1": "x"},
+                {"field_0": 2, "field_1": "y"},
+                {"field_0": 3, "field_1": None},
+            ],
+            [
+                {"field_0": 4, "field_1": "a"},
+                {"field_0": 5, "field_1": None},
+            ],
+            [
+                {"field_0": 6, "field_1": "c"},
+                {"field_0": None, "field_1": "d"},
+                {"field_0": None, "field_1": "e"},
+            ],
+        ],
+    )
+    assert_series_equal(result_with_pad, expected_with_pad)
 
 
 def test_list_zip_empty_lists() -> None:
@@ -1475,7 +1496,7 @@ def test_list_zip_error_non_list_input() -> None:
     )
 
     with pytest.raises(
-        ComputeError, match="All inputs to lst_zip must be list columns"
+        SchemaError, match="invalid series dtype: expected `List`, got `i64`"
     ):
         df.select(pl.col("lists").list.zip(pl.col("not_list")))
 
@@ -1483,7 +1504,7 @@ def test_list_zip_error_non_list_input() -> None:
     s_not_list = pl.Series("not_list_col", [10, 20])
 
     with pytest.raises(
-        ComputeError, match="All inputs to lst_zip must be list columns"
+        SchemaError, match="invalid series dtype: expected `List`, got `i64`"
     ):
         s_list.list.zip(s_not_list)
 
@@ -1498,6 +1519,5 @@ def test_list_zip_error_too_many_columns() -> None:
         }
     )
 
-    # This should now raise a TypeError since zip only accepts one 'other' parameter
     with pytest.raises(TypeError):
         df.select(pl.col("a").list.zip(pl.col("b"), pl.col("c")))

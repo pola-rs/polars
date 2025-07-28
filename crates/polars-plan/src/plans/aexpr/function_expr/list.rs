@@ -62,7 +62,7 @@ pub enum IRListFunction {
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStruct),
     #[cfg(feature = "list_zip")]
-    Zip,
+    Zip(bool),
 }
 
 impl IRListFunction {
@@ -130,7 +130,7 @@ impl IRListFunction {
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_zip")]
-            Zip => mapper.with_dtype(DataType::List(Box::new(DataType::Struct(
+            Zip(_) => mapper.with_dtype(DataType::List(Box::new(DataType::Struct(
                 mapper.args().to_vec(),
             )))),
             #[cfg(feature = "list_to_struct")]
@@ -220,7 +220,7 @@ impl IRListFunction {
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(ListToStruct::FixedWidth(_)) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_zip")]
-            L::Zip => FunctionOptions::elementwise(),
+            L::Zip(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(ListToStruct::InferWidth { .. }) => FunctionOptions::length_preserving(),
         }
@@ -297,7 +297,7 @@ impl Display for IRListFunction {
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
             #[cfg(feature = "list_zip")]
-            Zip => "zip",
+            Zip(_) => "zip",
         };
         write!(f, "list.{name}")
     }
@@ -362,7 +362,7 @@ impl From<IRListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
             #[cfg(feature = "list_zip")]
-            Zip => map_as_slice!(zip),
+            Zip(pad) => map_as_slice!(zip, pad),
         }
     }
 }
@@ -851,7 +851,7 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "list_zip")]
-pub(super) fn zip(s: &[Column]) -> PolarsResult<Column> {
+pub(super) fn zip(s: &[Column], pad: bool) -> PolarsResult<Column> {
     polars_ensure!(
         s.len() == 2,
         ComputeError: "zip expects exactly 2 columns, got {}",
@@ -859,7 +859,8 @@ pub(super) fn zip(s: &[Column]) -> PolarsResult<Column> {
     );
     let first = s[0].list()?;
     let second = s[1].list()?;
+    
     first
-        .lst_zip(&[second.clone().into_column()])
+        .lst_zip(&[second.clone().into_column()], pad)
         .map(|ca| ca.into_column())
 }

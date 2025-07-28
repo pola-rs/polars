@@ -1090,19 +1090,24 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def zip(self, other: IntoExpr) -> Series:
+    def zip(self, other: IntoExpr, *, pad: bool = False) -> Series:
         """
         Zip this list with another list element-wise into structs.
 
         This combines elements from two lists position-wise into struct values.
         Lists are aligned element-by-element, and the resulting list length is
-        determined by the shorter input list.
+        determined by the shorter input list by default, or the longer list when
+        padding is enabled.
 
         Parameters
         ----------
         other
             Another list expression to zip with. Must be a list column or expression
             that evaluates to a list.
+        pad
+            If False (default), the length of the resulting list is determined by the
+            shorter of the two input lists. If True, the lists are padded with nulls
+            to match the length of the longer list.
 
         Examples
         --------
@@ -1117,9 +1122,16 @@ class ListNameSpace:
             null
             [{null,35}]
         ]
-        """
-        import polars as pl
 
-        return (
-            self._s.to_frame().select(pl.col(self._s.name).list.zip(other)).to_series()
-        )
+        Use padding to match the length of the longer list:
+
+        >>> s1 = pl.Series("a", [[1, 2, 3], [4]])
+        >>> s2 = pl.Series("b", [["x", "y"], ["z", "w", "v"]])
+        >>> s1.list.zip(s2, pad=True)
+        shape: (2,)
+        Series: 'a' [list[struct[2]]]
+        [
+            [{1,"x"}, {2,"y"}, {3,null}]
+            [{4,"z"}, {null,"w"}, {null,"v"}]
+        ]
+        """

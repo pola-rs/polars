@@ -829,7 +829,7 @@ pub trait ListNameSpaceImpl: AsList {
 
     /// Zip lists together element-wise into structs.
     #[cfg(feature = "list_zip")]
-    fn lst_zip(&self, others: &[Column]) -> PolarsResult<ListChunked> {
+    fn lst_zip(&self, others: &[Column], pad: bool) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
 
         #[cfg(not(feature = "dtype-struct"))]
@@ -901,12 +901,21 @@ pub trait ListNameSpaceImpl: AsList {
                             continue;
                         }
 
-                        let mut min_len = first_list.as_ref().len();
-                        for other_list in &other_lists {
-                            min_len = min_len.min(other_list.as_ref().len());
-                        }
+                        let target_len = if pad {
+                            let mut max_len = first_list.as_ref().len();
+                            for other_list in &other_lists {
+                                max_len = max_len.max(other_list.as_ref().len());
+                            }
+                            max_len
+                        } else {
+                            let mut min_len = first_list.as_ref().len();
+                            for other_list in &other_lists {
+                                min_len = min_len.min(other_list.as_ref().len());
+                            }
+                            min_len
+                        };
 
-                        if min_len == 0 {
+                        if target_len == 0 {
                             let empty_fields: Vec<Series> = field_names
                                 .iter()
                                 .zip(all_inner_types.iter())
@@ -921,18 +930,32 @@ pub trait ListNameSpaceImpl: AsList {
 
                         let mut field_series = Vec::with_capacity(field_names.len());
 
-                        let mut first_field = first_list.as_ref().slice(0, min_len);
-                        first_field.rename(field_names[0].clone());
-                        field_series.push(first_field);
+                        let first_field = if pad && first_list.as_ref().len() < target_len {
+                            let null_count = target_len - first_list.as_ref().len();
+                            let extended = first_list.as_ref().clone();
+                            extended.extend_constant(AnyValue::Null, null_count)?
+                        } else {
+                            first_list.as_ref().slice(0, target_len)
+                        };
+                        let mut renamed_first = first_field;
+                        renamed_first.rename(field_names[0].clone());
+                        field_series.push(renamed_first);
 
                         for (i, other_list) in other_lists.iter().enumerate() {
-                            let mut field = other_list.as_ref().slice(0, min_len);
-                            field.rename(field_names[i + 1].clone());
-                            field_series.push(field);
+                            let field = if pad && other_list.as_ref().len() < target_len {
+                                let null_count = target_len - other_list.as_ref().len();
+                                let extended = other_list.as_ref().clone();
+                                extended.extend_constant(AnyValue::Null, null_count)?
+                            } else {
+                                other_list.as_ref().slice(0, target_len)
+                            };
+                            let mut renamed_field = field;
+                            renamed_field.rename(field_names[i + 1].clone());
+                            field_series.push(renamed_field);
                         }
 
                         let struct_chunked =
-                            StructChunked::from_series("".into(), min_len, field_series.iter())?;
+                            StructChunked::from_series("".into(), target_len, field_series.iter())?;
 
                         builder.append_series(&struct_chunked.into_series())?;
                     },
