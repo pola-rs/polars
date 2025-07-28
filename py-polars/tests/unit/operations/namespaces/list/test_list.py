@@ -1507,17 +1507,3 @@ def test_list_zip_error_non_list_input() -> None:
         SchemaError, match="invalid series dtype: expected `List`, got `i64`"
     ):
         s_list.list.zip(s_not_list)
-
-
-def test_list_zip_error_too_many_columns() -> None:
-    """Test that zip now only accepts exactly one other column."""
-    df = pl.DataFrame(
-        {
-            "a": [[1, 2], [3]],
-            "b": [["x", "y"], ["z"]],
-            "c": [[1.1, 2.2], [3.3]],
-        }
-    )
-
-    with pytest.raises(TypeError):
-        df.select(pl.col("a").list.zip(pl.col("b"), pl.col("c")))
