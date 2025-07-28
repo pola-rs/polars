@@ -1,16 +1,23 @@
 # Connect to your cloud environment
 
-Polars Cloud requires connection to your AWS environment to execute queries. After account registration, you'll set up an [organization](organization/organizations.md) that manages connected workspaces and team access.
+Polars Cloud requires connection to your AWS environment to execute queries. After account
+registration, you'll set up an [organization](organization/organizations.md) that manages connected
+workspaces and team access.
 
 ![Set up your organization after registering your account to invite your team and create workspaces](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/organization-setup.png)
 
 ## Workspace setup
 
-When you first access the Polars Cloud dashboard with a new account, you'll see a notification indicating your environment requires AWS connection. While you can explore the interface in this state, query execution requires completing the setup process.
+When you first access the Polars Cloud dashboard with a new account, you'll see a notification
+indicating your environment requires AWS connection. While you can explore the interface in this
+state, query execution requires completing the setup process.
 
 ![An overview of the Polars Cloud dashboard showing a button to connect your cloud environment](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/dashboard.png)
 
-The setup process begins with naming your workspace. The default "Personal Workspace" works for individual use, but consider using team or project names for collaborative environments. This workspace name becomes part of your [compute context](run/compute-context.md) configuration for remote query execution.
+The setup process begins with naming your workspace. The default "Personal Workspace" works for
+individual use, but consider using team or project names for collaborative environments. This
+workspace name becomes part of your [compute context](run/compute-context.md) configuration for
+remote query execution.
 
 <!-- dprint-ignore-start -->
 
@@ -24,11 +31,14 @@ The setup process begins with naming your workspace. The default "Personal Works
 
 ## AWS infrastructure deployment
 
-The deployment process uses a CloudFormation template to provision the necessary IAM roles and permissions in your AWS environment. This creates the setup that allows Polars Cloud to execute queries.
+The deployment process uses a CloudFormation template to provision the necessary IAM roles and
+permissions in your AWS environment. This creates the setup that allows Polars Cloud to execute
+queries.
 
 ![CloudFormation stack image as step of the setupflow](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/cloudformation.png)
 
-For detailed information about the AWS resources and architecture, see [the AWS Infrastructure page](providers/aws/infra.md).
+For detailed information about the AWS resources and architecture, see
+[the AWS Infrastructure page](providers/aws/infra.md).
 
 <!-- dprint-ignore-start -->
 
@@ -38,11 +48,13 @@ For detailed information about the AWS resources and architecture, see [the AWS 
 
 <!-- dprint-ignore-end -->
 
-CloudFormation stack deployment typically completes within 5 minutes. You can monitor progress through either the AWS console or the Polars Cloud setup interface for real-time status updates.
+CloudFormation stack deployment typically completes within 5 minutes. You can monitor progress
+through either the AWS console or the Polars Cloud setup interface for real-time status updates.
 
 ![Progress screen in the set up flow](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/progress-page.png)
 
-Upon successful deployment, the setup confirms completion and provides access to the full Polars Cloud dashboard for immediate query execution.
+Upon successful deployment, the setup confirms completion and provides access to the full Polars
+Cloud dashboard for immediate query execution.
 
 ![Final screen of the set up flow indication successful deployment](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/successful-setup.png)
 
@@ -61,8 +73,10 @@ your team.
 
 ## Start your next project
 
-With your workspace connected to AWS, you can execute Polars queries remotely. Consider these next actions:
+With your workspace connected to AWS, you can execute Polars queries remotely. Consider these next
+actions:
 
 - Run your first remote query with the [getting started guide](quickstart.md)
 - Learn about [compute context configuration](run/compute-context.md) for performance optimization
-- Invite [team members](workspace/team.md) to your connected workspace to collaborate on your next project.
+- Invite [team members](workspace/team.md) to your connected workspace to collaborate on your next
+  project.
