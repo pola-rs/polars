@@ -66,6 +66,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DurationChunked> {
         let time_unit = self.0.time_unit();
         let iter = self
             .0
+            .physical()
             .iter()
             .map(|opt_v| opt_v.map(|v| elapsed_offset_to_timedelta(v, time_unit)));
         PyList::new(py, iter)
@@ -80,7 +81,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DatetimeChunked> {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let time_zone = self.0.time_zone().as_ref();
         let time_unit = self.0.time_unit();
-        let iter = self.0.iter().map(|opt_v| {
+        let iter = self.0.physical().iter().map(|opt_v| {
             opt_v.map(|v| datetime_to_py_object(py, v, time_unit, time_zone).unwrap())
         });
         PyList::new(py, iter)
@@ -112,7 +113,11 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let iter = self.0.into_iter().map(|opt_v| opt_v.map(date32_to_date));
+        let iter = self
+            .0
+            .physical()
+            .into_iter()
+            .map(|opt_v| opt_v.map(date32_to_date));
         PyList::new(py, iter)
     }
 }
@@ -136,7 +141,7 @@ pub(crate) fn decimal_to_pyobject_iter<'py, 'a>(
     let py_scale = (-(ca.scale() as i32)).into_pyobject(py)?;
     // if we don't know precision, the only safe bet is to set it to 39
     let py_precision = ca.precision().unwrap_or(39).into_pyobject(py)?;
-    Ok(ca.iter().map(move |opt_v| {
+    Ok(ca.physical().iter().map(move |opt_v| {
         opt_v.map(|v| {
             // TODO! use AnyValue so that we have a single impl.
             const N: usize = 3;

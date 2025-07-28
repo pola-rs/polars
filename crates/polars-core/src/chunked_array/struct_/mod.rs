@@ -135,7 +135,7 @@ impl StructChunked {
     }
 
     /// Convert a struct to the underlying physical datatype.
-    pub fn to_physical_repr(&self) -> Cow<StructChunked> {
+    pub fn to_physical_repr(&self) -> Cow<'_, StructChunked> {
         let mut physicals = Vec::new();
 
         let field_series = self.fields_as_series();
@@ -202,25 +202,29 @@ impl StructChunked {
     }
 
     pub fn fields_as_series(&self) -> Vec<Series> {
-        self.struct_fields()
-            .iter()
-            .enumerate()
-            .map(|(i, field)| {
-                let field_chunks = self
-                    .downcast_iter()
-                    .map(|chunk| chunk.values()[i].clone())
-                    .collect::<Vec<_>>();
+        self._fields_iter().collect()
+    }
 
-                // SAFETY: correct type.
-                unsafe {
-                    Series::from_chunks_and_dtype_unchecked(
-                        field.name.clone(),
-                        field_chunks,
-                        &field.dtype,
-                    )
-                }
-            })
-            .collect()
+    pub fn fields_as_columns(&self) -> Vec<Column> {
+        self._fields_iter().map(|s| s.into_column()).collect()
+    }
+
+    fn _fields_iter(&self) -> impl Iterator<Item = Series> {
+        self.struct_fields().iter().enumerate().map(|(i, field)| {
+            let field_chunks = self
+                .downcast_iter()
+                .map(|chunk| chunk.values()[i].clone())
+                .collect::<Vec<_>>();
+
+            // SAFETY: correct type.
+            unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    field.name.clone(),
+                    field_chunks,
+                    &field.dtype,
+                )
+            }
+        })
     }
 
     unsafe fn cast_impl(

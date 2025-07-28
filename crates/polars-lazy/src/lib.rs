@@ -197,6 +197,10 @@
 //! ```
 #![allow(ambiguous_glob_reexports)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(
+    feature = "allow_unused",
+    allow(unused, dead_code, irrefutable_let_patterns)
+)] // Maybe be caused by some feature
 extern crate core;
 
 #[cfg(feature = "dot_diagram")]

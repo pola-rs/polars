@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -36,7 +37,9 @@ def test_root_and_output_names() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="cannot determine output column without a context for this expression",
+        match=re.escape(
+            "unable to find root column name for expr 'cs.all()' when calling 'output_name'"
+        ),
     ):
         pl.all().name.suffix("_").meta.output_name()
 

@@ -14,6 +14,7 @@ pub struct RowCounter {
 
 impl RowCounter {
     /// `usize::MAX` physical rows, 0 deleted rows
+    #[expect(unused)]
     pub const MAX: Self = Self {
         physical_rows: usize::MAX,
         deleted_rows: 0,

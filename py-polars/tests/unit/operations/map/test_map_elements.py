@@ -17,6 +17,7 @@ pytestmark = pytest.mark.filterwarnings(
 )
 
 
+@pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_map_elements_infer_list() -> None:
     df = pl.DataFrame(
         {
@@ -42,12 +43,13 @@ def test_map_elements_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
     with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         assert df.group_by("A").agg(
-            pl.col("B").map_elements(
-                lambda x: x + 1.0, return_dtype=pl.List(pl.Float64)
-            )
+            pl.col("B")
+            .implode()
+            .map_elements(lambda x: x + 1.0, return_dtype=pl.List(pl.Float64))
         )["B"].to_list() == [[3.0, 4.0]]
 
 
+@pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_map_elements_struct() -> None:
     df = pl.DataFrame(
         {
@@ -158,7 +160,9 @@ def test_map_elements_type_propagation() -> None:
             [
                 pl.when(~pl.col("b").has_nulls())
                 .then(
-                    pl.col("b").map_elements(
+                    pl.col("b")
+                    .implode()
+                    .map_elements(
                         lambda s: s[0]["c"],
                         return_dtype=pl.Float64,
                     )
@@ -169,6 +173,7 @@ def test_map_elements_type_propagation() -> None:
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "b": [1.0, 2.0, None]}
 
 
+@pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_empty_list_in_map_elements() -> None:
     df = pl.DataFrame(
         {"a": [[1], [1, 2], [3, 4], [5, 6]], "b": [[3], [1, 2], [1, 2], [4, 5]]}
@@ -230,6 +235,7 @@ def test_map_elements_explicit_list_output_type() -> None:
     assert out.to_dict(as_series=False) == {"str": [[1, 2, 3], [1, 2, 3]]}
 
 
+@pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_map_elements_dict() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -268,7 +274,9 @@ def test_map_elements_pass_name() -> None:
         return pl.Series([mapper[s.name]])
 
     assert df.group_by("bar", maintain_order=True).agg(
-        pl.col("foo").map_elements(element_mapper, pass_name=True),
+        pl.col("foo")
+        .implode()
+        .map_elements(element_mapper, pass_name=True, return_dtype=pl.List(pl.String)),
     ).to_dict(as_series=False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}
 
 
@@ -345,26 +353,6 @@ def test_cabbage_strategy_14396() -> None:
         pytest.warns(PolarsInefficientMapWarning),
     ):
         df.select(pl.col("x").map_elements(lambda x: 2 * x, strategy="cabbage"))  # type: ignore[arg-type]
-
-
-def test_unknown_map_elements() -> None:
-    df = pl.DataFrame(
-        {
-            "Amount": [10, 1, 1, 5],
-            "Flour": ["1000g", "100g", "50g", "75g"],
-        }
-    )
-
-    q = df.lazy().select(
-        pl.col("Amount"),
-        pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
-    )
-
-    assert q.collect().to_dict(as_series=False) == {
-        "Amount": [10, 1, 1, 5],
-        "Flour": [10.0, 100.0, 100.0, 20.0],
-    }
-    assert q.collect_schema().dtypes() == [pl.Int64, pl.Unknown]
 
 
 def test_map_elements_list_dtype_18472() -> None:

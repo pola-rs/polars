@@ -134,6 +134,24 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
 }
 
+pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
+    assert_eq!(s.len(), 2);
+
+    let a = &s[0];
+    let b = &s[1];
+
+    if upcast {
+        let dtype = try_get_supertype(a.dtype(), b.dtype())?;
+        let mut a = a.cast(&dtype)?;
+        a.append_owned(b.cast(&dtype)?)?;
+        Ok(a)
+    } else {
+        let mut a = a.clone();
+        a.append(b)?;
+        Ok(a)
+    }
+}
+
 #[cfg(feature = "mode")]
 pub(super) fn mode(s: &Column) -> PolarsResult<Column> {
     mode::mode(s.as_materialized_series()).map(Column::from)
@@ -160,6 +178,46 @@ pub(super) fn arg_unique(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
         .arg_unique()
         .map(|ok| ok.into_column())
+}
+
+pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_min()
+        .map_or(Scalar::null(IDX_DTYPE), |v| {
+            Scalar::from(IdxSize::try_from(v).expect("idxsize"))
+        })
+        .into_column(s.name().clone()))
+}
+
+pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_max()
+        .map_or(Scalar::null(IDX_DTYPE), |v| {
+            Scalar::from(IdxSize::try_from(v).expect("idxsize"))
+        })
+        .into_column(s.name().clone()))
+}
+
+pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> PolarsResult<Column> {
+    // @scalar-opt
+    Ok(s.as_materialized_series()
+        .arg_sort(SortOptions {
+            descending,
+            nulls_last,
+            multithreaded: true,
+            maintain_order: false,
+            limit: None,
+        })
+        .into_column())
+}
+
+pub(super) fn product(s: &Column) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .product()
+        .map(|sc| sc.into_column(s.name().clone()))
 }
 
 #[cfg(feature = "rank")]

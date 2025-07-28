@@ -3,7 +3,9 @@
 pub mod builder;
 pub mod capabilities;
 pub mod output;
+pub mod projection;
 
+use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
 use output::FileReaderOutputRecv;
 use polars_core::schema::SchemaRef;
@@ -13,6 +15,7 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::CastColumnsPolicy;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
+pub use projection::Projection;
 
 use crate::async_executor::JoinHandle;
 use crate::async_primitives::connector;
@@ -35,6 +38,11 @@ pub trait FileReader: Send + Sync {
     async fn file_schema(&mut self) -> PolarsResult<SchemaRef> {
         // Currently only gets called if the reader is taking predicates.
         unimplemented!()
+    }
+
+    /// Returns the arrow schema for file formats that contain one. Returns None otherwise.
+    async fn file_arrow_schema(&mut self) -> PolarsResult<Option<ArrowSchemaRef>> {
+        Ok(None)
     }
 
     /// This FileReader must be initialized before calling this.
@@ -118,7 +126,7 @@ pub trait FileReader: Send + Sync {
 #[derive(Debug)]
 pub struct BeginReadArgs {
     /// Columns to project from the file.
-    pub projected_schema: SchemaRef,
+    pub projection: Projection,
 
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
@@ -142,7 +150,7 @@ pub struct BeginReadArgs {
 impl Default for BeginReadArgs {
     fn default() -> Self {
         BeginReadArgs {
-            projected_schema: SchemaRef::default(),
+            projection: Projection::Plain(SchemaRef::default()),
             row_index: None,
             pre_slice: None,
             predicate: None,
@@ -199,11 +207,11 @@ impl std::fmt::Debug for FileReaderCallbacks {
 
         f.write_str(&format!(
             "\
-        FileReaderCallbacks: \
-        file_schema_tx: {:?} \
-        n_rows_in_file_tx: {:?} \
-        row_position_on_end_tx: {:?} \
-        ",
+            FileReaderCallbacks: \
+            file_schema_tx: {:?}, \
+            n_rows_in_file_tx: {:?}, \
+            row_position_on_end_tx: {:?} \
+            ",
             file_schema_tx.as_ref().map(|_| ""),
             n_rows_in_file_tx.as_ref().map(|_| ""),
             row_position_on_end_tx.as_ref().map(|_| "")

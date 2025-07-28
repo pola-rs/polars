@@ -130,9 +130,9 @@ where
 }
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-impl IntoGroupsType for CategoricalChunked {
+impl<T: PolarsCategoricalType> IntoGroupsType for CategoricalChunked<T> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        Ok(self.group_tuples_perfect(multithreaded, sorted))
+        self.phys.group_tuples(multithreaded, sorted)
     }
 }
 
@@ -167,13 +167,13 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             },
             DataType::Int64 => {
-                let BitRepr::Large(ca) = self.to_bit_repr() else {
+                let BitRepr::U64(ca) = self.to_bit_repr() else {
                     unreachable!()
                 };
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
             DataType::Int32 => {
-                let BitRepr::Small(ca) = self.to_bit_repr() else {
+                let BitRepr::U32(ca) = self.to_bit_repr() else {
                     unreachable!()
                 };
                 num_groups_proxy(&ca, multithreaded, sorted)

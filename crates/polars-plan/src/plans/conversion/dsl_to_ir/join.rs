@@ -109,11 +109,29 @@ pub fn resolve_join(
 
     let mut left_on = left_on
         .into_iter()
-        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_left))
+        .map(|e| {
+            to_expr_ir_materialized_lit(
+                e,
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_left,
+                    ctxt.opt_flags,
+                ),
+            )
+        })
         .collect::<PolarsResult<Vec<_>>>()?;
     let mut right_on = right_on
         .into_iter()
-        .map(|e| to_expr_ir_materialized_lit(e, ctxt.expr_arena, &schema_right))
+        .map(|e| {
+            to_expr_ir_materialized_lit(
+                e,
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_right,
+                    ctxt.opt_flags,
+                ),
+            )
+        })
         .collect::<PolarsResult<Vec<_>>>()?;
     let mut joined_on = PlHashSet::new();
 
@@ -136,12 +154,12 @@ pub fn resolve_join(
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left, true)
         .map_err(|e| e.context("'join' failed".into()))?;
     ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right, true)
         .map_err(|e| e.context("'join' failed".into()))?;
 
     // Re-evaluate because of mutable borrows earlier.
@@ -242,9 +260,9 @@ pub fn resolve_join(
         };
     }
 
-    // # Cast lossless
-    //
-    // If we do a full join and keys are coalesced, the cast keys must be added up front.
+    // As an optimization, when inserting casts for coalescing joins we only insert them beforehand for full-join.
+    // This means for e.g. left-join, the LHS key preserves its dtype in the output even if it is joined
+    // with an RHS key of wider type.
     let key_cols_coalesced =
         options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
     let mut as_with_columns_l = vec![];
@@ -438,7 +456,10 @@ fn resolve_join_where(
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
-        let predicate = to_expr_ir_materialized_lit(e, arena, &schema_merged)?;
+        let predicate = to_expr_ir_materialized_lit(
+            e,
+            &mut ExprToIRContext::new_with_opt_eager(arena, &schema_merged, ctxt.opt_flags),
+        )?;
         let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean
@@ -469,7 +490,7 @@ fn resolve_join_where(
     }
 
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, false)
         .map_err(|e| e.context("'join_where' failed".into()))?;
 
     Ok((last_node, join_node))

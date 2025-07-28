@@ -77,7 +77,7 @@ impl OptimizationRule for ExpandDatasets {
                     if config::verbose() {
                         eprintln!(
                             "expand_datasets(): python[{}]: limit: {:?}, project: {}",
-                            dataset_object.reader_name(),
+                            dataset_object.name(),
                             limit,
                             projection.as_ref().map_or(
                                 PlSmallStr::from_static("all"),
@@ -92,21 +92,22 @@ impl OptimizationRule for ExpandDatasets {
                         DslPlan::Scan {
                             sources: resolved_sources,
                             unified_scan_args: resolved_unified_scan_args,
-                            scan_type: _,
+                            scan_type: resolved_scan_type,
                             cached_ir: _,
                         } => {
+                            use crate::dsl::FileScanDsl;
+
                             let mut ir = ir.clone();
 
                             let IR::Scan {
                                 sources,
-                                scan_type: _,
+                                scan_type,
                                 unified_scan_args,
 
                                 file_info: _,
                                 hive_parts: _,
                                 predicate: _,
                                 output_schema: _,
-                                id: _,
                             } = &mut ir
                             else {
                                 unreachable!()
@@ -129,6 +130,7 @@ impl OptimizationRule for ExpandDatasets {
                                 extra_columns_policy,
                                 include_file_paths: _include_file_paths @ None,
                                 deletion_files,
+                                column_mapping,
                             } = *resolved_unified_scan_args
                             else {
                                 panic!(
@@ -144,9 +146,42 @@ impl OptimizationRule for ExpandDatasets {
                             unified_scan_args.missing_columns_policy = missing_columns_policy;
                             unified_scan_args.extra_columns_policy = extra_columns_policy;
                             unified_scan_args.deletion_files = deletion_files;
+                            unified_scan_args.column_mapping = column_mapping;
 
                             *sources = resolved_sources;
-                            //*scan_type = Box::new((*resolved_scan_type).into());
+                            *scan_type = Box::new(match *resolved_scan_type {
+                                #[cfg(feature = "csv")]
+                                FileScanDsl::Csv { options } => FileScanIR::Csv { options },
+
+                                #[cfg(feature = "ipc")]
+                                FileScanDsl::Ipc { options } => FileScanIR::Ipc {
+                                    options,
+                                    metadata: None,
+                                },
+
+                                #[cfg(feature = "parquet")]
+                                FileScanDsl::Parquet { options } => FileScanIR::Parquet {
+                                    options,
+                                    metadata: None,
+                                },
+
+                                #[cfg(feature = "json")]
+                                FileScanDsl::NDJson { options } => FileScanIR::NDJson { options },
+
+                                #[cfg(feature = "python")]
+                                FileScanDsl::PythonDataset { dataset_object } => {
+                                    FileScanIR::PythonDataset {
+                                        dataset_object,
+                                        cached_ir: Default::default(),
+                                    }
+                                },
+
+                                FileScanDsl::Anonymous {
+                                    options,
+                                    function,
+                                    file_info: _,
+                                } => FileScanIR::Anonymous { options, function },
+                            });
 
                             (ir, None)
                         },
@@ -157,7 +192,7 @@ impl OptimizationRule for ExpandDatasets {
                             (
                                 ir.clone(),
                                 Some((
-                                    dataset_object.reader_name(),
+                                    dataset_object.name(),
                                     options.scan_fn.expect("scan_fn is required"),
                                     options.python_source,
                                 )),

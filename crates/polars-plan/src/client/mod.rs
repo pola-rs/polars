@@ -2,7 +2,7 @@ mod check;
 
 use polars_core::error::PolarsResult;
 
-use crate::dsl::DslPlan;
+use crate::dsl::{DslPlan, PlanSerializationContext};
 
 /// Prepare the given [`DslPlan`] for execution on Polars Cloud.
 pub fn prepare_cloud_plan(dsl: DslPlan) -> PolarsResult<Vec<u8>> {
@@ -11,7 +11,12 @@ pub fn prepare_cloud_plan(dsl: DslPlan) -> PolarsResult<Vec<u8>> {
 
     // Serialize the plan.
     let mut writer = Vec::new();
-    dsl.serialize_versioned(&mut writer)?;
+    dsl.serialize_versioned(
+        &mut writer,
+        PlanSerializationContext {
+            use_cloudpickle: true,
+        },
+    )?;
 
     Ok(writer)
 }

@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import time_func, with_string_cache_if_auto_streaming
+from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy, PolarsDataType
@@ -65,7 +65,6 @@ def test_semi_anti_join() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
@@ -1259,7 +1258,6 @@ def test_array_explode_join_19763() -> None:
     assert_frame_equal(q.collect().sort("k"), pl.DataFrame({"k": [1, 2]}))
 
 
-@with_string_cache_if_auto_streaming
 def test_join_full_19814() -> None:
     schema = {"a": pl.Int64, "c": pl.Categorical}
     a = pl.LazyFrame({"a": [1], "c": [None]}, schema=schema)
@@ -1967,36 +1965,35 @@ def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> 
 
 
 def test_join_categorical_21815() -> None:
-    with pl.StringCache():
-        left = pl.DataFrame({"x": ["a", "b", "c", "d"]}).with_columns(
-            xc=pl.col.x.cast(pl.Categorical)
-        )
-        right = pl.DataFrame({"x": ["c", "d", "e", "f"]}).with_columns(
-            xc=pl.col.x.cast(pl.Categorical)
-        )
+    left = pl.DataFrame({"x": ["a", "b", "c", "d"]}).with_columns(
+        xc=pl.col.x.cast(pl.Categorical)
+    )
+    right = pl.DataFrame({"x": ["c", "d", "e", "f"]}).with_columns(
+        xc=pl.col.x.cast(pl.Categorical)
+    )
 
-        # As key.
-        cat_key = left.join(right, on="xc", how="full")
+    # As key.
+    cat_key = left.join(right, on="xc", how="full")
 
-        # As payload.
-        cat_payload = left.join(right, on="x", how="full")
+    # As payload.
+    cat_payload = left.join(right, on="x", how="full")
 
-        expected = pl.DataFrame(
-            {
-                "x": ["a", "b", "c", "d", None, None],
-                "x_right": [None, None, "c", "d", "e", "f"],
-            }
-        ).with_columns(
-            xc=pl.col.x.cast(pl.Categorical),
-            xc_right=pl.col.x_right.cast(pl.Categorical),
-        )
+    expected = pl.DataFrame(
+        {
+            "x": ["a", "b", "c", "d", None, None],
+            "x_right": [None, None, "c", "d", "e", "f"],
+        }
+    ).with_columns(
+        xc=pl.col.x.cast(pl.Categorical),
+        xc_right=pl.col.x_right.cast(pl.Categorical),
+    )
 
-        assert_frame_equal(
-            cat_key, expected, check_row_order=False, check_column_order=False
-        )
-        assert_frame_equal(
-            cat_payload, expected, check_row_order=False, check_column_order=False
-        )
+    assert_frame_equal(
+        cat_key, expected, check_row_order=False, check_column_order=False
+    )
+    assert_frame_equal(
+        cat_payload, expected, check_row_order=False, check_column_order=False
+    )
 
 
 def test_join_where_nested_boolean() -> None:
@@ -3076,7 +3073,7 @@ def test_join_filter_pushdown_asof_join() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_full_join_downgrade() -> None:
+def test_join_filter_pushdown_full_join_rewrite() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3269,7 +3266,7 @@ def test_join_filter_pushdown_full_join_downgrade() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_right_join_downgrade() -> None:
+def test_join_filter_pushdown_right_join_rewrite() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3322,7 +3319,7 @@ def test_join_filter_pushdown_right_join_downgrade() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_join_downgrade_equality_above_and() -> None:
+def test_join_filter_pushdown_join_rewrite_equality_above_and() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3354,7 +3351,7 @@ def test_join_filter_pushdown_join_downgrade_equality_above_and() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_left_join_downgrade() -> None:
+def test_join_filter_pushdown_left_join_rewrite() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
@@ -3399,7 +3396,7 @@ def test_join_filter_pushdown_left_join_downgrade() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
-def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
+def test_join_filter_pushdown_left_join_rewrite_23133() -> None:
     lhs = pl.LazyFrame(
         {
             "foo": [1, 2, 3],
@@ -3450,3 +3447,320 @@ def test_join_filter_pushdown_left_join_downgrade_23133() -> None:
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+def test_join_rewrite_panic_23307() -> None:
+    lhs = pl.select(a=pl.lit(1, dtype=pl.Int8)).lazy()
+    rhs = pl.select(a=pl.lit(1, dtype=pl.Int16), x=pl.lit(1, dtype=pl.Int32)).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", coalesce=True).filter(pl.col("x") >= 1)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.select(
+            a=pl.lit(1, dtype=pl.Int8),
+            x=pl.lit(1, dtype=pl.Int32),
+        ),
+    )
+
+    lhs = pl.select(a=pl.lit(999, dtype=pl.Int16)).lazy()
+
+    # Note: -25 matches to (999).overflowing_cast(Int8).
+    # This is specially chosen to test that we don't accidentally push the filter
+    # to the RHS.
+    rhs = pl.LazyFrame(
+        {"a": [1, -25], "x": [1, 2]}, schema={"a": pl.Int8, "x": pl.Int32}
+    )
+
+    q = lhs.join(
+        rhs,
+        on=pl.col("a").cast(pl.Int8, strict=False, wrap_numerical=True),
+        how="left",
+        coalesce=False,
+    ).filter(pl.col("a") >= 0)
+
+    expect = pl.DataFrame(
+        {"a": 999, "a_right": -25, "x": 2},
+        schema={"a": pl.Int16, "a_right": pl.Int8, "x": pl.Int32},
+    )
+
+    plan = q.explain()
+
+    assert not plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (pl.lit(None, dtype=pl.Int64), lambda col: col >= 1),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (col >= 1).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: (~(col >= 1)).is_not_null()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~(col >= 1).is_null()),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_in([1])),
+        (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
+        (1, lambda col: col.is_between(None, 1)),
+        (1, lambda col: col.is_between(1, None)),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_close(1)),
+        (1, lambda col: col.is_close(pl.lit(None, dtype=pl.Int64))),
+        #
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Int64), lambda col: col.is_infinite()),
+        #
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_not_nan()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_finite()),
+        (pl.lit(None, dtype=pl.Float64), lambda col: col.is_infinite()),
+    ],
+)
+def test_join_rewrite_null_preserving_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    assert (
+        pl.select(expr_first_input)
+        .select(expr_func(pl.first()))
+        .select(pl.first().is_null() | ~pl.first())
+        .to_series()
+        .item()
+    )
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("INNER JOIN")
+
+    out = q.collect()
+
+    assert out.height == 0
+    assert_frame_equal(out, q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+@pytest.mark.parametrize(
+    ("expr_first_input", "expr_func"),
+    [
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: ~(x.is_in([1, None], nulls_equal=True)),
+        ),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in([1, None], nulls_equal=True) > True,
+        ),
+        (
+            pl.lit(None, dtype=pl.Int64),
+            lambda x: x.is_in([1], nulls_equal=True),
+        ),
+    ],
+)
+def test_join_rewrite_forbid_exprs(
+    expr_first_input: Any, expr_func: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    lhs = pl.LazyFrame({"a": 1})
+    rhs = pl.select(a=1, x=expr_first_input).lazy()
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left_right").filter(
+        expr_func(pl.col("x"))
+    )
+
+    plan = q.explain()
+    assert plan.startswith("FILTER")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+def test_join_filter_pushdown_iejoin_cse_23469() -> None:
+    lf_x = pl.LazyFrame({"x": [1, 2, 3]})
+    lf_y = pl.LazyFrame({"y": [1, 2, 3]})
+
+    lf_xy = lf_x.join(lf_y, how="cross").filter(pl.col("x") > pl.col("y"))
+
+    q = pl.concat([lf_xy, lf_xy])
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        pl.DataFrame(
+            {
+                "x": [2, 2, 3, 3, 3, 3],
+                "y": [1, 1, 1, 1, 2, 2],
+            },
+        ),
+    )
+
+    q = pl.concat([lf_xy, lf_xy]).filter(pl.col("x") > pl.col("y"))
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        pl.DataFrame(
+            {
+                "x": [2, 2, 3, 3, 3, 3],
+                "y": [1, 1, 1, 1, 2, 2],
+            },
+        ),
+    )
+
+    q = (
+        lf_x.join_where(lf_y, pl.col("x") == pl.col("y"))
+        .cache()
+        .filter(pl.col("x") >= 0)
+    )
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()), pl.DataFrame({"x": [1, 2, 3], "y": [1, 2, 3]})
+    )
+
+
+def test_join_cast_type_coercion_23236() -> None:
+    lhs = pl.LazyFrame([{"name": "a"}]).rename({"name": "newname"})
+    rhs = pl.LazyFrame([{"name": "a"}])
+
+    q = lhs.join(rhs, left_on=pl.col("newname").cast(pl.String), right_on="name")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"newname": "a", "name": "a"}))
+
+
+@pytest.mark.parametrize(
+    ("how", "expected"),
+    [
+        (
+            "inner",
+            pl.DataFrame(schema={"a": pl.Int128, "a_right": pl.Int128}),
+        ),
+        (
+            "left",
+            pl.DataFrame(
+                {"a": [1, 1, 2], "a_right": None},
+                schema={"a": pl.Int128, "a_right": pl.Int128},
+            ),
+        ),
+        (
+            "right",
+            pl.DataFrame(
+                {
+                    "a": None,
+                    "a_right": [
+                        -9223372036854775808,
+                        -9223372036854775807,
+                        -9223372036854775806,
+                    ],
+                },
+                schema={"a": pl.Int128, "a_right": pl.Int128},
+            ),
+        ),
+        (
+            "full",
+            pl.DataFrame(
+                [
+                    pl.Series("a", [None, None, None, 1, 1, 2], dtype=pl.Int128),
+                    pl.Series(
+                        "a_right",
+                        [
+                            -9223372036854775808,
+                            -9223372036854775807,
+                            -9223372036854775806,
+                            None,
+                            None,
+                            None,
+                        ],
+                        dtype=pl.Int128,
+                    ),
+                ]
+            ),
+        ),
+        (
+            "semi",
+            pl.DataFrame([pl.Series("a", [], dtype=pl.Int128)]),
+        ),
+        (
+            "anti",
+            pl.DataFrame([pl.Series("a", [1, 1, 2], dtype=pl.Int128)]),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("sort_left", "sort_right"),
+    [(True, True), (True, False), (False, True), (False, False)],
+)
+def test_join_i128_23688(
+    how: str, expected: pl.DataFrame, sort_left: bool, sort_right: bool
+) -> None:
+    lhs = pl.LazyFrame({"a": pl.Series([1, 1, 2], dtype=pl.Int128)})
+
+    rhs = pl.LazyFrame(
+        {
+            "a": pl.Series(
+                [
+                    -9223372036854775808,
+                    -9223372036854775807,
+                    -9223372036854775806,
+                ],
+                dtype=pl.Int128,
+            )
+        }
+    )
+
+    lhs = lhs.collect().sort("a").lazy() if sort_left else lhs
+    rhs = rhs.collect().sort("a").lazy() if sort_right else rhs
+
+    q = lhs.join(rhs, on="a", how=how, coalesce=False)  # type: ignore[arg-type]
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        expected,
+    )
+
+    q = (
+        lhs.with_columns(b=pl.col("a"))
+        .join(
+            rhs.with_columns(b=pl.col("a")),
+            on=["a", "b"],
+            how=how,  # type: ignore[arg-type]
+            coalesce=False,
+        )
+        .select(expected.columns)
+    )
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        expected,
+    )
+
+
+def test_join_asof_by_i128() -> None:
+    lhs = pl.LazyFrame({"a": pl.Series([1, 1, 2], dtype=pl.Int128), "i": 1})
+
+    rhs = pl.LazyFrame(
+        {
+            "a": pl.Series(
+                [
+                    -9223372036854775808,
+                    -9223372036854775807,
+                    -9223372036854775806,
+                ],
+                dtype=pl.Int128,
+            ),
+            "i": 1,
+        }
+    ).with_columns(b=pl.col("a"))
+
+    q = lhs.join_asof(rhs, on="i", by="a")
+
+    assert_frame_equal(
+        q.collect().sort(pl.all()),
+        pl.DataFrame(
+            {"a": [1, 1, 2], "i": 1, "b": None},
+            schema={"a": pl.Int128, "i": pl.Int32, "b": pl.Int128},
+        ),
+    )

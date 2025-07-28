@@ -9,7 +9,8 @@ pub type DecimalChunked = Logical<DecimalType, Int128Type>;
 impl Int128Chunked {
     #[inline]
     pub fn into_decimal_unchecked(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
-        DecimalChunked::new_logical(self, DataType::Decimal(precision, Some(scale)))
+        // SAFETY: no invalid states.
+        unsafe { DecimalChunked::new_logical(self, DataType::Decimal(precision, Some(scale))) }
     }
 
     pub fn into_decimal(
@@ -75,6 +76,7 @@ impl LogicalType for DecimalChunked {
 
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
         let chunks = self
+            .physical()
             .chunks
             .iter()
             .map(|arr| {

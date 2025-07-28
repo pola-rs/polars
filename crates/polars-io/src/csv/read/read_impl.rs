@@ -2,13 +2,13 @@ pub(super) mod batched;
 
 use std::fmt;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
+use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
@@ -19,7 +19,7 @@ use super::parser::{
     skip_lines_naive, skip_this_line,
 };
 use super::reader::prepare_csv_schema;
-use super::schema_inference::{check_decimal_comma, infer_file_schema};
+use super::schema_inference::infer_file_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
@@ -121,8 +121,6 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_index: Option<RowIndex>,
-    #[cfg_attr(not(feature = "dtype-categorical"), allow(unused))]
-    has_categorical: bool,
 }
 
 impl fmt::Debug for CoreReader<'_> {
@@ -161,7 +159,6 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<CoreReader<'a>> {
         let separator = parse_options.separator;
 
-        check_decimal_comma(parse_options.decimal_comma, separator)?;
         #[cfg(feature = "decompress")]
         let mut reader_bytes = reader_bytes;
 
@@ -217,7 +214,7 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        let has_categorical = prepare_csv_schema(&mut schema, &mut to_cast)?;
+        prepare_csv_schema(&mut schema, &mut to_cast)?;
 
         // Create a null value for every column
         let null_values = parse_options
@@ -253,7 +250,6 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_index,
-            has_categorical,
         })
     }
 
@@ -375,7 +371,7 @@ impl<'a> CoreReader<'a> {
 
         let results = Arc::new(Mutex::new(vec![]));
         // We have to do this after parsing as there can be comments.
-        let total_line_count = &AtomicUsize::new(0);
+        let total_line_count = &RelaxedCell::new_usize(0);
 
         #[cfg(not(target_family = "wasm"))]
         let pool;
@@ -466,7 +462,7 @@ impl<'a> CoreReader<'a> {
                                 }
 
                                 if slf.n_rows.is_some() {
-                                    total_line_count.fetch_add(df.height(), Ordering::Relaxed);
+                                    total_line_count.fetch_add(df.height());
                                 }
 
                                 // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
@@ -495,7 +491,7 @@ impl<'a> CoreReader<'a> {
                     // Check just after we spawned a chunk. That mean we processed all data up until
                     // row count.
                     if self.n_rows.is_some()
-                        && total_line_count.load(Ordering::Relaxed) > self.n_rows.unwrap()
+                        && total_line_count.load() > self.n_rows.unwrap()
                     {
                         break;
                     }
@@ -518,15 +514,7 @@ impl<'a> CoreReader<'a> {
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn finish(mut self) -> PolarsResult<DataFrame> {
-        #[cfg(feature = "dtype-categorical")]
-        let mut _cat_lock = if self.has_categorical {
-            Some(polars_core::StringCacheHolder::hold())
-        } else {
-            None
-        };
-
         let reader_bytes = self.reader_bytes.take().unwrap();
-
         let mut df = self.parse_csv(&reader_bytes)?;
 
         // if multi-threaded the n_rows was probabilistically determined.

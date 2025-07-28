@@ -14,6 +14,9 @@ impl ListChunked {
         }
     }
 
+    /// # Panics
+    /// Panics if the physical representation of `dtype` differs the physical
+    /// representation of the existing inner `dtype`.
     pub fn set_inner_dtype(&mut self, dtype: DataType) {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
         let field = Arc::make_mut(&mut self.field);
@@ -39,7 +42,7 @@ impl ListChunked {
     }
 
     /// Convert the datatype of the list into the physical datatype.
-    pub fn to_physical_repr(&self) -> Cow<ListChunked> {
+    pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
         let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
             return Cow::Borrowed(self);
         };
@@ -59,7 +62,7 @@ impl ListChunked {
             .map(|(chunk, values)| {
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         values.dtype().clone(),
                         true,
                     ))),
@@ -108,7 +111,7 @@ impl ListChunked {
             .map(|(chunk, values)| {
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
-                        PlSmallStr::from_static("item"),
+                        LIST_VALUES_NAME,
                         values.dtype().clone(),
                         true,
                     ))),

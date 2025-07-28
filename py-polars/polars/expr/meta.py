@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, overload
 
+import polars._reexport as pl
 from polars._utils.deprecation import deprecated
 from polars._utils.serde import serialize_polars_object
 from polars._utils.various import display_dot_graph
@@ -271,25 +272,17 @@ class ExprMetaNameSpace:
         """
         return wrap_expr(self._pyexpr.meta_undo_aliases())
 
-    def _as_selector(self) -> Expr:
-        """Turn this expression in a selector."""
-        return wrap_expr(self._pyexpr._meta_as_selector())
+    def as_selector(self) -> pl.Selector:
+        """
+        Try to turn this expression in a selector.
 
-    def _selector_add(self, other: Expr) -> Expr:
-        """Add ('+') selectors."""
-        return wrap_expr(self._pyexpr._meta_selector_add(other._pyexpr))
+        Raises if the underlying expressions is not a column or selector.
 
-    def _selector_and(self, other: Expr) -> Expr:
-        """And ('&') selectors."""
-        return wrap_expr(self._pyexpr._meta_selector_and(other._pyexpr))
-
-    def _selector_sub(self, other: Expr) -> Expr:
-        """Subtract ('-') selectors."""
-        return wrap_expr(self._pyexpr._meta_selector_sub(other._pyexpr))
-
-    def _selector_xor(self, other: Expr) -> Expr:
-        """Xor ('^') selectors."""
-        return wrap_expr(self._pyexpr._meta_selector_xor(other._pyexpr))
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+        """
+        return pl.Selector._from_pyselector(self._pyexpr.into_selector())
 
     @overload
     def serialize(
@@ -376,7 +369,10 @@ class ExprMetaNameSpace:
 
     @overload
     def tree_format(
-        self, *, return_as_string: Literal[False], schema: None | SchemaDict = None
+        self,
+        *,
+        return_as_string: Literal[False] = ...,
+        schema: None | SchemaDict = None,
     ) -> None: ...
 
     @overload

@@ -8,8 +8,8 @@ use super::super::metadata::FileMetadata;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
-pub(super) fn metadata_len(buffer: &[u8], len: usize) -> i32 {
-    i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
+pub(super) fn metadata_len(buffer: &[u8], len: usize) -> u32 {
+    u32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
 // see (unstable) Seek::stream_len
@@ -59,9 +59,8 @@ pub fn read_metadata_with_size<R: Read + Seek>(
         return Err(ParquetError::oos("The file must end with PAR1"));
     }
 
-    let metadata_len = metadata_len(&buffer, default_end_len);
-
-    let metadata_len: u64 = metadata_len.try_into()?;
+    let metadata_len: u32 = metadata_len(&buffer, default_end_len);
+    let metadata_len: u64 = metadata_len as u64;
 
     let footer_len = FOOTER_SIZE + metadata_len;
     if footer_len > file_size {

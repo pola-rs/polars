@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.fs
@@ -21,15 +23,15 @@ def delta_table_path(io_files_path: Path) -> Path:
 
 
 def test_scan_delta(delta_table_path: Path) -> None:
-    ldf = pl.scan_delta(str(delta_table_path), version=0)
+    ldf = pl.scan_delta(delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_version(delta_table_path: Path) -> None:
-    df1 = pl.scan_delta(str(delta_table_path), version=0).collect()
-    df2 = pl.scan_delta(str(delta_table_path), version=1).collect()
+    df1 = pl.scan_delta(delta_table_path, version=0).collect()
+    df2 = pl.scan_delta(delta_table_path, version=1).collect()
 
     assert_frame_not_equal(df1, df2)
 
@@ -63,7 +65,7 @@ def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
 
 
 def test_scan_delta_columns(delta_table_path: Path) -> None:
-    ldf = pl.scan_delta(str(delta_table_path), version=0).select("name")
+    ldf = pl.scan_delta(delta_table_path, version=0).select("name")
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
@@ -82,15 +84,15 @@ def test_scan_delta_relative(delta_table_path: Path) -> None:
 
 
 def test_read_delta(delta_table_path: Path) -> None:
-    df = pl.read_delta(str(delta_table_path), version=0)
+    df = pl.read_delta(delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
     assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_version(delta_table_path: Path) -> None:
-    df1 = pl.read_delta(str(delta_table_path), version=0)
-    df2 = pl.read_delta(str(delta_table_path), version=1)
+    df1 = pl.read_delta(delta_table_path, version=0)
+    df2 = pl.read_delta(delta_table_path, version=1)
 
     assert_frame_not_equal(df1, df2)
 
@@ -124,7 +126,7 @@ def test_read_delta_timestamp_version(tmp_path: Path) -> None:
 
 
 def test_read_delta_columns(delta_table_path: Path) -> None:
-    df = pl.read_delta(str(delta_table_path), version=0, columns=["name"])
+    df = pl.read_delta(delta_table_path, version=0, columns=["name"])
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
     assert_frame_equal(expected, df, check_dtypes=False)
@@ -176,7 +178,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
     pl_df_0 = pl.read_delta(tbl.table_uri, version=0)
     pl_df_1 = pl.read_delta(tbl.table_uri, version=1)
-    pl_df_partitioned = pl.read_delta(str(partitioned_tbl_uri))
+    pl_df_partitioned = pl.read_delta(partitioned_tbl_uri)
 
     assert v0.shape == pl_df_0.shape
     assert v0.columns == pl_df_0.columns
@@ -228,7 +230,7 @@ def test_write_delta_overwrite_schema_deprecated(
     df = df.select(pl.col(pl.Int64))
     with pytest.deprecated_call():
         df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
-    result = pl.read_delta(str(tmp_path))
+    result = pl.read_delta(tmp_path)
     assert_frame_equal(df, result)
 
 
@@ -410,7 +412,7 @@ def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
     assert pa.schema(tbl.schema().to_arrow()) == expected.to_arrow().schema
 
     # Check result
-    result = pl.read_delta(str(tmp_path), version=0)
+    result = pl.read_delta(tmp_path, version=0)
     assert_frame_equal(result, expected)
 
 
@@ -445,7 +447,7 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
 
     merger.when_matched_delete(predicate="t.a > 2").execute()
 
-    result = pl.read_delta(str(tmp_path))
+    result = pl.read_delta(tmp_path)
 
     expected = df.filter(pl.col("a") <= 2)
     assert_frame_equal(result, expected, check_row_order=False)
@@ -466,16 +468,15 @@ def test_unsupported_dtypes(tmp_path: Path) -> None:
     reason="upstream bug in delta-rs causing categorical to be written as categorical in parquet"
 )
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_becomes_string(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
     df.write_delta(tmp_path)
-    df2 = pl.read_delta(str(tmp_path))
+    df2 = pl.read_delta(tmp_path)
     assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))
 
 
 def test_scan_delta_DT_input(delta_table_path: Path) -> None:
-    DT = DeltaTable(str(delta_table_path), version=0)
+    DT = DeltaTable(delta_table_path, version=0)
     ldf = pl.scan_delta(DT)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
@@ -517,3 +518,199 @@ def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
 
     assert_frame_equal(pl.scan_delta(table_path).collect(), expect)
     assert_frame_equal(pl.read_delta(table_path), expect)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_nanosecond_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame(
+        {"timestamp": [datetime(2025, 1, 1), datetime(2025, 1, 2)]},
+        schema={"timestamp": pl.Datetime("us", time_zone="UTC")},
+    )
+
+    df_nano_ts = pl.DataFrame(
+        {"timestamp": [datetime(2025, 1, 1), datetime(2025, 1, 2)]},
+        schema={"timestamp": pl.Datetime("ns", time_zone=None)},
+    )
+
+    root = tmp_path / "delta"
+
+    df.write_delta(root)
+
+    # Manually overwrite the file with one that has nanosecond timestamps.
+    parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
+    assert len(parquet_files) == 1
+    parquet_file_path = parquet_files[0]
+
+    df_nano_ts.write_parquet(parquet_file_path)
+
+    # Baseline: The timestamp in the file is in nanoseconds.
+    q = pl.scan_parquet(parquet_file_path)
+    assert q.collect_schema() == {"timestamp": pl.Datetime("ns", time_zone=None)}
+    assert_frame_equal(q.collect(), df_nano_ts)
+
+    q = pl.scan_delta(root)
+
+    assert q.collect_schema() == {"timestamp": pl.Datetime("us", time_zone="UTC")}
+    assert_frame_equal(q.collect(), df)
+
+    # Ensure row-group skipping is functioning.
+    q = pl.scan_delta(root).filter(
+        pl.col("timestamp")
+        < pl.lit(datetime(2025, 1, 1), dtype=pl.Datetime("us", time_zone="UTC"))
+    )
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    assert_frame_equal(q.collect(), df.clear())
+    assert "reading 0 / 1 row groups" in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "c1": [
+                {"timestamp": datetime(2025, 1, 1)},
+                {"timestamp": datetime(2025, 1, 2)},
+            ]
+        },
+        schema={"c1": pl.Struct({"timestamp": pl.Datetime("us", time_zone="UTC")})},
+    )
+
+    df_nano_ts = pl.DataFrame(
+        {
+            "c1": [
+                {"timestamp": datetime(2025, 1, 1)},
+                {"timestamp": datetime(2025, 1, 2)},
+            ]
+        },
+        schema={"c1": pl.Struct({"timestamp": pl.Datetime("ns", time_zone=None)})},
+    )
+
+    root = tmp_path / "delta"
+
+    df.write_delta(root)
+
+    # Manually overwrite the file with one that has nanosecond timestamps.
+    parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
+    assert len(parquet_files) == 1
+    parquet_file_path = parquet_files[0]
+
+    df_nano_ts.write_parquet(parquet_file_path)
+
+    # Baseline: The timestamp in the file is in nanoseconds.
+    q = pl.scan_parquet(parquet_file_path)
+    assert q.collect_schema() == {
+        "c1": pl.Struct({"timestamp": pl.Datetime("ns", time_zone=None)})
+    }
+    assert_frame_equal(q.collect(), df_nano_ts)
+
+    q = pl.scan_delta(root)
+
+    assert q.collect_schema() == {
+        "c1": pl.Struct({"timestamp": pl.Datetime("us", time_zone="UTC")})
+    }
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_schema_evolution_nested_struct_field_19915(tmp_path: Path) -> None:
+    (
+        pl.DataFrame(
+            {"a": ["test"], "properties": [{"property_key": {"item": 1}}]}
+        ).write_delta(tmp_path)
+    )
+
+    (
+        pl.DataFrame(
+            {
+                "a": ["test1"],
+                "properties": [{"property_key": {"item": 50, "item2": 10}}],
+            }
+        ).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={"schema_mode": "merge"},
+        )
+    )
+
+    q = pl.scan_delta(tmp_path)
+
+    expect = pl.DataFrame(
+        {
+            "a": ["test", "test1"],
+            "properties": [
+                {"property_key": {"item": 1, "item2": None}},
+                {"property_key": {"item": 50, "item2": 10}},
+            ],
+        },
+        schema={
+            "a": pl.String,
+            "properties": pl.Struct(
+                {"property_key": pl.Struct({"item": pl.Int64, "item2": pl.Int64})}
+            ),
+        },
+    )
+
+    assert_frame_equal(q.sort("a").collect(), expect)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_storage_options_from_delta_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.delta
+
+    storage_options_checked = False
+
+    def assert_scan_parquet_storage_options(*a: Any, **kw: Any) -> Any:
+        nonlocal storage_options_checked
+
+        assert kw["storage_options"] == {
+            "aws_endpoint_url": "http://localhost:777",
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+            "aws_session_token": "...",
+            "endpoint_url": "...",
+        }
+
+        storage_options_checked = True
+
+        return pl.scan_parquet(*a, **kw)
+
+    monkeypatch.setattr(
+        polars.io.delta, "scan_parquet", assert_scan_parquet_storage_options
+    )
+
+    df = pl.DataFrame({"a": ["test"], "properties": [{"property_key": {"item": 1}}]})
+
+    df.write_delta(tmp_path)
+
+    tbl = DeltaTable(
+        tmp_path,
+        storage_options={
+            "aws_endpoint_url": "http://localhost:333",
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+            "aws_session_token": "...",
+        },
+    )
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+        q = pl.scan_delta(
+            tbl,
+            storage_options={
+                "aws_endpoint_url": "http://localhost:777",
+                "endpoint_url": "...",
+            },
+        )
+
+        assert_frame_equal(q.collect(), df)
+
+    assert storage_options_checked

@@ -7,7 +7,7 @@ use super::{ColumnsUdf, FunctionOutputField};
 pub trait ExprRegistry: Sync + Send {
     fn get_function(&self, name: &str, payload: &[u8]) -> Option<Arc<dyn ColumnsUdf>>;
 
-    fn get_output(&self, name: &str) -> Option<Arc<dyn FunctionOutputField>>;
+    fn get_output(&self, name: &str, payload: &[u8]) -> Option<Arc<dyn FunctionOutputField>>;
 }
 
 pub(super) static NAMED_SERDE_REGISTRY_EXPR: LazyLock<RwLock<Option<Arc<dyn ExprRegistry>>>> =

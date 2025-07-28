@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, Location};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use std::time::Duration;
 
@@ -16,15 +16,16 @@ use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
 use park_group::ParkGroup;
 use parking_lot::Mutex;
+use polars_utils::relaxed_cell::RelaxedCell;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
 pub use task::{AbortOnDropHandle, JoinHandle};
 use task::{CancelHandle, Runnable};
 
-static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
+static NUM_EXECUTOR_THREADS: RelaxedCell<usize> = RelaxedCell::new_usize(0);
 pub fn set_num_threads(t: usize) {
-    NUM_EXECUTOR_THREADS.store(t, Ordering::Relaxed);
+    NUM_EXECUTOR_THREADS.store(t);
 }
 
 static GLOBAL_SCHEDULER: OnceLock<Executor> = OnceLock::new();
@@ -37,10 +38,10 @@ thread_local!(
 static NS_SPENT_BLOCKED: LazyLock<Mutex<HashMap<&'static Location<'static>, u64>>> =
     LazyLock::new(Mutex::default);
 
-static TRACK_WAIT_STATISTICS: AtomicBool = AtomicBool::new(false);
+static TRACK_WAIT_STATISTICS: RelaxedCell<bool> = RelaxedCell::new_bool(false);
 
 pub fn track_task_wait_statistics(should_track: bool) {
-    TRACK_WAIT_STATISTICS.store(should_track, Ordering::Relaxed);
+    TRACK_WAIT_STATISTICS.store(should_track);
 }
 
 pub fn get_task_wait_statistics() -> Vec<(&'static Location<'static>, Duration)> {
@@ -74,7 +75,7 @@ struct ScopedTaskMetadata {
 
 struct TaskMetadata {
     spawn_location: &'static Location<'static>,
-    ns_spent_blocked: AtomicU64,
+    ns_spent_blocked: RelaxedCell<u64>,
     priority: TaskPriority,
     freshly_spawned: AtomicBool,
     scoped: Option<ScopedTaskMetadata>,
@@ -85,7 +86,7 @@ impl Drop for TaskMetadata {
         *NS_SPENT_BLOCKED
             .lock()
             .entry(self.spawn_location)
-            .or_default() += self.ns_spent_blocked.load(Ordering::Relaxed);
+            .or_default() += self.ns_spent_blocked.load();
         if let Some(scoped) = &self.scoped {
             if let Some(completed_tasks) = scoped.completed_tasks.upgrade() {
                 completed_tasks.lock().push(scoped.task_key);
@@ -211,7 +212,7 @@ impl Executor {
     fn runner(&self, thread: usize) {
         TLS_THREAD_ID.set(thread);
 
-        let mut rng = SmallRng::from_rng(&mut rand::thread_rng()).unwrap();
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();
         let mut last_block_start = None;
 
@@ -239,7 +240,7 @@ impl Executor {
                     return Some(task);
                 }
 
-                if last_block_start.is_none() && TRACK_WAIT_STATISTICS.load(Ordering::Relaxed) {
+                if last_block_start.is_none() && TRACK_WAIT_STATISTICS.load() {
                     last_block_start = Some(std::time::Instant::now());
                 }
                 park.park();
@@ -248,11 +249,9 @@ impl Executor {
 
             if let Some(task) = task {
                 if let Some(t) = last_block_start.take() {
-                    if TRACK_WAIT_STATISTICS.load(Ordering::Relaxed) {
+                    if TRACK_WAIT_STATISTICS.load() {
                         let ns: u64 = t.elapsed().as_nanos().try_into().unwrap();
-                        task.metadata()
-                            .ns_spent_blocked
-                            .fetch_add(ns, Ordering::Relaxed);
+                        task.metadata().ns_spent_blocked.fetch_add(ns);
                     }
                 }
                 worker.recruit_next();
@@ -263,7 +262,7 @@ impl Executor {
 
     fn global() -> &'static Executor {
         GLOBAL_SCHEDULER.get_or_init(|| {
-            let mut n_threads = NUM_EXECUTOR_THREADS.load(Ordering::Relaxed);
+            let mut n_threads = NUM_EXECUTOR_THREADS.load();
             if n_threads == 0 {
                 n_threads = std::thread::available_parallelism()
                     .map(|n| n.get())
@@ -348,7 +347,7 @@ impl<'scope> TaskScope<'scope, '_> {
                     on_wake,
                     TaskMetadata {
                         spawn_location,
-                        ns_spent_blocked: AtomicU64::new(0),
+                        ns_spent_blocked: RelaxedCell::new_u64(0),
                         priority,
                         freshly_spawned: AtomicBool::new(true),
                         scoped: Some(ScopedTaskMetadata {
@@ -406,7 +405,7 @@ where
         on_wake,
         TaskMetadata {
             spawn_location,
-            ns_spent_blocked: AtomicU64::new(0),
+            ns_spent_blocked: RelaxedCell::new_u64(0),
             priority,
             freshly_spawned: AtomicBool::new(true),
             scoped: None,
@@ -420,10 +419,10 @@ fn random_permutation<R: Rng>(len: u32, rng: &mut R) -> impl Iterator<Item = u32
     let modulus = len.next_power_of_two();
     let halfwidth = modulus.trailing_zeros() / 2;
     let mask = modulus - 1;
-    let displace_zero = rng.r#gen::<u32>();
-    let odd1 = rng.r#gen::<u32>() | 1;
-    let odd2 = rng.r#gen::<u32>() | 1;
-    let uniform_first = ((rng.r#gen::<u32>() as u64 * len as u64) >> 32) as u32;
+    let displace_zero = rng.random::<u32>();
+    let odd1 = rng.random::<u32>() | 1;
+    let odd2 = rng.random::<u32>() | 1;
+    let uniform_first = ((rng.random::<u32>() as u64 * len as u64) >> 32) as u32;
 
     (0..modulus)
         .map(move |mut i| {

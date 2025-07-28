@@ -7,8 +7,10 @@ use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, DataFrameUdf, IR, IRAggExpr, NaiveExprMerger, write_group_by};
-use polars_plan::prelude::GroupbyOptions;
+use polars_plan::plans::{
+    AExpr, DataFrameUdf, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by,
+};
+use polars_plan::prelude::{GroupbyOptions, *};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_column_name;
@@ -165,6 +167,117 @@ fn try_lower_elementwise_scalar_agg_expr(
                 truthy,
                 falsy,
             }))
+        },
+
+        #[cfg(feature = "bitwise")]
+        AExpr::Function {
+            input: inner_exprs,
+            function:
+                IRFunctionExpr::Bitwise(
+                    inner_fn @ (IRBitwiseFunction::And
+                    | IRBitwiseFunction::Or
+                    | IRBitwiseFunction::Xor),
+                ),
+            options,
+        } => {
+            assert!(inner_exprs.len() == 1);
+
+            let input = inner_exprs[0].clone().node();
+            let inner_fn = *inner_fn;
+            let options = *options;
+
+            if is_input_independent(input, expr_arena, expr_cache) {
+                // TODO: we could simply return expr here, but we first need an is_scalar function, because if
+                // it is not a scalar we need to return expr.implode().
+                return None;
+            }
+
+            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
+                return None;
+            }
+
+            let agg_id = expr_merger.get_uniq_id(expr).unwrap();
+            let name = uniq_agg_exprs
+                .entry(agg_id)
+                .or_insert_with(|| {
+                    let input_id = expr_merger.get_uniq_id(input).unwrap();
+                    let input_col = uniq_input_exprs
+                        .entry(input_id)
+                        .or_insert_with(unique_column_name)
+                        .clone();
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                    let trans_agg_node = expr_arena.add(AExpr::Function {
+                        input: vec![ExprIR::from_node(input_col_node, expr_arena)],
+                        function: IRFunctionExpr::Bitwise(inner_fn),
+                        options,
+                    });
+
+                    // Add to aggregation expressions and replace with a reference to its output.
+                    let agg_expr = if let Some(name) = outer_name {
+                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
+                    } else {
+                        ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
+                    };
+                    agg_exprs.push(agg_expr.clone());
+                    agg_expr.output_name().clone()
+                })
+                .clone();
+            let result_node = expr_arena.add(AExpr::Column(name));
+            Some(result_node)
+        },
+
+        AExpr::Function {
+            input: inner_exprs,
+            function:
+                IRFunctionExpr::Boolean(
+                    inner_fn @ (IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. }),
+                ),
+            options,
+        } => {
+            assert!(inner_exprs.len() == 1);
+
+            let input = inner_exprs[0].clone().node();
+            let inner_fn = inner_fn.clone();
+            let options = *options;
+
+            if is_input_independent(input, expr_arena, expr_cache) {
+                // TODO: we could simply return expr here, but we first need an is_scalar function, because if
+                // it is not a scalar we need to return expr.implode().
+                return None;
+            }
+
+            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
+                return None;
+            }
+
+            let agg_id = expr_merger.get_uniq_id(expr).unwrap();
+            let name = uniq_agg_exprs
+                .entry(agg_id)
+                .or_insert_with(|| {
+                    let input_id = expr_merger.get_uniq_id(input).unwrap();
+                    let input_col = uniq_input_exprs
+                        .entry(input_id)
+                        .or_insert_with(unique_column_name)
+                        .clone();
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                    let trans_agg_node = expr_arena.add(AExpr::Function {
+                        input: vec![ExprIR::from_node(input_col_node, expr_arena)],
+                        function: IRFunctionExpr::Boolean(inner_fn),
+                        options,
+                    });
+
+                    // Add to aggregation expressions and replace with a reference to its output.
+                    let agg_expr = if let Some(name) = outer_name {
+                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
+                    } else {
+                        ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
+                    };
+                    agg_exprs.push(agg_expr.clone());
+                    agg_expr.output_name().clone()
+                })
+                .clone();
+            let result_node = expr_arena.add(AExpr::Column(name));
+            Some(result_node)
         },
 
         node @ AExpr::Function { input, options, .. }

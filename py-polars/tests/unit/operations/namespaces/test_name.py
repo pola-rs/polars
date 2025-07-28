@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_name_change_case() -> None:
@@ -65,4 +66,45 @@ def test_name_update_all() -> None:
             ("prefix_col1", pl.UInt64),
             ("col1_suffix", pl.UInt64),
         ]
+    )
+
+
+def test_name_map_chain_21164() -> None:
+    df = pl.DataFrame({"MyCol": [0, 1, 2]})
+    assert_frame_equal(
+        df.select(pl.all().name.to_lowercase().name.suffix("_suffix")),
+        df.select(mycol_suffix=pl.col("MyCol")),
+    )
+
+
+def test_when_then_keep_map_13858() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    assert_frame_equal(
+        df.with_columns(
+            pl.when(True)
+            .then(pl.int_range(3))
+            .otherwise(pl.all())
+            .name.keep()
+            .name.suffix("_other")
+        ),
+        df.with_columns(a_other=pl.int_range(3), b_other=pl.int_range(3)),
+    )
+
+
+def test_keep_name_struct_field_23669() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("foo", [{"x": 1}], pl.Struct({"x": pl.Int64})),
+            pl.Series("bar", [{"x": 2}], pl.Struct({"x": pl.Int64})),
+        ]
+    )
+    assert_frame_equal(
+        df.select(pl.all().struct.field("x").name.keep()),
+        pl.DataFrame(
+            [
+                pl.Series("foo", [1], pl.Int64),
+                pl.Series("bar", [2], pl.Int64),
+            ]
+        ),
     )

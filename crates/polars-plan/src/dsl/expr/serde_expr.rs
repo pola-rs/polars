@@ -186,9 +186,9 @@ impl<'a> Deserialize<'a> for GetOutput {
                         .map_err(|e| D::Error::custom(format!("{e}")))?;
                     Ok(LazySerde::Deserialized(SpecialEq::new(get_output)))
                 } else if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
-                    let (reg, name, _payload) = deserialize_named_registry(&buf)
+                    let (reg, name, payload) = deserialize_named_registry(&buf)
                         .map_err(|e| D::Error::custom(format!("{e}")))?;
-                    if let Some(func) = reg.get_output(name) {
+                    if let Some(func) = reg.get_output(name, payload) {
                         Ok(LazySerde::Deserialized(SpecialEq::new(func)))
                     } else {
                         let msg = "name not found in named serde registry";

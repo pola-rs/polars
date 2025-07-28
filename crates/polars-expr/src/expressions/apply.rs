@@ -1,9 +1,10 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
 
 use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
+use polars_core::chunked_array::from_iterator_par::{
+    ChunkedCollectParIterExt, try_list_from_par_iter,
+};
 use polars_core::prelude::*;
 use rayon::prelude::*;
 
@@ -23,7 +24,6 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     output_field: Field,
-    inlined_eval: OnceLock<Option<Column>>,
 }
 
 impl ApplyExpr {
@@ -54,7 +54,6 @@ impl ApplyExpr {
             allow_threading,
             check_lengths: options.check_lengths(),
             output_field,
-            inlined_eval: Default::default(),
         }
     }
 
@@ -94,7 +93,7 @@ impl ApplyExpr {
         Ok(ac)
     }
 
-    fn get_input_schema(&self, _df: &DataFrame) -> Cow<Schema> {
+    fn get_input_schema(&self, _df: &DataFrame) -> Cow<'_, Schema> {
         Cow::Borrowed(self.input_schema.as_ref())
     }
 
@@ -164,18 +163,17 @@ impl ApplyExpr {
             let iter = lst.par_iter().map(f);
 
             if let Some(dtype) = dtype {
-                // TODO! uncomment this line and remove debug_assertion after a while.
-                // POOL.install(|| {
-                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, DataType::List(Box::new(dtype)))
-                // })?
-                let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
-
-                if self.flags.returns_scalar() {
-                    debug_assert_eq!(&DataType::List(Box::new(dtype)), out.dtype());
+                // @NOTE: Since the output type for scalars does an implicit explode, we need to
+                // patch up the type here to also be a list.
+                let out_dtype = if self.is_scalar() {
+                    DataType::List(Box::new(dtype))
                 } else {
-                    debug_assert_eq!(&dtype, out.dtype());
-                }
+                    dtype
+                };
 
+                let out: ListChunked = POOL.install(|| {
+                    iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, out_dtype)
+                })?;
                 out
             } else {
                 POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
@@ -328,24 +326,6 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
 
-    fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {
-        // For predicate evaluation at I/O of:
-        // `lit("2024-01-01").str.strptime()`
-
-        self.inlined_eval
-            .get_or_init(|| {
-                let depth_limit = depth_limit.checked_sub(1)?;
-                let mut inputs = self
-                    .inputs
-                    .iter()
-                    .map(|x| x.evaluate_inline_impl(depth_limit).filter(|s| s.len() == 1))
-                    .collect::<Option<Vec<_>>>()?;
-
-                self.eval_and_flatten(&mut inputs).ok()
-            })
-            .clone()
-    }
-
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -353,36 +333,17 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        polars_ensure!(
-            self.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
-            expr = self.expr,
-            ComputeError: "this expression cannot run in the group_by context",
-        );
         if self.inputs.len() == 1 {
-            let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
+            let ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
             match self.flags.is_elementwise() {
-                false if self.flags.contains(FunctionFlags::APPLY_LIST) => {
-                    let c = self.eval_and_flatten(&mut [ac.aggregated()])?;
-                    ac.with_values(c, true, Some(&self.expr))?;
-                    Ok(ac)
-                },
                 false => self.apply_single_group_aware(ac),
                 true => self.apply_single_elementwise(ac),
             }
         } else {
-            let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
+            let acs = self.prepare_multiple_inputs(df, groups, state)?;
 
             match self.flags.is_elementwise() {
-                false if self.flags.contains(FunctionFlags::APPLY_LIST) => {
-                    let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-                    let c = self.eval_and_flatten(&mut c)?;
-                    // take the first aggregation context that as that is the input series
-                    let mut ac = acs.swap_remove(0);
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_values(c, true, Some(&self.expr))?;
-                    Ok(ac)
-                },
                 false => self.apply_multiple_group_aware(acs, df),
                 true => {
                     let mut has_agg_list = false;
@@ -423,7 +384,8 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
     fn is_scalar(&self) -> bool {
-        self.flags.returns_scalar() || self.function_operates_on_scalar
+        self.flags.returns_scalar()
+            || (self.function_operates_on_scalar && self.flags.is_length_preserving())
     }
 }
 

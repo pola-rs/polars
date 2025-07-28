@@ -2,6 +2,8 @@ use std::any::Any;
 
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
+#[cfg(feature = "dtype-categorical")]
+use polars_core::with_match_categorical_physical_type;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
@@ -85,7 +87,11 @@ pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
                 Box::new(single_key::SingleKeyHashGrouper::<Int128Type>::new())
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Box::new(single_key::SingleKeyHashGrouper::<UInt32Type>::new()),
+            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    Box::new(single_key::SingleKeyHashGrouper::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
+                })
+            },
 
             DataType::String | DataType::Binary => Box::new(binview::BinviewHashGrouper::new()),
 

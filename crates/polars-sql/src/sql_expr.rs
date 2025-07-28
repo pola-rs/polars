@@ -14,8 +14,8 @@ use polars_lazy::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::Rng;
+use rand::distr::Alphanumeric;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -243,7 +243,7 @@ impl SQLExprVisitor<'_> {
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(value) => self.visit_literal(value),
-            SQLExpr::Wildcard(_) => Ok(Expr::Wildcard),
+            SQLExpr::Wildcard(_) => Ok(all().as_expr()),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
                 polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
@@ -266,7 +266,7 @@ impl SQLExprVisitor<'_> {
             if schema.len() != 1 {
                 polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
             }
-            let rand_string: String = thread_rng()
+            let rand_string: String = rand::rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
@@ -830,7 +830,7 @@ impl SQLExprVisitor<'_> {
         &self,
         value: &SQLValue,
         op: Option<&UnaryOperator>,
-    ) -> PolarsResult<AnyValue> {
+    ) -> PolarsResult<AnyValue<'_>> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
             SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),

@@ -38,9 +38,7 @@ def elem_order_sign(
     if isinstance(lhs, pl.Series) and isinstance(rhs, pl.Series):
         assert lhs.dtype == rhs.dtype
 
-        if isinstance(lhs.dtype, pl.Enum) or lhs.dtype == pl.Categorical(
-            ordering="physical"
-        ):
+        if isinstance(lhs.dtype, pl.Enum):
             lhs = cast(Element, lhs.to_physical())
             rhs = cast(Element, rhs.to_physical())
             assert isinstance(lhs, pl.Series)

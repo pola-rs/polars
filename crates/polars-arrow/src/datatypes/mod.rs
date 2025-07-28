@@ -8,12 +8,17 @@ mod schema;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub use field::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field};
+pub use field::{
+    DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
+    DTYPE_ENUM_VALUES_NEW, Field,
+};
 pub use physical_type::*;
 use polars_utils::pl_str::PlSmallStr;
 pub use schema::{ArrowSchema, ArrowSchemaRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::array::LIST_VALUES_NAME;
 
 /// typedef for [BTreeMap<PlSmallStr, PlSmallStr>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
 pub type Metadata = BTreeMap<PlSmallStr, PlSmallStr>;
@@ -423,11 +428,7 @@ impl ArrowDataType {
 
     pub fn to_fixed_size_list(self, size: usize, is_nullable: bool) -> ArrowDataType {
         ArrowDataType::FixedSizeList(
-            Box::new(Field::new(
-                PlSmallStr::from_static("item"),
-                self,
-                is_nullable,
-            )),
+            Box::new(Field::new(LIST_VALUES_NAME, self, is_nullable)),
             size,
         )
     }

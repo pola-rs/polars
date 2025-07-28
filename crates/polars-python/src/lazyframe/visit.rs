@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use polars::prelude::PolarsError;
 use polars::prelude::python_dsl::PythonScanSource;
-use polars_plan::plans::{Context, IR, to_expr_ir};
+use polars_plan::plans::{Context, ExprToIRContext, IR, to_expr_ir};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
@@ -58,7 +58,7 @@ impl NodeTraverser {
     // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
-    const VERSION: Version = (8, 0);
+    const VERSION: Version = (9, 0);
 
     pub fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
@@ -127,7 +127,7 @@ impl NodeTraverser {
     fn get_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
-        Wrap(&**schema).into_pyobject(py)
+        Wrap((**schema).clone()).into_pyobject(py)
     }
 
     /// Get expression dtype of expr_node, the schema used is that of the current root node
@@ -198,8 +198,10 @@ impl NodeTraverser {
             expressions
                 .into_iter()
                 .map(|e| {
+                    let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
+                    ctx.allow_unknown = true;
                     // NOTE: Probably throwing away the output names here is not okay?
-                    to_expr_ir(e.inner, &mut expr_arena, &schema)
+                    to_expr_ir(e.inner, &mut ctx)
                         .map_err(PyPolarsErr::from)
                         .map(|v| v.node().0)
                 })

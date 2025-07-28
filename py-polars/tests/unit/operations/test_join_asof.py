@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 import warnings
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars._typing import AsofJoinStrategy, PolarsIntegerType
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import AsofJoinStrategy, PolarsIntegerType
 
 
 def test_asof_join_singular_right_11966() -> None:
@@ -1302,8 +1306,8 @@ def test_join_asof_not_sorted() -> None:
         assert len(w) == 0  # no warnings caught
 
 
-@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64])
-@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64])
+@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64, pl.Int128])
+@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64, pl.Int128])
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 def test_join_asof_large_int_21276(
     left_dtype: PolarsIntegerType,
@@ -1327,3 +1331,73 @@ def test_join_asof_large_int_21276(
         }
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("by", ["constant", None])
+def test_join_asof_slice_23583(by: str | None) -> None:
+    lhs = pl.LazyFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    rhs = pl.LazyFrame(
+        {
+            "index": [0, 1],
+            "constant": 0,
+            "date": [date(1970, 1, 1), date(2025, 1, 1)],
+        },
+    ).set_sorted("date")
+
+    q = (
+        lhs.join_asof(rhs, on="date", by=by, check_sortedness=False)
+        .head(1)
+        .select(pl.exclude("constant_right"))
+    )
+
+    expect = pl.DataFrame(
+        {
+            "index": [0],
+            "constant": 0,
+            "date": [date(2025, 1, 1)],
+            "index_right": [1],
+        },
+    )
+
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
+    assert_frame_equal(q.collect(), expect)
+
+
+def test_join_asof_23751() -> None:
+    a = pl.DataFrame(
+        [
+            pl.Series([1, 2, 3, 4, 5]).alias("index") * int(1e10),
+            pl.Series([1, -1, 1, 1, -1]).alias("side"),
+        ]
+    )
+
+    b = pl.DataFrame(
+        [
+            pl.Series([0, 1, 1, 3, 3, 5]).alias("index_right").cast(pl.UInt64)
+            * int(1e10),
+            pl.Series([-1, 1, -1, 1, 1, -1]).alias("side"),
+            pl.Series([0, 10, 20, 30, 40, 50]).alias("value"),
+        ]
+    )
+
+    assert a.join_asof(b, left_on="index", right_on="index_right", by="side").to_dict(
+        as_series=False
+    ) == {
+        "index": [10000000000, 20000000000, 30000000000, 40000000000, 50000000000],
+        "side": [1, -1, 1, 1, -1],
+        "index_right": [
+            10000000000,
+            10000000000,
+            30000000000,
+            30000000000,
+            50000000000,
+        ],
+        "value": [10, 20, 40, 40, 50],
+    }

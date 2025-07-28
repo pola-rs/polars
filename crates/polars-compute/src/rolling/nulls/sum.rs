@@ -1,79 +1,66 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-
 use super::*;
 
 pub struct SumWindow<'a, T, S> {
     slice: &'a [T],
     validity: &'a Bitmap,
-    sum: Option<S>,
+    sum: S,
     err: S,
+    non_finite_count: usize, // NaN or infinity.
+    pos_inf_count: usize,
+    neg_inf_count: usize,
+    pub(super) null_count: usize,
     last_start: usize,
     last_end: usize,
-    pub(super) null_count: usize,
 }
 
 impl<T, S> SumWindow<'_, T, S>
 where
-    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
-    // Kahan summation
+    fn add_finite_kahan(&mut self, val: T) {
+        let val: S = NumCast::from(val).unwrap();
+        let y = val - self.err;
+        let new_sum = self.sum + y;
+        self.err = (new_sum - self.sum) - y;
+        self.sum = new_sum;
+    }
+
     fn add(&mut self, val: T) {
-        if T::is_float() && val.is_finite() {
-            self.sum = self.sum.map(|sum| {
-                let val: S = NumCast::from(val).unwrap();
-                let y = val - self.err;
-                let new_sum = sum + y;
-                self.err = (new_sum - sum) - y;
-                new_sum
-            });
+        if T::is_float() {
+            if val.is_finite() {
+                self.add_finite_kahan(val);
+            } else {
+                self.non_finite_count += 1;
+                self.pos_inf_count += (val > T::zeroed()) as usize;
+                self.neg_inf_count += (val < T::zeroed()) as usize;
+            }
         } else {
             let val: S = NumCast::from(val).unwrap();
-            self.sum = self.sum.map(|v| v + val)
+            self.sum += val;
         }
     }
 
     fn sub(&mut self, val: T) {
-        if T::is_float() && val.is_finite() {
-            self.add(T::zeroed() - val)
+        if T::is_float() {
+            if val.is_finite() {
+                self.add_finite_kahan(T::zeroed() - val);
+            } else {
+                self.non_finite_count -= 1;
+                self.pos_inf_count -= (val > T::zeroed()) as usize;
+                self.neg_inf_count -= (val < T::zeroed()) as usize;
+            }
         } else {
             let val: S = NumCast::from(val).unwrap();
-            self.sum = self.sum.map(|v| v - val)
+            self.sum -= val;
         }
-    }
-}
-
-impl<T, S> SumWindow<'_, T, S>
-where
-    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
-    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
-{
-    // compute sum from the entire window
-    unsafe fn compute_sum_and_null_count(&mut self, start: usize, end: usize) -> Option<S> {
-        let mut sum = None;
-        let mut idx = start;
-        self.null_count = 0;
-        for value in &self.slice[start..end] {
-            let value: S = NumCast::from(*value).unwrap();
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                match sum {
-                    None => sum = Some(value),
-                    Some(current) => sum = Some(value + current),
-                }
-            } else {
-                self.null_count += 1;
-            }
-            idx += 1;
-        }
-        self.sum = sum;
-        sum
     }
 }
 
 impl<'a, T, S> RollingAggWindowNulls<'a, T> for SumWindow<'a, T, S>
 where
-    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast + PartialOrd,
     S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     unsafe fn new(
@@ -87,75 +74,62 @@ where
         let mut out = Self {
             slice,
             validity,
-            sum: None,
+            sum: S::zeroed(),
             err: S::zeroed(),
-            last_start: start,
-            last_end: end,
+            non_finite_count: 0,
+            pos_inf_count: 0,
+            neg_inf_count: 0,
+            last_start: 0,
+            last_end: 0,
             null_count: 0,
         };
-        out.compute_sum_and_null_count(start, end);
+        out.update(start, end);
         out
     }
 
+    // # Safety
+    // The start, end range must be in-bounds.
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // if we exceed the end, we have a completely new window
-        // so we recompute
-        let recompute_sum = if start >= self.last_end {
-            true
-        } else {
-            // remove elements that should leave the window
-            let mut recompute_sum = false;
-            for idx in self.last_start..start {
-                // SAFETY:
-                // we are in bounds
-                let valid = self.validity.get_bit_unchecked(idx);
-                if valid {
-                    let leaving_value = self.slice.get_unchecked(idx);
+        if start >= self.last_end {
+            self.sum = S::zeroed();
+            self.err = S::zeroed();
+            self.non_finite_count = 0;
+            self.pos_inf_count = 0;
+            self.neg_inf_count = 0;
+            self.null_count = 0;
+            self.last_start = start;
+            self.last_end = start;
+        }
 
-                    // if the leaving value is nan we need to recompute the window
-                    if T::is_float() && !leaving_value.is_finite() {
-                        recompute_sum = true;
-                        break;
-                    }
-                    self.sub(*leaving_value);
-                } else {
-                    // null value leaving the window
-                    self.null_count -= 1;
-
-                    // self.sum is None and the leaving value is None
-                    // if the entering value is valid, we might get a new sum.
-                    if self.sum.is_none() {
-                        recompute_sum = true;
-                        break;
-                    }
-                }
-            }
-            recompute_sum
-        };
-
-        self.last_start = start;
-
-        // we traverse all values and compute
-        if recompute_sum {
-            self.compute_sum_and_null_count(start, end);
-        } else {
-            for idx in self.last_end..end {
-                let valid = self.validity.get_bit_unchecked(idx);
-
-                if valid {
-                    let value = *self.slice.get_unchecked(idx);
-                    match self.sum {
-                        None => self.sum = NumCast::from(value),
-                        _ => self.add(value),
-                    }
-                } else {
-                    // null value entering the window
-                    self.null_count += 1;
-                }
+        for idx in self.last_start..start {
+            let valid = self.validity.get_bit_unchecked(idx);
+            if valid {
+                self.sub(unsafe { *self.slice.get_unchecked(idx) });
+            } else {
+                self.null_count -= 1;
             }
         }
+
+        for idx in self.last_end..end {
+            let valid = self.validity.get_bit_unchecked(idx);
+            if valid {
+                self.add(unsafe { *self.slice.get_unchecked(idx) });
+            } else {
+                self.null_count += 1;
+            }
+        }
+
+        self.last_start = start;
         self.last_end = end;
-        self.sum.and_then(NumCast::from)
+        if self.non_finite_count == 0 {
+            NumCast::from(self.sum)
+        } else if self.non_finite_count == self.pos_inf_count {
+            Some(T::pos_inf_value())
+        } else if self.non_finite_count == self.neg_inf_count {
+            Some(T::neg_inf_value())
+        } else {
+            Some(T::nan_value())
+        }
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {

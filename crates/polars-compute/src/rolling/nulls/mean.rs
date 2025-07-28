@@ -14,7 +14,8 @@ impl<
         + NumCast
         + Div<Output = T>
         + AddAssign
-        + SubAssign,
+        + SubAssign
+        + PartialOrd,
 > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
     unsafe fn new(
@@ -32,7 +33,12 @@ impl<
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let sum = self.sum.update(start, end);
-        sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
+        let len = end - start;
+        if self.sum.null_count == len {
+            None
+        } else {
+            sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
+        }
     }
     fn is_valid(&self, min_periods: usize) -> bool {
         self.sum.is_valid(min_periods)

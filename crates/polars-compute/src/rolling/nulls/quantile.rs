@@ -1,6 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::MutablePrimitiveArray;
-
 use super::*;
 use crate::rolling::quantile_filter::SealedRolling;
 
@@ -56,7 +54,7 @@ impl<
         // Nulls are guaranteed to be at the front
         length -= null_count;
         let mut idx = match self.method {
-            QuantileMethod::Nearest => ((length as f64) * self.prob) as usize,
+            QuantileMethod::Nearest => (((length as f64) - 1.0) * self.prob).round() as usize,
             QuantileMethod::Lower | QuantileMethod::Midpoint | QuantileMethod::Linear => {
                 ((length as f64 - 1.0) * self.prob).floor() as usize
             },
@@ -72,11 +70,20 @@ impl<
         match self.method {
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
-                Some(
-                    (self.sorted.get(idx + null_count).unwrap()
-                        + self.sorted.get(top_idx + null_count).unwrap())
-                        / T::from::<f64>(2.0f64).unwrap(),
-                )
+
+                debug_assert!(idx <= top_idx);
+                let v = if idx != top_idx {
+                    let mut vals = self
+                        .sorted
+                        .index_range(idx + null_count..top_idx + null_count + 1);
+                    let low = vals.next().unwrap().unwrap();
+                    let high = vals.next().unwrap().unwrap();
+                    (low + high) / T::from::<f64>(2.0f64).unwrap()
+                } else {
+                    self.sorted.get(idx + null_count).unwrap()
+                };
+
+                Some(v)
             },
             QuantileMethod::Linear => {
                 let float_idx = (length as f64 - 1.0) * self.prob;
@@ -85,13 +92,14 @@ impl<
                 if top_idx == idx {
                     Some(self.sorted.get(idx + null_count).unwrap())
                 } else {
+                    let mut vals = self
+                        .sorted
+                        .index_range(idx + null_count..top_idx + null_count + 1);
+                    let low = vals.next().unwrap().unwrap();
+                    let high = vals.next().unwrap().unwrap();
+
                     let proportion = T::from(float_idx - idx as f64).unwrap();
-                    Some(
-                        proportion
-                            * (self.sorted.get(top_idx + null_count).unwrap()
-                                - self.sorted.get(idx + null_count).unwrap())
-                            + self.sorted.get(idx + null_count).unwrap(),
-                    )
+                    Some(proportion * (high - low) + low)
                 }
             },
             _ => Some(self.sorted.get(idx + null_count).unwrap()),
@@ -133,6 +141,9 @@ where
         true => det_offsets_center,
         false => det_offsets,
     };
+    /*
+    TODO: fix or remove the dancing links based rolling implementation
+    see https://github.com/pola-rs/polars/issues/23480
     if !center {
         let params = params.as_ref().unwrap();
         let RollingFnParams::Quantile(params) = params else {
@@ -149,6 +160,7 @@ where
         let out: PrimitiveArray<T> = out.into();
         return Box::new(out);
     }
+    */
     rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),

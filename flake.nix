@@ -31,7 +31,7 @@
           let
             rustToolchain = pkgs.fenix.fromToolchainName {
               name = (lib.importTOML ./rust-toolchain.toml).toolchain.channel;
-              sha256 = "sha256-Xb/lE3DAZPNhrxCqtWiCfKBTHuWl0e0c7ZYbqrzjFeI=";
+              sha256 = "sha256-7BslJCnXhsJe97SDZiclW7tc83VH9NHp4fn+UTV1GYU=";
             };
 
             rustPlatform = pkgs.makeRustPlatform {
@@ -313,6 +313,15 @@
 									# # Used for Altair SVG / PNG conversions
 									"vl-convert-python"
 								];
+
+                rustPkg = rustToolchain.withComponents [
+                  "cargo"
+                  "clippy"
+                  "rust-src"
+                  "rustc"
+                  "rustfmt"
+                  "rust-analyzer"
+                ];
               in
               {
                 packages =
@@ -322,14 +331,7 @@
                     pythonPlatform.venvShellHook
                     pythonPlatform.build
 
-                    (rustToolchain.withComponents [
-                      "cargo"
-                      "clippy"
-                      "rust-src"
-                      "rustc"
-                      "rustfmt"
-                      "rust-analyzer"
-                    ])
+                    rustPkg
 
                     cmake
                     gnumake
@@ -377,6 +379,10 @@
 
                 postShellHook =
                   let
+                    openCmd = 
+                      if pkgs.stdenv.isLinux then "xdg-open"
+                      else "open";
+                        # on darwin, /usr/bin/ld actually looks at the environment variable
                     # Borrowed from jujutsu's flake.nix
                     # on macOS and Linux, use faster parallel linkers that are much more
                     # efficient than the defaults. these noticeably improve link time even for
@@ -423,6 +429,7 @@
                     export PYO3_NO_REOCOMPILE=1
                     export PYO3_NO_RECOMPILE=1
 
+                    export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
                     export PYO3_PYTHON=$($VENV/bin/python -c "import sys,os; print(os.path.abspath(sys.executable))")
                     export PYTHON_SHARED_LIB=$($VENV/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
 
@@ -433,11 +440,10 @@
                     # Set openssl for `cargo test` to work.
                     export LD_LIBRARY_PATH="${pkgs.openssl_3_4.out}/lib:${stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
 
-                    export RUSTFLAGS="-Zthreads=0 ${rustLinkFlagsString} $RUSTFLAGS"
-
                     export PYTHON_LIBS=$($VENV/bin/python -c "import site; print(site.getsitepackages()[0])")
 
                     export PYTHONPATH="$PYTHONPATH:$PYTHON_LIBS"
+										export RUST_SRC_PATH="${rustToolchain.rust-src}/lib/rustlib/src/rust/library"
                   '';
 
               }

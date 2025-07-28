@@ -65,7 +65,6 @@ def test_dtype() -> None:
     ]
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical() -> None:
     # https://github.com/pola-rs/polars/issues/2038
     df = pl.DataFrame(
@@ -201,19 +200,13 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
-def test_local_categorical_list() -> None:
+def test_categorical_list() -> None:
     values = [["a", "b"], ["c"], ["a", "d", "d"]]
     s = pl.Series(values, dtype=pl.List(pl.Categorical))
     assert s.dtype == pl.List
     assert s.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
     assert s.to_list() == values
-
-    # Check that underlying physicals match
-    idx_df = pl.Series([[0, 1], [2], [0, 3, 3]], dtype=pl.List(pl.UInt32))
-    assert_series_equal(s.cast(pl.List(pl.UInt32)), idx_df)
-
-    # Check if the categories array does not overlap
-    assert s.list.explode().cat.get_categories().to_list() == ["a", "b", "c", "d"]
+    assert s.explode().to_list() == ["a", "b", "c", "a", "d", "d"]
 
 
 def test_group_by_list_column() -> None:
@@ -689,30 +682,6 @@ def data_dispersion() -> pl.DataFrame:
     )
 
 
-def test_list_var(data_dispersion: pl.DataFrame) -> None:
-    df = data_dispersion
-
-    result = df.select(
-        pl.col("int").list.var().name.suffix("_var"),
-        pl.col("float").list.var().name.suffix("_var"),
-        pl.col("duration").list.var().name.suffix("_var"),
-    )
-
-    expected = pl.DataFrame(
-        [
-            pl.Series("int_var", [2.5], dtype=pl.Float64),
-            pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
-        ]
-    )
-
-    assert_frame_equal(result, expected)
-
-
 def test_list_std(data_dispersion: pl.DataFrame) -> None:
     df = data_dispersion
 
@@ -831,7 +800,6 @@ def test_list_list_sum_exception_12935() -> None:
         pl.Series([[1], [2]]).sum()
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_null_list_categorical_16405() -> None:
     df = pl.DataFrame(
         [(None, "foo")],

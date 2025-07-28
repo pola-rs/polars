@@ -31,8 +31,6 @@ pub use correlation::*;
 pub use horizontal::*;
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
-#[cfg(feature = "dtype-struct")]
-use polars_core::utils::get_supertype;
 #[cfg(all(feature = "range", feature = "temporal"))]
 pub use range::date_range; // This shouldn't be necessary, but clippy complains about dead code
 #[cfg(all(feature = "range", feature = "dtype-time"))]

@@ -1,4 +1,6 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+// TODO: Remove the allow and cfg_attr once Rust 1.89 is stable
+#![allow(stable_features)]
 #![cfg_attr(
     all(feature = "simd", target_arch = "x86_64"),
     feature(stdarch_x86_avx512)

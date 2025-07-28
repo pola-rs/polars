@@ -229,7 +229,7 @@ pub trait ListNameSpaceImpl: AsList {
         dispersion::std_with_nulls(ca, ddof)
     }
 
-    fn lst_var(&self, ddof: u8) -> Series {
+    fn lst_var(&self, ddof: u8) -> PolarsResult<Series> {
         let ca = self.as_list();
         dispersion::var_with_nulls(ca, ddof)
     }
@@ -696,23 +696,9 @@ pub trait ListNameSpaceImpl: AsList {
             match s.dtype() {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
-                    #[cfg(feature = "dtype-categorical")]
-                    if matches!(
-                        &inner_super_type,
-                        DataType::Categorical(_, _) | DataType::Enum(_, _)
-                    ) {
-                        inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
-                    }
                 },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
-                    #[cfg(feature = "dtype-categorical")]
-                    if matches!(
-                        &inner_super_type,
-                        DataType::Categorical(_, _) | DataType::Enum(_, _)
-                    ) {
-                        inner_super_type = merge_dtypes(&inner_super_type, dt)?;
-                    }
                 },
             }
         }

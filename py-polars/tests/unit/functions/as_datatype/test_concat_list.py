@@ -96,14 +96,12 @@ def test_list_concat_supertype() -> None:
     ].to_list() == [[1, 10000], [2, 20000]]
 
 
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_list_concat_4762() -> None:
     df = pl.DataFrame({"x": "a"})
     expected = {"x": [["a", "a"]]}
 
     q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
-    with pl.StringCache():
-        assert q.collect().to_dict(as_series=False) == expected
+    assert q.collect().to_dict(as_series=False) == expected
 
 
 def test_list_concat_rolling_window() -> None:

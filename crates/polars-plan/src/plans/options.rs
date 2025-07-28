@@ -68,15 +68,13 @@ bitflags!(
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
         pub struct FunctionFlags: u16 {
-            /// Raise if use in group by
-            const ALLOW_GROUP_AWARE = 1 << 0;
             /// The physical expression may rename the output of this function.
             /// If set to `false` the physical engine will ensure the left input
             /// expression is the output name.
-            const ALLOW_RENAME = 1 << 2;
+            const ALLOW_RENAME = 1 << 0;
             /// if set, then the `Series` passed to the function in the group_by operation
             /// will ensure the name is set. This is an extra heap allocation per group.
-            const PASS_NAME_TO_APPLY = 1 << 3;
+            const PASS_NAME_TO_APPLY = 1 << 1;
             /// There can be two ways of expanding wildcards:
             ///
             /// Say the schema is 'a', 'b' and there is a function `f`. In this case, `f('*')` can expand
@@ -87,7 +85,7 @@ bitflags!(
             /// Setting this to true, will lead to behavior 1.
             ///
             /// This also accounts for regex expansion.
-            const INPUT_WILDCARD_EXPANSION = 1 << 4;
+            const INPUT_WILDCARD_EXPANSION = 1 << 2;
             /// Automatically explode on unit length if it ran as final aggregation.
             ///
             /// this is the case for aggregations like sum, min, covariance etc.
@@ -100,25 +98,27 @@ bitflags!(
             /// sum(x) -> {4}
             ///
             /// mutually exclusive with `RETURNS_SCALAR`
-            const RETURNS_SCALAR = 1 << 5;
+            const RETURNS_SCALAR = 1 << 3;
             /// This can happen with UDF's that use Polars within the UDF.
             /// This can lead to recursively entering the engine and sometimes deadlocks.
             /// This flag must be set to handle that.
-            const OPTIONAL_RE_ENTRANT = 1 << 6;
+            const OPTIONAL_RE_ENTRANT = 1 << 4;
             /// Whether this function allows no inputs.
-            const ALLOW_EMPTY_INPUTS = 1 << 7;
+            const ALLOW_EMPTY_INPUTS = 1 << 5;
 
             /// Given a function f and a column of values [v1, ..., vn]
             /// f is row-separable i.f.f.
             /// f([v1, ..., vn]) = concat(f(v1, ... vm), f(vm+1, ..., vn))
-            const ROW_SEPARABLE = 1 << 8;
+            const ROW_SEPARABLE = 1 << 6;
             /// Given a function f and a column of values [v1, ..., vn]
             /// f is length preserving i.f.f. len(f([v1, ..., vn])) = n
             ///
             /// mutually exclusive with `RETURNS_SCALAR`
-            const LENGTH_PRESERVING = 1 << 9;
-            /// Aggregate the values of the expression into a list before applying the function.
-            const APPLY_LIST = 1 << 10;
+            const LENGTH_PRESERVING = 1 << 7;
+            /// NULLs on the first input are propagated to the output.
+            const PRESERVES_NULL_FIRST_INPUT = 1 << 8;
+            /// NULLs on any input are propagated to the output.
+            const PRESERVES_NULL_ALL_INPUTS = 1 << 9;
         }
 );
 
@@ -131,6 +131,14 @@ impl FunctionFlags {
         self.contains(Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING)
     }
 
+    pub fn is_row_separable(self) -> bool {
+        self.contains(Self::ROW_SEPARABLE)
+    }
+
+    pub fn is_length_preserving(self) -> bool {
+        self.contains(Self::LENGTH_PRESERVING)
+    }
+
     pub fn returns_scalar(self) -> bool {
         self.contains(Self::RETURNS_SCALAR)
     }
@@ -138,7 +146,7 @@ impl FunctionFlags {
 
 impl Default for FunctionFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(0) | Self::ALLOW_GROUP_AWARE
+        Self::from_bits_truncate(0)
     }
 }
 
@@ -190,6 +198,10 @@ impl FunctionOptions {
 
     pub fn is_length_preserving(&self) -> bool {
         self.flags.contains(FunctionFlags::LENGTH_PRESERVING)
+    }
+
+    pub fn is_row_separable(&self) -> bool {
+        self.flags.is_row_separable()
     }
 
     pub fn returns_scalar(&self) -> bool {

@@ -19,12 +19,7 @@ pub(super) fn process_join(
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
-    // This is always lowered to cross join + filter.
-    // The translation to IEJoin happens in collapse_joins, which runs after this function.
-    #[cfg(feature = "iejoin")]
-    assert!(!matches!(&options.args.how, JoinType::IEJoin));
-
-    let opt_post_select = try_downgrade_join_type(
+    let opt_post_select = try_rewrite_join_type(
         &schema_left,
         &schema_right,
         &mut schema,
@@ -35,14 +30,19 @@ pub(super) fn process_join(
         expr_arena,
     );
 
-    if acc_predicates.is_empty()
-        || match &options.args.how {
-            // Full-join with no coalesce. We can only push filters if they do not remove NULLs, but
-            // we don't have a reliable way to guarantee this.
-            JoinType::Full => !options.args.should_coalesce(),
+    if match &options.args.how {
+        // Full-join with no coalesce. We can only push filters if they do not remove NULLs, but
+        // we don't have a reliable way to guarantee this.
+        JoinType::Full => !options.args.should_coalesce(),
 
-            _ => false,
-        }
+        #[cfg(feature = "iejoin")]
+        JoinType::IEJoin => {
+            // TODO: Optimize this - https://github.com/pola-rs/polars/issues/23489
+            true
+        },
+
+        _ => false,
+    } || acc_predicates.is_empty()
     {
         let lp = IR::Join {
             input_left,
@@ -55,6 +55,8 @@ pub(super) fn process_join(
 
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
+
+    let should_coalesce = options.args.should_coalesce();
 
     // AsOf has the equality join keys under `asof_options.left/right_by`. This code builds an
     // iterator to address these generically without creating a `Box<dyn Iterator>`.
@@ -80,7 +82,18 @@ pub(super) fn process_join(
             _ => {
                 let expr = left_on.get(i).unwrap();
 
-                if let AExpr::Column(name) = expr_arena.get(expr.node()) {
+                // For non full-joins coalesce can still insert casts into the key exprs.
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if should_coalesce => *expr,
+
+                    _ => expr.node(),
+                };
+
+                if let AExpr::Column(name) = expr_arena.get(node) {
                     Some(name)
                 } else {
                     None
@@ -111,7 +124,18 @@ pub(super) fn process_join(
             _ => {
                 let expr = right_on.get(i).unwrap();
 
-                if let AExpr::Column(name) = expr_arena.get(expr.node()) {
+                // For non full-joins coalesce can still insert casts into the key exprs.
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if should_coalesce => *expr,
+
+                    _ => expr.node(),
+                };
+
+                if let AExpr::Column(name) = expr_arena.get(node) {
                     Some(name)
                 } else {
                     None
@@ -345,12 +369,12 @@ pub(super) fn process_join(
     Ok(lp)
 }
 
-/// Attempts to downgrade the join-type based on NULL-removing filters.
+/// Attempts to rewrite the join-type based on NULL-removing filters.
 ///
 /// Changing between some join types may cause the output column order to change. If this is the
 /// case, a Vec of column selectors will be returned that restore the original column order.
 #[expect(clippy::too_many_arguments)]
-fn try_downgrade_join_type(
+fn try_rewrite_join_type(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     output_schema: &mut SchemaRef,
@@ -369,11 +393,23 @@ fn try_downgrade_join_type(
         return None;
     }
 
+    let should_coalesce = options.args.should_coalesce();
+
     /// Note: This may panic if `args.should_coalesce()` is false.
     macro_rules! lhs_input_column_keys_iter {
         () => {{
-            left_on.iter().map(|e| {
-                let AExpr::Column(name) = expr_arena.get(e.node()) else {
+            left_on.iter().map(|expr| {
+                let node = match expr_arena.get(expr.node()) {
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: _,
+                    } if should_coalesce => *expr,
+
+                    _ => expr.node(),
+                };
+
+                let AExpr::Column(name) = expr_arena.get(node) else {
                     // All keys should be columns when coalesce=True
                     unreachable!()
                 };
@@ -386,7 +422,7 @@ fn try_downgrade_join_type(
     let mut coalesced_to_right: PlHashSet<PlSmallStr> = Default::default();
     // Removing NULLs on these columns do not allow for join downgrading.
     // We only need to track these for full-join - e.g. for left-join, removing NULLs from any left
-    // column does not cause any join downgrades.
+    // column does not cause any join rewrites.
     let mut coalesced_full_join_key_outputs: PlHashSet<PlSmallStr> = Default::default();
 
     if options.args.should_coalesce() {

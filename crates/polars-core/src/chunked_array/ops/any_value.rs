@@ -1,6 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-#[cfg(feature = "dtype-categorical")]
-use polars_utils::sync::SyncPtr;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
@@ -82,16 +80,22 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
         },
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(rev_map, _) => {
-            let arr = &*(arr as *const dyn Array as *const UInt32Array);
-            let v = arr.value_unchecked(idx);
-            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
+        DataType::Categorical(cats, mapping) => {
+            with_match_categorical_physical_type!(cats.physical(), |$C| {
+                type A = <$C as PolarsDataType>::Array;
+                let arr = &*(arr as *const dyn Array as *const A);
+                let cat_id = arr.value_unchecked(idx).as_cat();
+                AnyValue::Categorical(cat_id, mapping)
+            })
         },
         #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(rev_map, _) => {
-            let arr = &*(arr as *const dyn Array as *const UInt32Array);
-            let v = arr.value_unchecked(idx);
-            AnyValue::Enum(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
+        DataType::Enum(fcats, mapping) => {
+            with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                type A = <$C as PolarsDataType>::Array;
+                let arr = &*(arr as *const dyn Array as *const A);
+                let cat_id = arr.value_unchecked(idx).as_cat();
+                AnyValue::Enum(cat_id, mapping)
+            })
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
@@ -143,55 +147,15 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
 
 #[cfg(feature = "dtype-struct")]
 impl<'a> AnyValue<'a> {
-    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue> {
-        match self {
-            AnyValue::Struct(idx, arr, flds) => {
-                let idx = *idx;
-                unsafe {
-                    arr.values().iter().zip(*flds).map(move |(arr, fld)| {
-                        // The dictionary arrays categories don't have to map to the rev-map in the dtype
-                        // so we set the array pointer with values of the dictionary array.
-                        #[cfg(feature = "dtype-categorical")]
-                        {
-                            use arrow::legacy::is_valid::IsValid as _;
-                            if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
-                                let keys = arr.keys();
-                                let values = arr.values();
-                                let values =
-                                    values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                                let arr = &*(keys as *const dyn Array as *const UInt32Array);
-
-                                if arr.is_valid_unchecked(idx) {
-                                    let v = arr.value_unchecked(idx);
-                                    match fld.dtype() {
-                                        DataType::Categorical(Some(rev_map), _) => {
-                                            AnyValue::Categorical(
-                                                v,
-                                                rev_map,
-                                                SyncPtr::from_const(values),
-                                            )
-                                        },
-                                        DataType::Enum(Some(rev_map), _) => {
-                                            AnyValue::Enum(v, rev_map, SyncPtr::from_const(values))
-                                        },
-                                        _ => unimplemented!(),
-                                    }
-                                } else {
-                                    AnyValue::Null
-                                }
-                            } else {
-                                arr_to_any_value(&**arr, idx, fld.dtype())
-                            }
-                        }
-
-                        #[cfg(not(feature = "dtype-categorical"))]
-                        {
-                            arr_to_any_value(&**arr, idx, fld.dtype())
-                        }
-                    })
-                }
-            },
-            _ => unreachable!(),
+    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue<'_>> {
+        let AnyValue::Struct(idx, arr, flds) = self else {
+            unreachable!()
+        };
+        unsafe {
+            arr.values()
+                .iter()
+                .zip(*flds)
+                .map(move |(arr, fld)| arr_to_any_value(&**arr, *idx, fld.dtype()))
         }
     }
 
@@ -227,66 +191,66 @@ where
     T: PolarsNumericType,
 {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for BooleanChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for StringChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for BinaryChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for BinaryOffsetChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for ListChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
@@ -294,11 +258,11 @@ impl ChunkAnyValue for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkAnyValue for ArrayChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         get_any_value_unchecked!(self, index)
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
@@ -306,25 +270,25 @@ impl ChunkAnyValue for ArrayChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
         match self.get_object_unchecked(index) {
             None => AnyValue::Null,
             Some(v) => AnyValue::Object(v),
         }
     }
 
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         get_any_value!(self, index)
     }
 }
 
 impl ChunkAnyValue for NullChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, _index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, _index: usize) -> AnyValue<'_> {
         AnyValue::Null
     }
 
-    fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue> {
+    fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue<'_>> {
         Ok(AnyValue::Null)
     }
 }

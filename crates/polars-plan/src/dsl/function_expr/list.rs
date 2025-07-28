@@ -1,5 +1,19 @@
 use super::*;
 
+#[cfg(feature = "list_to_struct")]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum ListToStruct {
+    FixedWidth(Arc<[PlSmallStr]>),
+    InferWidth {
+        infer_field_strategy: ListToStructWidthStrategy,
+        get_index_name: Option<DslNameGenerator>,
+        /// If this is None, it means unbounded.
+        max_fields: Option<usize>,
+    },
+}
+
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -55,10 +69,10 @@ pub enum ListFunction {
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
-    #[cfg(feature = "list_to_struct")]
-    ToStruct(ListToStructArgs),
     #[cfg(feature = "list_zip")]
     Zip,
+    #[cfg(feature = "list_to_struct")]
+    ToStruct(ListToStruct),
 }
 
 impl Display for ListFunction {
@@ -125,5 +139,11 @@ impl Display for ListFunction {
             Zip => "zip",
         };
         write!(f, "list.{name}")
+    }
+}
+
+impl From<ListFunction> for FunctionExpr {
+    fn from(value: ListFunction) -> Self {
+        Self::ListExpr(value)
     }
 }

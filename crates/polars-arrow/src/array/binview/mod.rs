@@ -15,9 +15,9 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_error::*;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
@@ -136,7 +136,7 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
     /// Total bytes length if we would concatenate them all.
-    total_bytes_len: AtomicU64,
+    total_bytes_len: RelaxedCell<u64>,
     /// Total bytes in the buffer (excluding remaining capacity)
     total_buffer_len: usize,
 }
@@ -155,7 +155,7 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
             buffers: self.buffers.clone(),
             validity: self.validity.clone(),
             phantom: Default::default(),
-            total_bytes_len: AtomicU64::new(self.total_bytes_len.load(Ordering::Relaxed)),
+            total_bytes_len: self.total_bytes_len.clone(),
             total_buffer_len: self.total_buffer_len,
         }
     }
@@ -223,7 +223,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             buffers,
             validity,
             phantom: Default::default(),
-            total_bytes_len: AtomicU64::new(total_bytes_len as u64),
+            total_bytes_len: RelaxedCell::from(total_bytes_len as u64),
             total_buffer_len,
         }
     }
@@ -285,7 +285,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             views,
             buffers,
             validity,
-            self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            self.total_bytes_len.load() as usize,
             self.total_buffer_len,
         )
     }
@@ -398,12 +398,12 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&T, BinaryViewValueIter<T>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&T, BinaryViewValueIter<'_, T>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> BinaryViewValueIter<T> {
+    pub fn values_iter(&self) -> BinaryViewValueIter<'_, T> {
         BinaryViewValueIter::new(self)
     }
 
@@ -440,10 +440,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 
     /// Get the total length of bytes that it would take to concatenate all binary/str values in this array.
     pub fn total_bytes_len(&self) -> usize {
-        let total = self.total_bytes_len.load(Ordering::Relaxed);
+        let total = self.total_bytes_len.load();
         if total == UNKNOWN_LEN {
             let total = self.len_iter().map(|v| v as usize).sum::<usize>();
-            self.total_bytes_len.store(total as u64, Ordering::Relaxed);
+            self.total_bytes_len.store(total as u64);
             total
         } else {
             total as usize
@@ -542,7 +542,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let validity = self.validity.map(|bitmap| bitmap.make_mut());
 
         // We need to know the total_bytes_len if we are going to mutate it.
-        let mut total_bytes_len = self.total_bytes_len.load(Ordering::Relaxed);
+        let mut total_bytes_len = self.total_bytes_len.load();
         if total_bytes_len == UNKNOWN_LEN {
             total_bytes_len = views.iter().map(|view| view.length as u64).sum();
         }
@@ -584,7 +584,7 @@ impl BinaryViewArray {
             self.views.clone(),
             self.buffers.clone(),
             self.validity.clone(),
-            self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            self.total_bytes_len.load() as usize,
             self.total_buffer_len,
         )
     }
@@ -599,7 +599,7 @@ impl Utf8ViewArray {
                 self.views.clone(),
                 self.buffers.clone(),
                 self.validity.clone(),
-                self.total_bytes_len.load(Ordering::Relaxed) as usize,
+                self.total_bytes_len.load() as usize,
                 self.total_buffer_len,
             )
         }
@@ -654,7 +654,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
         self.views.slice_unchecked(offset, length);
-        self.total_bytes_len.store(UNKNOWN_LEN, Ordering::Relaxed)
+        self.total_bytes_len.store(UNKNOWN_LEN)
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {

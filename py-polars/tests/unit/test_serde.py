@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import pytest
 
 import polars as pl
-from polars import StringCache
 from polars.exceptions import SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -160,7 +159,6 @@ def test_pickle_lazyframe_nested_function_udf() -> None:
     assert q.collect()["a"].to_list() == [2, 4, 6]
 
 
-@StringCache()
 def test_serde_categorical_series_10586() -> None:
     s = pl.Series(["a", "b", "b", "a", "c"], dtype=pl.Categorical)
     loaded_s = pickle.loads(pickle.dumps(s))

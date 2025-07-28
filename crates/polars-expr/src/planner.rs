@@ -1,5 +1,4 @@
 use polars_core::prelude::*;
-use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -434,7 +433,6 @@ fn create_physical_expr_inner(
                 dtype: dtype.clone(),
                 expr: node_to_expr(expression, expr_arena),
                 options: *options,
-                inlined_eval: Default::default(),
             }))
         },
         Ternary {
@@ -494,7 +492,6 @@ fn create_physical_expr_inner(
             evaluation,
             variant,
         } => {
-            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { fmt_str, .. } if fmt_str.as_ref().as_str() == MAP_LIST_NAME));
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
             let mut pd_group = ExprPushdownGroup::Pushable;
@@ -530,7 +527,6 @@ fn create_physical_expr_inner(
                 is_scalar,
                 pd_group,
                 evaluation_is_scalar,
-                is_user_apply,
             )))
         },
         Function {

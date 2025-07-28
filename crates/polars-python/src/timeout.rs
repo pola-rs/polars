@@ -3,12 +3,12 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::time::Duration;
 
 use polars::prelude::{InitHashMaps, PlHashSet};
 use polars_utils::priority::Priority;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 static TIMEOUT_REQUEST_HANDLER: LazyLock<Sender<TimeoutRequest>> = LazyLock::new(|| {
     let (send, recv) = channel();
@@ -25,17 +25,17 @@ enum TimeoutRequest {
 }
 
 pub fn get_timeout() -> Option<Duration> {
-    static TIMEOUT_DISABLED: AtomicBool = AtomicBool::new(false);
+    static TIMEOUT_DISABLED: RelaxedCell<bool> = RelaxedCell::new_bool(false);
 
     // Fast path so we don't have to keep checking environment variables. Make
     // sure that if you want to use POLARS_TIMEOUT_MS it is set before the first
     // polars call.
-    if TIMEOUT_DISABLED.load(Ordering::Relaxed) {
+    if TIMEOUT_DISABLED.load() {
         return None;
     }
 
     let Ok(timeout) = std::env::var("POLARS_TIMEOUT_MS") else {
-        TIMEOUT_DISABLED.store(true, Ordering::Relaxed);
+        TIMEOUT_DISABLED.store(true);
         return None;
     };
 
@@ -86,10 +86,10 @@ fn timeout_thread(recv: Receiver<TimeoutRequest>) {
 }
 
 pub fn schedule_polars_timeout() -> Option<u64> {
-    static TIMEOUT_ID: AtomicU64 = AtomicU64::new(0);
+    static TIMEOUT_ID: RelaxedCell<u64> = RelaxedCell::new_u64(0);
 
     let timeout = get_timeout()?;
-    let id = TIMEOUT_ID.fetch_add(1, Ordering::Relaxed);
+    let id = TIMEOUT_ID.fetch_add(1);
     TIMEOUT_REQUEST_HANDLER
         .send(TimeoutRequest::Start(timeout, id))
         .unwrap();

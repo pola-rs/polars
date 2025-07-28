@@ -80,11 +80,11 @@ def test_arrow_list_chunked_array() -> None:
 
 # Test that polars convert Arrays of logical types correctly to arrow
 def test_arrow_array_logical() -> None:
-    # cast to large string and uint32 indices because polars converts to those
+    # cast to large string and uint8 indices because polars converts to those
     pa_data1 = (
         pa.array(["a", "b", "c", "d"])
         .dictionary_encode()
-        .cast(pa.dictionary(pa.uint32(), pa.large_string()))
+        .cast(pa.dictionary(pa.uint8(), pa.large_string()))
     )
     pa_array_logical1 = pa.FixedSizeListArray.from_arrays(pa_data1, 2)
 
@@ -331,23 +331,22 @@ def test_from_empty_arrow() -> None:
 
 
 def test_cat_int_types_3500() -> None:
-    with pl.StringCache():
-        # Create an enum / categorical / dictionary typed pyarrow array
-        # Most simply done by creating a pandas categorical series first
-        categorical_s = pd.Series(["a", "a", "b"], dtype="category")
-        pyarrow_array = pa.Array.from_pandas(categorical_s)
+    # Create an enum / categorical / dictionary typed pyarrow array
+    # Most simply done by creating a pandas categorical series first
+    categorical_s = pd.Series(["a", "a", "b"], dtype="category")
+    pyarrow_array = pa.Array.from_pandas(categorical_s)
 
-        # The in-memory representation of each category can either be a signed or
-        # unsigned 8-bit integer. Pandas uses Int8...
-        int_dict_type = pa.dictionary(index_type=pa.int8(), value_type=pa.utf8())
-        # ... while DuckDB uses UInt8
-        uint_dict_type = pa.dictionary(index_type=pa.uint8(), value_type=pa.utf8())
+    # The in-memory representation of each category can either be a signed or
+    # unsigned 8-bit integer. Pandas uses Int8...
+    int_dict_type = pa.dictionary(index_type=pa.int8(), value_type=pa.utf8())
+    # ... while DuckDB uses UInt8
+    uint_dict_type = pa.dictionary(index_type=pa.uint8(), value_type=pa.utf8())
 
-        for t in [int_dict_type, uint_dict_type]:
-            s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
-            assert_series_equal(
-                s, pl.Series(["a", "a", "b"]).cast(pl.Categorical), check_names=False
-            )
+    for t in [int_dict_type, uint_dict_type]:
+        s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
+        assert_series_equal(
+            s, pl.Series(["a", "a", "b"]).cast(pl.Categorical), check_names=False
+        )
 
 
 def test_from_pyarrow_chunked_array() -> None:
@@ -397,43 +396,42 @@ def test_from_fixed_size_binary_list() -> None:
 
 def test_dataframe_from_repr() -> None:
     # round-trip various types
-    with pl.StringCache():
-        frame = (
-            pl.LazyFrame(
-                {
-                    "a": [1, 2, None],
-                    "b": [4.5, 5.5, 6.5],
-                    "c": ["x", "y", "z"],
-                    "d": [True, False, True],
-                    "e": [None, "", None],
-                    "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
-                    "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
-                    "h": [
-                        datetime(2022, 7, 5, 10, 30, 45, 4560),
-                        datetime(2023, 10, 12, 20, 3, 8, 11),
-                        None,
-                    ],
-                },
-            )
-            .with_columns(
-                pl.col("c").cast(pl.Categorical),
-                pl.col("h").cast(pl.Datetime("ns")),
-            )
-            .collect()
+    frame = (
+        pl.LazyFrame(
+            {
+                "a": [1, 2, None],
+                "b": [4.5, 5.5, 6.5],
+                "c": ["x", "y", "z"],
+                "d": [True, False, True],
+                "e": [None, "", None],
+                "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                "h": [
+                    datetime(2022, 7, 5, 10, 30, 45, 4560),
+                    datetime(2023, 10, 12, 20, 3, 8, 11),
+                    None,
+                ],
+            },
         )
+        .with_columns(
+            pl.col("c").cast(pl.Categorical),
+            pl.col("h").cast(pl.Datetime("ns")),
+        )
+        .collect()
+    )
 
-        assert frame.schema == {
-            "a": pl.Int64,
-            "b": pl.Float64,
-            "c": pl.Categorical(ordering="physical"),
-            "d": pl.Boolean,
-            "e": pl.String,
-            "f": pl.Date,
-            "g": pl.Time,
-            "h": pl.Datetime("ns"),
-        }
-        df = cast(pl.DataFrame, pl.from_repr(repr(frame)))
-        assert_frame_equal(frame, df)
+    assert frame.schema == {
+        "a": pl.Int64,
+        "b": pl.Float64,
+        "c": pl.Categorical(ordering="lexical"),
+        "d": pl.Boolean,
+        "e": pl.String,
+        "f": pl.Date,
+        "g": pl.Time,
+        "h": pl.Datetime("ns"),
+    }
+    df = cast(pl.DataFrame, pl.from_repr(repr(frame)))
+    assert_frame_equal(frame, df)
 
     # empty frame; confirm schema is inferred
     df = cast(
@@ -624,34 +622,33 @@ def test_dataframe_from_duckdb_repr() -> None:
 
 
 def test_series_from_repr() -> None:
-    with pl.StringCache():
-        frame = (
-            pl.LazyFrame(
-                {
-                    "a": [1, 2, None],
-                    "b": [4.5, 5.5, 6.5],
-                    "c": ["x", "y", "z"],
-                    "d": [True, False, True],
-                    "e": [None, "", None],
-                    "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
-                    "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
-                    "h": [
-                        datetime(2022, 7, 5, 10, 30, 45, 4560),
-                        datetime(2023, 10, 12, 20, 3, 8, 11),
-                        None,
-                    ],
-                },
-            )
-            .with_columns(
-                pl.col("c").cast(pl.Categorical),
-                pl.col("h").cast(pl.Datetime("ns")),
-            )
-            .collect()
+    frame = (
+        pl.LazyFrame(
+            {
+                "a": [1, 2, None],
+                "b": [4.5, 5.5, 6.5],
+                "c": ["x", "y", "z"],
+                "d": [True, False, True],
+                "e": [None, "", None],
+                "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                "h": [
+                    datetime(2022, 7, 5, 10, 30, 45, 4560),
+                    datetime(2023, 10, 12, 20, 3, 8, 11),
+                    None,
+                ],
+            },
         )
+        .with_columns(
+            pl.col("c").cast(pl.Categorical),
+            pl.col("h").cast(pl.Datetime("ns")),
+        )
+        .collect()
+    )
 
-        for col in frame.columns:
-            s = cast(pl.Series, pl.from_repr(repr(frame[col])))
-            assert_series_equal(s, frame[col])
+    for col in frame.columns:
+        s = cast(pl.Series, pl.from_repr(repr(frame[col])))
+        assert_series_equal(s, frame[col])
 
     s = cast(
         pl.Series,
@@ -918,21 +915,12 @@ def test_arrow_roundtrip_lex_cat_20288() -> None:
     assert dt.ordering == "lexical"
 
 
-def test_from_arrow_string_cache_20271() -> None:
-    with pl.StringCache():
-        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
-        df = pl.from_arrow(
-            pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
-        )
-        assert isinstance(df, pl.DataFrame)
-
-        assert_series_equal(
-            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
-        )
-        assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
-        assert_series_equal(
-            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
-        )
+def test_from_arrow_20271() -> None:
+    df = pl.from_arrow(
+        pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
+    )
+    assert isinstance(df, pl.DataFrame)
+    assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
 
 
 def test_to_arrow_empty_chunks_20627() -> None:
@@ -956,3 +944,70 @@ def test_from_arrow_recorbatch() -> None:
             }
         ),
     )
+
+
+def test_from_arrow_map_containing_timestamp_23658() -> None:
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "column_1": [
+                [
+                    {
+                        "field_1": [
+                            {"key": 1, "value": datetime(2025, 1, 1)},
+                            {"key": 2, "value": datetime(2025, 1, 2)},
+                            {"key": 2, "value": None},
+                        ]
+                    },
+                    {"field_1": []},
+                    None,
+                ]
+            ],
+        },
+        schema=pa.schema(
+            [
+                (
+                    "column_1",
+                    pa.list_(
+                        pa.struct(
+                            [
+                                ("field_1", pa.map_(pa.int32(), pa.timestamp("ms"))),
+                            ]
+                        )
+                    ),
+                )
+            ]
+        ),
+    )
+
+    expect = pl.DataFrame(
+        {
+            "column_1": [
+                [
+                    {
+                        "field_1": [
+                            {"key": 1, "value": datetime(2025, 1, 1)},
+                            {"key": 2, "value": datetime(2025, 1, 2)},
+                            {"key": 2, "value": None},
+                        ]
+                    },
+                    {"field_1": []},
+                    None,
+                ]
+            ],
+        },
+        schema={
+            "column_1": pl.List(
+                pl.Struct(
+                    {
+                        "field_1": pl.List(
+                            pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")})
+                        )
+                    }
+                )
+            )
+        },
+    )
+
+    out = pl.DataFrame(arrow_tbl)
+
+    assert_frame_equal(out, expect)

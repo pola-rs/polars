@@ -661,6 +661,7 @@ mod dictionary;
 mod fixed_size_binary;
 mod fixed_size_list;
 mod list;
+pub use list::LIST_VALUES_NAME;
 mod map;
 mod null;
 mod primitive;

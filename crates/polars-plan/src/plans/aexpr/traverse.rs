@@ -3,6 +3,9 @@ use super::*;
 impl AExpr {
     /// Push the inputs of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
+    ///
+    /// This is subtlely different from `children_rev` as this only includes the input expressions,
+    /// not expressions used during evaluation.
     pub fn inputs_rev<E>(&self, container: &mut E)
     where
         E: Extend<Node>,
@@ -63,6 +66,74 @@ impl AExpr {
                 _ = evaluation;
                 container.extend([*expr]);
             },
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                container.extend([*length, *offset, *input]);
+            },
+        }
+    }
+
+    /// Push the children of this node to the given container, in reverse order.
+    /// This ensures the primary node responsible for the name is pushed last.
+    ///
+    /// This is subtlely different from `input_rev` as this only all expressions included in the
+    /// expression not only the input expressions,
+    pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
+        use AExpr::*;
+
+        match self {
+            Column(_) | Literal(_) | Len => {},
+            BinaryExpr { left, op: _, right } => {
+                container.extend([*right, *left]);
+            },
+            Cast { expr, .. } => container.extend([*expr]),
+            Sort { expr, .. } => container.extend([*expr]),
+            Gather { expr, idx, .. } => {
+                container.extend([*idx, *expr]);
+            },
+            SortBy { expr, by, .. } => {
+                container.extend(by.iter().cloned().rev());
+                container.extend([*expr]);
+            },
+            Filter { input, by } => {
+                container.extend([*by, *input]);
+            },
+            Agg(agg_e) => match agg_e.get_input() {
+                NodeInputs::Single(node) => container.extend([node]),
+                NodeInputs::Many(nodes) => container.extend(nodes.into_iter().rev()),
+                NodeInputs::Leaf => {},
+            },
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                container.extend([*predicate, *falsy, *truthy]);
+            },
+            AnonymousFunction { input, .. } | Function { input, .. } => {
+                container.extend(input.iter().rev().map(|e| e.node()))
+            },
+            Explode { expr: e, .. } => container.extend([*e]),
+            Window {
+                function,
+                partition_by,
+                order_by,
+                options: _,
+            } => {
+                if let Some((n, _)) = order_by {
+                    container.extend([*n]);
+                }
+                container.extend(partition_by.iter().rev().cloned());
+                container.extend([*function]);
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => container.extend([*evaluation, *expr]),
             Slice {
                 input,
                 offset,

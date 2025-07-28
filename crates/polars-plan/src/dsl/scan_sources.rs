@@ -90,7 +90,7 @@ impl ScanSource {
         }
     }
 
-    pub fn as_scan_source_ref(&self) -> ScanSourceRef {
+    pub fn as_scan_source_ref(&self) -> ScanSourceRef<'_> {
         match self {
             ScanSource::Path(path) => ScanSourceRef::Path(path.as_ref()),
             ScanSource::File(file) => ScanSourceRef::File(file.as_ref()),
@@ -203,7 +203,7 @@ impl ScanSources {
         }
     }
 
-    pub fn iter(&self) -> ScanSourceIter {
+    pub fn iter(&self) -> ScanSourceIter<'_> {
         ScanSourceIter {
             sources: self,
             offset: 0,
@@ -232,7 +232,7 @@ impl ScanSources {
     }
 
     /// Try get the first path in the scan sources
-    pub fn first_path(&self) -> Option<PlPathRef> {
+    pub fn first_path(&self) -> Option<PlPathRef<'_>> {
         match self {
             Self::Paths(paths) => paths.first().map(|p| p.as_ref()),
             Self::Files(_) | Self::Buffers(_) => None,
@@ -256,7 +256,7 @@ impl ScanSources {
         self.len() == 0
     }
 
-    pub fn first(&self) -> Option<ScanSourceRef> {
+    pub fn first(&self) -> Option<ScanSourceRef<'_>> {
         self.get(0)
     }
 
@@ -274,7 +274,7 @@ impl ScanSources {
     }
 
     /// Get the scan source at specific address
-    pub fn get(&self, idx: usize) -> Option<ScanSourceRef> {
+    pub fn get(&self, idx: usize) -> Option<ScanSourceRef<'_>> {
         match self {
             Self::Paths(paths) => paths.get(idx).map(|p| ScanSourceRef::Path(p.as_ref())),
             Self::Files(files) => files.get(idx).map(ScanSourceRef::File),
@@ -288,7 +288,7 @@ impl ScanSources {
     ///
     /// If the `idx` is out of range.
     #[track_caller]
-    pub fn at(&self, idx: usize) -> ScanSourceRef {
+    pub fn at(&self, idx: usize) -> ScanSourceRef<'_> {
         self.get(idx).unwrap()
     }
 }
@@ -365,6 +365,7 @@ impl ScanSourceRef<'_> {
     }
 
     #[cfg(not(feature = "cloud"))]
+    #[allow(clippy::wrong_self_convention)]
     fn to_memslice_async(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {

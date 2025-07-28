@@ -110,7 +110,7 @@ impl JoinTypeOptionsIR {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct JoinOptionsIR {
     pub allow_parallel: bool,
@@ -136,7 +136,7 @@ impl From<JoinOptions> for JoinOptionsIR {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct JoinOptions {
@@ -213,12 +213,12 @@ pub enum NestedType {
     // List,
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UnpivotArgsDSL {
-    pub on: Vec<Selector>,
-    pub index: Vec<Selector>,
+    pub on: Selector,
+    pub index: Selector,
     pub variable_name: Option<PlSmallStr>,
     pub value_name: Option<PlSmallStr>,
 }
@@ -322,7 +322,7 @@ impl GroupbyOptions {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct DistinctOptionsDSL {
     /// Subset of columns that will be taken into account.
-    pub subset: Option<Vec<Selector>>,
+    pub subset: Option<Selector>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming

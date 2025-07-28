@@ -18,20 +18,22 @@ pub trait DateMethods: AsDate {
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int32Type>(&date_to_year)
+        ca.physical().apply_kernel_cast::<Int32Type>(&date_to_year)
     }
 
     /// Extract year from underlying NaiveDate representation.
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
+        ca.physical()
+            .apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
     }
 
     /// This year number might not match the calendar year number.
     fn iso_year(&self) -> Int32Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int32Type>(&date_to_iso_year)
+        ca.physical()
+            .apply_kernel_cast::<Int32Type>(&date_to_iso_year)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
@@ -47,14 +49,15 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_month)
+        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_month)
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_iso_week)
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&date_to_iso_week)
     }
 
     /// Extract day from underlying NaiveDate representation.
@@ -63,7 +66,7 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_day)
+        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_day)
     }
 
     /// Returns the day of year starting from 1.
@@ -71,7 +74,8 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> Int16Chunked {
         let ca = self.as_date();
-        ca.apply_kernel_cast::<Int16Type>(&date_to_ordinal)
+        ca.physical()
+            .apply_kernel_cast::<Int16Type>(&date_to_ordinal)
     }
 
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;

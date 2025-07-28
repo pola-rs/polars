@@ -131,12 +131,12 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Returns an iterator of `Option<&[u8]>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<O>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<'_, O>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
-    pub fn values_iter(&self) -> BinaryValueIter<O> {
+    pub fn values_iter(&self) -> BinaryValueIter<'_, O> {
         BinaryValueIter::new(self)
     }
 

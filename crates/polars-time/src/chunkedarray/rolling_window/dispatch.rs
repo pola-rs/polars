@@ -118,7 +118,7 @@ where
     let func = rolling_agg_fn_dynamic;
     let out: ArrayRef = if by_is_sorted {
         let arr = ca.downcast_iter().next().unwrap();
-        let by_values = by.cont_slice().unwrap();
+        let by_values = by.physical().cont_slice().unwrap();
         let values = arr.values().as_slice();
         func(
             values,
@@ -132,9 +132,9 @@ where
             None,
         )?
     } else {
-        let sorting_indices = by.arg_sort(Default::default());
+        let sorting_indices = by.physical().arg_sort(Default::default());
         let ca = unsafe { ca.take_unchecked(&sorting_indices) };
-        let by = unsafe { by.take_unchecked(&sorting_indices) };
+        let by = unsafe { by.physical().take_unchecked(&sorting_indices) };
         let arr = ca.downcast_iter().next().unwrap();
         let by_values = by.cont_slice().unwrap();
         let values = arr.values().as_slice();

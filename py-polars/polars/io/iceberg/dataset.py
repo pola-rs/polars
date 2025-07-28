@@ -9,6 +9,7 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import _scan_pyarrow_dataset_impl
+from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -26,7 +27,7 @@ class IcebergDataset:
         *,
         snapshot_id: int | None = None,
         iceberg_storage_properties: dict[str, Any] | None = None,
-        reader_override: Literal["native", "pyiceberg"] | None,
+        reader_override: Literal["native", "pyiceberg"] | None = None,
     ) -> None:
         self._metadata_path = None
         self._table = None
@@ -46,12 +47,12 @@ class IcebergDataset:
     # PythonDatasetProvider interface functions
     #
 
-    def reader_name(self) -> str:
-        """Name of the reader."""
-        return "iceberg"
-
     def schema(self) -> pa.schema:
         """Fetch the schema of the table."""
+        return self.arrow_schema()
+
+    def arrow_schema(self) -> pa.schema:
+        """Fetch the arrow schema of the table."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         return schema_to_pyarrow(self.table().schema())
@@ -63,6 +64,8 @@ class IcebergDataset:
         projection: list[str] | None = None,
     ) -> LazyFrame:
         """Construct a LazyFrame scan."""
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
         import polars._utils.logging
 
         verbose = polars._utils.logging.verbose()
@@ -70,20 +73,29 @@ class IcebergDataset:
         if verbose:
             eprint(
                 "IcebergDataset: to_dataset_scan(): "
+                f"snapshot ID: {self._snapshot_id}, "
                 f"limit: {limit}, "
                 f"projection: {projection}"
             )
 
         tbl = self.table()
 
+        if verbose:
+            eprint(
+                "IcebergDataset: to_dataset_scan(): "
+                f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
+            )
+
         selected_fields = ("*",) if projection is None else tuple(projection)
 
         snapshot_id = self._snapshot_id
 
+        def snapshot_id_not_found(snapshot_id: Any) -> ValueError:
+            return ValueError(f"iceberg snapshot ID not found: {snapshot_id}")
+
         if snapshot_id is not None:
             if tbl.snapshot_by_id(snapshot_id) is None:
-                msg = f"iceberg snapshot ID not found: {snapshot_id}"
-                raise ValueError(msg)
+                raise snapshot_id_not_found(snapshot_id)
 
         # Take from parameter first then envvar
         reader_override = self._reader_override or os.getenv(
@@ -166,20 +178,54 @@ class IcebergDataset:
                 )
 
         if not fallback_reason:
-            from polars.io.parquet.functions import scan_parquet
+            schema_id = None
+
+            if snapshot_id is not None:
+                snapshot = tbl.snapshot_by_id(snapshot_id)
+
+                if snapshot is None:
+                    raise snapshot_id_not_found(snapshot_id)
+
+                schema_id = snapshot.schema_id
+
+                if schema_id is None:
+                    msg = (
+                        f"IcebergDataset: requested snapshot {snapshot_id} "
+                        "did not contain a schema ID"
+                    )
+                    raise ValueError(msg)
+
+                iceberg_schema = tbl.schemas()[schema_id]
+            else:
+                iceberg_schema = tbl.schema()
+                schema_id = tbl.metadata.current_schema_id
 
             if verbose:
+                s = "" if len(sources) == 1 else "s"
+                s2 = "" if total_deletion_files == 1 else "s"
+
                 eprint(
                     "IcebergDataset: to_dataset_scan(): "
-                    f"native scan_parquet() ({len(sources)} sources), "
-                    f"deletion files: {total_deletion_files} files, "
-                    f"{len(deletion_files)} sources"
+                    f"native scan_parquet(): "
+                    f"{len(sources)} source{s}, "
+                    f"snapshot ID: {snapshot_id}, "
+                    f"schema ID: {schema_id}, "
+                    f"{total_deletion_files} deletion file{s2}"
                 )
+
+            from polars.io.parquet.functions import scan_parquet
 
             return scan_parquet(
                 sources,
+                cast_options=ScanCastOptions._default_iceberg(),
                 missing_columns="insert",
                 extra_columns="ignore",
+                _column_mapping=(
+                    "iceberg-column-mapping",
+                    # The arrow schema returned by `schema_to_pyarrow` will contain
+                    # 'PARQUET:field_id'
+                    schema_to_pyarrow(iceberg_schema),
+                ),
                 _deletion_files=("iceberg-position-delete", deletion_files),
             )
 
@@ -200,8 +246,6 @@ class IcebergDataset:
             n_rows=limit,
             with_columns=projection,
         )
-
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         arrow_schema = schema_to_pyarrow(tbl.schema())
 

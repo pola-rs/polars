@@ -431,18 +431,16 @@ impl<C: Clone> FetchedCredentialsCache<C> {
             .unwrap()
             .as_secs();
 
-        // Ensure the credential is valid for at least this many seconds to
-        // accommodate for latency.
-        const REQUEST_TIME_BUFFER: u64 = 7;
-
-        if last_fetched_expiry.saturating_sub(current_time) < REQUEST_TIME_BUFFER {
+        if *last_fetched_expiry <= current_time {
             if verbose {
                 eprintln!(
-                    "[FetchedCredentialsCache]: Call update_func: current_time = {}\
-                     , last_fetched_expiry = {}",
+                    "[FetchedCredentialsCache]: \
+                    Call update_func: current_time = {}, \
+                    last_fetched_expiry = {}",
                     current_time, *last_fetched_expiry
                 )
             }
+
             let (credentials, expiry) = update_func.await?;
 
             *last_fetched_credentials = credentials;

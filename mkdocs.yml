@@ -20,6 +20,7 @@ nav:
                       - user-guide/concepts/data-types-and-structures.md
                       - user-guide/concepts/expressions-and-contexts.md
                       - user-guide/concepts/lazy-api.md
+                      - user-guide/concepts/streaming.md
                 - Expressions:
                       - user-guide/expressions/index.md
                       - user-guide/expressions/basic-operations.md
@@ -52,6 +53,7 @@ nav:
                       - user-guide/lazy/using.md
                       - user-guide/lazy/optimizations.md
                       - user-guide/lazy/schemas.md
+                      - user-guide/lazy/datatype_exprs.md
                       - user-guide/lazy/query-plan.md
                       - user-guide/lazy/execution.md
                       - user-guide/lazy/sources_sinks.md
@@ -113,15 +115,18 @@ nav:
           - polars-cloud/index.md
           - polars-cloud/quickstart.md
           - polars-cloud/connect-cloud.md
-          - User guide:
-                - polars-cloud/organizations.md
-                - polars-cloud/run/compute-context.md
-                - polars-cloud/run/workflow.md
-                - polars-cloud/run/interactive-batch.md
-                - polars-cloud/run/distributed-engine.md
-          - Manage workspace:
+
+          - Organizations:
+                - polars-cloud/organization/organizations.md
+                - polars-cloud/organization/billing.md
+          - Workspaces:
                 - polars-cloud/workspace/settings.md
                 - polars-cloud/workspace/team.md
+          - Workflows:
+                - polars-cloud/run/compute-context.md
+                - polars-cloud/run/interactive-batch.md
+                - polars-cloud/run/distributed-engine.md
+                - polars-cloud/run/example-workflow.md
           - Authentication:
                 - polars-cloud/explain/authentication.md
                 - polars-cloud/explain/service-accounts.md

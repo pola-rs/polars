@@ -113,21 +113,31 @@ def test_maintain_order_after_sampling() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_sorted_group_by_optimization() -> None:
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_group_by_optimization(
+    descending: bool, nulls_last: bool, maintain_order: bool
+) -> None:
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
     # the sorted optimization should not randomize the
     # groups, so this is tests that we hit the sorted optimization
-    for descending in [True, False]:
-        sorted_implicit = (
-            df.with_columns(pl.col("a").sort(descending=descending))
-            .group_by("a")
-            .agg(pl.len())
-        )
-        sorted_explicit = (
-            df.group_by("a").agg(pl.len()).sort("a", descending=descending)
-        )
-        assert_frame_equal(sorted_explicit, sorted_implicit)
+    sorted_implicit = (
+        df.with_columns(pl.col("a").sort(descending=descending, nulls_last=nulls_last))
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len())
+    )
+    sorted_explicit = (
+        df.group_by("a", maintain_order=maintain_order)
+        .agg(pl.len())
+        .sort("a", descending=descending, nulls_last=nulls_last)
+    )
+    assert_frame_equal(
+        sorted_explicit,
+        sorted_implicit,
+        check_row_order=maintain_order,
+    )
 
 
 def test_median_on_shifted_col_3522() -> None:
@@ -225,7 +235,8 @@ def test_opaque_filter_on_lists_3784() -> None:
             pl.col("str_list").map_elements(
                 lambda variant: pre in variant
                 and succ in variant
-                and variant.to_list().index(pre) < variant.to_list().index(succ)
+                and variant.to_list().index(pre) < variant.to_list().index(succ),
+                return_dtype=pl.Boolean,
             )
         )
     ).collect().to_dict(as_series=False) == {

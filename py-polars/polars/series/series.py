@@ -255,6 +255,7 @@ class Series:
     ]
     """
 
+    # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
     _s: PySeries = None
     _accessors: ClassVar[set[str]] = {
         "arr",
@@ -6378,10 +6379,10 @@ class Series:
         [
                 null
                 null
-                1.0
                 2.0
                 3.0
                 4.0
+                6.0
         ]
         >>> s.rolling_quantile(quantile=0.33, interpolation="linear", window_size=3)
         shape: (6,)
@@ -7411,8 +7412,8 @@ class Series:
         Series: 'a' [i64]
         [
                 2
-                1
                 3
+                1
         ]
         """
 

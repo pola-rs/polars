@@ -156,6 +156,7 @@ abs = []
 cov = []
 gather = []
 replace = ["is_in"]
+allow_unused = []
 
 [lints]
 workspace = true

@@ -202,6 +202,7 @@ def test_datetime_ms(value: datetime) -> None:
     assert result == value.replace(microsecond=expected_microsecond)
 
 
+@pytest.mark.may_fail_cloud  # @cloud-decimal
 def test_lit_decimal() -> None:
     value = Decimal("0.1")
 
@@ -224,6 +225,7 @@ def test_lit_string_float() -> None:
     assert result == str(value)
 
 
+@pytest.mark.may_fail_cloud  # @cloud-decimal
 @given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
 def test_lit_decimal_parametric(s: pl.Series) -> None:
     scale = s.dtype.scale  # type: ignore[attr-defined]
@@ -239,7 +241,7 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
 @pytest.mark.parametrize(
     "item",
-    [{}, {"foo": 1}],
+    [pytest.param({}, marks=pytest.mark.may_fail_cloud), {"foo": 1}],
 )
 def test_lit_structs(item: Any) -> None:
     assert pl.select(pl.lit(item)).to_dict(as_series=False) == {"literal": [item]}

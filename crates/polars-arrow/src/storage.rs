@@ -321,7 +321,7 @@ impl<T> SharedStorage<T> {
 }
 
 impl<T: Pod> SharedStorage<T> {
-    fn try_transmute<U: Pod>(self) -> Result<SharedStorage<U>, Self> {
+    pub fn try_transmute<U: Pod>(self) -> Result<SharedStorage<U>, Self> {
         let inner = self.inner();
 
         // The length of the array in bytes must be a multiple of the target size.

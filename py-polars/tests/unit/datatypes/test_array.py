@@ -27,7 +27,7 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
-def test_array_in_group_by() -> None:
+def test_array_in_group_by_iter() -> None:
     df = pl.DataFrame(
         [
             pl.Series("id", [1, 2]),
@@ -35,9 +35,14 @@ def test_array_in_group_by() -> None:
         ]
     )
 
+    assert df.lazy().group_by("id").agg(b=pl.col("id").agg_groups()).collect_schema()[
+        "b"
+    ] == pl.List(pl.get_index_type())
     result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
     assert result.to_list() == [[1, 2]]
 
+
+def test_array_in_group_by() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
         schema={"a": pl.Array(pl.Int64, 2), "g": pl.Int64},
@@ -57,6 +62,7 @@ def test_array_in_group_by() -> None:
         }
 
 
+@pytest.mark.may_fail_cloud
 def test_array_invalid_operation() -> None:
     s = pl.Series(
         [[1, 2], [8, 9]],
@@ -198,18 +204,12 @@ def test_arr_var(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.var().name.suffix("_var"),
         pl.col("float").arr.var().name.suffix("_var"),
-        pl.col("duration").arr.var().name.suffix("_var"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_var", [2.5], dtype=pl.Float64),
             pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
         ]
     )
 
@@ -232,6 +232,30 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
             pl.Series(
                 "duration_std",
                 [timedelta(microseconds=1581)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_mean(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.mean().name.suffix("_mean"),
+        pl.col("float").arr.mean().name.suffix("_mean"),
+        pl.col("duration").arr.mean().name.suffix("_mean"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_mean", [3.0], dtype=pl.Float64),
+            pl.Series("float_mean", [3.0], dtype=pl.Float64),
+            pl.Series(
+                "duration_mean",
+                [timedelta(microseconds=3000)],
                 dtype=pl.Duration(time_unit="us"),
             ),
         ]

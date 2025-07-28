@@ -103,10 +103,6 @@ pub struct AggregationContext<'a> {
     state: AggState,
     /// group tuples for AggState
     groups: Cow<'a, GroupPositions>,
-    /// if the group tuples are already used in a level above
-    /// and the series is exploded, the group tuples are sorted
-    /// e.g. the exploded Series is grouped per group.
-    sorted: bool,
     /// This is used to determined if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
@@ -117,12 +113,12 @@ pub struct AggregationContext<'a> {
 }
 
 impl<'a> AggregationContext<'a> {
-    pub(crate) fn dtype(&self) -> DataType {
+    pub(crate) fn dtype(&self) -> &DataType {
         match &self.state {
-            AggState::Literal(s) => s.dtype().clone(),
-            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype().clone(),
-            AggState::AggregatedScalar(s) => s.dtype().clone(),
-            AggState::NotAggregated(s) => s.dtype().clone(),
+            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype(),
+            AggState::Literal(s) | AggState::AggregatedScalar(s) | AggState::NotAggregated(s) => {
+                s.dtype()
+            },
         }
     }
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupPositions> {
@@ -204,22 +200,16 @@ impl<'a> AggregationContext<'a> {
         groups: Cow<'a, GroupPositions>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
-        let series = match (aggregated, column.dtype()) {
-            (true, &DataType::List(_)) => {
-                assert_eq!(column.len(), groups.len());
-                AggState::AggregatedList(column)
-            },
-            (true, _) => {
-                assert_eq!(column.len(), groups.len());
-                AggState::AggregatedScalar(column)
-            },
-            _ => AggState::NotAggregated(column),
+        let series = if aggregated {
+            assert_eq!(column.len(), groups.len());
+            AggState::AggregatedScalar(column)
+        } else {
+            AggState::NotAggregated(column)
         };
 
         Self {
             state: series,
             groups,
-            sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
         }
@@ -236,7 +226,6 @@ impl<'a> AggregationContext<'a> {
         Self {
             state: agg_state,
             groups,
-            sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
         }
@@ -246,7 +235,6 @@ impl<'a> AggregationContext<'a> {
         Self {
             state: AggState::Literal(lit),
             groups,
-            sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
         }
@@ -448,7 +436,6 @@ impl<'a> AggregationContext<'a> {
                 let out = unsafe { s.agg_list(&self.groups) };
                 self.state = AggState::AggregatedList(out.clone());
 
-                self.sorted = true;
                 self.update_groups = UpdateGroups::WithGroupsLen;
                 out
             },
@@ -503,7 +490,7 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedScalar(c) => (c, groups),
             AggState::Literal(c) => (c, groups),
             AggState::AggregatedList(c) => {
-                let flattened = c.explode(false).unwrap();
+                let flattened = c.explode(true).unwrap();
                 let groups = groups.into_owned();
                 // unroll the possible flattened state
                 // say we have groups with overlapping windows:
@@ -582,20 +569,6 @@ pub trait PhysicalExpr: Send + Sync {
 
     /// Take a DataFrame and evaluate the expression.
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
-
-    /// Attempt to cheaply evaluate this expression in-line without a DataFrame context.
-    /// This is used by StatsEvaluator when skipping files / row groups using a predicate.
-    /// TODO: Maybe in the future we can do this evaluation in-line at the optimizer stage?
-    ///
-    /// Do not implement this directly - instead implement `evaluate_inline_impl`
-    fn evaluate_inline(&self) -> Option<Column> {
-        self.evaluate_inline_impl(4)
-    }
-
-    /// Implementation of `evaluate_inline`
-    fn evaluate_inline_impl(&self, _depth_limit: u8) -> Option<Column> {
-        None
-    }
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.

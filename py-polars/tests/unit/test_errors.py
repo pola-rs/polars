@@ -343,9 +343,7 @@ def test_invalid_dtype() -> None:
 def test_arr_eval_named_cols() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
 
-    with pytest.raises(
-        ComputeError,
-    ):
+    with pytest.raises(ComputeError):
         df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 
@@ -425,21 +423,6 @@ def test_date_string_comparison(e: pl.Expr) -> None:
         match=r"cannot compare 'date/datetime/time' to a string value",
     ):
         df.select(e)
-
-
-def test_err_on_multiple_column_expansion() -> None:
-    # this would be a great feature :)
-    with pytest.raises(
-        ComputeError, match=r"expanding more than one `col` is not allowed"
-    ):
-        pl.DataFrame(
-            {
-                "a": [1],
-                "b": [2],
-                "c": [3],
-                "d": [4],
-            }
-        ).select([pl.col(["a", "b"]) + pl.col(["c", "d"])])
 
 
 def test_compare_different_len() -> None:
@@ -739,5 +722,7 @@ def test_raise_on_different_results_20104() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError):
         df.rolling("x", period="3i").agg(
-            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+            result=pl.col("x")
+            .gather_every(2, offset=1)
+            .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )

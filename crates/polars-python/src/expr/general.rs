@@ -6,14 +6,15 @@ use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::{node_to_expr, to_expr_ir};
+use polars_plan::plans::{ExprToIRContext, node_to_expr, to_expr_ir};
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
 use super::datatype::PyDataTypeExpr;
+use super::selector::PySelector;
 use crate::PyExpr;
-use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
+use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::utils::EnterPolarsExt;
@@ -269,16 +270,7 @@ impl PyExpr {
     }
 
     fn arg_sort(&self, descending: bool, nulls_last: bool) -> Self {
-        self.inner
-            .clone()
-            .arg_sort(SortOptions {
-                descending,
-                nulls_last,
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            })
-            .into()
+        self.inner.clone().arg_sort(descending, nulls_last).into()
     }
 
     #[cfg(feature = "top_k")]
@@ -707,24 +699,22 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise, returns_scalar))]
+    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<PyDataTypeExpr>,
-        agg_list: bool,
         is_elementwise: bool,
         returns_scalar: bool,
+        is_ufunc: bool,
     ) -> Self {
-        let output_type = output_type.map(|v| v.inner);
-        map_single(
-            self,
-            lambda,
-            output_type,
-            agg_list,
-            is_elementwise,
-            returns_scalar,
-        )
+        let output_type = if is_ufunc {
+            debug_assert!(output_type.is_none());
+            Some(DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc)))
+        } else {
+            output_type.map(|v| v.inner)
+        };
+        map_single(self, lambda, output_type, is_elementwise, returns_scalar)
     }
 
     fn dot(&self, other: Self) -> Self {
@@ -736,13 +726,6 @@ impl PyExpr {
     }
     fn mode(&self) -> Self {
         self.inner.clone().mode().into()
-    }
-    fn exclude(&self, columns: Vec<String>) -> Self {
-        self.inner.clone().exclude(columns).into()
-    }
-    fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
-        let dtypes = vec_extract_wrapped(dtypes);
-        self.inner.clone().exclude_dtype(&dtypes).into()
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
@@ -957,7 +940,9 @@ impl PyExpr {
     fn skip_batch_predicate(&self, py: Python<'_>, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
         let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
-            let node = to_expr_ir(self.inner.clone(), &mut aexpr_arena, &schema.0)?.node();
+            let mut ctx = ExprToIRContext::new(&mut aexpr_arena, &schema.0);
+            ctx.allow_unknown = true;
+            let node = to_expr_ir(self.inner.clone(), &mut ctx)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);
@@ -967,5 +952,23 @@ impl PyExpr {
                 inner: skip_batch_predicate,
             }))
         })
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    fn into_selector(&self) -> PyResult<PySelector> {
+        Ok(self
+            .inner
+            .clone()
+            .into_selector()
+            .ok_or_else(
+                || polars_err!(InvalidOperation: "expr `{}` is not a selector", &self.inner),
+            )
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
+
+    #[staticmethod]
+    fn new_selector(selector: PySelector) -> Self {
+        Expr::Selector(selector.inner).into()
     }
 }

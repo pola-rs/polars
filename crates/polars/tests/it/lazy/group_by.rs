@@ -73,7 +73,7 @@ fn test_filter_diff_arithmetic() -> PolarsResult<()> {
             * lit(2))
         .alias("diff")])
         .sort(["user"], Default::default())
-        .explode([col("diff")])
+        .explode(cols(["diff"]))
         .collect()?;
 
     let out = out.column("diff")?;

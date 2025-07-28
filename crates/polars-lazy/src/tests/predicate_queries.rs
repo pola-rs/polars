@@ -18,7 +18,7 @@ fn test_multiple_roots() -> PolarsResult<()> {
     assert!(predicate_at_scan(lf));
     // and that we don't have any filter node
     assert!(
-        !(&lp_arena)
+        !lp_arena
             .iter(root)
             .any(|(_, lp)| matches!(lp, IR::Filter { .. }))
     );
@@ -42,7 +42,7 @@ fn test_issue_2472() -> PolarsResult<()> {
     ]?;
     let base = df
         .lazy()
-        .with_column(col("group").cast(DataType::Categorical(None, Default::default())));
+        .with_column(col("group").cast(DataType::from_categories(Categories::global())));
 
     let extract = col("group")
         .cast(DataType::String)

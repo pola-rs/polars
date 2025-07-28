@@ -77,36 +77,22 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             strict: true,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(Some(rm), ordering)) if rm.is_global() => {
-            IsInTypeCoercionResult::SelfCast {
-                dtype: DataType::Categorical(None, *ordering),
-                strict: false,
-            }
-        },
-
-        // @NOTE: Local Categorical coercion has to happen in the kernel, which makes it streaming
-        // incompatible.
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(Some(rm), ordering), DataType::String) if rm.is_global() => {
-            IsInTypeCoercionResult::OtherCast {
-                dtype: match &type_other {
-                    DataType::List(_) => {
-                        DataType::List(Box::new(DataType::Categorical(None, *ordering)))
-                    },
-                    #[cfg(feature = "dtype-array")]
-                    DataType::Array(_, width) => {
-                        DataType::Array(Box::new(DataType::Categorical(None, *ordering)), *width)
-                    },
-                    _ => unreachable!(),
-                },
-                strict: false,
-            }
+        (DataType::String, DataType::Categorical(_, _)) => IsInTypeCoercionResult::SelfCast {
+            dtype: type_other_inner.clone(),
+            strict: false,
         },
 
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, _), DataType::String) => return Ok(None),
-        #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(_, _)) => return Ok(None),
+        (DataType::Categorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+            dtype: match &type_other {
+                DataType::List(_) => DataType::List(Box::new(type_left.clone())),
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(_, width) => DataType::Array(Box::new(type_left.clone()), *width),
+                _ => unreachable!(),
+            },
+            strict: false,
+        },
+
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
             IsInTypeCoercionResult::OtherCast {

@@ -72,6 +72,18 @@ pub(crate) fn call_lambda_with_series(
 ) -> PyResult<PyObject> {
     let pypolars = polars(py).bind(py);
 
+    // Set return_dtype in kwargs
+    let mut dict = None;
+    if let Some(output_dtype) = output_dtype {
+        let d = PyDict::new(py);
+        let output_dtype = match output_dtype {
+            None => None,
+            Some(dt) => Some(Wrap(dt).into_pyobject(py)?),
+        };
+        d.set_item("return_dtype", output_dtype)?;
+        dict = Some(d);
+    }
+
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(s.clone());
     // Wrap this PySeries object in the python side Series wrapper
@@ -98,87 +110,19 @@ pub(crate) fn call_lambda_with_series(
             .unwrap()
     }
 
-    let mut dict = None;
-    if let Some(output_dtype) = output_dtype {
-        let d = PyDict::new(py);
-        let output_dtype = match output_dtype {
-            None => None,
-            Some(dt) => Some(Wrap(dt).into_pyobject(py)?),
-        };
-        d.set_item("return_dtype", output_dtype)?;
-        dict = Some(d);
-    }
-
     lambda.call(py, (python_series_wrapper,), dict.as_ref())
-}
-
-/// A python lambda taking two Series
-pub(crate) fn binary_lambda(
-    lambda: &PyObject,
-    a: Series,
-    b: Series,
-) -> PolarsResult<Option<Series>> {
-    Python::with_gil(|py| {
-        // get the pypolars module
-        let pypolars = polars(py).bind(py);
-        // create a PySeries struct/object for Python
-        let pyseries_a = PySeries::new(a);
-        let pyseries_b = PySeries::new(b);
-
-        // Wrap this PySeries object in the python side Series wrapper
-        let python_series_wrapper_a = pypolars
-            .getattr("wrap_s")
-            .unwrap()
-            .call1((pyseries_a,))
-            .unwrap();
-        let python_series_wrapper_b = pypolars
-            .getattr("wrap_s")
-            .unwrap()
-            .call1((pyseries_b,))
-            .unwrap();
-
-        // call the lambda and get a python side Series wrapper
-        let result_series_wrapper =
-            match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => polars_bail!(
-                    ComputeError: "custom python function failed: {}", e.value(py),
-                ),
-            };
-        let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
-            let pyexpr = expr.extract::<PyExpr>(py).unwrap();
-            let expr = pyexpr.inner;
-            let df = DataFrame::empty();
-            let out = df
-                .lazy()
-                .select([expr])
-                .with_predicate_pushdown(false)
-                .with_projection_pushdown(false)
-                .collect()?;
-
-            let s = out.select_at_idx(0).unwrap().clone();
-            PySeries::new(s.take_materialized_series())
-        } else {
-            return Some(result_series_wrapper.to_series(py, pypolars.as_unbound(), ""))
-                .transpose();
-        };
-
-        // Finally get the actual Series
-        Ok(Some(pyseries.series))
-    })
 }
 
 pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,
     output_type: Option<DataTypeExpr>,
-    agg_list: bool,
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {
     let func =
         python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
-    pyexpr.inner.clone().map_python(func, agg_list).into()
+    pyexpr.inner.clone().map_python(func).into()
 }
 
 pub(crate) fn call_lambda_with_columns_slice(

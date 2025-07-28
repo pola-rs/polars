@@ -4,6 +4,7 @@ use polars_core::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use polars_core::series::IsSorted;
+use polars_core::with_match_categorical_physical_type;
 
 use super::*;
 
@@ -42,25 +43,25 @@ macro_rules! with_match_physical_numeric_polars_type {(
 impl ArgAgg for Series {
     fn arg_min(&self) -> Option<usize> {
         use DataType::*;
-        let s = self.to_physical_repr();
+        let phys_s = self.to_physical_repr();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => {
-                let ca = self.categorical().unwrap();
-                if ca.null_count() == ca.len() {
-                    return None;
-                }
-                if ca.uses_lexical_ordering() {
+            Categorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    let ca = self.cat::<$C>().unwrap();
+                    if ca.null_count() == ca.len() {
+                        return None;
+                    }
                     ca.iter_str()
                         .enumerate()
                         .flat_map(|(idx, val)| val.map(|val| (idx, val)))
                         .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
                         .map(|tpl| tpl.0)
-                } else {
-                    let ca = s.u32().unwrap();
-                    arg_min_numeric_dispatch(ca)
-                }
+                })
             },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => phys_s.arg_min(),
+            Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_min(),
             String => {
                 let ca = self.str().unwrap();
                 arg_min_str(ca)
@@ -69,17 +70,9 @@ impl ArgAgg for Series {
                 let ca = self.bool().unwrap();
                 arg_min_bool(ca)
             },
-            Date => {
-                let ca = s.i32().unwrap();
-                arg_min_numeric_dispatch(ca)
-            },
-            Datetime(_, _) | Duration(_) | Time => {
-                let ca = s.i64().unwrap();
-                arg_min_numeric_dispatch(ca)
-            },
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
                     arg_min_numeric_dispatch(ca)
                 })
             },
@@ -89,24 +82,25 @@ impl ArgAgg for Series {
 
     fn arg_max(&self) -> Option<usize> {
         use DataType::*;
-        let s = self.to_physical_repr();
+        let phys_s = self.to_physical_repr();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => {
-                let ca = self.categorical().unwrap();
-                if ca.null_count() == ca.len() {
-                    return None;
-                }
-                if ca.uses_lexical_ordering() {
+            Categorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    let ca = self.cat::<$C>().unwrap();
+                    if ca.null_count() == ca.len() {
+                        return None;
+                    }
                     ca.iter_str()
                         .enumerate()
+                        .flat_map(|(idx, val)| val.map(|val| (idx, val)))
                         .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
                         .map(|tpl| tpl.0)
-                } else {
-                    let ca_phys = s.u32().unwrap();
-                    arg_max_numeric_dispatch(ca_phys)
-                }
+                })
             },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => phys_s.arg_max(),
+            Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_max(),
             String => {
                 let ca = self.str().unwrap();
                 arg_max_str(ca)
@@ -115,17 +109,9 @@ impl ArgAgg for Series {
                 let ca = self.bool().unwrap();
                 arg_max_bool(ca)
             },
-            Date => {
-                let ca = s.i32().unwrap();
-                arg_max_numeric_dispatch(ca)
-            },
-            Datetime(_, _) | Duration(_) | Time => {
-                let ca = s.i64().unwrap();
-                arg_max_numeric_dispatch(ca)
-            },
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
                     arg_max_numeric_dispatch(ca)
                 })
             },

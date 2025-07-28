@@ -11,6 +11,7 @@ description = "Enable running Polars workloads in Python"
 [dependencies]
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
@@ -259,8 +260,9 @@ polars_cloud_server = ["polars/polars_cloud_server"]
 nightly = ["polars/nightly"]
 
 pymethods = []
+allow_unused = []
 
-all = [
+full = [
   "pymethods",
   "optimizations",
   "io",
@@ -279,9 +281,9 @@ all = [
 # we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197
 # so we have an indirection and compile
-# with --no-default-features --features=all for targets without simd
+# with --no-default-features --features=full for targets without simd
 default = [
-  "all",
+  "full",
 ]
 
 [lints]

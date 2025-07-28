@@ -29,7 +29,7 @@ def test_df_mixed_dtypes_string() -> None:
 def test_df_mixed_dtypes_object() -> None:
     data = {"x": [[b"abc", 12, 34.5]], "y": [1]}
 
-    with pytest.raises(TypeError, match="failed to determine supertype"):
+    with pytest.raises(TypeError):
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)

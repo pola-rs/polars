@@ -68,7 +68,7 @@ macro_rules! impl_dyn_series {
                 self.0.compute_len()
             }
 
-            fn _field(&self) -> Cow<Field> {
+            fn _field(&self) -> Cow<'_, Field> {
                 Cow::Borrowed(self.0.ref_field())
             }
 
@@ -220,7 +220,7 @@ macro_rules! impl_dyn_series {
                 self.0.rename(name);
             }
 
-            fn chunk_lengths(&self) -> ChunkLenIter {
+            fn chunk_lengths(&self) -> ChunkLenIter<'_> {
                 self.0.chunk_lengths()
             }
             fn name(&self) -> &PlSmallStr {
@@ -319,7 +319,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
-            unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+            unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
                 self.0.get_any_value_unchecked(index)
             }
 
@@ -518,6 +518,6 @@ impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
             .unwrap()
             .clone();
 
-        Some(BitRepr::Small(repr))
+        Some(BitRepr::U32(repr))
     }
 }

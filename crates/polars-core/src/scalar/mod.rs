@@ -1,22 +1,20 @@
 mod from;
 mod new;
 pub mod reduce;
+#[cfg(any(feature = "serde", feature = "dsl-schema"))]
+mod serde;
 
 use std::hash::Hash;
 
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::{Column, Series};
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
@@ -86,7 +84,7 @@ impl Scalar {
         &self.value
     }
 
-    pub fn as_any_value(&self) -> AnyValue {
+    pub fn as_any_value(&self) -> AnyValue<'_> {
         self.value
             .strict_cast(&self.dtype)
             .unwrap_or_else(|| self.value.clone())

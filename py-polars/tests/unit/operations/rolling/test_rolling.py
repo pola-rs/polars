@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -325,6 +326,7 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
             pl.when(pl.int_range(0, pl.len(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
+            .name.keep()
             .name.suffix("_nulls")
         )
         .cast(dtype)
@@ -353,24 +355,24 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     }
 
     # shuffled data triggers other kernels
-    df = df.select([pl.all().shuffle(0)])
+    df = df.select([pl.all().shuffle(seed=0)])
     expected = {
-        "col1": [None, None, 0, 0, 1, 2, 2],
-        "col2": [None, None, 0, 2, 1, 1, 1],
-        "col1_nulls": [None, None, None, None, None, 2, 2],
-        "col2_nulls": [None, None, None, None, None, 1, 1],
+        "col1": [None, None, 0, 0, 4, 1, 1],
+        "col2": [None, None, 1, 1, 0, 0, 0],
+        "col1_nulls": [None, None, None, None, 4, None, None],
+        "col2_nulls": [None, None, None, None, 0, None, None],
     }
     result = df.select([pl.all().rolling_min(3)])
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
     }
-
     result = df.select([pl.all().rolling_max(3)])
+
     expected = {
-        "col1": [None, None, 6, 4, 5, 5, 5],
-        "col2": [None, None, 6, 6, 5, 4, 4],
-        "col1_nulls": [None, None, None, None, None, 5, 5],
-        "col2_nulls": [None, None, None, None, None, 4, 4],
+        "col1": [None, None, 5, 5, 6, 6, 6],
+        "col2": [None, None, 6, 6, 2, 5, 5],
+        "col1_nulls": [None, None, None, None, 6, None, None],
+        "col2_nulls": [None, None, None, None, 2, None, None],
     }
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
@@ -517,18 +519,18 @@ def test_rolling_group_by_extrema(dtype: PolarsDataType) -> None:
     expected = {
         "col1_list": pl.Series(
             [
-                [3],
-                [3, 4],
-                [3, 4, 5],
-                [4, 5, 6],
-                [5, 6, 2],
-                [6, 2, 1],
-                [2, 1, 0],
+                [4],
+                [4, 2],
+                [4, 2, 5],
+                [2, 5, 1],
+                [5, 1, 6],
+                [1, 6, 0],
+                [6, 0, 3],
             ],
             dtype=pl.List(dtype),
         ).to_list(),
-        "col1_min": pl.Series([3, 3, 3, 4, 2, 1, 0], dtype=dtype).to_list(),
-        "col1_max": pl.Series([3, 4, 5, 6, 6, 6, 2], dtype=dtype).to_list(),
+        "col1_min": pl.Series([4, 2, 2, 1, 1, 0, 0], dtype=dtype).to_list(),
+        "col1_max": pl.Series([4, 4, 5, 5, 6, 6, 6], dtype=dtype).to_list(),
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -1522,7 +1524,6 @@ def test_rolling_quantile_with_nulls_22781(method: QuantileMethod) -> None:
             "a": [None, None, 1.0, None, None, 1.0, 1.0, None, None],
         }
     )
-    method = "nearest"
     out = (
         lf.rolling("index", period="2i")
         .agg(pl.col("a").quantile(0.5, interpolation=method))
@@ -1530,3 +1531,102 @@ def test_rolling_quantile_with_nulls_22781(method: QuantileMethod) -> None:
     )
     expected = pl.Series("a", [None, None, 1.0, 1.0, None, 1.0, 1.0, 1.0, None])
     assert_series_equal(out["a"], expected)
+
+
+def test_rolling_quantile_nearest_23392() -> None:
+    base = range(11)
+    s = pl.Series(base)
+
+    shuffle_base = list(base)
+    random.shuffle(shuffle_base)
+    s_shuffled = pl.Series(shuffle_base)
+
+    for q in np.arange(0, 1.0, 0.02, dtype=float):
+        out = s.rolling_quantile(q, interpolation="nearest", window_size=11)
+
+        # explicit:
+        expected = pl.Series([None] * 10 + [float(round(q * 10.0))])
+        assert_series_equal(out, expected)
+
+        # equivalence:
+        equiv = s.quantile(q, interpolation="nearest")
+        assert out.last() == equiv
+
+        # shuffled:
+        out = s_shuffled.rolling_quantile(q, interpolation="nearest", window_size=11)
+        assert_series_equal(out, expected)
+
+
+def test_rolling_quantile_nearest_kernel_23392() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 2),
+                datetime(2021, 1, 4),
+                datetime(2021, 1, 5),
+                datetime(2021, 1, 7),
+            ],
+            "values": pl.arange(0, 5, eager=True),
+        }
+    )
+    # values (period="3d", quantile=0.7) are chosen to trigger index rounding
+    out = (
+        df.set_sorted("dt")
+        .rolling("dt", period="3d", closed="both")
+        .agg([pl.col("values").quantile(quantile=0.7).alias("quantile")])
+        .select("quantile")
+    )
+    expected = pl.DataFrame({"quantile": [0.0, 1.0, 1.0, 2.0, 3.0]})
+    assert_frame_equal(out, expected)
+
+
+def test_rolling_quantile_nearest_with_nulls_23932() -> None:
+    lf = pl.LazyFrame(
+        {
+            "index": [0, 1, 2, 3, 4, 5, 6],
+            "a": [None, None, 1.0, 2.0, 3.0, None, None],
+        }
+    )
+    # values (period="3i", quantile=0.7) are chosen to trigger index rounding
+    out = (
+        lf.rolling("index", period="3i")
+        .agg(pl.col("a").quantile(0.7, interpolation="nearest"))
+        .collect()
+    )
+    expected = pl.Series("a", [None, None, 1.0, 2.0, 2.0, 3.0, 3.0])
+    assert_series_equal(out["a"], expected)
+
+
+def test_rolling_median_23480() -> None:
+    vals = [None] * 17 + [3262645.8, 856191.4, 1635379.0, 34707156.0]
+    evals = [None] * 19 + [1635379.0, (3262645.8 + 1635379.0) / 2]
+    out = pl.DataFrame({"a": vals}).select(
+        r15=pl.col("a").rolling_median(15, min_samples=3),
+        r17=pl.col("a").rolling_median(17, min_samples=3),
+    )
+    expected = pl.DataFrame({"r15": evals, "r17": evals})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("with_nulls", [True, False])
+def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
+    values: list[float | None] = [
+        0.0,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+        42.0,
+        -3.0,
+    ]
+    if with_nulls:
+        values.append(None)
+    data = random.choices(values, k=1000)
+    naive = [
+        sum(0 if x is None else x for x in data[max(0, i + 1 - 4) : i + 1])
+        if sum(x is not None for x in data[max(0, i + 1 - 4) : i + 1]) >= 2
+        else None
+        for i in range(1000)
+    ]
+    assert_series_equal(pl.Series(data).rolling_sum(4, min_samples=2), pl.Series(naive))

@@ -105,7 +105,7 @@ impl CsvReadOptions {
 }
 
 impl<R: MmapBytesReader> CsvReader<R> {
-    fn core_reader(&mut self) -> PolarsResult<CoreReader> {
+    fn core_reader(&mut self) -> PolarsResult<CoreReader<'_>> {
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
         let parse_options = self.options.get_parse_options();
@@ -134,7 +134,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
         )
     }
 
-    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader> {
+    pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader<'_>> {
         let csv_reader = self.core_reader()?;
         csv_reader.batched()
     }
@@ -197,17 +197,12 @@ impl<R: MmapBytesReader> CsvReader<R> {
 
 /// Splits datatypes that cannot be natively read into a `fields_to_cast` for
 /// post-read casting.
-///
-/// # Returns
-/// `has_categorical`
 pub fn prepare_csv_schema(
     schema: &mut SchemaRef,
     fields_to_cast: &mut Vec<Field>,
-) -> PolarsResult<bool> {
+) -> PolarsResult<()> {
     // This branch we check if there are dtypes we cannot parse.
-    // We only support a few dtypes in the parser and later cast to the required dtype
-    let mut _has_categorical = false;
-
+    // We only support a few dtypes in the parser and later cast to the required dtype.
     let mut changed = false;
 
     let new_schema = schema
@@ -221,11 +216,6 @@ pub fn prepare_csv_schema(
                 Time => {
                     fields_to_cast.push(fld.clone());
                     fld.coerce(String);
-                    PolarsResult::Ok(fld)
-                },
-                #[cfg(feature = "dtype-categorical")]
-                Categorical(_, _) => {
-                    _has_categorical = true;
                     PolarsResult::Ok(fld)
                 },
                 #[cfg(feature = "dtype-decimal")]
@@ -255,5 +245,5 @@ pub fn prepare_csv_schema(
         *schema = Arc::new(new_schema);
     }
 
-    Ok(_has_categorical)
+    Ok(())
 }

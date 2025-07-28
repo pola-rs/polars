@@ -69,7 +69,6 @@ def test_row_index_len_16543(foods_parquet_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_parquet_statistics(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -273,7 +272,6 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -287,19 +285,18 @@ def test_categorical(tmp_path: Path) -> None:
     file_path = tmp_path / "categorical.parquet"
     df.write_parquet(file_path)
 
-    with pl.StringCache():
-        result = (
-            pl.scan_parquet(file_path)
-            .group_by("name")
-            .agg(pl.col("amount").sum())
-            .collect()
-            .sort("name")
-        )
-        expected = pl.DataFrame(
-            {"name": ["Bob", "Alice"], "amount": [400, 200]},
-            schema_overrides={"name": pl.Categorical},
-        )
-        assert_frame_equal(result, expected)
+    result = (
+        pl.scan_parquet(file_path)
+        .group_by("name")
+        .agg(pl.col("amount").sum())
+        .collect()
+        .sort("name")
+    )
+    expected = pl.DataFrame(
+        {"name": ["Alice", "Bob"], "amount": [200, 400]},
+        schema_overrides={"name": pl.Categorical},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:

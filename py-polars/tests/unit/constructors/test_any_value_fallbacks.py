@@ -382,9 +382,7 @@ def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
     dtype = pl.Enum(["a", "b"])
     values = ["a", "b", "c", None]
 
-    with pytest.raises(
-        TypeError, match="cannot append 'c' to enum without that variant"
-    ):
+    with pytest.raises(TypeError, match="attempted to insert 'c'"):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
@@ -398,8 +396,6 @@ def test_fallback_with_dtype_strict_failure_decimal_precision() -> None:
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
-@pytest.mark.usefixtures("test_global_and_local")
-@pytest.mark.may_fail_auto_streaming
 def test_categorical_lit_18874() -> None:
     assert_frame_equal(
         pl.DataFrame(

@@ -27,6 +27,7 @@ pub struct FixedIndexTable<K> {
 impl<K> FixedIndexTable<K> {
     pub fn new(num_slots: IdxSize) -> Self {
         assert!(num_slots.is_power_of_two());
+        assert!(num_slots > 1);
         let empty_slot = Slot {
             tag: u32::MAX,
             last_access_tag: u32::MAX,

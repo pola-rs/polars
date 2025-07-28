@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 FloatCastOption: TypeAlias = Literal["upcast", "downcast"]
 DatetimeCastOption: TypeAlias = Literal["nanosecond-downcast", "convert-timezone"]
 
+_DEFAULT_CAST_OPTIONS_ICEBERG: ScanCastOptions | None = None
+
 
 class ScanCastOptions:
     """Options for scanning files."""
@@ -86,6 +88,29 @@ class ScanCastOptions:
         self.missing_struct_fields = missing_struct_fields
         self.extra_struct_fields = extra_struct_fields
 
+    # Note: We don't cache this here, it's cached on the Rust-side.
     @staticmethod
     def _default() -> ScanCastOptions:
         return ScanCastOptions(_internal_call=True)
+
+    @classmethod
+    def _default_iceberg(cls) -> ScanCastOptions:
+        """
+        Default options suitable for Iceberg / Deltalake.
+
+        This in general has all casting options enabled. Note: do not modify the
+        returned config object, it is a cached global object.
+        """
+        global _DEFAULT_CAST_OPTIONS_ICEBERG
+
+        if _DEFAULT_CAST_OPTIONS_ICEBERG is None:
+            _DEFAULT_CAST_OPTIONS_ICEBERG = ScanCastOptions(
+                integer_cast="upcast",
+                float_cast=["upcast", "downcast"],
+                datetime_cast=["nanosecond-downcast", "convert-timezone"],
+                missing_struct_fields="insert",
+                extra_struct_fields="ignore",
+                _internal_call=True,
+            )
+
+        return _DEFAULT_CAST_OPTIONS_ICEBERG

@@ -2,13 +2,14 @@ use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+use crate::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use crate::prelude::*;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
-    fn _field(&self) -> Cow<Field> {
+    fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
@@ -23,6 +24,24 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.equal_element(idx_self, idx_other, other)
+    }
+
+    fn vec_hash(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
+        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+            .vec_hash(build_hasher, buf)
+    }
+
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
+        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+            .vec_hash_combine(build_hasher, hashes)
     }
 
     #[cfg(feature = "zip_with")]
@@ -71,7 +90,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkLenIter {
+    fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
     fn name(&self) -> &PlSmallStr {
@@ -174,7 +193,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(index)
     }
 

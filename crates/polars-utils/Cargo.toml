@@ -34,6 +34,7 @@ serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -53,6 +54,7 @@ serde = [
   "dep:bincode",
   "dep:flate2",
   "dep:serde_json",
+  "uuid/serde",
 ]
 dsl-schema = ["dep:schemars"]
 polars_cloud_server = ["dep:serde_ignored"]

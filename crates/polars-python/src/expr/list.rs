@@ -1,8 +1,7 @@
-use std::borrow::Cow;
-
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 
@@ -207,21 +206,13 @@ impl PyExpr {
         name_gen: Option<PyObject>,
         upper_bound: Option<usize>,
     ) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| {
-            NameGenerator::from_func(move |idx: usize| {
-                Python::with_gil(|py| {
-                    let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: PlSmallStr = out.extract::<Cow<str>>(py).unwrap().as_ref().into();
-                    out
-                })
-            })
-        });
+        let name_gen = name_gen.map(|lambda| PlanCallback::new_python(PythonObject(lambda)));
 
         Ok(self
             .inner
             .clone()
             .list()
-            .to_struct(ListToStructArgs::InferWidth {
+            .to_struct(ListToStruct::InferWidth {
                 infer_field_strategy: width_strat.0,
                 get_index_name: name_gen,
                 max_fields: upper_bound,
@@ -235,7 +226,7 @@ impl PyExpr {
             .inner
             .clone()
             .list()
-            .to_struct(ListToStructArgs::FixedWidth(
+            .to_struct(ListToStruct::FixedWidth(
                 names
                     .try_iter()?
                     .map(|x| Ok(x?.extract::<Wrap<PlSmallStr>>()?.0))

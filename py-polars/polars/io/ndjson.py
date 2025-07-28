@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
-from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath
-from polars._utils.wrap import wrap_df, wrap_ldf
+from polars._utils.wrap import wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
 from polars.io.cloud.credential_provider._builder import (
@@ -16,18 +14,24 @@ from polars.io.cloud.credential_provider._builder import (
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PyLazyFrame
+    from polars.polars import PyLazyFrame
 
 if TYPE_CHECKING:
-    from io import IOBase
-
     from polars import DataFrame, LazyFrame
     from polars._typing import SchemaDefinition
     from polars.io.cloud import CredentialProviderFunction
 
 
 def read_ndjson(
-    source: str | Path | list[str] | list[Path] | IOBase | bytes,
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]],
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
@@ -144,32 +148,6 @@ def read_ndjson(
     │ 3   ┆ 8   │
     └─────┴─────┘
     """
-    if not (
-        isinstance(source, (str, Path))
-        or (
-            isinstance(source, Sequence)
-            and source
-            and isinstance(source[0], (str, Path))
-        )
-    ):
-        # TODO: A lot of the parameters aren't applied for BytesIO
-        if isinstance(source, StringIO):
-            source = BytesIO(source.getvalue().encode())
-
-        pydf = PyDataFrame.read_ndjson(
-            source,
-            ignore_errors=ignore_errors,
-            schema=schema,
-            schema_overrides=schema_overrides,
-        )
-
-        df = wrap_df(pydf)
-
-        if n_rows:
-            df = df.head(n_rows)
-
-        return df
-
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "read_ndjson"
     )

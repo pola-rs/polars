@@ -8,12 +8,10 @@ import polars as pl
 from polars.exceptions import (
     InvalidOperationError,
     SchemaError,
-    StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_supertype() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "ham"]})
     result = df.transpose()
@@ -27,7 +25,6 @@ def test_transpose_supertype() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_tz_naive_and_tz_aware() -> None:
     df = pl.DataFrame(
         {
@@ -43,7 +40,6 @@ def test_transpose_tz_naive_and_tz_aware() -> None:
         df.transpose()
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_struct() -> None:
     df = pl.DataFrame(
         {
@@ -85,7 +81,6 @@ def test_transpose_struct() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_arguments() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     expected = pl.DataFrame(
@@ -140,46 +135,26 @@ def test_transpose_arguments() -> None:
     assert_frame_equal(expected, out)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_categorical_data() -> None:
-    with pl.StringCache():
-        df = pl.DataFrame(
-            [
-                pl.Series(["a", "b", "c"], dtype=pl.Categorical),
-                pl.Series(["c", "g", "c"], dtype=pl.Categorical),
-                pl.Series(["d", "b", "c"], dtype=pl.Categorical),
-            ]
-        )
-        df_transposed = df.transpose(
-            include_header=False, column_names=["col1", "col2", "col3"]
-        )
-        assert_series_equal(
-            df_transposed.get_column("col1"),
-            pl.Series("col1", ["a", "c", "d"], dtype=pl.Categorical),
-        )
-
-    # Without string Cache only works if they have the same categories in the same order
     df = pl.DataFrame(
         [
-            pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
-            pl.Series(["a", "b", "b", "c"], dtype=pl.Categorical),
-            pl.Series(["a", "a", "b", "c"], dtype=pl.Categorical),
+            pl.Series(["a", "b", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["c", "g", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["d", "b", "c", "d"], dtype=pl.Categorical),
         ]
     )
-    df_transposed = df.transpose(
-        include_header=False, column_names=["col1", "col2", "col3", "col4"]
+    df_transposed = df.transpose(include_header=False)
+    expected = pl.DataFrame(
+        [
+            pl.Series(["a", "c", "d"], dtype=pl.Categorical),
+            pl.Series(["b", "g", "b"], dtype=pl.Categorical),
+            pl.Series(["c", "c", "c"], dtype=pl.Categorical),
+            pl.Series(["d", "d", "d"], dtype=pl.Categorical),
+        ]
     )
-
-    with pytest.raises(StringCacheMismatchError):
-        pl.DataFrame(
-            [
-                pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
-                pl.Series(["c", "b", "b", "c"], dtype=pl.Categorical),
-            ]
-        ).transpose()
+    assert_frame_equal(df_transposed, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_logical_data() -> None:
     df = pl.DataFrame(
         {
@@ -198,7 +173,6 @@ def test_transpose_logical_data() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_err_transpose_object() -> None:
     class CustomObject:
         pass
@@ -207,14 +181,12 @@ def test_err_transpose_object() -> None:
         pl.DataFrame([CustomObject()]).transpose()
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_name_from_column_13777() -> None:
     csv_file = io.BytesIO(b"id,kc\nhi,3")
     df = pl.read_csv(csv_file).transpose(column_names="id")
     assert_series_equal(df.to_series(0), pl.Series("hi", [3]))
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_transpose_multiple_chunks() -> None:
     df = pl.DataFrame({"a": ["1"]})
     expected = pl.DataFrame({"column_0": ["1"], "column_1": ["1"]})

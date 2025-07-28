@@ -1,7 +1,8 @@
 use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{
-    ArrowDataType, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field, IntegerType, IntervalUnit, TimeUnit,
+    ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
+    DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
 use arrow::types::{NativeType, days_ms, i256};
 use ethnum::I256;
@@ -178,6 +179,28 @@ pub fn page_iter_to_array(
                 nested,
                 PrimitiveArray::<days_ms>::try_new(dtype.clone(), values.into(), validity)?
                     .to_boxed(),
+                ptm,
+            )
+        },
+        (PhysicalType::FixedLenByteArray(16), Int128) => {
+            let n = 16;
+            let (nested, array, ptm) = PageDecoder::new(
+                &field.name,
+                pages,
+                ArrowDataType::FixedSizeBinary(n),
+                fixed_size_binary::BinaryDecoder { size: n },
+                init_nested,
+            )?
+            .collect(filter)?;
+
+            let (_, values, validity) = array.into_inner();
+            let values = values
+                .try_transmute()
+                .expect("this should work since the parquet decoder has alignment constraints");
+
+            (
+                nested,
+                PrimitiveArray::<i128>::try_new(dtype.clone(), values, validity)?.to_boxed(),
                 ptm,
             )
         },
@@ -418,17 +441,41 @@ pub fn page_iter_to_array(
             assert_eq!(value_type.as_ref(), &ArrowDataType::Utf8View);
 
             if field.metadata.is_some_and(|md| {
-                md.contains_key(DTYPE_ENUM_VALUES) || md.contains_key(DTYPE_CATEGORICAL)
-            }) && matches!(key_type, IntegerType::UInt32)
-            {
-                PageDecoder::new(
-                    &field.name,
-                    pages,
-                    dtype,
-                    CategoricalDecoder::new(),
-                    init_nested,
-                )?
-                .collect_boxed(filter)?
+                md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
+                    || md.contains_key(DTYPE_ENUM_VALUES_NEW)
+                    || md.contains_key(DTYPE_CATEGORICAL_NEW)
+                    || md.contains_key(DTYPE_CATEGORICAL_LEGACY)
+            }) && matches!(
+                key_type,
+                IntegerType::UInt8 | IntegerType::UInt16 | IntegerType::UInt32
+            ) {
+                match key_type {
+                    IntegerType::UInt8 => PageDecoder::new(
+                        &field.name,
+                        pages,
+                        dtype,
+                        CategoricalDecoder::<u8>::new(),
+                        init_nested,
+                    )?
+                    .collect_boxed(filter)?,
+                    IntegerType::UInt16 => PageDecoder::new(
+                        &field.name,
+                        pages,
+                        dtype,
+                        CategoricalDecoder::<u16>::new(),
+                        init_nested,
+                    )?
+                    .collect_boxed(filter)?,
+                    IntegerType::UInt32 => PageDecoder::new(
+                        &field.name,
+                        pages,
+                        dtype,
+                        CategoricalDecoder::<u32>::new(),
+                        init_nested,
+                    )?
+                    .collect_boxed(filter)?,
+                    _ => unreachable!(),
+                }
             } else {
                 let (nested, array, ptm) = PageDecoder::new(
                     &field.name,

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicU64, Ordering};
+
+use crate::relaxed_cell::RelaxedCell;
 
 #[macro_export]
 macro_rules! format_pl_smallstr {
@@ -68,6 +69,12 @@ impl PlSmallStr {
     #[inline(always)]
     pub fn as_mut_str(&mut self) -> &mut str {
         self.0.as_mut_str()
+    }
+
+    #[inline(always)]
+    #[allow(clippy::inherent_to_string_shadow_display)] // This is faster.
+    pub fn to_string(&self) -> String {
+        self.0.as_str().to_owned()
     }
 
     #[inline(always)]
@@ -295,7 +302,7 @@ impl core::fmt::Display for PlSmallStr {
 }
 
 pub fn unique_column_name() -> PlSmallStr {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let idx = COUNTER.fetch_add(1, Ordering::Relaxed);
+    static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
+    let idx = COUNTER.fetch_add(1);
     format_pl_smallstr!("_POLARS_TMP_{idx}")
 }

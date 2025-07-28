@@ -2,6 +2,7 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::UnionArgs;
+use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
@@ -10,9 +11,8 @@ use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::expr::datatype::PyDataTypeExpr;
 use crate::lazyframe::PyOptFlags;
-use crate::map::lazy::binary_lambda;
-use crate::prelude::vec_extract_wrapped;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
 
@@ -170,11 +170,6 @@ pub fn collect_all_with_callback(
 }
 
 #[pyfunction]
-pub fn cols(names: Vec<String>) -> PyExpr {
-    dsl::cols(names).into()
-}
-
-#[pyfunction]
 pub fn concat_lf(
     seq: &Bound<'_, PyAny>,
     rechunk: bool,
@@ -240,33 +235,38 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
+pub fn cum_fold(
+    acc: PyExpr,
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+    include_init: bool,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
-    dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
+    let func = PlanCallback::new_python(PythonObject(lambda));
+    dsl::cum_fold_exprs(
+        acc.inner,
+        func,
+        exprs,
+        returns_scalar,
+        return_dtype.map(|v| v.inner),
+        include_init,
+    )
+    .into()
 }
 
 #[pyfunction]
-pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn cum_reduce(
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
-    dsl::cum_reduce_exprs(func, exprs).into()
+    let func = PlanCallback::new_python(PythonObject(lambda));
+    dsl::cum_reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
 }
 
 #[pyfunction]
@@ -363,22 +363,6 @@ pub fn concat_expr(e: Vec<PyExpr>, rechunk: bool) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
-    let dtypes = vec_extract_wrapped(dtypes);
-    Ok(dsl::dtype_cols(dtypes).into())
-}
-
-#[pyfunction]
-pub fn index_cols(indices: Vec<i64>) -> PyExpr {
-    if indices.len() == 1 {
-        dsl::nth(indices[0])
-    } else {
-        dsl::index_cols(indices)
-    }
-    .into()
-}
-
-#[pyfunction]
 #[pyo3(signature = (weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds, time_unit))]
 pub fn duration(
     weeks: Option<PyExpr>,
@@ -416,46 +400,23 @@ pub fn duration(
 }
 
 #[pyfunction]
-pub fn first() -> PyExpr {
-    dsl::first().into()
-}
-
-#[pyfunction]
 pub fn fold(
     acc: PyExpr,
     lambda: PyObject,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
-    return_dtype: Option<Wrap<DataType>>,
+    return_dtype: Option<PyDataTypeExpr>,
 ) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
+    let func = PlanCallback::new_python(PythonObject(lambda));
     dsl::fold_exprs(
         acc.inner,
         func,
         exprs,
         returns_scalar,
-        return_dtype.map(|w| w.0),
+        return_dtype.map(|w| w.inner),
     )
     .into()
-}
-
-#[pyfunction]
-pub fn last() -> PyExpr {
-    dsl::last().into()
-}
-
-#[pyfunction]
-pub fn nth(n: i64) -> PyExpr {
-    dsl::nth(n).into()
 }
 
 #[pyfunction]
@@ -530,18 +491,15 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn reduce(
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<PyDataTypeExpr>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
-
-    let func = move |a: Column, b: Column| {
-        binary_lambda(
-            &lambda,
-            a.take_materialized_series(),
-            b.take_materialized_series(),
-        )
-        .map(|v| v.map(Column::from))
-    };
-    dsl::reduce_exprs(func, exprs).into()
+    let func = PlanCallback::new_python(PythonObject(lambda));
+    dsl::reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
 }
 
 #[pyfunction]

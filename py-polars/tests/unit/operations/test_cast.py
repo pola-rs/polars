@@ -561,11 +561,6 @@ def test_strict_cast_string(
 @pytest.mark.parametrize(
     "dtype_out",
     [
-        *INTEGER_DTYPES,
-        pl.Date,
-        pl.Datetime,
-        pl.Time,
-        pl.Duration,
         pl.String,
         pl.Categorical,
         pl.Enum(["1", "2"]),
@@ -764,14 +759,6 @@ def test_overflowing_cast_literals_21023() -> None:
         )
 
 
-def test_invalid_empty_cast_to_empty_enum() -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="cannot cast / initialize Enum without categories present",
-    ):
-        pl.Series([], dtype=pl.Enum)
-
-
 @pytest.mark.parametrize("value", [True, False])
 @pytest.mark.parametrize(
     "dtype",
@@ -780,7 +767,6 @@ def test_invalid_empty_cast_to_empty_enum() -> None:
         pl.Series(["a", "b"], dtype=pl.Categorical).dtype,
     ],
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
     # Enum
     with pytest.raises(
