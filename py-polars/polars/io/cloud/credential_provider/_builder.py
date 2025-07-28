@@ -90,7 +90,7 @@ class CredentialProviderBuilder:
         Parameters
         ----------
         clear_cached_credentials
-            If the built provider is an instance of `pl.CredentialProvider`,
+            If the built provider is an instance of `CachingCredentialProvider`,
             clears any cached credentials on that object.
         """
         verbose = polars._utils.logging.verbose()
@@ -268,7 +268,7 @@ class AutoInit(CredentialProviderBuilderImpl):
         import pickle
 
         hash = hashlib.sha256(pickle.dumps(self))
-        return hash.digest()
+        return hash.digest()[:16]
 
     @property
     def provider_repr(self) -> str:

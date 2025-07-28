@@ -74,7 +74,7 @@ class CredentialProvider(abc.ABC):
 
 class CachingCredentialProvider(CredentialProvider, abc.ABC):
     """
-    Base class for credential providers with caching.
+    Base class for credential providers that has built-in caching.
 
     .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -93,28 +93,10 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
             )
 
     def __call__(self) -> CredentialProviderFunctionReturn:
-        cached_credentials: NoPickleOption[CredentialProviderFunctionReturn] | None = (
-            v
-            if isinstance(
-                v := getattr(self, "_cached_credentials", None),
-                NoPickleOption,
-            )
-            else None
-        )
-
         if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
-            if cached_credentials is not None:
-                cached_credentials.set(None)
+            self._cached_credentials.set(None)
 
             return self.retrieve_credentials_impl()
-
-        if cached_credentials is None:
-            msg = (
-                f"[{type(self).__name__} @ {hex(id(self))}]: `_cached_credentials` attribute "
-                "not found. This can happen if a subclass forgets to call "
-                f"super().__init__() ({type(self) = })"
-            )
-            raise AttributeError(msg)
 
         credentials = self._cached_credentials.get()
 
@@ -139,11 +121,7 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
 
     def clear_cached_credentials(self) -> None:
-        if isinstance(
-            cached := getattr(self, "_cached_credentials", None),
-            NoPickleOption,
-        ):
-            cached.set(None)
+        self._cached_credentials.set(None)
 
 
 class CredentialProviderAWS(CachingCredentialProvider):
