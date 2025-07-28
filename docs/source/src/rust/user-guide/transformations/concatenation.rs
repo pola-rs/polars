@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "b"=> &[4],
     )?;
     let df_vertical_concat = concat(
-        [df_v1.clone().lazy(), df_v2.clone().lazy()],
+        [df_v1.lazy(), df_v2.lazy()],
         UnionArgs::default(),
     )?
     .collect()?;

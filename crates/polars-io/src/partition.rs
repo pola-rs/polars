@@ -135,7 +135,7 @@ pub fn write_partitioned_dataset(
 
         if n_files == 1 {
             write_part(
-                df.clone(),
+                df,
                 dir_path.as_ref().join(get_path_for_index(0)).as_ref(),
             )
         } else {
@@ -150,7 +150,7 @@ pub fn write_partitioned_dataset(
                         .map(|&(idx, slice_start)| {
                             let df = df.slice(slice_start as i64, rows_per_file);
                             write_part(
-                                df.clone(),
+                                df,
                                 dir_path.as_ref().join(get_path_for_index(idx)).as_ref(),
                             )
                         })

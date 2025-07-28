@@ -458,11 +458,11 @@ impl FileReader for IpcFileReader {
             })
             .collect::<Vec<_>>();
 
-        let memslice = memslice.clone();
-        let metadata = metadata.clone();
-        let slice = slice.clone();
-        let row_index = row_index.clone();
-        let projection_info = projection_info.clone();
+        let memslice = memslice;
+        let metadata = metadata;
+        let slice = slice;
+        let row_index = row_index;
+        let projection_info = projection_info;
 
         // Walker task.
         //

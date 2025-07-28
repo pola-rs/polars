@@ -148,9 +148,7 @@ impl FileCache {
 
             if verbose {
                 eprintln!(
-                    "[file_cache] init_entry: creating new entry for uri = {}, hash = {}",
-                    uri.clone(),
-                    uri_hash.clone()
+                    "[file_cache] init_entry: creating new entry for uri = {uri}, hash = {uri_hash}"
                 );
             }
 
@@ -162,7 +160,7 @@ impl FileCache {
                 ttl,
             ));
             entries.insert(uri, entry.clone());
-            Ok(entry.clone())
+            Ok(entry)
         }
     }
 

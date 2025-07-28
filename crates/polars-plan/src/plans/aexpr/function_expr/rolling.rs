@@ -208,7 +208,7 @@ pub(super) fn rolling_corr_cov(
 
     if is_corr {
         let var_x = x.rolling_var(rolling_options.clone())?;
-        let var_y = y.rolling_var(rolling_options.clone())?;
+        let var_y = y.rolling_var(rolling_options)?;
 
         let base = (var_x * var_y).unwrap();
         let sc = Scalar::new(

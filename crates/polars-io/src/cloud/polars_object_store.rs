@@ -513,7 +513,7 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
         .flat_map(|x| {
             // Split large individual ranges within the list of ranges.
             let (range, end) = x;
-            let split = split_range(range.clone());
+            let split = split_range(range);
             let len = split.len();
 
             split

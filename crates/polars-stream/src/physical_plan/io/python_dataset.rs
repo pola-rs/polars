@@ -60,7 +60,7 @@ pub fn python_dataset_scan_to_reader_builder(
     };
 
     Arc::new(BatchFnReaderBuilder {
-        name: name.clone(),
+        name,
         reader: std::sync::Mutex::new(Some(reader)),
     }) as Arc<dyn FileReaderBuilder>
 }

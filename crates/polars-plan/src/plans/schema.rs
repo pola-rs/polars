@@ -68,7 +68,7 @@ impl FileInfo {
         row_estimation: (Option<usize>, usize),
     ) -> Self {
         Self {
-            schema: schema.clone(),
+            schema,
             reader_schema,
             row_estimation,
         }

@@ -173,7 +173,7 @@ pub(crate) fn append_validity(
         (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
         (Some(page_validity), Some(Filter::Range(rng))) => {
             let page_validity = page_validity.clone();
-            validity.extend_from_bitmap(&page_validity.clone().sliced(rng.start, rng.len()))
+            validity.extend_from_bitmap(&page_validity.sliced(rng.start, rng.len()))
         },
         (Some(page_validity), Some(Filter::Mask(mask))) => {
             validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))

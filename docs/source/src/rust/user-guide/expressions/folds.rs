@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:manprod-fixed]
     let result = df
-        .clone()
+        
         .lazy()
         .select([fold_exprs(
             lit(1),
@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
+        
         .lazy()
         .filter(fold_exprs(
             lit(true),

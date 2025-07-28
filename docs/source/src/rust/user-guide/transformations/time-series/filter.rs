@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:range]
     let filtered_range_df = df
-        .clone()
+        
         .lazy()
         .filter(
             col("Date")
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .collect()?;
 
     let negative_dates_filtered_df = negative_dates_df
-        .clone()
+        
         .lazy()
         .filter(col("ts").dt().year().lt(-1300))
         .collect()?;
