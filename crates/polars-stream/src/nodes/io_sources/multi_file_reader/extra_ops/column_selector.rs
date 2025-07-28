@@ -682,7 +682,7 @@ impl ColumnSelectorBuilder {
                                 MissingColumnsPolicy::Raise => {
                                     return mismatch_err(&format!(
                                         "encountered missing struct field: {}, \
-                                    hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
+                                        hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
                                         &output_column.name,
                                     ));
                                 },

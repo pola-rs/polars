@@ -178,8 +178,8 @@ impl FileReader for ParquetFileReader {
             if verbose {
                 eprintln!(
                     "[ParquetFileReader]: early return: \
-                    n_rows_in_file: {n_rows_in_file} \
-                    pre_slice: {pre_slice_arg:?} \
+                    n_rows_in_file: {n_rows_in_file}, \
+                    pre_slice: {pre_slice_arg:?}, \
                     resolved_pre_slice: {normalized_pre_slice:?} \
                     "
                 )
