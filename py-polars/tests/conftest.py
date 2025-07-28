@@ -150,7 +150,7 @@ def _patched_cloud(
             def _(
                 source: io.BytesIO | io.StringIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
-                source = prepare_scan_sources(source)
+                source = prepare_scan_sources(source)  # type: ignore[assignment]
                 return prev_scan(source, *args, **kwargs)  # type: ignore[no-any-return]
 
             return _
