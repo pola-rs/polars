@@ -50,6 +50,7 @@ StackEntry: TypeAlias = Union[str, StackValue]
 
 _MIN_PY311 = sys.version_info >= (3, 11)
 _MIN_PY312 = _MIN_PY311 and sys.version_info >= (3, 12)
+_MIN_PY314 = _MIN_PY312 and sys.version_info >= (3, 14)
 
 
 class OpNames:
@@ -87,6 +88,10 @@ class OpNames:
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
     LOAD_ATTR = frozenset({"LOAD_METHOD", "LOAD_ATTR"})
     LOAD = LOAD_VALUES | LOAD_ATTR
+    SIMPLIFY_SPECIALIZED: ClassVar[dict[str, str]] = {
+        "LOAD_FAST_BORROW": "LOAD_FAST",
+        "LOAD_SMALL_INT": "LOAD_CONST",
+    }
     SYNTHETIC: ClassVar[dict[str, int]] = {
         "POLARS_EXPRESSION": 1,
     }
@@ -102,7 +107,9 @@ class OpNames:
         | set(SYNTHETIC)
         | LOAD_VALUES
     )
-    MATCHABLE_OPS = PARSEABLE_OPS | set(BINARY) | LOAD_ATTR | CALL
+    MATCHABLE_OPS = (
+        set(SIMPLIFY_SPECIALIZED) | PARSEABLE_OPS | set(BINARY) | LOAD_ATTR | CALL
+    )
     UNARY_VALUES = frozenset(UNARY.values())
 
 
@@ -736,6 +743,7 @@ class RewrittenInstructions:
         [
             "COPY",
             "COPY_FREE_VARS",
+            "NOT_TAKEN",
             "POP_TOP",
             "PRECALL",
             "PUSH_NULL",
@@ -762,7 +770,7 @@ class RewrittenInstructions:
                 if inst.opname not in OpNames.MATCHABLE_OPS:
                     self._rewritten_instructions = []
                     return
-                upgraded_inst = self._upgrade_instruction(inst)
+                upgraded_inst = self._update_instruction(inst)
                 normalised_instructions.append(upgraded_inst)
 
         self._rewritten_instructions = self._rewrite(normalised_instructions)
@@ -1077,7 +1085,10 @@ class RewrittenInstructions:
     ) -> Iterator[Instruction]:
         """Expand known 'superinstructions' into their component parts."""
         for inst in instructions:
-            if inst.opname == "LOAD_FAST_LOAD_FAST":
+            if inst.opname in (
+                "LOAD_FAST_LOAD_FAST",
+                "LOAD_FAST_BORROW_LOAD_FAST_BORROW",
+            ):
                 for idx in (0, 1):
                     yield inst._replace(
                         opname="LOAD_FAST",
@@ -1088,13 +1099,29 @@ class RewrittenInstructions:
                 yield inst
 
     @staticmethod
-    def _upgrade_instruction(inst: Instruction) -> Instruction:
-        """Rewrite any older binary opcodes using py 3.11 'BINARY_OP' instead."""
+    def _update_instruction(inst: Instruction) -> Instruction:
+        """Update/modify specific instructions to simplify multi-version parsing."""
         if not _MIN_PY311 and inst.opname in OpNames.BINARY:
+            # update older binary opcodes using py >= 3.11 'BINARY_OP' instead
             inst = inst._replace(
                 argrepr=OpNames.BINARY[inst.opname],
                 opname="BINARY_OP",
             )
+        elif _MIN_PY314:
+            if (opname := inst.opname) in OpNames.SIMPLIFY_SPECIALIZED:
+                # simplify specialised opcode variants to their more generic form
+                # (eg: 'LOAD_FAST_BORROW' -> 'LOAD_FAST', etc)
+                updated_params = {"opname": OpNames.SIMPLIFY_SPECIALIZED[inst.opname]}
+                if opname == "LOAD_SMALL_INT":
+                    updated_params["argrepr"] = str(inst.argval)
+                inst = inst._replace(**updated_params)  # type: ignore[arg-type]
+
+            elif opname == "BINARY_OP" and inst.argrepr == "[]":
+                # special case for new '[]' binary op; revert to 'BINARY_SUBSCR'
+                inst = inst._replace(
+                    opname="BINARY_SUBSCR", arg=None, argval=None, argrepr=""
+                )
+
         return inst
 
     def _is_stdlib_datetime(
