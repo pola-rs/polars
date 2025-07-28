@@ -460,7 +460,6 @@ impl FileReader for IpcFileReader {
 
         let memslice = memslice;
         let metadata = metadata;
-        let slice = slice;
         let row_index = row_index;
         let projection_info = projection_info;
 
