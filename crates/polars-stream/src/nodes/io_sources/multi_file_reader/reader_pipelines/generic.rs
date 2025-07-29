@@ -766,7 +766,6 @@ async fn start_reader_impl(
         external_filter_mask,
     ) = ReaderOperationPushdown {
         file_projection: file_projection.clone(),
-        cast_columns_policy: cast_columns_policy.clone(),
         reader_capabilities,
         external_filter_mask: external_filter_mask.clone(),
         extra_ops_post: &mut extra_ops_post,
@@ -1059,7 +1058,6 @@ impl AttachReaderToBridge {
 /// Encapsulates logic for determining which operations to push into the underlying reader.
 struct ReaderOperationPushdown<'a> {
     file_projection: Projection,
-    cast_columns_policy: CastColumnsPolicy,
     reader_capabilities: ReaderCapabilities,
     external_filter_mask: Option<ExternalFilterMask>,
     /// Operations will be `take()`en out when pushed.
@@ -1079,7 +1077,6 @@ impl ReaderOperationPushdown<'_> {
     ) {
         let Self {
             file_projection,
-            cast_columns_policy,
             reader_capabilities,
             external_filter_mask,
             extra_ops_post,
@@ -1090,14 +1087,14 @@ impl ReaderOperationPushdown<'_> {
         let unsupported_external_filter_mask = external_filter_mask.is_some()
             && !reader_capabilities.contains(RC::EXTERNAL_FILTER_MASK);
 
-        let unsupported_mapped_projection = match &file_projection {
+        let unsupported_resolved_mapped_projection = match &file_projection {
             Projection::Plain(_) => false,
             Projection::Mapped { .. } => {
                 !reader_capabilities.contains(RC::MAPPED_COLUMN_PROJECTION)
             },
         };
 
-        let (projection_to_reader, projection_to_post) = if unsupported_mapped_projection {
+        let (projection_to_reader, projection_to_post) = if unsupported_resolved_mapped_projection {
             (file_projection.get_plain_pre_projection(), file_projection)
         } else {
             let projection_to_post = Projection::Plain(file_projection.projected_schema().clone());
@@ -1111,7 +1108,7 @@ impl ReaderOperationPushdown<'_> {
         // If `unsupported_mapped_projection`, the file may contain a column sharing the name of
         // the row index column, but gets renamed by the column mapping.
         let row_index = if reader_capabilities.contains(RC::ROW_INDEX)
-            && !(unsupported_mapped_projection || unsupported_external_filter_mask)
+            && !(unsupported_resolved_mapped_projection || unsupported_external_filter_mask)
         {
             extra_ops_post.row_index.take()
         } else {
@@ -1132,9 +1129,7 @@ impl ReaderOperationPushdown<'_> {
             _ => None,
         };
 
-        let push_predicate = !(unsupported_mapped_projection
-            || (cast_columns_policy != CastColumnsPolicy::ERROR_ON_MISMATCH
-                && !reader_capabilities.contains(RC::MAPPED_COLUMN_PROJECTION))
+        let push_predicate = !(!reader_capabilities.contains(RC::MAPPED_COLUMN_PROJECTION)
             || unsupported_external_filter_mask
             || extra_ops_post.predicate.is_none()
             || (extra_ops_post.row_index.is_some() || extra_ops_post.pre_slice.is_some())
