@@ -88,8 +88,9 @@ def test_cat_uses_lexical_ordering() -> None:
     s = s.cast(pl.Categorical("lexical"))
     assert s.cat.uses_lexical_ordering()
 
-    s = s.cast(pl.Categorical("physical"))  # Deprecated.
-    assert s.cat.uses_lexical_ordering()
+    with pytest.warns(DeprecationWarning):
+        s = s.cast(pl.Categorical("physical"))  # Deprecated.
+        assert s.cat.uses_lexical_ordering()
 
 
 def test_cat_len_bytes() -> None:
