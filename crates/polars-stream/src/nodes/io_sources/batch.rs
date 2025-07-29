@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_err};
-use polars_io::pl_async::get_runtime;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -82,33 +81,76 @@ pub mod builder {
 pub type GetBatchFn =
     Box<dyn Fn(&StreamingExecutionState) -> PolarsResult<Option<DataFrame>> + Send + Sync>;
 
-/// Wraps `GetBatchFn` to support peeking.
-pub struct GetBatchState {
-    func: GetBatchFn,
-    peek: Option<DataFrame>,
-}
+pub use get_batch_state::GetBatchState;
 
-impl GetBatchState {
-    pub fn peek(&mut self, state: &StreamingExecutionState) -> PolarsResult<Option<&DataFrame>> {
-        if self.peek.is_none() {
-            self.peek = (self.func)(state)?;
-        }
+mod get_batch_state {
+    use polars_io::pl_async::get_runtime;
 
-        Ok(self.peek.as_ref())
+    use super::{DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
+
+    /// Wraps `GetBatchFn` to support peeking.
+    pub struct GetBatchState {
+        func: GetBatchFn,
+        peek: Option<DataFrame>,
     }
 
-    pub fn next(&mut self, state: &StreamingExecutionState) -> PolarsResult<Option<DataFrame>> {
-        if let Some(df) = self.peek.take() {
-            Ok(Some(df))
-        } else {
-            (self.func)(state)
+    impl GetBatchState {
+        pub async fn next(
+            mut slf: Self,
+            execution_state: StreamingExecutionState,
+        ) -> PolarsResult<(Self, Option<DataFrame>)> {
+            get_runtime()
+                .spawn_blocking({
+                    move || unsafe { slf.next_impl(&execution_state).map(|x| (slf, x)) }
+                })
+                .await
+                .unwrap()
+        }
+
+        pub fn peek_blocking(
+            mut slf: Self,
+            execution_state: StreamingExecutionState,
+        ) -> PolarsResult<(Self, Option<DataFrame>)> {
+            let rt = get_runtime();
+            rt.block_in_place_on(rt.spawn_blocking({
+                move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
+            }))
+            .unwrap()
+        }
+
+        /// # Safety
+        /// This may deadlock if the caller is an async executor thread, as the `GetBatchFn` may
+        /// be a Python function that re-enters the streaming engine before returning.
+        unsafe fn peek_impl(
+            &mut self,
+            state: &StreamingExecutionState,
+        ) -> PolarsResult<Option<DataFrame>> {
+            if self.peek.is_none() {
+                self.peek = (self.func)(state)?;
+            }
+
+            Ok(self.peek.clone())
+        }
+
+        /// # Safety
+        /// This may deadlock if the caller is an async executor thread, as the `GetBatchFn` may
+        /// be a Python function that re-enters the streaming engine before returning.
+        unsafe fn next_impl(
+            &mut self,
+            state: &StreamingExecutionState,
+        ) -> PolarsResult<Option<DataFrame>> {
+            if let Some(df) = self.peek.take() {
+                Ok(Some(df))
+            } else {
+                (self.func)(state)
+            }
         }
     }
-}
 
-impl From<GetBatchFn> for GetBatchState {
-    fn from(func: GetBatchFn) -> Self {
-        Self { func, peek: None }
+    impl From<GetBatchFn> for GetBatchState {
+        fn from(func: GetBatchFn) -> Self {
+            Self { func, peek: None }
+        }
     }
 }
 
@@ -177,20 +219,10 @@ impl FileReader for BatchFnReader {
             let mut n_rows_seen: usize = 0;
 
             loop {
-                let (_get_batch_state, opt_df) = get_runtime()
-                    .spawn_blocking({
-                        let execution_state = execution_state.clone();
+                let opt_df;
 
-                        move || {
-                            get_batch_state
-                                .next(&execution_state)
-                                .map(|x| (get_batch_state, x))
-                        }
-                    })
-                    .await
-                    .unwrap()?;
-
-                get_batch_state = _get_batch_state;
+                (get_batch_state, opt_df) =
+                    GetBatchState::next(get_batch_state, execution_state.clone()).await?;
 
                 let Some(df) = opt_df else {
                     break;
@@ -220,7 +252,16 @@ impl FileReader for BatchFnReader {
                     eprintln!("[BatchFnReader]: read to end for full row count");
                 }
 
-                while let Some(df) = get_batch_state.next(&execution_state)? {
+                loop {
+                    let opt_df;
+
+                    (get_batch_state, opt_df) =
+                        GetBatchState::next(get_batch_state, execution_state.clone()).await?;
+
+                    let Some(df) = opt_df else {
+                        break;
+                    };
+
                     n_rows_seen = n_rows_seen.saturating_add(df.height());
                 }
 
@@ -249,12 +290,14 @@ impl BatchFnReader {
         execution_state: &StreamingExecutionState,
     ) -> PolarsResult<SchemaRef> {
         if self.output_schema.is_none() {
-            let schema = if let Some(df) = self
-                .get_batch_state
-                .as_mut()
-                .unwrap()
-                .peek(execution_state)?
-            {
+            let get_batch_state = self.get_batch_state.take().unwrap();
+
+            let (get_batch_state, opt_df) =
+                GetBatchState::peek_blocking(get_batch_state, execution_state.clone())?;
+
+            self.get_batch_state.replace(get_batch_state);
+
+            let schema = if let Some(df) = opt_df {
                 df.schema().clone()
             } else {
                 SchemaRef::default()
