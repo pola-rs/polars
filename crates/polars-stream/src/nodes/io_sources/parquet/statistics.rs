@@ -208,8 +208,6 @@ fn build_row_index_statistics(
     row_index: &RowIndex,
     row_groups: &[RowGroupMetadata],
 ) -> StatisticsColumns {
-    // Should be the row index column
-
     let mut offset = row_index.offset;
 
     let null_count = PrimitiveArray::<IdxSize>::full(row_groups.len(), 0, ArrowDataType::IDX_DTYPE);

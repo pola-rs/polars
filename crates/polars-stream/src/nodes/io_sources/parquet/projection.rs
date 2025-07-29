@@ -34,10 +34,10 @@ pub fn resolve_arrow_field_projections(
                  output_dtype,
                  resolved_transform,
              }| {
+                let arrow_field = file_arrow_schema.get(source_name.as_str()).unwrap().clone();
+
                 let Some(resolved_transform) = resolved_transform else {
                     assert_eq!(source_name, output_name);
-
-                    let arrow_field = file_arrow_schema.get(source_name.as_str()).unwrap().clone();
 
                     return ArrowFieldProjection::Plain(arrow_field);
                 };
@@ -48,7 +48,7 @@ pub fn resolve_arrow_field_projections(
                 );
 
                 ArrowFieldProjection::Mapped {
-                    arrow_field: file_arrow_schema.get(source_name.as_str()).unwrap().clone(),
+                    arrow_field,
                     output_name: output_name.clone(),
                     output_dtype: output_dtype.clone(),
                     transform: resolved_transform.attach_transforms(ColumnSelector::Position(0)),
@@ -59,6 +59,7 @@ pub fn resolve_arrow_field_projections(
 }
 
 /// Represents a potentially mapped (i.e. casted and/or renamed) arrow field projection.
+#[derive(Debug)]
 pub enum ArrowFieldProjection {
     Plain(ArrowField),
     Mapped {

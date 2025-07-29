@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlIndexMap};
+use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
@@ -47,7 +47,7 @@ impl ProjectionBuilder {
                 // Many of the assertions below are based on this invariant.
                 assert!(projected_schema.len() <= iceberg_schema.len());
 
-                let projected_physical_ids_lookup: PlIndexMap<PlSmallStr, u32> = iceberg_schema
+                let projected_physical_ids_lookup: PlHashMap<PlSmallStr, u32> = iceberg_schema
                     .iter()
                     .filter(|(_, col)| projected_schema.contains(&col.name))
                     .map(|(key, col)| (col.name.clone(), *key))
@@ -106,7 +106,7 @@ impl ProjectionBuilder {
                     return Ok(Projection::Plain(projected_schema.clone()));
                 };
 
-                let mut mapping: Option<PlIndexMap<usize, ProjectionTransform>> = None;
+                let mut mapping: Option<PlHashMap<usize, ProjectionTransform>> = None;
                 let mut missing_columns_mask: Option<MutableBitmap> = None;
 
                 for (index, (projected_name, projected_dtype)) in
@@ -132,7 +132,7 @@ impl ProjectionBuilder {
                         selector => {
                             mapping
                                 .get_or_insert_with(|| {
-                                    PlIndexMap::with_capacity(projected_schema.len())
+                                    PlHashMap::with_capacity(projected_schema.len())
                                 })
                                 .insert(
                                     index,
@@ -164,7 +164,7 @@ impl ProjectionBuilder {
                     )
                 })?;
 
-                let mut mapping: Option<PlIndexMap<usize, ProjectionTransform>> = None;
+                let mut mapping: Option<PlHashMap<usize, ProjectionTransform>> = None;
                 let mut missing_columns_mask: Option<MutableBitmap> = None;
 
                 for (index, (physical_id, output_iceberg_column)) in
@@ -191,7 +191,7 @@ impl ProjectionBuilder {
                         selector => {
                             mapping
                                 .get_or_insert_with(|| {
-                                    PlIndexMap::with_capacity(projected_iceberg_schema.len())
+                                    PlHashMap::with_capacity(projected_iceberg_schema.len())
                                 })
                                 .insert(
                                     index,

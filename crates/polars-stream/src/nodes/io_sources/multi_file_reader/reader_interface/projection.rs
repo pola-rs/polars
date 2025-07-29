@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
-use polars_core::prelude::{DataType, PlIndexMap};
+use polars_core::prelude::{DataType, PlHashMap};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -26,7 +26,7 @@ pub enum Projection {
         /// Contains entries for columns which require e.g. renaming / casting.
         /// Key: Index in `projected_schema`.
         /// Value: (source_name, source_dtype, transform).
-        mapping: Option<Arc<PlIndexMap<usize, ProjectionTransform>>>,
+        mapping: Option<Arc<PlHashMap<usize, ProjectionTransform>>>,
         missing_columns_mask: Option<Bitmap>,
     },
 }
@@ -76,16 +76,13 @@ impl Projection {
                     }
 
                     let (source_name, source_dtype) =
-                        mapping.as_ref().and_then(|x| x.get_index(index)).map_or(
+                        mapping.as_ref().and_then(|x| x.get(&index)).map_or(
                             (output_name, output_dtype),
-                            |(
-                                _,
-                                ProjectionTransform {
-                                    source_name,
-                                    source_dtype,
-                                    transform: _,
-                                },
-                            )| (source_name, source_dtype),
+                            |ProjectionTransform {
+                                 source_name,
+                                 source_dtype,
+                                 transform: _,
+                             }| (source_name, source_dtype),
                         );
 
                     if let Some(existing) = pre_projection.get(source_name.as_str()) {
@@ -135,16 +132,13 @@ impl Projection {
                 }
 
                 let (source_name, resolved_transform) =
-                    mapping.as_ref().and_then(|x| x.get_index(index)).map_or(
+                    mapping.as_ref().and_then(|x| x.get(&index)).map_or(
                         (output_name, None),
-                        |(
-                            _index,
-                            ProjectionTransform {
-                                source_name,
-                                source_dtype,
-                                transform,
-                            },
-                        )| {
+                        |ProjectionTransform {
+                             source_name,
+                             source_dtype,
+                             transform,
+                         }| {
                             (
                                 source_name,
                                 Some(ResolvedTransformRef {

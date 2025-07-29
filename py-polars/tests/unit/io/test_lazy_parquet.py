@@ -1084,3 +1084,39 @@ def test_prefilter_with_n_rows_23790() -> None:
     q = pl.scan_parquet(f, n_rows=3).filter(pl.col("b").is_in([1, 3]))
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": ["A", "C"], "b": [1, 3]}))
+
+    # With row index / file_path
+
+    df = pl.DataFrame(
+        {
+            "a": ["A", "B", "C", "D", "E", "F"],
+            "b": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    f = io.BytesIO()
+
+    df.write_parquet(f, row_group_size=2)
+
+    md = pq.read_metadata(f)
+
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
+
+    q = pl.scan_parquet(
+        f,
+        n_rows=3,
+        row_index_name="index",
+        include_file_paths="file_path",
+    ).filter(pl.col("b").is_in([1, 3]))
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "index": pl.Series([0, 2], dtype=pl.get_index_type()),
+                "a": ["A", "C"],
+                "b": [1, 3],
+                "file_path": "in-mem",
+            }
+        ),
+    )
