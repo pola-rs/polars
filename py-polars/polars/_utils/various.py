@@ -437,9 +437,8 @@ class _NoDefault(Enum):
         return "<no_default>"
 
 
-# 'NoDefault' is a sentinel indicating that no default value has been set; note that
-# this should typically be used only when one of the valid parameter values is also
-# None, as otherwise we cannot determine if the caller has explicitly set that value.
+# the "no_default" sentinel should typically be used when one of the valid parameter
+# values is None, as otherwise we cannot determine if the caller has set that value.
 no_default = _NoDefault.no_default
 NoDefault = Literal[_NoDefault.no_default]
 
@@ -472,7 +471,7 @@ def find_stacklevel() -> int:
         # https://docs.python.org/3/library/inspect.html
         # > Though the cycle detector will catch these, destruction of the frames
         # > (and local variables) can be made deterministic by removing the cycle
-        # > in a finally clause.
+        # > in a 'finally' clause.
         del frame
     return n
 
