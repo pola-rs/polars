@@ -4,6 +4,7 @@ import io
 import subprocess
 import sys
 from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from typing import TYPE_CHECKING, Any
@@ -1062,6 +1063,68 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
             .collect()
         ),
         pl.DataFrame(schema={"a": pl.Int8, "b": pl.Int16}),
+    )
+
+
+def test_scan_parquet_prefilter_with_cast(
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame(
+        {
+            "a": ["A", "B", "C", "D", "E", "F"],
+            "b": pl.Series(
+                [
+                    datetime(2025, 1, 1),
+                    datetime(2025, 1, 2),
+                    datetime(2025, 1, 3),
+                    datetime(2025, 1, 4),
+                    datetime(2025, 1, 5),
+                    datetime(2025, 1, 6),
+                ],
+                dtype=pl.Datetime("ns"),
+            ),
+        }
+    )
+
+    df.write_parquet(f, row_group_size=3)
+
+    md = pq.read_metadata(f)
+
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [3, 3]
+
+    q = pl.scan_parquet(
+        f,
+        schema={"a": pl.String, "b": pl.Datetime("ms")},
+        cast_options=pl.ScanCastOptions(datetime_cast="nanosecond-downcast"),
+        include_file_paths="file_path",
+    ).filter(pl.col("b") == pl.lit(datetime(2025, 1, 5), dtype=pl.Datetime("ms")))
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect()
+        capture = capfd.readouterr().err
+
+    assert (
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live, 1 non-live)"
+        in capture
+    )
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 1 / 2 row groups" in capture
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "a": "E",
+                "b": pl.Series([datetime(2025, 1, 5)], dtype=pl.Datetime("ms")),
+                "file_path": "in-mem",
+            }
+        ),
     )
 
 
