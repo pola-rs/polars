@@ -1,5 +1,3 @@
-import pytest
-
 import polars as pl
 
 
@@ -19,8 +17,7 @@ def test_shrink_dtype() -> None:
             "k": pl.Series([None, None, None], dtype=pl.Float64),
         }
     )
-    with pytest.deprecated_call():
-        out = df.select(pl.all().shrink_dtype())
+    out = df.select(pl.all().shrink_dtype())
 
     assert out.dtypes == [
         pl.Int8,
@@ -50,7 +47,6 @@ def test_shrink_dtype() -> None:
         "k": [None, None, None],
     }
 
-    with pytest.deprecated_call():
-        q = df.lazy().select(pl.all().shrink_dtype())
-    s = q.collect_schema()
-    assert all(dt == pl.Unknown for dt in s.dtypes())
+    q = df.lazy().select(pl.all().shrink_dtype())
+    schema = q.collect_schema()
+    assert all(dt == pl.Unknown for dt in schema.dtypes())

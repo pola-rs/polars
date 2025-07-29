@@ -10296,13 +10296,9 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.set_sorted_flag(descending))
 
-    @deprecated("`shrink_dtype` is deprecated.")
     def shrink_dtype(self) -> Expr:
         """
         Shrink numeric columns to the minimal required datatype.
-
-        .. deprecated:: 1.32.0
-            This functionality has been deprecated and will not be replaced.
 
         Shrink to the dtype needed to fit the extrema of this [`Series`].
         This can be used to reduce memory pressure.
