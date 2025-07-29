@@ -13,7 +13,7 @@ pub enum DeletionFilesList {
     // * There may be data files without deletion files.
     // * A single data file may have multiple associated deletion files.
     //
-    // Note that this uses `PlIndexMap` instead of `PlHashMap` for schemars compatiblity.
+    // Note that this uses `PlIndexMap` instead of `PlHashMap` for schemars compatibility.
     //
     // Other possible options:
     // * ListArray(inner: Utf8Array)
