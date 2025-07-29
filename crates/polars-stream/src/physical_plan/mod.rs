@@ -108,7 +108,7 @@ pub enum PhysNodeKind {
     InputIndependentSelect {
         selectors: Vec<ExprIR>,
     },
-
+    
     Reduce {
         input: PhysStream,
         exprs: Vec<ExprIR>,
@@ -191,6 +191,11 @@ pub enum PhysNodeKind {
         by_column: Vec<ExprIR>,
         slice: Option<(i64, usize)>,
         sort_options: SortMultipleOptions,
+    },
+
+    Repeat {
+        value: PhysStream,
+        repeats: PhysStream,
     },
 
     OrderedUnion {
@@ -384,6 +389,16 @@ fn visit_node_inputs_mut(
                 visit(input);
                 visit(offset);
                 visit(length);
+            },
+
+            PhysNodeKind::Repeat {
+                value,
+                repeats,
+            } => {
+                rec!(value.node);
+                rec!(repeats.node);
+                visit(value);
+                visit(repeats);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
