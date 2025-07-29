@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, channel};
+use std::time::Duration;
 
 use polars_core::POOL;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -67,6 +68,12 @@ impl InProcessQuery {
     pub fn fetch_blocking(&self) -> PolarsResult<DataFrame> {
         let rx = self.rx.lock().unwrap();
         rx.recv().unwrap()
+    }
+
+    /// Await the result with a timeout.
+    pub fn fetch_timeout(&self, timeout: Duration) -> Option<PolarsResult<DataFrame>> {
+        let rx = self.rx.lock().unwrap();
+        rx.recv_timeout(timeout).ok()
     }
 }
 

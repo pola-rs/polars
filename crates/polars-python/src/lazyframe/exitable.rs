@@ -41,4 +41,13 @@ impl PyInProcessQuery {
         let out = py.enter_polars(|| self.ipq.fetch_blocking())?;
         Ok(out.into())
     }
+
+    pub fn fetch_timeout(&self, py: Python, timeout: f64) -> PyResult<Option<PyDataFrame>> {
+        let out = py.enter_polars(|| {
+            self.ipq
+                .fetch_timeout(std::time::Duration::from_secs_f64(timeout))
+                .transpose()
+        })?;
+        Ok(out.map(|df| df.into()))
+    }
 }
