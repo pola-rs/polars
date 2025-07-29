@@ -9,12 +9,15 @@ use polars_core::prelude::PlIndexMap;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DeletionFilesList {
-    // Chose to use IndexMap<usize, Arc<[String]>>:
+    // Chose to use a hashmap keyed by the scan source index.
     // * There may be data files without deletion files.
     // * A single data file may have multiple associated deletion files.
     //
+    // Note that this uses PlIndexMap instead of PlHashMap for schemars compatiblity.
+    //
     // Other possible options:
     // * ListArray(inner: Utf8Array)
+    //
     /// Iceberg positional deletes
     IcebergPositionDelete(Arc<PlIndexMap<usize, Arc<[String]>>>),
 }
