@@ -108,7 +108,7 @@ pub enum PhysNodeKind {
     InputIndependentSelect {
         selectors: Vec<ExprIR>,
     },
-    
+
     Reduce {
         input: PhysStream,
         exprs: Vec<ExprIR>,
@@ -391,10 +391,7 @@ fn visit_node_inputs_mut(
                 visit(length);
             },
 
-            PhysNodeKind::Repeat {
-                value,
-                repeats,
-            } => {
+            PhysNodeKind::Repeat { value, repeats } => {
                 rec!(value.node);
                 rec!(repeats.node);
                 visit(value);

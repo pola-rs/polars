@@ -486,7 +486,7 @@ fn to_graph_rec<'a>(
                 [(input_key, input.port)],
             )
         },
-        
+
         Repeat { value, repeats } => {
             let value_key = to_graph_rec(value.node, ctx)?;
             let repeats_key = to_graph_rec(repeats.node, ctx)?;
@@ -494,10 +494,7 @@ fn to_graph_rec<'a>(
             let repeats_schema = ctx.phys_sm[repeats.node].output_schema.clone();
             ctx.graph.add_node(
                 nodes::repeat::RepeatNode::new(value_schema, repeats_schema),
-                [
-                    (value_key, value.port),
-                    (repeats_key, repeats.port),
-                ],
+                [(value_key, value.port), (repeats_key, repeats.port)],
             )
         },
 
