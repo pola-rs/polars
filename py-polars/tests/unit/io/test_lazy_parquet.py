@@ -1075,17 +1075,7 @@ def test_scan_parquet_prefilter_with_cast(
     df = pl.DataFrame(
         {
             "a": ["A", "B", "C", "D", "E", "F"],
-            "b": pl.Series(
-                [
-                    datetime(2025, 1, 1),
-                    datetime(2025, 1, 2),
-                    datetime(2025, 1, 3),
-                    datetime(2025, 1, 4),
-                    datetime(2025, 1, 5),
-                    datetime(2025, 1, 6),
-                ],
-                dtype=pl.Datetime("ns"),
-            ),
+            "b": pl.Series([1, 1, 1, 1, 0, 1], dtype=pl.UInt8),
         }
     )
 
@@ -1095,14 +1085,12 @@ def test_scan_parquet_prefilter_with_cast(
 
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [3, 3]
 
-    assert pl.scan_parquet(f).collect_schema()["b"] == pl.Datetime("ns")
-
     q = pl.scan_parquet(
         f,
-        schema={"a": pl.String, "b": pl.Datetime("ms")},
-        cast_options=pl.ScanCastOptions(datetime_cast="nanosecond-downcast"),
+        schema={"a": pl.String, "b": pl.Int16},
+        cast_options=pl.ScanCastOptions(integer_cast="upcast"),
         include_file_paths="file_path",
-    ).filter(pl.col("b") == pl.lit(datetime(2025, 1, 5), dtype=pl.Datetime("ms")))
+    ).filter(pl.col("b") - 1 == pl.lit(-1, dtype=pl.Int16))
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -1123,7 +1111,7 @@ def test_scan_parquet_prefilter_with_cast(
         pl.DataFrame(
             {
                 "a": "E",
-                "b": pl.Series([datetime(2025, 1, 5)], dtype=pl.Datetime("ms")),
+                "b": pl.Series([0], dtype=pl.Int16),
                 "file_path": "in-mem",
             }
         ),
