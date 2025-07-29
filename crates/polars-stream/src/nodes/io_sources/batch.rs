@@ -107,21 +107,22 @@ mod get_batch_state {
                 .unwrap()
         }
 
-        pub fn peek_blocking(
+        pub async fn peek(
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            let rt = get_runtime();
-            rt.block_in_place_on(rt.spawn_blocking({
-                move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
-            }))
-            .unwrap()
+            get_runtime()
+                .spawn_blocking({
+                    move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
+                })
+                .await
+                .unwrap()
         }
 
         /// # Safety
         /// This may deadlock if the caller is an async executor thread, as the `GetBatchFn` may
         /// be a Python function that re-enters the streaming engine before returning.
-        unsafe fn peek_impl(
+        pub unsafe fn peek_impl(
             &mut self,
             state: &StreamingExecutionState,
         ) -> PolarsResult<Option<DataFrame>> {
@@ -181,7 +182,7 @@ impl FileReader for BatchFnReader {
             num_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
-                    file_schema_tx,
+                    mut file_schema_tx,
                     n_rows_in_file_tx,
                     row_position_on_end_tx,
                 },
@@ -192,9 +193,11 @@ impl FileReader for BatchFnReader {
 
         let execution_state = self.execution_state().clone();
 
-        // Must send this first before we `take()` the GetBatchState.
-        if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(self._file_schema(&execution_state)?);
+        if file_schema_tx.is_some() && self.output_schema.is_some() {
+            _ = file_schema_tx
+                .take()
+                .unwrap()
+                .try_send(self.output_schema.clone().unwrap());
         }
 
         let mut get_batch_state = self
@@ -212,6 +215,16 @@ impl FileReader for BatchFnReader {
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
         let handle = spawn(TaskPriority::Low, async move {
+            if let Some(mut file_schema_tx) = file_schema_tx {
+                let opt_df;
+
+                (get_batch_state, opt_df) =
+                    GetBatchState::peek(get_batch_state, execution_state.clone()).await?;
+
+                _ = file_schema_tx
+                    .try_send(opt_df.map(|df| df.schema().clone()).unwrap_or_default())
+            }
+
             let mut seq: u64 = 0;
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -283,29 +296,5 @@ impl BatchFnReader {
     /// Panics if `self.execution_state` is `None`.
     fn execution_state(&self) -> &StreamingExecutionState {
         self.execution_state.as_ref().unwrap()
-    }
-
-    fn _file_schema(
-        &mut self,
-        execution_state: &StreamingExecutionState,
-    ) -> PolarsResult<SchemaRef> {
-        if self.output_schema.is_none() {
-            let get_batch_state = self.get_batch_state.take().unwrap();
-
-            let (get_batch_state, opt_df) =
-                GetBatchState::peek_blocking(get_batch_state, execution_state.clone())?;
-
-            self.get_batch_state.replace(get_batch_state);
-
-            let schema = if let Some(df) = opt_df {
-                df.schema().clone()
-            } else {
-                SchemaRef::default()
-            };
-
-            self.output_schema = Some(schema);
-        }
-
-        Ok(self.output_schema.clone().unwrap())
     }
 }
