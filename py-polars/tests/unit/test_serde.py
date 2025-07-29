@@ -242,5 +242,5 @@ def test_serialize_does_not_overflow_stack() -> None:
     f.write(lf.serialize())
     f.seek(0)
     actual = pl.LazyFrame.deserialize(f).collect()
-    expected = pl.DataFrame({ "a": range(n) })
+    expected = pl.DataFrame({"a": range(n)})
     assert_frame_equal(actual, expected)
