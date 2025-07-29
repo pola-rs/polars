@@ -696,6 +696,7 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
     // originally (mostly) only looked at the LHS dtype.
     let out_type = match (left_dtype, right_dtype) {
+        #[cfg(feature = "dtype-struct")]
         (Struct(a), Struct(b)) => {
             polars_ensure!(a.len() == b.len() || b.len() == 1,
                 InvalidOperation: "cannot {} two structs of different length (left: {}, right: {})",
@@ -715,6 +716,7 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             }
             Struct(fields)
         },
+        #[cfg(feature = "dtype-struct")]
         (Struct(a), n) if n.is_numeric() => {
             let mut fields = Vec::with_capacity(a.len());
             for left in a.iter() {
