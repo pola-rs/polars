@@ -12,7 +12,6 @@ pub enum DeletionFilesList {
     // Chose to use IndexMap<usize, Arc<[String]>>:
     // * There may be data files without deletion files.
     // * A single data file may have multiple associated deletion files.
-    // * Needs to be sliceable for cloud execution.
     //
     // Other possible options:
     // * ListArray(inner: Utf8Array)
