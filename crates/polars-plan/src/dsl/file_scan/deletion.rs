@@ -1,4 +1,3 @@
-use std::ops::Range;
 use std::sync::Arc;
 
 use polars_core::prelude::PlIndexMap;
