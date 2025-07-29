@@ -35,6 +35,7 @@ kuzu
 azure-identity
 cloudpickle
 fsspec
+pyiceberg>=0.7.1
 s3fs[boto3]
 # Spreadsheet
 fastexcel>=0.11.5
