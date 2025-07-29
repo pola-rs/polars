@@ -1,6 +1,5 @@
 //! Extra operations applied during reads.
 pub mod apply;
-pub mod cast_columns;
 pub mod column_selector;
 
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
@@ -8,9 +7,7 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{
-    CastColumnsPolicy, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
-};
+use polars_plan::dsl::{ColumnMapping, ExtraColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
@@ -26,8 +23,6 @@ pub struct ExtraOperations {
     /// Index of the row index column in the final output.
     pub row_index_col_idx: usize,
     pub pre_slice: Option<Slice>,
-    pub cast_columns_policy: CastColumnsPolicy,
-    pub missing_columns_policy: MissingColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,
     /// Index of the file path column in the final output.
     pub file_path_col_idx: usize,

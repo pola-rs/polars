@@ -8,7 +8,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
+use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
@@ -31,6 +31,8 @@ pub enum ApplyExtraOps {
     Uninitialized {
         final_output_schema: SchemaRef,
         projection: Projection,
+        cast_columns_policy: CastColumnsPolicy,
+        missing_columns_policy: MissingColumnsPolicy,
         extra_ops: ExtraOperations,
         /// This here so that we can get the include file path name if needed.
         scan_source: ScanSource,
@@ -78,13 +80,13 @@ impl ApplyExtraOps {
             Uninitialized {
                 final_output_schema,
                 projection,
+                cast_columns_policy,
+                missing_columns_policy,
                 extra_ops:
                     ExtraOperations {
                         row_index,
                         row_index_col_idx,
                         pre_slice,
-                        cast_columns_policy,
-                        missing_columns_policy,
                         include_file_paths,
                         file_path_col_idx,
                         predicate,
