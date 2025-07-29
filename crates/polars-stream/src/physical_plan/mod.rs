@@ -193,6 +193,11 @@ pub enum PhysNodeKind {
         sort_options: SortMultipleOptions,
     },
 
+    Repeat {
+        value: PhysStream,
+        repeats: PhysStream,
+    },
+
     OrderedUnion {
         inputs: Vec<PhysStream>,
     },
@@ -384,6 +389,13 @@ fn visit_node_inputs_mut(
                 visit(input);
                 visit(offset);
                 visit(length);
+            },
+
+            PhysNodeKind::Repeat { value, repeats } => {
+                rec!(value.node);
+                rec!(repeats.node);
+                visit(value);
+                visit(repeats);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {

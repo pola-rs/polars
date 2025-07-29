@@ -607,6 +607,28 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: IRFunctionExpr::Repeat,
+                options: _,
+            } => {
+                assert!(inner_exprs.len() == 2);
+                let out_name = unique_column_name();
+                let value_expr_ir = inner_exprs[0].with_alias(out_name.clone());
+                let repeats_expr_ir = inner_exprs[1].clone();
+                let value_stream = build_select_stream_with_ctx(input, &[value_expr_ir], ctx)?;
+                let repeats_stream = build_select_stream_with_ctx(input, &[repeats_expr_ir], ctx)?;
+
+                let output_schema = ctx.phys_sm[value_stream.node].output_schema.clone();
+                let kind = PhysNodeKind::Repeat {
+                    value: value_stream,
+                    repeats: repeats_stream,
+                };
+                let slice_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(slice_node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: IRFunctionExpr::ConcatExpr(_rechunk),
                 options: _,
             } => {
