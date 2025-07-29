@@ -52,25 +52,34 @@ def test_asof_join_inline_cast_6438() -> None:
         }
     ).with_columns([pl.col("time").dt.cast_time_unit("ns")])
 
-    assert df_trades.join_asof(
+    df = df_trades.join_asof(
         df_quotes, on=pl.col("time").cast(pl.Datetime("ns")).set_sorted(), by="stock"
-    ).to_dict(as_series=False) == {
-        "time": [
-            datetime(2020, 1, 1, 9, 1),
-            datetime(2020, 1, 1, 9, 1),
-            datetime(2020, 1, 1, 9, 3),
-            datetime(2020, 1, 1, 9, 6),
-        ],
-        "time_right": [
-            datetime(2020, 1, 1, 9, 0),
-            None,
-            datetime(2020, 1, 1, 9, 2),
-            datetime(2020, 1, 1, 9, 3),
-        ],
-        "stock": ["A", "B", "B", "C"],
-        "trade": [101, 299, 301, 500],
-        "quote": [100, None, 300, 501],
-    }
+    )
+
+    df = df.sort("stock", maintain_order=True)
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "time": [
+                    datetime(2020, 1, 1, 9, 1),
+                    datetime(2020, 1, 1, 9, 1),
+                    datetime(2020, 1, 1, 9, 3),
+                    datetime(2020, 1, 1, 9, 6),
+                ],
+                "stock": ["A", "B", "B", "C"],
+                "trade": [101, 299, 301, 500],
+                "time_right": [
+                    datetime(2020, 1, 1, 9, 0),
+                    None,
+                    datetime(2020, 1, 1, 9, 2),
+                    datetime(2020, 1, 1, 9, 3),
+                ],
+                "quote": [100, None, 300, 501],
+            },
+            schema_overrides=df.schema,
+        ),
+    )
 
 
 def test_asof_join_projection_resolution_4606() -> None:

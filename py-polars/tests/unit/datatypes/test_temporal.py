@@ -734,17 +734,23 @@ def test_asof_join() -> None:
     ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
 
     out = trades.join_asof(quotes, on="dates", by="ticker")
-    assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
+    out = out.sort("ticker", maintain_order=True)
+    assert_series_equal(
+        out["bid_right"],
+        pl.Series([None, 720.5, 720.5, 51.95, 51.97]),
+        check_names=False,
+    )
 
     out = quotes.join_asof(trades, on="dates", by="ticker")
+    out = out.sort("ticker", maintain_order=True)
     assert out["bid_right"].to_list() == [
-        None,
-        51.95,
-        51.95,
-        51.95,
-        720.92,
         98.0,
+        None,
         720.92,
+        720.92,
+        51.95,
+        51.95,
+        51.95,
         51.95,
     ]
     assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
@@ -761,21 +767,35 @@ def test_asof_join() -> None:
         "bid_right"
     ].to_list() == [51.95, 51.95, 51.95, 51.95, 98.0, 98.0, 98.0, 98.0]
 
-    assert trades.sort(by=["ticker", "dates"]).join_asof(
-        quotes.sort(by=["ticker", "dates"]), on="dates", by="ticker", strategy="nearest"
-    )["bid_right"].to_list() == [97.99, 720.5, 720.5, 51.95, 51.99]
-    assert quotes.sort(by=["ticker", "dates"]).join_asof(
-        trades.sort(by=["ticker", "dates"]), on="dates", by="ticker", strategy="nearest"
-    )["bid_right"].to_list() == [
-        98.0,
-        720.92,
-        720.92,
-        720.92,
-        51.95,
-        51.95,
-        51.95,
-        51.95,
-    ]
+    lhs = trades.sort(by=["ticker", "dates"])
+    rhs = quotes.sort(by=["ticker", "dates"])
+
+    out = lhs.join_asof(rhs, on="dates", by="ticker", strategy="nearest")
+    out = out.sort("ticker", maintain_order=True)
+    assert_series_equal(
+        out["bid_right"],
+        pl.Series([97.99, 720.5, 720.5, 51.95, 51.99]),
+        check_names=False,
+    )
+
+    out = rhs.join_asof(lhs, on="dates", by="ticker", strategy="nearest")
+    out = out.sort("ticker", maintain_order=True)
+    assert_series_equal(
+        out["bid_right"],
+        pl.Series(
+            [
+                98.0,
+                720.92,
+                720.92,
+                720.92,
+                51.95,
+                51.95,
+                51.95,
+                51.95,
+            ]
+        ),
+        check_names=False,
+    )
 
 
 @pytest.mark.parametrize(
