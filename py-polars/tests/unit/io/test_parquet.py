@@ -2135,7 +2135,7 @@ def test_decimal_precision_nested_roundtrip(
 
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
-    monkeypatch: Any, capfd: Any, parallel: pl.ParallelStrategy
+    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: pl.ParallelStrategy
 ) -> None:
     f = io.BytesIO()
 
@@ -3528,9 +3528,33 @@ def test_scan_parquet_prefilter_with_cast(
         f,
         schema={"a": pl.String, "b": pl.Datetime("ms")},
         cast_options=pl.ScanCastOptions(datetime_cast="nanosecond-downcast"),
+        include_file_paths="file_path",
     ).filter(pl.col("b") == pl.lit(datetime(2025, 1, 5), dtype=pl.Datetime("ms")))
 
-    out = q.collect()
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect()
+        capture = capfd.readouterr().err
+
+    assert (
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live, 1 non-live)"
+        in capture
+    )
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 1 / 2 row groups" in capture
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "a": "E",
+                "b": pl.Series([datetime(2025, 1, 5)], dtype=pl.Datetime("ms")),
+                "file_path": "in-mem",
+            }
+        ),
+    )
 
 
 def test_roundtrip_int128() -> None:
