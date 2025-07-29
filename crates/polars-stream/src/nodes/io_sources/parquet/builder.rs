@@ -29,7 +29,8 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             | RC::PRE_SLICE
             | RC::NEGATIVE_PRE_SLICE
             | RC::PARTIAL_FILTER
-            | RC::PARTIAL_FILTER_PRE_CAST;
+            | RC::MAPPED_COLUMN_PROJECTION;
+
         if matches!(
             self.options.parallel,
             ParallelStrategy::Auto | ParallelStrategy::Prefiltered
