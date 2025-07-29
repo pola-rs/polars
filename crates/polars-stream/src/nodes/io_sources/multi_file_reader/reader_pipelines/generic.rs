@@ -21,7 +21,6 @@ use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::column_selector::ColumnSelectorBuilder;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::{
     ExtraOperations, ForbidExtraColumns, missing_column_err,
 };
@@ -116,8 +115,6 @@ impl MultiScanTaskInitializer {
                 self.config.final_output_schema.index_of(&x.name).unwrap()
             }),
             pre_slice,
-            cast_columns_policy,
-            missing_columns_policy,
             include_file_paths,
             file_path_col_idx: self
                 .config
@@ -302,10 +299,8 @@ impl MultiScanTaskInitializer {
                     final_output_schema,
                     reader_capabilities,
                     file_projection_builder,
-                    column_selector_builder: ColumnSelectorBuilder {
-                        cast_columns_policy: self.config.cast_columns_policy.clone(),
-                        missing_columns_policy: self.config.missing_columns_policy,
-                    },
+                    cast_columns_policy,
+                    missing_columns_policy,
                     forbid_extra_columns: self.config.forbid_extra_columns.clone(),
                     num_pipelines,
                     verbose,
@@ -699,7 +694,8 @@ struct StartReaderArgsConstant {
     final_output_schema: SchemaRef,
     reader_capabilities: ReaderCapabilities,
     file_projection_builder: ProjectionBuilder,
-    column_selector_builder: ColumnSelectorBuilder,
+    cast_columns_policy: CastColumnsPolicy,
+    missing_columns_policy: MissingColumnsPolicy,
     forbid_extra_columns: Option<ForbidExtraColumns>,
     num_pipelines: usize,
     verbose: bool,
@@ -725,7 +721,8 @@ async fn start_reader_impl(
         final_output_schema,
         reader_capabilities,
         file_projection_builder,
-        column_selector_builder,
+        cast_columns_policy,
+        missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
         verbose,
@@ -741,8 +738,6 @@ async fn start_reader_impl(
         external_filter_mask,
     } = args_this_file;
 
-    let missing_columns_policy = column_selector_builder.missing_columns_policy;
-
     let file_iceberg_schema: Option<IcebergSchema> =
         if matches!(&file_projection_builder, ProjectionBuilder::Iceberg { .. }) {
             reader
@@ -757,13 +752,13 @@ async fn start_reader_impl(
     let file_projection = file_projection_builder.build_projection(
         None,
         file_iceberg_schema.as_ref(),
-        &column_selector_builder,
+        cast_columns_policy.clone(),
     )?;
 
     let mut extra_ops_post = extra_ops_this_file;
 
     let (
-        projection_to_reader,
+        mut projection_to_reader,
         projection_to_post,
         row_index,
         pre_slice,
@@ -771,6 +766,7 @@ async fn start_reader_impl(
         external_filter_mask,
     ) = ReaderOperationPushdown {
         file_projection: file_projection.clone(),
+        cast_columns_policy: cast_columns_policy.clone(),
         reader_capabilities,
         external_filter_mask: external_filter_mask.clone(),
         extra_ops_post: &mut extra_ops_post,
@@ -807,8 +803,6 @@ async fn start_reader_impl(
         )
     }
 
-    let cast_columns_policy = extra_ops_post.cast_columns_policy.clone();
-
     let file_schema_rx = if forbid_extra_columns.is_some() {
         // Upstream should not have any reason to attach this.
         assert!(callbacks.file_schema_tx.is_none());
@@ -826,9 +820,34 @@ async fn start_reader_impl(
     );
 
     if let Some(predicate) = predicate.as_mut() {
+        assert!(matches!(projection_to_post, Projection::Plain(_)));
+
+        let reader_file_schema = reader.file_schema().await?;
+
+        // If we are sending a filter into the reader, fully initialize and resolve the projection
+        // here (i.e. column renaming / casting).
+        projection_to_reader = match projection_to_reader {
+            Projection::Plain(projected_schema) => {
+                assert!(file_iceberg_schema.is_none());
+                assert!(matches!(
+                    file_projection_builder,
+                    ProjectionBuilder::Plain(_)
+                ));
+                assert!(matches!(projection_to_post, Projection::Plain(_)));
+
+                ProjectionBuilder::new(projected_schema, None).build_projection(
+                    Some(reader_file_schema.as_ref()),
+                    None,
+                    cast_columns_policy.clone(),
+                )?
+            },
+            Projection::Mapped { .. } => projection_to_reader,
+        };
+
         let mut external_predicate_cols = Vec::with_capacity(
             hive_parts.as_ref().map_or(0, |x| x.df().width())
-                + extra_ops_post.include_file_paths.is_some() as usize,
+                + extra_ops_post.include_file_paths.is_some() as usize
+                + projection_to_reader.num_missing_columns().unwrap(),
         );
 
         if let Some(hp) = &hive_parts {
@@ -864,9 +883,8 @@ async fn start_reader_impl(
             ))
         }
 
-        for (missing_col_name, dtype) in file_projection
-            .iter_missing_columns(reader.as_mut())
-            .await?
+        for (missing_col_name, dtype) in
+            file_projection.iter_missing_columns(Some(&reader_file_schema))?
         {
             match &missing_columns_policy {
                 MissingColumnsPolicy::Insert => external_predicate_cols
@@ -883,7 +901,7 @@ async fn start_reader_impl(
         row_index,
         pre_slice,
         predicate,
-        cast_columns_policy,
+        cast_columns_policy: cast_columns_policy.clone(),
         num_pipelines,
         callbacks,
     };
@@ -919,6 +937,8 @@ async fn start_reader_impl(
         ApplyExtraOps::Uninitialized {
             final_output_schema,
             projection: projection_to_post,
+            cast_columns_policy,
+            missing_columns_policy,
             extra_ops,
             scan_source: scan_source.clone(),
             scan_source_idx,
@@ -1039,6 +1059,7 @@ impl AttachReaderToBridge {
 /// Encapsulates logic for determining which operations to push into the underlying reader.
 struct ReaderOperationPushdown<'a> {
     file_projection: Projection,
+    cast_columns_policy: CastColumnsPolicy,
     reader_capabilities: ReaderCapabilities,
     external_filter_mask: Option<ExternalFilterMask>,
     /// Operations will be `take()`en out when pushed.
@@ -1058,6 +1079,7 @@ impl ReaderOperationPushdown<'_> {
     ) {
         let Self {
             file_projection,
+            cast_columns_policy,
             reader_capabilities,
             external_filter_mask,
             extra_ops_post,
@@ -1110,36 +1132,24 @@ impl ReaderOperationPushdown<'_> {
             _ => None,
         };
 
+        let push_predicate = !(unsupported_mapped_projection
+            || (cast_columns_policy != CastColumnsPolicy::ERROR_ON_MISMATCH
+                && !reader_capabilities.contains(RC::MAPPED_COLUMN_PROJECTION))
+            || unsupported_external_filter_mask
+            || extra_ops_post.predicate.is_none()
+            || (extra_ops_post.row_index.is_some() || extra_ops_post.pre_slice.is_some())
+            || !reader_capabilities.contains(RC::PARTIAL_FILTER));
+
         let mut predicate: Option<ScanIOPredicate> = None;
 
-        #[expect(clippy::never_loop)]
-        loop {
-            if unsupported_mapped_projection
-                || unsupported_external_filter_mask
-                || extra_ops_post.predicate.is_none()
-                || extra_ops_post.row_index.is_some()
-                || extra_ops_post.pre_slice.is_some()
-            {
-                break;
+        if push_predicate {
+            predicate = if reader_capabilities.contains(RC::FULL_FILTER) {
+                // If the reader can fully handle the predicate itself, let it do it itself.
+                extra_ops_post.predicate.take()
+            } else {
+                // Otherwise, we want to pass it and filter again afterwards.
+                extra_ops_post.predicate.clone()
             }
-
-            if extra_ops_post.cast_columns_policy == CastColumnsPolicy::ERROR_ON_MISMATCH {
-                if !reader_capabilities.contains(RC::PARTIAL_FILTER) {
-                    break;
-                }
-
-                predicate = if reader_capabilities.contains(RC::FULL_FILTER) {
-                    // If the reader can fully handle the predicate itself, let it do it itself.
-                    extra_ops_post.predicate.take()
-                } else {
-                    // Otherwise, we want to pass it and filter again afterwards.
-                    extra_ops_post.predicate.clone()
-                };
-            } else if reader_capabilities.contains(RC::PARTIAL_FILTER_PRE_CAST) {
-                predicate = extra_ops_post.predicate.clone();
-            }
-
-            break;
         }
 
         (

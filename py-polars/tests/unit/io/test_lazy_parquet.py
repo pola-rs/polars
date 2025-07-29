@@ -9,6 +9,7 @@ from threading import Thread
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -1062,3 +1063,24 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
         ),
         pl.DataFrame(schema={"a": pl.Int8, "b": pl.Int16}),
     )
+
+
+def test_prefilter_with_n_rows_23790() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["A", "B", "C", "D", "E", "F"],
+            "b": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    f = io.BytesIO()
+
+    df.write_parquet(f, row_group_size=2)
+
+    md = pq.read_metadata(f)
+
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
+
+    q = pl.scan_parquet(f, n_rows=3).filter(pl.col("b").is_in([1, 3]))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": ["A", "C"], "b": [1, 3]}))

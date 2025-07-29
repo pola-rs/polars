@@ -6,7 +6,7 @@ use polars_core::prelude::{InitHashMaps, PlIndexMap};
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
-use polars_plan::dsl::ColumnMapping;
+use polars_plan::dsl::{CastColumnsPolicy, ColumnMapping, MissingColumnsPolicy};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -84,22 +84,73 @@ impl ProjectionBuilder {
 
     /// Builds a potentially mapped `Projection` (i.e. one containing renames/casting).
     ///
+    /// # Returns
+    /// Returns a `Plain` variant if `self` is a `Plain` variant and the `file_schema` is `None`.
+    ///
     /// # Panics
     /// * If `self` is the `Iceberg` variant and `file_iceberg_schema` is `None`.
     pub fn build_projection(
         &self,
         file_schema: Option<&Schema>,
         file_iceberg_schema: Option<&IcebergSchema>,
-        selector_builder: &ColumnSelectorBuilder,
+        cast_columns_policy: CastColumnsPolicy,
     ) -> PolarsResult<Projection> {
+        let selector_builder = ColumnSelectorBuilder {
+            cast_columns_policy,
+            missing_columns_policy: MissingColumnsPolicy::Raise,
+        };
+
         Ok(match self {
             Self::Plain(projected_schema) => {
-                let Some(_file_schema) = file_schema else {
+                let Some(file_schema) = file_schema else {
                     return Ok(Projection::Plain(projected_schema.clone()));
                 };
 
-                // TODO: Will be implemented and used when pushing filters to the reader.
-                unimplemented!()
+                let mut mapping: Option<PlIndexMap<usize, ProjectionTransform>> = None;
+                let mut missing_columns_mask: Option<MutableBitmap> = None;
+
+                for (index, (projected_name, projected_dtype)) in
+                    projected_schema.iter().enumerate()
+                {
+                    let Some(incoming_dtype) = file_schema.get(projected_name) else {
+                        missing_columns_mask
+                            .get_or_insert_with(|| {
+                                MutableBitmap::from_len_zeroed(projected_schema.len())
+                            })
+                            .set(index, true);
+
+                        continue;
+                    };
+
+                    match selector_builder.attach_transforms(
+                        ColumnSelector::Position(0),
+                        incoming_dtype,
+                        projected_dtype,
+                        projected_name,
+                    )? {
+                        ColumnSelector::Position(0) => {},
+                        selector => {
+                            mapping
+                                .get_or_insert_with(|| {
+                                    PlIndexMap::with_capacity(projected_schema.len())
+                                })
+                                .insert(
+                                    index,
+                                    ProjectionTransform {
+                                        source_name: projected_name.clone(),
+                                        source_dtype: incoming_dtype.clone(),
+                                        transform: selector,
+                                    },
+                                );
+                        },
+                    }
+                }
+
+                Projection::Mapped {
+                    projected_schema: projected_schema.clone(),
+                    mapping: mapping.map(Arc::new),
+                    missing_columns_mask: missing_columns_mask.map(|x| x.freeze()),
+                }
             },
 
             Self::Iceberg {
