@@ -7955,7 +7955,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def remote(
         self,
-        context: pc.ComputeContext | None = None,
+        context: pc.ClientContext | None = None,
         plan_type: pc._typing.PlanTypePreference = "dot",
     ) -> pc.LazyFrameExt:
         """
@@ -8010,7 +8010,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────────┘
 
         """
-        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
+        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)  # type: ignore[arg-type]
 
     @unstable()
     def match_to_schema(
