@@ -34,20 +34,6 @@ impl DeletionFilesList {
         }
     }
 
-    /// Returns a new DeletionFilesList for the sources within the specified range.
-    pub fn slice(&self, range: Range<usize>) -> Self {
-        use DeletionFilesList::*;
-
-        match self {
-            IcebergPositionDelete(paths) => IcebergPositionDelete(Arc::new(
-                paths.as_slice()[range]
-                    .iter()
-                    .map(|(k, v)| (*k, v.clone()))
-                    .collect(),
-            )),
-        }
-    }
-
     pub fn num_files_with_deletions(&self) -> usize {
         use DeletionFilesList::*;
 
