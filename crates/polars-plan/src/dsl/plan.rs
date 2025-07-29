@@ -261,7 +261,7 @@ impl DslPlan {
         writer.write_all(&le_major)?;
         writer.write_all(&le_minor)?;
         writer.write_all(DSL_SCHEMA_HASH.as_bytes())?;
-        pl_serialize::SerializeOptions::default().serialize_into_writer::<_, _, true>(writer, self)
+        pl_serialize::serialize_dsl(writer, self)
     }
 
     #[cfg(feature = "serde")]
@@ -327,8 +327,7 @@ impl DslPlan {
             );
         }
 
-        pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader::<_, _, true>(reader)
+        pl_serialize::deserialize_dsl(reader)
             .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
     }
 

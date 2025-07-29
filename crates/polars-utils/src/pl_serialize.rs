@@ -160,6 +160,29 @@ where
     Ok(v)
 }
 
+/// Serialize function customized for `DslPlan`, with stack overflow protection.
+pub fn serialize_dsl<W, T>(writer: W, value: &T) -> PolarsResult<()>
+where
+    W: std::io::Write,
+    T: serde::ser::Serialize,
+{
+    let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
+    let s = serde_stacker::Serializer::new(&mut s);
+    value.serialize(s).map_err(to_compute_err)
+}
+
+/// Deserialize function customized for `DslPlan`, with stack overflow protection.
+pub fn deserialize_dsl<T, R>(reader: R) -> PolarsResult<T>
+where
+    T: serde::de::DeserializeOwned,
+    R: std::io::Read,
+{
+    let mut de = rmp_serde::Deserializer::new(reader);
+    de.set_max_depth(usize::MAX);
+    let de = serde_stacker::Deserializer::new(&mut de);
+    T::deserialize(de).map_err(to_compute_err)
+}
+
 /// Potentially avoids copying memory compared to a naive `Vec::<u8>::deserialize`.
 ///
 /// This is essentially boilerplate for visiting bytes without copying where possible.

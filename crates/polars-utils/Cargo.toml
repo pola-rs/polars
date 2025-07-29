@@ -31,6 +31,7 @@ schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_ignored = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+serde_stacker = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
@@ -54,6 +55,7 @@ serde = [
   "dep:bincode",
   "dep:flate2",
   "dep:serde_json",
+  "dep:serde_stacker",
   "uuid/serde",
 ]
 dsl-schema = ["dep:schemars"]
