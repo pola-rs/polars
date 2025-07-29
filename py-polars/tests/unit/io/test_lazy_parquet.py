@@ -1095,6 +1095,8 @@ def test_scan_parquet_prefilter_with_cast(
 
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [3, 3]
 
+    assert pl.scan_parquet(f).collect_schema()["b"] == pl.Datetime("ns")
+
     q = pl.scan_parquet(
         f,
         schema={"a": pl.String, "b": pl.Datetime("ms")},
