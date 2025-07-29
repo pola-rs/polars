@@ -55,6 +55,7 @@ pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
 pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 pub use crate::series::arithmetic::{LhsNumOps, NumOpsDispatch};
+pub use crate::series::implementations::null::NullChunked;
 pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;

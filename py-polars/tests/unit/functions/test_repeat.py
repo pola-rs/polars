@@ -438,3 +438,20 @@ def test_repeat_value_first() -> None:
     result = df.select(rep=pl.repeat(pl.col("a").first(), n=pl.col("n").first()))
     expected = pl.DataFrame({"rep": ["a", "a", "a", "a"]})
     assert_frame_equal(result, expected)
+
+
+def test_repeat_by_arr() -> None:
+    assert_series_equal(
+        pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.String, 2)).repeat_by(2),
+        pl.Series(
+            [[["a", "b"], ["a", "b"]], [["a", "c"], ["a", "c"]]],
+            dtype=pl.List(pl.Array(pl.String, 2)),
+        ),
+    )
+
+
+def test_repeat_by_null() -> None:
+    assert_series_equal(
+        pl.Series([None, None], dtype=pl.Null).repeat_by(2),
+        pl.Series([[None, None], [None, None]], dtype=pl.List(pl.Null)),
+    )
