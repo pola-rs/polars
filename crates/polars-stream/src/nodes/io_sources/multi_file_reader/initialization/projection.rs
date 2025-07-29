@@ -97,6 +97,7 @@ impl ProjectionBuilder {
     ) -> PolarsResult<Projection> {
         let selector_builder = ColumnSelectorBuilder {
             cast_columns_policy,
+            // This should not be used by `attach_transforms()`.
             missing_columns_policy: MissingColumnsPolicy::Raise,
         };
 
