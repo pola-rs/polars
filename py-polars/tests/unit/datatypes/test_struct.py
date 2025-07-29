@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import operator
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any, Callable
@@ -838,6 +839,42 @@ def test_struct_arithmetic_schema() -> None:
     assert q.select(pl.struct("A") - pl.struct("B")).collect_schema()["A"] == pl.Struct(
         {"A": pl.Int64}
     )
+
+
+@pytest.mark.parametrize(
+    "lf",
+    [
+        pl.LazyFrame({"a": [10], "b": [20]}),
+        pl.LazyFrame({"a": [10.0], "b": [20.0]}),
+    ],
+)
+@pytest.mark.parametrize(
+    "rhs",
+    [
+        pl.struct("b"),
+        pl.lit(3),
+        pl.lit(3.0),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.sub,
+        operator.floordiv,
+        operator.truediv,
+        operator.mod,
+        operator.mul,
+    ],
+)
+def test_struct_arithmetic_schema_match(
+    lf: pl.LazyFrame,
+    rhs: pl.Expr,
+    op: Any,
+) -> None:
+    lhs = pl.struct("a")
+    q = lf.select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
 
 
 def test_struct_field() -> None:
