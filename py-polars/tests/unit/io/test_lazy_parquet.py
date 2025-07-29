@@ -4,7 +4,6 @@ import io
 import subprocess
 import sys
 from collections import OrderedDict
-from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from typing import TYPE_CHECKING, Any
