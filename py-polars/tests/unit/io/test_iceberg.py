@@ -1100,6 +1100,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
+        cx.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
         capfd.readouterr()
         out = q.collect()
         capture = capfd.readouterr().err
