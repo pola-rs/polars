@@ -3681,6 +3681,7 @@ dependencies = [
  "serde",
  "serde_ignored",
  "serde_json",
+ "serde_stacker",
  "slotmap",
  "stacker",
  "sysinfo",
@@ -4657,6 +4658,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40734c41988f7306bb04f0ecf60ec0f3f1caa34290e4e8ea471dcd3346483b83"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "serde_stacker"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69c8defe6c780725cce4ec6ad3bd91e321baf6fa4e255df1f31e345d507ef01a"
+dependencies = [
+ "serde",
+ "stacker",
 ]
 
 [[package]]
