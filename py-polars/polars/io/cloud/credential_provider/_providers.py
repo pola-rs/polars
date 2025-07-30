@@ -115,13 +115,38 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
             )
             self._has_logged_use_cache = True
 
-        return credentials
+        creds, expiry = credentials
+
+        return {**creds}, expiry
 
     @abc.abstractmethod
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
 
     def clear_cached_credentials(self) -> None:
         self._cached_credentials.set(None)
+
+
+class CachedCredentialProvider(CachingCredentialProvider):
+    """
+    Wrapper that adds caching on top of a credential provider.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+    """
+
+    def __init__(
+        self, provider: CredentialProvider | CredentialProviderFunction
+    ) -> None:
+        self._provider = provider
+
+        super().__init__()
+
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
+        return self._provider()
+
+    def __repr__(self) -> str:
+        return f"CachedCredentialProvider[{self._provider!r}]"
 
 
 class CredentialProviderAWS(CachingCredentialProvider):
