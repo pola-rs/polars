@@ -262,22 +262,21 @@ def test_from_dicts_struct() -> None:
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    assert df.to_series().list.to_struct(upper_bound=3).to_list() == [
+    assert df.to_series().list.to_struct().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": 3},
         {"field_0": 1, "field_1": 2, "field_2": None},
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.to_series().list.to_struct(
-        fields=lambda idx: f"col_name_{idx}",
-        upper_bound=2,
+        fields=lambda idx: f"col_name_{idx}"
     ).to_list() == [
         {"col_name_0": 1, "col_name_1": 2},
         {"col_name_0": 1, "col_name_1": 2},
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct(upper_bound=3).to_list() == [
+    assert df.to_series().list.to_struct().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]

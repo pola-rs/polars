@@ -924,10 +924,10 @@ class ListNameSpace:
         └─────┴─────┴───────┘
         """
         if isinstance(fields, Sequence):
+            s = wrap_s(self._s)
             return (
-                wrap_s(self._s)
-                .to_frame()
-                .select_seq(F.col(self.name).list.to_struct(fields=fields))
+                s.to_frame()
+                .select_seq(F.col(s.name).list.to_struct(fields=fields))
                 .to_series()
             )
 

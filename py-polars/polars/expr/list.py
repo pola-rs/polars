@@ -1164,7 +1164,8 @@ class ExprListNameSpace:
         """
         if n_field_strategy is not None:
             issue_warning(
-                "`Expr.list.to_struct` with `n_field_strategy` is deprecated and has no effect on execution."
+                "`Expr.list.to_struct` with `n_field_strategy` is deprecated and has no effect on execution.",
+                DeprecationWarning,
             )
 
         if not isinstance(fields, Sequence):
