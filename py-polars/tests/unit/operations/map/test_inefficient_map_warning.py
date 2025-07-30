@@ -228,15 +228,6 @@ TEST_CASES = [
         None,
     ),
     # ---------------------------------------------
-    # json expr: load/extract
-    # ---------------------------------------------
-    (
-        "c",
-        "lambda x: json.loads(x)",
-        'pl.col("c").str.json_decode()',
-        pl.Struct(dict.fromkeys(["a", "b", "c"], pl.Int64)),
-    ),
-    # ---------------------------------------------
     # replace
     # ---------------------------------------------
     ("a", "lambda x: MY_DICT[x]", 'pl.col("a").replace_strict(MY_DICT)', None),
@@ -431,7 +422,15 @@ def test_parse_apply_raw_functions() -> None:
         match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
         for expr in (
-            pl.col("value").str.json_decode(),
+            pl.col("value").str.json_decode(
+                pl.Struct(
+                    {
+                        "a": pl.Int64,
+                        "b": pl.Boolean,
+                        "c": pl.String,
+                    }
+                )
+            ),
             pl.col("value").map_elements(
                 json.loads,
                 return_dtype=pl.Struct(

@@ -517,6 +517,23 @@ impl PySeries {
         .map_err(PyPolarsErr::from)
         .map_err(PyErr::from)
     }
+
+    #[cfg(feature = "extract_jsonpath")]
+    fn str_json_decode(
+        &self,
+        py: Python<'_>,
+        infer_schema_length: Option<usize>,
+    ) -> PyResult<Self> {
+        py.enter_polars(|| {
+            self.series
+                .str()?
+                .json_decode(None, infer_schema_length)
+                .map(|s| s.with_name(self.series.name().clone()))
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
 }
 
 macro_rules! impl_set_with_mask {

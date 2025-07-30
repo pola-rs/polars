@@ -773,6 +773,15 @@ class StringNameSpace:
                 {2,false}
         ]
         """
+        if dtype is not None:
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(F.col(s.name).str.json_decode(dtype))
+                .to_series()
+            )
+
+        return wrap_s(self._s.str_json_decode(infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """

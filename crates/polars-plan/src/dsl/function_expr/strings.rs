@@ -45,10 +45,7 @@ pub enum StringFunction {
     LenChars,
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
-    JsonDecode {
-        dtype: Option<DataTypeExpr>,
-        infer_schema_len: Option<usize>,
-    },
+    JsonDecode(DataTypeExpr),
     #[cfg(feature = "extract_jsonpath")]
     JsonPathMatch,
     #[cfg(feature = "regex")]

@@ -9,18 +9,18 @@ from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import find_stacklevel, no_default, qualified_type_name
+from polars._utils.various import (
+    find_stacklevel,
+    issue_warning,
+    no_default,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
-from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
-    import contextlib
     import sys
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        import polars._plr as plr
 
     from polars import Expr
     from polars._typing import (
@@ -1257,9 +1257,9 @@ class ExprStringNameSpace:
 
     def json_decode(
         self,
-        dtype: PolarsDataType | pl.DataTypeExpr | None = None,
+        dtype: PolarsDataType | pl.DataTypeExpr,
         *,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
+        infer_schema_length: int | None = None,
     ) -> Expr:
         """
         Parse string values as JSON.
@@ -1269,11 +1269,13 @@ class ExprStringNameSpace:
         Parameters
         ----------
         dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
-            inferred from the JSON value.
+            The dtype to cast the extracted value to.
         infer_schema_length
-            The maximum number of rows to scan for schema inference.
-            If set to `None`, the full data may be scanned *(this is slow)*.
+            Deprecated and ignored.
+
+        .. versionchanged: 1.33.0
+            Deprecate `infer_schema_length` and make `dtype` non-optional to
+            ensure that the planner can determine the output datatype.
 
         See Also
         --------
@@ -1298,10 +1300,18 @@ class ExprStringNameSpace:
         │ {"a":2, "b": false} ┆ {2,false} │
         └─────────────────────┴───────────┘
         """
-        dtype_expr: plr.PyDataTypeExpr | None = None
-        if dtype is not None:
-            dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
-        return wrap_expr(self._pyexpr.str_json_decode(dtype_expr, infer_schema_length))
+        if dtype is None:
+            msg = "`Expr.str.json_decode` needs an explicitly given `dtype` otherwise Polars is not able to determine the output type. If you want to eagerly infer datatype you can use `Series.str.json_decode`."
+            raise TypeError(msg)
+
+        if infer_schema_length is not None:
+            issue_warning(
+                "`Expr.str.json_decode` with `infer_schema_length` is deprecated and has no effect on execution.",
+                DeprecationWarning,
+            )
+
+        dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
+        return wrap_expr(self._pyexpr.str_json_decode(dtype_expr))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
