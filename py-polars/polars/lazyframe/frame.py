@@ -7402,6 +7402,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         for instance does an aggregation of a column, `predicate_pushdown` should not
         be allowed, as this prunes rows and will influence your aggregation results.
 
+        Notes
+        -----
+        A UDF passed to `map_batches` must be pure, meaning that it cannot modify or
+        depend on state other than its arguments.
+
         Examples
         --------
         >>> lf = (  # doctest: +SKIP
