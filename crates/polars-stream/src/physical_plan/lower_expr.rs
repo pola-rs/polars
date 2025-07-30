@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, Field, InitHashMaps, PlHashMap, PlHashSet};
 use polars_core::schema::{Schema, SchemaExt};
@@ -622,8 +623,59 @@ fn lower_exprs_with_ctx(
                     value: value_stream,
                     repeats: repeats_stream,
                 };
-                let slice_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_streams.insert(PhysStream::first(slice_node_key));
+                let repeat_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(repeat_node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::ExtendConstant,
+                options: _,
+            } => {
+                assert!(inner_exprs.len() == 3);
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let out_name = unique_column_name();
+                let first_ir = inner_exprs[0].with_alias(out_name.clone());
+                let out_dtype = first_ir.dtype(&input_schema, Context::Default, &ctx.expr_arena)?;
+                let mut value_expr_ir = inner_exprs[1].with_alias(out_name.clone());
+                let repeats_expr_ir = inner_exprs[2].clone();
+
+                // Cast the value if necessary.
+                if value_expr_ir.dtype(&input_schema, Context::Default, &ctx.expr_arena)?
+                    != out_dtype
+                {
+                    let cast_expr = AExpr::Cast {
+                        expr: value_expr_ir.node(),
+                        dtype: out_dtype.clone(),
+                        options: CastOptions::NonStrict,
+                    };
+                    value_expr_ir = ExprIR::new(
+                        ctx.expr_arena.add(cast_expr),
+                        OutputName::Alias(out_name.clone()),
+                    );
+                }
+
+                let first_stream = build_select_stream_with_ctx(input, &[first_ir], ctx)?;
+                let value_stream = build_select_stream_with_ctx(input, &[value_expr_ir], ctx)?;
+                let repeats_stream = build_select_stream_with_ctx(input, &[repeats_expr_ir], ctx)?;
+
+                let output_schema = ctx.phys_sm[first_stream.node].output_schema.clone();
+                let repeat_kind = PhysNodeKind::Repeat {
+                    value: value_stream,
+                    repeats: repeats_stream,
+                };
+                let repeat_node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(output_schema.clone(), repeat_kind));
+
+                let concat_kind = PhysNodeKind::OrderedUnion {
+                    inputs: vec![first_stream, PhysStream::first(repeat_node_key)],
+                };
+                let concat_node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(output_schema, concat_kind));
+                input_streams.insert(PhysStream::first(concat_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 

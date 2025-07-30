@@ -733,8 +733,8 @@ pub(super) fn convert_functions(
         },
         F::Append { upcast } => I::Append { upcast },
         F::ShiftAndFill => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
-            polars_ensure!(&e[2].is_scalar(ctx.arena), ComputeError: "'fill_value' must be scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
+            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
             I::ShiftAndFill
         },
         F::Shift => I::Shift,
@@ -764,8 +764,8 @@ pub(super) fn convert_functions(
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
         F::Repeat => {
-            polars_ensure!(&e[0].is_scalar(ctx.arena), ComputeError: "'value' must be scalar value");
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[0].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             I::Repeat
         },
         #[cfg(feature = "round_series")]
@@ -807,7 +807,7 @@ pub(super) fn convert_functions(
         F::ShrinkType => I::ShrinkType,
         #[cfg(feature = "diff")]
         F::Diff(n) => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             I::Diff(n)
         },
         #[cfg(feature = "pct_change")]
@@ -981,7 +981,11 @@ pub(super) fn convert_functions(
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
         F::Reinterpret(v) => I::Reinterpret(v),
-        F::ExtendConstant => I::ExtendConstant,
+        F::ExtendConstant => {
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
+            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
+            I::ExtendConstant
+        }
     };
 
     let mut options = ir_function.function_options();
