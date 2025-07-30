@@ -699,7 +699,7 @@ class StringNameSpace:
                 .to_series()
             )
 
-        return wrap_s(self._s.str_json_decode(dtype, infer_schema_length))
+        return wrap_s(self._s.str_json_decode(infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """

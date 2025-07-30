@@ -519,6 +519,7 @@ impl PySeries {
         })
     }
 
+    #[cfg(feature = "extract_jsonpath")]
     fn str_json_decode(
         &self,
         py: Python<'_>,
