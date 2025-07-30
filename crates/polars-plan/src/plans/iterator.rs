@@ -141,9 +141,9 @@ impl Expr {
         push_expr!(self, container, push, push, iter);
     }
 
-    pub fn nodes_owned(self, container: &mut UnitVec<Expr>) {
-        let push_arc = |c: &mut UnitVec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
-        let push_owned = |c: &mut UnitVec<Expr>, e: Expr| c.push(e);
+    pub fn nodes_owned(self, container: &mut Vec<Expr>) {
+        let push_arc = |c: &mut Vec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
+        let push_owned = |c: &mut Vec<Expr>, e: Expr| c.push(e);
         push_expr!(self, container, push_arc, push_owned, into_iter);
     }
 
