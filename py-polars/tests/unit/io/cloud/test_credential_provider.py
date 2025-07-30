@@ -4,6 +4,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -368,12 +369,12 @@ def test_credential_provider_python_builder_cache(
         }, None
 
     with monkeypatch.context() as cx:
-        init_tracker = TrackCallCount(pl.CredentialProviderAWS.__init__)
+        provider_init = Mock(wraps=pl.CredentialProviderAWS.__init__)
 
         cx.setattr(
             pl.CredentialProviderAWS,
             "__init__",
-            init_tracker.get_function(),
+            lambda *a, **kw: provider_init(*a, **kw),
         )
 
         cx.setattr(
@@ -393,17 +394,17 @@ def test_credential_provider_python_builder_cache(
                 credential_provider="auto",
             )
 
-        assert init_tracker.count == 0
+        assert provider_init.call_count == 0
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 1
+        assert provider_init.call_count == 1
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 1
+        assert provider_init.call_count == 1
 
         with pytest.raises(OSError):
             pl.scan_parquet(
@@ -415,12 +416,12 @@ def test_credential_provider_python_builder_cache(
                 credential_provider="auto",
             ).collect()
 
-        assert init_tracker.count == 2
+        assert provider_init.call_count == 2
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 2
+        assert provider_init.call_count == 2
 
         cx.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
 
@@ -429,12 +430,12 @@ def test_credential_provider_python_builder_cache(
 
         # Note: Increments by 2 due to Rust-side object store rebuilding.
 
-        assert init_tracker.count == 4
+        assert provider_init.call_count == 4
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert init_tracker.count == 6
+        assert provider_init.call_count == 6
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -468,45 +469,47 @@ def test_credential_provider_python_builder_cache(
 def test_credential_provider_python_credentials_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def dummy_static_aws_credentials(*a: Any, **kw: Any) -> Any:
-        return {
-            "aws_access_key_id": "...",
-            "aws_secret_access_key": "...",
-        }, None
-
-    tracker = TrackCallCount(dummy_static_aws_credentials)
+    credentials_func = Mock(
+        wraps=lambda: (
+            {
+                "aws_access_key_id": "...",
+                "aws_secret_access_key": "...",
+            },
+            None,
+        )
+    )
 
     monkeypatch.setattr(
         pl.CredentialProviderAWS,
         "retrieve_credentials_impl",
-        tracker.get_function(),
+        credentials_func,
     )
 
-    assert tracker.count == 0
+    assert credentials_func.call_count == 0
 
     provider = pl.CredentialProviderAWS()
 
     provider()
-    assert tracker.count == 1
+    assert credentials_func.call_count == 1
 
     provider()
-    assert tracker.count == 1
+    assert credentials_func.call_count == 1
 
     monkeypatch.setenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING", "1")
 
     provider()
-    assert tracker.count == 2
+    assert credentials_func.call_count == 2
 
     provider()
-    assert tracker.count == 3
+    assert credentials_func.call_count == 3
 
     monkeypatch.delenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING")
 
     provider()
-    assert tracker.count == 4
+    assert credentials_func.call_count == 4
 
     provider()
-    assert tracker.count == 4
+    assert credentials_func.call_count == 4
 
     assert provider._cached_credentials.get() is not None
     assert pickle.loads(pickle.dumps(provider))._cached_credentials.get() is None
@@ -528,19 +531,6 @@ def test_credential_provider_python_credentials_cache(
         },
         None,
     )
-
-
-class TrackCallCount:  # noqa: D101
-    def __init__(self, func: Any) -> None:
-        self.func = func
-        self.count = 0
-
-    def get_function(self) -> Any:
-        def f(*a: Any, **kw: Any) -> Any:
-            self.count += 1
-            return self.func(*a, **kw)
-
-        return f
 
 
 def test_no_pickle_option() -> None:
@@ -789,33 +779,37 @@ def test_user_gcp_token_provider(
 
 
 def test_auto_init_cache_key_memoize(monkeypatch: pytest.MonkeyPatch) -> None:
-    tracker = TrackCallCount(AutoInit.get_cache_key_impl)
-    monkeypatch.setattr(AutoInit, "get_cache_key_impl", tracker.get_function())
+    get_cache_key_impl = Mock(wraps=AutoInit.get_cache_key_impl)
+    monkeypatch.setattr(
+        AutoInit,
+        "get_cache_key_impl",
+        lambda *a, **kw: get_cache_key_impl(*a, **kw),
+    )
 
     v = AutoInit(int)
 
-    assert tracker.count == 0
+    assert get_cache_key_impl.call_count == 0
 
     v.get_or_init_cache_key()
-    assert tracker.count == 1
+    assert get_cache_key_impl.call_count == 1
 
     v.get_or_init_cache_key()
-    assert tracker.count == 1
+    assert get_cache_key_impl.call_count == 1
 
 
 def test_cached_credential_provider_returns_copied_creds() -> None:
-    tracker = TrackCallCount(lambda: ({"A": "A"}, None))
-    provider = CachedCredentialProvider(tracker.get_function())
+    provider_func = Mock(wraps=lambda: ({"A": "A"}, None))
+    provider = CachedCredentialProvider(provider_func)
 
-    assert tracker.count == 0
+    assert provider_func.call_count == 0
 
     provider()
     assert provider() == ({"A": "A"}, None)
 
-    assert tracker.count == 1
+    assert provider_func.call_count == 1
 
     provider()[0]["B"] = "B"
 
     assert provider() == ({"A": "A"}, None)
 
-    assert tracker.count == 1
+    assert provider_func.call_count == 1
