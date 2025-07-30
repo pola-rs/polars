@@ -56,10 +56,7 @@ pub enum IRStringFunction {
     LenChars,
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
-    JsonDecode {
-        dtype: Option<DataType>,
-        infer_schema_len: Option<usize>,
-    },
+    JsonDecode(DataType),
     #[cfg(feature = "extract_jsonpath")]
     JsonPathMatch,
     #[cfg(feature = "regex")]
@@ -159,7 +156,7 @@ impl IRStringFunction {
             #[cfg(feature = "regex")]
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
-            JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            JsonDecode(dtype) => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
@@ -252,10 +249,7 @@ impl IRStringFunction {
             #[cfg(feature = "regex")]
             S::Find { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
             #[cfg(feature = "extract_jsonpath")]
-            S::JsonDecode { dtype: Some(_), .. } => FunctionOptions::elementwise(),
-            // because dtype should be inferred only once and be consistent over chunks/morsels.
-            #[cfg(feature = "extract_jsonpath")]
-            S::JsonDecode { dtype: None, .. } => FunctionOptions::elementwise_with_infer(),
+            S::JsonDecode { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_jsonpath")]
             S::JsonPathMatch => FunctionOptions::elementwise(),
             S::LenBytes | S::LenChars => FunctionOptions::elementwise(),
@@ -332,7 +326,7 @@ impl Display for IRStringFunction {
             Head => "head",
             Tail => "tail",
             #[cfg(feature = "extract_jsonpath")]
-            JsonDecode { .. } => "json_decode",
+            JsonDecode(..) => "json_decode",
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
@@ -493,10 +487,7 @@ impl From<IRStringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
             #[cfg(feature = "extract_jsonpath")]
-            JsonDecode {
-                dtype,
-                infer_schema_len,
-            } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            JsonDecode(dtype) => map!(strings::json_decode, dtype.clone()),
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
@@ -1211,11 +1202,10 @@ pub(super) fn to_decimal(s: &Column, infer_len: usize) -> PolarsResult<Column> {
 #[cfg(feature = "extract_jsonpath")]
 pub(super) fn json_decode(
     s: &Column,
-    dtype: Option<DataType>,
-    infer_schema_len: Option<usize>,
+    dtype: DataType,
 ) -> PolarsResult<Column> {
     let ca = s.str()?;
-    ca.json_decode(dtype, infer_schema_len).map(Column::from)
+    ca.json_decode(Some(dtype), None).map(Column::from)
 }
 
 #[cfg(feature = "extract_jsonpath")]

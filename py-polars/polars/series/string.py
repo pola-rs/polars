@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
+from polars._utils.wrap import wrap_s
 from polars.datatypes import Int64
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
@@ -689,6 +691,15 @@ class StringNameSpace:
                 {2,false}
         ]
         """
+        if dtype is not None:
+            return (
+                wrap_s(self._s)
+                .to_frame()
+                .select_seq(F.col(self.name).str.json_decode(dtype))
+                .to_series()
+            )
+
+        return wrap_s(self._s.str_json_decode(dtype, infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
