@@ -714,3 +714,25 @@ def test_scan_delta_storage_options_from_delta_table(
         assert_frame_equal(q.collect(), df)
 
     assert storage_options_checked
+
+
+def test_scan_delta_loads_aws_profile_endpoint_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    cfg_file_path = tmp_path / "config"
+
+    cfg_file_path.write_text("""\
+[profile endpoint_333]
+aws_access_key_id=A
+aws_secret_access_key=A
+endpoint_url = http://localhost:333
+""")
+
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
+    monkeypatch.setenv("AWS_PROFILE", "endpoint_333")
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        pl.scan_delta("s3://.../...")
