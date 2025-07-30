@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
-from polars.series.utils import expr_dispatch
+from polars.series.utils import call_expr, expr_dispatch
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
@@ -922,20 +922,15 @@ class ListNameSpace:
         │ 0   ┆ 1   ┆ null  │
         └─────┴─────┴───────┘
         """
-        s = wrap_s(self._s)
-        return (
-            s.to_frame()
-            .select(
-                F.col(s.name).list.to_struct(
-                    # note: in eager mode, 'upper_bound' is always None, as (unlike
-                    # in lazy mode) there is no need to determine/track the schema.
-                    n_field_strategy,
-                    fields,
-                    _eager=True,
-                )
+        if isinstance(fields, Sequence):
+            return (
+                wrap_s(self._s)
+                .to_frame()
+                .select_seq(F.col(self.name).list.to_struct(fields=fields))
+                .to_series()
             )
-            .to_series()
-        )
+
+        return wrap_s(self._s.list_to_struct(n_field_strategy, fields))
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Series:
         """
