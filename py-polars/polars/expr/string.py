@@ -1308,7 +1308,7 @@ class ExprStringNameSpace:
             )
 
         dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
-        return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
+        return wrap_expr(self._pyexpr.str_json_decode(dtype))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """

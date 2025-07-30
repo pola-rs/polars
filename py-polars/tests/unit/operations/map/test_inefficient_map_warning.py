@@ -197,10 +197,6 @@ TEST_CASES = [
         """pl.col("b").str.zfill(8)""",
     ),
     # ---------------------------------------------
-    # json expr: load/extract
-    # ---------------------------------------------
-    ("c", "lambda x: json.loads(x)", 'pl.col("c").str.json_decode()'),
-    # ---------------------------------------------
     # replace
     # ---------------------------------------------
     ("a", "lambda x: MY_DICT[x]", 'pl.col("a").replace_strict(MY_DICT)'),
