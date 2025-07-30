@@ -985,7 +985,7 @@ pub(super) fn convert_functions(
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             I::ExtendConstant
-        }
+        },
     };
 
     let mut options = ir_function.function_options();
