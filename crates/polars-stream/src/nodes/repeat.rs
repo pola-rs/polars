@@ -128,7 +128,7 @@ impl ComputeNode for RepeatNode {
                         }
                         wait_group.wait().await;
                     }
-                    
+
                     Ok(())
                 }));
             },
