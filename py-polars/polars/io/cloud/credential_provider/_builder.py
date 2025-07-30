@@ -6,9 +6,10 @@ import threading
 from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
 import polars._utils.logging
+from polars._utils.cache import LRUCache
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
-from polars.io.cloud._utils import LRUCache, NoPickleOption
+from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
     CachingCredentialProvider,
     CredentialProvider,
@@ -167,7 +168,7 @@ class CredentialProviderBuilderImpl(abc.ABC):
         return f"{provider_repr} @ {builder_name}"
 
 
-# Wraps an already ininitialized credential provider into the builder interface.
+# Wraps an already initialized credential provider into the builder interface.
 # Used for e.g. user-provided credential providers.
 class InitializedCredentialProvider(CredentialProviderBuilderImpl):
     """Wraps an already initialized credential provider."""
@@ -221,10 +222,10 @@ def _auto_init_with_cache(
         cache_key = get_cache_key_func()
 
         try:
-            provider = AUTO_INIT_LRU_CACHE.get(cache_key)
+            provider = AUTO_INIT_LRU_CACHE[cache_key]
         except KeyError:
             provider = build_provider_func()
-            AUTO_INIT_LRU_CACHE.insert(cache_key, provider)
+            AUTO_INIT_LRU_CACHE[cache_key] = provider
 
         return provider
 
