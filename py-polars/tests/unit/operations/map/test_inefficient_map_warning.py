@@ -377,7 +377,15 @@ def test_parse_apply_raw_functions() -> None:
         match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
         for expr in (
-            pl.col("value").str.json_decode(),
+            pl.col("value").str.json_decode(
+                pl.Struct(
+                    {
+                        "a": pl.Int64,
+                        "b": pl.Boolean,
+                        "c": pl.String,
+                    }
+                )
+            ),
             pl.col("value").map_elements(
                 json.loads,
                 return_dtype=pl.Struct(
