@@ -642,8 +642,7 @@ fn lower_exprs_with_ctx(
                 let repeats_expr_ir = inner_exprs[2].clone();
 
                 // Cast the value if necessary.
-                if value_expr_ir.dtype(input_schema, Context::Default, ctx.expr_arena)?
-                    != out_dtype
+                if value_expr_ir.dtype(input_schema, Context::Default, ctx.expr_arena)? != out_dtype
                 {
                     let cast_expr = AExpr::Cast {
                         expr: value_expr_ir.node(),
