@@ -20,7 +20,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_write_json() -> None:
@@ -632,3 +632,11 @@ def test_ndjson_22229() -> None:
     ]
 
     assert pl.read_ndjson(io.StringIO("\n".join(li))).to_dict(as_series=False)
+
+
+def test_json_encode_enum_23826() -> None:
+    s = pl.Series("a", ["b"], dtype=pl.Enum(["b"]))
+    assert_series_equal(
+        s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
+        pl.Series("c", ['{"a":"0"}'], pl.String),
+    )
