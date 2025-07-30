@@ -41,17 +41,17 @@ ctx= plc.ComputeContext(
 
 ## Service Account Management
 
-Service accounts provide programmatic workspace access for automation, API integrations, and
-scheduled workflows. Each service account generates an authentication token with workspace-scoped
-permissions.
+Service accounts allow scripts to authenticate without human intervention. Each service account
+generates an authentication token with workspace-scoped permissions.
 
-Use descriptive token descriptions to maintain clear access audit trails. Refer to the "Use service
-accounts" section for implementation patterns and security best practices.
+Use clear and descriptive names that match your project structure or data domain to improve clarity.
+Refer to the [Use service accounts](../explain/service-accounts.md) section for implementation
+patterns and security best practices.
 
 ## Disable workspace
 
-Workspace admins can disable workspaces removing all data, terminating active processes, and revokes
-all access tokens. This action cannot be reversed.
+Workspace admins can disable workspaces removing all data, terminating active processes, and
+revoking all access tokens. This action cannot be reversed.
 
 Ensure data export and backup completion before disabling workspaces containing critical datasets or
 analysis artifacts.

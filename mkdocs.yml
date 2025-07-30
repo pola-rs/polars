@@ -118,6 +118,7 @@ nav:
           - Organizations:
                 - polars-cloud/organization/organizations.md
                 - polars-cloud/organization/billing.md
+                - polars-cloud/organization/members.md
           - Workspaces:
                 - polars-cloud/workspace/settings.md
                 - polars-cloud/workspace/team.md

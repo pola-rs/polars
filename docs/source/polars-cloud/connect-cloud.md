@@ -10,7 +10,7 @@ workspaces and team access.
 
 When you first access the Polars Cloud dashboard with a new account, you'll see a notification
 indicating your environment requires AWS connection. While you can explore the interface in this
-state, query execution requires completing the setup process.
+state, executing queries requires completing the setup process.
 
 ![An overview of the Polars Cloud dashboard showing a button to connect your cloud environment](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/dashboard.png)
 
