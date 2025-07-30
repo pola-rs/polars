@@ -1,7 +1,7 @@
 # Configure settings
 
-Workspace settings control default settings for resource allocation defaults and programmatic access
-for your teams.
+On the workspace settings page you can set cluster defaults, create labels, add service accounts and
+change other workspace related settings.
 
 ## Workspace configuration
 
