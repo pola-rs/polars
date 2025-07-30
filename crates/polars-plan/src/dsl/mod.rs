@@ -1511,13 +1511,6 @@ impl Expr {
         self.map_unary(BooleanFunction::All { ignore_nulls })
     }
 
-    /// Shrink numeric columns to the minimal required datatype
-    /// needed to fit the extrema of this [`Series`].
-    /// This can be used to reduce memory pressure.
-    pub fn shrink_dtype(self) -> Self {
-        self.map_unary(FunctionExpr::ShrinkType)
-    }
-
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
