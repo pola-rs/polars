@@ -6502,7 +6502,7 @@ class DataFrame:
     def pipe_columns(
         self,
         column_names: str | Sequence[str],
-        function: Callable[Series, Series],
+        function: Callable[[Series], Series],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> DataFrame:
