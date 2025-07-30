@@ -116,7 +116,7 @@ pub(crate) fn call_lambda_with_series(
 pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,
-    output_type: Option<DataTypeExpr>,
+    output_type: DataTypeExpr,
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {

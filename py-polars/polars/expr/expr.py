@@ -4386,9 +4386,12 @@ class Expr:
         function
             Lambda/function to apply.
         return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be inferred based on the first non-null value
-            that is returned by the function.
+            Datatype of the output Series.
+            If not set, the dtype is assumed to same as the input type.
+
+            .. versionchanged: 1.33.0
+                Previously, this would try to infer the datatype. Now, it defaults to
+                expecting the same input type as the input type.
         agg_list
             First implode when in a group-by aggregation.
 
@@ -4542,9 +4545,12 @@ Consider using {self}.implode() instead"""
         function
             Lambda/function to map.
         return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be inferred based on the first non-null value
-            that is returned by the function.
+            Datatype of the output Series.
+            If not set, the dtype is assumed to same as the input type.
+
+            .. versionchanged: 1.33.0
+                Previously, this would try to infer the datatype. Now, it defaults to
+                expecting the same input type as the input type.
         skip_nulls
             Don't map the function over values that contain nulls (this is faster).
         pass_name

@@ -710,9 +710,9 @@ impl PyExpr {
     ) -> Self {
         let output_type = if is_ufunc {
             debug_assert!(output_type.is_none());
-            Some(DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc)))
+            DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc))
         } else {
-            output_type.map(|v| v.inner)
+            output_type.map_or(DataTypeExpr::SelfDtype, |v| v.inner)
         };
         map_single(self, lambda, output_type, is_elementwise, returns_scalar)
     }

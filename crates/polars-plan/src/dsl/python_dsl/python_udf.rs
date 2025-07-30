@@ -5,7 +5,6 @@ use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
-use polars_core::prelude::UnknownKind;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
@@ -27,7 +26,7 @@ pub use polars_utils::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VE
 
 pub struct PythonUdfExpression {
     python_function: PyObject,
-    output_type: Option<DataTypeExpr>,
+    output_type: DataTypeExpr,
     materialized_output_type: OnceLock<DataType>,
     is_elementwise: bool,
     returns_scalar: bool,
@@ -36,11 +35,11 @@ pub struct PythonUdfExpression {
 impl PythonUdfExpression {
     pub fn new(
         lambda: PyObject,
-        output_type: Option<impl Into<DataTypeExpr>>,
+        output_type: impl Into<DataTypeExpr>,
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
-        let output_type = output_type.map(Into::into);
+        let output_type = output_type.into();
         Self {
             python_function: lambda,
             output_type,
@@ -61,7 +60,7 @@ impl PythonUdfExpression {
 
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
-        let (output_type, is_elementwise, returns_scalar): (Option<DataTypeExpr>, bool, bool) =
+        let (output_type, is_elementwise, returns_scalar): (DataTypeExpr, bool, bool) =
             pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         let buf = &buf[reader.position() as usize..];
@@ -89,12 +88,11 @@ impl ColumnsUdf for PythonUdfExpression {
         input_schema: &Schema,
         self_dtype: Option<&DataType>,
     ) -> PolarsResult<()> {
-        if let Some(output_type) = self.output_type.as_ref() {
-            let dtype = output_type
-                .clone()
-                .into_datatype_with_opt_self(input_schema, self_dtype)?;
-            self.materialized_output_type.get_or_init(|| dtype);
-        }
+        let dtype = self
+            .output_type
+            .clone()
+            .into_datatype_with_opt_self(input_schema, self_dtype)?;
+        self.materialized_output_type.get_or_init(|| dtype);
         Ok(())
     }
 
@@ -149,14 +147,14 @@ impl ColumnsUdf for PythonUdfExpression {
 
 /// Serializable version of [`GetOutput`] for Python UDFs.
 pub struct PythonGetOutput {
-    return_dtype: Option<DataTypeExpr>,
+    return_dtype: DataTypeExpr,
     materialized_output_type: OnceLock<DataType>,
 }
 
 impl PythonGetOutput {
-    pub fn new(return_dtype: Option<impl Into<DataTypeExpr>>) -> Self {
+    pub fn new(return_dtype: impl Into<DataTypeExpr>) -> Self {
         Self {
-            return_dtype: return_dtype.map(Into::into),
+            return_dtype: return_dtype.into(),
             materialized_output_type: OnceLock::new(),
         }
     }
@@ -170,7 +168,7 @@ impl PythonGetOutput {
         let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
-        let return_dtype: Option<DataTypeExpr> =
+        let return_dtype: DataTypeExpr =
             pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         Ok(Arc::new(Self::new(return_dtype)) as Arc<dyn FunctionOutputField>)
@@ -189,14 +187,10 @@ impl FunctionOutputField for PythonGetOutput {
         let return_dtype = match self.materialized_output_type.get() {
             Some(dtype) => dtype.clone(),
             None => {
-                let dtype = if let Some(output_type) = self.return_dtype.as_ref() {
-                    output_type
-                        .clone()
-                        .into_datatype_with_self(input_schema, fields[0].dtype())?
-                } else {
-                    DataType::Unknown(UnknownKind::Any)
-                };
-
+                let dtype = self
+                    .return_dtype
+                    .clone()
+                    .into_datatype_with_self(input_schema, fields[0].dtype())?;
                 self.materialized_output_type.get_or_init(|| dtype.clone());
                 dtype
             },
