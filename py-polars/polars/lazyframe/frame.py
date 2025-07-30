@@ -7957,7 +7957,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         context: pc.ComputeContext | None = None,
         plan_type: pc._typing.PlanTypePreference = "dot",
-    ) -> pc.LazyFrameExt:
+    ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
 
@@ -8010,7 +8010,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────────┘
 
         """
-        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
+        return pc.LazyFrameRemote(lf=self, context=context, plan_type=plan_type)
 
     @unstable()
     def match_to_schema(

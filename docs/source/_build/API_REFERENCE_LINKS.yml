@@ -186,7 +186,7 @@ python:
   write_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_parquet.html
   Workspace: https://docs.cloud.pola.rs/reference/workspace/workspace.html
   ComputeContext: https://docs.cloud.pola.rs/reference/compute/compute.html
-  LazyFrameExt: https://docs.cloud.pola.rs/reference/query/lazyframeext.html
+  LazyFrameRemote: https://docs.cloud.pola.rs/reference/query/lazyframe_remote.html
   QueryResult: https://docs.cloud.pola.rs/reference/query/query_result.html
   InteractiveQuery: https://docs.cloud.pola.rs/reference/query/interactive_query.html
   BatchQuery: https://docs.cloud.pola.rs/reference/query/batch_query.html

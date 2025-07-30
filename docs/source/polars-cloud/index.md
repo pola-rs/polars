@@ -40,7 +40,7 @@ pip install polars polars_cloud
 To run your query in the cloud, simply write Polars queries like you are used to, but call
 `LazyFrame.remote()` to indicate that the query should be run remotely.
 
-{{code_block('polars-cloud/index','index',['ComputeContext','LazyFrameExt'])}}
+{{code_block('polars-cloud/index','index',['ComputeContext','LazyFrameRemote'])}}
 
 ## Sign up today and start for free
 
