@@ -4410,6 +4410,11 @@ class Expr:
         We allow this, but it is considered a bug in the user's query. In the
         future this will raise in `Lazy` queries.
 
+        Notes
+        -----
+        A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+        or depend on state other than its arguments.
+
         See Also
         --------
         map_elements
@@ -4584,6 +4589,9 @@ Consider using {self}.implode() instead"""
 
         * Window function application using `over` is considered a GroupBy context
           here, so `map_elements` can be used to map functions over window groups.
+
+        * A UDF passed to `map_elements` must be pure, meaning that it cannot modify or
+          depend on state other than its arguments.
 
         Examples
         --------

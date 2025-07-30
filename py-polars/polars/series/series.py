@@ -5772,9 +5772,13 @@ class Series:
 
         Notes
         -----
-        If your function is expensive and you don't want it to be called more than
-        once for a given input, consider applying an `@lru_cache` decorator to it.
-        If your data is suitable you may achieve *significant* speedups.
+        * If your function is expensive and you don't want it to be called more than
+          once for a given input, consider applying an `@lru_cache` decorator to it.
+          If your data is suitable you may achieve *significant* speedups.
+
+        * A UDF passed to `map_elements` must be pure, meaning that it cannot modify
+          or depend on state other than its arguments.
+
 
         Examples
         --------
