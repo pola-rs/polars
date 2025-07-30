@@ -10324,12 +10324,22 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.set_sorted_flag(descending))
 
+    @deprecated(
+        "`Expr.shrink_dtype` is deprecated and is a no-op; use `Series.shrink_dtype` instead."
+    )
     def shrink_dtype(self) -> Expr:
         """
         Shrink numeric columns to the minimal required datatype.
 
         Shrink to the dtype needed to fit the extrema of this [`Series`].
         This can be used to reduce memory pressure.
+
+        .. versionchanged:: 1.33.0
+            Deprecated and turned into a no-op. The operation does not match the
+            Polars data-model during lazy execution since the output datatype
+            cannot be known without inspecting the data.
+
+            Use `Series.shrink_dtype` instead.
 
         Examples
         --------
@@ -10344,7 +10354,7 @@ Consider using {self}.implode() instead"""
         ...         "g": [0.1, 1.32, 0.12],
         ...         "h": [True, None, False],
         ...     }
-        ... ).select(pl.all().shrink_dtype())
+        ... ).select(pl.all().shrink_dtype())  # doctest: +SKIP
         shape: (3, 8)
         ┌─────┬────────────┬────────────┬──────┬──────┬─────┬──────┬───────┐
         │ a   ┆ b          ┆ c          ┆ d    ┆ e    ┆ f   ┆ g    ┆ h     │
@@ -10356,7 +10366,7 @@ Consider using {self}.implode() instead"""
         │ 3   ┆ 8589934592 ┆ 1073741824 ┆ 112  ┆ 129  ┆ c   ┆ 0.12 ┆ false │
         └─────┴────────────┴────────────┴──────┴──────┴─────┴──────┴───────┘
         """
-        return wrap_expr(self._pyexpr.shrink_dtype())
+        return self
 
     @unstable()
     def hist(

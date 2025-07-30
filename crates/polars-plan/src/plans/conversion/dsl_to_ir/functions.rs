@@ -814,7 +814,6 @@ pub(super) fn convert_functions(
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => I::ApproxNUnique,
         F::Coalesce => I::Coalesce,
-        F::ShrinkType => I::ShrinkType,
         #[cfg(feature = "diff")]
         F::Diff(n) => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");

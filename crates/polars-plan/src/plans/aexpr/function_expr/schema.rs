@@ -226,29 +226,6 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
-            ShrinkType => {
-                // we return the smallest type this can return
-                // this might not be correct once the actual data
-                // comes in, but if we set the smallest datatype
-                // we have the least chance that the smaller dtypes
-                // get cast to larger types in type-coercion
-                // this will lead to an incorrect schema in polars
-                // but we because only the numeric types deviate in
-                // bit size this will likely not lead to issues
-                mapper.map_dtype(|dt| {
-                    if dt.is_primitive_numeric() {
-                        if dt.is_float() {
-                            DataType::Float32
-                        } else if dt.is_unsigned_integer() {
-                            DataType::Int8
-                        } else {
-                            DataType::UInt8
-                        }
-                    } else {
-                        dt.clone()
-                    }
-                })
-            },
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),

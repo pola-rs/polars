@@ -448,6 +448,16 @@ impl PySeries {
     pub fn not_(&self, py: Python) -> PyResult<Self> {
         py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series))
     }
+
+    pub fn shrink_dtype(&self, py: Python<'_>) -> PyResult<Self> {
+        py.enter_polars(|| {
+            self.series
+                .shrink_type()
+                .map(Into::into)
+                .map_err(PyPolarsErr::from)
+                .map_err(PyErr::from)
+        })
+    }
 }
 
 macro_rules! impl_set_with_mask {
