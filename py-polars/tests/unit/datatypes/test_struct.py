@@ -276,7 +276,7 @@ def test_list_to_struct() -> None:
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct().to_list() == [
+    assert df.to_series().list.to_struct("max_width").to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
