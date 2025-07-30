@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import copy
-import warnings
 from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
-from polars import exceptions, functions as F
+from polars import exceptions
+from polars import functions as F
 from polars._utils.parse import parse_into_expression
-from polars._utils.various import find_stacklevel, issue_warning
+from polars._utils.various import issue_warning
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
