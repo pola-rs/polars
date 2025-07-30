@@ -14,6 +14,9 @@ from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 
@@ -733,6 +736,23 @@ endpoint_url = http://localhost:333
 
     monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
     monkeypatch.setenv("AWS_PROFILE", "endpoint_333")
+
+    assert (
+        builder := _init_credential_provider_builder(
+            "auto", "s3://.../...", storage_options=None, caller_name="test"
+        )
+    ) is not None
+
+    assert isinstance(
+        provider := builder.build_credential_provider(),
+        pl.CredentialProviderAWS,
+    )
+
+    assert provider._can_use_as_provider()
+
+    assert provider._storage_update_options() == {
+        "endpoint_url": "http://localhost:333"
+    }
 
     with pytest.raises(OSError, match="http://localhost:333"):
         pl.scan_delta("s3://.../...")
