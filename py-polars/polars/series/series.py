@@ -5779,6 +5779,7 @@ class Series:
         * A UDF passed to `map_elements` must be pure, meaning that it cannot modify
           or depend on state other than its arguments.
 
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
