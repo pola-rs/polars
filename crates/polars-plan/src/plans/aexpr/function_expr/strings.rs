@@ -1200,10 +1200,7 @@ pub(super) fn to_decimal(s: &Column, infer_len: usize) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "extract_jsonpath")]
-pub(super) fn json_decode(
-    s: &Column,
-    dtype: DataType,
-) -> PolarsResult<Column> {
+pub(super) fn json_decode(s: &Column, dtype: DataType) -> PolarsResult<Column> {
     let ca = s.str()?;
     ca.json_decode(Some(dtype), None).map(Column::from)
 }

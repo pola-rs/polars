@@ -477,10 +477,7 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_decode(
-        self,
-        dtype: impl Into<DataTypeExpr>,
-    ) -> Expr {
+    pub fn json_decode(self, dtype: impl Into<DataTypeExpr>) -> Expr {
         self.0.map_unary(StringFunction::JsonDecode(dtype.into()))
     }
 

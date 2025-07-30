@@ -692,10 +692,10 @@ class StringNameSpace:
         ]
         """
         if dtype is not None:
+            s = wrap_s(self._s)
             return (
-                wrap_s(self._s)
-                .to_frame()
-                .select_seq(F.col(self.name).str.json_decode(dtype))
+                s.to_frame()
+                .select_seq(F.col(s.name).str.json_decode(dtype))
                 .to_series()
             )
 

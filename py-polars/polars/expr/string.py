@@ -1298,12 +1298,13 @@ class ExprStringNameSpace:
         └─────────────────────┴───────────┘
         """
         if dtype is None:
-            issue_warning(
-                "`Expr.str.json_decode` needs an explicitly given `dtype` otherwise Polars is not able to determine the output type. If you want to eagerly infer datatype you can use `Series.str.json_decode`."
-            )
+            msg = "`Expr.str.json_decode` needs an explicitly given `dtype` otherwise Polars is not able to determine the output type. If you want to eagerly infer datatype you can use `Series.str.json_decode`."
+            raise TypeError(msg)
+
         if infer_schema_length is not None:
             issue_warning(
-                "`Expr.str.json_decode` with `infer_schema_length` is deprecated and has no effect on execution."
+                "`Expr.str.json_decode` with `infer_schema_length` is deprecated and has no effect on execution.",
+                DeprecationWarning,
             )
 
         dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
