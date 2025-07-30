@@ -15,6 +15,7 @@ from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
 from polars.io.cloud.credential_provider._providers import (
+    CachedCredentialProvider,
     CachingCredentialProvider,
     UserProvidedGCPToken,
 )
@@ -510,6 +511,24 @@ def test_credential_provider_python_credentials_cache(
     assert provider._cached_credentials.get() is not None
     assert pickle.loads(pickle.dumps(provider))._cached_credentials.get() is None
 
+    assert provider() == (
+        {
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+        },
+        None,
+    )
+
+    provider()[0]["A"] = "A"
+
+    assert provider() == (
+        {
+            "aws_access_key_id": "...",
+            "aws_secret_access_key": "...",
+        },
+        None,
+    )
+
 
 class TrackCallCount:  # noqa: D101
     def __init__(self, func: Any) -> None:
@@ -781,4 +800,22 @@ def test_auto_init_cache_key_memoize(monkeypatch: pytest.MonkeyPatch) -> None:
     assert tracker.count == 1
 
     v.get_or_init_cache_key()
+    assert tracker.count == 1
+
+
+def test_cached_credential_provider_returns_copied_creds() -> None:
+    tracker = TrackCallCount(lambda: ({"A": "A"}, None))
+    provider = CachedCredentialProvider(tracker.get_function())
+
+    assert tracker.count == 0
+
+    provider()
+    assert provider() == ({"A": "A"}, None)
+
+    assert tracker.count == 1
+
+    provider()[0]["B"] = "B"
+
+    assert provider() == ({"A": "A"}, None)
+
     assert tracker.count == 1
