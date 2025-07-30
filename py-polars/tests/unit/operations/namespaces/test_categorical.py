@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 import pytest
 
 import polars as pl
@@ -236,3 +238,17 @@ def test_cat_slice() -> None:
         "",
         None,
     ]
+
+
+def test_cat_order_flag_csv_read_23823() -> None:
+    data = BytesIO(b"colx,coly\nabc,123\n#not_a_row\nxyz,456")
+    lf = pl.scan_csv(
+        source=data,
+        comment_prefix="#",
+        schema_overrides={"colx": pl.Categorical},
+    )
+    expected = pl.DataFrame(
+        {"colx": ["abc", "xyz"], "coly": [123, 456]},
+        schema_overrides={"colx": pl.Categorical},
+    )
+    assert_frame_equal(expected, lf.sort("colx", descending=False).collect())
