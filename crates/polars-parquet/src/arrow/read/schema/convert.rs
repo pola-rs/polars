@@ -314,7 +314,7 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
 fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> Option<Field> {
     let field_info = type_.get_field_info();
 
-    let metadata: Option<Arc<Metadata>> = field_info.id.map(|x| {
+    let metadata: Option<Arc<Metadata>> = field_info.id.map(|x: i32| {
         Arc::new(
             [(
                 PlSmallStr::from_static("PARQUET:field_id"),

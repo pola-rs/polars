@@ -29,6 +29,9 @@ impl OptimizationRule for ExpandDatasets {
         _expr_arena: &mut Arena<crate::prelude::AExpr>,
         node: Node,
     ) -> PolarsResult<Option<IR>> {
+        // # Note
+        // This function mutates the IR node in-place rather than returning the new IR - the
+        // StackOptimizer will re-call this function otherwise.
         if let IR::Scan {
             sources,
             scan_type,
