@@ -374,12 +374,19 @@ pub fn expand_paths_hive(
                             })
                             .await?;
 
+                        // Since Path::parse() removes any trailing slash ('/'), we may need to restore it
+                        // to calculate the right byte offset
+                        let mut prefix = prefix.to_string();
+                        if addr.ends_with('/') {
+                            prefix.push('/')
+                        };
+
                         paths.sort_unstable();
                         (
                             format_path(
                                 &cloud_location.scheme,
                                 &cloud_location.bucket,
-                                &cloud_location.prefix,
+                                prefix.as_ref(),
                             )
                             .len(),
                             paths,
