@@ -259,7 +259,7 @@ named `polars`, so you can `pip install polars` and `import polars`.
 ## Using custom Rust functions in Python
 
 Extending Polars with UDFs compiled in Rust is easy. We expose PyO3 extensions for `DataFrame` and
-`Series` data structures. See more in https://github.com/pola-rs/pyo3-polars.
+`Series` data structures. See more in https://github.com/pola-rs/polars/tree/main/pyo3-polars.
 
 ## Going big...
 
