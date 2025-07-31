@@ -7,7 +7,7 @@ from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from polars import Series
     from polars._plr import PySeries
@@ -625,6 +625,109 @@ class ArrayNameSpace:
             4
             5
             6
+        ]
+        """
+
+    def concat(
+        self, exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+    ) -> Series:
+        """
+        Horizontally concatenate columns into a single array column.
+
+        Non-array columns are reshaped to a unit-width array. All columns must have
+        a dtype of either `pl.Array(<DataType>, width)` or `pl.<DataType>`.
+
+        .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        exprs
+            Columns to concatenate into a single array column. Accepts expression input.
+            Strings are parsed as column names, other non-expression inputs are parsed as
+            literals.
+        *more_exprs
+            Additional columns to concatenate into a single array column, specified as
+            positional arguments.
+
+
+        Examples
+        --------
+        Concatenate 2 array columns:
+
+        >>> a = pl.Series([[1], [3], None], dtype=pl.Array(pl.Int64, 1))
+        >>> b = pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1))
+        >>> a.arr.concat(b)
+        shape: (3,)
+        Series: '' [array[i64, 2]]
+        [
+            [1, 3]
+            [3, null]
+            null
+        ]
+        >>> a.arr.concat(b[0])
+        shape: (3,)
+        Series: '' [array[i64, 2]]
+        [
+            [1, 3]
+            [3, 3]
+            null
+        ]
+
+        Concatenate non-array columns:
+
+        >>> c = pl.Series([None, 5, 6], dtype=pl.Int64)
+        >>> d = c.reverse()
+        >>> c.arr.concat(d)
+        shape: (3,)
+        Series: '' [array[i64, 2]]
+        [
+            [null, 6]
+            [5, 5]
+            [6, null]
+        ]
+
+        Concatenate mixed array and non-array columns:
+
+        >>> a = pl.Series([[1], [3], None], dtype=pl.Array(pl.Int64, 1))
+        >>> b = pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1))
+        >>> c = pl.Series([None, 5, 6], dtype=pl.Int64)
+        >>> a.arr.concat(b, c)
+        shape: (3,)
+        Series: '' [array[i64, 3]]
+        [
+            [1, 3, null]
+            [3, null, 5]
+            null
+        ]
+
+        Unit-length columns are broadcasted:
+
+        >>> a = pl.Series([1, 3, None], dtype=pl.Int64)
+        >>> a.arr.concat(pl.lit(0, dtype=pl.Int64))
+        shape: (3,)
+        Series: '' [array[i64, 2]]
+        [
+            [1, 0]
+            [3, 0]
+            [null, 0]
+        ]
+        >>> a.arr.concat(pl.lit(a.sum(), dtype=pl.Int64))
+        shape: (3,)
+        Series: '' [array[i64, 2]]
+        [
+            [1, 4]
+            [3, 4]
+            [null, 4]
+        ]
+        >>> a.arr.concat(a.max())
+        shape: (3,)
+        Series: '' [array[i64, 2]]
+        [
+            [1, 3]
+            [3, 3]
+            [null, 3]
         ]
         """
 

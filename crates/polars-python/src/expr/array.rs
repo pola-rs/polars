@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3::pymethods;
 
 use crate::error::PyPolarsErr;
-use crate::expr::PyExpr;
+use crate::expr::{PyExpr, ToExprs};
 
 #[pymethods]
 impl PyExpr {
@@ -154,5 +154,10 @@ impl PyExpr {
 
     fn arr_explode(&self) -> Self {
         self.inner.clone().arr().explode().into()
+    }
+
+    fn arr_concat(&self, input: Vec<PyExpr>) -> Self {
+        let input = input.to_exprs();
+        self.inner.clone().arr().concat(input).into()
     }
 }
