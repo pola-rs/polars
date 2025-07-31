@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import MutableMapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from polars._utils.various import no_default
 
@@ -10,12 +10,14 @@ if TYPE_CHECKING:
     import sys
     from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
 
+    from polars._utils.various import NoDefault
+
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
-T = TypeVar("T")
+D = TypeVar("D")
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -109,7 +111,13 @@ class LRUCache(MutableMapping[K, V]):
         """Clear the cache, removing all items."""
         self._items.clear()
 
-    def get(self, key: K, default: Any = None) -> V:
+    @overload
+    def get(self, key: K, default: None = None) -> V | None: ...
+
+    @overload
+    def get(self, key: K, default: D = ...) -> D: ...
+
+    def get(self, key: K, default: D | V | None = None) -> V | D | None:
         """Return value associated with `key` if present, otherwise return `default`."""
         if key in self:
             # moving accessed items to the end marks them as recently used
@@ -147,7 +155,7 @@ class LRUCache(MutableMapping[K, V]):
             self.popitem()
         self._max_size = n
 
-    def pop(self, key: K, default: Any = no_default) -> V:
+    def pop(self, key: K, default: D | NoDefault = no_default) -> V | D:
         """
         Remove specified key from the cache and return the associated value.
 
