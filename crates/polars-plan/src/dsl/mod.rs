@@ -1239,60 +1239,10 @@ impl Expr {
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     pub fn rolling_map(
         self,
-        f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
-        output_type: GetOutput,
+        f: PlanCallback<Series, Series>,
         options: RollingOptionsFixedWindow,
     ) -> Expr {
-        self.apply_with_fmt_str(
-            move |c: Column| {
-                c.as_materialized_series()
-                    .rolling_map(f.as_ref(), options.clone())
-                    .map(Column::from)
-                    .map(Some)
-            },
-            output_type,
-            "rolling_map",
-        )
-    }
-
-    #[cfg(feature = "rolling_window")]
-    /// Apply a custom function over a rolling/ moving window of the array.
-    /// Prefer this over rolling_apply in case of floating point numbers as this is faster.
-    /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    pub fn rolling_map_float<F>(self, window_size: usize, f: F) -> Expr
-    where
-        F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
-    {
-        self.apply_with_fmt_str(
-            move |c: Column| {
-                let out = match c.dtype() {
-                    DataType::Float64 => c
-                        .f64()
-                        .unwrap()
-                        .rolling_map_float(window_size, f)
-                        .map(|ca| ca.into_column()),
-                    _ => c
-                        .cast(&DataType::Float64)?
-                        .f64()
-                        .unwrap()
-                        .rolling_map_float(window_size, f)
-                        .map(|ca| ca.into_column()),
-                }?;
-                if let DataType::Float32 = c.dtype() {
-                    out.cast(&DataType::Float32).map(Some)
-                } else {
-                    Ok(Some(out))
-                }
-            },
-            GetOutput::map_field(|field| {
-                Ok(match field.dtype() {
-                    DataType::Float64 => field.clone(),
-                    DataType::Float32 => Field::new(field.name().clone(), DataType::Float32),
-                    _ => Field::new(field.name().clone(), DataType::Float64),
-                })
-            }),
-            "rolling_map_float",
-        )
+        self.finish_rolling(options, RollingFunction::Map(f))
     }
 
     #[cfg(feature = "peaks")]

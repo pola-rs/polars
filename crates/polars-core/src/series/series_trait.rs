@@ -612,7 +612,7 @@ pub trait SeriesTrait:
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     fn rolling_map(
         &self,
-        _f: &dyn Fn(&Series) -> Series,
+        _f: &dyn Fn(&Series) -> PolarsResult<Series>,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
         polars_bail!(opq = rolling_map, self._dtype());
