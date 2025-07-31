@@ -140,12 +140,11 @@ impl OptimizationRule for ExpandDatasets {
                             };
 
                             unified_scan_args.cloud_options = cloud_options.clone();
-                            unified_scan_args.rechunk = rechunk.clone();
-                            unified_scan_args.cache = cache.clone();
+                            unified_scan_args.rechunk = *rechunk;
+                            unified_scan_args.cache = *cache;
                             unified_scan_args.cast_columns_policy = cast_columns_policy.clone();
-                            unified_scan_args.missing_columns_policy =
-                                missing_columns_policy.clone();
-                            unified_scan_args.extra_columns_policy = extra_columns_policy.clone();
+                            unified_scan_args.missing_columns_policy = *missing_columns_policy;
+                            unified_scan_args.extra_columns_policy = *extra_columns_policy;
                             unified_scan_args.deletion_files = deletion_files.clone();
                             unified_scan_args.column_mapping = column_mapping.clone();
 
