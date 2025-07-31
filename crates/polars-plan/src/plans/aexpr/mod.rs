@@ -190,7 +190,6 @@ pub enum AExpr {
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: OpaqueColumnUdf,
-        output_type: GetOutput,
         options: FunctionOptions,
         fmt_str: Box<PlSmallStr>,
     },

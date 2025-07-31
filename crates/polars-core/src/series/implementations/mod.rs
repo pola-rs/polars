@@ -210,10 +210,10 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn rolling_map(
                 &self,
-                _f: &dyn Fn(&Series) -> Series,
-                _options: RollingOptionsFixedWindow,
+                f: &dyn Fn(&Series) -> PolarsResult<Series>,
+                options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
-                ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
+                ChunkRollApply::rolling_map(&self.0, f, options).map(|ca| ca.into_series())
             }
 
             fn rename(&mut self, name: PlSmallStr) {

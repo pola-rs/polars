@@ -2,15 +2,15 @@ use polars_core::utils::arrow::bitmap::utils::SlicesIterator;
 
 use super::*;
 
-pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
-        Ok(Some(Column::full_null(
+        Ok(Column::full_null(
             predicate.name().clone(),
             0,
             &IDX_DTYPE,
-        )))
+        ))
     } else {
         let capacity = predicate.sum().unwrap();
         let mut out = Vec::with_capacity(capacity as usize);
@@ -37,6 +37,6 @@ pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Option<Column>> {
             total_offset += arr.len();
         });
         let ca = IdxCa::with_chunk(predicate.name().clone(), IdxArr::from_vec(out));
-        Ok(Some(ca.into_column()))
+        Ok(ca.into_column())
     }
 }

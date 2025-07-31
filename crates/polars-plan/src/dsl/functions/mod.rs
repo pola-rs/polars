@@ -1,7 +1,6 @@
 //! # Functions
 //!
 //! Functions on expressions that might be useful.
-mod arity;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-struct")]
@@ -20,7 +19,6 @@ mod syntactic_sugar;
 #[cfg(feature = "temporal")]
 mod temporal;
 
-pub use arity::*;
 #[cfg(all(feature = "business", feature = "dtype-date"))]
 pub use business::*;
 #[cfg(feature = "dtype-struct")]

@@ -119,9 +119,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                             .collect();
 
-                        Ok(Some(result.into_column()))
+                        Ok(result.into_column())
                     },
-                    GetOutput::from_type(DataType::Int32),
+                    |_, f| Ok(Field::new(f.name().clone(), DataType::Int32)),
                 )
                 // note: the `'solution_map_elements'` alias is just there to show how you
                 // get the same output as in the Python API example.

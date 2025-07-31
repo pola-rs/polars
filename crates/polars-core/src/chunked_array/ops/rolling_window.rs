@@ -87,7 +87,7 @@ mod inner_mod {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         fn rolling_map(
             &self,
-            f: &dyn Fn(&Series) -> Series,
+            f: &dyn Fn(&Series) -> PolarsResult<Series>,
             mut options: RollingOptionsFixedWindow,
         ) -> PolarsResult<Series> {
             check_input(options.window_size, options.min_periods)?;
@@ -144,7 +144,7 @@ mod inner_mod {
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
                         let s = if size == options.window_size {
-                            f(&series_container.multiply(&weights_series).unwrap())
+                            f(&series_container.multiply(&weights_series).unwrap())?
                         } else {
                             let weights_cutoff: Series = match self.dtype() {
                                 DataType::Float64 => weights_series
@@ -160,7 +160,7 @@ mod inner_mod {
                                     .take(series_container.len())
                                     .collect(),
                             };
-                            f(&series_container.multiply(&weights_cutoff).unwrap())
+                            f(&series_container.multiply(&weights_cutoff).unwrap())?
                         };
 
                         let out = self.unpack_series_matching_type(&s)?;
@@ -197,7 +197,7 @@ mod inner_mod {
                         series_container.clear_flags();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
-                        let s = f(&series_container);
+                        let s = f(&series_container)?;
                         let out = self.unpack_series_matching_type(&s)?;
                         builder.append_option(out.get(0));
                     }

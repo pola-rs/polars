@@ -31,7 +31,7 @@ fn test_agg_exprs() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("cars")])
         .agg([(lit(1) - col("A"))
-            .map(|s| Ok(Some(&s * 2)), GetOutput::same_type())
+            .map(|s| Ok(&s * 2), |_, f| Ok(field.clone()))
             .alias("foo")])
         .collect()?;
     let ca = out.column("foo")?.list()?;
@@ -547,12 +547,14 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
     let b = Column::new_scalar("b".into(), Scalar::new(dtype, AnyValue::Null), 3);
     let df = DataFrame::new(vec![a, b]).unwrap();
 
-    let f = move |c: &mut [Column]| reduction_function(std::mem::take(&mut c[0]));
+    let f = BaseColumnUdf::new(
+        move |c: &mut [Column]| reduction_function(std::mem::take(&mut c[0])),
+        |_, fs| Ok(fs[0].clone()),
+    );
 
     let expr = Expr::AnonymousFunction {
         input: vec![col("b")],
         function: LazySerde::Deserialized(SpecialEq::new(Arc::new(f))),
-        output_type: Default::default(),
         options: FunctionOptions::aggregation(),
         fmt_str: Box::new(PlSmallStr::EMPTY),
     };
