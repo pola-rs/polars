@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
 use polars_core::config;
@@ -29,15 +29,16 @@ impl OptimizationRule for ExpandDatasets {
         _expr_arena: &mut Arena<crate::prelude::AExpr>,
         node: Node,
     ) -> PolarsResult<Option<IR>> {
-        // Note: This directly replaces the `node` in the `lp_arena` and always returns `None`.
-        // We use the traversal of `StackOptimizer` but we don't want to be called again.
-        let ir = lp_arena.get(node);
-
         if let IR::Scan {
+            sources,
             scan_type,
             unified_scan_args,
-            ..
-        } = ir
+
+            file_info: _,
+            hive_parts: _,
+            predicate: _,
+            output_schema: _,
+        } = lp_arena.get_mut(node)
         {
             let projection = unified_scan_args.projection.clone();
             let limit = match unified_scan_args.pre_slice.clone() {
@@ -45,14 +46,13 @@ impl OptimizationRule for ExpandDatasets {
                 _ => None,
             };
 
-            match scan_type.as_ref() {
+            match scan_type.as_mut() {
                 #[cfg(feature = "python")]
                 FileScanIR::PythonDataset {
                     dataset_object,
                     cached_ir,
                 } => {
                     let cached_ir = cached_ir.clone();
-
                     let mut guard = cached_ir.lock().unwrap();
 
                     if config::verbose() {
@@ -72,7 +72,7 @@ impl OptimizationRule for ExpandDatasets {
                             let ExpandedDataset {
                                 limit: cached_limit,
                                 projection: cached_projection,
-                                resolved_ir: _,
+                                expanded_dsl: _,
                                 python_scan: _,
                             } = resolved;
 
@@ -83,139 +83,122 @@ impl OptimizationRule for ExpandDatasets {
                     };
 
                     if !can_use_existing {
-                        let plan = dataset_object.to_dataset_scan(limit, projection.as_deref())?;
+                        let expanded_dsl =
+                            dataset_object.to_dataset_scan(limit, projection.as_deref())?;
 
-                        let (resolved_ir, python_scan) = match plan {
-                            DslPlan::Scan {
-                                sources: resolved_sources,
-                                unified_scan_args: resolved_unified_scan_args,
-                                scan_type: resolved_scan_type,
-                                cached_ir: _,
-                            } => {
-                                use crate::dsl::FileScanDsl;
-
-                                let mut ir = ir.clone();
-
-                                let IR::Scan {
-                                    sources,
-                                    scan_type,
-                                    unified_scan_args,
-
-                                    file_info: _,
-                                    hive_parts: _,
-                                    predicate: _,
-                                    output_schema: _,
-                                } = &mut ir
-                                else {
-                                    unreachable!()
-                                };
-
-                                // We only want a few configuration flags from here (e.g. column casting config).
-                                // The rest we either expect to be None (e.g. projection / row_index), or ignore.
-                                let UnifiedScanArgs {
-                                    schema: _,
-                                    cloud_options,
-                                    hive_options: _,
-                                    rechunk,
-                                    cache,
-                                    glob: _,
-                                    projection: _projection @ None,
-                                    row_index: _row_index @ None,
-                                    pre_slice: _pre_slice @ None,
-                                    cast_columns_policy,
-                                    missing_columns_policy,
-                                    extra_columns_policy,
-                                    include_file_paths: _include_file_paths @ None,
-                                    deletion_files,
-                                    column_mapping,
-                                } = *resolved_unified_scan_args
-                                else {
-                                    panic!(
-                                        "invalid scan args from python dataset resolve: {:?}",
-                                        &resolved_unified_scan_args
-                                    )
-                                };
-
-                                unified_scan_args.cloud_options = cloud_options;
-                                unified_scan_args.rechunk = rechunk;
-                                unified_scan_args.cache = cache;
-                                unified_scan_args.cast_columns_policy = cast_columns_policy;
-                                unified_scan_args.missing_columns_policy = missing_columns_policy;
-                                unified_scan_args.extra_columns_policy = extra_columns_policy;
-                                unified_scan_args.deletion_files = deletion_files;
-                                unified_scan_args.column_mapping = column_mapping;
-
-                                *sources = resolved_sources;
-                                *scan_type = Box::new(match *resolved_scan_type {
-                                    #[cfg(feature = "csv")]
-                                    FileScanDsl::Csv { options } => FileScanIR::Csv { options },
-
-                                    #[cfg(feature = "ipc")]
-                                    FileScanDsl::Ipc { options } => FileScanIR::Ipc {
-                                        options,
-                                        metadata: None,
-                                    },
-
-                                    #[cfg(feature = "parquet")]
-                                    FileScanDsl::Parquet { options } => FileScanIR::Parquet {
-                                        options,
-                                        metadata: None,
-                                    },
-
-                                    #[cfg(feature = "json")]
-                                    FileScanDsl::NDJson { options } => {
-                                        FileScanIR::NDJson { options }
-                                    },
-
-                                    #[cfg(feature = "python")]
-                                    FileScanDsl::PythonDataset { dataset_object } => {
-                                        FileScanIR::PythonDataset {
-                                            dataset_object,
-                                            cached_ir: Default::default(),
-                                        }
-                                    },
-
-                                    FileScanDsl::Anonymous {
-                                        options,
-                                        function,
-                                        file_info: _,
-                                    } => FileScanIR::Anonymous { options, function },
-                                });
-
-                                (ir, None)
-                            },
-
-                            DslPlan::PythonScan { options } => (
-                                ir.clone(),
-                                Some(ExpandedPythonScan {
-                                    name: dataset_object.name(),
-                                    scan_fn: options.scan_fn.unwrap(),
-                                    variant: options.python_source,
-                                }),
-                            ),
-
-                            dsl => {
-                                polars_bail!(
-                                    ComputeError:
-                                    "unknown DSL when resolving python dataset scan: {}",
-                                    dsl.display()?
-                                )
-                            },
-                        };
-
-                        let resolved = ExpandedDataset {
+                        *guard = Some(ExpandedDataset {
                             limit,
                             projection,
-                            resolved_ir,
-                            python_scan,
-                        };
-
-                        *guard = Some(resolved);
+                            expanded_dsl,
+                            python_scan: None,
+                        })
                     }
 
-                    let resolved_ir = guard.as_ref().map(|x| x.resolved_ir.clone()).unwrap();
+                    let ExpandedDataset {
+                        limit: _,
+                        projection: _,
+                        expanded_dsl,
+                        python_scan,
+                    } = guard.as_mut().unwrap();
 
-                    lp_arena.replace(node, resolved_ir);
+                    match expanded_dsl {
+                        DslPlan::Scan {
+                            sources: resolved_sources,
+                            unified_scan_args: resolved_unified_scan_args,
+                            scan_type: resolved_scan_type,
+                            cached_ir: _,
+                        } => {
+                            use crate::dsl::FileScanDsl;
+
+                            // We only want a few configuration flags from here (e.g. column casting config).
+                            // The rest we either expect to be None (e.g. projection / row_index), or ignore.
+                            let UnifiedScanArgs {
+                                schema: _,
+                                cloud_options,
+                                hive_options: _,
+                                rechunk,
+                                cache,
+                                glob: _,
+                                projection: _projection @ None,
+                                row_index: _row_index @ None,
+                                pre_slice: _pre_slice @ None,
+                                cast_columns_policy,
+                                missing_columns_policy,
+                                extra_columns_policy,
+                                include_file_paths: _include_file_paths @ None,
+                                deletion_files,
+                                column_mapping,
+                            } = resolved_unified_scan_args.as_ref()
+                            else {
+                                panic!(
+                                    "invalid scan args from python dataset resolve: {:?}",
+                                    &resolved_unified_scan_args
+                                )
+                            };
+
+                            unified_scan_args.cloud_options = cloud_options.clone();
+                            unified_scan_args.rechunk = rechunk.clone();
+                            unified_scan_args.cache = cache.clone();
+                            unified_scan_args.cast_columns_policy = cast_columns_policy.clone();
+                            unified_scan_args.missing_columns_policy =
+                                missing_columns_policy.clone();
+                            unified_scan_args.extra_columns_policy = extra_columns_policy.clone();
+                            unified_scan_args.deletion_files = deletion_files.clone();
+                            unified_scan_args.column_mapping = column_mapping.clone();
+
+                            *sources = resolved_sources.clone();
+
+                            *scan_type = Box::new(match *resolved_scan_type.clone() {
+                                #[cfg(feature = "csv")]
+                                FileScanDsl::Csv { options } => FileScanIR::Csv { options },
+
+                                #[cfg(feature = "ipc")]
+                                FileScanDsl::Ipc { options } => FileScanIR::Ipc {
+                                    options,
+                                    metadata: None,
+                                },
+
+                                #[cfg(feature = "parquet")]
+                                FileScanDsl::Parquet { options } => FileScanIR::Parquet {
+                                    options,
+                                    metadata: None,
+                                },
+
+                                #[cfg(feature = "json")]
+                                FileScanDsl::NDJson { options } => FileScanIR::NDJson { options },
+
+                                #[cfg(feature = "python")]
+                                FileScanDsl::PythonDataset { dataset_object } => {
+                                    FileScanIR::PythonDataset {
+                                        dataset_object,
+                                        cached_ir: Default::default(),
+                                    }
+                                },
+
+                                FileScanDsl::Anonymous {
+                                    options,
+                                    function,
+                                    file_info: _,
+                                } => FileScanIR::Anonymous { options, function },
+                            });
+                        },
+
+                        DslPlan::PythonScan { options } => {
+                            *python_scan = Some(ExpandedPythonScan {
+                                name: dataset_object.name(),
+                                scan_fn: options.scan_fn.clone().unwrap(),
+                                variant: options.python_source.clone(),
+                            })
+                        },
+
+                        dsl => {
+                            polars_bail!(
+                                ComputeError:
+                                "unknown DSL when resolving python dataset scan: {}",
+                                dsl.display()?
+                            )
+                        },
+                    };
                 },
 
                 _ => {},
@@ -230,7 +213,7 @@ impl OptimizationRule for ExpandDatasets {
 pub struct ExpandedDataset {
     limit: Option<usize>,
     projection: Option<Arc<[PlSmallStr]>>,
-    resolved_ir: IR,
+    expanded_dsl: DslPlan,
 
     /// Fallback python scan
     #[cfg(feature = "python")]
@@ -257,7 +240,7 @@ impl Debug for ExpandedDataset {
         let ExpandedDataset {
             limit,
             projection,
-            resolved_ir,
+            expanded_dsl,
 
             #[cfg(feature = "python")]
             python_scan,
@@ -266,8 +249,10 @@ impl Debug for ExpandedDataset {
         return display::ExpandedDataset {
             limit,
             projection,
-            resolved_ir,
-
+            expanded_dsl: &match expanded_dsl.display() {
+                Ok(v) => v.to_string(),
+                Err(e) => e.to_string(),
+            },
             #[cfg(feature = "python")]
             python_scan: python_scan.as_ref().map(
                 |ExpandedPythonScan {
@@ -282,10 +267,12 @@ impl Debug for ExpandedDataset {
         .fmt(f);
 
         mod display {
+            use std::fmt::{Debug, Display};
             use std::sync::Arc;
 
             use polars_utils::pl_str::PlSmallStr;
 
+            use crate::dsl::DslPlan;
             use crate::prelude::IR;
 
             #[derive(Debug)]
@@ -293,7 +280,7 @@ impl Debug for ExpandedDataset {
             pub struct ExpandedDataset<'a> {
                 pub limit: &'a Option<usize>,
                 pub projection: &'a Option<Arc<[PlSmallStr]>>,
-                pub resolved_ir: &'a IR,
+                pub expanded_dsl: &'a str,
 
                 #[cfg(feature = "python")]
                 pub python_scan: Option<PlSmallStr>,
