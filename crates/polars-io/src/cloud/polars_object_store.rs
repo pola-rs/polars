@@ -154,6 +154,10 @@ impl PolarsObjectStore {
     + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
     + use<'a, T> {
         futures::stream::iter(ranges.map(move |range| async move {
+            if range.is_empty() {
+                return Ok(Bytes::new());
+            }
+
             let out = store
                 .get_range(path, range.start as u64..range.end as u64)
                 .await?;
@@ -164,6 +168,10 @@ impl PolarsObjectStore {
     }
 
     pub async fn get_range(&self, path: &Path, range: Range<usize>) -> PolarsResult<Bytes> {
+        if range.is_empty() {
+            return Ok(Bytes::new());
+        }
+
         self.try_exec_rebuild_on_err(move |store| {
             let range = range.clone();
             let st = store.clone();
