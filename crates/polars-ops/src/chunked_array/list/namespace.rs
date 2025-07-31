@@ -826,6 +826,151 @@ pub trait ListNameSpaceImpl: AsList {
         };
         Ok(out)
     }
+
+    /// Zip lists together element-wise into structs.
+    #[cfg(feature = "list_zip")]
+    fn lst_zip(&self, others: &[Column], pad: bool) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+
+        #[cfg(not(feature = "dtype-struct"))]
+        {
+            polars_bail!(ComputeError: "struct dtype not available")
+        }
+
+        #[cfg(feature = "dtype-struct")]
+        {
+            let mut other_list_cas = Vec::with_capacity(others.len());
+            let mut all_inner_types = Vec::with_capacity(others.len() + 1);
+
+            all_inner_types.push(ca.inner_dtype().clone());
+
+            for other in others {
+                let other_ca = other.list().map_err(
+                    |_| polars_err!(ComputeError: "All inputs to lst_zip must be list columns"),
+                )?;
+                all_inner_types.push(other_ca.inner_dtype().clone());
+                other_list_cas.push(other_ca);
+            }
+
+            let field_names: Vec<PlSmallStr> = (0..(others.len() + 1))
+                .map(|i| format!("field_{i}").into())
+                .collect();
+
+            let fields: Vec<Field> = field_names
+                .iter()
+                .zip(all_inner_types.iter())
+                .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
+                .collect();
+
+            let struct_dtype = DataType::Struct(fields);
+
+            let mut iters = Vec::with_capacity(other_list_cas.len());
+            for other_ca in &other_list_cas {
+                iters.push(other_ca.amortized_iter());
+            }
+
+            let mut builder = get_list_builder(
+                &struct_dtype,
+                ca.get_values_size()
+                    + other_list_cas
+                        .iter()
+                        .map(|ca| ca.get_values_size())
+                        .sum::<usize>(),
+                ca.len(),
+                ca.name().clone(),
+            );
+
+            for first_opt in ca.amortized_iter() {
+                match first_opt {
+                    Some(first_list) => {
+                        let mut other_lists = Vec::with_capacity(iters.len());
+                        let mut any_null = false;
+
+                        for iter in &mut iters {
+                            match iter.next().unwrap() {
+                                Some(s) => other_lists.push(s),
+                                None => {
+                                    any_null = true;
+                                    break;
+                                },
+                            }
+                        }
+
+                        if any_null {
+                            builder.append_null();
+                            continue;
+                        }
+
+                        let target_len = if pad {
+                            let mut max_len = first_list.as_ref().len();
+                            for other_list in &other_lists {
+                                max_len = max_len.max(other_list.as_ref().len());
+                            }
+                            max_len
+                        } else {
+                            let mut min_len = first_list.as_ref().len();
+                            for other_list in &other_lists {
+                                min_len = min_len.min(other_list.as_ref().len());
+                            }
+                            min_len
+                        };
+
+                        if target_len == 0 {
+                            let empty_fields: Vec<Series> = field_names
+                                .iter()
+                                .zip(all_inner_types.iter())
+                                .map(|(name, dtype)| Series::new_empty(name.clone(), dtype))
+                                .collect();
+
+                            let struct_chunked =
+                                StructChunked::from_series("".into(), 0, empty_fields.iter())?;
+                            builder.append_series(&struct_chunked.into_series())?;
+                            continue;
+                        }
+
+                        let mut field_series = Vec::with_capacity(field_names.len());
+
+                        let first_field = if pad && first_list.as_ref().len() < target_len {
+                            let null_count = target_len - first_list.as_ref().len();
+                            let extended = first_list.as_ref().clone();
+                            extended.extend_constant(AnyValue::Null, null_count)?
+                        } else {
+                            first_list.as_ref().slice(0, target_len)
+                        };
+                        let mut renamed_first = first_field;
+                        renamed_first.rename(field_names[0].clone());
+                        field_series.push(renamed_first);
+
+                        for (i, other_list) in other_lists.iter().enumerate() {
+                            let field = if pad && other_list.as_ref().len() < target_len {
+                                let null_count = target_len - other_list.as_ref().len();
+                                let extended = other_list.as_ref().clone();
+                                extended.extend_constant(AnyValue::Null, null_count)?
+                            } else {
+                                other_list.as_ref().slice(0, target_len)
+                            };
+                            let mut renamed_field = field;
+                            renamed_field.rename(field_names[i + 1].clone());
+                            field_series.push(renamed_field);
+                        }
+
+                        let struct_chunked =
+                            StructChunked::from_series("".into(), target_len, field_series.iter())?;
+
+                        builder.append_series(&struct_chunked.into_series())?;
+                    },
+                    None => {
+                        for iter in &mut iters {
+                            iter.next().unwrap();
+                        }
+                        builder.append_null();
+                    },
+                }
+            }
+
+            Ok(builder.finish())
+        }
+    }
 }
 
 impl ListNameSpaceImpl for ListChunked {}
