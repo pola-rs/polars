@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -269,13 +269,10 @@ impl Debug for ExpandedDataset {
         .fmt(f);
 
         mod display {
-            use std::fmt::{Debug, Display};
+            use std::fmt::Debug;
             use std::sync::Arc;
 
             use polars_utils::pl_str::PlSmallStr;
-
-            use crate::dsl::DslPlan;
-            use crate::prelude::IR;
 
             #[derive(Debug)]
             #[expect(unused)]
