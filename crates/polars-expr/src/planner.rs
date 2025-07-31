@@ -464,7 +464,6 @@ fn create_physical_expr_inner(
         AnonymousFunction {
             input,
             function,
-            output_type: _,
             options,
             fmt_str: _,
         } => {
@@ -475,10 +474,11 @@ fn create_physical_expr_inner(
 
             let input =
                 create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
+            let function = function.clone().materialize()?;
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function.clone().materialize()?,
+                SpecialEq::new(function.into_inner().as_column_udf()),
                 node_to_expr(expression, expr_arena),
                 *options,
                 state.allow_threading,
@@ -572,9 +572,7 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             let skip_empty = *skip_empty;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| {
-                    c[0].explode(skip_empty).map(Some)
-                },
+                move |c: &mut [polars_core::frame::column::Column]| c[0].explode(skip_empty),
             ) as Arc<dyn ColumnsUdf>);
 
             let field = expr_arena

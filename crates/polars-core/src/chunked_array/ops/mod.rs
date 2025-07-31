@@ -102,7 +102,7 @@ pub trait ChunkBytes {
 pub trait ChunkRollApply: AsRefDataType {
     fn rolling_map(
         &self,
-        _f: &dyn Fn(&Series) -> Series,
+        _f: &dyn Fn(&Series) -> PolarsResult<Series>,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series>
     where

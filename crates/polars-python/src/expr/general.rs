@@ -456,7 +456,7 @@ impl PyExpr {
     fn rechunk(&self) -> Self {
         self.inner
             .clone()
-            .map(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
+            .map(|s| Ok(s.rechunk()), |_, f| Ok(f.clone()))
             .into()
     }
 
@@ -699,21 +699,15 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
+    #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<PyDataTypeExpr>,
         is_elementwise: bool,
         returns_scalar: bool,
-        is_ufunc: bool,
     ) -> Self {
-        let output_type = if is_ufunc {
-            debug_assert!(output_type.is_none());
-            DataTypeExpr::Literal(DataType::Unknown(UnknownKind::Ufunc))
-        } else {
-            output_type.map_or(DataTypeExpr::SelfDtype, |v| v.inner)
-        };
+        let output_type = output_type.map(|v| v.inner);
         map_single(self, lambda, output_type, is_elementwise, returns_scalar)
     }
 

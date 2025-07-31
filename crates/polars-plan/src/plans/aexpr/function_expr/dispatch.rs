@@ -101,33 +101,34 @@ pub(super) fn repeat_by(s: &[Column]) -> PolarsResult<Column> {
         .map(|ok| ok.into_column())
 }
 
-pub(super) fn max_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
-    polars_ops::prelude::max_horizontal(s)
+pub(super) fn max_horizontal(s: &mut [Column]) -> PolarsResult<Column> {
+    assert!(!s.is_empty());
+    polars_ops::prelude::max_horizontal(s).map(|v| v.unwrap())
 }
 
-pub(super) fn min_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
-    polars_ops::prelude::min_horizontal(s)
+pub(super) fn min_horizontal(s: &mut [Column]) -> PolarsResult<Column> {
+    assert!(!s.is_empty());
+    polars_ops::prelude::min_horizontal(s).map(|v| v.unwrap())
 }
 
-pub(super) fn sum_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsResult<Option<Column>> {
+pub(super) fn sum_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsResult<Column> {
+    assert!(!s.is_empty());
     let null_strategy = if ignore_nulls {
         NullStrategy::Ignore
     } else {
         NullStrategy::Propagate
     };
-    polars_ops::prelude::sum_horizontal(s, null_strategy)
+    polars_ops::prelude::sum_horizontal(s, null_strategy).map(|v| v.unwrap())
 }
 
-pub(super) fn mean_horizontal(
-    s: &mut [Column],
-    ignore_nulls: bool,
-) -> PolarsResult<Option<Column>> {
+pub(super) fn mean_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsResult<Column> {
+    assert!(!s.is_empty());
     let null_strategy = if ignore_nulls {
         NullStrategy::Ignore
     } else {
         NullStrategy::Propagate
     };
-    polars_ops::prelude::mean_horizontal(s, null_strategy)
+    polars_ops::prelude::mean_horizontal(s, null_strategy).map(|v| v.unwrap())
 }
 
 pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {

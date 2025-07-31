@@ -706,6 +706,7 @@ pub(super) fn convert_functions(
                         corr_cov_options,
                         is_corr,
                     },
+                    R::Map(f) => IR::Map(f),
                 },
                 options,
             }

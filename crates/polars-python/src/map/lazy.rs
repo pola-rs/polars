@@ -116,12 +116,12 @@ pub(crate) fn call_lambda_with_series(
 pub fn map_single(
     pyexpr: &PyExpr,
     lambda: PyObject,
-    output_type: DataTypeExpr,
+    output_type: Option<DataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,
 ) -> PyExpr {
     let func =
-        python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
+        python_dsl::PythonUdfExpression::new(lambda, is_elementwise, returns_scalar, output_type);
     pyexpr.inner.clone().map_python(func).into()
 }
 
@@ -168,21 +168,21 @@ pub fn map_mul(
 
             // we return an error, because that will become a null value polars lazy apply list
             if map_groups && out.is_none(py) {
-                return Ok(None);
+                polars_bail!(InvalidOperation: "returned none from a UDF");
             }
 
-            Ok(Some(out.to_series(py, &pypolars, "")?.into_column()))
+            Ok(out.to_series(py, &pypolars, "")?.into_column())
         })
     };
 
     let exprs = pyexpr.iter().map(|pe| pe.clone().inner).collect::<Vec<_>>();
 
-    let output_map = GetOutput::map_field(move |fld| {
+    let output_map = move |_: &Schema, f: &[Field]| {
         Ok(match output_type {
-            Some(ref dt) => Field::new(fld.name().clone(), dt.0.clone()),
-            None => fld.clone(),
+            Some(ref dt) => Field::new(f[0].name().clone(), dt.0.clone()),
+            None => f[0].clone(),
         })
-    });
+    };
     if map_groups {
         polars::lazy::dsl::apply_multiple(function, exprs, output_map, returns_scalar).into()
     } else {

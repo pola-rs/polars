@@ -83,8 +83,8 @@ impl TreeWalker for Expr {
             KeepName(expr) => KeepName(am(expr, f)?),
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
-            AnonymousFunction { input, function, output_type, options, fmt_str } => {
-                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options, fmt_str }
+            AnonymousFunction { input, function, options, fmt_str } => {
+                AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             SubPlan(_, _) => self,

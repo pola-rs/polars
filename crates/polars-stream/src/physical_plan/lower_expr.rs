@@ -190,7 +190,6 @@ pub fn is_input_independent_rec(
         AExpr::AnonymousFunction {
             input,
             function: _,
-            output_type: _,
             options: _,
             fmt_str: _,
         }
@@ -319,7 +318,6 @@ pub fn is_length_preserving_rec(
         AExpr::AnonymousFunction {
             input,
             function: _,
-            output_type: _,
             options,
             fmt_str: _,
         }
