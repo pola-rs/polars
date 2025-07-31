@@ -842,18 +842,18 @@ def test_struct_arithmetic_schema() -> None:
 
 
 @pytest.mark.parametrize(
-    "lf",
+    "df",
     [
-        pl.LazyFrame({"a": [10], "b": [20]}),
-        pl.LazyFrame({"a": [10.0], "b": [20.0]}),
+        pl.DataFrame({"a": [10], "b": [20], "c": [30]}),
+        pl.DataFrame({"a": [10.0], "b": [20.0], "c": [30.0]}),
     ],
 )
 @pytest.mark.parametrize(
     "rhs",
     [
-        pl.struct("b"),
-        pl.lit(3),
-        pl.lit(3.0),
+        pl.struct("c"),
+        pl.lit(7),
+        pl.lit(7.0),
     ],
 )
 @pytest.mark.parametrize(
@@ -868,12 +868,19 @@ def test_struct_arithmetic_schema() -> None:
     ],
 )
 def test_struct_arithmetic_schema_match(
-    lf: pl.LazyFrame,
+    df: pl.DataFrame,
     rhs: pl.Expr,
     op: Any,
 ) -> None:
+    # 1 field on the LHS struct
     lhs = pl.struct("a")
-    q = lf.select(op(lhs, rhs))
+    q = df.lazy().select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
+
+    # 2 fields on the LHS struct
+    df = df.with_columns(pl.struct(pl.all()).alias("ab"))
+    lhs = pl.col("ab")
+    q = df.lazy().select(op(lhs, rhs))
     assert q.collect_schema() == q.collect().schema
 
 
