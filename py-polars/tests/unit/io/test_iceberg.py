@@ -53,18 +53,18 @@ class TestIcebergScanIO:
     """Test coverage for `iceberg` scan ops."""
 
     def test_scan_iceberg_plain(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
         }
 
     def test_scan_iceberg_snapshot_id(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
@@ -476,7 +476,7 @@ def test_scan_iceberg_column_deletion(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(
-        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        pl.scan_iceberg(tbl).collect(),
         expect,
     )
 
@@ -687,7 +687,7 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
     tbl.append(arrow_tbl)
 
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
-    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df)
 
     # Change schema
     # Note: Iceberg doesn't allow modifying the "key" part of the Map type.
@@ -802,7 +802,8 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
     assert_frame_equal(
         pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), expect
     )
-    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), expect)
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), expect)
 
 
 @pytest.mark.write_disk
@@ -951,7 +952,7 @@ def test_scan_iceberg_nulls_multiple_nesting(tmp_path: Path) -> None:
     tbl.append(arrow_tbl)
 
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
-    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df)
 
 
 @pytest.mark.write_disk
@@ -1017,7 +1018,7 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
     tbl.append(arrow_tbl)
 
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
-    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df)
 
 
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
@@ -1087,7 +1088,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         sch.move_first("column_1")
 
     assert_frame_equal(
-        pl.scan_iceberg(tbl, reader_override="native").collect().sort("column_3"),
+        pl.scan_iceberg(tbl).collect().sort("column_3"),
         pl.DataFrame(
             {
                 "column_1": ["P", "Q", "R", "S", "T", "U"],
@@ -1096,7 +1097,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         ),
     )
 
-    q = pl.scan_iceberg(tbl, reader_override="native").filter(pl.col("column_3") == 5)
+    q = pl.scan_iceberg(tbl).filter(pl.col("column_3") == 5)
 
     with monkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
