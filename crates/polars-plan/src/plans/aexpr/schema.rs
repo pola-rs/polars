@@ -703,7 +703,12 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
                 "div", a.len(), b.len()
             );
             let mut fields = Vec::with_capacity(a.len());
-            for (left, right) in a.iter().zip(b) {
+            let b_iter: Box<dyn Iterator<Item = &Field>> = if b.len() == 1 {
+                Box::new(std::iter::repeat_n(&b[0], a.len()))
+            } else {
+                Box::new(b.iter())
+            };
+            for (left, right) in a.iter().zip(b_iter) {
                 let name = left.name.clone();
                 let (left, right) = (left.dtype(), right.dtype());
                 if !(left.is_numeric() && right.is_numeric()) {
