@@ -759,6 +759,12 @@ class ExprArrayNameSpace:
         separator = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator, ignore_nulls))
 
+    def concat(self, other: Expr) -> Expr:
+        """
+        Concatenate two arrays elementwise.
+        """
+        return wrap_expr(self._pyexpr.arr_concat(other._pyexpr))
+
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every array element.

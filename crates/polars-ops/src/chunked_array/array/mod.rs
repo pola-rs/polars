@@ -1,5 +1,6 @@
 #[cfg(feature = "array_any_all")]
 mod any_all;
+mod concat;
 mod count;
 mod dispersion;
 mod get;
