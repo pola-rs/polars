@@ -1,15 +1,22 @@
 //! Structures for holding data.
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 use components::row_counter::RowCounter;
 use components::row_deletions::ExternalFilterMask;
 use polars_core::prelude::PlHashMap;
+use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
+use crate::async_executor::AbortOnDropHandle;
+use crate::async_primitives::connector;
+use crate::async_primitives::wait_group::WaitToken;
+use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_file_reader::components;
+use crate::nodes::io_sources::multi_file_reader::pipeline_tasks::bridge::BridgeState;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
 
 /// Anything aside from reading columns from the file. E.g. row_index, slice, predicate etc.
@@ -50,4 +57,10 @@ pub struct ResolvedSliceInfo {
     #[expect(clippy::type_complexity)]
     pub initialized_readers: Option<(usize, VecDeque<(Box<dyn FileReader>, RowCounter)>)>,
     pub row_deletions: PlHashMap<usize, ExternalFilterMask>,
+}
+
+pub struct InitializedPipelineState {
+    pub task_handle: AbortOnDropHandle<PolarsResult<()>>,
+    pub phase_channel_tx: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+    pub bridge_state: Arc<Mutex<BridgeState>>,
 }

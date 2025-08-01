@@ -3,12 +3,12 @@ use std::sync::Arc;
 use polars_error::PolarsResult;
 use polars_utils::slice_enum::Slice;
 
-use super::row_counter::RowCounter;
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::morsel_linearizer::MorselLinearizer;
 use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_file_reader::components::apply_extra_ops::ApplyExtraOps;
+use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
 
 pub struct PostApplyExtraOps {

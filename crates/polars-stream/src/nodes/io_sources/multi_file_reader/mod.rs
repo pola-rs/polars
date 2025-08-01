@@ -8,8 +8,7 @@ pub mod reader_interface;
 
 use std::sync::{Arc, Mutex};
 
-use components::bridge::BridgeState;
-use functions::MultiScanTaskInitializer;
+use pipeline_initialization::MultiScanTaskInitializer;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_utils::format_pl_smallstr;
@@ -24,23 +23,7 @@ use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
-
-enum MultiScanState {
-    Uninitialized {
-        config: Arc<MultiFileReaderConfig>,
-    },
-
-    Initialized {
-        send_phase_tx_to_bridge: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
-        /// Wait group sent to the bridge, only dropped when a disconnect happens at the bridge.
-        wait_group: WaitGroup,
-        bridge_state: Arc<Mutex<BridgeState>>,
-        /// Single join handle for all background tasks. Note, this does not include the bridge.
-        join_handle: AbortOnDropHandle<PolarsResult<()>>,
-    },
-
-    Finished,
-}
+use crate::nodes::io_sources::multi_file_reader::pipeline_tasks::bridge::BridgeState;
 
 pub struct MultiFileReader {
     name: PlSmallStr,
@@ -160,6 +143,23 @@ impl ComputeNode for MultiFileReader {
     }
 }
 
+enum MultiScanState {
+    Uninitialized {
+        config: Arc<MultiFileReaderConfig>,
+    },
+
+    Initialized {
+        send_phase_tx_to_bridge: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+        /// Wait group sent to the bridge, only dropped when a disconnect happens at the bridge.
+        wait_group: WaitGroup,
+        bridge_state: Arc<Mutex<BridgeState>>,
+        /// Single join handle for all background tasks. Note, this does not include the bridge.
+        join_handle: AbortOnDropHandle<PolarsResult<()>>,
+    },
+
+    Finished,
+}
+
 impl MultiScanState {
     /// Initialize state if not yet initialized.
     fn initialize(&mut self, execution_state: &StreamingExecutionState) {
@@ -204,7 +204,7 @@ impl MultiScanState {
     /// Refresh the state. This checks the bridge state if `self` is initialized and updates accordingly.
     async fn refresh(&mut self, verbose: bool) -> PolarsResult<()> {
         use MultiScanState::*;
-        use bridge::StopReason;
+        use pipeline_tasks::bridge::StopReason;
 
         // Take, so that if we error below the state will be left as finished.
         let slf = std::mem::replace(self, MultiScanState::Finished);
@@ -247,41 +247,4 @@ impl MultiScanState {
 
         Ok(())
     }
-}
-
-fn calc_n_readers_pre_init(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
-    if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
-        x.parse::<usize>()
-            .ok()
-            .filter(|x| *x > 0)
-            .unwrap_or_else(|| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {x}"))
-    }) {
-        return v;
-    }
-
-    let max_files_with_slice = match &config.pre_slice {
-        // Calculate the max number of files assuming 1 row per file.
-        Some(v @ Slice::Positive { .. }) => v.end_position().max(1),
-        Some(Slice::Negative { .. }) | None => usize::MAX,
-    };
-
-    // Set this generously high, there are users who scan 10,000's of small files from the cloud.
-    num_pipelines
-        .saturating_add(3)
-        .min(max_files_with_slice)
-        .min(config.sources.len().max(1))
-        .min(128)
-}
-
-fn calc_max_concurrent_scans(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
-    if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
-        x.parse::<usize>()
-            .ok()
-            .filter(|x| *x > 0)
-            .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
-    }) {
-        return v;
-    }
-
-    num_pipelines.min(config.sources.len().max(1)).min(128)
 }

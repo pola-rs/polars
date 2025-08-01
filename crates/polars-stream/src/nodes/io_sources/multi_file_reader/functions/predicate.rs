@@ -2,8 +2,6 @@ use arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
 
-use super::MultiScanTaskInitializer;
-
 impl MultiScanTaskInitializer {
     /// # Returns
     /// `(skip_files_mask, scan_predicate)`

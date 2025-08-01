@@ -1,34 +1,15 @@
 use std::collections::VecDeque;
 
-use components::row_deletions::{DeletionFilesProvider, ExternalFilterMask};
+use components::row_deletions::DeletionFilesProvider;
 use futures::StreamExt;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::PolarsResult;
-use polars_io::RowIndex;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_file_reader::models::ResolvedSliceInfo;
 use crate::nodes::io_sources::multi_file_reader::{MultiFileReaderConfig, components};
-
-pub struct ResolvedSliceInfo {
-    /// In the negative slice case this can be a non-zero starting position.
-    pub scan_source_idx: usize,
-    /// In the negative slice case this will hold a row index with the offset adjusted.
-    pub row_index: Option<RowIndex>,
-    /// Resolved positive slice.
-    pub pre_slice: Option<Slice>,
-    /// If we resolved a negative slice we keep the initialized readers here (with a limit). For
-    /// Parquet this can save a duplicate metadata fetch/decode.
-    ///
-    /// This will be in-order - i.e. `pop_front()` corresponds to the next reader.
-    ///
-    /// `Option(scan_source_idx, Deque(file_reader, n_rows))`
-    #[expect(clippy::type_complexity)]
-    pub initialized_readers: Option<(usize, VecDeque<(Box<dyn FileReader>, RowCounter)>)>,
-    pub row_deletions: PlHashMap<usize, ExternalFilterMask>,
-}
 
 pub async fn resolve_to_positive_slice(
     config: &MultiFileReaderConfig,

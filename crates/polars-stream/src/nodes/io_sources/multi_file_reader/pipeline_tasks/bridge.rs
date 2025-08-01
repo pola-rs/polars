@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 
-use super::reader_interface::output::FileReaderOutputRecv;
 use crate::async_executor::{self, JoinHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::morsel_linearizer::MorselLinearizer;
 use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
+use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
 
 #[expect(clippy::type_complexity)]
 pub fn spawn_bridge(

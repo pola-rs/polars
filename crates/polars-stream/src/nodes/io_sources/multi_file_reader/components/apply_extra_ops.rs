@@ -17,10 +17,10 @@ use crate::nodes::io_sources::multi_file_reader::components::column_selector::{
     ColumnSelector, ColumnSelectorBuilder,
 };
 use crate::nodes::io_sources::multi_file_reader::components::errors::missing_column_err;
+use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
 use crate::nodes::io_sources::multi_file_reader::models;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
-use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 
 /// Apply extra operations onto morsels originating from a reader. This should be initialized
 /// per-reader (it contains e.g. file path).

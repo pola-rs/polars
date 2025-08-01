@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use components::bridge::{BridgeState, spawn_bridge};
+use pipeline_tasks::bridge::{BridgeState, spawn_bridge};
 use polars_error::PolarsResult;
 
 use super::MultiFileReaderConfig;
@@ -8,7 +8,14 @@ use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
 use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::Morsel;
-use crate::nodes::io_sources::multi_file_reader::components;
+use crate::nodes::io_sources::multi_file_reader::models::InitializedPipelineState;
+use crate::nodes::io_sources::multi_file_reader::pipeline_tasks;
+
+pub fn initialize_multi_file_pipeline(
+    config: Arc<MultiFileReaderConfig>,
+) -> InitializedPipelineState {
+    todo!()
+}
 
 pub struct MultiScanTaskInitializer {
     pub(super) config: Arc<MultiFileReaderConfig>,
