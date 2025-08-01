@@ -239,18 +239,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    #[pyo3(signature = (dtype=None, infer_schema_len=None))]
-    fn str_json_decode(
-        &self,
-        dtype: Option<PyDataTypeExpr>,
-        infer_schema_len: Option<usize>,
-    ) -> Self {
-        let dtype = dtype.map(|wrap| wrap.inner);
-        self.inner
-            .clone()
-            .str()
-            .json_decode(dtype, infer_schema_len)
-            .into()
+    fn str_json_decode(&self, dtype: PyDataTypeExpr) -> Self {
+        self.inner.clone().str().json_decode(dtype.inner).into()
     }
 
     #[cfg(feature = "extract_jsonpath")]
