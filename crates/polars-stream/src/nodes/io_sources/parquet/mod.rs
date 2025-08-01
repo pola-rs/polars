@@ -206,9 +206,10 @@ impl FileReader for ParquetFileReader {
         let row_group_prefetch_size = polars_core::config::get_rg_prefetch_size();
 
         // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
-        let min_values_per_thread = std::env::var("POLARS_MIN_VALUES_PER_THREAD")
-            .map(|x| x.parse::<usize>().expect("integer").max(1))
-            .unwrap_or(16_777_216);
+        let target_values_per_thread =
+            std::env::var("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD")
+                .map(|x| x.parse::<usize>().expect("integer").max(1))
+                .unwrap_or(16_777_216);
 
         let is_full_projection = projected_arrow_fields.len() == file_schema.len();
 
@@ -245,7 +246,7 @@ impl FileReader for ParquetFileReader {
             config: io_sources::parquet::Config {
                 num_pipelines,
                 row_group_prefetch_size,
-                min_values_per_thread,
+                target_values_per_thread,
             },
             verbose,
             memory_prefetch_func,
@@ -343,7 +344,7 @@ struct Config {
     row_group_prefetch_size: usize,
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
-    min_values_per_thread: usize,
+    target_values_per_thread: usize,
 }
 
 impl ParquetReadImpl {

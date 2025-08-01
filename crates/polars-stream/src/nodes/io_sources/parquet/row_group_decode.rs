@@ -15,6 +15,7 @@ use polars_io::prelude::_internal::calc_prefilter_cost;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, ParquetType, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::IdxSize;
+use polars_utils::enum_unit_vec::EnumUnitVec;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::row_group_data_fetch::RowGroupData;
@@ -33,7 +34,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) predicate_field_indices: Arc<[usize]>,
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
-    pub(super) min_values_per_thread: usize,
+    pub(super) target_values_per_thread: usize,
 }
 
 impl RowGroupDecoder {
@@ -97,7 +98,7 @@ impl RowGroupDecoder {
             let mask = mask.bool().unwrap();
 
             let filtered =
-                unsafe { filter_cols(df.take_columns(), mask, self.min_values_per_thread) }.await?;
+                filter_cols(df.take_columns(), mask, self.target_values_per_thread).await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -172,31 +173,10 @@ impl RowGroupDecoder {
             }
         };
 
-        let Some((cols_per_thread, _)) = calc_cols_per_thread(
+        let cols_per_thread = calc_cols_per_thread(
             row_group_data.row_group_metadata.num_rows(),
-            projected_arrow_fields.len(),
-            self.min_values_per_thread,
-        ) else {
-            // Single-threaded
-            for s in (0..projected_arrow_fields.len()).map(|i| {
-                let projection = &projected_arrow_fields[get_projected_field_at_output_index(i)];
-
-                let (col, pred_true_mask) = decode_column(
-                    projection.arrow_field(),
-                    row_group_data,
-                    filter.clone(),
-                    expected_num_rows,
-                )?;
-
-                let col = projection.apply_transform(col)?;
-
-                PolarsResult::Ok((col, pred_true_mask))
-            }) {
-                out_vec.push(s?.0)
-            }
-
-            return Ok(());
-        };
+            self.target_values_per_thread,
+        );
 
         let projected_arrow_fields = projected_arrow_fields.clone();
         let row_group_data_2 = row_group_data.clone();
@@ -236,7 +216,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<Vec<_>>>()
+                                .collect::<PolarsResult<EnumUnitVec<_>>>()
                         }
                     }),
             )
@@ -311,27 +291,17 @@ fn decode_column(
     Ok((series.into_column(), pred_true_mask))
 }
 
-/// # Safety
-/// All series in `cols` have the same length.
-async unsafe fn filter_cols(
-    mut cols: Vec<Column>,
+/// Filters columns, in parallel depending number of rows / columns.
+async fn filter_cols(
+    cols: Vec<Column>,
     mask: &BooleanChunked,
-    min_values_per_thread: usize,
+    target_values_per_thread: usize,
 ) -> PolarsResult<Vec<Column>> {
     if cols.is_empty() {
         return Ok(cols);
     }
 
-    let Some((cols_per_thread, _)) =
-        calc_cols_per_thread(cols[0].len(), cols.len(), min_values_per_thread)
-    else {
-        for s in cols.iter_mut() {
-            *s = s.filter(mask)?;
-        }
-
-        return Ok(cols);
-    };
-
+    let cols_per_thread = calc_cols_per_thread(cols[0].len(), target_values_per_thread);
     let mut out_vec = Vec::with_capacity(cols.len());
     let cols = Arc::new(cols);
     let mask = mask.clone();
@@ -344,9 +314,9 @@ async unsafe fn filter_cols(
             let cols = cols.clone();
             let mask = mask.clone();
             async move {
-                (offset..offset + cols_per_thread)
+                (offset..offset.saturating_add(cols_per_thread).min(cols.len()))
                     .map(|i| cols[i].filter(&mask))
-                    .collect::<PolarsResult<Vec<_>>>()
+                    .collect::<PolarsResult<EnumUnitVec<_>>>()
             }
         }))
     };
@@ -358,25 +328,20 @@ async unsafe fn filter_cols(
     Ok(out_vec)
 }
 
-/// Returns `Some((n_cols_per_thread, n_remainder))` if at least 2 tasks with >= `min_values_per_thread` can be created.
-fn calc_cols_per_thread(
-    n_rows_per_col: usize,
-    n_cols: usize,
-    min_values_per_thread: usize,
-) -> Option<(usize, usize)> {
-    let cols_per_thread = 1 + min_values_per_thread / n_rows_per_col.max(1);
+fn calc_cols_per_thread(n_rows_per_col: usize, target_n_rows_per_thread: usize) -> usize {
+    if n_rows_per_col == 0 {
+        return usize::MAX;
+    }
 
-    let cols_per_thread = if n_rows_per_col >= min_values_per_thread {
-        1
+    let n = target_n_rows_per_thread / n_rows_per_col;
+    let floor_distance = target_n_rows_per_thread % n_rows_per_col;
+    let ceil_distance = n_rows_per_col - floor_distance;
+
+    if floor_distance <= ceil_distance {
+        n.max(1)
     } else {
-        cols_per_thread
-    };
-
-    // At least 2 fully saturated tasks according to floordiv.
-    let parallel = n_cols / cols_per_thread >= 2;
-    let remainder = n_cols % cols_per_thread;
-
-    parallel.then_some((cols_per_thread, remainder))
+        n + 1
+    }
 }
 
 // Pre-filtered
@@ -509,7 +474,7 @@ impl RowGroupDecoder {
 
                                     Ok((col, pred_true_mask))
                                 })
-                                .collect::<PolarsResult<Vec<_>>>()
+                                .collect::<PolarsResult<EnumUnitVec<_>>>()
                         }
                     }),
             )
@@ -566,8 +531,7 @@ impl RowGroupDecoder {
             }
 
             let filtered =
-                unsafe { filter_cols(live_df.take_columns(), mask, self.min_values_per_thread) }
-                    .await?;
+                filter_cols(live_df.take_columns(), mask, self.target_values_per_thread).await?;
 
             let filtered_height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -618,12 +582,12 @@ impl RowGroupDecoder {
                     let projected_arrow_fields = projected_arrow_fields.clone();
                     let mask = mask.clone();
                     let mask_bitmap = mask_bitmap.clone();
-                    let max_col = offset
-                        .saturating_add(cols_per_thread)
-                        .min(non_predicate_len);
 
                     async move {
-                        (offset..max_col)
+                        (offset
+                            ..offset
+                                .saturating_add(cols_per_thread)
+                                .min(non_predicate_len))
                             .map(|i| {
                                 let projection =
                                     &projected_arrow_fields[non_predicate_field_indices[i]];
@@ -640,7 +604,7 @@ impl RowGroupDecoder {
 
                                 projection.apply_transform(col)
                             })
-                            .collect::<PolarsResult<Vec<_>>>()
+                            .collect::<PolarsResult<EnumUnitVec<_>>>()
                     }
                 },
             ))
@@ -731,17 +695,34 @@ mod tests {
     fn test_calc_cols_per_thread() {
         use super::calc_cols_per_thread;
 
-        let n_rows = 3;
-        let n_cols = 11;
-        let min_vals = 5;
-        assert_eq!(calc_cols_per_thread(n_rows, n_cols, min_vals), Some((2, 1)));
+        assert_eq!(
+            [
+                calc_cols_per_thread(0, 5),
+                calc_cols_per_thread(1, 5),
+                calc_cols_per_thread(2, 5),
+                calc_cols_per_thread(3, 5),
+                calc_cols_per_thread(4, 5),
+                calc_cols_per_thread(5, 5),
+            ],
+            [usize::MAX, 5, 2, 2, 1, 1]
+        );
 
-        let n_rows = 6;
-        let n_cols = 11;
-        let min_vals = 5;
-        assert_eq!(calc_cols_per_thread(n_rows, n_cols, min_vals), Some((1, 0)));
+        assert_eq!(
+            [
+                calc_cols_per_thread(11_184_810, 16_777_216),
+                calc_cols_per_thread(11_184_811 + 1, 16_777_216),
+            ],
+            [2, 1]
+        );
 
-        calc_cols_per_thread(0, 1, 1);
-        calc_cols_per_thread(1, 0, 1);
+        assert_eq!(
+            [
+                calc_cols_per_thread(0, 0),
+                calc_cols_per_thread(0, 99),
+                calc_cols_per_thread(99, 0),
+                calc_cols_per_thread(99, 99),
+            ],
+            [usize::MAX, usize::MAX, 1, 1],
+        )
     }
 }

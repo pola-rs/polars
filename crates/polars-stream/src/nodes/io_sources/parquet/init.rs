@@ -237,7 +237,7 @@ impl ParquetReadImpl {
     pub(super) fn init_row_group_decoder(&mut self) -> RowGroupDecoder {
         let projected_arrow_fields = self.projected_arrow_fields.clone();
         let row_index = self.row_index.clone();
-        let min_values_per_thread = self.config.min_values_per_thread;
+        let target_values_per_thread = self.config.target_values_per_thread;
         let predicate = self.predicate.clone();
 
         let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
@@ -298,7 +298,7 @@ impl ParquetReadImpl {
             use_prefiltered,
             predicate_field_indices,
             non_predicate_field_indices,
-            min_values_per_thread,
+            target_values_per_thread,
         }
     }
 }
