@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import operator
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any, Callable
@@ -838,6 +839,49 @@ def test_struct_arithmetic_schema() -> None:
     assert q.select(pl.struct("A") - pl.struct("B")).collect_schema()["A"] == pl.Struct(
         {"A": pl.Int64}
     )
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.DataFrame({"a": [10], "b": [20], "c": [30]}),
+        pl.DataFrame({"a": [10.0], "b": [20.0], "c": [30.0]}),
+    ],
+)
+@pytest.mark.parametrize(
+    "rhs",
+    [
+        pl.struct("c"),
+        pl.lit(7),
+        pl.lit(7.0),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.sub,
+        operator.floordiv,
+        operator.truediv,
+        operator.mod,
+        operator.mul,
+    ],
+)
+def test_struct_arithmetic_schema_match(
+    df: pl.DataFrame,
+    rhs: pl.Expr,
+    op: Any,
+) -> None:
+    # 1 field on the LHS struct
+    lhs = pl.struct("a")
+    q = df.lazy().select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
+
+    # 2 fields on the LHS struct
+    df = df.with_columns(pl.struct(pl.all()).alias("ab"))
+    lhs = pl.col("ab")
+    q = df.lazy().select(op(lhs, rhs))
+    assert q.collect_schema() == q.collect().schema
 
 
 def test_struct_field() -> None:
