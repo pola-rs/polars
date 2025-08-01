@@ -1,105 +1,23 @@
-use std::collections::VecDeque;
-use std::sync::Arc;
-
-use arrow::bitmap::Bitmap;
-use futures::StreamExt;
-use futures::stream::BoxStream;
-use polars_core::prelude::{AnyValue, DataType, PlHashMap};
-use polars_core::scalar::Scalar;
-use polars_core::schema::SchemaRef;
-use polars_core::schema::iceberg::IcebergSchema;
-use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
-use polars_plan::plans::hive::HivePartitionsDf;
-use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, JoinHandle, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
-use crate::nodes::io_sources::multi_file_reader::components::apply_extra_ops::ApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::components::row_deletions::{
-    DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
-};
-use crate::nodes::io_sources::multi_file_reader::components::{
-    ExtraOperations, ForbidExtraColumns, missing_column_err,
-};
-use crate::nodes::io_sources::multi_file_reader::functions::initialize_multi_scan_pipeline;
-use crate::nodes::io_sources::multi_file_reader::functions::resolve_projections::ProjectionBuilder;
-use crate::nodes::io_sources::multi_file_reader::functions::resolve_slice::{
-    ResolvedSliceInfo, resolve_to_positive_slice,
-};
-use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyExtraOps;
+use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
+use crate::nodes::io_sources::multi_file_reader::pipeline::models::ExtraOperations;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
-    BeginReadArgs, FileReader, FileReaderCallbacks, Projection,
-};
-use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
-
-struct AttachReaderToBridge {
-    started_reader_rx: tokio::sync::mpsc::Receiver<(
-        AbortOnDropHandle<PolarsResult<StartedReaderState>>,
-        WaitToken,
-    )>,
-    bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
-    verbose: bool,
-}
-
-impl AttachReaderToBridge {
-    async fn run(self) -> PolarsResult<()> {
-        let AttachReaderToBridge {
-            mut started_reader_rx,
-            mut bridge_recv_port_tx,
-            verbose,
-        } = self;
-
-        let mut n_readers_received: usize = 0;
-
-        while let Some((init_task_handle, wait_token)) = started_reader_rx.recv().await {
-            n_readers_received = n_readers_received.saturating_add(1);
-
-            if verbose {
-                eprintln!(
-                    "[AttachReaderToBridge]: received reader (n_readers_received: {n_readers_received})",
-                );
-            }
-
-            let StartedReaderState {
-                bridge_recv_port,
-                post_apply_pipeline_handle,
-                reader_handle,
-            } = init_task_handle.await?;
-
-            if bridge_recv_port_tx.send(bridge_recv_port).await.is_err() {
-                break;
-            }
-
-            drop(wait_token);
-            reader_handle.await?;
-
-            if let Some(handle) = post_apply_pipeline_handle {
-                handle.await?;
-            }
-        }
-
-        Ok(())
-    }
-}
 
 /// Encapsulates logic for determining which operations to push into the underlying reader.
-struct ReaderOperationPushdown<'a> {
-    file_projection: Projection,
-    reader_capabilities: ReaderCapabilities,
-    external_filter_mask: Option<ExternalFilterMask>,
+pub struct ReaderOperationPushdown<'a> {
+    pub file_projection: Projection,
+    pub reader_capabilities: ReaderCapabilities,
+    pub external_filter_mask: Option<ExternalFilterMask>,
     /// Operations will be `take()`en out when pushed.
-    extra_ops_post: &'a mut ExtraOperations,
+    pub extra_ops_post: &'a mut ExtraOperations,
 }
 
 impl ReaderOperationPushdown<'_> {
-    fn push_operations(
+    pub fn push_operations(
         self,
     ) -> (
         Projection,

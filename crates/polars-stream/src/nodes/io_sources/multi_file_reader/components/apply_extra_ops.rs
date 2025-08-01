@@ -1,7 +1,6 @@
 //! Implementation of applying the operations during execution.
 use std::sync::Arc;
 
-use models::ExtraOperations;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
@@ -20,7 +19,7 @@ use crate::nodes::io_sources::multi_file_reader::components::errors::missing_col
 use crate::nodes::io_sources::multi_file_reader::components::projection::Projection;
 use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
-use crate::nodes::io_sources::multi_file_reader::models;
+use crate::nodes::io_sources::multi_file_reader::pipeline::models::ExtraOperations;
 
 /// Apply extra operations onto morsels originating from a reader. This should be initialized
 /// per-reader (it contains e.g. file path).

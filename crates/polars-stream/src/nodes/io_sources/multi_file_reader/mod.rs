@@ -1,7 +1,6 @@
 pub mod components;
 pub mod config;
 pub mod functions;
-mod models;
 mod pipeline;
 pub mod reader_interface;
 
@@ -25,6 +24,7 @@ use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::functions::{
     calc_max_concurrent_scans, calc_n_readers_pre_init,
 };
+use crate::nodes::io_sources::multi_file_reader::pipeline::models::InitializedPipelineState;
 
 pub struct MultiFileReader {
     name: PlSmallStr,
@@ -106,32 +106,32 @@ impl ComputeNode for MultiFileReader {
                 Finished => return Ok(()),
 
                 Initialized {
-                    send_phase_tx_to_bridge,
+                    phase_channel_tx,
                     wait_group,
                     ..
                 } => {
                     use crate::async_primitives::connector::SendError;
 
-                    match send_phase_tx_to_bridge.try_send((phase_morsel_tx, wait_group.token())) {
+                    match phase_channel_tx.try_send((phase_morsel_tx, wait_group.token())) {
                         Ok(_) => wait_group.wait().await,
 
                         // Should never: We only send the next value once the wait token is dropped.
                         Err(SendError::Full(_)) => unreachable!(),
 
                         // Bridge has disconnected from the reader side. We know this because
-                        // we are still holding `send_phase_tx_to_bridge`.
+                        // we are still holding `phase_channel_tx`.
                         Err(SendError::Closed(_)) => {
                             if verbose {
                                 eprintln!("[MultiFileReader]: Bridge disconnected")
                             }
 
-                            let Initialized { join_handle, .. } =
+                            let Initialized { task_handle, .. } =
                                 std::mem::replace(&mut self.state, Finished)
                             else {
                                 unreachable!()
                             };
 
-                            join_handle.await?;
+                            task_handle.await?;
 
                             return Ok(());
                         },
@@ -150,12 +150,12 @@ enum MultiScanState {
     },
 
     Initialized {
-        send_phase_tx_to_bridge: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+        phase_channel_tx: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
         /// Wait group sent to the bridge, only dropped when a disconnect happens at the bridge.
         wait_group: WaitGroup,
         bridge_state: Arc<Mutex<BridgeState>>,
         /// Single join handle for all background tasks. Note, this does not include the bridge.
-        join_handle: AbortOnDropHandle<PolarsResult<()>>,
+        task_handle: AbortOnDropHandle<PolarsResult<()>>,
     },
 
     Finished,
@@ -192,16 +192,19 @@ impl MultiScanState {
             config.sources.len(),
         ));
 
-        let (join_handle, send_phase_tx_to_bridge, bridge_state) =
-            initialize_multi_scan_pipeline(config).spawn_background_tasks();
+        let InitializedPipelineState {
+            task_handle,
+            phase_channel_tx,
+            bridge_state,
+        } = initialize_multi_scan_pipeline(config);
 
         let wait_group = WaitGroup::default();
 
         *self = Initialized {
-            send_phase_tx_to_bridge,
+            phase_channel_tx,
             wait_group,
             bridge_state,
-            join_handle,
+            task_handle,
         };
     }
 
@@ -218,19 +221,19 @@ impl MultiScanState {
 
             #[expect(clippy::blocks_in_conditions)]
             Initialized {
-                send_phase_tx_to_bridge,
+                phase_channel_tx,
                 wait_group,
                 bridge_state,
-                join_handle,
+                task_handle,
             } => match { *bridge_state.lock().unwrap() } {
                 BridgeState::NotYetStarted | BridgeState::Running => Initialized {
-                    send_phase_tx_to_bridge,
+                    phase_channel_tx,
                     wait_group,
                     bridge_state,
-                    join_handle,
+                    task_handle,
                 },
 
-                // Never the case: holding `send_phase_tx_to_bridge` guarantees this.
+                // Never the case: holding `phase_channel_tx` guarantees this.
                 BridgeState::Stopped(StopReason::ComputeNodeDisconnected) => unreachable!(),
 
                 // If we are disconnected from the reader side, it could mean an error. Joining on
@@ -241,7 +244,7 @@ impl MultiScanState {
                     }
 
                     *self = Finished;
-                    join_handle.await?;
+                    task_handle.await?;
                     Finished
                 },
             },

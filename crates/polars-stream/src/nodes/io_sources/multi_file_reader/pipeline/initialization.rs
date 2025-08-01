@@ -1,20 +1,34 @@
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use arrow::bitmap::Bitmap;
-use pipeline_tasks::bridge::{BridgeState, spawn_bridge};
+use futures::StreamExt;
+use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
-use super::MultiFileReaderConfig;
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
-use crate::nodes::io_sources::multi_file_reader::models::{
-    InitializedPipelineState, ResolvedSliceInfo,
+use crate::nodes::io_sources::multi_file_reader::components::bridge::{
+    BridgeRecvPort, BridgeState,
 };
-use crate::nodes::io_sources::multi_file_reader::pipeline_tasks;
-use crate::nodes::io_sources::multi_file_reader::pipeline_tasks::bridge::BridgeRecvPort;
+use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_file_reader::components::row_deletions::{
+    DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
+};
+use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
+use crate::nodes::io_sources::multi_file_reader::functions::resolve_slice::resolve_to_positive_slice;
+use crate::nodes::io_sources::multi_file_reader::pipeline::models::{
+    ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, StartReaderArgsConstant,
+};
+use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::attach_reader_to_bridge::AttachReaderToBridge;
+use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::bridge::spawn_bridge;
+use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::reader_starter::{
+    InitializedReaderState, ReaderStarter,
+};
+use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 
 pub fn initialize_multi_scan_pipeline(
@@ -174,13 +188,9 @@ async fn finish_initialize_multi_scan_pipeline(
         }),
         pre_slice,
         include_file_paths,
-        file_path_col_idx: self
-            .config
-            .include_file_paths
-            .as_ref()
-            .map_or(usize::MAX, |x| {
-                config.final_output_schema.index_of(x).unwrap()
-            }),
+        file_path_col_idx: config.include_file_paths.as_ref().map_or(usize::MAX, |x| {
+            config.final_output_schema.index_of(x).unwrap()
+        }),
         predicate,
     };
 
@@ -256,13 +266,16 @@ async fn finish_initialize_multi_scan_pipeline(
             !can_skip
         });
 
+        let sources = config.sources.clone();
+        let cloud_options = config.cloud_options.clone();
+        let file_reader_builder = config.file_reader_builder.clone();
         let deletion_files_provider = DeletionFilesProvider::new(config.deletion_files.clone());
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {
-                let cloud_options = config.cloud_options.clone();
-                let file_reader_builder = config.file_reader_builder.clone();
-                let sources = config.sources.clone();
+                let sources = sources.clone();
+                let cloud_options = cloud_options.clone();
+                let file_reader_builder = file_reader_builder.clone();
                 let deletion_files_provider = deletion_files_provider.clone();
                 let initialized_row_deletions = initialized_row_deletions.clone();
 

@@ -9,9 +9,9 @@ use polars_plan::dsl::CastColumnsPolicy;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_file_reader::components::column_selector::ColumnSelector;
-use crate::nodes::io_sources::multi_file_reader::functions::resolve_projections::ProjectionBuilder;
+use crate::nodes::io_sources::multi_file_reader::components::projection::MappedProjectionRef;
+use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::projection::MappedProjectionRef;
 
 pub fn resolve_arrow_field_projections(
     file_arrow_schema: &ArrowSchema,

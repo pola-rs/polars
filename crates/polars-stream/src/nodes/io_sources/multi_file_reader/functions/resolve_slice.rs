@@ -8,7 +8,7 @@ use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
-use crate::nodes::io_sources::multi_file_reader::models::ResolvedSliceInfo;
+use crate::nodes::io_sources::multi_file_reader::pipeline::models::ResolvedSliceInfo;
 use crate::nodes::io_sources::multi_file_reader::{MultiFileReaderConfig, components};
 
 pub async fn resolve_to_positive_slice(

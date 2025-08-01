@@ -33,8 +33,8 @@ use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;
-use crate::nodes::io_sources::multi_file_reader::components::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::functions::resolve_projections::ProjectionBuilder;
+use crate::nodes::io_sources::multi_file_reader::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::ExprCache;
 

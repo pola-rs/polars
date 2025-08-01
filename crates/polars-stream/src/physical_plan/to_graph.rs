@@ -31,7 +31,7 @@ use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
 use crate::nodes::io_sinks::partition::PerPartitionSortBy;
-use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
+use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::physical_plan::lower_expr::compute_output_schema;
@@ -1005,7 +1005,7 @@ fn to_graph_rec<'a>(
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
-            use crate::nodes::io_sources::multi_file_reader::functions::resolve_projections::ProjectionBuilder;
+            use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
 
             let reader = BatchFnReader {
                 name: name.clone(),

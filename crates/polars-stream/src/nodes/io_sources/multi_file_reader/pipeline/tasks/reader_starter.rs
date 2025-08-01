@@ -1,10 +1,15 @@
+use std::sync::Arc;
+
 use arrow::bitmap::Bitmap;
 use components::bridge::BridgeRecvPort;
 use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use polars_core::prelude::{AnyValue, DataType};
+use polars_core::scalar::Scalar;
+use polars_core::schema::iceberg::IcebergSchema;
 use polars_error::PolarsResult;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
@@ -12,42 +17,47 @@ use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_file_reader::components;
+use crate::nodes::io_sources::multi_file_reader::components::apply_extra_ops::ApplyExtraOps;
+use crate::nodes::io_sources::multi_file_reader::components::errors::missing_column_err;
 use crate::nodes::io_sources::multi_file_reader::components::physical_slice::PhysicalSlice;
+use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_file_reader::pipeline::models::{
-    ExtraOperations, StartReaderArgsConstant, StartedReaderState,
+    ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
+use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
+use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::reader_operation_pushdown::ReaderOperationPushdown;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, Projection,
 };
 
 /// Starts readers, potentially multiple at the same time if it can.
-pub(super) struct ReaderStarter {
-    pub(super) reader_capabilities: ReaderCapabilities,
-    pub(super) readers_init_iter: BoxStream<'static, PolarsResult<InitializedReaderState>>,
-    pub(super) n_sources: usize,
-    pub(super) started_reader_tx: tokio::sync::mpsc::Sender<(
+pub struct ReaderStarter {
+    pub reader_capabilities: ReaderCapabilities,
+    pub readers_init_iter: BoxStream<'static, PolarsResult<InitializedReaderState>>,
+    pub n_sources: usize,
+    pub started_reader_tx: tokio::sync::mpsc::Sender<(
         AbortOnDropHandle<PolarsResult<StartedReaderState>>,
         WaitToken,
     )>,
-    pub(super) max_concurrent_scans: usize,
-    pub(super) skip_files_mask: Option<Bitmap>,
-    pub(super) extra_ops: ExtraOperations,
-    pub(super) constant_args: StartReaderArgsConstant,
-    pub(super) verbose: bool,
+    pub max_concurrent_scans: usize,
+    pub skip_files_mask: Option<Bitmap>,
+    pub extra_ops: ExtraOperations,
+    pub constant_args: StartReaderArgsConstant,
+    pub verbose: bool,
 }
 
-pub(super) struct InitializedReaderState {
-    pub(super) scan_source_idx: usize,
-    pub(super) scan_source: ScanSource,
-    pub(super) reader: Box<dyn FileReader>,
-    pub(super) n_rows_in_file: Option<RowCounter>,
-    pub(super) row_deletions: Option<RowDeletionsInit>,
+pub struct InitializedReaderState {
+    pub scan_source_idx: usize,
+    pub scan_source: ScanSource,
+    pub reader: Box<dyn FileReader>,
+    pub n_rows_in_file: Option<RowCounter>,
+    pub row_deletions: Option<RowDeletionsInit>,
 }
 
 impl ReaderStarter {
-    pub(super) async fn run(self) -> PolarsResult<()> {
+    pub async fn run(self) -> PolarsResult<()> {
         let ReaderStarter {
             reader_capabilities,
             mut readers_init_iter,
