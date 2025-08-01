@@ -1172,3 +1172,20 @@ def test_prefilter_with_n_rows_23790() -> None:
             }
         ),
     )
+
+
+def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD", "5")
+    num_rows = 3
+    num_cols = 5
+
+    f = io.BytesIO()
+
+    pl.select(
+        pl.int_range(0, num_rows).alias(f"col_{i}") for i in range(num_cols)
+    ).write_parquet(f)
+
+    for parallel in ["auto", "columns", "row_groups", "prefiltered", "none"]:
+        pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
+            pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
+        ).collect()
