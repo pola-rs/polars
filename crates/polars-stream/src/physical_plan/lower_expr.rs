@@ -637,12 +637,12 @@ fn lower_exprs_with_ctx(
                 let input_schema = &ctx.phys_sm[input.node].output_schema;
                 let out_name = unique_column_name();
                 let first_ir = inner_exprs[0].with_alias(out_name.clone());
-                let out_dtype = first_ir.dtype(input_schema, Context::Default, ctx.expr_arena)?;
+                let out_dtype = first_ir.dtype(input_schema, ctx.expr_arena)?;
                 let mut value_expr_ir = inner_exprs[1].with_alias(out_name.clone());
                 let repeats_expr_ir = inner_exprs[2].clone();
 
                 // Cast the value if necessary.
-                if value_expr_ir.dtype(input_schema, Context::Default, ctx.expr_arena)? != out_dtype
+                if value_expr_ir.dtype(input_schema, ctx.expr_arena)? != out_dtype
                 {
                     let cast_expr = AExpr::Cast {
                         expr: value_expr_ir.node(),
