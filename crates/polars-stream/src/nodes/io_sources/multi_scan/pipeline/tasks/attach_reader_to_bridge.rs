@@ -7,6 +7,7 @@ use crate::nodes::io_sources::multi_scan::components::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_scan::pipeline::models::StartedReaderState;
 
 pub struct AttachReaderToBridge {
+    /// The size of the channel controls how many readers are run in parallel.
     pub started_reader_rx: tokio::sync::mpsc::Receiver<(
         AbortOnDropHandle<PolarsResult<StartedReaderState>>,
         WaitToken,

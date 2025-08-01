@@ -21,12 +21,12 @@ use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtr
 use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
 use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
 use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
-use crate::nodes::io_sources::multi_scan::pipeline::tasks::reader_operation_pushdown::ReaderOperationPushdown;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, Projection,
