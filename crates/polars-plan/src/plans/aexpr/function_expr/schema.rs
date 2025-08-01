@@ -60,7 +60,7 @@ impl IRFunctionExpr {
             Sign => mapper.ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?.with_same_dtype(),
             FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
-            RollingExpr{function, ..} => {
+            RollingExpr { function, options } => {
                 use IRRollingFunction::*;
                 match function {
                     Min | Max => mapper.with_same_dtype(),
@@ -71,6 +71,17 @@ impl IRFunctionExpr {
                     CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew | Kurtosis => mapper.map_to_float_dtype(),
+                    Map(_) => mapper.try_map_field(|field| {
+                        if options.weights.is_some() {
+                            let dtype = match field.dtype() {
+                                DataType::Float32 => DataType::Float32,
+                                _ => DataType::Float64,
+                            };
+                            Ok(Field::new(field.name().clone(), dtype))
+                        } else {
+                            Ok(field.clone())
+                        }
+                    }),
                 }
             },
             #[cfg(feature = "rolling_window_by")]
