@@ -1,4 +1,3 @@
-pub mod deletion_files;
 pub mod predicate;
 pub mod projection;
 pub mod slice;

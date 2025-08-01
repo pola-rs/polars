@@ -13,7 +13,7 @@ use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPoli
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
-use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_column_err;
+use crate::nodes::io_sources::multi_file_reader::components::errors::missing_column_err;
 
 /// This is a physical expression that is specialized for performing positional column selections,
 /// column renaming, as well as type-casting.

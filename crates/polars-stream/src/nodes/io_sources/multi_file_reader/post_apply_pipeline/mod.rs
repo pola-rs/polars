@@ -8,7 +8,7 @@ use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::morsel_linearizer::MorselLinearizer;
 use crate::morsel::Morsel;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
+use crate::nodes::io_sources::multi_file_reader::components::apply_extra_ops::ApplyExtraOps;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
 
 pub struct PostApplyPipeline {

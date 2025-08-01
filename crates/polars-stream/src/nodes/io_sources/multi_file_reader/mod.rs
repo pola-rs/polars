@@ -1,8 +1,9 @@
 pub mod bridge;
+pub mod components;
 pub mod config;
-pub mod extra_ops;
 pub mod initialization;
 pub mod pipeline;
+mod pipeline_tasks;
 pub mod post_apply_pipeline;
 pub mod reader_interface;
 pub mod row_counter;

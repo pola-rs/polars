@@ -1,16 +1,16 @@
 use std::collections::VecDeque;
 
+use components::row_deletions::{DeletionFilesProvider, ExternalFilterMask};
 use futures::StreamExt;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_utils::slice_enum::Slice;
 
-use super::deletion_files::{DeletionFilesProvider, ExternalFilterMask};
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_file_reader::{MultiFileReaderConfig, components};
 
 pub struct ResolvedSliceInfo {
     /// In the negative slice case this can be a non-zero starting position.

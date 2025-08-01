@@ -13,11 +13,11 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
 use super::ExtraOperations;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::column_selector::{
+use crate::nodes::io_sources::multi_file_reader::components::column_selector::{
     ColumnSelector, ColumnSelectorBuilder,
 };
-use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_column_err;
-use crate::nodes::io_sources::multi_file_reader::initialization::deletion_files::ExternalFilterMask;
+use crate::nodes::io_sources::multi_file_reader::components::errors::missing_column_err;
+use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 

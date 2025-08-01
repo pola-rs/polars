@@ -20,14 +20,14 @@ use crate::async_executor::{self, AbortOnDropHandle, JoinHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::{
+use crate::nodes::io_sources::multi_file_reader::components::apply_extra_ops::ApplyExtraOps;
+use crate::nodes::io_sources::multi_file_reader::components::row_deletions::{
+    DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
+};
+use crate::nodes::io_sources::multi_file_reader::components::{
     ExtraOperations, ForbidExtraColumns, missing_column_err,
 };
 use crate::nodes::io_sources::multi_file_reader::initialization::MultiScanTaskInitializer;
-use crate::nodes::io_sources::multi_file_reader::initialization::deletion_files::{
-    DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
-};
 use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,

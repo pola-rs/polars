@@ -13,7 +13,7 @@ use polars_utils::slice_enum::Slice;
 use reader_interface::builder::FileReaderBuilder;
 use reader_interface::capabilities::ReaderCapabilities;
 
-use crate::nodes::io_sources::multi_file_reader::extra_ops::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_file_reader::components::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface;
 
