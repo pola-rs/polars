@@ -1404,7 +1404,7 @@ def test_join_asof_23751() -> None:
 
 
 def test_join_asof_nosuffix_dup_col_23834() -> None:
-    a = pl.DataFrame({"a": [1,2,3], "b": [4,5,6]})
-    b = pl.DataFrame({"b": [1,2,3], "c": [9,10,11]})
+    a = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    b = pl.DataFrame({"b": [1, 2, 3], "c": [9, 10, 11]})
     with pytest.raises(DuplicateError):
         a.join_asof(b, left_on="a", right_on="b", suffix="")
