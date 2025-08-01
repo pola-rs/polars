@@ -1182,10 +1182,10 @@ def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) 
     f = io.BytesIO()
 
     pl.select(
-        **{f"col_{i}": pl.int_range(0, num_rows) for i in range(num_cols)}
+        pl.int_range(0, num_rows).alias(f"col_{i}") for i in range(num_cols)
     ).write_parquet(f)
 
     for parallel in ["auto", "columns", "row_groups", "prefiltered", "none"]:
-        pl.scan_parquet(f, parallel=parallel).filter(
+        pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
             pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
         ).collect()
