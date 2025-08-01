@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Callable
 
-from polars._utils.unstable import issue_unstable_warning
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -810,8 +810,8 @@ class ExprArrayNameSpace:
         ----------
         exprs
             Columns to concatenate into a single array column. Accepts expression input.
-            Strings are parsed as column names, other non-expression inputs are parsed as
-            literals.
+            Strings are parsed as column names, other non-expression inputs are parsed
+            as literals.
         *more_exprs
             Additional columns to concatenate into a single array column, specified as
             positional arguments.
@@ -827,7 +827,9 @@ class ExprArrayNameSpace:
         ...         b=pl.Series([[3], [None], [5]], dtype=pl.Array(pl.Int64, 1)),
         ...     ).with_columns(
         ...         pl.col("a").arr.concat("b").alias("concat_arr(a, b)"),
-        ...         pl.col("a").arr.concat(pl.first("b")).alias("concat_arr(a, first(b))"),
+        ...         pl.col("a")
+        ...         .arr.concat(pl.first("b"))
+        ...         .alias("concat_arr(a, first(b))"),
         ...     )
         ... )
         shape: (3, 4)
@@ -891,7 +893,9 @@ class ExprArrayNameSpace:
         ...     pl.select(
         ...         a=pl.Series([1, 3, None]),
         ...     ).with_columns(
-        ...         pl.col("a").arr.concat(pl.lit(0, dtype=pl.Int64)).alias("concat_arr(a, 0)"),
+        ...         pl.col("a")
+        ...         .arr.concat(pl.lit(0, dtype=pl.Int64))
+        ...         .alias("concat_arr(a, 0)"),
         ...         pl.col("a").arr.concat(pl.sum("a")).alias("concat_arr(a, sum(a))"),
         ...         pl.col("a").arr.concat(pl.max("a")).alias("concat_arr(a, max(a))"),
         ...     )

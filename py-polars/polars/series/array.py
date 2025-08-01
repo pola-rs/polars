@@ -645,8 +645,8 @@ class ArrayNameSpace:
         ----------
         exprs
             Columns to concatenate into a single array column. Accepts expression input.
-            Strings are parsed as column names, other non-expression inputs are parsed as
-            literals.
+            Strings are parsed as column names, other non-expression inputs are parsed
+            as literals.
         *more_exprs
             Additional columns to concatenate into a single array column, specified as
             positional arguments.
