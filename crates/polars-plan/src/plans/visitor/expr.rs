@@ -119,7 +119,7 @@ impl AexprNode {
 
     pub fn to_field(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<Field> {
         let aexpr = arena.get(self.node);
-        aexpr.to_field(schema, Context::Default, arena)
+        aexpr.to_field(schema, arena)
     }
 
     pub fn assign(&mut self, ae: AExpr, arena: &mut Arena<AExpr>) {

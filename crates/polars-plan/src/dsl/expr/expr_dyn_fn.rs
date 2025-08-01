@@ -157,12 +157,7 @@ pub trait FunctionOutputField: Send + Sync {
         Ok(())
     }
 
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        fields: &[Field],
-    ) -> PolarsResult<Field>;
+    fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field>;
 
     fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
         polars_bail!(ComputeError: "serialization not supported for this output field")
@@ -174,7 +169,7 @@ pub type GetOutput = LazySerde<SpecialEq<Arc<dyn FunctionOutputField>>>;
 impl Default for GetOutput {
     fn default() -> Self {
         LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| Ok(fields[0].clone()),
+            |_input_schema: &Schema, fields: &[Field]| Ok(fields[0].clone()),
         )))
     }
 }
@@ -186,21 +181,19 @@ impl GetOutput {
 
     pub fn first() -> Self {
         LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| Ok(fields[0].clone()),
+            |_input_schema: &Schema, fields: &[Field]| Ok(fields[0].clone()),
         )))
     }
 
     pub fn from_type(dt: DataType) -> Self {
         LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, _: Context, flds: &[Field]| {
-                Ok(Field::new(flds[0].name().clone(), dt.clone()))
-            },
+            move |_: &Schema, flds: &[Field]| Ok(Field::new(flds[0].name().clone(), dt.clone())),
         )))
     }
 
     pub fn map_field<F: 'static + Fn(&Field) -> PolarsResult<Field> + Send + Sync>(f: F) -> Self {
         LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, _: Context, flds: &[Field]| f(&flds[0]),
+            move |_: &Schema, flds: &[Field]| f(&flds[0]),
         )))
     }
 
@@ -208,7 +201,7 @@ impl GetOutput {
         f: F,
     ) -> Self {
         LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, _: Context, flds: &[Field]| f(flds),
+            move |_: &Schema, flds: &[Field]| f(flds),
         )))
     }
 
@@ -216,7 +209,7 @@ impl GetOutput {
         f: F,
     ) -> Self {
         LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, _: Context, flds: &[Field]| {
+            move |_: &Schema, flds: &[Field]| {
                 let mut fld = flds[0].clone();
                 let new_type = f(fld.dtype())?;
                 fld.coerce(new_type);
@@ -249,7 +242,7 @@ impl GetOutput {
         F: 'static + Fn(&[&DataType]) -> PolarsResult<DataType> + Send + Sync,
     {
         LazySerde::Deserialized(SpecialEq::new(Arc::new(
-            move |_: &Schema, _: Context, flds: &[Field]| {
+            move |_: &Schema, flds: &[Field]| {
                 let mut fld = flds[0].clone();
                 let dtypes = flds.iter().map(|fld| fld.dtype()).collect::<Vec<_>>();
                 let new_type = f(&dtypes)?;
@@ -262,15 +255,10 @@ impl GetOutput {
 
 impl<F> FunctionOutputField for F
 where
-    F: Fn(&Schema, Context, &[Field]) -> PolarsResult<Field> + Send + Sync,
+    F: Fn(&Schema, &[Field]) -> PolarsResult<Field> + Send + Sync,
 {
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        cntxt: Context,
-        fields: &[Field],
-    ) -> PolarsResult<Field> {
-        self(input_schema, cntxt, fields)
+    fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field> {
+        self(input_schema, fields)
     }
 }
 

@@ -6,7 +6,6 @@ impl IRFunctionExpr {
     pub(crate) fn get_field(
         &self,
         _input_schema: &Schema,
-        _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
         use IRFunctionExpr::*;

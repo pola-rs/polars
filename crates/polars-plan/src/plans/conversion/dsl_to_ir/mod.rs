@@ -396,9 +396,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut null_columns = vec![];
 
                 for (i, c) in by_column.iter().enumerate() {
-                    if let DataType::Null =
-                        c.dtype(&input_schema, Context::Default, ctxt.expr_arena)?
-                    {
+                    if let DataType::Null = c.dtype(&input_schema, ctxt.expr_arena)? {
                         null_columns.push(i);
                     }
                 }
@@ -796,11 +794,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                     };
-                    let schema = Arc::new(expressions_to_schema(
-                        &exprs,
-                        &input_schema,
-                        Context::Default,
-                    )?);
+                    let schema = Arc::new(expressions_to_schema(&exprs, &input_schema)?);
                     let eirs = to_expr_irs(
                         exprs,
                         &mut ExprToIRContext::new_with_opt_eager(
@@ -1067,7 +1061,7 @@ fn resolve_with_columns(
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
     )?;
     for eir in eirs.iter() {
-        let field = eir.field(&input_schema, Context::Default, expr_arena)?;
+        let field = eir.field(&input_schema, expr_arena)?;
 
         if !output_names.insert(field.name().clone()) {
             let msg = format!(
@@ -1099,7 +1093,7 @@ fn resolve_group_by(
     let mut keys = rewrite_projections(keys, &PlHashSet::default(), input_schema, opt_flags)?;
 
     // Initialize schema from keys
-    let mut output_schema = expressions_to_schema(&keys, input_schema, Context::Default)?;
+    let mut output_schema = expressions_to_schema(&keys, input_schema)?;
     let mut key_names: PlHashSet<PlSmallStr> = output_schema.iter_names().cloned().collect();
 
     #[allow(unused_mut)]
@@ -1129,26 +1123,44 @@ fn resolve_group_by(
         }
     }
     let keys_index_len = output_schema.len();
-
-    let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
     if pop_keys {
         let _ = keys.pop();
     }
-
-    // Add aggregation column(s)
-    let aggs_schema = expressions_to_schema(&aggs, input_schema, Context::Aggregation)?;
-    output_schema.merge(aggs_schema);
-
     let keys = to_expr_irs(
         keys,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
+
+    // Add aggregation column(s)
+    let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
     let aggs = to_expr_irs(
         aggs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     utils::validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
+
+    let mut aggs_schema = expr_irs_to_schema(&aggs, input_schema, expr_arena);
+
+    // Make sure aggregation columns do not contain duplicates
+    if aggs_schema.len() < aggs.len() {
+        let mut names = PlHashSet::with_capacity(aggs.len());
+        for agg in aggs.iter() {
+            let name = agg.output_name();
+            polars_ensure!(names.insert(name.clone()), duplicate = name)
+        }
+    }
+
+    // Coerce aggregation column(s) into List unless not needed (auto-implode)
+    debug_assert!(aggs_schema.len() == aggs.len());
+    for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+        if !expr.is_scalar(expr_arena) {
+            *dtype = dtype.clone().implode();
+        }
+    }
+
+    // Final output_schema
+    output_schema.merge(aggs_schema);
 
     // Make sure aggregation columns do not contain keys or index columns
     if output_schema.len() < (keys_index_len + aggs.len()) {

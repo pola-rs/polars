@@ -89,9 +89,7 @@ fn into_datatype_impl(
             let mut arena = Arena::new();
             let mut ctx = ExprToIRContext::new(&mut arena, schema);
             let e = to_expr_ir(expr, &mut ctx)?;
-            let dtype = arena
-                .get(e.node())
-                .to_dtype(schema, Default::default(), &arena)?;
+            let dtype = arena.get(e.node()).to_dtype(schema, &arena)?;
             polars_ensure!(!dtype.contains_unknown(),InvalidOperation:"DataType expression is not allowed to instantiate to `unknown`");
             dtype
         },

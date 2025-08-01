@@ -56,7 +56,7 @@ impl PhysicalExpr for RollingExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.function.to_field(input_schema, Context::Default)
+        self.function.to_field(input_schema)
     }
 
     fn as_expression(&self) -> Option<&Expr> {
