@@ -17,7 +17,7 @@ polars-error = { workspace = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
 polars-ops = { workspace = true, optional = true }
-polars-parquet = { workspace = true }
+polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
@@ -59,6 +59,7 @@ default = [
   "docs",
   "zip_with",
   "csv",
+  "polars-parquet",
   "temporal",
   "fmt",
   "dtype-slim",
@@ -74,7 +75,14 @@ serde-lazy = [
   "polars-ops?/serde",
   "polars-utils/serde",
 ]
-parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet", "new_streaming"]
+parquet = [
+  "polars-parquet",
+  "polars-io",
+  "polars-lazy?/parquet",
+  "polars-io/parquet",
+  "polars-sql?/parquet",
+  "new_streaming",
+]
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
 aws = ["async", "cloud", "polars-io/aws"]
