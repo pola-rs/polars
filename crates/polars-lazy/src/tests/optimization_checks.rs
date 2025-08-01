@@ -282,8 +282,8 @@ fn test_lazy_filter_and_rename() {
         .lazy()
         .rename(["a"], ["x"], true)
         .filter(col("x").map(
-            |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
-            GetOutput::from_type(DataType::Boolean),
+            |s: Column| Ok(s.as_materialized_series().gt(3)?.into_column()),
+            |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
         ))
         .select([col("x")]);
 
@@ -295,8 +295,8 @@ fn test_lazy_filter_and_rename() {
 
     // now we check if the column is rename or added when we don't select
     let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
-        |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
-        GetOutput::from_type(DataType::Boolean),
+        |s: Column| Ok(s.as_materialized_series().gt(3)?.into_column()),
+        |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
     ));
     // the rename function should not interfere with the predicate pushdown
     assert!(predicate_at_scan(lf.clone()));

@@ -39,22 +39,15 @@ def test_error_on_reducing_map() -> None:
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
     with pytest.raises(
-        InvalidOperationError,
-        match=(
-            r"output length of `map` \(1\) must be equal to "
-            r"the input length \(6\); consider using `apply` instead"
-        ),
+        TypeError,
+        match=r"`map` with `returns_scalar=False`",
     ):
-        df.group_by("id").agg(pl.map_batches(["t", "y"], np.mean))
+        df.group_by("id").agg(
+            pl.map_batches(["t", "y"], np.mean, return_dtype=pl.Float64)
+        )
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
-    with pytest.raises(
-        InvalidOperationError,
-        match=(
-            r"output length of `map` \(1\) must be equal to "
-            r"the input length \(4\); consider using `apply` instead"
-        ),
-    ):
+    with pytest.raises(TypeError, match=r"`map` with `returns_scalar=False`"):
         df.select(
             pl.col("x")
             .map_batches(
@@ -471,12 +464,7 @@ def test_with_column_duplicates() -> None:
 
 def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
-
-    with pytest.raises(
-        ComputeError,
-        match=r"The output type of the 'map_elements' function cannot be determined",
-    ):
-        df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
+    df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
 
 @pytest.mark.parametrize(
@@ -720,7 +708,7 @@ def test_raise_column_not_found_in_join_arg() -> None:
 def test_raise_on_different_results_20104() -> None:
     df = pl.DataFrame({"x": [1, 2]})
 
-    with pytest.raises(pl.exceptions.SchemaError):
+    with pytest.raises(TypeError):
         df.rolling("x", period="3i").agg(
             result=pl.col("x")
             .gather_every(2, offset=1)

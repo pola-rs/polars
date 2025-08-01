@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::IntoLazy;
-use polars_plan::prelude::{GetOutput, UserDefinedFunction};
+use polars_plan::dsl::BaseColumnUdf;
+use polars_plan::prelude::UserDefinedFunction;
 use polars_sql::SQLContext;
 use polars_sql::function_registry::FunctionRegistry;
 
@@ -34,21 +35,24 @@ impl FunctionRegistry for MyFunctionRegistry {
 fn test_udfs() -> PolarsResult<()> {
     let my_custom_sum = UserDefinedFunction::new(
         "my_custom_sum".into(),
-        GetOutput::map_dtypes(|dtypes| {
-            // UDF is responsible for schema validation
-            let Ok([first, second]) = <[&DataType; 2]>::try_from(dtypes) else {
-                polars_bail!(SchemaMismatch: "expected two arguments")
-            };
-            if first != second {
-                polars_bail!(SchemaMismatch: "mismatched types")
-            }
-            Ok(first.clone())
-        }),
-        move |c: &mut [Column]| {
-            let first = c[0].as_materialized_series().clone();
-            let second = c[1].as_materialized_series().clone();
-            (first + second).map(Column::from).map(Some)
-        },
+        BaseColumnUdf::new(
+            move |c: &mut [Column]| {
+                let first = c[0].as_materialized_series().clone();
+                let second = c[1].as_materialized_series().clone();
+                (first + second).map(Column::from)
+            },
+            |_: &Schema, fs: &[Field]| {
+                // UDF is responsible for schema validation
+                polars_ensure!(fs.len() == 2, SchemaMismatch: "expected two arguments");
+                let first = &fs[0];
+                let second = &fs[1];
+
+                if first.dtype() != second.dtype() {
+                    polars_bail!(SchemaMismatch: "mismatched types")
+                }
+                Ok(first.clone())
+            },
+        ),
     );
 
     let mut ctx = SQLContext::new()
@@ -75,21 +79,24 @@ fn test_udfs() -> PolarsResult<()> {
     // create a new UDF to be registered on the context
     let my_custom_divide = UserDefinedFunction::new(
         "my_custom_divide".into(),
-        GetOutput::map_dtypes(|dtypes| {
-            // UDF is responsible for schema validation
-            let Ok([first, second]) = <[&DataType; 2]>::try_from(dtypes) else {
-                polars_bail!(SchemaMismatch: "expected two arguments")
-            };
-            if first != second {
-                polars_bail!(SchemaMismatch: "mismatched types")
-            }
-            Ok(first.clone())
-        }),
-        move |c: &mut [Column]| {
-            let first = c[0].as_materialized_series().clone();
-            let second = c[1].as_materialized_series().clone();
-            (first / second).map(Column::from).map(Some)
-        },
+        BaseColumnUdf::new(
+            move |c: &mut [Column]| {
+                let first = c[0].as_materialized_series().clone();
+                let second = c[1].as_materialized_series().clone();
+                (first / second).map(Column::from)
+            },
+            |_: &Schema, fs: &[Field]| {
+                // UDF is responsible for schema validation
+                polars_ensure!(fs.len() == 2, SchemaMismatch: "expected two arguments");
+                let first = &fs[0];
+                let second = &fs[1];
+
+                if first.dtype() != second.dtype() {
+                    polars_bail!(SchemaMismatch: "mismatched types")
+                }
+                Ok(first.clone())
+            },
+        ),
     );
 
     // register a new UDF on an existing context

@@ -159,8 +159,6 @@ pub enum Expr {
         input: Vec<Expr>,
         /// function to apply
         function: OpaqueColumnUdf,
-        /// output dtype of the function
-        output_type: GetOutput,
 
         options: FunctionOptions,
         /// used for formatting
@@ -357,7 +355,6 @@ impl Hash for Expr {
             Expr::AnonymousFunction {
                 input,
                 function: _,
-                output_type: _,
                 options,
                 fmt_str,
             } => {
