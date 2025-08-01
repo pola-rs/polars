@@ -185,10 +185,7 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         # We use the cache by keying the entry as the address of the object
         # provided by the user.
         return _build_with_cache(
-            lambda: id(self.credential_provider).to_bytes(
-                length=8,
-                byteorder="little",
-            ),
+            lambda: id(self.credential_provider),
             lambda: CachedCredentialProvider(self.credential_provider),
         )
 
@@ -198,16 +195,16 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
 
 
 # The keys of this can be:
-# * 16-byte hashes from `AutoInit`
-# * 8-byte object addresses from `InitializedCredentialProvider`
-BUILT_PROVIDERS_LRU_CACHE: LRUCache[bytes, CredentialProviderBuilderReturn] | None = (
-    None
-)
+# * int: Object address of a user-passed credential provider
+# * bytes: Hash of an AutoInit configuration
+BUILT_PROVIDERS_LRU_CACHE: (
+    LRUCache[int | bytes, CredentialProviderBuilderReturn] | None
+) = None
 BUILT_PROVIDERS_LRU_CACHE_LOCK: threading.RLock = threading.RLock()
 
 
 def _build_with_cache(
-    get_cache_key_func: Callable[[], bytes],
+    get_cache_key_func: Callable[[], int | bytes],
     build_provider_func: Callable[[], CredentialProviderBuilderReturn],
 ) -> CredentialProviderBuilderReturn:
     global BUILT_PROVIDERS_LRU_CACHE
