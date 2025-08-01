@@ -721,7 +721,7 @@ class ArrayNameSpace:
             [3, 4]
             [null, 4]
         ]
-        >>> a.arr.concat(a.max())
+        >>> a.arr.concat(pl.lit(a.max(), dtype=pl.Int64))
         shape: (3,)
         Series: '' [array[i64, 2]]
         [
