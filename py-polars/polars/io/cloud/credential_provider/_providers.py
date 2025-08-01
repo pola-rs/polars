@@ -87,9 +87,6 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
         )
         self._has_logged_use_cache = False
 
-        if verbose():
-            eprint(f"[{self!r}]: CredentialProvider.__init__()")
-
     def __call__(self) -> CredentialProviderFunctionReturn:
         if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
             self._cached_credentials.set(None)
@@ -108,7 +105,10 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
 
         elif verbose() and not self._has_logged_use_cache:
             expiry = credentials[1]
-            eprint(f"[{self!r}]: Using cached credentials ({expiry = })")
+            eprint(
+                f"[{CachingCredentialProvider.__repr__(self)}]: "
+                f"Using cached credentials ({expiry = })"
+            )
             self._has_logged_use_cache = True
 
         creds, expiry = credentials
@@ -120,6 +120,9 @@ class CachingCredentialProvider(CredentialProvider, abc.ABC):
 
     def clear_cached_credentials(self) -> None:
         self._cached_credentials.set(None)
+
+    def __repr__(self) -> str:
+        return f"CachingCredentialProvider[{type(self).__name__} @ {hex(id(self))}]"
 
 
 class CachedCredentialProvider(CachingCredentialProvider):
