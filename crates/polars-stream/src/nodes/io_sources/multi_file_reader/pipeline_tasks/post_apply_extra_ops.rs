@@ -11,7 +11,7 @@ use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_file_reader::components::apply_extra_ops::ApplyExtraOps;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
 
-pub struct PostApplyPipeline {
+pub struct PostApplyExtraOps {
     pub reader_output_port: FileReaderOutputRecv,
     pub ops_applier: Arc<ApplyExtraOps>,
     /// We have this because initialization of `ops_applier` causes `reader_output_port` to have the
@@ -21,9 +21,9 @@ pub struct PostApplyPipeline {
     pub num_pipelines: usize,
 }
 
-impl PostApplyPipeline {
+impl PostApplyExtraOps {
     pub fn run(self) -> (MorselLinearizer, AbortOnDropHandle<PolarsResult<()>>) {
-        let PostApplyPipeline {
+        let PostApplyExtraOps {
             mut reader_output_port,
             ops_applier,
             first_morsel,

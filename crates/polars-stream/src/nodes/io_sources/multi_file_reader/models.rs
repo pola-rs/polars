@@ -1,6 +1,7 @@
 //! Structures for holding data.
 use std::collections::VecDeque;
 
+use components::row_counter::RowCounter;
 use components::row_deletions::ExternalFilterMask;
 use polars_core::prelude::PlHashMap;
 use polars_io::RowIndex;
@@ -10,7 +11,6 @@ use polars_utils::slice_enum::Slice;
 
 use crate::nodes::io_sources::multi_file_reader::components;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 
 /// Anything aside from reading columns from the file. E.g. row_index, slice, predicate etc.
 ///

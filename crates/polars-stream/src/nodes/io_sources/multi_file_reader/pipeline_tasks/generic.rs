@@ -32,7 +32,7 @@ use crate::nodes::io_sources::multi_file_reader::functions::projection::Projecti
 use crate::nodes::io_sources::multi_file_reader::functions::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,
 };
-use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyPipeline;
+use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyExtraOps;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, Projection,
@@ -966,7 +966,7 @@ async fn start_reader_impl(
             let ops_applier = Arc::new(ops_applier);
             let first_morsel = first_morsel.unwrap();
 
-            let (rx, handle) = PostApplyPipeline {
+            let (rx, handle) = PostApplyExtraOps {
                 reader_output_port,
                 ops_applier,
                 first_morsel,
