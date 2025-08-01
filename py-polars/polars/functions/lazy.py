@@ -22,6 +22,8 @@ from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
+from polars.dependencies import _check_for_numpy
+from polars.dependencies import numpy as np
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
@@ -1045,10 +1047,51 @@ def cov(
         return wrap_expr(plr.cov(a, b, ddof))
 
 
+class _map_batches_wrapper:
+    def __init__(
+        self,
+        function: Callable[[Series], Series | Any],
+        *,
+        map_groups: bool,
+    ) -> None:
+        self.function = function
+        self.map_groups = map_groups
+
+    def __call__(
+        self, sl: list[plr.PySeries], *args: Any, **kwargs: Any
+    ) -> plr.PySeries | None:
+        return_dtype = kwargs["return_dtype"]
+        slp = [wrap_s(s) for s in sl]
+
+        # ufunc and numba don't expect return_dtype
+        try:
+            rv = self.function(slp, *args, **kwargs)
+        except TypeError as e:
+            if "unexpected keyword argument 'return_dtype'" in e.args[0]:
+                kwargs.pop("return_dtype")
+                rv = self.function(slp, *args, **kwargs)
+            else:
+                raise
+
+        if _check_for_numpy(rv) and isinstance(rv, np.ndarray):
+            rv = pl.Series(rv, dtype=return_dtype)
+
+        if self.map_groups and rv is None:
+            return None
+        if isinstance(rv, pl.Series):
+            return rv._s
+        else:
+            return pl.Series([rv], dtype=return_dtype)._s
+
+
 def map_batches(
     exprs: Sequence[str] | Sequence[Expr],
     function: Callable[[Sequence[Series]], Series],
     return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
+    *,
+    is_elementwise: bool = False,
+    returns_scalar: bool = False,
+    _is_ufunc: bool = False,
 ) -> Expr:
     """
     Map a custom function over multiple columns/expressions.
@@ -1063,6 +1106,17 @@ def map_batches(
         Function to apply over the input.
     return_dtype
         dtype of the output Series.
+    is_elementwise
+        Set to true if the operations is elementwise for better performance
+        and optimization.
+
+        An elementwise operations has unit or equal length for all inputs
+        and can be ran sequentially on slices without results being affected.
+    returns_scalar
+        If the function returns a scalar, by default it will be wrapped in
+        a list in the output, since the assumption is that the function
+        always returns something Series-like. If you want to keep the
+        result as a scalar, set this argument to True.
 
     Returns
     -------
@@ -1105,17 +1159,24 @@ def map_batches(
         return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
     return wrap_expr(
-        plr.map_mul(
-            exprs, function, return_dtype, map_groups=False, returns_scalar=False
+        plr.map_expr(
+            exprs,
+            _map_batches_wrapper(function, map_groups=False),
+            return_dtype,
+            is_elementwise=is_elementwise,
+            returns_scalar=returns_scalar,
+            map_groups=False,
+            is_ufunc=_is_ufunc,
         )
     )
 
 
 def map_groups(
     exprs: Sequence[str | Expr],
-    function: Callable[[Sequence[Series]], Series | Any],
+    function: Callable[[Sequence[Series]], Series | None],
     return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     *,
+    is_elementwise: bool = False,
     returns_scalar: bool = False,
 ) -> Expr:
     """
@@ -1194,12 +1255,14 @@ def map_groups(
         return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
     return wrap_expr(
-        plr.map_mul(
+        plr.map_expr(
             exprs,
-            function,
+            _map_batches_wrapper(function, map_groups=True),
             return_dtype,
-            map_groups=True,
+            is_elementwise=is_elementwise,
             returns_scalar=returns_scalar,
+            map_groups=True,
+            is_ufunc=False,
         )
     )
 
