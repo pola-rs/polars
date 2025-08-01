@@ -336,9 +336,10 @@ fn calc_cols_per_thread(n_rows_per_col: usize, target_n_rows_per_thread: usize) 
     }
 
     let n = target_n_rows_per_thread / n_rows_per_col;
-    let distance = target_n_rows_per_thread % n_rows_per_col;
+    let floor_distance = target_n_rows_per_thread % n_rows_per_col;
+    let ceil_distance = n_rows_per_col - floor_distance;
 
-    if distance <= n_rows_per_col - distance {
+    if floor_distance <= ceil_distance {
         n.max(1)
     } else {
         n + 1
