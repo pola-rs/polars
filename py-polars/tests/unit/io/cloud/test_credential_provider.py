@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
-from polars.io.cloud._utils import LRUCache, NoPickleOption
+from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     AutoInit,
     _init_credential_provider_builder,
@@ -605,70 +605,6 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
     }
 
     assert expiry is None
-
-
-def test_lru_cache() -> None:
-    def _test(cache: LRUCache[int, str]) -> None:
-        with pytest.raises(ValueError):
-            cache.set_max_items(-1)
-
-        assert len(cache) == 0
-        assert cache.max_items() == 2
-
-        cache.insert(1, "1")
-        cache.insert(2, "2")
-
-        assert cache.get(2) == "2"
-        assert cache.get(1) == "1"
-
-        assert cache.contains(1)
-        assert cache.contains(2)
-
-        assert list(cache.keys()) == [2, 1]
-
-        cache.insert(3, "3")
-
-        # Note: We have 1, 3 due to cache.get() ordering above.
-        # The calls to contains() should not shift the LRU order.
-        assert list(cache.keys()) == [1, 3]
-
-        cache.insert(4, "4")
-
-        assert cache.contains(3)
-        assert cache.contains(4)
-
-        assert list(cache.keys()) == [3, 4]
-
-        cache.remove(4)
-        cache.insert(5, "5")
-
-        assert list(cache.keys()) == [3, 5]
-
-        assert cache.max_items() == 2
-        assert len(cache) == 2
-
-        cache.set_max_items(1)
-        assert cache.max_items() == 1
-        assert len(cache) == 1
-        assert list(cache.keys()) == [5]
-
-    cache: LRUCache[int, str] = LRUCache(2)
-
-    _test(cache)
-
-    cache.set_max_items(0)
-    assert len(cache) == 0
-    assert cache.max_items() == 0
-
-    cache.insert(1, "1")
-    assert len(cache.keys()) == 0
-    assert not cache.contains(1)
-
-    with pytest.raises(KeyError):
-        cache.remove(1)
-
-    cache.set_max_items(2)
-    _test(cache)
 
 
 @pytest.mark.slow
