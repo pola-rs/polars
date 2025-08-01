@@ -28,7 +28,7 @@ where
     O: Send + 'static,
 {
     /// Spawns the future onto the async executor.
-    pub fn new_spawned(fut: F) -> Self {
+    pub fn spawn(fut: F) -> Self {
         LocalOrSpawnedFuture::Spawned {
             handle: AbortOnDropHandle::new(spawn(TaskPriority::Low, fut)),
         }
@@ -98,8 +98,8 @@ where
     // Note:
     // * The local future must come first to ensure we don't block polling it.
     // * Remaining futures must all be spawned upfront into the Vec for them to run parallel.
-    futures.extend([first_fut, LocalOrSpawnedFuture::new_spawned(second_fut)]);
-    futures.extend(futures_iter.map(LocalOrSpawnedFuture::new_spawned));
+    futures.extend([first_fut, LocalOrSpawnedFuture::spawn(second_fut)]);
+    futures.extend(futures_iter.map(LocalOrSpawnedFuture::spawn));
 
     EnumUnitVec::from(futures)
 }
