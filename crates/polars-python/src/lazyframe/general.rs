@@ -15,6 +15,7 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyDictMethods, PyList};
+use python_dsl::SchemaProvider;
 
 use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
@@ -443,7 +444,7 @@ impl PyLazyFrame {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
         Ok(LazyFrame::scan_from_python_function(
-            Either::Right(schema),
+            SchemaProvider::Plain(schema),
             scan_fn,
             pyarrow,
             validate_schema,
@@ -464,7 +465,7 @@ impl PyLazyFrame {
                 .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
         ));
         Ok(LazyFrame::scan_from_python_function(
-            Either::Right(schema),
+            SchemaProvider::Plain(schema),
             scan_fn,
             pyarrow,
             validate_schema,
@@ -479,7 +480,7 @@ impl PyLazyFrame {
         validate_schema: bool,
     ) -> PyResult<Self> {
         Ok(LazyFrame::scan_from_python_function(
-            Either::Left(schema_fn),
+            SchemaProvider::Function(schema_fn.into()),
             scan_fn,
             false,
             validate_schema,
