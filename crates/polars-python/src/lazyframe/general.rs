@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
