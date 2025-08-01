@@ -1,6 +1,7 @@
 //! Implementation of applying the operations during execution.
 use std::sync::Arc;
 
+use models::ExtraOperations;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
@@ -12,12 +13,12 @@ use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
-use super::ExtraOperations;
 use crate::nodes::io_sources::multi_file_reader::components::column_selector::{
     ColumnSelector, ColumnSelectorBuilder,
 };
 use crate::nodes::io_sources::multi_file_reader::components::errors::missing_column_err;
 use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
+use crate::nodes::io_sources::multi_file_reader::models;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
 

@@ -14,7 +14,7 @@ use reader_interface::builder::FileReaderBuilder;
 use reader_interface::capabilities::ReaderCapabilities;
 
 use crate::nodes::io_sources::multi_file_reader::components::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
+use crate::nodes::io_sources::multi_file_reader::functions::projection::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface;
 
 // Some parts are called MultiFileReader for now to avoid conflict with existing MultiScan.

@@ -1,17 +1,16 @@
 pub mod bridge;
 pub mod components;
 pub mod config;
-pub mod initialization;
+pub mod functions;
+pub mod models;
 pub mod pipeline;
-mod pipeline_tasks;
 pub mod post_apply_pipeline;
 pub mod reader_interface;
-pub mod row_counter;
 
 use std::sync::{Arc, Mutex};
 
 use bridge::BridgeState;
-use initialization::MultiScanTaskInitializer;
+use functions::MultiScanTaskInitializer;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_utils::format_pl_smallstr;

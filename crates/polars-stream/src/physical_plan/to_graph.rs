@@ -1005,7 +1005,7 @@ fn to_graph_rec<'a>(
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
-            use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
+            use crate::nodes::io_sources::multi_file_reader::functions::projection::ProjectionBuilder;
 
             let reader = BatchFnReader {
                 name: name.clone(),

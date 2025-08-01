@@ -27,9 +27,9 @@ use crate::nodes::io_sources::multi_file_reader::components::row_deletions::{
 use crate::nodes::io_sources::multi_file_reader::components::{
     ExtraOperations, ForbidExtraColumns, missing_column_err,
 };
-use crate::nodes::io_sources::multi_file_reader::initialization::MultiScanTaskInitializer;
-use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
-use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
+use crate::nodes::io_sources::multi_file_reader::functions::MultiScanTaskInitializer;
+use crate::nodes::io_sources::multi_file_reader::functions::projection::ProjectionBuilder;
+use crate::nodes::io_sources::multi_file_reader::functions::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,
 };
 use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyPipeline;
