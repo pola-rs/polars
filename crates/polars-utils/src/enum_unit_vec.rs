@@ -10,7 +10,7 @@ impl<T> EnumUnitVec<T> {
         Self(Either::Right(Vec::new()))
     }
 
-    pub fn new_single(value: T) -> Self {
+    pub const fn new_single(value: T) -> Self {
         Self(Either::Left([value]))
     }
 }
