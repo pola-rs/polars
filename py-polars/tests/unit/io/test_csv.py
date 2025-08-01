@@ -6,6 +6,7 @@ import os
 import sys
 import textwrap
 import zlib
+from collections import ChainMap
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from tempfile import NamedTemporaryFile
@@ -2384,10 +2385,12 @@ def test_csv_quoted_newlines_skip_rows_19535() -> None:
 def test_csv_read_time_dtype(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "1"
-    path.write_bytes(b"""\
+    path.write_bytes(
+        b"""\
 time
 00:00:00.000000000
-""")
+"""
+    )
 
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
 
@@ -2446,10 +2449,12 @@ def test_batched_csv_schema_overrides(io_files_path: Path) -> None:
 
 
 def test_csv_ragged_lines_20062() -> None:
-    buf = io.StringIO("""A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V
+    buf = io.StringIO(
+        """A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V
 ,"B",,,,,,,,,A,,,,,,,,
 a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,0.0,1.0,2.0,3.0
-""")
+"""
+    )
     assert pl.read_csv(buf, truncate_ragged_lines=True).to_dict(as_series=False) == {
         "A": [None, "a"],
         "B": ["B", "a"],
@@ -2561,9 +2566,11 @@ def test_csv_enum_raise() -> None:
 
 def test_csv_no_header_ragged_lines_1505() -> None:
     # Test that the header schema will grow dynamically.
-    csv = io.StringIO("""a,b,c
+    csv = io.StringIO(
+        """a,b,c
 a,b,c,d,e,f
-g,h,i,j,k""")
+g,h,i,j,k"""
+    )
 
     assert pl.read_csv(csv, has_header=False).to_dict(as_series=False) == {
         "column_1": ["a", "a", "g"],
@@ -2784,3 +2791,27 @@ def test_stop_split_fields_simd_23651() -> None:
     df = pl.read_csv(buf, truncate_ragged_lines=True, has_header=False, schema=schema)
     assert df.shape == (7, 27)
     assert df["column_26"].null_count() == 7
+
+
+def test_read_csv_nonlist_schema_override() -> None:
+    csv = "name,age\nJohn,20\nJane,30"
+    df = pl.read_csv(
+        io.StringIO(csv),
+        columns=["age"],
+        schema_overrides=(pl.UInt8,),
+    )
+    assert df.schema == pl.Schema({"age": pl.UInt8})
+
+
+def test_read_csv_nondict_schema_override() -> None:
+    csv = "name,age\nJohn,20\nJane,30"
+    dt_enum = pl.Enum(["John", "Jane"])
+
+    d_name = {"name": dt_enum}
+    d_age = {"age": pl.UInt8}
+
+    df = pl.read_csv(
+        io.StringIO(csv),
+        schema_overrides=ChainMap(d_name, d_age),
+    )
+    assert df.schema == pl.Schema({"name": dt_enum, "age": pl.UInt8})
