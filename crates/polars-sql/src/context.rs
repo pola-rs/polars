@@ -803,10 +803,7 @@ impl SQLContext {
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
             for p in projections.iter() {
-                let name = p
-                    .to_field(schema.deref(), Context::Default)?
-                    .name
-                    .to_string();
+                let name = p.to_field(schema.deref())?.name.to_string();
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
@@ -1302,8 +1299,7 @@ impl SQLContext {
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
         let schema_before = self.get_frame_schema(&mut lf)?;
-        let group_by_keys_schema =
-            expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
+        let group_by_keys_schema = expressions_to_schema(group_by_keys, &schema_before)?;
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
@@ -1337,7 +1333,7 @@ impl SQLContext {
                     projection_aliases.insert(alias.as_ref());
                 }
             }
-            let field = e.to_field(&schema_before, Context::Default)?;
+            let field = e.to_field(&schema_before)?;
             if group_by_keys_schema.get(&field.name).is_none() && is_agg_or_window {
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode(expr)) = &e {
@@ -1372,8 +1368,7 @@ impl SQLContext {
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
-        let projection_schema =
-            expressions_to_schema(projections, &schema_before, Context::Default)?;
+        let projection_schema = expressions_to_schema(projections, &schema_before)?;
 
         // A final projection to get the proper order and any deferred transforms/aliases.
         let final_projection = projection_schema
