@@ -1,0 +1,6 @@
+﻿polars.Series.quantile
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.quantile
