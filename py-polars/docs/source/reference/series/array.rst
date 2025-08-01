@@ -13,6 +13,7 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.any
     Series.arr.arg_max
     Series.arr.arg_min
+    Series.arr.concat
     Series.arr.contains
     Series.arr.count_matches
     Series.arr.explode
