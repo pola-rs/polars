@@ -15,7 +15,6 @@ import zstandard
 if TYPE_CHECKING:
     from pathlib import Path
 
-import orjson
 import pytest
 
 import polars as pl
@@ -420,17 +419,6 @@ def test_json_normalize() -> None:
             '{"height": 130, "weight": 60}',
             '{"height": 130, "weight": 60}',
             '{"height": 130, "weight": 60}',
-        ],
-    }
-    assert pl.json_normalize(data, max_level=0, encoder=orjson.dumps).to_dict(
-        as_series=False,
-    ) == {
-        "id": [1, None, 2],
-        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
-        "fitness": [
-            b'{"height":130,"weight":60}',
-            b'{"height":130,"weight":60}',
-            b'{"height":130,"weight":60}',
         ],
     }
 

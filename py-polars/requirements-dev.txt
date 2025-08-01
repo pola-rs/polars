@@ -26,10 +26,10 @@ pydantic>=2.0.0
 tzdata; platform_system == 'Windows'
 # Database
 sqlalchemy
-adbc-driver-manager; platform_system != 'Windows'
-adbc-driver-sqlite; platform_system != 'Windows'
+#adbc-driver-manager; platform_system != 'Windows' # TODO is not supported on free-threaded python
+#adbc-driver-sqlite; platform_system != 'Windows' # TODO is not supported on free-threaded python
 aiosqlite
-connectorx
+# connectorx # TODO connectorx is not supported on free-threaded python
 kuzu
 # Cloud
 azure-identity
@@ -57,7 +57,6 @@ matplotlib
 # Testing
 hypothesis
 # Miscellaneous
-orjson
 
 # -------
 # TOOLING
