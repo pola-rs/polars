@@ -52,7 +52,7 @@ where
     }
 }
 
-/// Parallelizes an iterator of futures across the computational async runtime.
+/// Parallelizes futures across the computational async runtime.
 ///
 /// As an optimization for cache access, the first future is kept on the current thread. If there
 /// is only 1 future, then all data is kept on the current thread and spawn is not called at all.
@@ -61,9 +61,6 @@ where
 ///
 /// Note that dropping the iterator will call abort on all spawned futures, as this is intended to be
 /// used for compute.
-///
-/// # Panics
-/// Panics if the iterator has less than `futures_iter_length` items.
 pub fn parallelize_first_to_local<I, F, O>(
     futures_iter: I,
 ) -> impl ExactSizeIterator<Item = impl Future<Output = O> + Send + 'static>
