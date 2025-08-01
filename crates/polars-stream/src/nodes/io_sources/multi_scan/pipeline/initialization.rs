@@ -11,9 +11,7 @@ use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
-use crate::nodes::io_sources::multi_scan::components::bridge::{
-    BridgeRecvPort, BridgeState,
-};
+use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
