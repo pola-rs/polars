@@ -13,6 +13,7 @@ bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
 compact_str = { workspace = true }
+either = { workspace = true }
 flate2 = { workspace = true, default-features = true, optional = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
