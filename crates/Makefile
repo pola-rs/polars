@@ -114,6 +114,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-schema
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-compute
+	cargo publish --allow-dirty -p polars-dtype
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
