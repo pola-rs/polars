@@ -1,37 +1,18 @@
 use std::collections::VecDeque;
 
+use components::row_deletions::DeletionFilesProvider;
 use futures::StreamExt;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::PolarsResult;
-use polars_io::RowIndex;
 use polars_utils::slice_enum::Slice;
 
-use super::deletion_files::{DeletionFilesProvider, ExternalFilterMask};
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
-
-pub struct ResolvedSliceInfo {
-    /// In the negative slice case this can be a non-zero starting position.
-    pub scan_source_idx: usize,
-    /// In the negative slice case this will hold a row index with the offset adjusted.
-    pub row_index: Option<RowIndex>,
-    /// Resolved positive slice.
-    pub pre_slice: Option<Slice>,
-    /// If we resolved a negative slice we keep the initialized readers here (with a limit). For
-    /// Parquet this can save a duplicate metadata fetch/decode.
-    ///
-    /// This will be in-order - i.e. `pop_front()` corresponds to the next reader.
-    ///
-    /// `Option(scan_source_idx, Deque(file_reader, n_rows))`
-    #[expect(clippy::type_complexity)]
-    pub initialized_readers: Option<(usize, VecDeque<(Box<dyn FileReader>, RowCounter)>)>,
-    pub row_deletions: PlHashMap<usize, ExternalFilterMask>,
-}
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::pipeline::models::ResolvedSliceInfo;
+use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
 
 pub async fn resolve_to_positive_slice(
-    config: &MultiFileReaderConfig,
+    config: &MultiScanConfig,
 ) -> PolarsResult<ResolvedSliceInfo> {
     match config.pre_slice.clone() {
         None => Ok(ResolvedSliceInfo {
@@ -55,7 +36,7 @@ pub async fn resolve_to_positive_slice(
 }
 
 /// Translates a negative slice to positive slice.
-async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<ResolvedSliceInfo> {
+async fn resolve_negative_slice(config: &MultiScanConfig) -> PolarsResult<ResolvedSliceInfo> {
     let verbose = config.verbose;
 
     let pre_slice @ Slice::Negative {

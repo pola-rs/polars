@@ -16,10 +16,8 @@ use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
-    BeginReadArgs, FileReaderCallbacks,
-};
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::{BeginReadArgs, FileReaderCallbacks};
 #[cfg(feature = "parquet")]
 use crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder;
 
@@ -139,7 +137,7 @@ impl DeletionFilesProvider {
                         let handles = file_readers
                             .into_iter()
                             .map(|init_fut| {
-                                use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
+                                use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 
                                 let begin_read_args = BeginReadArgs {
                                     projection: Projection::Plain(projected_schema.clone()),

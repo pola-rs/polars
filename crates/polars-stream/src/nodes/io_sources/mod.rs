@@ -1,4 +1,4 @@
-pub mod multi_file_reader;
+pub mod multi_scan;
 
 pub mod batch;
 #[cfg(feature = "csv")]
