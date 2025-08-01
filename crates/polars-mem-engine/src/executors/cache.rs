@@ -112,7 +112,7 @@ impl Executor for CachePrefiller {
             #[cfg(feature = "async")]
             if state.verbose() && !scan_handles.is_empty() {
                 eprintln!(
-                    "CachePrefiller: wait for {} scans executors",
+                    "CachePrefiller: wait for {} scan executors",
                     scan_handles.len()
                 )
             }
@@ -128,7 +128,7 @@ impl Executor for CachePrefiller {
         #[cfg(feature = "async")]
         if state.verbose() && !scan_handles.is_empty() {
             eprintln!(
-                "CachePrefiller: wait for {} scans executors",
+                "CachePrefiller: wait for {} scan executors",
                 scan_handles.len()
             )
         }
