@@ -1,6 +1,6 @@
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{ColumnsUdf, Expr, GetOutput, OpaqueColumnUdf};
+use super::{AnonymousColumnsUdf, Expr, OpaqueColumnUdf};
 use crate::prelude::{FunctionOptions, new_column_udf};
 
 /// Represents a user-defined function
@@ -8,8 +8,6 @@ use crate::prelude::{FunctionOptions, new_column_udf};
 pub struct UserDefinedFunction {
     /// name
     pub name: PlSmallStr,
-    /// The function output type.
-    pub return_type: GetOutput,
     /// The function implementation.
     pub fun: OpaqueColumnUdf,
     /// Options for the function.
@@ -28,10 +26,9 @@ impl std::fmt::Debug for UserDefinedFunction {
 
 impl UserDefinedFunction {
     /// Create a new UserDefinedFunction
-    pub fn new(name: PlSmallStr, return_type: GetOutput, fun: impl ColumnsUdf + 'static) -> Self {
+    pub fn new(name: PlSmallStr, fun: impl AnonymousColumnsUdf + 'static) -> Self {
         Self {
             name,
-            return_type,
             fun: new_column_udf(fun),
             options: FunctionOptions::default(),
         }
@@ -42,7 +39,6 @@ impl UserDefinedFunction {
         Expr::AnonymousFunction {
             input: args,
             function: self.fun,
-            output_type: self.return_type.clone(),
             options: self.options,
             fmt_str: Box::new(PlSmallStr::EMPTY),
         }
