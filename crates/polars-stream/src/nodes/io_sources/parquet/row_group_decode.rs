@@ -98,8 +98,7 @@ impl RowGroupDecoder {
             let mask = mask.bool().unwrap();
 
             let filtered =
-                unsafe { filter_cols(df.take_columns(), mask, self.target_values_per_thread) }
-                    .await?;
+                filter_cols(df.take_columns(), mask, self.target_values_per_thread).await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -292,9 +291,8 @@ fn decode_column(
     Ok((series.into_column(), pred_true_mask))
 }
 
-/// # Safety
-/// All series in `cols` have the same length.
-async unsafe fn filter_cols(
+/// Filters columns, in parallel depending number of rows / columns.
+async fn filter_cols(
     cols: Vec<Column>,
     mask: &BooleanChunked,
     target_values_per_thread: usize,
@@ -533,8 +531,7 @@ impl RowGroupDecoder {
             }
 
             let filtered =
-                unsafe { filter_cols(live_df.take_columns(), mask, self.target_values_per_thread) }
-                    .await?;
+                filter_cols(live_df.take_columns(), mask, self.target_values_per_thread).await?;
 
             let filtered_height = if let Some(fst) = filtered.first() {
                 fst.len()
