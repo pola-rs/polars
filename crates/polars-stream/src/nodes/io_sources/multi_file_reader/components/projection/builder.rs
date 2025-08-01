@@ -11,8 +11,9 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::nodes::io_sources::multi_file_reader::components::column_selector::{
     ColumnSelector, ColumnSelectorBuilder,
 };
-use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::projection::ProjectionTransform;
+use crate::nodes::io_sources::multi_file_reader::components::projection::{
+    Projection, ProjectionTransform,
+};
 
 /// Provides projections for columns that are sourced from the file.
 #[derive(Debug, Clone)]

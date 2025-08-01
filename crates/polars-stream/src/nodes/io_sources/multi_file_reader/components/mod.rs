@@ -4,6 +4,7 @@ pub mod bridge;
 pub mod column_selector;
 pub mod errors;
 pub mod forbid_extra_columns;
+pub mod physical_slice;
 pub mod projection;
 pub mod row_counter;
 pub mod row_deletions;

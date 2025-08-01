@@ -1,14 +1,13 @@
-mod components;
+pub mod components;
 pub mod config;
 pub mod functions;
 mod models;
-mod pipeline_initialization;
-mod pipeline_tasks;
+mod pipeline;
 pub mod reader_interface;
 
 use std::sync::{Arc, Mutex};
 
-use pipeline_initialization::initialize_multi_scan_pipeline;
+use pipeline::initialization::initialize_multi_scan_pipeline;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_utils::format_pl_smallstr;
@@ -21,11 +20,11 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
+use crate::nodes::io_sources::multi_file_reader::components::bridge::BridgeState;
 use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::functions::{
     calc_max_concurrent_scans, calc_n_readers_pre_init,
 };
-use crate::nodes::io_sources::multi_file_reader::pipeline_tasks::bridge::BridgeState;
 
 pub struct MultiFileReader {
     name: PlSmallStr,
@@ -194,7 +193,7 @@ impl MultiScanState {
         ));
 
         let (join_handle, send_phase_tx_to_bridge, bridge_state) =
-            initialize_multi_scan_pipeline::new(config).spawn_background_tasks();
+            initialize_multi_scan_pipeline(config).spawn_background_tasks();
 
         let wait_group = WaitGroup::default();
 
@@ -209,7 +208,7 @@ impl MultiScanState {
     /// Refresh the state. This checks the bridge state if `self` is initialized and updates accordingly.
     async fn refresh(&mut self, verbose: bool) -> PolarsResult<()> {
         use MultiScanState::*;
-        use pipeline_tasks::bridge::StopReason;
+        use components::bridge::StopReason;
 
         // Take, so that if we error below the state will be left as finished.
         let slf = std::mem::replace(self, MultiScanState::Finished);

@@ -1,7 +1,6 @@
 use arrow::bitmap::Bitmap;
 use components::bridge::BridgeRecvPort;
-use components::row_deletions::{DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit};
-use components::{ExtraOperations, ForbidExtraColumns};
+use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use polars_error::PolarsResult;
@@ -13,8 +12,10 @@ use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_file_reader::components;
-use crate::nodes::io_sources::multi_file_reader::functions::resolve_slice::{
-    ResolvedSliceInfo, resolve_to_positive_slice,
+use crate::nodes::io_sources::multi_file_reader::components::physical_slice::PhysicalSlice;
+use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_file_reader::pipeline::models::{
+    ExtraOperations, StartReaderArgsConstant, StartedReaderState,
 };
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
@@ -22,31 +23,31 @@ use crate::nodes::io_sources::multi_file_reader::reader_interface::{
 };
 
 /// Starts readers, potentially multiple at the same time if it can.
-struct ReaderStarter {
-    reader_capabilities: ReaderCapabilities,
-    readers_init_iter: BoxStream<'static, PolarsResult<InitializedReaderState>>,
-    n_sources: usize,
-    started_reader_tx: tokio::sync::mpsc::Sender<(
+pub(super) struct ReaderStarter {
+    pub(super) reader_capabilities: ReaderCapabilities,
+    pub(super) readers_init_iter: BoxStream<'static, PolarsResult<InitializedReaderState>>,
+    pub(super) n_sources: usize,
+    pub(super) started_reader_tx: tokio::sync::mpsc::Sender<(
         AbortOnDropHandle<PolarsResult<StartedReaderState>>,
         WaitToken,
     )>,
-    max_concurrent_scans: usize,
-    skip_files_mask: Option<Bitmap>,
-    extra_ops: ExtraOperations,
-    constant_args: StartReaderArgsConstant,
-    verbose: bool,
+    pub(super) max_concurrent_scans: usize,
+    pub(super) skip_files_mask: Option<Bitmap>,
+    pub(super) extra_ops: ExtraOperations,
+    pub(super) constant_args: StartReaderArgsConstant,
+    pub(super) verbose: bool,
 }
 
-pub struct InitializedReaderState {
-    scan_source_idx: usize,
-    scan_source: ScanSource,
-    reader: Box<dyn FileReader>,
-    n_rows_in_file: Option<RowCounter>,
-    row_deletions: Option<RowDeletionsInit>,
+pub(super) struct InitializedReaderState {
+    pub(super) scan_source_idx: usize,
+    pub(super) scan_source: ScanSource,
+    pub(super) reader: Box<dyn FileReader>,
+    pub(super) n_rows_in_file: Option<RowCounter>,
+    pub(super) row_deletions: Option<RowDeletionsInit>,
 }
 
 impl ReaderStarter {
-    async fn run(self) -> PolarsResult<()> {
+    pub(super) async fn run(self) -> PolarsResult<()> {
         let ReaderStarter {
             reader_capabilities,
             mut readers_init_iter,
@@ -376,4 +377,291 @@ impl ReaderStarter {
 
         Ok(())
     }
+}
+
+/// This function gets run in a spawned task to avoid blocking the ReaderStarter's loop.
+async fn start_reader_impl(
+    constant_args: StartReaderArgsConstant,
+    args_this_file: StartReaderArgsPerFile,
+) -> PolarsResult<StartedReaderState> {
+    let StartReaderArgsConstant {
+        hive_parts,
+        final_output_schema,
+        reader_capabilities,
+        file_projection_builder,
+        cast_columns_policy,
+        missing_columns_policy,
+        forbid_extra_columns,
+        num_pipelines,
+        verbose,
+    } = constant_args;
+
+    let StartReaderArgsPerFile {
+        scan_source,
+        scan_source_idx,
+        mut reader,
+        pre_slice_this_file,
+        extra_ops_this_file,
+        mut callbacks,
+        external_filter_mask,
+    } = args_this_file;
+
+    let file_iceberg_schema: Option<IcebergSchema> =
+        if matches!(&file_projection_builder, ProjectionBuilder::Iceberg { .. }) {
+            reader
+                .file_arrow_schema()
+                .await?
+                .map(|x| IcebergSchema::from_arrow_schema(x.as_ref()))
+                .transpose()?
+        } else {
+            None
+        };
+
+    let file_projection = file_projection_builder.build_projection(
+        None,
+        file_iceberg_schema.as_ref(),
+        cast_columns_policy.clone(),
+    )?;
+
+    let mut extra_ops_post = extra_ops_this_file;
+
+    let (
+        mut projection_to_reader,
+        projection_to_post,
+        row_index,
+        pre_slice,
+        mut predicate,
+        external_filter_mask,
+    ) = ReaderOperationPushdown {
+        file_projection: file_projection.clone(),
+        reader_capabilities,
+        external_filter_mask: external_filter_mask.clone(),
+        extra_ops_post: &mut extra_ops_post,
+    }
+    .push_operations();
+
+    // Position of the first morsel sent by the reader.
+    let first_morsel_position = if pre_slice.is_some() {
+        // Pre-slice was pushed to reader.
+        let Some(PhysicalSlice {
+            slice: _,
+            slice_start_position,
+        }) = pre_slice_this_file
+        else {
+            panic!("{pre_slice_this_file:?}")
+        };
+
+        slice_start_position
+    } else {
+        RowCounter::default()
+    };
+
+    if verbose {
+        eprintln!(
+            "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
+            projection_to_reader: {:?}, \
+            projection_to_post: {:?}, \
+            pre_slice_to_reader: {:?}, \
+            external_filter_mask: {}",
+            &projection_to_reader,
+            &projection_to_post,
+            pre_slice,
+            ExternalFilterMask::log_display(external_filter_mask.as_ref()),
+        )
+    }
+
+    let file_schema_rx = if forbid_extra_columns.is_some() {
+        // Upstream should not have any reason to attach this.
+        assert!(callbacks.file_schema_tx.is_none());
+        let (tx, rx) = connector::connector();
+        callbacks.file_schema_tx = Some(tx);
+        Some(rx)
+    } else {
+        None
+    };
+
+    // Should not have both of these set, as the `n_rows_in_file` will cause the `row_position_on_end`
+    // callback to be unnecessarily blocked in CSV and NDJSON.
+    debug_assert!(
+        !(callbacks.row_position_on_end_tx.is_some() && callbacks.n_rows_in_file_tx.is_some()),
+    );
+
+    if let Some(predicate) = predicate.as_mut() {
+        assert!(matches!(projection_to_post, Projection::Plain(_)));
+
+        let reader_file_schema = reader.file_schema().await?;
+
+        // If we are sending a filter into the reader, fully initialize and resolve the projection
+        // here (i.e. column renaming / casting).
+        projection_to_reader = match projection_to_reader {
+            Projection::Plain(projected_schema) => {
+                assert!(file_iceberg_schema.is_none());
+                assert!(matches!(
+                    file_projection_builder,
+                    ProjectionBuilder::Plain(_)
+                ));
+                assert!(matches!(projection_to_post, Projection::Plain(_)));
+
+                ProjectionBuilder::new(projected_schema, None).build_projection(
+                    Some(reader_file_schema.as_ref()),
+                    None,
+                    cast_columns_policy.clone(),
+                )?
+            },
+            Projection::Mapped { .. } => projection_to_reader,
+        };
+
+        let mut external_predicate_cols = Vec::with_capacity(
+            hive_parts.as_ref().map_or(0, |x| x.df().width())
+                + extra_ops_post.include_file_paths.is_some() as usize
+                + projection_to_reader.num_missing_columns().unwrap(),
+        );
+
+        if let Some(hp) = &hive_parts {
+            external_predicate_cols.extend(
+                hp.df()
+                    .get_columns()
+                    .iter()
+                    .filter(|c| predicate.live_columns.contains(c.name()))
+                    .map(|c| {
+                        (
+                            c.name().clone(),
+                            Scalar::new(
+                                c.dtype().clone(),
+                                c.get(scan_source_idx).unwrap().into_static(),
+                            ),
+                        )
+                    }),
+            );
+        }
+
+        if let Some(col_name) = extra_ops_post.include_file_paths.clone() {
+            external_predicate_cols.push((
+                col_name,
+                Scalar::new(
+                    DataType::String,
+                    AnyValue::StringOwned(
+                        scan_source
+                            .as_scan_source_ref()
+                            .to_include_path_name()
+                            .into(),
+                    ),
+                ),
+            ))
+        }
+
+        for (missing_col_name, dtype) in
+            file_projection.iter_missing_columns(Some(&reader_file_schema))?
+        {
+            match &missing_columns_policy {
+                MissingColumnsPolicy::Insert => external_predicate_cols
+                    .push((missing_col_name.clone(), Scalar::null(dtype.clone()))),
+                MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),
+            }
+        }
+
+        predicate.set_external_constant_columns(external_predicate_cols);
+    }
+
+    let begin_read_args = BeginReadArgs {
+        projection: projection_to_reader,
+        row_index,
+        pre_slice,
+        predicate,
+        cast_columns_policy: cast_columns_policy.clone(),
+        num_pipelines,
+        callbacks,
+    };
+
+    let (mut reader_output_port, reader_handle) = reader.begin_read(begin_read_args)?;
+
+    let reader_handle = AbortOnDropHandle::new(reader_handle);
+
+    if let Some(forbid_extra_columns) = forbid_extra_columns {
+        if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
+            forbid_extra_columns
+                .check_file_schema(&this_file_schema, file_iceberg_schema.as_ref())?;
+        } else {
+            drop(reader_output_port);
+            return Err(reader_handle.await.unwrap_err());
+        }
+    }
+
+    let first_morsel = reader_output_port.recv().await.ok();
+
+    let ops_applier = if let Some(first_morsel) = &first_morsel {
+        let final_output_schema = final_output_schema.clone();
+        let extra_ops = extra_ops_post;
+
+        if verbose {
+            eprintln!(
+                "start_reader_impl: \
+                scan_source_idx: {scan_source_idx}, \
+                first_morsel_position: {first_morsel_position:?}"
+            )
+        }
+
+        ApplyExtraOps::Uninitialized {
+            final_output_schema,
+            projection: projection_to_post,
+            cast_columns_policy,
+            missing_columns_policy,
+            extra_ops,
+            scan_source: scan_source.clone(),
+            scan_source_idx,
+            hive_parts,
+            external_filter_mask,
+        }
+        .initialize(first_morsel.df().schema())?
+    } else {
+        ApplyExtraOps::Noop
+    };
+
+    // Note: We assume that if we have an Initialized ops_applier, then the first_morsel is Some(_).
+
+    if verbose {
+        eprintln!(
+            "start_reader_impl: \
+            scan_source_idx: {scan_source_idx}, \
+            ApplyExtraOps::{}, \
+            first_morsel_position: {first_morsel_position:?}",
+            ops_applier.variant_name(),
+        );
+    }
+
+    let (bridge_recv_port, post_apply_pipeline_handle) = match ops_applier {
+        ApplyExtraOps::Initialized { .. } => {
+            let ops_applier = Arc::new(ops_applier);
+            let first_morsel = first_morsel.unwrap();
+
+            let (rx, handle) = PostApplyExtraOps {
+                reader_output_port,
+                ops_applier,
+                first_morsel,
+                first_morsel_position,
+                num_pipelines,
+            }
+            .run();
+
+            (BridgeRecvPort::Linearized { rx }, Some(handle))
+        },
+
+        ApplyExtraOps::Noop => (
+            BridgeRecvPort::Direct {
+                rx: reader_output_port,
+                first_morsel,
+            },
+            None,
+        ),
+
+        ApplyExtraOps::Uninitialized { .. } => unreachable!(),
+    };
+
+    let state = StartedReaderState {
+        bridge_recv_port,
+        post_apply_pipeline_handle,
+        reader_handle,
+    };
+
+    Ok(state)
 }

@@ -139,7 +139,7 @@ impl DeletionFilesProvider {
                         let handles = file_readers
                             .into_iter()
                             .map(|init_fut| {
-                                use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
+                                use crate::nodes::io_sources::multi_file_reader::components::projection::Projection;
 
                                 let begin_read_args = BeginReadArgs {
                                     projection: Projection::Plain(projected_schema.clone()),

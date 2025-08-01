@@ -3,7 +3,6 @@
 pub mod builder;
 pub mod capabilities;
 pub mod output;
-pub mod projection;
 
 use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
@@ -15,10 +14,10 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::CastColumnsPolicy;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
-pub use projection::Projection;
 
 use crate::async_executor::JoinHandle;
 use crate::async_primitives::connector;
+pub use crate::nodes::io_sources::multi_file_reader::components::projection::Projection;
 
 /// Interface to read a single file
 #[async_trait]
