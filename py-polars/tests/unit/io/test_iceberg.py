@@ -53,18 +53,18 @@ class TestIcebergScanIO:
     """Test coverage for `iceberg` scan ops."""
 
     def test_scan_iceberg_plain(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
         }
 
     def test_scan_iceberg_snapshot_id(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
