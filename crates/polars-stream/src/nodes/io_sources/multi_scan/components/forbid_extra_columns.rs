@@ -3,7 +3,7 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_plan::dsl::{ColumnMapping, ExtraColumnsPolicy};
 
-use crate::nodes::io_sources::multi_file_reader::components::errors::extra_column_err;
+use crate::nodes::io_sources::multi_scan::components::errors::extra_column_err;
 
 #[derive(Debug, Clone)]
 pub enum ForbidExtraColumns {

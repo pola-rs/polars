@@ -17,7 +17,7 @@ use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::JoinHandle;
 use crate::async_primitives::connector;
-pub use crate::nodes::io_sources::multi_file_reader::components::projection::Projection;
+pub use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 
 /// Interface to read a single file
 #[async_trait]

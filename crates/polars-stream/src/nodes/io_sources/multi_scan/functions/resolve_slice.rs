@@ -7,12 +7,12 @@ use polars_error::PolarsResult;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
-use crate::nodes::io_sources::multi_file_reader::pipeline::models::ResolvedSliceInfo;
-use crate::nodes::io_sources::multi_file_reader::{MultiFileReaderConfig, components};
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::pipeline::models::ResolvedSliceInfo;
+use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
 
 pub async fn resolve_to_positive_slice(
-    config: &MultiFileReaderConfig,
+    config: &MultiScanConfig,
 ) -> PolarsResult<ResolvedSliceInfo> {
     match config.pre_slice.clone() {
         None => Ok(ResolvedSliceInfo {
@@ -36,7 +36,7 @@ pub async fn resolve_to_positive_slice(
 }
 
 /// Translates a negative slice to positive slice.
-async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<ResolvedSliceInfo> {
+async fn resolve_negative_slice(config: &MultiScanConfig) -> PolarsResult<ResolvedSliceInfo> {
     let verbose = config.verbose;
 
     let pre_slice @ Slice::Negative {

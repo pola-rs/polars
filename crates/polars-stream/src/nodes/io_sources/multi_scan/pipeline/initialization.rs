@@ -11,29 +11,27 @@ use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector::{self};
-use crate::nodes::io_sources::multi_file_reader::components::bridge::{
+use crate::nodes::io_sources::multi_scan::components::bridge::{
     BridgeRecvPort, BridgeState,
 };
-use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
-use crate::nodes::io_sources::multi_file_reader::components::row_deletions::{
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };
-use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
-use crate::nodes::io_sources::multi_file_reader::functions::resolve_slice::resolve_to_positive_slice;
-use crate::nodes::io_sources::multi_file_reader::pipeline::models::{
+use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
+use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
+use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, StartReaderArgsConstant,
 };
-use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::attach_reader_to_bridge::AttachReaderToBridge;
-use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::bridge::spawn_bridge;
-use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::reader_starter::{
+use crate::nodes::io_sources::multi_scan::pipeline::tasks::attach_reader_to_bridge::AttachReaderToBridge;
+use crate::nodes::io_sources::multi_scan::pipeline::tasks::bridge::spawn_bridge;
+use crate::nodes::io_sources::multi_scan::pipeline::tasks::reader_starter::{
     InitializedReaderState, ReaderStarter,
 };
-use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
-pub fn initialize_multi_scan_pipeline(
-    config: Arc<MultiFileReaderConfig>,
-) -> InitializedPipelineState {
+pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> InitializedPipelineState {
     assert!(config.num_pipelines() > 0);
 
     if config.verbose {
@@ -71,7 +69,7 @@ pub fn initialize_multi_scan_pipeline(
 }
 
 async fn finish_initialize_multi_scan_pipeline(
-    config: Arc<MultiFileReaderConfig>,
+    config: Arc<MultiScanConfig>,
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
 ) -> PolarsResult<()> {
     let verbose = config.verbose;

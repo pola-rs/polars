@@ -12,14 +12,14 @@ use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::slice_enum::Slice;
 
-use crate::nodes::io_sources::multi_file_reader::components::column_selector::{
+use crate::nodes::io_sources::multi_scan::components::column_selector::{
     ColumnSelector, ColumnSelectorBuilder,
 };
-use crate::nodes::io_sources::multi_file_reader::components::errors::missing_column_err;
-use crate::nodes::io_sources::multi_file_reader::components::projection::Projection;
-use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
-use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
-use crate::nodes::io_sources::multi_file_reader::pipeline::models::ExtraOperations;
+use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
+use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::components::row_deletions::ExternalFilterMask;
+use crate::nodes::io_sources::multi_scan::pipeline::models::ExtraOperations;
 
 /// Apply extra operations onto morsels originating from a reader. This should be initialized
 /// per-reader (it contains e.g. file path).

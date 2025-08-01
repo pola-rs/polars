@@ -26,9 +26,9 @@ use polars_utils::{IdxSize, unique_column_name};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
-use crate::nodes::io_sources::multi_file_reader;
-use crate::nodes::io_sources::multi_file_reader::components::forbid_extra_columns::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan;
+use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{
     ExprCache, build_length_preserving_select_stream, build_select_stream,
     is_elementwise_rec_cached, lower_exprs,
@@ -566,7 +566,7 @@ pub fn lower_ir(
                     let file_schema = file_info.schema;
 
                     let (file_projection_builder, file_schema) =
-                        multi_file_reader::functions::resolve_projections::resolve_projections(
+                        multi_scan::functions::resolve_projections::resolve_projections(
                             &output_schema,
                             &file_schema,
                             &mut hive_parts,

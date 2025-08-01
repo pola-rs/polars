@@ -2,10 +2,10 @@ use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_utils::slice_enum::Slice;
 
-use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
-use crate::nodes::io_sources::multi_file_reader::pipeline::models::ExtraOperations;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::components::row_deletions::ExternalFilterMask;
+use crate::nodes::io_sources::multi_scan::pipeline::models::ExtraOperations;
+use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
 /// Encapsulates logic for determining which operations to push into the underlying reader.
 pub struct ReaderOperationPushdown<'a> {

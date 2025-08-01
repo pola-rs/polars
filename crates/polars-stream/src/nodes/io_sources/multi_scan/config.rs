@@ -13,13 +13,13 @@ use polars_utils::slice_enum::Slice;
 use reader_interface::builder::FileReaderBuilder;
 use reader_interface::capabilities::ReaderCapabilities;
 
-use crate::nodes::io_sources::multi_file_reader::components::forbid_extra_columns::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
-use crate::nodes::io_sources::multi_file_reader::reader_interface;
+use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface;
 
-// Some parts are called MultiFileReader for now to avoid conflict with existing MultiScan.
+// Some parts are called MultiScan for now to avoid conflict with existing MultiScan.
 
-pub struct MultiFileReaderConfig {
+pub struct MultiScanConfig {
     pub sources: ScanSources,
     pub file_reader_builder: Arc<dyn FileReaderBuilder>,
     pub cloud_options: Option<Arc<CloudOptions>>,
@@ -49,7 +49,7 @@ pub struct MultiFileReaderConfig {
     pub verbose: bool,
 }
 
-impl MultiFileReaderConfig {
+impl MultiScanConfig {
     pub fn num_pipelines(&self) -> usize {
         self.num_pipelines.load()
     }

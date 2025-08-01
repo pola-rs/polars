@@ -7,8 +7,8 @@ use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::dsl::ScanSource;
 
 use super::{FileReader, ParquetFileReader};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
 #[derive(Debug, Clone)]
 pub struct ParquetReaderBuilder {

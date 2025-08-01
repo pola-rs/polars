@@ -8,10 +8,10 @@ use polars_error::{PolarsResult, polars_err};
 use polars_plan::dsl::{CastColumnsPolicy, ColumnMapping, MissingColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::nodes::io_sources::multi_file_reader::components::column_selector::{
+use crate::nodes::io_sources::multi_scan::components::column_selector::{
     ColumnSelector, ColumnSelectorBuilder,
 };
-use crate::nodes::io_sources::multi_file_reader::components::projection::{
+use crate::nodes::io_sources::multi_scan::components::projection::{
     Projection, ProjectionTransform,
 };
 

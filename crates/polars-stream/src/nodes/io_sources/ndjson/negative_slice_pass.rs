@@ -13,7 +13,7 @@ use crate::async_executor;
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 
 /// Outputs a stream of morsels in reverse order from which they were received.
 /// Attaches (properly offsetted) row index if necessary.

@@ -5,7 +5,7 @@ use crate::async_executor::{JoinHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
-use crate::nodes::io_sources::multi_file_reader::components::bridge::{
+use crate::nodes::io_sources::multi_scan::components::bridge::{
     BridgeRecvPort, BridgeState, StopReason,
 };
 

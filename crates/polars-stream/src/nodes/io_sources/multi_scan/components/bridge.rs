@@ -1,6 +1,6 @@
 use crate::async_primitives::morsel_linearizer::MorselLinearizer;
 use crate::morsel::Morsel;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputRecv;
 
 #[derive(Copy, Clone)]
 pub enum BridgeState {

@@ -18,15 +18,15 @@ use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::Morsel;
-use crate::nodes::io_sources::multi_file_reader::components;
-use crate::nodes::io_sources::multi_file_reader::components::bridge::{
+use crate::nodes::io_sources::multi_scan::components;
+use crate::nodes::io_sources::multi_scan::components::bridge::{
     BridgeRecvPort, BridgeState,
 };
-use crate::nodes::io_sources::multi_file_reader::components::forbid_extra_columns::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::components::physical_slice::PhysicalSlice;
-use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
+use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
+use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks,
 };
 

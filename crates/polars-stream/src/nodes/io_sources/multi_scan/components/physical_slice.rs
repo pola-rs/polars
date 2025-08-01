@@ -1,7 +1,7 @@
 use polars_utils::slice_enum::Slice;
 
-use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
-use crate::nodes::io_sources::multi_file_reader::components::row_deletions::ExternalFilterMask;
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::components::row_deletions::ExternalFilterMask;
 
 /// Represents a [`Slice`] that has been potentially adjusted to account for deleted rows.
 #[derive(Debug)]

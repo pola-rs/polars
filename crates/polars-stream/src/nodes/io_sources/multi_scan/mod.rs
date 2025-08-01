@@ -19,25 +19,25 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
-use crate::nodes::io_sources::multi_file_reader::components::bridge::BridgeState;
-use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
-use crate::nodes::io_sources::multi_file_reader::functions::{
+use crate::nodes::io_sources::multi_scan::components::bridge::BridgeState;
+use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
+use crate::nodes::io_sources::multi_scan::functions::{
     calc_max_concurrent_scans, calc_n_readers_pre_init,
 };
-use crate::nodes::io_sources::multi_file_reader::pipeline::models::InitializedPipelineState;
+use crate::nodes::io_sources::multi_scan::pipeline::models::InitializedPipelineState;
 
-pub struct MultiFileReader {
+pub struct MultiScan {
     name: PlSmallStr,
     state: MultiScanState,
     verbose: bool,
 }
 
-impl MultiFileReader {
-    pub fn new(config: Arc<MultiFileReaderConfig>) -> Self {
+impl MultiScan {
+    pub fn new(config: Arc<MultiScanConfig>) -> Self {
         let name = format_pl_smallstr!("multi-scan[{}]", config.file_reader_builder.reader_name());
         let verbose = config.verbose;
 
-        MultiFileReader {
+        MultiScan {
             name,
             state: MultiScanState::Uninitialized { config },
             verbose,
@@ -45,7 +45,7 @@ impl MultiFileReader {
     }
 }
 
-impl ComputeNode for MultiFileReader {
+impl ComputeNode for MultiScan {
     fn name(&self) -> &str {
         &self.name
     }
@@ -122,7 +122,7 @@ impl ComputeNode for MultiFileReader {
                         // we are still holding `phase_channel_tx`.
                         Err(SendError::Closed(_)) => {
                             if verbose {
-                                eprintln!("[MultiFileReader]: Bridge disconnected")
+                                eprintln!("[MultiScan]: Bridge disconnected")
                             }
 
                             let Initialized { task_handle, .. } =
@@ -146,7 +146,7 @@ impl ComputeNode for MultiFileReader {
 
 enum MultiScanState {
     Uninitialized {
-        config: Arc<MultiFileReaderConfig>,
+        config: Arc<MultiScanConfig>,
     },
 
     Initialized {

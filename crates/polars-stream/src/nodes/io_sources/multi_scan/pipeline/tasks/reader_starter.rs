@@ -16,19 +16,19 @@ use polars_utils::slice_enum::Slice;
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::nodes::io_sources::multi_file_reader::components;
-use crate::nodes::io_sources::multi_file_reader::components::apply_extra_ops::ApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::components::errors::missing_column_err;
-use crate::nodes::io_sources::multi_file_reader::components::physical_slice::PhysicalSlice;
-use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
-use crate::nodes::io_sources::multi_file_reader::components::row_counter::RowCounter;
-use crate::nodes::io_sources::multi_file_reader::pipeline::models::{
+use crate::nodes::io_sources::multi_scan::components;
+use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
+use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
+use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
+use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
-use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::pipeline::tasks::reader_operation_pushdown::ReaderOperationPushdown;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
+use crate::nodes::io_sources::multi_scan::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
+use crate::nodes::io_sources::multi_scan::pipeline::tasks::reader_operation_pushdown::ReaderOperationPushdown;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, Projection,
 };
 
