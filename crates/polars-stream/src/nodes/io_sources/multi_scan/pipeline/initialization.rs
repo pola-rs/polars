@@ -194,8 +194,7 @@ async fn finish_initialize_multi_scan_pipeline(
         eprintln!(
             "initialize_multi_scan_pipeline: \
             scan_source_idx: {}, \
-            extra_ops: {:?} \
-            ",
+            extra_ops: {:?}",
             scan_source_idx, &extra_ops,
         )
     }
