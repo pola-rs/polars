@@ -9,7 +9,7 @@ use polars_plan::dsl::CastColumnsPolicy;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_file_reader::components::column_selector::ColumnSelector;
-use crate::nodes::io_sources::multi_file_reader::functions::projection::ProjectionBuilder;
+use crate::nodes::io_sources::multi_file_reader::functions::resolve_projections::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::projection::MappedProjectionRef;
 

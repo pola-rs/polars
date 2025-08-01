@@ -5,11 +5,11 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_plan::dsl::ColumnMapping;
 use polars_plan::plans::hive::HivePartitionsDf;
 
-use crate::nodes::io_sources::multi_file_reader::components::projection_builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_file_reader::components::projection::builder::ProjectionBuilder;
 
 /// Returns the schema containing columns to project from the file.
 ///
-/// Note: This is used during IR lowering.
+/// Note: This is used by `lower_ir.rs`.
 ///
 /// # Returns
 /// `(ProjectionBuilder, FullFileSchema)`, where `ProjectionBuilder` holds information on

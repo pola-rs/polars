@@ -13,8 +13,8 @@ use polars_utils::slice_enum::Slice;
 use reader_interface::builder::FileReaderBuilder;
 use reader_interface::capabilities::ReaderCapabilities;
 
+use crate::nodes::io_sources::multi_file_reader::components::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::components::forbid_extra_columns::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::components::projection_builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface;
 
 // Some parts are called MultiFileReader for now to avoid conflict with existing MultiScan.

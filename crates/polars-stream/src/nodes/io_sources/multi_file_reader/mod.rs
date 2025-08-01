@@ -8,12 +8,11 @@ pub mod reader_interface;
 
 use std::sync::{Arc, Mutex};
 
-use pipeline_initialization::MultiScanTaskInitializer;
+use pipeline_initialization::initialize_multi_scan_pipeline;
 use polars_error::PolarsResult;
 use polars_io::pl_async;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector;
@@ -23,6 +22,9 @@ use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_file_reader::config::MultiFileReaderConfig;
+use crate::nodes::io_sources::multi_file_reader::functions::{
+    calc_max_concurrent_scans, calc_n_readers_pre_init,
+};
 use crate::nodes::io_sources::multi_file_reader::pipeline_tasks::bridge::BridgeState;
 
 pub struct MultiFileReader {
@@ -180,16 +182,19 @@ impl MultiScanState {
 
         config.num_pipelines.store(num_pipelines);
 
-        config
-            .n_readers_pre_init
-            .store(calc_n_readers_pre_init(num_pipelines, &config));
+        config.n_readers_pre_init.store(calc_n_readers_pre_init(
+            num_pipelines,
+            config.sources.len(),
+            config.pre_slice.as_ref(),
+        ));
 
-        config
-            .max_concurrent_scans
-            .store(calc_max_concurrent_scans(num_pipelines, &config));
+        config.max_concurrent_scans.store(calc_max_concurrent_scans(
+            num_pipelines,
+            config.sources.len(),
+        ));
 
         let (join_handle, send_phase_tx_to_bridge, bridge_state) =
-            MultiScanTaskInitializer::new(config).spawn_background_tasks();
+            initialize_multi_scan_pipeline::new(config).spawn_background_tasks();
 
         let wait_group = WaitGroup::default();
 

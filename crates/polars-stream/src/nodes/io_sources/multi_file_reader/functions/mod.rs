@@ -1,8 +1,7 @@
 use polars_utils::slice_enum::Slice;
 
-pub mod predicate;
-pub mod projection;
-pub mod slice;
+pub mod resolve_projections;
+pub mod resolve_slice;
 
 pub fn calc_n_readers_pre_init(
     num_pipelines: usize,

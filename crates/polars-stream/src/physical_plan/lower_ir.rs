@@ -566,7 +566,7 @@ pub fn lower_ir(
                     let file_schema = file_info.schema;
 
                     let (file_projection_builder, file_schema) =
-                        multi_file_reader::functions::projection::resolve_projections(
+                        multi_file_reader::functions::resolve_projections::resolve_projections(
                             &output_schema,
                             &file_schema,
                             &mut hive_parts,

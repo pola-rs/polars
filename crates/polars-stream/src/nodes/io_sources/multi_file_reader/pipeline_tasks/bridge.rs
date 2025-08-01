@@ -1,11 +1,13 @@
 use std::sync::{Arc, Mutex};
 
-use crate::async_executor::{self, JoinHandle, TaskPriority};
+use crate::async_executor;
+use crate::async_executor::{JoinHandle, TaskPriority};
 use crate::async_primitives::connector;
-use crate::async_primitives::morsel_linearizer::MorselLinearizer;
 use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
+use crate::nodes::io_sources::multi_file_reader::components::bridge::{
+    BridgeRecvPort, BridgeState, StopReason,
+};
 
 #[expect(clippy::type_complexity)]
 pub fn spawn_bridge(
@@ -41,50 +43,6 @@ struct Bridge {
     outgoing: connector::Receiver<(connector::Sender<Morsel>, WaitToken)>,
     bridge_state: Arc<Mutex<BridgeState>>,
     source_token: SourceToken,
-}
-
-#[derive(Copy, Clone)]
-pub enum BridgeState {
-    NotYetStarted,
-    Running,
-    Stopped(StopReason),
-}
-
-#[derive(Copy, Clone)]
-pub enum StopReason {
-    /// Disconnected from the reader side. The reader pipeline handle should be joined on in this case to
-    /// determine if the readers disconnected due to an error.
-    ReadersDisconnected,
-    /// Disconnected from the multi scan ComputeNode.
-    ComputeNodeDisconnected,
-}
-
-/// Port for the reader side.
-///
-/// Note: `first_morsel` is a residual from post-op initialization.
-pub enum BridgeRecvPort {
-    Direct {
-        rx: FileReaderOutputRecv,
-        first_morsel: Option<Morsel>,
-    },
-    /// Parallel post-apply ops will connect through this.
-    Linearized { rx: MorselLinearizer },
-}
-
-impl BridgeRecvPort {
-    async fn recv(&mut self) -> Result<Morsel, ()> {
-        use BridgeRecvPort::*;
-        match self {
-            Direct { rx, first_morsel } => {
-                if let Some(v) = first_morsel.take() {
-                    Ok(v)
-                } else {
-                    rx.recv().await
-                }
-            },
-            Linearized { rx } => rx.get().await.ok_or(()),
-        }
-    }
 }
 
 impl Bridge {

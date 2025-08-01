@@ -1,3 +1,4 @@
+pub mod builder;
 use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
