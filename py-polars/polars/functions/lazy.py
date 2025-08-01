@@ -1048,7 +1048,7 @@ def cov(
 def map_batches(
     exprs: Sequence[str] | Sequence[Expr],
     function: Callable[[Sequence[Series]], Series],
-    return_dtype: PolarsDataType | None = None,
+    return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
 ) -> Expr:
     """
     Map a custom function over multiple columns/expressions.
@@ -1100,6 +1100,10 @@ def map_batches(
     └─────┴─────┴───────┘
     """
     exprs = parse_into_list_of_expressions(exprs)
+
+    if return_dtype is not None:
+        return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     return wrap_expr(
         plr.map_mul(
             exprs, function, return_dtype, map_groups=False, returns_scalar=False
@@ -1110,7 +1114,7 @@ def map_batches(
 def map_groups(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
-    return_dtype: PolarsDataType | None = None,
+    return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     *,
     returns_scalar: bool = False,
 ) -> Expr:
@@ -1185,6 +1189,10 @@ def map_groups(
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
     exprs = parse_into_list_of_expressions(exprs)
+
+    if return_dtype is not None:
+        return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
+
     return wrap_expr(
         plr.map_mul(
             exprs,

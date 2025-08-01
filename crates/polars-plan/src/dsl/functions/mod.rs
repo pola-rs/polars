@@ -1,7 +1,6 @@
 //! # Functions
 //!
 //! Functions on expressions that might be useful.
-mod arity;
 #[cfg(feature = "business")]
 mod business;
 #[cfg(feature = "dtype-struct")]

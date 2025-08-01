@@ -168,21 +168,22 @@ pub fn map_mul(
 
             // we return an error, because that will become a null value polars lazy apply list
             if map_groups && out.is_none(py) {
-                return Ok(None);
+                polars_bail!(InvalidOperation: "returned none from a UDF");
             }
 
-            Ok(Some(out.to_series(py, &pypolars, "")?.into_column()))
+            Ok(out.to_series(py, &pypolars, "")?.into_column())
         })
     };
 
     let exprs = pyexpr.iter().map(|pe| pe.clone().inner).collect::<Vec<_>>();
 
-    let output_map = GetOutput::map_field(move |fld| {
+    let output_map = move |_: &Schema, f: &[Field]| {
+        let f = &f[0];
         Ok(match output_type {
-            Some(ref dt) => Field::new(fld.name().clone(), dt.0.clone()),
-            None => fld.clone(),
+            Some(ref dt) => Field::new(f.name().clone(), dt.0.clone()),
+            None => f.clone(),
         })
-    });
+    };
     if map_groups {
         polars::lazy::dsl::apply_multiple(function, exprs, output_map, returns_scalar).into()
     } else {

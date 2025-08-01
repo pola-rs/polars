@@ -200,11 +200,9 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([map_multiple(
-            multiply,
-            [col("A"), col("B")],
-            GetOutput::from_type(DataType::Int32),
-        )])
+        .select([map_multiple(multiply, [col("A"), col("B")], |_, f| {
+            Ok(Field::new(f.name().clone(), DataType::Int32))
+        })])
         .collect()?;
     let out = out.column("A")?;
     let out = out.i32()?;
@@ -219,7 +217,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .agg([apply_multiple(
             multiply,
             [col("A"), col("B")],
-            GetOutput::from_type(DataType::Int32),
+            |_, f| Ok(Field::new(f.name().clone(), DataType::Int32)),
             false,
         )])
         .collect()?;

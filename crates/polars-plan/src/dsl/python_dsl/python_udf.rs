@@ -51,7 +51,7 @@ impl PythonUdfExpression {
     }
 
     #[cfg(feature = "serde")]
-    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
+    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousColumnsUdf>> {
         use polars_utils::pl_serialize;
 
         if !buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK) {
@@ -84,21 +84,7 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 }
 
 impl ColumnsUdf for PythonUdfExpression {
-    fn resolve_dsl(
-        &self,
-        input_schema: &Schema,
-        self_dtype: Option<&DataType>,
-    ) -> PolarsResult<()> {
-        if let Some(output_type) = self.output_type.as_ref() {
-            let dtype = output_type
-                .clone()
-                .into_datatype_with_opt_self(input_schema, self_dtype)?;
-            self.materialized_output_type.get_or_init(|| dtype);
-        }
-        Ok(())
-    }
-
-    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Column> {
         let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
 
         let output_type = self
@@ -122,7 +108,13 @@ impl ColumnsUdf for PythonUdfExpression {
             }
         }
 
-        Ok(Some(out))
+        Ok(out)
+    }
+}
+
+impl AnonymousColumnsUdf for PythonUdfExpression {
+    fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf> {
+        self as _
     }
 
     #[cfg(feature = "serde")]
@@ -145,51 +137,14 @@ impl ColumnsUdf for PythonUdfExpression {
         pl_serialize::python_object_serialize(&self.python_function, buf)?;
         Ok(())
     }
-}
 
-/// Serializable version of [`GetOutput`] for Python UDFs.
-pub struct PythonGetOutput {
-    return_dtype: Option<DataTypeExpr>,
-    materialized_output_type: OnceLock<DataType>,
-}
-
-impl PythonGetOutput {
-    pub fn new(return_dtype: Option<impl Into<DataTypeExpr>>) -> Self {
-        Self {
-            return_dtype: return_dtype.map(Into::into),
-            materialized_output_type: OnceLock::new(),
-        }
-    }
-
-    #[cfg(feature = "serde")]
-    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn FunctionOutputField>> {
-        // Skip header.
-
-        use polars_utils::pl_serialize;
-        debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
-        let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
-
-        let mut reader = Cursor::new(buf);
-        let return_dtype: Option<DataTypeExpr> =
-            pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
-
-        Ok(Arc::new(Self::new(return_dtype)) as Arc<dyn FunctionOutputField>)
-    }
-}
-
-impl FunctionOutputField for PythonGetOutput {
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        _cntxt: Context,
-        fields: &[Field],
-    ) -> PolarsResult<Field> {
+    fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field> {
         // Take the name of first field, just like [`GetOutput::map_field`].
         let name = fields[0].name();
         let return_dtype = match self.materialized_output_type.get() {
             Some(dtype) => dtype.clone(),
             None => {
-                let dtype = if let Some(output_type) = self.return_dtype.as_ref() {
+                let dtype = if let Some(output_type) = self.output_type.as_ref() {
                     output_type
                         .clone()
                         .into_datatype_with_self(input_schema, fields[0].dtype())?
@@ -203,14 +158,6 @@ impl FunctionOutputField for PythonGetOutput {
         };
         Ok(Field::new(name.clone(), return_dtype))
     }
-
-    #[cfg(feature = "serde")]
-    fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
-        use polars_utils::pl_serialize;
-
-        buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
-        pl_serialize::serialize_into_writer::<_, _, true>(&mut *buf, &self.return_dtype)
-    }
 }
 
 impl Expr {
@@ -218,12 +165,6 @@ impl Expr {
         const NAME: &str = "python_udf";
 
         let returns_scalar = func.returns_scalar;
-        let return_dtype = func.output_type.clone();
-
-        let output_field = PythonGetOutput::new(return_dtype);
-        let output_type = LazySerde::Deserialized(SpecialEq::new(
-            Arc::new(output_field) as Arc<dyn FunctionOutputField>
-        ));
 
         let mut flags = FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT;
         if func.is_elementwise {
@@ -236,7 +177,6 @@ impl Expr {
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(func),
-            output_type,
             options: FunctionOptions {
                 flags,
                 ..Default::default()

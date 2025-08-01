@@ -86,16 +86,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ((col("time").last() - col("time").first()).map(
                 // had to use map as .duration().days() is not available
                 |s| {
-                    Ok(Some(
-                        s.duration()?
-                            .physical()
-                            .into_iter()
-                            .map(|d| d.map(|v| v / 1000 / 24 / 60 / 60))
-                            .collect::<Int64Chunked>()
-                            .into_column(),
-                    ))
+                    Ok(s.duration()?
+                        .physical()
+                        .into_iter()
+                        .map(|d| d.map(|v| v / 1000 / 24 / 60 / 60))
+                        .collect::<Int64Chunked>()
+                        .into_column())
                 },
-                GetOutput::from_type(DataType::Int64),
+                |_, f| Ok(Field::new(f.name().clone(), DataType::Int64)),
             ) + lit(1))
             .alias("days_in_month"),
         ])

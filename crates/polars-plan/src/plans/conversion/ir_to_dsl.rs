@@ -178,13 +178,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => Expr::AnonymousFunction {
             input: expr_irs_to_exprs(input, expr_arena),
             function,
-            output_type,
             options,
             fmt_str,
         },

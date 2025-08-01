@@ -4502,7 +4502,7 @@ class Expr:
 Consider using {self}.implode() instead"""
             raise DeprecationWarning(msg)
             self = self.implode()
-        elif return_dtype is not None:
+        if return_dtype is not None:
             return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
         return wrap_expr(
