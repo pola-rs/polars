@@ -6,7 +6,7 @@ use polars_utils::format_pl_smallstr;
 
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::batch::GetBatchFn;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 
 /// Note: Currently used for iceberg fallback.
 pub fn python_dataset_scan_to_reader_builder(

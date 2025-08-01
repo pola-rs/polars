@@ -11,10 +11,10 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::async_executor::{JoinHandle, TaskPriority, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::{
+use crate::nodes::io_sources::multi_scan::reader_interface::output::{
     FileReaderOutputRecv, FileReaderOutputSend,
 };
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
+use crate::nodes::io_sources::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks,
 };
 
@@ -25,9 +25,9 @@ pub mod builder {
 
     use super::BatchFnReader;
     use crate::execute::StreamingExecutionState;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+    use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
+    use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+    use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
     pub struct BatchFnReaderBuilder {
         pub name: PlSmallStr,

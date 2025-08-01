@@ -11,7 +11,7 @@ use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::async_executor;
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
 use crate::nodes::{MorselSeq, TaskPriority};

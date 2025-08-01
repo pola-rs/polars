@@ -1,353 +1,63 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
+use components::bridge::BridgeRecvPort;
+use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
 use futures::stream::BoxStream;
-use polars_core::prelude::{AnyValue, DataType, PlHashMap};
+use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
-use polars_core::schema::SchemaRef;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_error::PolarsResult;
-use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
-use polars_plan::plans::hive::HivePartitionsDf;
+use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, JoinHandle, TaskPriority};
+use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::{
-    ExtraOperations, ForbidExtraColumns, missing_column_err,
+use crate::nodes::io_sources::multi_scan::components;
+use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
+use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
+use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
+use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
+use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
+use crate::nodes::io_sources::multi_scan::pipeline::models::{
+    ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
-use crate::nodes::io_sources::multi_file_reader::initialization::MultiScanTaskInitializer;
-use crate::nodes::io_sources::multi_file_reader::initialization::deletion_files::{
-    DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
-};
-use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
-use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
-    ResolvedSliceInfo, resolve_to_positive_slice,
-};
-use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyPipeline;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
+use crate::nodes::io_sources::multi_scan::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, Projection,
 };
-use crate::nodes::io_sources::multi_file_reader::row_counter::RowCounter;
-
-impl MultiScanTaskInitializer {
-    /// Generic reader pipeline that should work for all file types and configurations
-    pub async fn init_and_run(
-        self,
-        bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
-        skip_files_mask: Option<Bitmap>,
-        predicate: Option<ScanIOPredicate>,
-    ) -> PolarsResult<JoinHandle<PolarsResult<()>>> {
-        let verbose = self.config.verbose;
-        let num_pipelines = self.config.num_pipelines();
-        let reader_capabilities = self.config.reader_capabilities();
-
-        // Row index should only be pushed if we have a predicate or negative slice as there is a
-        // serial synchronization cost from needing to track the row position.
-        if self.config.row_index.is_some() {
-            debug_assert!(
-                self.config.predicate.is_some()
-                    || matches!(self.config.pre_slice, Some(Slice::Negative { .. }))
-            );
-        }
-
-        let ResolvedSliceInfo {
-            scan_source_idx,
-            row_index,
-            pre_slice,
-            initialized_readers,
-            row_deletions,
-        } = match self.config.pre_slice {
-            // This can hugely benefit NDJSON, as it can read backwards.
-            Some(Slice::Negative { .. })
-                if self.config.sources.len() == 1
-                    && reader_capabilities.contains(ReaderCapabilities::NEGATIVE_PRE_SLICE)
-                    && (self.config.row_index.is_none()
-                        || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
-                    && (self.config.deletion_files.is_none()
-                        || reader_capabilities
-                            .contains(ReaderCapabilities::EXTERNAL_FILTER_MASK)) =>
-            {
-                if verbose {
-                    eprintln!("[MultiScanTaskInitializer]: Single file negative slice");
-                }
-
-                ResolvedSliceInfo {
-                    scan_source_idx: 0,
-                    row_index: self.config.row_index.clone(),
-                    pre_slice: self.config.pre_slice.clone(),
-                    initialized_readers: None,
-                    row_deletions: Default::default(),
-                }
-            },
-            _ => {
-                if let Some(Slice::Negative { .. }) = self.config.pre_slice {
-                    if verbose {
-                        eprintln!(
-                            "[MultiScanTaskInitializer]: Begin resolving negative slice to positive"
-                        );
-                    }
-                }
-
-                resolve_to_positive_slice(&self.config).await?
-            },
-        };
-
-        let initialized_row_deletions: Arc<PlHashMap<usize, ExternalFilterMask>> =
-            Arc::new(row_deletions);
-
-        let cast_columns_policy = self.config.cast_columns_policy.clone();
-        let missing_columns_policy = self.config.missing_columns_policy;
-        let include_file_paths = self.config.include_file_paths.clone();
-
-        let extra_ops = ExtraOperations {
-            row_index,
-            row_index_col_idx: self.config.row_index.as_ref().map_or(usize::MAX, |x| {
-                self.config.final_output_schema.index_of(&x.name).unwrap()
-            }),
-            pre_slice,
-            include_file_paths,
-            file_path_col_idx: self
-                .config
-                .include_file_paths
-                .as_ref()
-                .map_or(usize::MAX, |x| {
-                    self.config.final_output_schema.index_of(x).unwrap()
-                }),
-            predicate,
-        };
-
-        if verbose {
-            eprintln!(
-                "[MultiScanTaskInitializer]: \
-                scan_source_idx: {}, \
-                extra_ops: {:?} \
-                ",
-                scan_source_idx, &extra_ops,
-            )
-        }
-
-        // Pre-initialized readers if we resolved a negative slice.
-        let mut initialized_readers: VecDeque<(Box<dyn FileReader>, RowCounter)> =
-            initialized_readers
-                .map(|(idx, readers)| {
-                    // Sanity check
-                    assert_eq!(idx, scan_source_idx);
-                    readers
-                })
-                .unwrap_or_default();
-
-        let has_row_index_or_slice = extra_ops.has_row_index_or_slice();
-
-        let config = self.config.clone();
-
-        // Buffered initialization stream. This concurrently calls `FileReader::initialize()`,
-        // allowing for e.g. concurrent Parquet metadata fetch.
-        let readers_init_iter = {
-            let skip_files_mask = skip_files_mask.clone();
-
-            let mut range = {
-                // If a negative slice was initialized, the length of the initialized readers will be the exact
-                // stopping position.
-                let end = if initialized_readers.is_empty() {
-                    self.config.sources.len()
-                } else {
-                    scan_source_idx + initialized_readers.len()
-                };
-
-                scan_source_idx..end
-            };
-
-            if verbose {
-                let n_filtered = skip_files_mask
-                    .clone()
-                    .map_or(0, |x| x.sliced(range.start, range.len()).set_bits());
-                let n_readers_init = range.len() - n_filtered;
-
-                eprintln!(
-                    "\
-                    [MultiScanTaskInitializer]: Readers init: {} / ({} total) \
-                    (range: {:?}, filtered out: {})",
-                    n_readers_init,
-                    self.config.sources.len(),
-                    &range,
-                    n_filtered,
-                )
-            }
-
-            if let Some(skip_files_mask) = &skip_files_mask {
-                range.end = range
-                    .end
-                    .min(skip_files_mask.len() - skip_files_mask.trailing_ones());
-            }
-
-            let range = range.filter(move |scan_source_idx| {
-                let can_skip = !has_row_index_or_slice
-                    && skip_files_mask
-                        .as_ref()
-                        .is_some_and(|x| x.get_bit(*scan_source_idx));
-
-                !can_skip
-            });
-
-            let deletion_files_provider =
-                DeletionFilesProvider::new(self.config.deletion_files.clone());
-
-            futures::stream::iter(range)
-                .map(move |scan_source_idx| {
-                    let cloud_options = config.cloud_options.clone();
-                    let file_reader_builder = config.file_reader_builder.clone();
-                    let sources = config.sources.clone();
-                    let deletion_files_provider = deletion_files_provider.clone();
-                    let initialized_row_deletions = initialized_row_deletions.clone();
-
-                    let maybe_initialized = initialized_readers.pop_front();
-                    let scan_source = sources.get(scan_source_idx).unwrap().into_owned();
-
-                    AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-                        let (scan_source, reader, n_rows_in_file) = async {
-                            if verbose {
-                                eprintln!("[MultiScan]: Initialize source {scan_source_idx}");
-                            }
-
-                            let scan_source = scan_source?;
-
-                            if let Some((reader, n_rows_in_file)) = maybe_initialized {
-                                return PolarsResult::Ok((
-                                    scan_source,
-                                    reader,
-                                    Some(n_rows_in_file),
-                                ));
-                            }
-
-                            let mut reader = file_reader_builder.build_file_reader(
-                                scan_source.clone(),
-                                cloud_options.clone(),
-                                scan_source_idx,
-                            );
-
-                            reader.initialize().await?;
-                            let opt_n_rows = reader
-                                .fast_n_rows_in_file()
-                                .await?
-                                .map(|num_phys_rows| RowCounter::new(num_phys_rows, 0));
-
-                            PolarsResult::Ok((scan_source, reader, opt_n_rows))
-                        }
-                        .await?;
-
-                        let row_deletions: Option<RowDeletionsInit> = initialized_row_deletions
-                            .get(&scan_source_idx)
-                            .map(|x| RowDeletionsInit::Initialized(x.clone()))
-                            .or_else(|| {
-                                deletion_files_provider.spawn_row_deletions_init(
-                                    scan_source_idx,
-                                    cloud_options,
-                                    num_pipelines,
-                                    verbose,
-                                )
-                            });
-
-                        Ok(InitializedReaderState {
-                            scan_source_idx,
-                            scan_source,
-                            reader,
-                            n_rows_in_file,
-                            row_deletions,
-                        })
-                    }))
-                })
-                .buffered(
-                    self.config
-                        .n_readers_pre_init()
-                        .min(self.config.sources.len()),
-                )
-        };
-
-        let sources = self.config.sources.clone();
-        let readers_init_iter = readers_init_iter.boxed();
-        let hive_parts = self.config.hive_parts.clone();
-        let final_output_schema = self.config.final_output_schema.clone();
-        let file_projection_builder = self.config.file_projection_builder.clone();
-        let max_concurrent_scans = self.config.max_concurrent_scans();
-
-        let (started_reader_tx, started_reader_rx) =
-            tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
-
-        let reader_starter_handle = AbortOnDropHandle::new(async_executor::spawn(
-            TaskPriority::Low,
-            ReaderStarter {
-                reader_capabilities,
-                n_sources: sources.len(),
-
-                readers_init_iter,
-                started_reader_tx,
-                max_concurrent_scans,
-                skip_files_mask,
-                extra_ops,
-                constant_args: StartReaderArgsConstant {
-                    hive_parts,
-                    final_output_schema,
-                    reader_capabilities,
-                    file_projection_builder,
-                    cast_columns_policy,
-                    missing_columns_policy,
-                    forbid_extra_columns: self.config.forbid_extra_columns.clone(),
-                    num_pipelines,
-                    verbose,
-                },
-                verbose,
-            }
-            .run(),
-        ));
-
-        let attach_to_bridge_handle = AbortOnDropHandle::new(async_executor::spawn(
-            TaskPriority::Low,
-            AttachReaderToBridge {
-                started_reader_rx,
-                bridge_recv_port_tx,
-                verbose,
-            }
-            .run(),
-        ));
-
-        let handle = async_executor::spawn(TaskPriority::Low, async move {
-            attach_to_bridge_handle.await?;
-            reader_starter_handle.await?;
-            Ok(())
-        });
-
-        Ok(handle)
-    }
-}
 
 /// Starts readers, potentially multiple at the same time if it can.
-struct ReaderStarter {
-    reader_capabilities: ReaderCapabilities,
-    readers_init_iter: BoxStream<'static, PolarsResult<InitializedReaderState>>,
-    n_sources: usize,
-    started_reader_tx: tokio::sync::mpsc::Sender<(
+pub struct ReaderStarter {
+    pub reader_capabilities: ReaderCapabilities,
+    pub readers_init_iter: BoxStream<'static, PolarsResult<InitializedReaderState>>,
+    pub n_sources: usize,
+    pub started_reader_tx: tokio::sync::mpsc::Sender<(
         AbortOnDropHandle<PolarsResult<StartedReaderState>>,
         WaitToken,
     )>,
-    max_concurrent_scans: usize,
-    skip_files_mask: Option<Bitmap>,
-    extra_ops: ExtraOperations,
-    constant_args: StartReaderArgsConstant,
-    verbose: bool,
+    pub max_concurrent_scans: usize,
+    pub skip_files_mask: Option<Bitmap>,
+    pub extra_ops: ExtraOperations,
+    pub constant_args: StartReaderArgsConstant,
+    pub verbose: bool,
+}
+
+pub struct InitializedReaderState {
+    pub scan_source_idx: usize,
+    pub scan_source: ScanSource,
+    pub reader: Box<dyn FileReader>,
+    pub n_rows_in_file: Option<RowCounter>,
+    pub row_deletions: Option<RowDeletionsInit>,
 }
 
 impl ReaderStarter {
-    async fn run(self) -> PolarsResult<()> {
+    pub async fn run(self) -> PolarsResult<()> {
         let ReaderStarter {
             reader_capabilities,
             mut readers_init_iter,
@@ -679,38 +389,6 @@ impl ReaderStarter {
     }
 }
 
-struct InitializedReaderState {
-    scan_source_idx: usize,
-    scan_source: ScanSource,
-    reader: Box<dyn FileReader>,
-    n_rows_in_file: Option<RowCounter>,
-    row_deletions: Option<RowDeletionsInit>,
-}
-
-/// Constant over the file list.
-#[derive(Clone)]
-struct StartReaderArgsConstant {
-    hive_parts: Option<Arc<HivePartitionsDf>>,
-    final_output_schema: SchemaRef,
-    reader_capabilities: ReaderCapabilities,
-    file_projection_builder: ProjectionBuilder,
-    cast_columns_policy: CastColumnsPolicy,
-    missing_columns_policy: MissingColumnsPolicy,
-    forbid_extra_columns: Option<ForbidExtraColumns>,
-    num_pipelines: usize,
-    verbose: bool,
-}
-
-struct StartReaderArgsPerFile {
-    scan_source: ScanSource,
-    scan_source_idx: usize,
-    reader: Box<dyn FileReader>,
-    pre_slice_this_file: Option<PhysicalSlice>,
-    extra_ops_this_file: ExtraOperations,
-    callbacks: FileReaderCallbacks,
-    external_filter_mask: Option<ExternalFilterMask>,
-}
-
 /// This function gets run in a spawned task to avoid blocking the ReaderStarter's loop.
 async fn start_reader_impl(
     constant_args: StartReaderArgsConstant,
@@ -966,7 +644,7 @@ async fn start_reader_impl(
             let ops_applier = Arc::new(ops_applier);
             let first_morsel = first_morsel.unwrap();
 
-            let (rx, handle) = PostApplyPipeline {
+            let (rx, handle) = PostApplyExtraOps {
                 reader_output_port,
                 ops_applier,
                 first_morsel,
@@ -996,202 +674,4 @@ async fn start_reader_impl(
     };
 
     Ok(state)
-}
-
-/// State for a reader that has been started.
-struct StartedReaderState {
-    bridge_recv_port: BridgeRecvPort,
-    post_apply_pipeline_handle: Option<AbortOnDropHandle<PolarsResult<()>>>,
-    reader_handle: AbortOnDropHandle<PolarsResult<()>>,
-}
-
-struct AttachReaderToBridge {
-    started_reader_rx: tokio::sync::mpsc::Receiver<(
-        AbortOnDropHandle<PolarsResult<StartedReaderState>>,
-        WaitToken,
-    )>,
-    bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
-    verbose: bool,
-}
-
-impl AttachReaderToBridge {
-    async fn run(self) -> PolarsResult<()> {
-        let AttachReaderToBridge {
-            mut started_reader_rx,
-            mut bridge_recv_port_tx,
-            verbose,
-        } = self;
-
-        let mut n_readers_received: usize = 0;
-
-        while let Some((init_task_handle, wait_token)) = started_reader_rx.recv().await {
-            n_readers_received = n_readers_received.saturating_add(1);
-
-            if verbose {
-                eprintln!(
-                    "[AttachReaderToBridge]: received reader (n_readers_received: {n_readers_received})",
-                );
-            }
-
-            let StartedReaderState {
-                bridge_recv_port,
-                post_apply_pipeline_handle,
-                reader_handle,
-            } = init_task_handle.await?;
-
-            if bridge_recv_port_tx.send(bridge_recv_port).await.is_err() {
-                break;
-            }
-
-            drop(wait_token);
-            reader_handle.await?;
-
-            if let Some(handle) = post_apply_pipeline_handle {
-                handle.await?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// Encapsulates logic for determining which operations to push into the underlying reader.
-struct ReaderOperationPushdown<'a> {
-    file_projection: Projection,
-    reader_capabilities: ReaderCapabilities,
-    external_filter_mask: Option<ExternalFilterMask>,
-    /// Operations will be `take()`en out when pushed.
-    extra_ops_post: &'a mut ExtraOperations,
-}
-
-impl ReaderOperationPushdown<'_> {
-    fn push_operations(
-        self,
-    ) -> (
-        Projection,
-        Projection,
-        Option<RowIndex>,
-        Option<Slice>,
-        Option<ScanIOPredicate>,
-        Option<ExternalFilterMask>,
-    ) {
-        let Self {
-            file_projection,
-            reader_capabilities,
-            external_filter_mask,
-            extra_ops_post,
-        } = self;
-
-        use ReaderCapabilities as RC;
-
-        let unsupported_external_filter_mask = external_filter_mask.is_some()
-            && !reader_capabilities.contains(RC::EXTERNAL_FILTER_MASK);
-
-        let unsupported_resolved_mapped_projection = match &file_projection {
-            Projection::Plain(_) => false,
-            Projection::Mapped { .. } => {
-                !reader_capabilities.contains(RC::MAPPED_COLUMN_PROJECTION)
-            },
-        };
-
-        let (projection_to_reader, projection_to_post) = if unsupported_resolved_mapped_projection {
-            (file_projection.get_plain_pre_projection(), file_projection)
-        } else {
-            let projection_to_post = Projection::Plain(file_projection.projected_schema().clone());
-            (file_projection, projection_to_post)
-        };
-
-        // Notes
-        // * If there is both a slice and deletions, DO NOT push deletions to the reader without
-        //   pushing the slice.
-
-        // If `unsupported_mapped_projection`, the file may contain a column sharing the name of
-        // the row index column, but gets renamed by the column mapping.
-        let row_index = if reader_capabilities.contains(RC::ROW_INDEX)
-            && !(unsupported_resolved_mapped_projection || unsupported_external_filter_mask)
-        {
-            extra_ops_post.row_index.take()
-        } else {
-            None
-        };
-
-        let pre_slice = match &extra_ops_post.pre_slice {
-            Some(Slice::Positive { .. }) if reader_capabilities.contains(RC::PRE_SLICE) => {
-                extra_ops_post.pre_slice.take()
-            },
-
-            Some(Slice::Negative { .. })
-                if reader_capabilities.contains(RC::NEGATIVE_PRE_SLICE) =>
-            {
-                extra_ops_post.pre_slice.take()
-            },
-
-            _ => None,
-        };
-
-        let push_predicate = !(!reader_capabilities.contains(RC::MAPPED_COLUMN_PROJECTION)
-            || unsupported_external_filter_mask
-            || extra_ops_post.predicate.is_none()
-            || (extra_ops_post.row_index.is_some() || extra_ops_post.pre_slice.is_some())
-            || !reader_capabilities.contains(RC::PARTIAL_FILTER));
-
-        let mut predicate: Option<ScanIOPredicate> = None;
-
-        if push_predicate {
-            predicate = if reader_capabilities.contains(RC::FULL_FILTER) {
-                // If the reader can fully handle the predicate itself, let it do it itself.
-                extra_ops_post.predicate.take()
-            } else {
-                // Otherwise, we want to pass it and filter again afterwards.
-                extra_ops_post.predicate.clone()
-            }
-        }
-
-        (
-            projection_to_reader,
-            projection_to_post,
-            row_index,
-            pre_slice,
-            predicate,
-            external_filter_mask,
-        )
-    }
-}
-
-/// Represents a [`Slice`] that has been potentially adjusted to account for deleted rows.
-#[derive(Debug)]
-struct PhysicalSlice {
-    slice: Slice,
-    /// Counter that records the number of physical and deleted rows that make up the slice offset,
-    /// and `slice_start_position.num_rows() == slice.offset`
-    slice_start_position: RowCounter,
-}
-
-impl PhysicalSlice {
-    /// # Panics
-    /// Panics if `slice` is [`Slice::Negative`]
-    fn new(slice: Slice, external_filter_mask: Option<&ExternalFilterMask>) -> Self {
-        if let Some(external_filter_mask) = external_filter_mask {
-            let requested_offset = slice.positive_offset();
-
-            let physical_slice = external_filter_mask.calc_physical_slice(slice);
-
-            let physical_offset = physical_slice.positive_offset();
-            let deleted_in_offset = physical_offset.checked_sub(requested_offset).unwrap();
-
-            let slice_start_position = RowCounter::new(physical_offset, deleted_in_offset);
-
-            PhysicalSlice {
-                slice: physical_slice,
-                slice_start_position,
-            }
-        } else {
-            let slice_start_position = RowCounter::new(slice.positive_offset(), 0);
-
-            PhysicalSlice {
-                slice,
-                slice_start_position,
-            }
-        }
-    }
 }
