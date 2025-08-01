@@ -310,6 +310,25 @@ pub fn execute_graph(
         assert!(pipe.send_state == PortState::Done && pipe.recv_state == PortState::Done);
     }
 
+    // Finalize all the nodes.
+    async_executor::task_scope(|scope| {
+        let mut join_handles = Vec::new();
+        for (_, node) in graph.nodes.iter_mut() {
+            node.compute.finalize(scope, &state, &mut join_handles);
+        }
+
+        if !join_handles.is_empty() {
+            polars_io::pl_async::get_runtime().block_on(async move {
+                for handle in join_handles {
+                    handle.await?;
+                }
+                PolarsResult::Ok(())
+            })?;
+        }
+
+        PolarsResult::Ok(())
+    })?;
+
     // Extract output from in-memory nodes.
     let mut out = SparseSecondaryMap::new();
     for (node_key, node) in graph.nodes.iter_mut() {

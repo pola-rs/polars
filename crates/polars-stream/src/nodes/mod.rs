@@ -79,6 +79,18 @@ pub trait ComputeNode: Send {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 
+    /// Spawn tasks that are needed to finalize this node.
+    ///
+    /// This function is called exactly once after this node is finished.
+    fn finalize<'env, 's>(
+        &'env mut self,
+        scope: &'s TaskScope<'s, 'env>,
+        state: &'s StreamingExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        _ = (scope, state, join_handles);
+    }
+
     /// Called once after the last execution phase to extract output from
     /// in-memory nodes.
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
