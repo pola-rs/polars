@@ -34,7 +34,7 @@ pub fn initialize_multi_scan_pipeline(config: Arc<MultiScanConfig>) -> Initializ
 
     if config.verbose {
         eprintln!(
-            "initialize_multi_scan_pipeline: \
+            "[MultiScanTaskInit]: \
             {} sources, \
             reader name: {}, \
             {:?}, \
@@ -80,7 +80,7 @@ async fn finish_initialize_multi_scan_pipeline(
 
     if verbose {
         eprintln!(
-            "initialize_multi_scan_pipeline: \
+            "[MultiScanTaskInit]: \
             predicate: {:?}, \
             skip files mask: {:?}, \
             predicate to reader: {:?}",
@@ -97,9 +97,7 @@ async fn finish_initialize_multi_scan_pipeline(
             .is_some_and(|x| x.unset_bits() == 0)
         {
             if verbose {
-                eprintln!(
-                    "initialize_multi_scan_pipeline: early return (skip_files_mask / predicate)"
-                )
+                eprintln!("[MultiScanTaskInit]: early return (skip_files_mask / predicate)")
             }
         } else if config.pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
             if cfg!(debug_assertions) {
@@ -107,7 +105,7 @@ async fn finish_initialize_multi_scan_pipeline(
             }
 
             if verbose {
-                eprintln!("initialize_multi_scan_pipeline: early return (pre_slice.len == 0)")
+                eprintln!("[MultiScanTaskInit]: early return (pre_slice.len == 0)")
             }
         } else {
             break;
@@ -146,7 +144,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK)) =>
         {
             if verbose {
-                eprintln!("initialize_multi_scan_pipeline: Single file negative slice");
+                eprintln!("[MultiScanTaskInit]: Single file negative slice");
             }
 
             ResolvedSliceInfo {
@@ -160,9 +158,7 @@ async fn finish_initialize_multi_scan_pipeline(
         _ => {
             if let Some(Slice::Negative { .. }) = config.pre_slice {
                 if verbose {
-                    eprintln!(
-                        "initialize_multi_scan_pipeline: Begin resolving negative slice to positive"
-                    );
+                    eprintln!("[MultiScanTaskInit]: Begin resolving negative slice to positive");
                 }
             }
 
@@ -192,7 +188,7 @@ async fn finish_initialize_multi_scan_pipeline(
 
     if verbose {
         eprintln!(
-            "initialize_multi_scan_pipeline: \
+            "[MultiScanTaskInit]: \
             scan_source_idx: {}, \
             extra_ops: {:?}",
             scan_source_idx, &extra_ops,
@@ -237,7 +233,7 @@ async fn finish_initialize_multi_scan_pipeline(
 
             eprintln!(
                 "\
-                initialize_multi_scan_pipeline: Readers init: {} / ({} total) \
+                [MultiScanTaskInit]: Readers init: {} / ({} total) \
                 (range: {:?}, filtered out: {})",
                 n_readers_init,
                 config.sources.len(),
