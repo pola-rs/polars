@@ -209,10 +209,7 @@ impl FileReader for ParquetFileReader {
         let target_values_per_thread =
             std::env::var("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD")
                 .map(|x| x.parse::<usize>().expect("integer").max(1))
-                .unwrap_or(
-                    // ((1 << 24) + (1 << 23)) // 2
-                    12_582_912,
-                );
+                .unwrap_or(16_777_216);
 
         let is_full_projection = projected_arrow_fields.len() == file_schema.len();
 
