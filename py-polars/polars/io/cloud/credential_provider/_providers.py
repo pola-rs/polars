@@ -610,4 +610,10 @@ def _get_credentials_from_provider_expiry_aware(
         sleep(1 + expires_in)
         creds, _ = credential_provider()
 
+    # Loads the endpoint_url
+    if isinstance(credential_provider, CredentialProviderAWS) and (
+        v := credential_provider._storage_update_options()
+    ):
+        creds = {**creds, **v}
+
     return creds
