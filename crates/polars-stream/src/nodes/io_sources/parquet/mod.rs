@@ -16,9 +16,7 @@ use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::slice_enum::Slice;
 
-use super::multi_scan::reader_interface::output::{
-    FileReaderOutputRecv, FileReaderOutputSend,
-};
+use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileReaderOutputSend};
 use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
