@@ -182,14 +182,22 @@ pub(crate) fn det_join_schema(
                     if is_coalesced && field_left.name != field_right.name {
                         _asof_pre_added_rhs_keys.insert(field_right.name.clone());
 
-                        if schema_left.contains(&field_right.name) {
-                            new_schema.with_column(
-                                _join_suffix_name(&field_right.name, options.args.suffix()),
-                                field_right.dtype,
-                            );
+                        // For the error message.
+                        let mut suffixed = None;
+                        let (name, dtype) = if schema_left.contains(&field_right.name) {
+                            suffixed =
+                                Some(_join_suffix_name(&field_right.name, options.args.suffix()));
+                            (suffixed.clone().unwrap(), field_right.dtype.clone())
                         } else {
-                            new_schema.with_column(field_right.name, field_right.dtype);
-                        }
+                            (field_right.name.clone(), field_right.dtype.clone())
+                        };
+                        new_schema.try_insert(name, dtype).map_err(|e| {
+                            if let Some(column) = suffixed {
+                                join_suffix_duplicate_help_msg(&column)
+                            } else {
+                                e
+                            }
+                        })?;
                     }
                 }
             }
@@ -228,7 +236,6 @@ pub(crate) fn det_join_schema(
 
                 // For the error message.
                 let mut suffixed = None;
-
                 let (name, dtype) = if schema_left.contains(name) {
                     suffixed = Some(format_pl_smallstr!("{}{}", name, options.args.suffix()));
                     (suffixed.clone().unwrap(), dtype.clone())
