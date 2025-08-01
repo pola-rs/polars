@@ -193,9 +193,9 @@ async fn finish_initialize_multi_scan_pipeline(
     if verbose {
         eprintln!(
             "initialize_multi_scan_pipeline: \
-                scan_source_idx: {}, \
-                extra_ops: {:?} \
-                ",
+            scan_source_idx: {}, \
+            extra_ops: {:?} \
+            ",
             scan_source_idx, &extra_ops,
         )
     }
@@ -238,8 +238,8 @@ async fn finish_initialize_multi_scan_pipeline(
 
             eprintln!(
                 "\
-                    initialize_multi_scan_pipeline: Readers init: {} / ({} total) \
-                    (range: {:?}, filtered out: {})",
+                initialize_multi_scan_pipeline: Readers init: {} / ({} total) \
+                (range: {:?}, filtered out: {})",
                 n_readers_init,
                 config.sources.len(),
                 &range,
