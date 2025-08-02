@@ -1,7 +1,6 @@
 use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
 use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
-use polars_core::prelude::arity::binary_elementwise;
 use polars_core::prelude::*;
 
 pub fn array_concat(left: &ArrayChunked, right: &ArrayChunked) -> PolarsResult<ArrayChunked> {
@@ -22,9 +21,6 @@ pub fn array_concat(left: &ArrayChunked, right: &ArrayChunked) -> PolarsResult<A
     let left_width = left.width();
     let right_width = right.width();
     let new_width = left_width + right_width;
-
-    // Create new dtype with combined width
-    let new_dtype = DataType::Array(Box::new(left.inner_dtype().clone()), new_width);
 
     // Process each chunk
     let chunks: PolarsResult<Vec<_>> = left
