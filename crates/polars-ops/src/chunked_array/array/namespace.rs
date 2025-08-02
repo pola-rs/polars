@@ -12,10 +12,10 @@ use crate::chunked_array::array::count::count_boolean_bits;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
 #[cfg(feature = "array_any_all")]
 use crate::prelude::array::any_all::{array_all, array_any};
+use crate::prelude::array::concat::array_concat;
 use crate::prelude::array::get::array_get;
 use crate::prelude::array::join::array_join;
 use crate::prelude::array::sum_mean::sum_array_numerical;
-use crate::prelude::array::concat::array_concat;
 use crate::series::ArgAgg;
 
 pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {

@@ -1,4 +1,4 @@
-use arrow::array::builder::{ShareStrategy, make_builder, ArrayBuilder};
+use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
 use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::arity::binary_elementwise;
@@ -8,23 +8,24 @@ pub fn array_concat(left: &ArrayChunked, right: &ArrayChunked) -> PolarsResult<A
     // Early validation
     polars_ensure!(
         left.len() == right.len(),
-        length_mismatch = "arr.concat", left.len(), right.len()
+        length_mismatch = "arr.concat",
+        left.len(),
+        right.len()
     );
-    
+
     polars_ensure!(
         left.inner_dtype() == right.inner_dtype(),
-        ComputeError: "cannot concatenate arrays with different inner types: {} and {}", 
+        ComputeError: "cannot concatenate arrays with different inner types: {} and {}",
         left.inner_dtype(), right.inner_dtype()
     );
 
-    
     let left_width = left.width();
     let right_width = right.width();
     let new_width = left_width + right_width;
-    
+
     // Create new dtype with combined width
     let new_dtype = DataType::Array(Box::new(left.inner_dtype().clone()), new_width);
-    
+
     // Process each chunk
     let chunks: PolarsResult<Vec<_>> = left
         .downcast_iter()
@@ -33,7 +34,7 @@ pub fn array_concat(left: &ArrayChunked, right: &ArrayChunked) -> PolarsResult<A
             concat_fixed_size_list_arrays(left_arr, right_arr, left_width, right_width, new_width)
         })
         .collect();
-    
+
     let result = ArrayChunked::from_chunk_iter(left.name().clone(), chunks?);
     Ok(result)
 }
@@ -50,10 +51,10 @@ fn concat_fixed_size_list_arrays(
 
     builder.reserve(len * new_width);
     let mut validity = BitmapBuilder::with_capacity(len);
-    
+
     let left_values = left_arr.values();
     let right_values = right_arr.values();
- 
+
     // Process each row to build the new concatenated array.
     for row in 0..len {
         let is_valid = left_arr.is_valid(row) && right_arr.is_valid(row);
@@ -66,10 +67,20 @@ fn concat_fixed_size_list_arrays(
         }
 
         let left_start = row * left_width;
-        builder.subslice_extend(&**left_values, left_start, left_width, ShareStrategy::Always);
-        
+        builder.subslice_extend(
+            &**left_values,
+            left_start,
+            left_width,
+            ShareStrategy::Always,
+        );
+
         let right_start = row * right_width;
-        builder.subslice_extend(&**right_values, right_start, right_width, ShareStrategy::Always);
+        builder.subslice_extend(
+            &**right_values,
+            right_start,
+            right_width,
+            ShareStrategy::Always,
+        );
     }
 
     let values = builder.freeze();
@@ -83,13 +94,10 @@ fn concat_fixed_size_list_arrays(
         return Err(PolarsError::ComputeError("Expected FixedSizeList".into()));
     };
 
-    let new_dtype = ArrowDataType::FixedSizeList(
-        Box::new(inner_field),
-        new_width,
-    );
+    let new_dtype = ArrowDataType::FixedSizeList(Box::new(inner_field), new_width);
 
     let validity_bitmap = validity.freeze();
-    
+
     Ok(FixedSizeListArray::new(
         new_dtype,
         len,

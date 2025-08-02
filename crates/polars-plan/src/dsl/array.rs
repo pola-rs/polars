@@ -132,10 +132,8 @@ impl ArrayNameSpace {
 
     /// Joins array with another array on the right.
     pub fn concat(self, other: Expr) -> Expr {
-        self.0.map_binary(
-            FunctionExpr::ArrayExpr(ArrayFunction::Concat),
-            other,
-        )
+        self.0
+            .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Concat), other)
     }
 
     #[cfg(feature = "is_in")]
