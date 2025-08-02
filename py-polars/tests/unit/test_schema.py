@@ -368,3 +368,11 @@ def test_scalar_agg_schema_20044() -> None:
         .group_by("c")
         .agg(pl.col("d").mean())
     ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])
+
+
+def test_schema_for_length_preserving_on_scalar() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
+    lf = df.group_by("a", maintain_order=True).agg(
+        pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
+    )
+    assert lf.collect().schema == lf.collect_schema()
