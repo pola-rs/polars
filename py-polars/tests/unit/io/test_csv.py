@@ -2805,13 +2805,18 @@ def test_read_csv_nonlist_schema_override() -> None:
 
 def test_read_csv_nondict_schema_override() -> None:
     csv = "name,age\nJohn,20\nJane,30"
-    dt_enum = pl.Enum(["John", "Jane"])
 
-    d_name = {"name": dt_enum}
-    d_age = {"age": pl.UInt8}
-
+    dt_names = pl.Enum(["John", "Jane"])
     df = pl.read_csv(
         io.StringIO(csv),
-        schema_overrides=ChainMap(d_name, d_age),
+        schema_overrides=ChainMap(
+            {"name": dt_names},
+            {"age": pl.UInt8},
+        ),
     )
-    assert df.schema == pl.Schema({"name": dt_enum, "age": pl.UInt8})
+    assert df.schema == pl.Schema(
+        {  # type: ignore[arg-type]
+            "name": dt_names,
+            "age": pl.UInt8,
+        }
+    )
