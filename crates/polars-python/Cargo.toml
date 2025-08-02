@@ -125,6 +125,9 @@ features = [
 version_check = { workspace = true }
 
 [features]
+allocator = []
+c_api = []
+
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
 catalog = ["polars-lazy/catalog"]

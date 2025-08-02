@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 libc = { workspace = true }
 # Explicit dependency is needed to add bigidx in CI during release
 polars = { workspace = true }
-polars-python = { workspace = true, features = ["pymethods", "iejoin"] }
+polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin"] }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
 
 [target.'cfg(all(any(not(target_family = "unix"), target_os = "emscripten", allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
