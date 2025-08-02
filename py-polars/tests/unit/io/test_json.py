@@ -78,6 +78,21 @@ def test_write_json_time() -> None:
     assert value == expected
 
 
+def test_write_json_list_of_arrays() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [[(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)], [(7.0, 8.0, 9.0)]],
+                dtype=pl.List(pl.Array(pl.Float32, 3)),
+            ),
+        }
+    )
+
+    value = df.write_json()
+    expected = '[{"a":[[1.0,2.0,3.0],[4.0,5.0,6.0]]},{"a":[[7.0,8.0,9.0]]}]'
+    assert value == expected
+
+
 def test_write_json_decimal() -> None:
     df = pl.DataFrame({"a": pl.Series([D("1.00"), D("2.00"), None])})
 

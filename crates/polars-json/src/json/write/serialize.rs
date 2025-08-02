@@ -276,7 +276,11 @@ fn fixed_size_list_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    let mut serializer = new_serializer(array.values().as_ref(), offset, take);
+    let mut serializer = new_serializer(
+        array.values().as_ref(),
+        offset * array.size(),
+        take * array.size(),
+    );
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new(0..array.len(), array.validity().map(|x| x.iter())),
