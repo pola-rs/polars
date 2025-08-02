@@ -147,22 +147,7 @@ pub trait ArrayNameSpace: AsArray {
     fn concat(&self, other: &Self) -> PolarsResult<Series> {
         let left = self.as_array();
         let right = other.as_array();
-
-        if left.inner_dtype() != right.inner_dtype() {
-            polars_bail!(ComputeError: "Cannot concatenate arrays with different inner types: {} and {}", left.inner_dtype(), right.inner_dtype());
-        }
-
-        if left.len() != right.len() {
-            polars_bail!(length_mismatch = "arr.concat", left.len(), right.len());
-        }
-
-        let left_width = left.width();
-        let right_width = right.width();
-        let new_width = left_width + right_width;
-
-        let mut chunks = Vec::with_capacity(left.chunks().len());
-
-        array::concat_arrays(left, right)
+        array_concat(left, right).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "array_count")]
