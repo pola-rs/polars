@@ -15,6 +15,7 @@ use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::get::array_get;
 use crate::prelude::array::join::array_join;
 use crate::prelude::array::sum_mean::sum_array_numerical;
+use crate::prelude::array::concat::array_concat;
 use crate::series::ArgAgg;
 
 pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
@@ -141,6 +142,27 @@ pub trait ArrayNameSpace: AsArray {
     fn array_join(&self, separator: &StringChunked, ignore_nulls: bool) -> PolarsResult<Series> {
         let ca = self.as_array();
         array_join(ca, separator, ignore_nulls).map(|ok| ok.into_series())
+    }
+
+    fn concat(&self, other: &Self) -> PolarsResult<Series> {
+        let left = self.as_array();
+        let right = other.as_array();
+
+        if left.inner_dtype() != right.inner_dtype() {
+            polars_bail!(ComputeError: "Cannot concatenate arrays with different inner types: {} and {}", left.inner_dtype(), right.inner_dtype());
+        }
+
+        if left.len() != right.len() {
+            polars_bail!(length_mismatch = "arr.concat", left.len(), right.len());
+        }
+
+        let left_width = left.width();
+        let right_width = right.width();
+        let new_width = left_width + right_width;
+
+        let mut chunks = Vec::with_capacity(left.chunks().len());
+
+        array::concat_arrays(left, right)
     }
 
     #[cfg(feature = "array_count")]
