@@ -2095,7 +2095,7 @@ def test_read_csv_invalid_schema_overrides_length() -> None:
         == "1"
     ):
         err = TypeError
-        match = "expected 'schema_overrides' dict, found 'list'"
+        match = "expected 'schema_overrides' mapping, found sequence"
     else:
         err = InvalidOperationError
         match = "The number of schema overrides must be less than or equal to the number of fields"
