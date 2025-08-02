@@ -96,7 +96,7 @@ impl PyExpr {
             .into()
     }
 
-    fn arr_concat(&self, other: &PyExpr) -> Self {
+    fn arr_concat(&self, other: PyExpr) -> Self {
         self.inner.clone().arr().concat(other.inner.clone()).into()
     }
 
