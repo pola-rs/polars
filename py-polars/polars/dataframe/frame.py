@@ -6499,6 +6499,70 @@ class DataFrame:
         """
         return function(self, *args, **kwargs)
 
+    def pipe_columns(
+        self,
+        column_names: str | Sequence[str],
+        function: Callable[[Series], Series],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> DataFrame:
+        """
+        Apply a user-defined function (UDF) to columns.
+
+        Parameters
+        ----------
+        column_names
+            The columns to apply the UDF to.
+        function
+            Callable; will receive a column series as the first parameter,
+            followed by any given args/kwargs.
+        *args
+            Arguments to pass to the UDF.
+        **kwargs
+            Keyword arguments to pass to the UDF.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
+        >>> df.pipe_columns("a", lambda s: s.shrink_dtype())
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i8  ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ 10  │
+        │ 2   ┆ 20  │
+        │ 3   ┆ 30  │
+        │ 4   ┆ 40  │
+        └─────┴─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ['{"x":"a"}', None, '{"x":"b"}', None],
+        ...         "b": ['{"a":1, "b": true}', None, '{"a":2, "b": false}', None],
+        ...     }
+        ... )
+        >>> df.pipe_columns(["a", "b"], lambda s: s.str.json_decode())
+        shape: (4, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ struct[1] ┆ struct[2] │
+        ╞═══════════╪═══════════╡
+        │ {"a"}     ┆ {1,true}  │
+        │ null      ┆ null      │
+        │ {"b"}     ┆ {2,false} │
+        │ null      ┆ null      │
+        └───────────┴───────────┘
+        """
+        if isinstance(column_names, str):
+            column_names = [column_names]
+
+        return self.with_columns(
+            **{c: function(self[c], *args, **kwargs) for c in column_names}
+        )
+
     def with_row_index(self, name: str = "index", offset: int = 0) -> DataFrame:
         """
         Add a row index as the first column in the DataFrame.
