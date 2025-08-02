@@ -1,3 +1,4 @@
+use std::ops::RangeInclusive;
 use std::rc::Rc;
 
 use arrow::bitmap::bitmask::nth_set_bit_u32;
@@ -52,22 +53,22 @@ impl DataTypeArbitrarySelection {
 #[derive(Clone)]
 pub struct DataTypeArbitraryOptions {
     pub allowed_dtypes: DataTypeArbitrarySelection,
-    pub decimal_precision_limit: usize,
-    pub categories_limit: usize,
-    pub array_width_limit: usize,
-    pub struct_fields_limit: usize,
     pub max_nesting_level: usize,
+    pub decimal_precision_range: RangeInclusive<usize>,
+    pub categories_range: RangeInclusive<usize>,
+    pub array_width_range: RangeInclusive<usize>,
+    pub struct_fields_range: RangeInclusive<usize>,
 }
 
 impl Default for DataTypeArbitraryOptions {
     fn default() -> Self {
         Self {
             allowed_dtypes: DataTypeArbitrarySelection::all(),
-            decimal_precision_limit: 38,
-            categories_limit: 3,
-            array_width_limit: 3,
-            struct_fields_limit: 3,
             max_nesting_level: 3,
+            decimal_precision_range: 1..=38,
+            categories_range: 0..=3,
+            array_width_range: 0..=3,
+            struct_fields_range: 0..=3,
         }
     }
 }
@@ -111,16 +112,16 @@ pub fn dtypes(
             _ if selection == S::NULL => Just(DataType::Null).boxed(),
             #[cfg(feature = "dtype-decimal")]
             _ if selection == S::DECIMAL => {
-                decimal_strategy(options.decimal_precision_limit).boxed()
+                decimal_strategy(options.decimal_precision_range.clone()).boxed()
             },
             _ if selection == S::DATETIME => datetime_strategy().boxed(),
             _ if selection == S::DURATION => duration_strategy().boxed(),
             #[cfg(feature = "dtype-categorical")]
             _ if selection == S::CATEGORICAL => {
-                categorical_strategy(options.categories_limit).boxed()
+                categorical_strategy(options.categories_range.clone()).boxed()
             },
             #[cfg(feature = "dtype-categorical")]
-            _ if selection == S::ENUM => enum_strategy(options.categories_limit).boxed(),
+            _ if selection == S::ENUM => enum_strategy(options.categories_range.clone()).boxed(),
             #[cfg(feature = "object")]
             _ if selection == S::OBJECT => Just(DataType::Object("test_object")).boxed(),
             _ if selection == S::LIST => {
@@ -129,13 +130,13 @@ pub fn dtypes(
             #[cfg(feature = "dtype-array")]
             _ if selection == S::ARRAY => array_strategy(
                 dtypes(options.clone(), nesting_level + 1),
-                options.array_width_limit,
+                options.array_width_range.clone(),
             )
             .boxed(),
             #[cfg(feature = "dtype-struct")]
             _ if selection == S::STRUCT => struct_strategy(
                 dtypes(options.clone(), nesting_level + 1),
-                options.struct_fields_limit,
+                options.struct_fields_range.clone(),
             )
             .boxed(),
             _ => unreachable!(),
@@ -144,10 +145,12 @@ pub fn dtypes(
 }
 
 #[cfg(feature = "dtype-decimal")]
-fn decimal_strategy(decimal_precision_limit: usize) -> impl Strategy<Value = DataType> {
-    prop::option::of(1_usize..=decimal_precision_limit)
+fn decimal_strategy(
+    decimal_precision_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = DataType> {
+    prop::option::of(decimal_precision_range.clone())
         .prop_flat_map(move |precision| {
-            let max_scale = precision.unwrap_or(decimal_precision_limit);
+            let max_scale = precision.unwrap_or(*decimal_precision_range.end());
             let scale_strategy = prop::option::of(0_usize..=max_scale);
 
             (Just(precision), scale_strategy)
@@ -174,14 +177,16 @@ fn duration_strategy() -> impl Strategy<Value = DataType> {
 }
 
 #[cfg(feature = "dtype-categorical")]
-fn categorical_strategy(categories_limit: usize) -> impl Strategy<Value = DataType> {
+fn categorical_strategy(
+    categories_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = DataType> {
     (
         proptest::prop_oneof![
             Just(CategoricalPhysical::U8),
             Just(CategoricalPhysical::U16),
             Just(CategoricalPhysical::U32),
         ],
-        1usize..=categories_limit,
+        categories_range,
     )
         .prop_map(|(physical, n_categories)| {
             let name = PlSmallStr::from_static("test_category");
@@ -200,8 +205,8 @@ fn categorical_strategy(categories_limit: usize) -> impl Strategy<Value = DataTy
 }
 
 #[cfg(feature = "dtype-categorical")]
-fn enum_strategy(categories_limit: usize) -> impl Strategy<Value = DataType> {
-    (1usize..=categories_limit).prop_map(|n_categories| {
+fn enum_strategy(categories_range: RangeInclusive<usize>) -> impl Strategy<Value = DataType> {
+    (categories_range).prop_map(|n_categories| {
         let category_names: Vec<String> =
             (0..n_categories).map(|i| format!("category{i}")).collect();
 
@@ -220,18 +225,17 @@ fn list_strategy(inner: impl Strategy<Value = DataType>) -> impl Strategy<Value 
 #[cfg(feature = "dtype-array")]
 fn array_strategy(
     inner: impl Strategy<Value = DataType>,
-    array_width_limit: usize,
+    array_width_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = DataType> {
-    (inner, 1usize..=array_width_limit)
-        .prop_map(|(inner, width)| DataType::Array(Box::new(inner), width))
+    (inner, array_width_range).prop_map(|(inner, width)| DataType::Array(Box::new(inner), width))
 }
 
 #[cfg(feature = "dtype-struct")]
 fn struct_strategy(
     inner: impl Strategy<Value = DataType>,
-    struct_fields_limit: usize,
+    struct_fields_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = DataType> {
-    prop::collection::vec(inner, 1usize..=struct_fields_limit).prop_map(|datatypes_vec| {
+    prop::collection::vec(inner, struct_fields_range).prop_map(|datatypes_vec| {
         let fields_vec: Vec<Field> = datatypes_vec
             .into_iter()
             .enumerate()
