@@ -761,7 +761,65 @@ class ExprArrayNameSpace:
 
     def concat(self, other: Expr) -> Expr:
         """
-        Concatenate two arrays elementwise.
+        Concatenate two arrays element-wise.
+
+        Parameters
+        ----------
+        other
+            Array column to concatenate with. Must have the same inner data type
+            and number of rows as the caller.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Array` with combined width.
+            The new array width equals the sum of both input array widths.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [3, 4]],
+        ...         "b": [[5, 6, 7], [8, 9, 10]],
+        ...     },
+        ...     schema={
+        ...         "a": pl.Array(pl.Int32, 2),
+        ...         "b": pl.Array(pl.Int32, 3),
+        ...     },
+        ... )
+        >>> df.with_columns(concat=pl.col("a").arr.concat(pl.col("b")))
+        shape: (2, 3)
+        ┌───────────────┬──────────────┬──────────────────┐
+        │ a             ┆ b            ┆ concat           │
+        │ ---           ┆ ---          ┆ ---              │
+        │ array[i32, 2] ┆ array[i32, 3] ┆ array[i32, 5]   │
+        ╞═══════════════╪══════════════╪══════════════════╡
+        │ [1, 2]        ┆ [5, 6, 7]    ┆ [1, 2, 5, 6, 7]  │
+        │ [3, 4]        ┆ [8, 9, 10]   ┆ [3, 4, 8, 9, 10] │
+        └───────────────┴──────────────┴──────────────────┘
+
+        Handle null values by propagating them:
+
+        >>> df_nulls = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], None],
+        ...         "b": [[5, 6], [7, 8]],
+        ...     },
+        ...     schema={
+        ...         "a": pl.Array(pl.Int32, 2),
+        ...         "b": pl.Array(pl.Int32, 2),
+        ...     },
+        ... )
+        >>> df_nulls.with_columns(concat=pl.col("a").arr.concat(pl.col("b")))
+        shape: (2, 3)
+        ┌───────────────┬───────────┬───────────────────┐
+        │ a             ┆ b         ┆ concat            │
+        │ ---           ┆ ---       ┆ ---               │
+        │ array[i32, 2] ┆ array[i32, 2] ┆ array[i32, 4] │
+        ╞═══════════════╪═══════════╪═══════════════════╡
+        │ [1, 2]        ┆ [5, 6]    ┆ [1, 2, 5, 6]      │
+        │ null          ┆ [7, 8]    ┆ null              │
+        └───────────────┴───────────┴───────────────────┘
         """
         return wrap_expr(self._pyexpr.arr_concat(other._pyexpr))
 
