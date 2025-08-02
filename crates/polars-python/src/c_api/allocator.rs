@@ -1,6 +1,4 @@
 #[cfg(all(
-    not(allocator = "mimalloc"),
-    not(allocator = "default"),
     not(feature = "default_alloc"),
     target_family = "unix",
     not(target_os = "emscripten"),
@@ -9,13 +7,8 @@
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(all(
-    not(allocator = "default"),
     not(feature = "default_alloc"),
-    any(
-        not(target_family = "unix"),
-        target_os = "emscripten",
-        allocator = "mimalloc"
-    ),
+    any(not(target_family = "unix"), target_os = "emscripten"),
 ))]
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -27,23 +20,25 @@ use pyo3::ffi::PyCapsule_New;
 use pyo3::{Bound, PyAny, PyResult, Python};
 
 unsafe extern "C" fn alloc(size: usize, align: usize) -> *mut u8 {
-    std::alloc::alloc(Layout::from_size_align_unchecked(size, align))
+    unsafe { std::alloc::alloc(Layout::from_size_align_unchecked(size, align)) }
 }
 
 unsafe extern "C" fn dealloc(ptr: *mut u8, size: usize, align: usize) {
-    std::alloc::dealloc(ptr, Layout::from_size_align_unchecked(size, align))
+    unsafe { std::alloc::dealloc(ptr, Layout::from_size_align_unchecked(size, align)) }
 }
 
 unsafe extern "C" fn alloc_zeroed(size: usize, align: usize) -> *mut u8 {
-    std::alloc::alloc_zeroed(Layout::from_size_align_unchecked(size, align))
+    unsafe { std::alloc::alloc_zeroed(Layout::from_size_align_unchecked(size, align)) }
 }
 
 unsafe extern "C" fn realloc(ptr: *mut u8, size: usize, align: usize, new_size: usize) -> *mut u8 {
-    std::alloc::realloc(
-        ptr,
-        Layout::from_size_align_unchecked(size, align),
-        new_size,
-    )
+    unsafe {
+        std::alloc::realloc(
+            ptr,
+            Layout::from_size_align_unchecked(size, align),
+            new_size,
+        )
+    }
 }
 
 #[repr(C)]
