@@ -55,6 +55,12 @@ class ArrowStreamExportable(Protocol):
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
 
 
+class ArrowSchemaExportable(Protocol):
+    """Type protocol for Arrow C Schema Interface via Arrow PyCapsule Interface."""
+
+    def __arrow_c_schema__(self) -> object: ...
+
+
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[type["TemporalType"], "TemporalType"]
