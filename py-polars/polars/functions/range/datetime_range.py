@@ -29,7 +29,7 @@ def datetime_range(
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-    eager: Literal[False],
+    eager: Literal[False] = ...,
 ) -> Expr: ...
 
 
@@ -292,7 +292,7 @@ def datetime_ranges(
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-    eager: Literal[False],
+    eager: Literal[False] = ...,
 ) -> Expr: ...
 
 
