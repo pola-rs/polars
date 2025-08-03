@@ -1131,6 +1131,45 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_month())
 
+    def days_in_month(self) -> Expr:
+        """
+        Extract the number of days in the month from the underlying Date representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the number of days in the month.
+        The return value ranges from 28 to 31.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Int8`.
+
+        See Also
+        --------
+        month
+        is_leap_year
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {"date": [date(2001, 1, 1), date(2001, 2, 1), date(2000, 2, 1)]}
+        ... )
+        >>> df.with_columns(pl.col("date").dt.days_in_month().alias("days_in_month"))
+        shape: (3, 2)
+        ┌────────────┬───────────────┐
+        │ date       ┆ days_in_month │
+        │ ---        ┆ ---           │
+        │ date       ┆ i8            │
+        ╞════════════╪═══════════════╡
+        │ 2001-01-01 ┆ 31            │
+        │ 2001-02-01 ┆ 28            │
+        │ 2000-02-01 ┆ 29            │
+        └────────────┴───────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_days_in_month())
+
     def week(self) -> Expr:
         """
         Extract the week from the underlying Date representation.

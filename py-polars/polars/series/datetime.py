@@ -679,6 +679,41 @@ class DateTimeNameSpace:
         ]
         """
 
+    def days_in_month(self) -> Series:
+        """
+        Extract the number of days in the month from the underlying date representation.
+
+        Applies to Date and Datetime columns.
+
+        Returns the number of days in the month.
+        The return value ranges from 28 to 31.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Int8`.
+
+        See Also
+        --------
+        month
+        is_leap_year
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "date", [date(2001, 1, 1), date(2001, 2, 1), date(2000, 2, 1)]
+        ... )
+        >>> s.dt.days_in_month()
+        shape: (3,)
+        Series: 'date' [i8]
+        [
+                31
+                28
+                29
+        ]
+        """
+
     def week(self) -> Series:
         """
         Extract the week from the underlying date representation.
