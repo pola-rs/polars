@@ -266,15 +266,17 @@ impl ComputeNode for SinkComputeNode {
         }
 
         if recv[0] == PortState::Done {
-            if let Some(mut started) = self.started.take() {
+            if let Some(started) = self.started.take() {
                 drop(started.input_send);
-                polars_io::pl_async::get_runtime().block_on(async move {
-                    // Either the task finished or some error occurred.
-                    while let Some(ret) = started.join_handles.next().await {
-                        ret?;
-                    }
-                    PolarsResult::Ok(())
-                })?;
+                for join_handle in started.join_handles {
+                    state.spawn_subphase_task(join_handle);
+                }
+
+                let mut join_handles = Vec::new();
+                self.sink.finalize(state, &mut join_handles);
+                for join_handle in join_handles {
+                    state.spawn_subphase_task(join_handle);
+                }
             }
         }
 
@@ -337,15 +339,6 @@ impl ComputeNode for SinkComputeNode {
 
             Ok(())
         }));
-    }
-
-    fn finalize<'env, 's>(
-        &'env mut self,
-        _scope: &'s TaskScope<'s, 'env>,
-        state: &'s StreamingExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        self.sink.finalize(state, join_handles);
     }
 
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {

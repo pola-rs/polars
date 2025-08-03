@@ -39,7 +39,6 @@ impl StreamingExecutionState {
     /// if called inside `update_state` it is awaited after the state update, and
     /// if called inside `spawn` it is awaited after the execution of that phase is
     /// complete.
-    #[expect(unused)]
     pub fn spawn_subphase_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(
         &self,
         fut: F,
