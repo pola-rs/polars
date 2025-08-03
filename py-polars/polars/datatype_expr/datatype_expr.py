@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, SchemaDict
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyDataTypeExpr
+        from polars._plr import PyDataTypeExpr
 elif BUILDING_SPHINX_DOCS:
     import sys
 

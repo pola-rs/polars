@@ -21,7 +21,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
     # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
-    from polars.polars import __register_startup_deps
+    from polars._plr import __register_startup_deps
 
     __register_startup_deps()
 

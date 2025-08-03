@@ -33,7 +33,7 @@ from polars.datatypes import (
 from polars.expr import Expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyExpr, PySelector
+    from polars._plr import PyExpr, PySelector
 
 if sys.version_info >= (3, 10):
     from types import NoneType

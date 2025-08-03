@@ -105,7 +105,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, get_engine_affinity
+    from polars._plr import PyLazyFrame, get_engine_affinity
 
 if TYPE_CHECKING:
     import sys
@@ -116,7 +116,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr, PyPartitioning, PySelector
+        from polars._plr import PyExpr, PyPartitioning, PySelector
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (

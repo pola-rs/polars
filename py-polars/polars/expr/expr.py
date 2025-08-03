@@ -66,14 +66,14 @@ from polars.expr.struct import ExprStructNameSpace
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import arg_where as py_arg_where
+    from polars._plr import arg_where as py_arg_where
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyExpr
+    from polars._plr import PyExpr
 
 if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PySeries
+        from polars._plr import PySeries
 
     from collections.abc import Iterable
     from io import IOBase

@@ -6,6 +6,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
+    from polars._plr import PySeries
     from polars._typing import (
         Endianness,
         IntoExpr,
@@ -13,7 +14,6 @@ if TYPE_CHECKING:
         SizeUnit,
         TransferEncoding,
     )
-    from polars.polars import PySeries
 
 
 @expr_dispatch

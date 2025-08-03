@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from polars.selectors import Selector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyPartitioning
+        from polars._plr import PyPartitioning
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
