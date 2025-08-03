@@ -74,7 +74,7 @@ fn build_filter_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
-    let predicate = predicate.clone();
+    let predicate = predicate;
     let cols_and_predicate = phys_sm[input.node]
         .output_schema
         .iter_names()
@@ -320,7 +320,7 @@ pub fn lower_ir(
 
                         let select_output_schema = Arc::new(select_output_schema);
                         let node = phys_sm.insert(PhysNode {
-                            output_schema: select_output_schema.clone(),
+                            output_schema: select_output_schema,
                             kind: PhysNodeKind::Select {
                                 input,
                                 selectors: key_exprs.clone(),
@@ -541,17 +541,13 @@ pub fn lower_ir(
                         use crate::physical_plan::io::python_dataset::python_dataset_scan_to_reader_builder;
                         let guard = cached_ir.lock().unwrap();
 
-                        let (scan_name, scan_fn, python_source_type) = guard
+                        let expanded_scan = guard
                             .as_ref()
                             .expect("python dataset should be resolved")
                             .python_scan()
                             .expect("should be python scan");
 
-                        python_dataset_scan_to_reader_builder(
-                            scan_name,
-                            scan_fn.clone(),
-                            python_source_type,
-                        )
+                        python_dataset_scan_to_reader_builder(expanded_scan)
                     },
 
                     FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
@@ -567,7 +563,7 @@ pub fn lower_ir(
                         };
 
                     let cloud_options = cloud_options.clone().map(Arc::new);
-                    let file_schema = file_info.schema.clone();
+                    let file_schema = file_info.schema;
 
                     let (file_projection_builder, file_schema) =
                         multi_file_reader::initialization::projection::resolve_projections(
@@ -642,7 +638,7 @@ pub fn lower_ir(
 
                     let mut row_index_post = unified_scan_args.row_index;
                     let mut pre_slice_post = pre_slice.clone();
-                    let mut predicate_post = predicate.clone();
+                    let mut predicate_post = predicate;
 
                     // Always send predicate and slice to multiscan as they can be used to prune files. If the
                     // underlying reader does not support predicates, multiscan will apply it in post.
@@ -757,7 +753,7 @@ pub fn lower_ir(
                         };
 
                         let node_key = phys_sm.insert(PhysNode {
-                            output_schema: schema_after_row_index_post.clone(),
+                            output_schema: schema_after_row_index_post,
                             kind: node,
                         });
 
@@ -833,7 +829,7 @@ pub fn lower_ir(
                 &aggs,
                 output_schema,
                 maintain_order,
-                options.clone(),
+                options,
                 apply,
                 expr_arena,
                 phys_sm,
@@ -964,7 +960,7 @@ pub fn lower_ir(
                 let input_schema = phys_sm[phys_input.node].output_schema.clone();
                 let lmdf = Arc::new(LateMaterializedDataFrame::default());
                 let mut lp_arena = Arena::default();
-                let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
+                let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
                 let distinct_lp_node = lp_arena.add(IR::Distinct {
                     input: input_lp_node,
                     options,

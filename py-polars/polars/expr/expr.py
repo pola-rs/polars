@@ -42,7 +42,7 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_expr
+from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
@@ -72,6 +72,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyExpr
 
 if TYPE_CHECKING:
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        from polars.polars import PySeries
+
     from collections.abc import Iterable
     from io import IOBase
 
@@ -4410,6 +4413,11 @@ class Expr:
         We allow this, but it is considered a bug in the user's query. In the
         future this will raise in `Lazy` queries.
 
+        Notes
+        -----
+        A UDF passed to `map_batches` must be pure, meaning that it cannot modify
+        or depend on state other than its arguments.
+
         See Also
         --------
         map_elements
@@ -4584,6 +4592,9 @@ Consider using {self}.implode() instead"""
 
         * Window function application using `over` is considered a GroupBy context
           here, so `map_elements` can be used to map functions over window groups.
+
+        * A UDF passed to `map_elements` must be pure, meaning that it cannot modify or
+          depend on state other than its arguments.
 
         Examples
         --------
@@ -8577,10 +8588,16 @@ Consider using {self}.implode() instead"""
         """
         if min_samples is None:
             min_samples = window_size
+
+        def _wrap(pys: PySeries) -> pl.Series:
+            s = wrap_s(pys)
+            rv = function(s)
+            if isinstance(rv, pl.Series):
+                return rv._s
+            return pl.Series([rv])._s
+
         return wrap_expr(
-            self._pyexpr.rolling_map(
-                function, window_size, weights, min_samples, center
-            )
+            self._pyexpr.rolling_map(_wrap, window_size, weights, min_samples, center)
         )
 
     def abs(self) -> Expr:

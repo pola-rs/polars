@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
-use polars_core::prelude::{DataType, PlIndexMap};
+use polars_core::prelude::{DataType, PlHashMap};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_file_reader::extra_ops::column_selector::ColumnSelector;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
 
 /// Encapsulates projection logic, including column mapping / renaming / casting information.
 /// Intended to be used for the projected file columns.
@@ -27,7 +26,7 @@ pub enum Projection {
         /// Contains entries for columns which require e.g. renaming / casting.
         /// Key: Index in `projected_schema`.
         /// Value: (source_name, source_dtype, transform).
-        mapping: Option<Arc<PlIndexMap<usize, ProjectionTransform>>>,
+        mapping: Option<Arc<PlHashMap<usize, ProjectionTransform>>>,
         missing_columns_mask: Option<Bitmap>,
     },
 }
@@ -77,16 +76,13 @@ impl Projection {
                     }
 
                     let (source_name, source_dtype) =
-                        mapping.as_ref().and_then(|x| x.get_index(index)).map_or(
+                        mapping.as_ref().and_then(|x| x.get(&index)).map_or(
                             (output_name, output_dtype),
-                            |(
-                                _,
-                                ProjectionTransform {
-                                    source_name,
-                                    source_dtype,
-                                    transform: _,
-                                },
-                            )| (source_name, source_dtype),
+                            |ProjectionTransform {
+                                 source_name,
+                                 source_dtype,
+                                 transform: _,
+                             }| (source_name, source_dtype),
                         );
 
                     if let Some(existing) = pre_projection.get(source_name.as_str()) {
@@ -136,16 +132,13 @@ impl Projection {
                 }
 
                 let (source_name, resolved_transform) =
-                    mapping.as_ref().and_then(|x| x.get_index(index)).map_or(
+                    mapping.as_ref().and_then(|x| x.get(&index)).map_or(
                         (output_name, None),
-                        |(
-                            _index,
-                            ProjectionTransform {
-                                source_name,
-                                source_dtype,
-                                transform,
-                            },
-                        )| {
+                        |ProjectionTransform {
+                             source_name,
+                             source_dtype,
+                             transform,
+                         }| {
                             (
                                 source_name,
                                 Some(ResolvedTransformRef {
@@ -175,22 +168,36 @@ impl Projection {
         self.get_mapped_projection_ref_by_index(index)
     }
 
+    pub fn iter_non_missing_columns(&self) -> impl Iterator<Item = MappedProjectionRef<'_>> {
+        (0..self.projected_schema().len())
+            .filter_map(|i| self.get_mapped_projection_ref_by_index(i))
+    }
+
+    /// # Returns
+    /// Returns the number of missing columns if `self` is a `Mapped` variant. Otherwise returns `None`.
+    pub fn num_missing_columns(&self) -> Option<usize> {
+        match self {
+            Projection::Plain(_) => None,
+            Projection::Mapped {
+                missing_columns_mask,
+                ..
+            } => Some(missing_columns_mask.as_ref().map_or(0, |x| x.set_bits())),
+        }
+    }
+
     /// Returns an iterator of names in the projected schema that are missing from the file.
+    ///
+    /// # Panics
+    /// Panics if `self` is a `Plain` variant and `reader_schema` is `None`.
     ///
     /// # Returns
     /// `(output_name, output_dtype)`
-    pub async fn iter_missing_columns(
+    pub fn iter_missing_columns(
         &self,
-        reader: &mut dyn FileReader,
+        reader_schema: Option<&Schema>,
     ) -> PolarsResult<impl Iterator<Item = (&PlSmallStr, &DataType)>> {
-        let mut reader_schema: Option<SchemaRef> = None;
-        let iter_len: usize;
-
-        match self {
-            Projection::Plain(projected_schema) => {
-                iter_len = projected_schema.len();
-                reader_schema = Some(reader.file_schema().await?);
-            },
+        let iter_len = match self {
+            Projection::Plain(projected_schema) => projected_schema.len(),
 
             Projection::Mapped {
                 projected_schema,
@@ -199,18 +206,18 @@ impl Projection {
             } => {
                 // For the `Mapped` case, the missing columns will have been resolved to a bitmap
                 // by the `ProjectionBuilder`.
-                iter_len = missing_columns_mask.as_ref().map_or(0, |x| {
+                missing_columns_mask.as_ref().map_or(0, |x| {
                     assert_eq!(x.len(), projected_schema.len());
                     x.len()
                 })
             },
-        }
+        };
 
         Ok((0..iter_len).filter_map(move |i| match self {
             Projection::Plain(projected_schema) => {
                 let (projected_name, dtype) = projected_schema.get_at_index(i).unwrap();
 
-                (!reader_schema.as_deref().unwrap().contains(projected_name))
+                (!reader_schema.unwrap().contains(projected_name))
                     .then_some((projected_name, dtype))
             },
 
@@ -238,7 +245,6 @@ pub struct ProjectionTransform {
 #[derive(Debug)]
 pub struct MappedProjectionRef<'a> {
     pub source_name: &'a PlSmallStr,
-    #[expect(unused)]
     pub output_name: &'a PlSmallStr,
     pub output_dtype: &'a DataType,
     pub resolved_transform: Option<ResolvedTransformRef<'a>>,

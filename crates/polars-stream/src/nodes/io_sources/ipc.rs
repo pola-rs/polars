@@ -242,8 +242,8 @@ impl FileReader for IpcFileReader {
             if verbose {
                 eprintln!(
                     "[IpcFileReader]: early return: \
-                    n_rows_in_file: {} \
-                    pre_slice: {:?} \
+                    n_rows_in_file: {}, \
+                    pre_slice: {:?}, \
                     resolved_pre_slice: {:?} \
                     ",
                     self._n_rows_in_file()?,
@@ -458,11 +458,10 @@ impl FileReader for IpcFileReader {
             })
             .collect::<Vec<_>>();
 
-        let memslice = memslice.clone();
-        let metadata = metadata.clone();
-        let slice = slice.clone();
-        let row_index = row_index.clone();
-        let projection_info = projection_info.clone();
+        let memslice = memslice;
+        let metadata = metadata;
+        let row_index = row_index;
+        let projection_info = projection_info;
 
         // Walker task.
         //

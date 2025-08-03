@@ -485,7 +485,7 @@ impl LazyFrame {
             .collect();
 
         if cast_cols.is_empty() {
-            self.clone()
+            self
         } else {
             self.with_columns(cast_cols)
         }
@@ -1121,7 +1121,7 @@ impl LazyFrame {
         );
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
-            payload: payload.clone(),
+            payload,
         };
         Ok(self)
     }

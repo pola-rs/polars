@@ -21,11 +21,11 @@ use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::match_integer_type;
 use arrow::offset::{Offset, Offsets};
-pub use binview_to::binview_to_primitive_dyn;
 use binview_to::{
     binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
     utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
+pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;

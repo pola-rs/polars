@@ -184,7 +184,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let aliased = format!("{tp}_amplitude");
         exprs.push((col(high) - col(low)).alias(aliased))
     }
-    let result = df.clone().lazy().with_columns(exprs).collect()?;
+    let result = df.lazy().with_columns(exprs).collect()?;
     println!("{result}");
     // --8<-- [end:yield-expressions]
 

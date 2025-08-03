@@ -114,8 +114,19 @@ pub(super) fn convert_functions(
                 B::Base64Encode => IB::Base64Encode,
                 B::Size => IB::Size,
                 #[cfg(feature = "binary_encoding")]
-                B::Reinterpret(data_type, v) => {
-                    IB::Reinterpret(data_type.into_datatype(ctx.schema)?, v)
+                B::Reinterpret(dtype_expr, v) => {
+                    let dtype = dtype_expr.into_datatype(ctx.schema)?;
+                    let can_reinterpret_to =
+                        |dt: &DataType| dt.is_primitive_numeric() || dt.is_temporal();
+                    polars_ensure!(
+                        can_reinterpret_to(&dtype) || (
+                            dtype.is_array() && dtype.inner_dtype().map(can_reinterpret_to) == Some(true)
+                        ),
+                        InvalidOperation:
+                        "cannot reinterpret binary to dtype {:?}. Only numeric or temporal dtype, or Arrays of these, are supported. Hint: To reinterpret to a nested Array, first reinterpret to a linear Array, and then use reshape",
+                        dtype
+                    );
+                    IB::Reinterpret(dtype, v)
                 },
             })
         },
@@ -707,6 +718,7 @@ pub(super) fn convert_functions(
                         corr_cov_options,
                         is_corr,
                     },
+                    R::Map(f) => IR::Map(f),
                 },
                 options,
             }
@@ -734,8 +746,8 @@ pub(super) fn convert_functions(
         },
         F::Append { upcast } => I::Append { upcast },
         F::ShiftAndFill => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
-            polars_ensure!(&e[2].is_scalar(ctx.arena), ComputeError: "'fill_value' must be scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
+            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
             I::ShiftAndFill
         },
         F::Shift => I::Shift,
@@ -765,8 +777,8 @@ pub(super) fn convert_functions(
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
         F::Repeat => {
-            polars_ensure!(&e[0].is_scalar(ctx.arena), ComputeError: "'value' must be scalar value");
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[0].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             I::Repeat
         },
         #[cfg(feature = "round_series")]
@@ -808,7 +820,7 @@ pub(super) fn convert_functions(
         F::ShrinkType => I::ShrinkType,
         #[cfg(feature = "diff")]
         F::Diff(n) => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             I::Diff(n)
         },
         #[cfg(feature = "pct_change")]
@@ -982,7 +994,11 @@ pub(super) fn convert_functions(
         F::GatherEvery { n, offset } => I::GatherEvery { n, offset },
         #[cfg(feature = "reinterpret")]
         F::Reinterpret(v) => I::Reinterpret(v),
-        F::ExtendConstant => I::ExtendConstant,
+        F::ExtendConstant => {
+            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
+            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
+            I::ExtendConstant
+        },
     };
 
     let mut options = ir_function.function_options();
@@ -992,7 +1008,7 @@ pub(super) fn convert_functions(
 
     // Handles special case functions like `struct.field`.
     let output_name = match ir_function.output_name().and_then(|v| v.into_inner()) {
-        Some(name) => name.clone(),
+        Some(name) => name,
         None if e.is_empty() => format_pl_smallstr!("{}", &ir_function),
         None => e[0].output_name().clone(),
     };

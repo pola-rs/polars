@@ -1226,7 +1226,7 @@ mod tests {
     fn test_unpack_primitive_dtypes() {
         let inner_type = DataType::Float64;
         let array_type = DataType::Array(Box::new(inner_type), 10);
-        let list_type = DataType::List(Box::new(array_type.clone()));
+        let list_type = DataType::List(Box::new(array_type));
 
         let result = unpack_dtypes(&list_type, false);
 
@@ -1246,8 +1246,8 @@ mod tests {
         let result = unpack_dtypes(&list_type, true);
 
         let mut expected = PlHashSet::new();
-        expected.insert(list_type.clone());
-        expected.insert(array_type.clone());
+        expected.insert(list_type);
+        expected.insert(array_type);
         expected.insert(DataType::Float64);
 
         assert_eq!(result, expected)

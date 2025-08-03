@@ -102,7 +102,7 @@ impl DeletionFilesProvider {
                     .map(|(deletion_file_idx, path)| {
                         let source = ScanSource::Path(PlPath::new(path));
                         let mut reader = reader_builder.build_file_reader(
-                            source.clone(),
+                            source,
                             cloud_options.clone(),
                             deletion_file_idx,
                         );

@@ -209,7 +209,7 @@ impl FileReader for NDJsonFileReader {
 
         let opt_post_process_handle = if is_negative_slice {
             // Note: This is right-to-left
-            let negative_slice = global_slice.clone().unwrap();
+            let negative_slice = global_slice.unwrap();
 
             if verbose {
                 eprintln!("[NDJsonFileReader]: Initialize morsel stream reverser");
@@ -329,7 +329,7 @@ impl FileReader for NDJsonFileReader {
                         } else {
                             LineBatchProcessorOutputPort::Direct {
                                 tx: morsel_senders.pop().unwrap(),
-                                source_token: source_token.clone(),
+                                source_token,
                             }
                         },
                         needs_total_row_count,

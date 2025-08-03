@@ -53,18 +53,18 @@ class TestIcebergScanIO:
     """Test coverage for `iceberg` scan ops."""
 
     def test_scan_iceberg_plain(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
         }
 
     def test_scan_iceberg_snapshot_id(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
@@ -1018,3 +1018,112 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
 
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
+
+
+def test_scan_iceberg_parquet_prefilter_with_column_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count())
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(
+                field_id=next_field_id(),
+                name="column_1",
+                field_type=StringType(),
+                required=False,
+            ),
+            NestedField(
+                field_id=next_field_id(),
+                name="column_2",
+                field_type=IntegerType(),
+                required=False,
+            ),
+            NestedField(
+                field_id=next_field_id(),
+                name="column_3",
+                field_type=StringType(),
+                required=False,
+            ),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    df = pl.DataFrame(
+        {
+            "column_1": ["A", "B", "C", "D", "E", "F"],
+            "column_2": pl.Series([1, 2, 3, 4, 5, 6], dtype=pl.Int32),
+            "column_3": ["P", "Q", "R", "S", "T", "U"],
+        }
+    )
+
+    df.slice(0, 3).write_iceberg(tbl, mode="append")
+    df.slice(3).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.update_column("column_2", LongType())
+
+    with tbl.update_schema() as sch:
+        sch.delete_column("column_1")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("column_3", "column_1")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("column_2", "column_3")
+
+    with tbl.update_schema() as sch:
+        sch.move_first("column_1")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect().sort("column_3"),
+        pl.DataFrame(
+            {
+                "column_1": ["P", "Q", "R", "S", "T", "U"],
+                "column_3": pl.Series([1, 2, 3, 4, 5, 6], dtype=pl.Int64),
+            }
+        ),
+    )
+
+    q = pl.scan_iceberg(tbl, reader_override="native").filter(pl.col("column_3") == 5)
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        cx.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+        capfd.readouterr()
+        out = q.collect()
+        capture = capfd.readouterr().err
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "column_1": ["T"],
+                "column_3": pl.Series([5], dtype=pl.Int64),
+            }
+        ),
+    )
+
+    # First file
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 0 / 1 row groups" in capture
+    )
+    # Second file
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
+    )
+    assert (
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live, 1 non-live)"
+        in capture
+    )

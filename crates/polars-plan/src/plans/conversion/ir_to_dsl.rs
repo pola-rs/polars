@@ -799,6 +799,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                         corr_cov_options,
                         is_corr,
                     },
+                    IR::Map(f) => R::Map(f),
                 },
                 options,
             }

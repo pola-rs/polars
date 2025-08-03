@@ -348,7 +348,7 @@ impl FlightConsumer {
                         mmap_record(
                             &self.md.schema,
                             &self.md.ipc_schema.fields,
-                            arrow_data.clone(),
+                            arrow_data,
                             batch,
                             0,
                             &self.dictionaries,

@@ -463,7 +463,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
-        _ => {
+        DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
             let left_asof = left_asof.cast(&DataType::Int32).unwrap();
             let right_asof = right_asof.cast(&DataType::Int32).unwrap();
             let ca = left_asof.i32().unwrap();
@@ -477,6 +477,7 @@ fn dispatch_join_type(
                 allow_eq,
             )
         },
+        dt => polars_bail!(opq = asof_join, dt),
     }
 }
 

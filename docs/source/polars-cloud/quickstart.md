@@ -37,4 +37,4 @@ Now that we are done with the setup, we can start running queries. You can write
 used and to only need to call `.remote()` on your `LazyFrame`. In the following example we create a
 compute cluster and run a simple Polars query.
 
-{{code_block('polars-cloud/quickstart','general',['ComputeContext','LazyFrameExt'])}}
+{{code_block('polars-cloud/quickstart','general',['ComputeContext','LazyFrameRemote'])}}

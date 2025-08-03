@@ -36,10 +36,10 @@ impl LineBatchDistributor {
             eprintln!(
                 "\
                 [NDJSON LineBatchDistributor]: \
-                global_bytes.len(): {} \
-                chunk_size: {} \
-                n_chunks: {} \
-                n_rows_to_skip: {} \
+                global_bytes.len(): {}, \
+                chunk_size: {}, \
+                n_chunks: {}, \
+                n_rows_to_skip: {}, \
                 reverse: {} \
                 ",
                 global_bytes.len(),

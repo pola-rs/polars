@@ -329,7 +329,7 @@ fn assert_series_values_equal(
             right.sort(SortOptions::default())?,
         )
     } else {
-        (left.clone(), right.clone())
+        (left, right)
     };
 
     let unequal = match left.not_equal_missing(&right) {

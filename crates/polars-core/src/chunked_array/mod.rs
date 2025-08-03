@@ -1020,7 +1020,7 @@ pub(crate) mod test {
             PlSmallStr::EMPTY,
             CategoricalPhysical::U32,
         );
-        let ca = ca.cast(&DataType::from_categories(cats.clone())).unwrap();
+        let ca = ca.cast(&DataType::from_categories(cats)).unwrap();
         let ca = ca.cat32().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);

@@ -1,4 +1,3 @@
-use std::ops::Range;
 use std::sync::Arc;
 
 use polars_core::prelude::PlIndexMap;
@@ -10,13 +9,15 @@ use polars_core::prelude::PlIndexMap;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DeletionFilesList {
-    // Chose to use IndexMap<usize, Arc<[String]>>:
+    // Chose to use a hashmap keyed by the scan source index.
     // * There may be data files without deletion files.
     // * A single data file may have multiple associated deletion files.
-    // * Needs to be sliceable for cloud execution.
+    //
+    // Note that this uses `PlIndexMap` instead of `PlHashMap` for schemars compatibility.
     //
     // Other possible options:
     // * ListArray(inner: Utf8Array)
+    //
     /// Iceberg positional deletes
     IcebergPositionDelete(Arc<PlIndexMap<usize, Arc<[String]>>>),
 }
@@ -31,20 +32,6 @@ impl DeletionFilesList {
                 (!paths.is_empty()).then_some(IcebergPositionDelete(paths))
             },
             None => None,
-        }
-    }
-
-    /// Returns a new DeletionFilesList for the sources within the specified range.
-    pub fn slice(&self, range: Range<usize>) -> Self {
-        use DeletionFilesList::*;
-
-        match self {
-            IcebergPositionDelete(paths) => IcebergPositionDelete(Arc::new(
-                paths.as_slice()[range]
-                    .iter()
-                    .map(|(k, v)| (*k, v.clone()))
-                    .collect(),
-            )),
         }
     }
 

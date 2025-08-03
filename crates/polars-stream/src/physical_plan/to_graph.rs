@@ -487,6 +487,17 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Repeat { value, repeats } => {
+            let value_key = to_graph_rec(value.node, ctx)?;
+            let repeats_key = to_graph_rec(repeats.node, ctx)?;
+            let value_schema = ctx.phys_sm[value.node].output_schema.clone();
+            let repeats_schema = ctx.phys_sm[repeats.node].output_schema.clone();
+            ctx.graph.add_node(
+                nodes::repeat::RepeatNode::new(value_schema, repeats_schema),
+                [(value_key, value.port), (repeats_key, repeats.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()
@@ -996,29 +1007,28 @@ fn to_graph_rec<'a>(
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
             use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
 
-            let mut reader = BatchFnReader {
+            let reader = BatchFnReader {
                 name: name.clone(),
                 // If validate_schema is false, the schema of the morsels may not match the
                 // configured schema. In this case we set this to `None` and the reader will
                 // retrieve the schema from the first morsel.
                 output_schema: validate_schema.then(|| output_schema.clone()),
                 get_batch_state: Some(GetBatchState::from(get_batch_fn)),
+                execution_state: None,
                 verbose: config::verbose(),
             };
-
-            // Note: This will potentially override the output schema if `validate_schema` is `false`.
-            let output_schema = reader._file_schema()?;
 
             let file_reader_builder = Arc::new(BatchFnReaderBuilder {
                 name,
                 reader: std::sync::Mutex::new(Some(reader)),
+                execution_state: Default::default(),
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
             let sources = ScanSources::Paths(Arc::from([PlPath::from_str("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
-            let file_projection_builder = ProjectionBuilder::new(output_schema.clone(), None);
+            let file_projection_builder = ProjectionBuilder::new(output_schema, None);
             let row_index = None;
             let pre_slice = None;
             let predicate = None;

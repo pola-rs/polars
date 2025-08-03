@@ -847,7 +847,7 @@ impl<'a> GroupBy<'a> {
         match slice {
             None => self,
             Some((offset, length)) => {
-                self.groups = (self.groups.slice(offset, length)).clone();
+                self.groups = self.groups.slice(offset, length);
                 self.selected_keys = self.keys_sliced(slice);
                 self
             },

@@ -74,14 +74,20 @@ mod inner {
         ) -> PolarsResult<Arc<dyn ObjectStore>> {
             let mut current_store = self.inner.store.lock().await;
 
-            self.rebuilt.store(true);
-
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
-                *current_store = self.inner.builder.clone().build_impl().await.map_err(|e| {
-                    e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
-                })?;
+                *current_store =
+                    self.inner
+                        .builder
+                        .clone()
+                        .build_impl(true)
+                        .await
+                        .map_err(|e| {
+                            e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
+                        })?;
             }
+
+            self.rebuilt.store(true);
 
             Ok((*current_store).clone())
         }
@@ -148,6 +154,10 @@ impl PolarsObjectStore {
     + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
     + use<'a, T> {
         futures::stream::iter(ranges.map(move |range| async move {
+            if range.is_empty() {
+                return Ok(Bytes::new());
+            }
+
             let out = store
                 .get_range(path, range.start as u64..range.end as u64)
                 .await?;
@@ -158,6 +168,10 @@ impl PolarsObjectStore {
     }
 
     pub async fn get_range(&self, path: &Path, range: Range<usize>) -> PolarsResult<Bytes> {
+        if range.is_empty() {
+            return Ok(Bytes::new());
+        }
+
         self.try_exec_rebuild_on_err(move |store| {
             let range = range.clone();
             let st = store.clone();
@@ -513,7 +527,7 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
         .flat_map(|x| {
             // Split large individual ranges within the list of ranges.
             let (range, end) = x;
-            let split = split_range(range.clone());
+            let split = split_range(range);
             let len = split.len();
 
             split

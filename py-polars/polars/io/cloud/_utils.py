@@ -33,22 +33,6 @@ class NoPickleOption(Generic[T]):
         NoPickleOption.__init__(self)
 
 
-class ZeroHashWrap(Generic[T]):
-    """Wrapper that always hashes to 0 and always returns True for __eq__."""
-
-    def __init__(self, value: T) -> None:
-        self._value = value
-
-    def get(self) -> T:
-        return self._value
-
-    def __eq__(self, _other: object) -> bool:
-        return True
-
-    def __hash__(self) -> int:
-        return 0
-
-
 def _first_scan_path(
     source: Any,
 ) -> str | Path | None:
