@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from polars import Series
+    from polars._plr import PySeries
     from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
         TimeUnit,
     )
-    from polars.polars import PySeries
 
     if sys.version_info >= (3, 13):
         from warnings import deprecated

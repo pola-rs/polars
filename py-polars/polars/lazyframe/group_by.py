@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
+    from polars._plr import PyLazyGroupBy
     from polars._typing import IntoExpr, QuantileMethod, SchemaDict
-    from polars.polars import PyLazyGroupBy
 
     if sys.version_info >= (3, 13):
         from warnings import deprecated

@@ -32,7 +32,7 @@ from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PyLazyFrame
+    from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

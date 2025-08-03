@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from polars.lazyframe import LazyFrame
 
 with contextlib.suppress(ImportError):
-    from polars.polars import PyCatalogClient
+    from polars._plr import PyCatalogClient
 
     PyCatalogClient.init_classes(
         catalog_info_cls=CatalogInfo,

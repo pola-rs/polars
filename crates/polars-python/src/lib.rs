@@ -48,6 +48,9 @@ pub mod testing;
 pub mod timeout;
 pub mod utils;
 
+#[cfg(feature = "c_api")]
+pub mod c_api;
+
 use crate::conversion::Wrap;
 
 pub type PyDataType = Wrap<polars_core::datatypes::DataType>;
