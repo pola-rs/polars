@@ -175,6 +175,7 @@ impl IRStringFunction {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(time_unit, time_zone) => {
                     let mut time_zone = time_zone.clone();
+                    #[cfg(all(feature = "regex", feature = "timezones"))]
                     if options
                         .format
                         .as_ref()
