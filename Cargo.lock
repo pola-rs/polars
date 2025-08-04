@@ -3155,11 +3155,13 @@ dependencies = [
  "num-traits",
  "polars-arrow",
  "polars-compute",
+ "polars-core",
  "polars-dtype",
  "polars-error",
  "polars-row",
  "polars-schema",
  "polars-utils",
+ "proptest",
  "rand 0.9.1",
  "rand_distr",
  "rayon",
@@ -3515,6 +3517,7 @@ dependencies = [
  "hashbrown 0.15.4",
  "itoa",
  "libc",
+ "mimalloc",
  "ndarray",
  "num-traits",
  "numpy",
@@ -3540,6 +3543,7 @@ dependencies = [
  "rayon",
  "recursive",
  "serde_json",
+ "tikv-jemallocator",
  "version_check",
 ]
 
@@ -3801,11 +3805,9 @@ version = "1.32.0"
 dependencies = [
  "either",
  "libc",
- "mimalloc",
  "polars",
  "polars-python",
  "pyo3",
- "tikv-jemallocator",
 ]
 
 [[package]]

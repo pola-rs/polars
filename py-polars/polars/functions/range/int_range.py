@@ -10,7 +10,7 @@ from polars.datatypes import Int64
 from polars.datatypes._parse import parse_into_datatype_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     from typing import Literal

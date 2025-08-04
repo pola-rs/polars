@@ -45,7 +45,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import dtype_str_repr as _dtype_str_repr
+    from polars._plr import dtype_str_repr as _dtype_str_repr
 
 
 OptionType = type(Optional[type])

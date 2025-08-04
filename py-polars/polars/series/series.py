@@ -111,7 +111,7 @@ from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PySeries
+    from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Generator, Mapping

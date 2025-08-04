@@ -12,12 +12,12 @@ from polars.expr import Expr
 
 if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyDataFrame, PyExpr
+        from polars._plr import PyDataFrame, PyExpr
 
     from typing import IO, Any, Callable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyPartitioning
+    from polars._plr import PyPartitioning
 
 
 class KeyedPartition:

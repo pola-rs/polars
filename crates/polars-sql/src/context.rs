@@ -803,10 +803,7 @@ impl SQLContext {
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
             for p in projections.iter() {
-                let name = p
-                    .to_field(schema.deref(), Context::Default)?
-                    .name
-                    .to_string();
+                let name = p.to_field(schema.deref())?.name.to_string();
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
@@ -1302,8 +1299,7 @@ impl SQLContext {
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
         let schema_before = self.get_frame_schema(&mut lf)?;
-        let group_by_keys_schema =
-            expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
+        let group_by_keys_schema = expressions_to_schema(group_by_keys, &schema_before)?;
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
@@ -1313,11 +1309,22 @@ impl SQLContext {
 
         for mut e in projections {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_agg_or_window = has_expr(e, |e| {
-                matches!(e, Expr::Agg(_) | Expr::Len | Expr::Window { .. })
+            let is_non_group_key_expr = has_expr(e, |e| {
+                match e {
+                    Expr::Agg(_) | Expr::Len | Expr::Window { .. } => true,
+                    Expr::Function { function: func, .. }
+                        if !matches!(func, FunctionExpr::StructExpr(_)) =>
+                    {
+                        // If it's a function call containing a column NOT in the group by keys,
+                        // we treat it as an aggregation.
+                        has_expr(e, |e| match e {
+                            Expr::Column(name) => !group_by_keys_schema.contains(name),
+                            _ => false,
+                        })
+                    },
+                    _ => false,
+                }
             });
-
-            let mut is_function_under_alias = false;
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
@@ -1331,14 +1338,12 @@ impl SQLContext {
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
-                } else if let Expr::Function { .. } = expr.deref() {
-                    is_function_under_alias = true;
-                } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
+                } else if !is_non_group_key_expr && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
             }
-            let field = e.to_field(&schema_before, Context::Default)?;
-            if group_by_keys_schema.get(&field.name).is_none() && is_agg_or_window {
+            let field = e.to_field(&schema_before)?;
+            if group_by_keys_schema.get(&field.name).is_none() && is_non_group_key_expr {
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode(expr)) = &e {
                     e = (**expr).clone();
@@ -1358,22 +1363,10 @@ impl SQLContext {
                 if !group_by_keys_schema.contains(&field.name) {
                     polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                 }
-            } else if is_function_under_alias || matches!(e, Expr::Function { .. }) {
-                aggregation_projection.push(e.clone());
-            } else if let Expr::Literal { .. }
-            | Expr::Cast { .. }
-            | Expr::Ternary { .. }
-            | Expr::Field { .. }
-            | Expr::Alias { .. } = e
-            {
-                // do nothing
-            } else {
-                polars_bail!(SQLSyntax: "Unsupported operation in the GROUP BY clause: {}", e);
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
-        let projection_schema =
-            expressions_to_schema(projections, &schema_before, Context::Default)?;
+        let projection_schema = expressions_to_schema(projections, &schema_before)?;
 
         // A final projection to get the proper order and any deferred transforms/aliases.
         let final_projection = projection_schema

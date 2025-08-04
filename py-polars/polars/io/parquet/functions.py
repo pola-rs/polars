@@ -30,8 +30,8 @@ from polars.io.cloud.credential_provider._builder import (
 from polars.io.scan_options._options import ScanOptions
 
 with contextlib.suppress(ImportError):
-    from polars.polars import PyLazyFrame
-    from polars.polars import read_parquet_metadata as _read_parquet_metadata
+    from polars._plr import PyLazyFrame
+    from polars._plr import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
     from typing import Literal

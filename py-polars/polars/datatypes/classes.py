@@ -13,9 +13,9 @@ import polars.datatypes
 import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
-    from polars.polars import PyCategories
-    from polars.polars import dtype_str_repr as _dtype_str_repr
+    import polars._plr as plr
+    from polars._plr import PyCategories
+    from polars._plr import dtype_str_repr as _dtype_str_repr
 
 import polars.datatypes.classes as pldt
 
@@ -278,7 +278,7 @@ class DataType(metaclass=DataTypeClass):
         >>> pl.Int16().to_dtype_expr().collect_dtype({})
         Int16
         """
-        from polars.polars import PyDataTypeExpr
+        from polars._plr import PyDataTypeExpr
 
         return pl.DataTypeExpr._from_pydatatype_expr(PyDataTypeExpr.from_dtype(self))
 

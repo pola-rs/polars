@@ -115,13 +115,13 @@ pub(crate) fn det_join_schema(
             // Get join names.
             let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
             for e in left_on {
-                let field = e.field(schema_left, Context::Default, expr_arena)?;
+                let field = e.field(schema_left, expr_arena)?;
                 join_on_left.insert(field.name);
             }
 
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.field(schema_right, Context::Default, expr_arena)?;
+                let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
@@ -176,8 +176,8 @@ pub(crate) fn det_join_schema(
             #[cfg(feature = "asof_join")]
             if matches!(_how, JoinType::AsOf(_)) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
-                    let field_left = left_on.field(schema_left, Context::Default, expr_arena)?;
-                    let field_right = right_on.field(schema_right, Context::Default, expr_arena)?;
+                    let field_left = left_on.field(schema_left, expr_arena)?;
+                    let field_right = right_on.field(schema_right, expr_arena)?;
 
                     if is_coalesced && field_left.name != field_right.name {
                         _asof_pre_added_rhs_keys.insert(field_right.name.clone());
@@ -204,7 +204,7 @@ pub(crate) fn det_join_schema(
 
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.field(schema_right, Context::Default, expr_arena)?;
+                let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 

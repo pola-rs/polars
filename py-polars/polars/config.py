@@ -84,7 +84,7 @@ _POLARS_CFG_ENV_VARS = {
 # method name paired with a callable that returns the current state of that value:
 with contextlib.suppress(ImportError, NameError):
     # note: 'plr' not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
     _POLARS_CFG_DIRECT_VARS = {
         "set_fmt_float": plr.get_float_fmt,

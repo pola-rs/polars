@@ -1,5 +1,5 @@
 try:
-    from polars.polars import (
+    from polars._plr import (
         CategoricalRemappingWarning,
         ColumnNotFoundError,
         ComputeError,

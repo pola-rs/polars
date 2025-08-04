@@ -30,7 +30,9 @@ impl StreamingExecutionState {
     /// Spawns a task which is awaited at the end of the query.
     #[expect(unused)]
     pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
-        self.query_tasks_send.send(tokio::task::spawn(fut)).unwrap();
+        self.query_tasks_send
+            .send(polars_io::pl_async::get_runtime().spawn(fut))
+            .unwrap();
     }
 
     /// Spawns a task which is awaited at the end of the current subphase. That is
@@ -43,7 +45,7 @@ impl StreamingExecutionState {
         fut: F,
     ) {
         self.subphase_tasks_send
-            .send(tokio::task::spawn(fut))
+            .send(polars_io::pl_async::get_runtime().spawn(fut))
             .unwrap();
     }
 }
