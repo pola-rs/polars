@@ -36,9 +36,9 @@ polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
-polars-ops = { workspace = true, features = ["rle"] }
+polars-ops = { workspace = true, features = ["rle", "unique_counts"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["cse", "rle"] }
+polars-plan = { workspace = true, features = ["cse", "rle", "unique_counts"] }
 
 [build-dependencies]
 version_check = { workspace = true }
