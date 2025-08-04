@@ -1294,7 +1294,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).rolling(
                 Expr::Column(output_field.name().clone()),
@@ -1339,7 +1339,7 @@ impl LazyFrame {
             options.index_column = name;
         } else {
             let output_field = index_column
-                .to_field(&self.collect_schema().unwrap(), Context::Default)
+                .to_field(&self.collect_schema().unwrap())
                 .unwrap();
             return self.with_column(index_column).group_by_dynamic(
                 Expr::Column(output_field.name().clone()),

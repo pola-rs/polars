@@ -23,10 +23,7 @@ pub(super) fn convert_functions(
     ) {
         let mut input = input.into_iter();
         let struct_input = to_expr_ir(input.next().unwrap(), ctx)?;
-        let dtype = struct_input
-            .to_expr(ctx.arena)
-            .to_field(ctx.schema, Context::Default)?
-            .dtype;
+        let dtype = struct_input.to_expr(ctx.arena).to_field(ctx.schema)?.dtype;
         let DataType::Struct(fields) = &dtype else {
             polars_bail!(op = "struct.with_fields", dtype);
         };

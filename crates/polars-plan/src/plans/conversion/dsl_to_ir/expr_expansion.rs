@@ -8,7 +8,7 @@ pub fn prepare_projection(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, &PlHashSet::new(), schema, opt_flags)?;
-    let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
+    let schema = expressions_to_schema(&exprs, schema)?;
     Ok((exprs, schema))
 }
 
@@ -607,7 +607,7 @@ fn expand_expression_rec(
                             |e| e,
                         )?;
                         for e in tmp_out {
-                            let dtype = e.to_field(schema, Context::Default)?.dtype;
+                            let dtype = e.to_field(schema)?.dtype;
 
                             let DataType::Struct(fields) = dtype else {
                                 polars_bail!(op = "struct.field", &dtype);
@@ -792,7 +792,7 @@ fn expand_expression_rec(
 
             for expr in tmp {
                 let expr = Arc::new(expr);
-                let expr_dtype = expr.to_field(schema, Context::Default)?.dtype;
+                let expr_dtype = expr.to_field(schema)?.dtype;
                 let element_dtype = variant.element_dtype(&expr_dtype)?;
                 let evaluation_schema =
                     Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
