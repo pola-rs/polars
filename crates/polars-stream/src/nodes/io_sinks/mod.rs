@@ -266,11 +266,16 @@ impl ComputeNode for SinkComputeNode {
         }
 
         if recv[0] == PortState::Done {
-            if let Some(started) = self.started.take() {
+            if let Some(mut started) = self.started.take() {
                 drop(started.input_send);
-                for join_handle in started.join_handles {
-                    state.spawn_subphase_task(join_handle);
-                }
+                // These need to happen before we call finalize.
+                polars_io::pl_async::get_runtime().block_on(async move {
+                    // Either the task finished or some error occurred.
+                    while let Some(ret) = started.join_handles.next().await {
+                        ret?;
+                    }
+                    PolarsResult::Ok(())
+                })?;
 
                 let mut join_handles = Vec::new();
                 self.sink.finalize(state, &mut join_handles);
