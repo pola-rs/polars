@@ -168,6 +168,15 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             pyobject_converter,
             physical_dtype,
         );
+
+        use crate::dataset::dataset_provider_funcs;
+
+        polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
+            name: dataset_provider_funcs::name,
+            schema: dataset_provider_funcs::schema,
+            to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
+        });
+
         // Register SERIES UDF.
         python_dsl::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
         // Register DATAFRAME UDF.

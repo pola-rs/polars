@@ -92,7 +92,6 @@ pub enum FileScanIR {
     #[cfg(feature = "python")]
     PythonDataset {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip, default))]
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
 
