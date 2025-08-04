@@ -804,6 +804,27 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(left_col_expr);
             },
 
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::RLEID,
+                options: _,
+            } => {
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(input, inner_exprs, ctx)?;
+                let node_kind = PhysNodeKind::RleId {
+                    input,
+                    name: value_key.clone(),
+                };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), DataType::UInt32)]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
             // Lower arbitrary elementwise functions.
             ref node @ AExpr::Function {
                 input: ref inner_exprs,

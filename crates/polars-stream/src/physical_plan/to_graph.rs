@@ -498,6 +498,15 @@ fn to_graph_rec<'a>(
             )
         },
 
+        RleId { input, name } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            ctx.graph.add_node(
+                nodes::rle_id::RleIdNode::new(name.clone(), input_schema),
+                [(input_key, input.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()

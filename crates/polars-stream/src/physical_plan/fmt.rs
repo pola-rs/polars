@@ -318,6 +318,7 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        PhysNodeKind::RleId { input, .. } => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,
