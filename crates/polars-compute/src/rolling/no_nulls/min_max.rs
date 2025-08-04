@@ -60,7 +60,6 @@ macro_rules! rolling_minmax_func {
                         offset_fn,
                         weighted_min_max::<T, $policy>,
                         &weights,
-                        false,
                     )
                 },
             }
