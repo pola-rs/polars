@@ -17,6 +17,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars._plr import PySeries
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
@@ -27,7 +28,6 @@ from polars.exceptions import (
     OutOfBoundsError,
     ShapeError,
 )
-from polars.polars import PySeries
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,

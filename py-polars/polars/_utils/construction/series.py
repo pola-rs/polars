@@ -62,7 +62,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PySeries
+    from polars._plr import PySeries
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -161,11 +161,11 @@ def sequence_to_pyseries(
             Datetime,
             Duration,
             Time,
-            Categorical,
             Boolean,
+            Categorical,
             Enum,
             Decimal,
-        ):
+        ) or isinstance(dtype, Categorical):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         return pyseries

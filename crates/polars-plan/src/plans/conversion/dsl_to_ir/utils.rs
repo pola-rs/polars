@@ -10,6 +10,7 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) cache_file_info: SourcesToFileInfo,
     pub(super) pushdown_maintain_errors: bool,
     pub(super) verbose: bool,
+    pub(super) cache_id_for_arc_ptr: PlHashMap<usize, UniqueId>,
 }
 
 pub(super) fn expand_expressions(
@@ -23,9 +24,7 @@ pub(super) fn expand_expressions(
     let exprs = rewrite_projections(exprs, &Default::default(), &schema, opt_flags)?;
     to_expr_irs(
         exprs,
-        expr_arena,
-        &schema,
-        opt_flags.contains(OptFlags::EAGER),
+        &mut ExprToIRContext::new_with_opt_eager(expr_arena, &schema, opt_flags),
     )
 }
 

@@ -1,6 +1,6 @@
 import pickle
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal as PyDecimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -1120,6 +1120,24 @@ def test_pickle_selector_11425() -> None:
 
     assert df.select(selectors[0] | selectors[1]).columns == ["a", "b"]
     assert df.select(unpickled_selectors[0] | unpickled_selectors[1]).columns == [
+        "a",
+        "b",
+    ]
+
+
+def test_list_eval_selector_23667() -> None:
+    df = pl.DataFrame({"x": [[1, 2], [3]]})
+    assert_frame_equal(df, df.select(pl.all().list.eval(pl.element())))
+
+
+def test_datetime_selectors_23767() -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 1, 1)], "b": [datetime(2020, 1, 2, tzinfo=timezone.utc)]}
+    )
+
+    assert df.select(pl.selectors.datetime("us", time_zone=None)).columns == ["a"]
+    assert df.select(pl.selectors.datetime("us", time_zone=["UTC"])).columns == ["b"]
+    assert df.select(pl.selectors.datetime("us", time_zone=[None, "UTC"])).columns == [
         "a",
         "b",
     ]

@@ -421,7 +421,7 @@ impl PyLazyFrame {
         use crate::dataset::dataset_provider_funcs;
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
-            reader_name: dataset_provider_funcs::reader_name,
+            name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });
@@ -980,11 +980,6 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn fetch(&self, py: Python<'_>, n_rows: usize) -> PyResult<PyDataFrame> {
-        let ldf = self.ldf.clone();
-        py.enter_polars_df(|| ldf.fetch(n_rows))
-    }
-
     fn filter(&mut self, predicate: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
@@ -1128,7 +1123,11 @@ impl PyLazyFrame {
                 strategy: strategy.0,
                 left_by: left_by.map(strings_to_pl_smallstr),
                 right_by: right_by.map(strings_to_pl_smallstr),
-                tolerance: tolerance.map(|t| t.0.into_static()),
+                tolerance: tolerance.map(|t| {
+                    let av = t.0.into_static();
+                    let dtype = av.dtype();
+                    Scalar::new(dtype, av)
+                }),
                 tolerance_str: tolerance_str.map(|s| s.into()),
                 allow_eq,
                 check_sortedness,

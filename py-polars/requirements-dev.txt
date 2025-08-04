@@ -18,7 +18,7 @@ pip
 polars-cloud
 # Interop
 numpy
-numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
+numba >= 0.54; python_version < '3.14'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
@@ -32,8 +32,10 @@ aiosqlite
 connectorx
 kuzu
 # Cloud
+azure-identity
 cloudpickle
 fsspec
+pyiceberg>=0.7.1; python_version < '3.13'
 s3fs[boto3]
 # Spreadsheet
 fastexcel>=0.11.5

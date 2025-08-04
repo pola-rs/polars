@@ -53,6 +53,7 @@ nav:
                       - user-guide/lazy/using.md
                       - user-guide/lazy/optimizations.md
                       - user-guide/lazy/schemas.md
+                      - user-guide/lazy/datatype_exprs.md
                       - user-guide/lazy/query-plan.md
                       - user-guide/lazy/execution.md
                       - user-guide/lazy/sources_sinks.md
@@ -117,6 +118,7 @@ nav:
 
           - Organizations:
                 - polars-cloud/organization/organizations.md
+                - polars-cloud/organization/billing.md
           - Workspaces:
                 - polars-cloud/workspace/settings.md
                 - polars-cloud/workspace/team.md

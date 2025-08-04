@@ -41,7 +41,7 @@ fn build_group_by_fallback(
     let input_schema = phys_sm[input.node].output_schema.clone();
     let lmdf = Arc::new(LateMaterializedDataFrame::default());
     let mut lp_arena = Arena::default();
-    let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
+    let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
     let group_by_lp_node = lp_arena.add(IR::GroupBy {
         input: input_lp_node,
         keys: keys.to_vec(),
@@ -172,13 +172,14 @@ fn try_lower_elementwise_scalar_agg_expr(
         #[cfg(feature = "bitwise")]
         AExpr::Function {
             input: inner_exprs,
-            function: IRFunctionExpr::Bitwise(inner_fn),
+            function:
+                IRFunctionExpr::Bitwise(
+                    inner_fn @ (IRBitwiseFunction::And
+                    | IRBitwiseFunction::Or
+                    | IRBitwiseFunction::Xor),
+                ),
             options,
-        } if matches!(
-            inner_fn,
-            IRBitwiseFunction::And | IRBitwiseFunction::Or | IRBitwiseFunction::Xor
-        ) =>
-        {
+        } => {
             assert!(inner_exprs.len() == 1);
 
             let input = inner_exprs[0].clone().node();
@@ -204,10 +205,64 @@ fn try_lower_elementwise_scalar_agg_expr(
                         .entry(input_id)
                         .or_insert_with(unique_column_name)
                         .clone();
-                    let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
                     let trans_agg_node = expr_arena.add(AExpr::Function {
                         input: vec![ExprIR::from_node(input_col_node, expr_arena)],
                         function: IRFunctionExpr::Bitwise(inner_fn),
+                        options,
+                    });
+
+                    // Add to aggregation expressions and replace with a reference to its output.
+                    let agg_expr = if let Some(name) = outer_name {
+                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
+                    } else {
+                        ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
+                    };
+                    agg_exprs.push(agg_expr.clone());
+                    agg_expr.output_name().clone()
+                })
+                .clone();
+            let result_node = expr_arena.add(AExpr::Column(name));
+            Some(result_node)
+        },
+
+        AExpr::Function {
+            input: inner_exprs,
+            function:
+                IRFunctionExpr::Boolean(
+                    inner_fn @ (IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. }),
+                ),
+            options,
+        } => {
+            assert!(inner_exprs.len() == 1);
+
+            let input = inner_exprs[0].clone().node();
+            let inner_fn = inner_fn.clone();
+            let options = *options;
+
+            if is_input_independent(input, expr_arena, expr_cache) {
+                // TODO: we could simply return expr here, but we first need an is_scalar function, because if
+                // it is not a scalar we need to return expr.implode().
+                return None;
+            }
+
+            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
+                return None;
+            }
+
+            let agg_id = expr_merger.get_uniq_id(expr).unwrap();
+            let name = uniq_agg_exprs
+                .entry(agg_id)
+                .or_insert_with(|| {
+                    let input_id = expr_merger.get_uniq_id(input).unwrap();
+                    let input_col = uniq_input_exprs
+                        .entry(input_id)
+                        .or_insert_with(unique_column_name)
+                        .clone();
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
+                    let trans_agg_node = expr_arena.add(AExpr::Function {
+                        input: vec![ExprIR::from_node(input_col_node, expr_arena)],
+                        function: IRFunctionExpr::Boolean(inner_fn),
                         options,
                     });
 
@@ -243,7 +298,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 })
                 .collect::<Option<Vec<_>>>()?;
 
-            let mut new_node = node.clone();
+            let mut new_node = node;
             match &mut new_node {
                 AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
                     *input = new_input;
@@ -302,7 +357,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                                 .entry(input_id)
                                 .or_insert_with(unique_column_name)
                                 .clone();
-                            let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                            let input_col_node = expr_arena.add(AExpr::Column(input_col));
                             trans_agg.set_input(input_col_node);
                             let trans_agg_node = expr_arena.add(AExpr::Agg(trans_agg));
 

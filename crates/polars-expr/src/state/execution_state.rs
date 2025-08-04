@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
+use std::sync::atomic::AtomicI64;
 use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
@@ -7,6 +7,7 @@ use bitflags::bitflags;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unique_id::UniqueId;
 
 use super::NodeTimer;
@@ -101,18 +102,19 @@ impl From<u8> for StateFlags {
 type CachedValue = Arc<(AtomicI64, OnceLock<DataFrame>)>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
+#[derive(Clone)]
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<RwLock<PlHashMap<UniqueId, CachedValue>>>,
-    pub schema_cache: RwLock<Option<SchemaRef>>,
+    pub schema_cache: Arc<RwLock<Option<SchemaRef>>>,
     /// Used by Window Expressions to cache intermediate state
     pub window_cache: Arc<WindowCache>,
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
-    pub flags: AtomicU8,
+    pub flags: RelaxedCell<u8>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
     node_timer: Option<NodeTimer>,
-    stop: Arc<AtomicBool>,
+    stop: Arc<RelaxedCell<bool>>,
 }
 
 impl ExecutionState {
@@ -126,10 +128,10 @@ impl ExecutionState {
             schema_cache: Default::default(),
             window_cache: Default::default(),
             branch_idx: 0,
-            flags: AtomicU8::new(StateFlags::init().as_u8()),
+            flags: RelaxedCell::from(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
             node_timer: None,
-            stop: Arc::new(AtomicBool::new(false)),
+            stop: Arc::new(RelaxedCell::from(false)),
         }
     }
 
@@ -160,11 +162,11 @@ impl ExecutionState {
     // This is wrong when the U64 overflows which will never happen.
     pub fn should_stop(&self) -> PolarsResult<()> {
         try_raise_keyboard_interrupt();
-        polars_ensure!(!self.stop.load(Ordering::Relaxed), ComputeError: "query interrupted");
+        polars_ensure!(!self.stop.load(), ComputeError: "query interrupted");
         Ok(())
     }
 
-    pub fn cancel_token(&self) -> Arc<AtomicBool> {
+    pub fn cancel_token(&self) -> Arc<RelaxedCell<bool>> {
         self.stop.clone()
     }
 
@@ -190,7 +192,7 @@ impl ExecutionState {
             schema_cache: Default::default(),
             window_cache: Default::default(),
             branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
+            flags: self.flags.clone(),
             ext_contexts: self.ext_contexts.clone(),
             node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
@@ -224,7 +226,7 @@ impl ExecutionState {
                 let mut guard = self.df_cache.write().unwrap();
 
                 guard
-                    .entry(key.clone())
+                    .entry(*key)
                     .or_insert_with(|| {
                         Arc::new((AtomicI64::new(cache_hits as i64), OnceLock::new()))
                     })
@@ -244,26 +246,26 @@ impl ExecutionState {
     }
 
     fn set_flags(&self, f: &dyn Fn(StateFlags) -> StateFlags) {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         let flags = f(flags);
-        self.flags.store(flags.as_u8(), Ordering::Relaxed);
+        self.flags.store(flags.as_u8());
     }
 
     /// Indicates that window expression's [`GroupTuples`] may be cached.
     pub fn cache_window(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
     /// Indicates that window expression's [`GroupTuples`] may be cached.
     pub fn has_window(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         flags.contains(StateFlags::HAS_WINDOW)
     }
 
     /// More verbose logging
     pub fn verbose(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        let flags: StateFlags = self.flags.load().into();
         flags.contains(StateFlags::VERBOSE)
     }
 
@@ -292,21 +294,5 @@ impl ExecutionState {
 impl Default for ExecutionState {
     fn default() -> Self {
         ExecutionState::new()
-    }
-}
-
-impl Clone for ExecutionState {
-    /// clones, but clears no state.
-    fn clone(&self) -> Self {
-        Self {
-            df_cache: self.df_cache.clone(),
-            schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            window_cache: self.window_cache.clone(),
-            branch_idx: self.branch_idx,
-            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
-            stop: self.stop.clone(),
-        }
     }
 }

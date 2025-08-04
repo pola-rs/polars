@@ -26,7 +26,7 @@ from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
 from polars.functions.business import business_day_count
 from polars.functions.col import col
-from polars.functions.datatype import dtype_of, self_dtype
+from polars.functions.datatype import dtype_of, self_dtype, struct_with_fields
 from polars.functions.eager import align_frames, concat
 from polars.functions.escape_regex import escape_regex
 from polars.functions.lazy import (
@@ -65,6 +65,7 @@ from polars.functions.lazy import (
     reduce,
     rolling_corr,
     rolling_cov,
+    row_index,
     select,
     sql_expr,
     std,
@@ -107,6 +108,7 @@ __all__ = [
     # polars.functions.datatype
     "dtype_of",
     "self_dtype",
+    "struct_with_fields",
     # polars.functions.eager
     "align_frames",
     "approx_n_unique",
@@ -171,6 +173,7 @@ __all__ = [
     "reduce",
     "rolling_corr",
     "rolling_cov",
+    "row_index",
     "select",
     "set_random_seed",
     "std",

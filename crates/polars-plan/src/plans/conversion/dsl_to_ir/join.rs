@@ -112,9 +112,11 @@ pub fn resolve_join(
         .map(|e| {
             to_expr_ir_materialized_lit(
                 e,
-                ctxt.expr_arena,
-                &schema_left,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_left,
+                    ctxt.opt_flags,
+                ),
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -123,9 +125,11 @@ pub fn resolve_join(
         .map(|e| {
             to_expr_ir_materialized_lit(
                 e,
-                ctxt.expr_arena,
-                &schema_right,
-                ctxt.opt_flags.contains(OptFlags::EAGER),
+                &mut ExprToIRContext::new_with_opt_eager(
+                    ctxt.expr_arena,
+                    &schema_right,
+                    ctxt.opt_flags,
+                ),
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -150,12 +154,12 @@ pub fn resolve_join(
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left, true)
         .map_err(|e| e.context("'join' failed".into()))?;
     ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right, true)
         .map_err(|e| e.context("'join' failed".into()))?;
 
     // Re-evaluate because of mutable borrows earlier.
@@ -204,7 +208,7 @@ pub fn resolve_join(
                 let tmp_name = get_tmp_name(count);
                 count += 1;
                 e.set_alias(tmp_name.clone());
-                let dtype = e.dtype(&schema_left_new, Context::Default, ctxt.expr_arena)?;
+                let dtype = e.dtype(&schema_left_new, ctxt.expr_arena)?;
                 schema_left_new.with_column(tmp_name.clone(), dtype.clone());
 
                 let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
@@ -224,7 +228,7 @@ pub fn resolve_join(
                 let tmp_name = get_tmp_name(count);
                 count += 1;
                 e.set_alias(tmp_name.clone());
-                let dtype = e.dtype(&schema_right_new, Context::Default, ctxt.expr_arena)?;
+                let dtype = e.dtype(&schema_right_new, ctxt.expr_arena)?;
                 schema_right_new.with_column(tmp_name.clone(), dtype.clone());
 
                 let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
@@ -252,7 +256,7 @@ pub fn resolve_join(
         ($expr:expr, $schema:expr) => {
             ctxt.expr_arena
                 .get($expr.node())
-                .get_type($schema, Context::Default, ctxt.expr_arena)
+                .get_dtype($schema, ctxt.expr_arena)
         };
     }
 
@@ -454,15 +458,13 @@ fn resolve_join_where(
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_materialized_lit(
             e,
-            arena,
-            &schema_merged,
-            ctxt.opt_flags.contains(OptFlags::EAGER),
+            &mut ExprToIRContext::new_with_opt_eager(arena, &schema_merged, ctxt.opt_flags),
         )?;
         let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean
         let ae = arena.get(node);
-        let dt_out = ae.to_dtype(&schema_merged, Context::Default, arena)?;
+        let dt_out = ae.to_dtype(&schema_merged, arena)?;
         polars_ensure!(
             dt_out == DataType::Boolean,
             ComputeError: "'join_where' predicates must resolve to boolean"
@@ -488,7 +490,7 @@ fn resolve_join_where(
     }
 
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, false)
         .map_err(|e| e.context("'join_where' failed".into()))?;
 
     Ok((last_node, join_node))
@@ -573,10 +575,8 @@ fn build_upcast_node_list(
                         // Ensure our dtype casts are lossless
                         let left = expr_arena.get(*left_node);
                         let right = expr_arena.get(*right_node);
-                        let dtype_left =
-                            left.to_dtype(schema_merged, Context::Default, expr_arena)?;
-                        let dtype_right =
-                            right.to_dtype(schema_merged, Context::Default, expr_arena)?;
+                        let dtype_left = left.to_dtype(schema_merged, expr_arena)?;
+                        let dtype_right = right.to_dtype(schema_merged, expr_arena)?;
                         if dtype_left != dtype_right {
                             // Ensure that we have a lossless cast between the two types.
                             let dt = if dtype_left.is_primitive_numeric()

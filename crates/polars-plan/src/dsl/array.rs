@@ -43,6 +43,12 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Var(ddof)))
     }
 
+    /// Compute the mean of the items in every subarray.
+    pub fn mean(self) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Mean))
+    }
+
     /// Compute the median of the items in every subarray.
     pub fn median(self) -> Expr {
         self.0

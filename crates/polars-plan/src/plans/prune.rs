@@ -108,26 +108,25 @@ impl<'a> CopyContext<'a> {
 
         let src_ir = self.src_ir.get(src_node);
 
+        let mut dst_ir = src_ir.clone();
+
         // Recurse into inputs
-        let mut inputs = src_ir.get_inputs_vec();
-        for input in &mut inputs {
-            *input = self.copy_ir(*input);
-        }
+        dst_ir = dst_ir.with_inputs(src_ir.inputs().map(|input| self.copy_ir(input)));
 
         // Recurse into expressions
-        let mut exprs = src_ir.get_exprs();
-        for expr in &mut exprs {
+        dst_ir = dst_ir.with_exprs(src_ir.exprs().map(|expr| {
+            let mut expr = expr.clone();
             expr.set_node(self.copy_expr(expr.node()));
-        }
+            expr
+        }));
 
-        // Copy this node
-        let dst_ir = src_ir.with_exprs_and_input(exprs, inputs);
+        // Add this node
         let dst_node = self.dst_ir.add(dst_ir);
 
         // If this is a cache, reset the hit count and store the dst node.
         if let IR::Cache { cache_hits, id, .. } = self.dst_ir.get_mut(dst_node) {
             *cache_hits = 0;
-            let prev = self.dst_caches.insert(id.clone(), dst_node);
+            let prev = self.dst_caches.insert(*id, dst_node);
             assert!(prev.is_none(), "cache {id} was traversed twice");
         }
 
@@ -155,7 +154,15 @@ impl<'a> CopyContext<'a> {
         }
         inputs.reverse();
 
-        self.dst_expr.add(expr.clone().replace_inputs(&inputs))
+        let mut dst_expr = expr.clone().replace_inputs(&inputs);
+
+        // Fix up eval, the evaluation subtree is not treated as an input,
+        // so it needs to be copied manually.
+        if let AExpr::Eval { evaluation, .. } = &mut dst_expr {
+            *evaluation = self.copy_expr(*evaluation);
+        }
+
+        self.dst_expr.add(dst_expr)
     }
 }
 
@@ -165,7 +172,7 @@ mod tests {
 
     use super::*;
     use crate::dsl::{SinkTypeIR, col, lit};
-    use crate::plans::{ArenaLpIter as _, to_expr_ir};
+    use crate::plans::{ArenaLpIter as _, ExprToIRContext, to_expr_ir};
 
     //           SINK[right]
     //               |
@@ -309,8 +316,7 @@ mod tests {
 
     fn exprs_equal(ir_a: &IR, arena_a: &Arena<AExpr>, ir_b: &IR, arena_b: &Arena<AExpr>) -> bool {
         let [a, b] = [(ir_a, arena_a), (ir_b, arena_b)].map(|(ir, arena)| {
-            ir.get_exprs()
-                .into_iter()
+            ir.exprs()
                 .map(|e| (e.output_name_inner().clone(), e.to_expr(arena)))
         });
         a.eq(b)
@@ -328,10 +334,11 @@ mod tests {
                 output_schema: None,
             });
 
+            let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
+            ctx.allow_unknown = true;
             let filter = ir_arena.add(IR::Filter {
                 input: scan,
-                predicate: to_expr_ir(col("a").gt_eq(lit(10)), &mut expr_arena, &schema, true)
-                    .unwrap(),
+                predicate: to_expr_ir(col("a").gt_eq(lit(10)), &mut ctx).unwrap(),
             });
 
             // Throw in an unreachable node
@@ -339,7 +346,7 @@ mod tests {
 
             let cache = ir_arena.add(IR::Cache {
                 input: filter,
-                id: UniqueId::Plain(0),
+                id: UniqueId::new(),
                 cache_hits: 1,
             });
 
@@ -351,9 +358,11 @@ mod tests {
             // Throw in an unreachable node
             ir_arena.add(IR::Invalid);
 
+            let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
+            ctx.allow_unknown = true;
             let sort = ir_arena.add(IR::Sort {
                 input: cache,
-                by_column: vec![to_expr_ir(col("a"), &mut expr_arena, &schema, true).unwrap()],
+                by_column: vec![to_expr_ir(col("a"), &mut ctx).unwrap()],
                 slice: None,
                 sort_options: Default::default(),
             });

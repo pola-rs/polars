@@ -1,0 +1,2 @@
+maturin
+polars

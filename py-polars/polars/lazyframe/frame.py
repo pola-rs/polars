@@ -105,7 +105,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, get_engine_affinity
+    from polars._plr import PyLazyFrame, get_engine_affinity
 
 if TYPE_CHECKING:
     import sys
@@ -116,7 +116,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr, PyPartitioning, PySelector
+        from polars._plr import PyExpr, PyPartitioning, PySelector
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -225,8 +225,9 @@ def _gpu_engine_callback(
         install_message=(
             "Please install using the command "
             "`pip install cudf-polars-cu12` "
-            "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
-            "if your system has a CUDA 11 driver)."
+            "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
+            "If your system has a CUDA 11 driver, install with "
+            "`pip install cudf-polars-cu11==25.06` "
         ),
     )
     if not is_config_obj:
@@ -3496,18 +3497,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def fetch(
         self,
         n_rows: int = 500,
-        *,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
+        **kwargs: Any,
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -3529,133 +3519,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This is strictly a utility function that can help to debug queries using a
         smaller number of rows, and should *not* be used in production code.
         """
-        return self._fetch(
-            n_rows=n_rows,
-            type_coercion=type_coercion,
-            _type_check=_type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            no_optimization=no_optimization,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-        )
-
-    def _fetch(
-        self,
-        n_rows: int = 500,
-        *,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        _check_order: bool = True,
-    ) -> DataFrame:
-        """
-        Collect a small number of rows for debugging purposes.
-
-        Do not confuse with `collect`; this function will frequently return
-        incorrect data (see the warning for additional details).
-
-        Parameters
-        ----------
-        n_rows
-            Collect n_rows from the data sources.
-        type_coercion
-            Run type coercion optimization.
-        predicate_pushdown
-            Run predicate pushdown optimization.
-        projection_pushdown
-            Run projection pushdown optimization.
-        simplify_expression
-            Run simplify expressions optimization.
-        no_optimization
-            Turn off optimizations.
-        slice_pushdown
-            Slice pushdown optimization
-        comm_subplan_elim
-            Will try to cache branching subplans that occur on self-joins or unions.
-        comm_subexpr_elim
-            Common subexpressions will be cached and reused.
-        cluster_with_columns
-            Combine sequential independent calls to with_columns
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-        Notes
-        -----
-        This is similar to a :func:`collect` operation, but it overwrites the number of
-        rows read by *every* scan operation. Be aware that `fetch` does not guarantee
-        the final number of rows in the DataFrame. Filters, join operations and fewer
-        rows being available in the scanned data will all influence the final number
-        of rows (joins are especially susceptible to this, and may return no data
-        at all if `n_rows` is too small as the join keys may not be present).
-
-        Warnings
-        --------
-        This is strictly a utility function that can help to debug queries using a
-        smaller number of rows, and should *not* be used in production code.
-
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": ["a", "b", "a", "b", "b", "c"],
-        ...         "b": [1, 2, 3, 4, 5, 6],
-        ...         "c": [6, 5, 4, 3, 2, 1],
-        ...     }
-        ... )
-        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum())._fetch(2)
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 6   │
-        │ b   ┆ 2   ┆ 5   │
-        └─────┴─────┴─────┘
-        """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-            comm_subplan_elim = False
-            comm_subexpr_elim = False
-            cluster_with_columns = False
-            collapse_joins = False
-
-        type_check = _type_check
-        lf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        return wrap_df(lf.fetch(n_rows))
+        return self.head(n_rows).collect(**kwargs)
 
     def lazy(self) -> LazyFrame:
         """
@@ -7538,6 +7402,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         for instance does an aggregation of a column, `predicate_pushdown` should not
         be allowed, as this prunes rows and will influence your aggregation results.
 
+        Notes
+        -----
+        A UDF passed to `map_batches` must be pure, meaning that it cannot modify or
+        depend on state other than its arguments.
+
         Examples
         --------
         >>> lf = (  # doctest: +SKIP
@@ -8093,7 +7962,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         context: pc.ComputeContext | None = None,
         plan_type: pc._typing.PlanTypePreference = "dot",
-    ) -> pc.LazyFrameExt:
+    ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
 
@@ -8146,7 +8015,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────────┘
 
         """
-        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
+        return pc.LazyFrameRemote(lf=self, context=context, plan_type=plan_type)
 
     @unstable()
     def match_to_schema(

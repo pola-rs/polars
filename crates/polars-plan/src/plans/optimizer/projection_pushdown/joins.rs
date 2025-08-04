@@ -488,7 +488,7 @@ fn resolve_join_suffixes(
                 all_columns = false;
                 ExprIR::new(node, OutputName::Alias(name.clone()))
             } else {
-                ExprIR::new(proj.0, OutputName::ColumnLhs(name.clone()))
+                ExprIR::new(proj.0, OutputName::ColumnLhs(name))
             }
         })
         .collect::<Vec<_>>();

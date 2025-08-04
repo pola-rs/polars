@@ -6,7 +6,6 @@ impl IRFunctionExpr {
     pub(crate) fn get_field(
         &self,
         _input_schema: &Schema,
-        _cntxt: Context,
         fields: &[Field],
     ) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
@@ -39,7 +38,7 @@ impl IRFunctionExpr {
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 IRPowFunction::Generic => mapper.pow_dtype(),
-                _ => mapper.map_numeric_to_float_dtype(),
+                _ => mapper.map_numeric_to_float_dtype(true),
             },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
@@ -57,10 +56,10 @@ impl IRFunctionExpr {
             #[cfg(feature = "trigonometry")]
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
-            Sign => mapper.with_dtype(DataType::Int64),
+            Sign => mapper.ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "sign")?.with_same_dtype(),
             FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
-            RollingExpr{function, ..} => {
+            RollingExpr { function, options } => {
                 use IRRollingFunction::*;
                 match function {
                     Min | Max => mapper.with_same_dtype(),
@@ -71,6 +70,17 @@ impl IRFunctionExpr {
                     CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew | Kurtosis => mapper.map_to_float_dtype(),
+                    Map(_) => mapper.try_map_field(|field| {
+                        if options.weights.is_some() {
+                            let dtype = match field.dtype() {
+                                DataType::Float32 => DataType::Float32,
+                                _ => DataType::Float64,
+                            };
+                            Ok(Field::new(field.name().clone(), dtype))
+                        } else {
+                            Ok(field.clone())
+                        }
+                    }),
                 }
             },
             #[cfg(feature = "rolling_window_by")]
@@ -211,11 +221,11 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "interpolate")]
             Interpolate(method) => match method {
-                InterpolationMethod::Linear => mapper.map_numeric_to_float_dtype(),
+                InterpolationMethod::Linear => mapper.map_numeric_to_float_dtype(false),
                 InterpolationMethod::Nearest => mapper.with_same_dtype(),
             },
             #[cfg(feature = "interpolate_by")]
-            InterpolateBy => mapper.map_numeric_to_float_dtype(),
+            InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             ShrinkType => {
                 // we return the smallest type this can return
                 // this might not be correct once the actual data
@@ -251,9 +261,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "peaks")]
-            PeakMin => mapper.with_same_dtype(),
-            #[cfg(feature = "peaks")]
-            PeakMax => mapper.with_same_dtype(),
+            PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]
             Cut {
                 include_breaks: false,
@@ -397,11 +405,11 @@ impl IRFunctionExpr {
                 })
             }
             #[cfg(feature = "ewma")]
-            EwmMean { .. } => mapper.map_numeric_to_float_dtype(),
+            EwmMean { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma_by")]
-            EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(),
+            EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_numeric_to_float_dtype(),
+            EwmStd { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.var_dtype(),
             #[cfg(feature = "replace")]
@@ -478,12 +486,13 @@ impl<'a> FieldsMapper<'a> {
     pub fn var_dtype(&self) -> PolarsResult<Field> {
         if self.fields[0].dtype().leaf_dtype().is_duration() {
             let map_inner = |dt: &DataType| match dt {
-                #[cfg(feature = "dtype-duration")]
-                DataType::Duration(_) => DataType::Duration(TimeUnit::Milliseconds),
-                dt => dt.clone(),
+                dt if dt.is_temporal() => {
+                    polars_bail!(InvalidOperation: "variance of type {dt} is not supported")
+                },
+                dt => Ok(dt.clone()),
             };
 
-            self.map_dtype(|dt| match dt {
+            self.try_map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-array")]
                 DataType::Array(inner, _) => map_inner(inner),
                 DataType::List(inner) => map_inner(inner),
@@ -526,12 +535,12 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map to a float supertype if numeric, else preserve
-    pub fn map_numeric_to_float_dtype(&self) -> PolarsResult<Field> {
+    pub fn map_numeric_to_float_dtype(&self, coerce_decimal: bool) -> PolarsResult<Field> {
         self.map_dtype(|dt| {
             let should_coerce = match dt {
                 DataType::Float32 => false,
                 #[cfg(feature = "dtype-decimal")]
-                DataType::Decimal(..) => true,
+                DataType::Decimal(..) => coerce_decimal,
                 DataType::Boolean => true,
                 dt => dt.is_primitive_numeric(),
             };
@@ -733,6 +742,23 @@ impl<'a> FieldsMapper<'a> {
             },
         };
         self.with_dtype(dtype)
+    }
+
+    fn ensure_satisfies(
+        self,
+        mut f: impl FnMut(usize, &DataType) -> bool,
+        op: &'static str,
+    ) -> PolarsResult<Self> {
+        for (i, field) in self.fields.iter().enumerate() {
+            polars_ensure!(
+                f(i, field.dtype()),
+                opidx = op,
+                idx = i,
+                self.fields[i].dtype()
+            );
+        }
+
+        Ok(self)
     }
 }
 

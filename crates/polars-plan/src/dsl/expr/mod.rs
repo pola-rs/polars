@@ -1,8 +1,10 @@
+mod datatype_fn;
 mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+pub use datatype_fn::*;
 pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
@@ -86,6 +88,7 @@ pub enum Expr {
     Column(PlSmallStr),
     Selector(Selector),
     Literal(LiteralValue),
+    DataTypeFunction(DataTypeFunction),
     BinaryExpr {
         left: Arc<Expr>,
         op: Operator,
@@ -257,6 +260,7 @@ impl Hash for Expr {
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
             // Expr::Nth(v) => v.hash(state),
+            Expr::DataTypeFunction(v) => v.hash(state),
             Expr::Filter { input, by } => {
                 input.hash(state);
                 by.hash(state);
@@ -395,20 +399,21 @@ pub enum Excluded {
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
-    pub fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
+    pub fn to_field(&self, schema: &Schema) -> PolarsResult<Field> {
         // this is not called much and the expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
-        self.to_field_amortized(schema, ctxt, &mut arena)
+        self.to_field_amortized(schema, &mut arena)
     }
     pub(crate) fn to_field_amortized(
         &self,
         schema: &Schema,
-        ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let expr = to_expr_ir(self.clone(), expr_arena, schema, true)?;
+        let mut ctx = ExprToIRContext::new(expr_arena, schema);
+        ctx.allow_unknown = true;
+        let expr = to_expr_ir(self.clone(), &mut ctx)?;
         let (node, output_name) = expr.into_inner();
-        let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
+        let dtype = expr_arena.get(node).to_dtype(schema, expr_arena)?;
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 

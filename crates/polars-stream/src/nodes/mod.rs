@@ -1,3 +1,4 @@
+pub mod dynamic_slice;
 pub mod filter;
 pub mod group_by;
 pub mod in_memory_map;
@@ -14,6 +15,7 @@ pub mod multiplexer;
 pub mod negative_slice;
 pub mod ordered_union;
 pub mod reduce;
+pub mod repeat;
 pub mod select;
 pub mod simple_projection;
 pub mod streaming_slice;

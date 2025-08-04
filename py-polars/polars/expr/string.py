@@ -2615,8 +2615,8 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 
-        Broadcast a replacement for many patterns by passing a string or a sequence of
-        length 1 to the `replace_with` parameter.
+        Broadcast a replacement for many patterns by passing sequence of length 1 to the
+        `replace_with` parameter.
 
         >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> df = pl.DataFrame(
@@ -2632,7 +2632,7 @@ class ExprStringNameSpace:
         ...     pl.col("lyrics")
         ...     .str.replace_many(
         ...         ["me", "you", "they"],
-        ...         "",
+        ...         [""],
         ...     )
         ...     .alias("removes_pronouns")
         ... )

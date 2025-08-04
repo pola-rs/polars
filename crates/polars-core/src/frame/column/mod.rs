@@ -126,6 +126,57 @@ impl Column {
         }
     }
 
+    /// Returns the backing `Series` for the values of this column.
+    ///
+    /// * For `Column::Series` columns, simply returns the inner `Series`.
+    /// * For `Column::Partitioned` columns, returns the series representing the values.
+    /// * For `Column::Scalar` columns, returns an empty or unit length series.
+    ///
+    /// # Note
+    /// This method is safe to use. However, care must be taken when operating on the returned
+    /// `Series` to ensure result correctness. E.g. It is suitable to perform elementwise operations
+    /// on it, however e.g. aggregations will return unspecified results.
+    pub fn _get_backing_series(&self) -> Series {
+        match self {
+            Column::Series(s) => (**s).clone(),
+            Column::Partitioned(s) => s.partitions().clone(),
+            Column::Scalar(s) => s.as_single_value_series(),
+        }
+    }
+
+    /// Constructs a new `Column` of the same variant as `self` from a backing `Series` representing
+    /// the values.
+    ///
+    /// # Panics
+    /// Panics if:
+    /// * `self` is `Column::Series` and the length of `new_s` does not match that of `self`.
+    /// * `self` is `Column::Partitioned` and the length of `new_s` does not match that of the existing partitions.
+    /// * `self` is `Column::Scalar` and if either:
+    ///   * `self` is not empty and `new_s` is not of unit length.
+    ///   * `self` is empty and `new_s` is not empty.
+    pub fn _to_new_from_backing(&self, new_s: Series) -> Self {
+        match self {
+            Column::Series(s) => {
+                assert_eq!(new_s.len(), s.len());
+                Column::Series(SeriesColumn::new(new_s))
+            },
+            Column::Partitioned(s) => {
+                assert_eq!(new_s.len(), s.partitions().len());
+                unsafe {
+                    Column::Partitioned(PartitionedColumn::new_unchecked(
+                        new_s.name().clone(),
+                        new_s,
+                        s.partition_ends_ref().clone(),
+                    ))
+                }
+            },
+            Column::Scalar(s) => {
+                assert_eq!(new_s.len(), s.as_single_value_series().len());
+                Column::Scalar(ScalarColumn::from_single_value_series(new_s, self.len()))
+            },
+        }
+    }
+
     /// Turn [`Column`] into a [`Column::Series`].
     ///
     /// This may need to materialize the [`Series`] on the first invocation for a specific column.

@@ -48,6 +48,9 @@ autolabeler:
   - label: fix
     title:
       - '/^fix/'
+  - label: sql
+    title:
+      - '/\bsql\b/i'
   - label: performance
     title:
       - '/^perf/'

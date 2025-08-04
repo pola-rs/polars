@@ -5,6 +5,7 @@ mod utils;
 
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
+use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
 use utils::*;
 
@@ -106,20 +107,21 @@ impl PredicatePushDown<'_> {
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
     ) -> PolarsResult<IR> {
-        let inputs = lp.get_inputs_vec();
-        let exprs = lp.get_exprs();
-
         if has_projections {
-            // projections should only have a single input.
-            if inputs.len() > 1 {
-                // except for ExtContext
-                assert!(matches!(lp, IR::ExtContext { .. }));
-            }
-            let input = inputs[inputs.len() - 1];
+            let input = {
+                let mut inputs = lp.inputs();
+                let input = inputs.next().unwrap();
+                // projections should only have a single input.
+                if inputs.next().is_some() {
+                    // except for ExtContext
+                    assert!(matches!(lp, IR::ExtContext { .. }));
+                }
+                input
+            };
 
             let maintain_errors = self.maintain_errors;
             let (eligibility, alias_rename_map) = pushdown_eligibility(
-                &exprs,
+                &lp.exprs().cloned().collect::<Vec<_>>(),
                 &[],
                 &acc_predicates,
                 expr_arena,
@@ -152,15 +154,16 @@ impl PredicatePushDown<'_> {
             let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
             lp_arena.replace(input, alp);
 
-            let lp = lp.with_exprs_and_input(exprs, inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
         } else {
             let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
+            let inputs = lp.get_inputs();
+
             // determine new inputs by pushing down predicates
             let new_inputs = inputs
-                .iter()
-                .map(|&node| {
+                .into_iter()
+                .map(|node| {
                     // first we check if we are able to push down the predicate passed this node
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
@@ -186,9 +189,9 @@ impl PredicatePushDown<'_> {
                     lp_arena.replace(node, alp);
                     Ok(node)
                 })
-                .collect::<PolarsResult<Vec<_>>>()?;
+                .collect::<PolarsResult<UnitVec<_>>>()?;
 
-            let lp = lp.with_exprs_and_input(exprs, new_inputs);
+            let lp = lp.with_inputs(new_inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
         }
     }
@@ -201,12 +204,10 @@ impl PredicatePushDown<'_> {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
-        let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
+        let inputs = lp.inputs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .map(|node| {
                 let alp = lp_arena.take(node);
                 let alp = self.push_down(
                     alp,
@@ -218,7 +219,7 @@ impl PredicatePushDown<'_> {
                 Ok(node)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let lp = lp.with_exprs_and_input(exprs, new_inputs);
+        let lp = lp.with_inputs(new_inputs);
 
         // all predicates are done locally
         let local_predicates = acc_predicates.into_values().collect::<Vec<_>>();
@@ -357,7 +358,6 @@ impl PredicatePushDown<'_> {
                 scan_type,
                 unified_scan_args,
                 output_schema,
-                id: _,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -412,7 +412,6 @@ impl PredicatePushDown<'_> {
                         unified_scan_args,
                         output_schema,
                         scan_type,
-                        id: Default::default(),
                     }
                 } else {
                     let lp = Scan {
@@ -423,7 +422,6 @@ impl PredicatePushDown<'_> {
                         unified_scan_args,
                         output_schema,
                         scan_type,
-                        id: Default::default(),
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);

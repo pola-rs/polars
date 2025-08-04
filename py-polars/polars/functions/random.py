@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 
 def set_random_seed(seed: int) -> None:

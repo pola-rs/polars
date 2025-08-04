@@ -233,6 +233,11 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::DynamicSlice {
+            input,
+            offset,
+            length,
+        } => ("slice".to_owned(), &[*input, *offset, *length][..]),
         PhysNodeKind::Filter { input, predicate } => (
             format!(
                 "filter\\n{}",
@@ -312,6 +317,7 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
+        PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,
@@ -329,7 +335,7 @@ fn visualize_plan_rec(
             scan_sources,
             file_reader_builder,
             cloud_options: _,
-            projected_file_schema,
+            file_projection_builder,
             output_schema,
             row_index,
             pre_slice,
@@ -338,7 +344,7 @@ fn visualize_plan_rec(
             include_file_paths,
             cast_columns_policy: _,
             missing_columns_policy: _,
-            extra_columns_policy: _,
+            forbid_extra_columns: _,
             deletion_files,
             file_schema: _,
         } => {
@@ -355,7 +361,7 @@ fn visualize_plan_rec(
                 f,
                 "\nproject: {} total, {} from file",
                 output_schema.len(),
-                projected_file_schema.len()
+                file_projection_builder.num_projections(),
             )
             .unwrap();
 

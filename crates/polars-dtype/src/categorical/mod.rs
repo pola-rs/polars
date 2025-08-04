@@ -1,5 +1,5 @@
 use std::fmt;
-use std::hash::{BuildHasher, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
@@ -83,7 +83,7 @@ struct CategoricalId {
 impl CategoricalId {
     fn global() -> Self {
         Self {
-            name: PlSmallStr::from_static("__POLARS_GLOBAL_CATEGORIES"),
+            name: PlSmallStr::from_static(""),
             namespace: PlSmallStr::from_static(""),
             physical: CategoricalPhysical::U32,
         }
@@ -155,6 +155,16 @@ impl Categories {
         GLOBAL_CATEGORIES.clone()
     }
 
+    /// Returns whether this refers to the global categories.
+    pub fn is_global(self: &Arc<Self>) -> bool {
+        Arc::ptr_eq(self, &*GLOBAL_CATEGORIES)
+    }
+
+    /// Generates a Categories with a random (UUID) name.
+    pub fn random(namespace: PlSmallStr, physical: CategoricalPhysical) -> Arc<Self> {
+        Self::new(uuid::Uuid::new_v4().to_string().into(), namespace, physical)
+    }
+
     /// The name of this Categories object.
     pub fn name(&self) -> &PlSmallStr {
         &self.id.name
@@ -168,6 +178,11 @@ impl Categories {
     /// The physical dtype of the category ids.
     pub fn physical(&self) -> CategoricalPhysical {
         self.id.physical
+    }
+
+    /// A stable hash of this Categories object, not the contained categories.
+    pub fn hash(&self) -> u64 {
+        PlFixedStateQuality::default().hash_one(&self.id)
     }
 
     /// The mapping for this Categories object. If no mapping currently exists
@@ -284,6 +299,11 @@ impl FrozenCategories {
     /// The mapping for this FrozenCategories object.
     pub fn mapping(&self) -> &Arc<CategoricalMapping> {
         &self.mapping
+    }
+
+    /// A stable hash of the categories.
+    pub fn hash(&self) -> u64 {
+        self.combined_hash
     }
 }
 

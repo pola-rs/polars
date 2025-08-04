@@ -24,7 +24,6 @@ mod lower_ir;
 mod to_graph;
 
 pub use fmt::visualize_plan;
-use polars_plan::dsl::ExtraColumnsPolicy;
 use polars_plan::prelude::FileType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -34,7 +33,9 @@ use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -125,6 +126,12 @@ pub enum PhysNodeKind {
         length: usize,
     },
 
+    DynamicSlice {
+        input: PhysStream,
+        offset: PhysStream,
+        length: PhysStream,
+    },
+
     Filter {
         input: PhysStream,
         predicate: ExprIR,
@@ -186,6 +193,11 @@ pub enum PhysNodeKind {
         sort_options: SortMultipleOptions,
     },
 
+    Repeat {
+        value: PhysStream,
+        repeats: PhysStream,
+    },
+
     OrderedUnion {
         inputs: Vec<PhysStream>,
     },
@@ -210,7 +222,7 @@ pub enum PhysNodeKind {
         cloud_options: Option<Arc<CloudOptions>>,
 
         /// Columns to project from the file.
-        projected_file_schema: SchemaRef,
+        file_projection_builder: ProjectionBuilder,
         /// Final output schema of morsels being sent out of MultiScan.
         output_schema: SchemaRef,
 
@@ -222,7 +234,7 @@ pub enum PhysNodeKind {
         include_file_paths: Option<PlSmallStr>,
         cast_columns_policy: CastColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
-        extra_columns_policy: ExtraColumnsPolicy,
+        forbid_extra_columns: Option<ForbidExtraColumns>,
 
         deletion_files: Option<DeletionFilesList>,
 
@@ -364,6 +376,26 @@ fn visit_node_inputs_mut(
                 rec!(input_right.node);
                 visit(input_left);
                 visit(input_right);
+            },
+
+            PhysNodeKind::DynamicSlice {
+                input,
+                offset,
+                length,
+            } => {
+                rec!(input.node);
+                rec!(offset.node);
+                rec!(length.node);
+                visit(input);
+                visit(offset);
+                visit(length);
+            },
+
+            PhysNodeKind::Repeat { value, repeats } => {
+                rec!(value.node);
+                rec!(repeats.node);
+                visit(value);
+                visit(repeats);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {

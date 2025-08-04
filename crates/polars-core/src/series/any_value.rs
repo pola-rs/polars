@@ -722,7 +722,7 @@ fn any_values_to_array(
     #[cfg(feature = "dtype-struct")]
     if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
         unsafe {
-            out.set_dtype(target_dtype.clone());
+            out.set_dtype(target_dtype);
         };
     }
 

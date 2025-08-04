@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from asyncio.futures import Future
     from collections.abc import Generator
 
-    from polars.polars import PyDataFrame
+    from polars._plr import PyDataFrame
 
 
 T = TypeVar("T")

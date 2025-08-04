@@ -11,6 +11,7 @@ description = "Enable running Polars workloads in Python"
 [dependencies]
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
@@ -47,6 +48,16 @@ pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "mult
 rayon = { workspace = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
+
+[target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
+
+# Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
+[target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten")))'.dependencies]
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"] }
+
+[target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"] }
 
 [dependencies.polars]
 workspace = true
@@ -124,6 +135,9 @@ features = [
 version_check = { workspace = true }
 
 [features]
+allocator = []
+c_api = []
+
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
 catalog = ["polars-lazy/catalog"]
@@ -257,8 +271,9 @@ polars_cloud_server = ["polars/polars_cloud_server"]
 nightly = ["polars/nightly"]
 
 pymethods = []
+allow_unused = []
 
-all = [
+full = [
   "pymethods",
   "optimizations",
   "io",
@@ -277,10 +292,11 @@ all = [
 # we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197
 # so we have an indirection and compile
-# with --no-default-features --features=all for targets without simd
+# with --no-default-features --features=full for targets without simd
 default = [
-  "all",
+  "full",
 ]
+default_alloc = []
 
 [lints]
 workspace = true

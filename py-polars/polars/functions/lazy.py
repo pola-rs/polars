@@ -26,9 +26,10 @@ from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
 )
+from polars.meta.index_type import get_index_type
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     import sys
@@ -2551,3 +2552,82 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
+
+
+@unstable()
+def row_index(name: str = "index") -> pl.Expr:
+    """
+    Generates a sequence of integers.
+
+    The length of the returned sequence will match the context length, and the
+    datatype will match the one returned by `get_index_dtype()`.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    If you would like to generate sequences with custom offsets / length /
+    step size / datatypes, it is recommended to use `int_range` instead.
+
+    Parameters
+    ----------
+    name
+        Name of the returned column.
+
+    Returns
+    -------
+    Expr
+        Column of integers.
+
+    See Also
+    --------
+    int_range : Generate a range of integers.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": ["A", "A", "B", "B", "B"]})
+    >>> df.with_columns(pl.row_index(), pl.row_index("another_index"))
+    shape: (5, 3)
+    ┌─────┬───────┬───────────────┐
+    │ x   ┆ index ┆ another_index │
+    │ --- ┆ ---   ┆ ---           │
+    │ str ┆ u32   ┆ u32           │
+    ╞═════╪═══════╪═══════════════╡
+    │ A   ┆ 0     ┆ 0             │
+    │ A   ┆ 1     ┆ 1             │
+    │ B   ┆ 2     ┆ 2             │
+    │ B   ┆ 3     ┆ 3             │
+    │ B   ┆ 4     ┆ 4             │
+    └─────┴───────┴───────────────┘
+    >>> df.group_by("x").agg(pl.row_index()).sort("x")
+    shape: (2, 2)
+    ┌─────┬───────────┐
+    │ x   ┆ index     │
+    │ --- ┆ ---       │
+    │ str ┆ list[u32] │
+    ╞═════╪═══════════╡
+    │ A   ┆ [0, 1]    │
+    │ B   ┆ [0, 1, 2] │
+    └─────┴───────────┘
+    >>> df.select(pl.row_index())
+    shape: (5, 1)
+    ┌───────┐
+    │ index │
+    │ ---   │
+    │ u32   │
+    ╞═══════╡
+    │ 0     │
+    │ 1     │
+    │ 2     │
+    │ 3     │
+    │ 4     │
+    └───────┘
+    """
+    # Notes
+    # * Dispatching to `int_range` means that we cannot accept an offset
+    #   parameter, as unlike `DataFrame.with_row_index()`, `int_range` will simply
+    #   truncate instead of raising an error.
+    return F.int_range(
+        F.len(),
+        dtype=get_index_type(),
+    ).alias(name)

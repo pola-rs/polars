@@ -155,7 +155,7 @@ impl IRStringFunction {
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
-            ToInteger { .. } => mapper.with_dtype(DataType::Int64),
+            ToInteger { dtype, .. } => mapper.with_dtype(dtype.clone().unwrap_or(DataType::Int64)),
             #[cfg(feature = "regex")]
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
@@ -171,7 +171,22 @@ impl IRStringFunction {
             #[cfg(feature = "string_reverse")]
             Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
-            Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
+            Strptime(dtype, options) => match dtype {
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(time_unit, time_zone) => {
+                    let mut time_zone = time_zone.clone();
+                    #[cfg(all(feature = "regex", feature = "timezones"))]
+                    if options
+                        .format
+                        .as_ref()
+                        .is_some_and(|format| TZ_AWARE_RE.is_match(format.as_str()))
+                    {
+                        time_zone = Some(time_zone.unwrap_or(TimeZone::UTC));
+                    }
+                    mapper.with_dtype(DataType::Datetime(*time_unit, time_zone))
+                },
+                _ => mapper.with_dtype(dtype.clone()),
+            },
             Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
@@ -989,6 +1004,12 @@ fn replace_n<'a>(
             if n > 1 {
                 polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
             }
+
+            if n == 0 {
+                return Ok(ca.clone());
+            };
+
+            // from here on, we know that n == 1
             let mut pat = get_pat(pat)?.to_string();
             polars_ensure!(
                 len_val == ca.len(),
@@ -1006,18 +1027,13 @@ fn replace_n<'a>(
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
             let f = |s: &'a str, val: &'a str| {
-                if lit && (s.len() <= 32) {
-                    Cow::Owned(s.replacen(&pat, val, 1))
+                if literal {
+                    reg.replace(s, NoExpand(val))
                 } else {
-                    // According to the docs for replace
-                    // when literal = True then capture groups are ignored.
-                    if literal {
-                        reg.replace(s, NoExpand(val))
-                    } else {
-                        reg.replace(s, val)
-                    }
+                    reg.replace(s, val)
                 }
             };
+
             Ok(iter_and_replace(ca, val, f))
         },
         _ => polars_bail!(

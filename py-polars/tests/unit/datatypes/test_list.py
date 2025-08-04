@@ -682,30 +682,6 @@ def data_dispersion() -> pl.DataFrame:
     )
 
 
-def test_list_var(data_dispersion: pl.DataFrame) -> None:
-    df = data_dispersion
-
-    result = df.select(
-        pl.col("int").list.var().name.suffix("_var"),
-        pl.col("float").list.var().name.suffix("_var"),
-        pl.col("duration").list.var().name.suffix("_var"),
-    )
-
-    expected = pl.DataFrame(
-        [
-            pl.Series("int_var", [2.5], dtype=pl.Float64),
-            pl.Series("float_var", [2.5], dtype=pl.Float64),
-            pl.Series(
-                "duration_var",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="ms"),
-            ),
-        ]
-    )
-
-    assert_frame_equal(result, expected)
-
-
 def test_list_std(data_dispersion: pl.DataFrame) -> None:
     df = data_dispersion
 

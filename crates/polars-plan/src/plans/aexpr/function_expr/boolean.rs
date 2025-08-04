@@ -7,9 +7,7 @@ use polars_utils::total_ord::TotalOrdWrap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::*;
-#[cfg(feature = "is_in")]
-use crate::wrap;
-use crate::{map, map_as_slice};
+use crate::{map, map_as_slice, wrap};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]

@@ -30,14 +30,20 @@ from polars.io.cloud.credential_provider._builder import (
 from polars.io.scan_options._options import ScanOptions
 
 with contextlib.suppress(ImportError):
-    from polars.polars import PyLazyFrame
-    from polars.polars import read_parquet_metadata as _read_parquet_metadata
+    from polars._plr import PyLazyFrame
+    from polars._plr import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import DeletionFiles, FileSource, ParallelStrategy, SchemaDict
+    from polars._typing import (
+        ColumnMapping,
+        DeletionFiles,
+        FileSource,
+        ParallelStrategy,
+        SchemaDict,
+    )
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.scan_options import ScanCastOptions
 
@@ -417,6 +423,7 @@ def scan_parquet(
     allow_missing_columns: bool | None = None,
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
+    _column_mapping: ColumnMapping | None = None,
     _deletion_files: DeletionFiles | None = None,
 ) -> LazyFrame:
     """
@@ -646,6 +653,7 @@ def scan_parquet(
             credential_provider=credential_provider_builder,
             retries=retries,
             deletion_files=_deletion_files,
+            column_mapping=_column_mapping,
         ),
     )
 

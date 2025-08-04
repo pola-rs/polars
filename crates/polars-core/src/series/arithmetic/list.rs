@@ -28,6 +28,7 @@ impl NumOpsDispatchInner for ListType {
     }
 }
 
+#[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
 #[derive(Clone)]
 pub struct NumericListOp(NumericOp);
 
@@ -272,7 +273,7 @@ mod inner {
                 ) && validity_rhs.as_ref().is_some_and(|x| x.set_bits() == 0))
             {
                 return Ok(Either::Right(ListChunked::full_null_with_dtype(
-                    output_name.clone(),
+                    output_name,
                     output_len,
                     output_inner_dtype.as_ref(),
                 )));

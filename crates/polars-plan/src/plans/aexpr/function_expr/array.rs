@@ -16,6 +16,7 @@ pub enum IRArrayFunction {
     NUnique,
     Std(u8),
     Var(u8),
+    Mean,
     Median,
     #[cfg(feature = "array_any_all")]
     Any,
@@ -64,6 +65,7 @@ impl IRArrayFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             Std(_) => mapper.moment_dtype(),
             Var(_) => mapper.var_dtype(),
+            Mean => mapper.moment_dtype(),
             Median => mapper.moment_dtype(),
             #[cfg(feature = "array_any_all")]
             Any | All => mapper.with_dtype(DataType::Boolean),
@@ -121,6 +123,7 @@ impl IRArrayFunction {
             | A::NUnique
             | A::Std(_)
             | A::Var(_)
+            | A::Mean
             | A::Median
             | A::Sort(_)
             | A::Reverse
@@ -180,6 +183,7 @@ impl Display for IRArrayFunction {
             NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
+            Mean => "mean",
             Median => "median",
             #[cfg(feature = "array_any_all")]
             Any => "any",
@@ -219,6 +223,7 @@ impl From<IRArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             Std(ddof) => map!(std, ddof),
             Var(ddof) => map!(var, ddof),
+            Mean => map!(mean),
             Median => map!(median),
             #[cfg(feature = "array_any_all")]
             Any => map!(any),
@@ -285,6 +290,11 @@ pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {
 pub(super) fn var(s: &Column, ddof: u8) -> PolarsResult<Column> {
     s.array()?.array_var(ddof).map(Column::from)
 }
+
+pub(super) fn mean(s: &Column) -> PolarsResult<Column> {
+    s.array()?.array_mean().map(Column::from)
+}
+
 pub(super) fn median(s: &Column) -> PolarsResult<Column> {
     s.array()?.array_median().map(Column::from)
 }

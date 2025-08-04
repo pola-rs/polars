@@ -1098,6 +1098,9 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                             is_corr
                         )
                     },
+                    Map(f) => {
+                        map!(rolling::rolling_map, options.clone(), f.clone())
+                    },
                 }
             },
             #[cfg(feature = "rolling_window_by")]

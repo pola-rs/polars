@@ -628,7 +628,12 @@ def from_pandas(
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame, Series, or Index.
 
-    This operation clones data.
+    This operation may clone data. If you want to ensure that in-place modifications
+    of the output don't affect the input, you may want to consider one of the following:
+
+    - Enable `Copy-On-Write <https://pandas.pydata.org/docs/dev/user_guide/copy_on_write.html>`_
+      in pandas.
+    - Call :meth:`DataFrame.clone` on the output of `from_pandas`.
 
     This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
 

@@ -294,7 +294,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         left_by,
                         right_by,
                         options.strategy,
-                        options.tolerance,
+                        options.tolerance.map(|v| v.into_value()),
                         args.suffix.clone(),
                         args.slice,
                         should_coalesce,
@@ -306,7 +306,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         s_left,
                         s_right,
                         options.strategy,
-                        options.tolerance,
+                        options.tolerance.map(|v| v.into_value()),
                         args.suffix,
                         args.slice,
                         should_coalesce,
@@ -383,7 +383,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         out?,
                         names_left.as_slice(),
                         drop_names.as_slice(),
-                        suffix.clone(),
+                        suffix,
                         left_df,
                     ))
                 } else {
@@ -609,7 +609,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 )
             };
 
-        _finish_join(df_left, df_right, args.suffix.clone())
+        _finish_join(df_left, df_right, args.suffix)
     }
 }
 

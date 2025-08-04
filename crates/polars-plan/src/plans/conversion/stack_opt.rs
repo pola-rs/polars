@@ -70,7 +70,11 @@ impl ConversionOptimizer {
         });
     }
 
-    pub fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
+    pub fn fill_scratch<I, N>(&mut self, exprs: I, expr_arena: &Arena<AExpr>)
+    where
+        I: IntoIterator<Item = N>,
+        N: Borrow<Node>,
+    {
         for e in exprs {
             let node = *e.borrow();
             self.push_scratch(node, expr_arena);
@@ -84,6 +88,8 @@ impl ConversionOptimizer {
         expr_arena: &mut Arena<AExpr>,
         ir_arena: &mut Arena<IR>,
         current_ir_node: Node,
+        // Use the schema of `current_ir_node` instead of its input when resolving expr fields.
+        use_current_node_schema: bool,
     ) -> PolarsResult<()> {
         // Different from the stack-opt in the optimizer phase, this does a single pass until fixed point per expression.
 
@@ -94,7 +100,11 @@ impl ConversionOptimizer {
         }
 
         // process the expressions on the stack and apply optimizations.
-        let schema = get_schema(ir_arena, current_ir_node);
+        let schema = if use_current_node_schema {
+            ir_arena.get(current_ir_node).schema(ir_arena)
+        } else {
+            get_input_schema(ir_arena, current_ir_node)
+        };
         let plan = ir_arena.get(current_ir_node);
         let mut ctx = OptimizeExprContext {
             in_filter: matches!(plan, IR::Filter { .. }),
@@ -129,9 +139,7 @@ impl ConversionOptimizer {
                 } else {
                     &self.schemas[schema_idx - 1]
                 };
-                let expr = expr_arena
-                    .get(*expr)
-                    .get_type(schema, Context::Default, expr_arena)?;
+                let expr = expr_arena.get(*expr).get_dtype(schema, expr_arena)?;
 
                 let element_dtype = variant.element_dtype(&expr)?;
                 let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);

@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from polars.selectors import Selector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyPartitioning
+        from polars._plr import PyPartitioning
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -106,6 +106,7 @@ AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
+ColumnMapping: TypeAlias = tuple[Literal["iceberg-column-mapping"], "pa.Schema"]
 DeletionFiles: TypeAlias = tuple[
     Literal["iceberg-position-delete"], dict[int, list[str]]
 ]

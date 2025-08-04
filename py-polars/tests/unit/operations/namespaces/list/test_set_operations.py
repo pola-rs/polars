@@ -119,6 +119,23 @@ def test_list_set_operations() -> None:
     assert r1 == exp
     assert r2 == exp
 
+    # check that broadcast_rhs works correctly
+    df = pl.DataFrame(
+        {
+            "a": [["a"], []],
+            "b": [[], ["a"]],
+        }
+    )
+    df_broadcast_rhs = df.join(pl.DataFrame({"c": [True]}), how="cross").filter("c")
+
+    assert df_broadcast_rhs.select(pl.col("a").list.set_intersection("b")).to_dict(
+        as_series=False
+    ) == {"a": [[], []]}
+
+    assert df_broadcast_rhs.select(
+        pl.col("a").list.set_symmetric_difference("b")
+    ).to_dict(as_series=False) == {"a": [["a"], ["a"]]}
+
 
 def test_list_set_operations_broadcast() -> None:
     df = pl.DataFrame(

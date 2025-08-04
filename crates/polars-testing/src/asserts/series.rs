@@ -465,7 +465,7 @@ mod tests {
         let field1 = Series::new("field1".into(), &["a", "d", "g"]);
         let field2 = Series::new("field2".into(), &["b", "e", "h"]);
 
-        let s1_fields = [field1.clone(), field2.clone()];
+        let s1_fields = [field1.clone(), field2];
         let s1_struct =
             StructChunked::from_series("".into(), field1.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
@@ -473,7 +473,7 @@ mod tests {
         let field1_alt = Series::new("field1".into(), &["a", "DIFFERENT", "g"]);
         let field2_alt = Series::new("field2".into(), &["b", "e", "h"]);
 
-        let s2_fields = [field1_alt.clone(), field2_alt.clone()];
+        let s2_fields = [field1_alt.clone(), field2_alt];
         let s2_struct =
             StructChunked::from_series("".into(), field1_alt.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
@@ -491,7 +491,7 @@ mod tests {
             StructChunked::from_series("".into(), field1.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
 
-        let s2_fields = [field1.clone(), field2.clone()];
+        let s2_fields = [field1.clone(), field2];
         let s2_struct =
             StructChunked::from_series("".into(), field1.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
@@ -511,7 +511,7 @@ mod tests {
         let s1 = s1_struct.into_series();
 
         let id_alt = Series::new("id".into(), &[1, 99, 3]);
-        let s2_fields = [id_alt.clone(), value.clone(), active.clone()];
+        let s2_fields = [id_alt, value, active];
         let s2_struct = StructChunked::from_series("".into(), id.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 
@@ -528,7 +528,7 @@ mod tests {
         let s1_struct = StructChunked::from_series("".into(), id.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
 
-        let s2_fields = [id.clone(), value.clone(), active.clone()];
+        let s2_fields = [id.clone(), value, active];
         let s2_struct = StructChunked::from_series("".into(), id.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 

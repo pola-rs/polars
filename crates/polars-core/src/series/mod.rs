@@ -428,7 +428,7 @@ impl Series {
                     new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
                         let dtype = cast_dtype(&field.dtype).unwrap_or(field.dtype);
                         Field {
-                            name: field.name.clone(),
+                            name: field.name,
                             dtype,
                         }
                     }));
@@ -496,7 +496,7 @@ impl Series {
     ///
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
-        debug_assert!(!self.dtype().is_logical());
+        debug_assert!(!self.dtype().is_logical(), "{:?}", self.dtype());
 
         if self.dtype() == dtype {
             return Ok(self.clone());
@@ -1104,7 +1104,7 @@ mod test {
             PlSmallStr::from_static("a"),
             [ListArray::new(
                 ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    PlSmallStr::from_static("item"),
+                    LIST_VALUES_NAME,
                     ArrowDataType::Int32,
                     true,
                 ))),
@@ -1163,7 +1163,7 @@ mod test {
         }
 
         {
-            let mut s2 = s2.clone();
+            let mut s2 = s2;
             s2.extend(&s1).unwrap();
             assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
         }

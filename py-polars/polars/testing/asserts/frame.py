@@ -9,7 +9,7 @@ from polars.lazyframe import LazyFrame
 from polars.testing.asserts.utils import raise_assertion_error
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import assert_dataframe_equal_py
+    from polars._plr import assert_dataframe_equal_py
 
 
 def _assert_correct_input_type(

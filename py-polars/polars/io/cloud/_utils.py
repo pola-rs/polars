@@ -1,10 +1,36 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from polars._utils.various import is_path_or_str_sequence
 from polars.io.partition import PartitionMaxSize
+
+T = TypeVar("T")
+
+
+class NoPickleOption(Generic[T]):
+    """
+    Wrapper that does not pickle the wrapped value.
+
+    This wrapper will unpickle to contain a None. Used for cached values.
+    """
+
+    def __init__(self, opt_value: T | None = None) -> None:
+        self._opt_value = opt_value
+
+    def get(self) -> T | None:
+        return self._opt_value
+
+    def set(self, value: T | None) -> None:
+        self._opt_value = value
+
+    def __getstate__(self) -> tuple[()]:
+        # Needs to return not-None for `__setstate__()` to be called
+        return ()
+
+    def __setstate__(self, _state: tuple[()]) -> None:
+        NoPickleOption.__init__(self)
 
 
 def _first_scan_path(

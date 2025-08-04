@@ -13,8 +13,8 @@ from polars.expr.expr import Expr
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from polars._plr import PyExpr
     from polars._typing import IntoExpr
-    from polars.polars import PyExpr
 
 
 class When:

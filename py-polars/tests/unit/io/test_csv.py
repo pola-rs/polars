@@ -142,9 +142,7 @@ def test_csv_null_values() -> None:
     # note: after reading, the buffer position in StringIO will have been
     # advanced; reading again will raise NoDataError, so we provide a hint
     # in the error string about this, suggesting "seek(0)" as a possible fix...
-    with pytest.raises(
-        NoDataError, match=r"empty data .* position = 20; try seek\(0\)"
-    ):
+    with pytest.raises(NoDataError, match=r"empty"):
         pl.read_csv(f)
 
     # ... unless we explicitly tell read_csv not to raise an
@@ -456,6 +454,7 @@ def test_read_csv_columns_argument(
     assert df.columns == col_out
 
 
+@pytest.mark.may_fail_cloud  # read->scan_csv dispatch
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_buffer_ownership() -> None:
     bts = b"\xf0\x9f\x98\x80,5.55,333\n\xf0\x9f\x98\x86,-5.0,666"
@@ -2236,12 +2235,6 @@ def test_csv_float_decimal() -> None:
     assert read.dtypes == [pl.Float64] * 2
     assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
 
-    floats = b"a;b\n12,239;1,233\n13,908;87,32"
-    with pytest.raises(
-        InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
-    ):
-        pl.read_csv(floats, decimal_comma=True)
-
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_fsspec_not_available() -> None:
@@ -2308,6 +2301,8 @@ def test_write_csv_to_dangling_file_17328(
     df_no_lists.write_csv((tmp_path / "dangling.csv").open("w"))
 
 
+@pytest.mark.may_fail_cloud  # really hard to mimic this error
+@pytest.mark.write_disk
 def test_write_csv_raise_on_non_utf8_17328(
     df_no_lists: pl.DataFrame, tmp_path: Path
 ) -> None:
@@ -2658,6 +2653,8 @@ x"y,b,c
         (";", None, False, None, True, b"123,75;60;9\n"),
         (",", None, True, 0, True, b"1e2,6e1,9\n"),
         (",", None, True, 3, True, b'"1,238e2","6,000e1",9\n'),
+        (",", None, True, 4, True, b'"1,2375e2","6,0000e1",9\n'),
+        (",", None, True, 5, True, b'"1,23750e2","6,00000e1",9\n'),
         (",", None, False, 0, True, b"124,60,9\n"),
         (",", None, False, 3, True, b'"123,750","60,000",9\n'),
         (",", "always", None, None, True, b'"123,75","60,0","9"\n'),
@@ -2708,11 +2705,15 @@ def test_write_csv_decimal_comma(
     buf.seek(0)
     assert buf.read() == expected
 
-    # Invariant testing:
-    #   df == read_csv(write_csv(df)), unless precision affects the value
-    # TODO: drop the separator condition when read_csv supports comma as both the
-    # decimal separator and field separator, see #23157
-    if (precision is None or precision > 2) and separator != ",":
+    # Round-trip testing: assert df == read_csv(write_csv(df)), unless:
+    # - precision affects the value, or
+    # - quote_style = 'never' generates malformed csv
+    round_trip = not (
+        (not scientific and precision is not None and precision <= 2)
+        or (scientific and precision is not None and precision != 4)
+        or (quote_style == "never" and decimal_comma and separator == ",")
+    )
+    if round_trip:
         # eager
         buf.seek(0)
         df.write_csv(
@@ -2724,6 +2725,7 @@ def test_write_csv_decimal_comma(
             decimal_comma=decimal_comma,
             include_header=True,
         )
+        buf.seek(0)
         out = pl.read_csv(
             buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
         )
@@ -2740,6 +2742,7 @@ def test_write_csv_decimal_comma(
             decimal_comma=decimal_comma,
             include_header=True,
         )
+        buf.seek(0)
         out = pl.scan_csv(
             buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
         ).collect()
@@ -2763,3 +2766,21 @@ def test_write_csv_large_number_autoformat_decimal_comma() -> None:
     buf.seek(0)
     expected = b'"1,2345678901234567e19","1e24"\n'  # note, excessive quoting when fractional is all-zero, ok to relax
     assert buf.read() == expected
+
+
+def test_stop_split_fields_simd_23651() -> None:
+    csv = """C,NEMP.WORLD,DAILY,AEMO,PUBLIC,2025/05/29,04:05:04,0000000465336084,,0000000465336084
+    I,DISPATCH,CASESOLUTION,1,SETTLEMENTDATE,RUNNO,INTERVENTION,CASESUBTYPE,SOLUTIONSTATUS,SPDVERSION,NONPHYSICALLOSSES,TOTALOBJECTIVE,TOTALAREAGENVIOLATION,TOTALINTERCONNECTORVIOLATION,TOTALGENERICVIOLATION,TOTALRAMPRATEVIOLATION,TOTALUNITMWCAPACITYVIOLATION,TOTAL5MINVIOLATION,TOTALREGVIOLATION,TOTAL6SECVIOLATION,TOTAL60SECVIOLATION,TOTALASPROFILEVIOLATION,TOTALFASTSTARTVIOLATION,TOTALENERGYOFFERVIOLATION,LASTCHANGED
+    D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:05:00",1,0,,0,,0,-60421745.3380,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:00:04"
+    D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:10:00",1,0,,0,,0,-60871813.2780,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:05:04"
+    D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:15:00",1,0,,1,,0,-61228162.2270,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:10:03"
+    D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:20:00",1,0,,1,,0,-60901926.5760,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:15:03"
+    D,DISPATCH,CASESOLUTION,1,"""
+    buf = io.StringIO(csv)
+
+    schema = {f"column_{i + 1}": pl.String for i in range(27)}
+
+    buf = io.StringIO(csv)
+    df = pl.read_csv(buf, truncate_ragged_lines=True, has_header=False, schema=schema)
+    assert df.shape == (7, 27)
+    assert df["column_26"].null_count() == 7

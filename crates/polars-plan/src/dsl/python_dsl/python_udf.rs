@@ -178,12 +178,7 @@ impl PythonGetOutput {
 }
 
 impl FunctionOutputField for PythonGetOutput {
-    fn get_field(
-        &self,
-        input_schema: &Schema,
-        _cntxt: Context,
-        fields: &[Field],
-    ) -> PolarsResult<Field> {
+    fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field> {
         // Take the name of first field, just like [`GetOutput::map_field`].
         let name = fields[0].name();
         let return_dtype = match self.materialized_output_type.get() {

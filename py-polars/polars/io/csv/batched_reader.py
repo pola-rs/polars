@@ -14,7 +14,7 @@ from polars.io._utils import parse_columns_arg, parse_row_index_args
 from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyBatchedCsv
+    from polars._plr import PyBatchedCsv
 
 if TYPE_CHECKING:
     from pathlib import Path
