@@ -111,7 +111,7 @@ from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PySeries
+    from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Generator, Mapping
@@ -5915,6 +5915,136 @@ class Series:
         require_same_type(self, other)
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
+    @unstable()
+    def rolling_min_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling min based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling min with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_min_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            0
+            0
+            1
+            2
+            …
+            18
+            19
+            20
+            21
+            22
+        ]
+        """
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
@@ -5962,6 +6092,136 @@ class Series:
             100
             200
             300
+        ]
+        """
+
+    @unstable()
+    def rolling_max_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling max based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling max with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_max_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
         ]
         """
 
@@ -6015,6 +6275,136 @@ class Series:
         ]
         """
 
+    @unstable()
+    def rolling_mean_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling mean based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling mean with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_mean_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            0.0
+            0.5
+            1.0
+            2.0
+            3.0
+            …
+            19.0
+            20.0
+            21.0
+            22.0
+            23.0
+        ]
+        """
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_mean(
         self,
@@ -6065,6 +6455,136 @@ class Series:
         ]
         """
 
+    @unstable()
+    def rolling_sum_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling sum based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling mean with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_sum_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            3
+            6
+            9
+            …
+            57
+            60
+            63
+            66
+            69
+        ]
+        """
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_sum(
         self,
@@ -6112,6 +6632,139 @@ class Series:
                 5
                 7
                 9
+        ]
+        """
+
+    @unstable()
+    def rolling_std_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+        ddof: int = 1,
+    ) -> Self:
+        """
+        Compute a rolling standard deviation based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+                2001-01-01 00:00:00
+                2001-01-01 01:00:00
+                2001-01-01 02:00:00
+                2001-01-01 03:00:00
+                2001-01-01 04:00:00
+                …
+                2001-01-01 20:00:00
+                2001-01-01 21:00:00
+                2001-01-01 22:00:00
+                2001-01-01 23:00:00
+                2001-01-02 00:00:00
+        ]
+
+        Compute the rolling std with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_std_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            null
+            0.707107
+            1.0
+            1.0
+            1.0
+            …
+            1.0
+            1.0
+            1.0
+            1.0
+            1.0
         ]
         """
 
@@ -6166,6 +6819,139 @@ class Series:
                 1.0
                 1.527525
                 2.0
+        ]
+        """
+
+    @unstable()
+    def rolling_var_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+        ddof: int = 1,
+    ) -> Self:
+        """
+        Compute a rolling variance based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+        ddof
+            "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling std with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_std_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            null
+            0.707107
+            1.0
+            1.0
+            1.0
+            …
+            1.0
+            1.0
+            1.0
+            1.0
+            1.0
         ]
         """
 
@@ -6281,6 +7067,136 @@ class Series:
         """
 
     @unstable()
+    def rolling_median_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling median based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        window_size
+            The length of the window. Can be a dynamic temporal
+            size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling median with the temporal windows
+        from the second series closed on the right:
+
+        >>> s.rolling_median_by(d, "3h")
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            0.0
+            0.5
+            1.0
+            2.0
+            3.0
+            …
+            19.0
+            20.0
+            21.0
+            22.0
+            23.0
+        ]
+        """
+
+    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_median(
         self,
@@ -6331,6 +7247,141 @@ class Series:
                 6.0
         ]
         """
+
+    @unstable()
+    def rolling_quantile_by(
+        self,
+        by: IntoExpr,
+        window_size: timedelta | str,
+        *,
+        quantile: float,
+        interpolation: QuantileMethod = "nearest",
+        min_samples: int = 1,
+        closed: ClosedInterval = "right",
+    ) -> Self:
+        """
+        Compute a rolling quantile based on another series.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
+        (the default) means the windows will be:
+
+            - (t_0 - window_size, t_0]
+            - (t_1 - window_size, t_1]
+            - ...
+            - (t_n - window_size, t_n]
+
+        Parameters
+        ----------
+        by
+            Should be ``DateTime``, ``Date``, ``UInt64``, ``UInt32``, ``Int64``,
+            or ``Int32`` data type (note that the integral ones require using `'i'`
+            in `window size`).
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
+            Interpolation method.
+        window_size
+            The length of the window. Can be a dynamic
+            temporal size indicated by a timedelta or the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 calendar day)
+            - 1w    (1 calendar week)
+            - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            By "calendar day", we mean the corresponding time on the next day
+            (which may not be 24 hours, due to daylight savings). Similarly for
+            "calendar week", "calendar month", "calendar quarter", and
+            "calendar year".
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result.
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive),
+            defaults to `'right'`.
+
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `rolling` - this method can cache the window size
+        computation.
+
+        Examples
+        --------
+        Create a series with a row index value
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.Series("index", range(25))
+        >>> s
+        shape: (25,)
+        Series: 'index' [i64]
+        [
+            0
+            1
+            2
+            3
+            4
+            …
+            20
+            21
+            22
+            23
+            24
+        ]
+
+        Create another series to apply the window mask:
+
+        >>> d = pl.Series("date", pl.datetime_range(start, stop, "1h", eager=True))
+        >>> d
+        shape: (25,)
+        Series: 'date' [datetime[μs]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            …
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+
+        Compute the rolling quantile with the temporal windows from the second series closed on the right:
+
+        >>> s.rolling_quantile_by(d, "3h", quantile=0.5)
+        shape: (25,)
+        Series: 'index' [f64]
+        [
+            0.0
+            1.0
+            1.0
+            2.0
+            3.0
+            …
+            19.0
+            20.0
+            21.0
+            22.0
+            23.0
+        ]
+        """  # noqa: W505
 
     @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")

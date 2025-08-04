@@ -112,9 +112,9 @@ from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
-    from polars.polars import dtype_str_repr as _dtype_str_repr
-    from polars.polars import write_clipboard_string as _write_clipboard_string
+    from polars._plr import PyDataFrame
+    from polars._plr import dtype_str_repr as _dtype_str_repr
+    from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
     import sys

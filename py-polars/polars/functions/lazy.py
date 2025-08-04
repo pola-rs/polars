@@ -29,7 +29,7 @@ from polars.lazyframe.opt_flags import (
 from polars.meta.index_type import get_index_type
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 if TYPE_CHECKING:
     import sys

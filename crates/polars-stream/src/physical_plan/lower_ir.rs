@@ -14,9 +14,7 @@ use polars_plan::dsl::{
     SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{
-    AExpr, Context, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive,
-};
+use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -26,9 +24,9 @@ use polars_utils::{IdxSize, unique_column_name};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
-use crate::nodes::io_sources::multi_file_reader;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan;
+use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{
     ExprCache, build_length_preserving_select_stream, build_select_stream,
     is_elementwise_rec_cached, lower_exprs,
@@ -312,9 +310,7 @@ pub fn lower_ir(
                         for key_expr in key_exprs.iter() {
                             select_output_schema.insert(
                                 key_expr.output_name().clone(),
-                                key_expr
-                                    .dtype(input_schema.as_ref(), Context::Default, expr_arena)?
-                                    .clone(),
+                                key_expr.dtype(input_schema.as_ref(), expr_arena)?.clone(),
                             );
                         }
 
@@ -566,7 +562,7 @@ pub fn lower_ir(
                     let file_schema = file_info.schema;
 
                     let (file_projection_builder, file_schema) =
-                        multi_file_reader::initialization::projection::resolve_projections(
+                        multi_scan::functions::resolve_projections::resolve_projections(
                             &output_schema,
                             &file_schema,
                             &mut hive_parts,

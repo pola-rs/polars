@@ -42,7 +42,6 @@ pub(super) fn process_group_by(
     let key_schema = aexprs_to_schema(
         &keys,
         lp_arena.get(input).schema(lp_arena).as_ref(),
-        Context::Default,
         expr_arena,
     );
 

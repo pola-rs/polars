@@ -115,13 +115,13 @@ pub(crate) fn det_join_schema(
             // Get join names.
             let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
             for e in left_on {
-                let field = e.field(schema_left, Context::Default, expr_arena)?;
+                let field = e.field(schema_left, expr_arena)?;
                 join_on_left.insert(field.name);
             }
 
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.field(schema_right, Context::Default, expr_arena)?;
+                let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
@@ -176,27 +176,35 @@ pub(crate) fn det_join_schema(
             #[cfg(feature = "asof_join")]
             if matches!(_how, JoinType::AsOf(_)) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
-                    let field_left = left_on.field(schema_left, Context::Default, expr_arena)?;
-                    let field_right = right_on.field(schema_right, Context::Default, expr_arena)?;
+                    let field_left = left_on.field(schema_left, expr_arena)?;
+                    let field_right = right_on.field(schema_right, expr_arena)?;
 
                     if is_coalesced && field_left.name != field_right.name {
                         _asof_pre_added_rhs_keys.insert(field_right.name.clone());
 
-                        if schema_left.contains(&field_right.name) {
-                            new_schema.with_column(
-                                _join_suffix_name(&field_right.name, options.args.suffix()),
-                                field_right.dtype,
-                            );
+                        // For the error message.
+                        let mut suffixed = None;
+                        let (name, dtype) = if schema_left.contains(&field_right.name) {
+                            suffixed =
+                                Some(_join_suffix_name(&field_right.name, options.args.suffix()));
+                            (suffixed.clone().unwrap(), field_right.dtype.clone())
                         } else {
-                            new_schema.with_column(field_right.name, field_right.dtype);
-                        }
+                            (field_right.name.clone(), field_right.dtype.clone())
+                        };
+                        new_schema.try_insert(name, dtype).map_err(|e| {
+                            if let Some(column) = suffixed {
+                                join_suffix_duplicate_help_msg(&column)
+                            } else {
+                                e
+                            }
+                        })?;
                     }
                 }
             }
 
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.field(schema_right, Context::Default, expr_arena)?;
+                let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
@@ -228,7 +236,6 @@ pub(crate) fn det_join_schema(
 
                 // For the error message.
                 let mut suffixed = None;
-
                 let (name, dtype) = if schema_left.contains(name) {
                     suffixed = Some(format_pl_smallstr!("{}{}", name, options.args.suffix()));
                     (suffixed.clone().unwrap(), dtype.clone())

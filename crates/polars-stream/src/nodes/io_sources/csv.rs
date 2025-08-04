@@ -22,15 +22,15 @@ use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::slice_enum::Slice;
 
-use super::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
-use super::multi_file_reader::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
+use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
+use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::{self, distributor_channel};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
 
 pub mod builder {
@@ -42,9 +42,9 @@ pub mod builder {
     use polars_plan::dsl::ScanSource;
 
     use super::CsvFileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+    use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
+    use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+    use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
     impl FileReaderBuilder for Arc<CsvReadOptions> {
         fn reader_name(&self) -> &str {

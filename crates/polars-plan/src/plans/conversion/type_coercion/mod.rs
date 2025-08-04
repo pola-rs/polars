@@ -65,11 +65,7 @@ fn get_aexpr_and_type<'a>(
     input_schema: &Schema,
 ) -> Option<(&'a AExpr, DataType)> {
     let ae = expr_arena.get(e);
-    Some((
-        ae,
-        ae.get_type(input_schema, Context::Default, expr_arena)
-            .ok()?,
-    ))
+    Some((ae, ae.get_dtype(input_schema, expr_arena).ok()?))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -104,7 +100,7 @@ impl OptimizationRule for TypeCoercionRule {
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
                             .get(input_expr)
-                            .to_field(schema, Context::Default, expr_arena)?
+                            .to_field(schema, expr_arena)?
                             .dtype;
                         let cast_to = &dtype;
 
@@ -404,8 +400,7 @@ impl OptimizationRule for TypeCoercionRule {
                         CastingRules::FirstArgLossless => {
                             if super_type.is_integer() {
                                 for other in &input[1..] {
-                                    let other =
-                                        other.dtype(schema, Context::Default, expr_arena)?;
+                                    let other = other.dtype(schema, expr_arena)?;
                                     if other.is_float() {
                                         polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
                                     }
@@ -413,8 +408,7 @@ impl OptimizationRule for TypeCoercionRule {
                             }
                             if super_type.is_categorical() || super_type.is_enum() {
                                 for other in &input[1..] {
-                                    let other =
-                                        other.dtype(schema, Context::Default, expr_arena)?;
+                                    let other = other.dtype(schema, expr_arena)?;
                                     if !(other.is_string()
                                         || other.is_null()
                                         || *other == super_type)
@@ -833,7 +827,7 @@ fn inline_or_prune_cast(
 
             match op {
                 LogicalOr | LogicalAnd => {
-                    let field = aexpr.to_field(input_schema, Context::Default, expr_arena)?;
+                    let field = aexpr.to_field(input_schema, expr_arena)?;
                     if field.dtype == *dtype {
                         return Ok(Some(aexpr.clone()));
                     }
@@ -972,7 +966,7 @@ fn raise_supertype(
 ) -> PolarsResult<()> {
     let dtypes = inputs
         .iter()
-        .map(|e| e.dtype(input_schema, Context::Default, expr_arena).cloned())
+        .map(|e| e.dtype(input_schema, expr_arena).cloned())
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let st = dtypes

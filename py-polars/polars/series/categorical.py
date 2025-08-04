@@ -8,7 +8,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
-    from polars.polars import PySeries
+    from polars._plr import PySeries
 
 
 @expr_dispatch

@@ -17,6 +17,9 @@ mod into_scalar;
 mod static_array_collect;
 mod temporal;
 
+#[cfg(feature = "proptest")]
+pub mod proptest;
+
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
