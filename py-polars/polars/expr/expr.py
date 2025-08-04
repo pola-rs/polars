@@ -4410,7 +4410,9 @@ class Expr:
         ... )
         >>> df.select(
         ...     pl.all().map_batches(
-        ...         lambda x: x.to_numpy().argmax(), return_dtype=pl.Int64
+        ...         lambda x: x.to_numpy().argmax(),
+        ...         return_dtype=pl.Int64,
+        ...         returns_scalar=True,
         ...     )
         ... )
         shape: (1, 2)
