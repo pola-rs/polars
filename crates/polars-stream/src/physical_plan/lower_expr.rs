@@ -754,19 +754,20 @@ fn lower_exprs_with_ctx(
 
                 let input_schema = &ctx.phys_sm[input.node].output_schema;
 
-                let input_expr = &inner_exprs[0];
                 let key_name = unique_column_name();
+                let tmp_count_name = unique_column_name();
+
+                let input_expr = &inner_exprs[0];
                 let output_dtype = input_expr.dtype(input_schema, ctx.expr_arena)?.clone();
-                let output_name = inner_exprs[0].output_name();
                 let group_by_output_schema = Arc::new(Schema::from_iter([
                     (key_name.clone(), output_dtype),
-                    (output_name.clone(), IDX_DTYPE),
+                    (tmp_count_name.clone(), IDX_DTYPE),
                 ]));
 
                 let keys = [input_expr.with_alias(key_name)];
                 let aggs = [ExprIR::new(
                     ctx.expr_arena.add(AExpr::Len),
-                    OutputName::Alias(output_name.clone()),
+                    OutputName::Alias(tmp_count_name.clone()),
                 )];
 
                 let stream = build_group_by_stream(
@@ -784,7 +785,7 @@ fn lower_exprs_with_ctx(
                         prepare_visualization: ctx.prepare_visualization,
                     },
                 )?;
-                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(output_name.clone())));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_count_name)));
                 input_streams.insert(stream);
             },
             AExpr::Function {
@@ -815,21 +816,25 @@ fn lower_exprs_with_ctx(
 
                 let input_schema = &ctx.phys_sm[input.node].output_schema;
 
+                let tmp_value_name = unique_column_name();
+                let tmp_count_name = unique_column_name();
+
                 let input_expr = &inner_exprs[0];
                 let output_field = input_expr.field(input_schema, ctx.expr_arena)?;
                 let group_by_output_schema = Arc::new(Schema::from_iter([
-                    output_field.clone(),
-                    Field::new(count_name.clone(), IDX_DTYPE),
+                    output_field.clone().with_name(tmp_value_name.clone()),
+                    Field::new(tmp_count_name.clone(), IDX_DTYPE),
                 ]));
 
+                let keys = [input_expr.with_alias(tmp_value_name.clone())];
                 let aggs = [ExprIR::new(
                     ctx.expr_arena.add(AExpr::Len),
-                    OutputName::Alias(count_name.clone()),
+                    OutputName::Alias(tmp_count_name.clone()),
                 )];
 
                 let stream = build_group_by_stream(
                     input,
-                    inner_exprs,
+                    &keys,
                     &aggs,
                     group_by_output_schema,
                     false,
@@ -844,12 +849,11 @@ fn lower_exprs_with_ctx(
                 )?;
 
                 let value = ExprIR::new(
-                    ctx.expr_arena
-                        .add(AExpr::Column(output_field.name().clone())),
+                    ctx.expr_arena.add(AExpr::Column(tmp_value_name)),
                     OutputName::Alias(output_field.name),
                 );
                 let count = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Column(count_name.clone())),
+                    ctx.expr_arena.add(AExpr::Column(tmp_count_name)),
                     OutputName::Alias(count_name.clone()),
                 );
 
