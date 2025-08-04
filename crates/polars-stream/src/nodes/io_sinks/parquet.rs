@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::{ArrowSchema, CompatLevel};
@@ -122,6 +123,7 @@ impl SinkNode for ParquetSinkNode {
         let column_options = self.column_options.clone();
         let output_file_size = self.file_size.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
+            dbg!("IO TASK START");
             let mut file = target
                 .open_into_writeable_async(&sink_options, cloud_options.as_ref())
                 .await?;
@@ -161,6 +163,8 @@ impl SinkNode for ParquetSinkNode {
 
             file.sync_on_close(sink_options.sync_on_close)?;
             file.close()?;
+
+            dbg!("IO TASK END");
 
             output_file_size.store(file_size);
             PolarsResult::Ok(())
@@ -334,8 +338,7 @@ impl SinkNode for ParquetSinkNode {
     fn finalize(
         &mut self,
         _state: &StreamingExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
         // If we were never spawned, we need to make sure that the `tx` is taken. This signals to
         // the IO task that it is done and prevents deadlocks.
         drop(self.io_tx.take());
@@ -346,10 +349,11 @@ impl SinkNode for ParquetSinkNode {
             .expect("not initialized / finish called more than once");
 
         // Wait for the IO task to complete.
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        Some(Box::pin(async move {
+            dbg!("IO FINALIZE");
             io_task
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
-        }));
+        }))
     }
 }

@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::pin::Pin;
 
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
@@ -146,8 +147,7 @@ impl SinkNode for NDJsonSinkNode {
     fn finalize(
         &mut self,
         _state: &StreamingExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
         // If we were never spawned, we need to make sure that the `tx` is taken. This signals to
         // the IO task that it is done and prevents deadlocks.
         drop(self.io_tx.take());
@@ -158,10 +158,10 @@ impl SinkNode for NDJsonSinkNode {
             .expect("not initialized / finish called more than once");
 
         // Wait for the IO task to complete.
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        Some(Box::pin(async move {
             io_task
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
-        }));
+        }))
     }
 }

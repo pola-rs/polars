@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 
 use futures::StreamExt;
@@ -303,7 +304,6 @@ impl SinkNode for PartitionByKeySinkNode {
             };
             receive_and_pass().await?;
 
-            let mut join_handles_vec = Vec::new();
             let mut partition_metrics = Vec::with_capacity(file_idx);
 
             // At this point, we need to wait for all sinks to finish writing and close them. Also,
@@ -356,10 +356,8 @@ impl SinkNode for PartitionByKeySinkNode {
                     metrics.keys = Some(keys.into_iter().map(|c| c.get(0).unwrap().into_static()).collect());
                     partition_metrics.push(metrics);
                 }
-                node.finalize(&state, &mut join_handles_vec);
-                join_handles.extend(join_handles_vec.drain(..).map(AbortOnDropHandle::new));
-                while let Some(res) = join_handles.next().await {
-                    res?;
+                if let Some(finalize) = node.finalize(&state) {
+                    finalize.await?;
                 }
             }
 
@@ -372,17 +370,16 @@ impl SinkNode for PartitionByKeySinkNode {
     fn finalize(
         &mut self,
         _state: &StreamingExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
         let finish_callback = self.finish_callback.clone();
         let written_partitions = self.written_partitions.clone();
 
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        Some(Box::pin(async move {
             if let Some(finish_callback) = &finish_callback {
                 let df = written_partitions.get().unwrap();
                 finish_callback.call(df.clone())?;
             }
             Ok(())
-        }));
+        }))
     }
 }

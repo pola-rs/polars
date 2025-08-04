@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
@@ -302,7 +303,6 @@ impl SinkNode for PartedPartitionSinkNode {
 
             spawn(TaskPriority::High, async move {
                 let mut partition_metrics = Vec::new();
-                let mut join_handles_vec = Vec::new();
 
                 while let Ok((mut join_handles, mut node, keys)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
@@ -318,10 +318,8 @@ impl SinkNode for PartedPartitionSinkNode {
                         );
                         partition_metrics.push(metrics);
                     }
-                    node.finalize(&task_state, &mut join_handles_vec);
-                    join_handles.extend(join_handles_vec.drain(..).map(AbortOnDropHandle::new));
-                    while let Some(res) = join_handles.next().await {
-                        res?;
+                    if let Some(finalize) = node.finalize(&task_state) {
+                        finalize.await?;
                     }
                 }
 
@@ -338,15 +336,14 @@ impl SinkNode for PartedPartitionSinkNode {
     fn finalize(
         &mut self,
         _state: &StreamingExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
         let finish_callback = self.finish_callback.clone();
         let partition_metrics = self.partition_metrics.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let input_schema = self.input_schema.clone();
         let key_cols = self.key_cols.clone();
 
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        Some(Box::pin(async move {
             if let Some(finish_callback) = &finish_callback {
                 let mut written_partitions = partition_metrics.lock().unwrap();
                 let written_partitions =
@@ -362,6 +359,6 @@ impl SinkNode for PartedPartitionSinkNode {
                 finish_callback.call(df)?;
             }
             Ok(())
-        }));
+        }))
     }
 }

@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
@@ -270,7 +271,6 @@ impl SinkNode for MaxSizePartitionSinkNode {
             let task_state = state.clone();
             spawn(TaskPriority::High, async move {
                 let mut partition_metrics = Vec::new();
-                let mut join_handles_vec = Vec::new();
 
                 while let Ok((mut join_handles, mut node)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
@@ -281,10 +281,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
                     if let Some(metrics) = node.get_metrics()? {
                         partition_metrics.push(metrics);
                     }
-                    node.finalize(&task_state, &mut join_handles_vec);
-                    join_handles.extend(join_handles_vec.drain(..).map(AbortOnDropHandle::new));
-                    while let Some(ret) = join_handles.next().await {
-                        ret.inspect_err(|_| {
+                    if let Some(finalize) = node.finalize(&task_state) {
+                        finalize.await.inspect_err(|_| {
                             has_error_occurred.store(true);
                         })?;
                     }
@@ -304,13 +302,12 @@ impl SinkNode for MaxSizePartitionSinkNode {
     fn finalize(
         &mut self,
         _state: &StreamingExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
         let finish_callback = self.finish_callback.clone();
         let partition_metrics = self.partition_metrics.clone();
         let input_schema = self.input_schema.clone();
 
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        Some(Box::pin(async move {
             if let Some(finish_callback) = &finish_callback {
                 let mut partition_metrics = partition_metrics.lock().unwrap();
                 let partition_metrics =
@@ -322,6 +319,6 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 finish_callback.call(df)?;
             }
             Ok(())
-        }));
+        }))
     }
 }
