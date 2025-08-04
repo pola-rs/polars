@@ -123,7 +123,6 @@ impl SinkNode for ParquetSinkNode {
         let column_options = self.column_options.clone();
         let output_file_size = self.file_size.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            dbg!("IO TASK START");
             let mut file = target
                 .open_into_writeable_async(&sink_options, cloud_options.as_ref())
                 .await?;
@@ -163,8 +162,6 @@ impl SinkNode for ParquetSinkNode {
 
             file.sync_on_close(sink_options.sync_on_close)?;
             file.close()?;
-
-            dbg!("IO TASK END");
 
             output_file_size.store(file_size);
             PolarsResult::Ok(())
@@ -350,7 +347,6 @@ impl SinkNode for ParquetSinkNode {
 
         // Wait for the IO task to complete.
         Some(Box::pin(async move {
-            dbg!("IO FINALIZE");
             io_task
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
