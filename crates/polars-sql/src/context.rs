@@ -1309,11 +1309,22 @@ impl SQLContext {
 
         for mut e in projections {
             // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_agg_or_window = has_expr(e, |e| {
-                matches!(e, Expr::Agg(_) | Expr::Len | Expr::Window { .. })
+            let is_non_group_key_expr = has_expr(e, |e| {
+                match e {
+                    Expr::Agg(_) | Expr::Len | Expr::Window { .. } => true,
+                    Expr::Function { function: func, .. }
+                        if !matches!(func, FunctionExpr::StructExpr(_)) =>
+                    {
+                        // If it's a function call containing a column NOT in the group by keys,
+                        // we treat it as an aggregation.
+                        has_expr(e, |e| match e {
+                            Expr::Column(name) => !group_by_keys_schema.contains(name),
+                            _ => false,
+                        })
+                    },
+                    _ => false,
+                }
             });
-
-            let mut is_function_under_alias = false;
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
@@ -1327,14 +1338,12 @@ impl SQLContext {
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
-                } else if let Expr::Function { .. } = expr.deref() {
-                    is_function_under_alias = true;
-                } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
+                } else if !is_non_group_key_expr && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
             }
             let field = e.to_field(&schema_before)?;
-            if group_by_keys_schema.get(&field.name).is_none() && is_agg_or_window {
+            if group_by_keys_schema.get(&field.name).is_none() && is_non_group_key_expr {
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode(expr)) = &e {
                     e = (**expr).clone();
@@ -1354,17 +1363,6 @@ impl SQLContext {
                 if !group_by_keys_schema.contains(&field.name) {
                     polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                 }
-            } else if is_function_under_alias || matches!(e, Expr::Function { .. }) {
-                aggregation_projection.push(e.clone());
-            } else if let Expr::Literal { .. }
-            | Expr::Cast { .. }
-            | Expr::Ternary { .. }
-            | Expr::Field { .. }
-            | Expr::Alias { .. } = e
-            {
-                // do nothing
-            } else {
-                polars_bail!(SQLSyntax: "Unsupported operation in the GROUP BY clause: {}", e);
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
