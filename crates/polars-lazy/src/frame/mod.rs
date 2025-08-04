@@ -709,10 +709,6 @@ impl LazyFrame {
                 );
                 result.map(|v| v.unwrap_single())
             }),
-            _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
-                InvalidOperation: "partition sinks are not supported on for the '{}' engine",
-                engine.into_static_str()
-            )),
             Engine::Gpu => {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
@@ -2490,10 +2486,14 @@ mod streaming_dispatch {
             _ => false,
         };
 
-        let node = ir_arena.add(IR::Sink {
-            input: node,
-            payload: SinkTypeIR::Memory,
-        });
+        let node = match ir_arena.get(node) {
+            IR::SinkMultiple { .. } => panic!("SinkMultiple not supported"),
+            IR::Sink { .. } => node,
+            _ => ir_arena.add(IR::Sink {
+                input: node,
+                payload: SinkTypeIR::Memory,
+            }),
+        };
 
         polars_stream::StreamingQuery::build(node, ir_arena, expr_arena)
             .map(Some)

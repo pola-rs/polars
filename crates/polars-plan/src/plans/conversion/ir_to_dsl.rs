@@ -850,6 +850,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
+        IF::Append { upcast } => F::Append { upcast },
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
@@ -1035,6 +1036,48 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             symbol,
             kwargs,
         },
+
+        IF::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::FoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        IF::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::ReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        #[cfg(feature = "dtype-struct")]
+        IF::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+        } => F::CumReduceHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+        },
+        #[cfg(feature = "dtype-struct")]
+        IF::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype,
+            include_init,
+        } => F::CumFoldHorizontal {
+            callback,
+            returns_scalar,
+            return_dtype: return_dtype.map(DataTypeExpr::Literal),
+            include_init,
+        },
+
         IF::MaxHorizontal => F::MaxHorizontal,
         IF::MinHorizontal => F::MinHorizontal,
         IF::SumHorizontal { ignore_nulls } => F::SumHorizontal { ignore_nulls },

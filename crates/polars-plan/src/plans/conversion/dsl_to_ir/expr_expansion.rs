@@ -79,6 +79,8 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
             | F::ConcatExpr(_)
             | F::MinHorizontal
             | F::MaxHorizontal
+            | F::FoldHorizontal { .. }
+            | F::ReduceHorizontal { .. }
             | F::SumHorizontal { .. }
             | F::MeanHorizontal { .. }
     );
@@ -94,6 +96,10 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
     {
         expand_into_inputs |= matches!(function, F::AsStruct);
         expand_into_inputs |= matches!(function, F::StructExpr(StructFunction::WithFields));
+        expand_into_inputs |= matches!(
+            function,
+            F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. }
+        );
     }
     #[cfg(feature = "ffi_plugin")]
     {

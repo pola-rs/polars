@@ -10,6 +10,7 @@ pub(crate) use polars_time::in_nanoseconds_window;
 pub(crate) use polars_time::prelude::*;
 pub use polars_utils::arena::{Arena, Node};
 
+pub use crate::callback::*;
 pub use crate::dsl::*;
 #[cfg(feature = "debugging")]
 pub use crate::plans::debug::*;

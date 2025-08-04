@@ -806,6 +806,7 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
+        (Float32, Float64) => Float64,
         (Float32, _) => Float32,
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, Some(scale_left)), Decimal(_, _)) => {
