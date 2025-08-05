@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars._utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
+from polars._utils.udfs import _BYTECODE_PARSER_CACHE_, _NUMPY_FUNCTIONS, BytecodeParser
 from polars._utils.various import in_terminal_that_supports_colour
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -518,13 +518,22 @@ def test_expr_exact_warning_message() -> None:
         "with this one instead:\n"
         f'  {green}+ pl.col("a") + 1{end_escape}\n'
     )
-    # Check the EXACT warning message. If modifying the message in the future,
-    # make sure to keep the `^` and `$`, and keep the assertion on `len(warnings)`.
+
+    fn = lambda x: x + 1  # noqa: E731
+
+    # check the EXACT warning messages - if modifying the message in the future,
+    # make sure to keep the `^` and `$`, and the assertion on `len(warnings)`
     with pytest.warns(PolarsInefficientMapWarning, match=rf"^{msg}$") as warnings:
         df = pl.DataFrame({"a": [1, 2, 3]})
-        df.select(pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64))
+        for _ in range(3):  # << loop a few times to exercise the caching path
+            df.select(pl.col("a").map_elements(fn, return_dtype=pl.Int64))
 
-    assert len(warnings) == 1
+    assert len(warnings) == 3
+
+    # confirm that the associated parser/etc was cached
+    bp = _BYTECODE_PARSER_CACHE_[(fn, "expr")]
+    assert isinstance(bp, BytecodeParser)
+    assert bp.to_expression("a") == 'pl.col("a") + 1'
 
 
 def test_omit_implicit_bool() -> None:

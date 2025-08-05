@@ -98,9 +98,7 @@ if TYPE_CHECKING:
         TemporalLiteral,
         WindowMappingStrategy,
     )
-    from polars._utils.various import (
-        NoDefault,
-    )
+    from polars._utils.various import NoDefault
 
     if sys.version_info >= (3, 11):
         from typing import Concatenate, ParamSpec
