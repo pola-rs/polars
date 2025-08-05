@@ -120,10 +120,10 @@ impl PhysicalExpr for SliceExpr {
 
         use AggState::*;
         let groups = match (&ac_offset.state, &ac_length.state) {
-            (Literal(offset), Literal(length)) => {
+            (LiteralScalar(offset), LiteralScalar(length)) => {
                 let (offset, length) = extract_args(offset, length, &self.expr)?;
 
-                if let Literal(s) = ac.agg_state() {
+                if let LiteralScalar(s) = ac.agg_state() {
                     let s1 = s.slice(offset, length);
                     ac.with_literal(s1);
                     return Ok(ac);
@@ -150,7 +150,7 @@ impl PhysicalExpr for SliceExpr {
                     },
                 }
             },
-            (Literal(offset), _) => {
+            (LiteralScalar(offset), _) => {
                 let groups = ac.groups();
                 let offset = extract_offset(offset, &self.expr)?;
                 let length = ac_length.aggregated();
@@ -185,7 +185,7 @@ impl PhysicalExpr for SliceExpr {
                     },
                 }
             },
-            (_, Literal(length)) => {
+            (_, LiteralScalar(length)) => {
                 let groups = ac.groups();
                 let length = extract_length(length, &self.expr)?;
                 let offset = ac_offset.aggregated();

@@ -236,7 +236,9 @@ your solution, feel free to open a draft pull request and ask for help.
 The most important components of Polars documentation are the
 [user guide](https://docs.pola.rs/user-guide/), the
 [API references](https://docs.pola.rs/api/python/stable/reference/index.html), and the database of
-questions on [StackOverflow](https://stackoverflow.com/).
+questions on Stack Overflow for
+[Python Polars](https://stackoverflow.com/questions/tagged/python-polars) and
+[Rust Polars](https://stackoverflow.com/questions/tagged/rust-polars).
 
 ### User guide
 

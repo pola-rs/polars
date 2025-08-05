@@ -70,26 +70,30 @@ impl OptimizationRule for ExpandDatasets {
                         )
                     }
 
-                    let can_use_existing = match guard.as_ref() {
+                    let existing_resolved_version_key = match guard.as_ref() {
                         Some(resolved) => {
                             let ExpandedDataset {
+                                version,
                                 limit: cached_limit,
                                 projection: cached_projection,
                                 expanded_dsl: _,
                                 python_scan: _,
                             } = resolved;
 
-                            cached_limit == &limit && cached_projection == &projection
+                            (cached_limit == &limit && cached_projection == &projection)
+                                .then_some(version.as_str())
                         },
 
-                        None => false,
+                        None => None,
                     };
 
-                    if !can_use_existing {
-                        let expanded_dsl =
-                            dataset_object.to_dataset_scan(limit, projection.as_deref())?;
-
+                    if let Some((expanded_dsl, version)) = dataset_object.to_dataset_scan(
+                        existing_resolved_version_key,
+                        limit,
+                        projection.as_deref(),
+                    )? {
                         *guard = Some(ExpandedDataset {
+                            version,
                             limit,
                             projection,
                             expanded_dsl,
@@ -98,6 +102,7 @@ impl OptimizationRule for ExpandDatasets {
                     }
 
                     let ExpandedDataset {
+                        version: _,
                         limit: _,
                         projection: _,
                         expanded_dsl,
@@ -123,6 +128,8 @@ impl OptimizationRule for ExpandDatasets {
                                 cache,
                                 glob: _,
                                 projection: _projection @ None,
+                                column_mapping,
+                                default_values,
                                 row_index: _row_index @ None,
                                 pre_slice: _pre_slice @ None,
                                 cast_columns_policy,
@@ -130,7 +137,6 @@ impl OptimizationRule for ExpandDatasets {
                                 extra_columns_policy,
                                 include_file_paths: _include_file_paths @ None,
                                 deletion_files,
-                                column_mapping,
                             } = resolved_unified_scan_args.as_ref()
                             else {
                                 panic!(
@@ -145,8 +151,9 @@ impl OptimizationRule for ExpandDatasets {
                             unified_scan_args.cast_columns_policy = cast_columns_policy.clone();
                             unified_scan_args.missing_columns_policy = *missing_columns_policy;
                             unified_scan_args.extra_columns_policy = *extra_columns_policy;
-                            unified_scan_args.deletion_files = deletion_files.clone();
                             unified_scan_args.column_mapping = column_mapping.clone();
+                            unified_scan_args.default_values = default_values.clone();
+                            unified_scan_args.deletion_files = deletion_files.clone();
 
                             *sources = resolved_sources.clone();
 
@@ -213,6 +220,7 @@ impl OptimizationRule for ExpandDatasets {
 
 #[derive(Clone)]
 pub struct ExpandedDataset {
+    version: PlSmallStr,
     limit: Option<usize>,
     projection: Option<Arc<[PlSmallStr]>>,
     expanded_dsl: DslPlan,
@@ -240,6 +248,7 @@ impl ExpandedDataset {
 impl Debug for ExpandedDataset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ExpandedDataset {
+            version,
             limit,
             projection,
             expanded_dsl,
@@ -249,6 +258,7 @@ impl Debug for ExpandedDataset {
         } = self;
 
         return display::ExpandedDataset {
+            version,
             limit,
             projection,
             expanded_dsl: &match expanded_dsl.display() {
@@ -277,6 +287,7 @@ impl Debug for ExpandedDataset {
             #[derive(Debug)]
             #[expect(unused)]
             pub struct ExpandedDataset<'a> {
+                pub version: &'a str,
                 pub limit: &'a Option<usize>,
                 pub projection: &'a Option<Arc<[PlSmallStr]>>,
                 pub expanded_dsl: &'a str,

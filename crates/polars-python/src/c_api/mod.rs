@@ -223,6 +223,16 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::when)).unwrap();
 
+    // Functions: schema
+    m.add_wrapped(wrap_pyfunction!(
+        crate::interop::arrow::init_polars_schema_from_arrow_c_schema
+    ))
+    .unwrap();
+    m.add_wrapped(wrap_pyfunction!(
+        crate::interop::arrow::polars_schema_field_from_arrow_c_schema
+    ))
+    .unwrap();
+
     // Functions: other
     m.add_wrapped(wrap_pyfunction!(functions::check_length))
         .unwrap();

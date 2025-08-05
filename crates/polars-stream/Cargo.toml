@@ -31,14 +31,15 @@ rayon = { workspace = true }
 recursive = { workspace = true }
 slotmap = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = ["rt"] }
 
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
-polars-ops = { workspace = true, features = ["rle"] }
+polars-ops = { workspace = true, features = ["rle", "unique_counts", "dtype-struct"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["cse", "rle"] }
+polars-plan = { workspace = true, features = ["cse", "rle", "unique_counts", "dtype-struct"] }
 
 [build-dependencies]
 version_check = { workspace = true }

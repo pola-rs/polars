@@ -5,6 +5,7 @@ use components::bridge::BridgeRecvPort;
 use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -431,6 +432,7 @@ async fn start_reader_impl(
         None,
         file_iceberg_schema.as_ref(),
         cast_columns_policy.clone(),
+        scan_source_idx,
     )?;
 
     let mut extra_ops_post = extra_ops_this_file;
@@ -468,17 +470,24 @@ async fn start_reader_impl(
 
     if verbose {
         eprintln!(
-            "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
-            projection_to_reader: {:?}, \
-            projection_to_post: {:?}, \
+            "[ReaderStarter]: \
+            scan_source_idx: {scan_source_idx}: \
             pre_slice_to_reader: {:?}, \
-            external_filter_mask: {}",
-            &projection_to_reader,
-            &projection_to_post,
+            external_filter_mask: {}, \
+            file_iceberg_schema: {:?}",
             pre_slice,
             ExternalFilterMask::log_display(external_filter_mask.as_ref()),
+            &file_iceberg_schema,
         )
     }
+
+    verbose_print_sensitive(|| {
+        format!(
+            "[ReaderStarter]: \
+            projection_to_reader: {projection_to_reader:?}, \
+            projection_to_post: {projection_to_post:?}"
+        )
+    });
 
     let file_schema_rx = if forbid_extra_columns.is_some() {
         // Upstream should not have any reason to attach this.
@@ -497,7 +506,7 @@ async fn start_reader_impl(
     );
 
     if let Some(predicate) = predicate.as_mut() {
-        assert!(matches!(projection_to_post, Projection::Plain(_)));
+        assert!(!projection_to_post.has_projection_transforms());
 
         let reader_file_schema = reader.file_schema().await?;
 
@@ -512,10 +521,11 @@ async fn start_reader_impl(
                 ));
                 assert!(matches!(projection_to_post, Projection::Plain(_)));
 
-                ProjectionBuilder::new(projected_schema, None).build_projection(
+                ProjectionBuilder::new(projected_schema, None, None).build_projection(
                     Some(reader_file_schema.as_ref()),
                     None,
                     cast_columns_policy.clone(),
+                    scan_source_idx,
                 )?
             },
             Projection::Mapped { .. } => projection_to_reader,
@@ -560,12 +570,16 @@ async fn start_reader_impl(
             ))
         }
 
-        for (missing_col_name, dtype) in
+        for (missing_col_name, dtype, default_value) in
             file_projection.iter_missing_columns(Some(&reader_file_schema))?
         {
             match &missing_columns_policy {
-                MissingColumnsPolicy::Insert => external_predicate_cols
-                    .push((missing_col_name.clone(), Scalar::null(dtype.clone()))),
+                MissingColumnsPolicy::Insert => external_predicate_cols.push((
+                    missing_col_name.clone(),
+                    default_value
+                        .cloned()
+                        .unwrap_or_else(|| Scalar::null(dtype.clone())),
+                )),
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),
             }
         }

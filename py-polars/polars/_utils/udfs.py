@@ -24,12 +24,15 @@ from typing import (
     Union,
 )
 
-from polars._utils.various import re_escape
+from polars._utils.cache import LRUCache
+from polars._utils.various import no_default, re_escape
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
+
+    from polars._utils.various import NoDefault
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -51,6 +54,10 @@ StackEntry: TypeAlias = Union[str, StackValue]
 _MIN_PY311 = sys.version_info >= (3, 11)
 _MIN_PY312 = _MIN_PY311 and sys.version_info >= (3, 12)
 _MIN_PY314 = _MIN_PY312 and sys.version_info >= (3, 14)
+
+_BYTECODE_PARSER_CACHE_: MutableMapping[
+    tuple[Callable[[Any], Any], str], BytecodeParser
+] = LRUCache(32)
 
 
 class OpNames:
@@ -280,6 +287,7 @@ _MODULE_FUNC_TO_EXPR_NAME = {
     "json.loads": "str.json_decode",
 }
 _RE_IMPLICIT_BOOL = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
+_RE_SERIES_NAMES = re.compile(r"^(s|srs\d?|series)\.")
 _RE_STRIP_BOOL = re.compile(r"^bool\((.+)\)$")
 
 
@@ -318,8 +326,9 @@ def _get_target_name(col: str, expression: str, map_target: str) -> str:
     if map_target == "expr":
         return col_expr
     elif map_target == "series":
-        if re.match(r"^(s|srs\d?|series)\.", expression):
+        if _RE_SERIES_NAMES.match(expression):
             return expression.split(".", 1)[0]
+
         # note: handle overlapping name from global variables; fallback
         # through "s", "srs", "series" and (finally) srs0 -> srsN...
         search_expr = expression.replace(col_expr, "")
@@ -340,7 +349,9 @@ class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
 
     _map_target_name: str | None = None
+    _can_attempt_rewrite: bool | None = None
     _caller_variables: dict[str, Any] | None = None
+    _col_expression: tuple[str, str] | NoDefault | None = no_default
 
     def __init__(self, function: Callable[[Any], Any], map_target: MapTarget) -> None:
         """
@@ -396,8 +407,8 @@ class BytecodeParser:
     ) -> list[tuple[int, str]]:
         """Inject nesting boundaries into expression blocks (as parentheses)."""
         if logical_instructions:
-            # reconstruct nesting boundaries for mixed and/or ops by associating control
-            # flow jump offsets with their target expression blocks and applying parens
+            # reconstruct nesting for mixed 'and'/'or' ops by associating control flow
+            # jump offsets with their target expression blocks and applying parens
             if len({inst.opname for inst in logical_instructions}) > 1:
                 block_offsets: list[int] = list(expression_blocks.keys())
                 prev_end = -1
@@ -428,22 +439,24 @@ class BytecodeParser:
         guaranteed that using the equivalent bare constant value will return the
         same output. (Hopefully nobody is writing lambdas like that anyway...)
         """
-        return (
-            self._param_name is not None
-            # check minimum number of ops, ensuring all are parseable
-            and len(self._rewritten_instructions) >= 2
-            and all(
-                inst.opname in OpNames.PARSEABLE_OPS
-                for inst in self._rewritten_instructions
+        if self._can_attempt_rewrite is None:
+            self._can_attempt_rewrite = (
+                self._param_name is not None
+                # check minimum number of ops, ensuring all are parseable
+                and len(self._rewritten_instructions) >= 2
+                and all(
+                    inst.opname in OpNames.PARSEABLE_OPS
+                    for inst in self._rewritten_instructions
+                )
+                # exclude constructs/functions with multiple RETURN_VALUE ops
+                and sum(
+                    1
+                    for inst in self.original_instructions
+                    if inst.opname == "RETURN_VALUE"
+                )
+                == 1
             )
-            # exclude constructs/functions with multiple RETURN_VALUE ops
-            and sum(
-                1
-                for inst in self.original_instructions
-                if inst.opname == "RETURN_VALUE"
-            )
-            == 1
-        )
+        return self._can_attempt_rewrite
 
     def dis(self) -> None:
         """Print disassembled function bytecode."""
@@ -471,8 +484,20 @@ class BytecodeParser:
 
     def to_expression(self, col: str) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
+        if self._col_expression is not no_default and self._col_expression is not None:
+            col_name, expr = self._col_expression
+            if col != col_name:
+                expr = re.sub(
+                    rf'pl\.col\("{re_escape(col_name)}"\)',
+                    f'pl.col("{re_escape(col)}")',
+                    expr,
+                )
+                self._col_expression = (col, expr)
+            return expr
+
         self._map_target_name = None
         if self._param_name is None:
+            self._col_expression = None
             return None
 
         # decompose bytecode into logical 'and'/'or' expression blocks (if present)
@@ -505,21 +530,25 @@ class BytecodeParser:
                 logical_instructions,
             )
         except NotImplementedError:
+            self._col_expression = None
             return None
+
         polars_expr = " ".join(expr for _offset, expr in expression_strings)
 
         # note: if no 'pl.col' in the expression, it likely represents a compound
         # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
         if "pl.col(" not in polars_expr:
+            self._col_expression = None
             return None
         else:
             polars_expr = self._omit_implicit_bool(polars_expr)
             if self._map_target == "series":
                 if (target_name := self._map_target_name) is None:
                     target_name = _get_target_name(col, polars_expr, self._map_target)
-                return polars_expr.replace(f'pl.col("{col}")', target_name)
-            else:
-                return polars_expr
+                polars_expr = polars_expr.replace(f'pl.col("{col}")', target_name)
+
+            self._col_expression = (col, polars_expr)
+            return polars_expr
 
     def warn(
         self,
@@ -602,24 +631,24 @@ class InstructionTranslator:
     @staticmethod
     def op(inst: Instruction) -> str:
         """Convert bytecode instruction to suitable intermediate op string."""
-        if inst.opname in OpNames.CONTROL_FLOW:
-            return OpNames.CONTROL_FLOW[inst.opname]
+        if (opname := inst.opname) in OpNames.CONTROL_FLOW:
+            return OpNames.CONTROL_FLOW[opname]
         elif inst.argrepr:
             return inst.argrepr
-        elif inst.opname == "IS_OP":
+        elif opname == "IS_OP":
             return "is not" if inst.argval else "is"
-        elif inst.opname == "CONTAINS_OP":
+        elif opname == "CONTAINS_OP":
             return "not in" if inst.argval else "in"
-        elif inst.opname in OpNames.UNARY:
-            return OpNames.UNARY[inst.opname]
-        elif inst.opname == "BINARY_SUBSCR":
+        elif opname in OpNames.UNARY:
+            return OpNames.UNARY[opname]
+        elif opname == "BINARY_SUBSCR":
             return "replace_strict"
         else:
             msg = (
-                f"unexpected or unrecognised op name ({inst.opname})\n\n"
+                f"unexpected or unrecognised op name ({opname})\n\n"
                 "Please report a bug to https://github.com/pola-rs/polars/issues "
                 "with the content of function you were passing to the `map` "
-                f"expressions and the following instruction object:\n{inst!r}"
+                f"expression and the following instruction object:\n{inst!r}"
             )
             raise AssertionError(msg)
 
@@ -656,7 +685,7 @@ class InstructionTranslator:
                 return f"{op}{e1}"
             else:
                 e2 = self._expr(value.right_operand, col, param_name, depth + 1)
-                if op in ("is", "is not") and value[2] == "None":
+                if op in ("is", "is not") and value.left_operand == "None":
                     not_ = "" if op == "is" else "not_"
                     return f"{e1}.is_{not_}null()"
                 elif op in ("in", "not in"):
@@ -674,13 +703,12 @@ class InstructionTranslator:
                         raise NotImplementedError(msg)
                     return f"{e2}.{op}({e1})"
                 elif op == "<<":
-                    # Result of 2**e2 might be float is e2 was negative.
-                    # But, if e1 << e2 was valid, then e2 must have been positive.
-                    # Hence, the output of 2**e2 can be safely cast to Int64, which
-                    # may be necessary if chaining operations which assume Int64 output.
+                    # 2**e2 may be float if e2 was -ve, but if e1 << e2 was valid then
+                    # e2 must have been +ve. therefore 2**e2 can be safely cast to
+                    # i64, which may be necessary if chaining ops that assume i64.
                     return f"({e1} * 2**{e2}).cast(pl.Int64)"
                 elif op == ">>":
-                    # Motivation for the cast is the same as in the '<<' case above.
+                    # (motivation for the cast is same as the '<<' case above)
                     return f"({e1} / 2**{e2}).cast(pl.Int64)"
                 else:
                     expr = f"{e1} {op} {e2}"
@@ -1117,10 +1145,8 @@ class RewrittenInstructions:
                 inst = inst._replace(**updated_params)  # type: ignore[arg-type]
 
             elif opname == "BINARY_OP" and inst.argrepr == "[]":
-                # special case for new '[]' binary op; revert to 'BINARY_SUBSCR'
-                inst = inst._replace(
-                    opname="BINARY_SUBSCR", arg=None, argval=None, argrepr=""
-                )
+                # special case for new 'BINARY_OP ([])'; revert to 'BINARY_SUBSCR'
+                inst = inst._replace(opname="BINARY_SUBSCR", argrepr="")
 
         return inst
 
@@ -1179,11 +1205,10 @@ def warn_on_inefficient_map(
     function
         The function passed to `map`.
     columns
-        The column names of the original object; in the case of an `Expr` this
-        will be a list of length 1 containing the expression's root name.
+        The column name(s) of the original object; in the case of an `Expr` this
+        will be a list of length 1, containing the expression's root name.
     map_target
-        The target of the `map` call. One of `"expr"`, `"frame"`,
-        or `"series"`.
+        The target of the `map` call. One of `"expr"`, `"frame"`, or `"series"`.
     """
     if map_target == "frame":
         msg = "TODO: 'frame' map-function parsing"
@@ -1195,8 +1220,11 @@ def warn_on_inefficient_map(
         return None
 
     # the parser introspects function bytecode to determine if we can
-    # rewrite as a much more optimal native polars expression instead
-    parser = BytecodeParser(function, map_target)
+    # rewrite as a (much) more optimal native polars expression instead
+    if (parser := _BYTECODE_PARSER_CACHE_.get(key := (function, map_target))) is None:
+        parser = BytecodeParser(function, map_target)
+        _BYTECODE_PARSER_CACHE_[key] = parser
+
     if parser.can_attempt_rewrite():
         parser.warn(col)
     else:

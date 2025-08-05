@@ -498,6 +498,17 @@ fn to_graph_rec<'a>(
             )
         },
 
+        RleId { input, name } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            assert_eq!(input_schema.len(), 1);
+            let dtype = input_schema.get_at_index(0).unwrap().1.clone();
+            ctx.graph.add_node(
+                nodes::rle_id::RleIdNode::new(name.clone(), dtype),
+                [(input_key, input.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()
@@ -1026,7 +1037,7 @@ fn to_graph_rec<'a>(
             let sources = ScanSources::Paths(Arc::from([PlPath::from_str("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
-            let file_projection_builder = ProjectionBuilder::new(output_schema, None);
+            let file_projection_builder = ProjectionBuilder::new(output_schema, None, None);
             let row_index = None;
             let pre_slice = None;
             let predicate = None;

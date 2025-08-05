@@ -13,13 +13,14 @@ use crate::series::IsSorted;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct PartitionedColumn {
     name: PlSmallStr,
 
     values: Series,
     ends: Arc<[IdxSize]>,
 
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "serde", serde(skip, default))]
     materialized: OnceLock<Series>,
 }
 

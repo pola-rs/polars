@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 from pathlib import PosixPath
 from typing import Any, Callable, TypeVar, cast
 
@@ -47,7 +48,7 @@ def _patched_cloud(
         class PatchedComputeContext(ComputeContext):
             def __init__(self, *args: Any, **kwargs: Any) -> None:
                 self._interactive = True
-                self._compute_address = "localhost:5051"
+                self._compute_address = os.environ.get("SCHEDULER_ADDRESS", "localhost")
                 self._compute_public_key = b""
                 self._insecure = True
                 self._compute_id = uuid.uuid4()

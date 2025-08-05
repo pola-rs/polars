@@ -3513,3 +3513,13 @@ def test_write_nested_categoricals() -> None:
 
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), df)
+
+
+def test_literal_predicate_23901() -> None:
+    df = pl.DataFrame({"x": range(10)})
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=1)
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).filter(pl.lit(1) == 1).collect(), df)

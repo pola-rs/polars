@@ -17,6 +17,9 @@ use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
 use polars::prelude::ColumnMapping;
+use polars::prelude::default_values::{
+    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
+};
 use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -305,7 +308,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let series = to_series(py, categories.into_series().into())?;
                 class.call1((series,))
             },
-            DataType::Time => pl.getattr(intern!(py, "Time")),
+            DataType::Time => pl.getattr(intern!(py, "Time")).and_then(|x| x.call0()),
             DataType::Struct(fields) => {
                 let field_class = pl.getattr(intern!(py, "Field"))?;
                 let iter = fields.iter().map(|fld| {
@@ -1705,6 +1708,47 @@ impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
                 }
 
                 DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown deletion file type: {v}"
+                )));
+            },
+        }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<DefaultFieldValues> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (default_values_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*default_values_type {
+            "iceberg" => {
+                let dict: Bound<'_, PyDict> = ob.extract()?;
+
+                let mut out = PlIndexMap::new();
+
+                for (k, v) in dict
+                    .try_iter()?
+                    .zip(dict.call_method0("values")?.try_iter()?)
+                {
+                    let k: u32 = k?.extract()?;
+                    let v = v?;
+
+                    let v: Result<Column, String> = if let Ok(s) = get_series(&v) {
+                        Ok(s.into_column())
+                    } else {
+                        let err_msg: String = v.extract()?;
+                        Err(err_msg)
+                    };
+
+                    out.insert(k, v);
+                }
+
+                DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(
+                    out,
+                )))
             },
 
             v => {

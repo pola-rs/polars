@@ -119,6 +119,7 @@ module = [
   "moto.server",
   "openpyxl",
   "polars.polars",
+  "polars._plr",
   "polars_cloud",
   "pyarrow.*",
   "pydantic",
