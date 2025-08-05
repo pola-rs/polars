@@ -115,6 +115,13 @@ nav:
           - polars-cloud/quickstart.md
           - polars-cloud/connect-cloud.md
 
+          - Queries:
+                - polars-cloud/run/first-query.md
+                - polars-cloud/run/example-interactive.md
+                - polars-cloud/run/distributed-engine.md
+          - Context:
+                - polars-cloud/context/compute-context.md
+                - polars-cloud/context/plugins.md
           - Organizations:
                 - polars-cloud/organization/organizations.md
                 - polars-cloud/organization/billing.md
@@ -122,12 +129,6 @@ nav:
           - Workspaces:
                 - polars-cloud/workspace/settings.md
                 - polars-cloud/workspace/team.md
-          - Workflows:
-                - polars-cloud/run/compute-context.md
-                - polars-cloud/run/interactive-batch.md
-                - polars-cloud/run/distributed-engine.md
-                - polars-cloud/run/plugins.md
-                - polars-cloud/run/example-workflow.md
           - Authentication:
                 - polars-cloud/explain/authentication.md
                 - polars-cloud/explain/service-accounts.md

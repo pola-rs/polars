@@ -1,4 +1,4 @@
-# Configure settings
+# Workspace configuration
 
 On the workspace settings page you can set cluster defaults, create labels, add service accounts and
 change other workspace related settings.
@@ -25,7 +25,7 @@ for standard workloads.
 
 Default compute configurations eliminate the need to explicitly define a compute context. More
 information on configuration can be found in the section on
-[setting the compute context](../run/compute-context.md).
+[setting the compute context](../context/compute-context.md).
 
 ## Query and compute labels
 

@@ -1,4 +1,4 @@
-# Execute distributed query
+# Distributed queries
 
 With the introduction of Polars Cloud, we also introduced the distributed engine. This engine
 enables users to horizontally scale workloads across multiple machines.

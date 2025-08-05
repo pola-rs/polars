@@ -16,7 +16,7 @@ state, executing queries requires completing the setup process.
 
 The setup process begins with naming your workspace. The default "Personal Workspace" works for
 individual use, but consider using team or project names for collaborative environments. This
-workspace name becomes part of your [compute context](run/compute-context.md) configuration for
+workspace name becomes part of your [compute context](context/compute-context.md) configuration for
 remote query execution.
 
 <!-- dprint-ignore-start -->
@@ -60,8 +60,8 @@ Cloud dashboard for immediate query execution.
 
 You can now run your Polars queries remotely in the cloud. Go to the
 [getting started section](quickstart.md) to your first query in minutes,
-[learn more how to run queries remotely](run/compute-context.md) or manage your workspace to invite
-your team.
+[learn more how to run queries remotely](context/compute-context.md) or manage your workspace to
+invite your team.
 
 <!-- dprint-ignore-start -->
 
@@ -77,6 +77,7 @@ With your workspace connected to AWS, you can execute Polars queries remotely. C
 actions:
 
 - Run your first remote query with the [getting started guide](quickstart.md)
-- Learn about [compute context configuration](run/compute-context.md) for performance optimization
+- Learn about [compute context configuration](context/compute-context.md) for performance
+  optimization
 - Invite [team members](workspace/team.md) to your connected workspace to collaborate on your next
   project.
