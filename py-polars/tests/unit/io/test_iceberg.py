@@ -329,6 +329,59 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_collect_without_version_scans_latest(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "a", LongType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    q = pl.scan_iceberg(tbl, reader_override="native")
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema={"a": pl.Int64}))
+
+    pl.DataFrame({"a": 1}).write_iceberg(tbl, mode="append")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1}))
+
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    snapshot_id = snapshot.snapshot_id
+
+    q_with_id = pl.scan_iceberg(tbl, reader_override="native", snapshot_id=snapshot_id)
+
+    assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
+
+    pl.DataFrame({"a": 2}).write_iceberg(tbl, mode="append")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 1]}))
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
+
+    assert (
+        "IcebergDataset: to_dataset_scan(): early return (snapshot_id_key = "
+        in capfd.readouterr().err
+    )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_extra_columns(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",

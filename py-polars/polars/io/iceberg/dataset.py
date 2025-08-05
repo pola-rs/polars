@@ -63,9 +63,10 @@ class IcebergDataset:
     def to_dataset_scan(
         self,
         *,
+        existing_resolved_version_key: str | None = None,
         limit: int | None = None,
         projection: list[str] | None = None,
-    ) -> LazyFrame:
+    ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -138,9 +139,26 @@ class IcebergDataset:
                 raise ValueError(msg)
 
             iceberg_schema = tbl.schemas()[schema_id]
+            snapshot_id_key = f"{snapshot.snapshot_id}"
         else:
             iceberg_schema = tbl.schema()
             schema_id = tbl.metadata.current_schema_id
+
+            snapshot_id_key = (
+                f"{v.snapshot_id}" if (v := tbl.current_snapshot()) is not None else ""
+            )
+
+        if (
+            existing_resolved_version_key is not None
+            and existing_resolved_version_key == snapshot_id_key
+        ):
+            if verbose:
+                eprint(
+                    "IcebergDataset: to_dataset_scan(): early return "
+                    f"({snapshot_id_key = })"
+                )
+
+            return None
 
         projected_iceberg_schema = (
             iceberg_schema
@@ -246,7 +264,7 @@ class IcebergDataset:
                 ),
                 _default_values=("iceberg", missing_field_defaults.finish()),
                 _deletion_files=("iceberg-position-delete", deletion_files),
-            )
+            ), snapshot_id_key
 
         elif reader_override == "native":
             msg = f"iceberg reader_override='native' failed: {fallback_reason}"
@@ -270,7 +288,7 @@ class IcebergDataset:
 
         lf = pl.LazyFrame._scan_python_function(arrow_schema, func, pyarrow=True)
 
-        return lf
+        return lf, snapshot_id_key
 
     #
     # Accessors
@@ -323,14 +341,14 @@ class IcebergDataset:
 
         if verbose():
             path_repr = state["metadata_path"]
-            snapshot_id = state["snapshot_id"]
+            snapshot_id = f"'{v}'" if (v := state["snapshot_id"]) is not None else None
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
             reader_override = state["reader_override"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
-                f"snapshot_id: '{snapshot_id}', "
+                f"snapshot_id: {snapshot_id}, "
                 f"iceberg_storage_properties: {keys_repr}, "
                 f"reader_override: {reader_override}"
             )
