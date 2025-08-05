@@ -749,3 +749,38 @@ def test_cached_credential_provider_returns_copied_creds() -> None:
     assert provider() == ({"A": "A"}, None)
 
     assert provider_func.call_count == 1
+
+
+def test_cache_user_credential_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    user_provider = Mock(
+        return_value=(
+            {"aws_access_key_id": "...", "aws_secret_access_key": "..."},
+            None,
+        )
+    )
+
+    def get_q() -> pl.LazyFrame:
+        return pl.scan_parquet(
+            "s3://.../...",
+            storage_options={"aws_endpoint_url": "http://localhost:333"},
+            credential_provider=user_provider,
+        )
+
+    assert user_provider.call_count == 0
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert user_provider.call_count == 2
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert user_provider.call_count == 3
+
+    monkeypatch.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        get_q().collect()
+
+    assert user_provider.call_count == 5
