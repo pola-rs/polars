@@ -5,11 +5,7 @@ use polars_utils::IdxSize;
 
 use super::ListNameSpaceImpl;
 
-pub fn lst_get(
-    ca: &ListChunked,
-    index: &Int64Chunked,
-    null_on_oob: bool,
-) -> PolarsResult<Column> {
+pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Column> {
     match index.len() {
         1 => {
             let index = index.get(0);
