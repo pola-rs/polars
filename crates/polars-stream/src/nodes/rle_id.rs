@@ -1,7 +1,6 @@
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
-use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -21,12 +20,7 @@ pub struct RleIdNode {
 }
 
 impl RleIdNode {
-    pub fn new(name: PlSmallStr, schema: &Schema) -> Self {
-        let dtype = if schema.len() == 1 {
-            schema.get_at_index(0).unwrap().1.clone()
-        } else {
-            DataType::Struct(schema.iter_fields().collect())
-        };
+    pub fn new(name: PlSmallStr, dtype: DataType) -> Self {
         Self {
             name,
             index: 0,
