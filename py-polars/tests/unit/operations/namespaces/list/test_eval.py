@@ -166,3 +166,99 @@ def test_list_eval_in_filter_23300() -> None:
         ).height
         == 1
     )
+
+
+@pytest.mark.parametrize(
+    "ldf",
+    [
+        pl.LazyFrame(
+            {"a": [[1, 2, 3], [6, 4, 5], [7, 9, 8]], "id": [1, 1, 2]},
+        ),
+        pl.LazyFrame(
+            {"a": [[{"b": 5}, {"b": 6}], [{"c": 7}]], "id": [1, 2]},
+        ),
+        pl.LazyFrame(
+            {"a": [[]], "id": [1]},
+        ),
+        pl.LazyFrame(
+            {"a": [[{}]], "id": [1]},
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.lit(""),
+        pl.element(),
+        pl.element().is_not_null(),
+        pl.element().first(),
+        pl.element().sum(),
+        pl.element().min(),
+        pl.element().rank(),
+        pl.element().get(0),
+        pl.element().gather([0]),
+    ],
+)
+def test_list_eval_in_group_by_schema(ldf: pl.LazyFrame, expr: pl.Expr) -> None:
+    q_select = ldf.select(x=pl.col("a").list.eval(expr))
+    q_group_by = ldf.group_by("id").agg(x=pl.col("a").list.eval(expr))
+    q_over = ldf.select(x=pl.col("a").list.eval(expr).over("id"))
+
+    # skip index 0 on the empty list
+    skip = ("get" in str(expr) or "gather" in str(expr)) and ldf.select(
+        pl.col("a").first().list.len()
+    ).collect().to_series()[0] == 0
+
+    for q in [q_select, q_group_by, q_over]:
+        if not skip:
+            assert q.collect_schema() == q.collect().schema
+
+
+def test_list_eval_in_group_by_value() -> None:
+    ldf = pl.LazyFrame(
+        {"a": [[1, 2, 3], [6, 4, 5], [7, 9, 8]], "id": [1, 1, 2]},
+    )
+
+    expr = pl.element().first()
+
+    # select
+    q = ldf.select(x=pl.col("a").list.eval(expr))
+    expected = pl.Series("x", [[1], [6], [7]])
+    assert_series_equal(q.collect().to_series(), expected)
+
+    # group_by
+    q = ldf.group_by("id").agg(x=pl.col("a").list.eval(expr)).select("x")
+    expected = pl.Series("x", [[[1], [6]], [[7]]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+
+    # over
+    q = ldf.select(x=pl.col("a").list.eval(expr).over("id"))
+    expected = pl.Series("x", [[1], [6], [7]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+
+
+def test_list_eval_struct_in_group_by_23846() -> None:
+    dict = {"b": 5}
+    ldf = pl.LazyFrame(
+        {"a": [[dict, dict], [dict]], "id": [1, 2]},
+    )
+
+    expr = pl.element().struct.field("b")
+
+    # select
+    q = ldf.select(x=pl.col("a").list.eval(expr))
+    expected = pl.Series("x", [[5, 5], [5]])
+    assert_series_equal(q.collect().to_series(), expected)
+    assert q.collect_schema() == q.collect().schema
+
+    # group_by
+    q = ldf.group_by("id").agg(x=pl.col("a").list.eval(expr)).select("x")
+    expected = pl.Series("x", [[[5, 5]], [[5]]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+    assert q.collect_schema() == q.collect().schema
+
+    # over
+    q = ldf.select(x=pl.col("a").list.eval(expr).over("id"))
+    expected = pl.Series("x", [[5, 5], [5]])
+    assert_series_equal(q.collect().to_series().sort(), expected.sort())
+    assert q.collect_schema() == q.collect().schema
