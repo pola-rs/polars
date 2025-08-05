@@ -813,7 +813,7 @@ def test_json_decode_nested_struct() -> None:
         '[{"key_1": "a3", "key_2": 3, "key_3": "c"}]',
     ]
     s = pl.Series("json_str", json)
-    s_parsed = s.str.json_decode()
+    s_parsed = s.str.json_decode().rename("parsed_list_json")
 
     expected_dtype = pl.List(
         pl.Struct(
