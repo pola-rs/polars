@@ -198,6 +198,11 @@ pub enum PhysNodeKind {
         repeats: PhysStream,
     },
 
+    RleId {
+        input: PhysStream,
+        name: PlSmallStr,
+    },
+
     OrderedUnion {
         inputs: Vec<PhysStream>,
     },
@@ -335,6 +340,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::RleId { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
