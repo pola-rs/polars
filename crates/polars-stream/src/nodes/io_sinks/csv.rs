@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::pin::Pin;
 
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
@@ -11,11 +12,15 @@ use polars_utils::priority::Priority;
 
 use super::{SinkInputPort, SinkNode};
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::Receiver;
+use crate::async_primitives::connector::{Receiver, Sender, connector};
+use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
+use crate::morsel::MorselSeq;
 use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{JoinHandle, TaskPriority};
+
+type IOSend = Linearizer<Priority<Reverse<MorselSeq>, Vec<u8>>>;
 
 pub struct CsvSinkNode {
     target: SinkTarget,
@@ -23,6 +28,9 @@ pub struct CsvSinkNode {
     sink_options: SinkOptions,
     write_options: CsvWriterOptions,
     cloud_options: Option<CloudOptions>,
+
+    io_tx: Option<Sender<IOSend>>,
+    io_task: Option<tokio_util::task::AbortOnDropHandle<PolarsResult<()>>>,
 }
 impl CsvSinkNode {
     pub fn new(
@@ -38,6 +46,9 @@ impl CsvSinkNode {
             sink_options,
             write_options,
             cloud_options,
+
+            io_tx: None,
+            io_task: None,
         }
     }
 }
@@ -51,17 +62,81 @@ impl SinkNode for CsvSinkNode {
         true
     }
 
+    fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
+        let (io_tx, mut io_rx) = connector::<Linearizer<Priority<Reverse<MorselSeq>, Vec<u8>>>>();
+
+        // IO task.
+        //
+        // Task that will actually do write to the target file.
+        let target = self.target.clone();
+        let sink_options = self.sink_options.clone();
+        let schema = self.schema.clone();
+        let options = self.write_options.clone();
+        let cloud_options = self.cloud_options.clone();
+        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
+            use tokio::io::AsyncWriteExt;
+
+            let mut file = target
+                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .await?;
+
+            // Write the header
+            if options.include_header || options.include_bom {
+                let mut writer = CsvWriter::new(&mut *file)
+                    .include_bom(options.include_bom)
+                    .include_header(options.include_header)
+                    .with_separator(options.serialize_options.separator)
+                    .with_line_terminator(options.serialize_options.line_terminator.clone())
+                    .with_quote_char(options.serialize_options.quote_char)
+                    .with_datetime_format(options.serialize_options.datetime_format.clone())
+                    .with_date_format(options.serialize_options.date_format.clone())
+                    .with_time_format(options.serialize_options.time_format.clone())
+                    .with_float_scientific(options.serialize_options.float_scientific)
+                    .with_float_precision(options.serialize_options.float_precision)
+                    .with_decimal_comma(options.serialize_options.decimal_comma)
+                    .with_null_value(options.serialize_options.null.clone())
+                    .with_quote_style(options.serialize_options.quote_style)
+                    .n_threads(1) // Disable rayon parallelism
+                    .batched(&schema)?;
+                writer.write_batch(&DataFrame::empty_with_schema(&schema))?;
+            }
+
+            let mut file = file.try_into_async_writeable()?;
+
+            while let Ok(mut lin_rx) = io_rx.recv().await {
+                while let Some(Priority(_, buffer)) = lin_rx.get().await {
+                    file.write_all(&buffer).await?;
+                }
+            }
+
+            file.sync_on_close(sink_options.sync_on_close).await?;
+            file.close().await?;
+
+            PolarsResult::Ok(())
+        });
+
+        self.io_tx = Some(io_tx);
+        self.io_task = Some(tokio_util::task::AbortOnDropHandle::new(io_task));
+
+        Ok(())
+    }
+
     fn spawn_sink(
         &mut self,
         recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
         state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        let (pass_rxs, mut io_rx) = parallelize_receive_task(
+        let io_tx = self
+            .io_tx
+            .take()
+            .expect("not initialized / spawn called more than once");
+        let pass_rxs = parallelize_receive_task(
             join_handles,
             recv_port_rx,
             state.num_pipelines,
             self.sink_options.maintain_order,
+            io_tx,
         );
 
         // 16MB
@@ -116,60 +191,26 @@ impl SinkNode for CsvSinkNode {
                 PolarsResult::Ok(())
             })
         }));
+    }
 
-        // IO task.
-        //
-        // Task that will actually do write to the target file.
-        let target = self.target.clone();
-        let sink_options = self.sink_options.clone();
-        let schema = self.schema.clone();
-        let options = self.write_options.clone();
-        let cloud_options = self.cloud_options.clone();
-        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            use tokio::io::AsyncWriteExt;
+    fn finalize(
+        &mut self,
+        _state: &StreamingExecutionState,
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
+        // If we were never spawned, we need to make sure that the `tx` is taken. This signals to
+        // the IO task that it is done and prevents deadlocks.
+        drop(self.io_tx.take());
 
-            let mut file = target
-                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
-                .await?;
+        let io_task = self
+            .io_task
+            .take()
+            .expect("not initialized / finish called more than once");
 
-            // Write the header
-            if options.include_header || options.include_bom {
-                let mut writer = CsvWriter::new(&mut *file)
-                    .include_bom(options.include_bom)
-                    .include_header(options.include_header)
-                    .with_separator(options.serialize_options.separator)
-                    .with_line_terminator(options.serialize_options.line_terminator.clone())
-                    .with_quote_char(options.serialize_options.quote_char)
-                    .with_datetime_format(options.serialize_options.datetime_format.clone())
-                    .with_date_format(options.serialize_options.date_format.clone())
-                    .with_time_format(options.serialize_options.time_format.clone())
-                    .with_float_scientific(options.serialize_options.float_scientific)
-                    .with_float_precision(options.serialize_options.float_precision)
-                    .with_decimal_comma(options.serialize_options.decimal_comma)
-                    .with_null_value(options.serialize_options.null.clone())
-                    .with_quote_style(options.serialize_options.quote_style)
-                    .n_threads(1) // Disable rayon parallelism
-                    .batched(&schema)?;
-                writer.write_batch(&DataFrame::empty_with_schema(&schema))?;
-            }
-
-            let mut file = file.try_into_async_writeable()?;
-
-            while let Ok(mut lin_rx) = io_rx.recv().await {
-                while let Some(Priority(_, buffer)) = lin_rx.get().await {
-                    file.write_all(&buffer).await?;
-                }
-            }
-
-            file.sync_on_close(sink_options.sync_on_close).await?;
-            file.close().await?;
-
-            PolarsResult::Ok(())
-        });
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        // Wait for the IO task to complete.
+        Some(Box::pin(async move {
             io_task
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
-        }));
+        }))
     }
 }
