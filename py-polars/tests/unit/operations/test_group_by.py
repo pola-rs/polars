@@ -1411,3 +1411,46 @@ def test_group_by_series_lit_22103(maintain_order: bool) -> None:
         ),
         check_row_order=maintain_order,
     )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_filter_sum_23897(maintain_order: bool) -> None:
+    testdf = pl.DataFrame(
+        {
+            "id": [8113, 9110, 9110],
+            "value": [None, None, 1.0],
+            "weight": [1.0, 1.0, 1.0],
+        }
+    )
+
+    w = pl.col("weight").filter(pl.col("value").is_finite())
+
+    w = w / w.sum()
+
+    result = w.sum()
+
+    assert_frame_equal(
+        testdf.group_by("id", maintain_order=maintain_order).agg(result),
+        pl.DataFrame({"id": [8113, 9110], "weight": [0.0, 1.0]}),
+        check_row_order=maintain_order,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_shift_filter_23910(maintain_order: bool) -> None:
+    df = pl.DataFrame({"a": [3, 7, 5, 9, 2, 1], "b": [2, 2, 2, 3, 3, 1]})
+
+    out = df.group_by("b", maintain_order=maintain_order).agg(
+        pl.col("a").filter(pl.col("a") > pl.col("a").shift(1)).sum().alias("tt")
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "b": [2, 3, 1],
+                "tt": [7, 0, 0],
+            }
+        ),
+        check_row_order=maintain_order,
+    )
