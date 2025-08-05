@@ -329,8 +329,10 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", ["pyiceberg", "native"])
 def test_scan_iceberg_collect_without_version_scans_latest(
     tmp_path: Path,
+    reader_override: str,
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -351,7 +353,7 @@ def test_scan_iceberg_collect_without_version_scans_latest(
 
     tbl = catalog.load_table("namespace.table")
 
-    q = pl.scan_iceberg(tbl, reader_override="native")
+    q = pl.scan_iceberg(tbl, reader_override=reader_override)  # type: ignore[arg-type]
 
     assert_frame_equal(q.collect(), pl.DataFrame(schema={"a": pl.Int64}))
 
@@ -363,7 +365,11 @@ def test_scan_iceberg_collect_without_version_scans_latest(
     assert snapshot is not None
     snapshot_id = snapshot.snapshot_id
 
-    q_with_id = pl.scan_iceberg(tbl, reader_override="native", snapshot_id=snapshot_id)
+    q_with_id = pl.scan_iceberg(
+        tbl,
+        reader_override=reader_override,  # type: ignore[arg-type]
+        snapshot_id=snapshot_id,
+    )
 
     assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
 
