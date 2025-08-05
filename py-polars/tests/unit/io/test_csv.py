@@ -2784,3 +2784,10 @@ def test_stop_split_fields_simd_23651() -> None:
     df = pl.read_csv(buf, truncate_ragged_lines=True, has_header=False, schema=schema)
     assert df.shape == (7, 27)
     assert df["column_26"].null_count() == 7
+
+
+def test_read_csv_decimal_header_only_200008() -> None:
+    csv = "a,b"
+
+    df = pl.read_csv(csv.encode(), schema={"a": pl.Decimal(scale=2), "b": pl.String})
+    assert df.dtypes == [pl.Decimal(scale=2), pl.String]
