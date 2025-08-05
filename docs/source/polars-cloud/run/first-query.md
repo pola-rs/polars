@@ -7,7 +7,7 @@ need it.
 
 !!! note "Polars Cloud is set up and connected"
 
-    This page assumes that you have created an organization and connected a workspace to your cloud information. If you haven't yet, find more information on [Connect cloud environment](../connect-cloud.md) page
+    This page assumes that you have created an organization and connected a workspace to your cloud environment. If you haven't yet, find more information on [Connect cloud environment](../connect-cloud.md) page
 
 ## Define your local query
 
