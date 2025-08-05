@@ -108,7 +108,9 @@ impl ComputeNode for RleIdNode {
                         self.index += 1;
                         values.extend(std::iter::repeat_n(self.index, *length as usize));
                     }
-                    Column::new(self.name.clone(), values)
+                    let mut column = Column::new(self.name.clone(), values);
+                    column.set_sorted_flag(polars_core::series::IsSorted::Ascending);
+                    column
                 };
 
                 // SAFETY:
