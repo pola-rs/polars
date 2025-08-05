@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
@@ -376,8 +375,8 @@ def scan_delta(
             msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
             raise DeltaProtocolError(msg)
 
-    delta_schema = dl_tbl.schema().to_arrow()
-    polars_schema = from_arrow(delta_schema.empty_table()).schema  # type: ignore[union-attr]
+    delta_schema = dl_tbl.schema()
+    polars_schema = Schema(delta_schema)
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(

@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, UnstableWarning
+from polars.exceptions import ComputeError, DuplicateError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
@@ -1011,3 +1011,38 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
     out = pl.DataFrame(arrow_tbl)
 
     assert_frame_equal(out, expect)
+
+
+def test_schema_constructor_from_schema_capsule() -> None:
+    arrow_schema = pa.schema(
+        [pa.field("test", pa.map_(pa.int32(), pa.timestamp("ms")))]
+    )
+
+    assert pl.Schema(arrow_schema) == {
+        "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
+    }
+
+    arrow_schema = pa.schema([pa.field("a", pa.int32()), pa.field("a", pa.int32())])
+
+    with pytest.raises(
+        DuplicateError,
+        match="arrow schema contained duplicate name: a",
+    ):
+        pl.Schema(arrow_schema)
+
+    with pytest.raises(
+        ValueError,
+        match="object passed to pl.Schema did not return struct dtype: object: pyarrow.Field<a: int32>, dtype: Int32",
+    ):
+        pl.Schema(pa.field("a", pa.int32()))
+
+    assert pl.Schema([pa.field("a", pa.int32()), pa.field("b", pa.string())]) == {
+        "a": pl.Int32,
+        "b": pl.String,
+    }
+
+    with pytest.raises(
+        DuplicateError,
+        match="iterable passed to pl.Schema contained duplicate name 'a'",
+    ):
+        pl.Schema([pa.field("a", pa.int32()), pa.field("a", pa.int64())])
