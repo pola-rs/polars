@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, Literal
@@ -35,8 +35,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from polars import DataFrame, LazyFrame
     from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
@@ -293,7 +291,7 @@ def read_csv(
                 raise ValueError(msg)
 
     if schema_overrides is not None and not isinstance(
-        schema_overrides, (dict, Sequence)
+        schema_overrides, (Mapping, Sequence)
     ):
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
@@ -367,7 +365,7 @@ def read_csv(
             return _update_columns(df, new_columns)
         return df
 
-    if projection and schema_overrides and isinstance(schema_overrides, list):
+    if projection and schema_overrides and isinstance(schema_overrides, Sequence):
         if len(projection) < len(schema_overrides):
             msg = "more schema overrides are specified than there are selected columns"
             raise ValueError(msg)
@@ -382,7 +380,7 @@ def read_csv(
 
         schema_overrides = dtypes_list
 
-    if columns and schema_overrides and isinstance(schema_overrides, list):
+    if columns and schema_overrides and isinstance(schema_overrides, Sequence):
         if len(columns) < len(schema_overrides):
             msg = "more dtypes overrides are specified than there are selected columns"
             raise ValueError(msg)
@@ -392,7 +390,7 @@ def read_csv(
         # columns.
         schema_overrides = dict(zip(columns, schema_overrides))
 
-    if new_columns and schema_overrides and isinstance(schema_overrides, dict):
+    if new_columns and schema_overrides and isinstance(schema_overrides, Mapping):
         current_columns = None
 
         # As new column names are not available yet while parsing the CSV file, rename
@@ -447,7 +445,7 @@ def read_csv(
                 if len(dtype_list) == len(schema_overrides):
                     schema_overrides = dtype_list
 
-        if current_columns and isinstance(schema_overrides, dict):
+        if current_columns and isinstance(schema_overrides, Mapping):
             new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
             schema_overrides = {
@@ -629,7 +627,7 @@ def _read_csv_impl(
     dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
     dtype_slice: Sequence[PolarsDataType] | None = None
     if schema_overrides is not None:
-        if isinstance(schema_overrides, dict):
+        if isinstance(schema_overrides, Mapping):
             dtype_list = []
             for k, v in schema_overrides.items():
                 dtype_list.append((k, parse_into_dtype(v)))
@@ -961,7 +959,7 @@ def read_csv_batched(
         # columns.
         schema_overrides = dict(zip(columns, schema_overrides))
 
-    if new_columns and schema_overrides and isinstance(schema_overrides, dict):
+    if new_columns and schema_overrides and isinstance(schema_overrides, Mapping):
         current_columns = None
 
         # As new column names are not available yet while parsing the CSV file, rename
@@ -1010,7 +1008,7 @@ def read_csv_batched(
                 if len(dtype_list) == len(schema_overrides):
                     schema_overrides = dtype_list
 
-        if current_columns and isinstance(schema_overrides, dict):
+        if current_columns and isinstance(schema_overrides, Mapping):
             new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
             schema_overrides = {
@@ -1314,7 +1312,7 @@ def scan_csv(
     └─────┴──────┘
     """
     if schema_overrides is not None and not isinstance(
-        schema_overrides, (dict, Sequence)
+        schema_overrides, (Mapping, Sequence)
     ):
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
@@ -1392,15 +1390,17 @@ def scan_csv(
 
 
 def _scan_csv_impl(
-    source: str
-    | IO[str]
-    | IO[bytes]
-    | bytes
-    | list[str]
-    | list[Path]
-    | list[IO[str]]
-    | list[IO[bytes]]
-    | list[bytes],
+    source: (
+        str
+        | IO[str]
+        | IO[bytes]
+        | bytes
+        | list[str]
+        | list[Path]
+        | list[IO[str]]
+        | list[IO[bytes]]
+        | list[bytes]
+    ),
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1437,8 +1437,8 @@ def _scan_csv_impl(
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
-        if not isinstance(schema_overrides, dict):
-            msg = "expected 'schema_overrides' dict, found 'list'"
+        if not isinstance(schema_overrides, Mapping):
+            msg = "expected 'schema_overrides' mapping, found sequence"
             raise TypeError(msg)
         dtype_list = []
         for k, v in schema_overrides.items():
