@@ -98,7 +98,9 @@ def test_pivot_list() -> None:
         ("median", [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]),
     ],
 )
-def test_pivot_aggregate(agg_fn: PivotAgg, expected_rows: list[tuple[Any]]) -> None:
+def test_pivot_aggregate(
+    agg_fn: PivotAgg, expected_rows: list[tuple[Any, ...]]
+) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 2, 2, 3],
