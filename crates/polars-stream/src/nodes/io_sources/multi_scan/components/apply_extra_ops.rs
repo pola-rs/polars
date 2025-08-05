@@ -178,7 +178,10 @@ impl ApplyExtraOps {
                         match &selector_builder.missing_columns_policy {
                             MissingColumnsPolicy::Insert => ColumnSelector::Constant(Box::new((
                                 output_name.clone(),
-                                Scalar::null(output_dtype.clone()),
+                                projection
+                                    .get_default_value_by_output_name(output_name)
+                                    .cloned()
+                                    .unwrap_or_else(|| Scalar::null(output_dtype.clone())),
                             ))),
                             MissingColumnsPolicy::Raise => {
                                 return Err(missing_column_err(output_name));

@@ -123,6 +123,8 @@ impl OptimizationRule for ExpandDatasets {
                                 cache,
                                 glob: _,
                                 projection: _projection @ None,
+                                column_mapping,
+                                default_values,
                                 row_index: _row_index @ None,
                                 pre_slice: _pre_slice @ None,
                                 cast_columns_policy,
@@ -130,7 +132,6 @@ impl OptimizationRule for ExpandDatasets {
                                 extra_columns_policy,
                                 include_file_paths: _include_file_paths @ None,
                                 deletion_files,
-                                column_mapping,
                             } = resolved_unified_scan_args.as_ref()
                             else {
                                 panic!(
@@ -145,8 +146,9 @@ impl OptimizationRule for ExpandDatasets {
                             unified_scan_args.cast_columns_policy = cast_columns_policy.clone();
                             unified_scan_args.missing_columns_policy = *missing_columns_policy;
                             unified_scan_args.extra_columns_policy = *extra_columns_policy;
-                            unified_scan_args.deletion_files = deletion_files.clone();
                             unified_scan_args.column_mapping = column_mapping.clone();
+                            unified_scan_args.default_values = default_values.clone();
+                            unified_scan_args.deletion_files = deletion_files.clone();
 
                             *sources = resolved_sources.clone();
 

@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::schema::{Schema, SchemaRef};
-use polars_plan::dsl::ColumnMapping;
 use polars_plan::plans::hive::HivePartitionsDf;
-
-use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 
 /// Returns the schema containing columns to project from the file.
 ///
@@ -26,8 +23,7 @@ pub fn resolve_projections(
     // TODO: One day update IR conversion to avoid attaching these to the file schema :')
     row_index_name: Option<&str>,
     include_file_paths: Option<&str>,
-    column_mapping: Option<&ColumnMapping>,
-) -> (ProjectionBuilder, SchemaRef) {
+) -> (SchemaRef, SchemaRef) {
     if let Some(hive_parts) = hive_parts.as_mut() {
         let projected_hive_parts: HivePartitionsDf = hive_parts
             .df()
@@ -70,8 +66,5 @@ pub fn resolve_projections(
         Arc::make_mut(&mut full_file_schema).shift_remove(include_file_paths.unwrap());
     }
 
-    let projection_builder =
-        ProjectionBuilder::new(Arc::new(projected_file_schema), column_mapping);
-
-    (projection_builder, full_file_schema)
+    (Arc::new(projected_file_schema), full_file_schema)
 }

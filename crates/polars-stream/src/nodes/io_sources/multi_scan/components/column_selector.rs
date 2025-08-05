@@ -13,6 +13,7 @@ use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPoli
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
+use crate::nodes::io_sources::multi_scan::components::default_field_values::IcebergDefaultValueProviderRef;
 use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
 
 /// This is a physical expression that is specialized for performing positional column selections,
@@ -610,7 +611,15 @@ impl ColumnSelectorBuilder {
         input_selector: ColumnSelector,
         incoming_column: &IcebergColumn,
         target_column: &IcebergColumn,
+        mut iceberg_default_value_provider: Option<IcebergDefaultValueProviderRef>,
     ) -> PolarsResult<ColumnSelector> {
+        use IcebergColumnType as ICT;
+
+        match &target_column.type_ {
+            ICT::FixedSizeList(..) | ICT::List(_) => iceberg_default_value_provider = None,
+            ICT::Struct(_) | ICT::Primitive { .. } => {},
+        }
+
         let selector = (|| {
             let target_dtype = &target_column.type_;
             let incoming_dtype = &incoming_column.type_;
@@ -629,8 +638,6 @@ impl ColumnSelectorBuilder {
                     hint,
                 )
             };
-
-            use IcebergColumnType as ICT;
 
             let out = match target_dtype {
                 ICT::Struct(target_fields) => {
@@ -670,13 +677,20 @@ impl ColumnSelectorBuilder {
                                 ColumnSelector::Position(incoming_index),
                                 incoming_column,
                                 output_column,
+                                iceberg_default_value_provider,
                             )?
                         } else {
                             match &self.cast_columns_policy.missing_struct_fields {
                                 MissingColumnsPolicy::Insert => {
                                     ColumnSelector::Constant(Box::new((
                                         output_column.name.clone(),
-                                        Scalar::null(output_column.type_.to_polars_dtype()),
+                                        iceberg_default_value_provider
+                                            .map(|x| build_iceberg_default_value(x, target_column))
+                                            .transpose()?
+                                            .flatten()
+                                            .unwrap_or_else(|| {
+                                                Scalar::null(output_column.type_.to_polars_dtype())
+                                            }),
                                     )))
                                 },
                                 MissingColumnsPolicy::Raise => {
@@ -720,6 +734,7 @@ impl ColumnSelectorBuilder {
                         ColumnSelector::Position(0),
                         incoming_inner,
                         target_inner,
+                        iceberg_default_value_provider,
                     )? {
                         ColumnSelector::Position(0) => input_selector,
                         values_selector => ColumnTransform::ListValuesMapping { values_selector }
@@ -748,6 +763,7 @@ impl ColumnSelectorBuilder {
                             ColumnSelector::Position(0),
                             incoming_inner,
                             target_inner,
+                            iceberg_default_value_provider,
                         )? {
                             ColumnSelector::Position(0) => input_selector,
                             values_selector => {
@@ -793,5 +809,76 @@ impl ColumnSelectorBuilder {
         };
 
         Ok(selector)
+    }
+}
+
+pub fn build_iceberg_default_value(
+    iceberg_default_value_provider: IcebergDefaultValueProviderRef,
+    target_column: &IcebergColumn,
+) -> PolarsResult<Option<Scalar>> {
+    let Some(c) = build_iceberg_default_value_impl(iceberg_default_value_provider, target_column)?
+    else {
+        return Ok(None);
+    };
+
+    assert_eq!(c.len(), 1);
+
+    Ok(Some(Scalar::new(
+        c.dtype().clone(),
+        c.get(0).unwrap().into_static(),
+    )))
+}
+
+pub fn build_iceberg_default_value_impl(
+    iceberg_default_value_provider: IcebergDefaultValueProviderRef,
+    target_column: &IcebergColumn,
+) -> PolarsResult<Option<Column>> {
+    use IcebergColumnType as ICT;
+
+    match &target_column.type_ {
+        ICT::FixedSizeList(..) | ICT::List(_) => Ok(None),
+
+        ICT::Struct(fields) => {
+            use polars_core::prelude::StructChunked;
+
+            let mut is_input_passthrough = true;
+
+            let mut field_columns = Vec::with_capacity(fields.len());
+
+            for field in fields.values() {
+                let opt_default =
+                    build_iceberg_default_value_impl(iceberg_default_value_provider, field)?;
+
+                is_input_passthrough &= opt_default.is_none();
+
+                field_columns.push(if let Some(default) = opt_default {
+                    assert_eq!(default.len(), 1);
+                    default.with_name(field.name.clone())
+                } else {
+                    Column::full_null(field.name.clone(), 1, &field.type_.to_polars_dtype())
+                });
+            }
+
+            if is_input_passthrough {
+                Ok(None)
+            } else {
+                Ok(Some(
+                    StructChunked::from_columns(target_column.name.clone(), 1, &field_columns)?
+                        .into_series()
+                        .into_column(),
+                ))
+            }
+        },
+
+        ICT::Primitive { dtype } => Ok(iceberg_default_value_provider
+            .get_default_value(target_column.physical_id)?
+            .map(|any_value| {
+                debug_assert_eq!(&any_value.dtype(), dtype);
+
+                PolarsResult::Ok(
+                    Series::from_any_values(PlSmallStr::EMPTY, &[any_value], true)?.into_column(),
+                )
+            })
+            .transpose()?),
     }
 }
