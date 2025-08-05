@@ -1,9 +1,9 @@
-use std::borrow::Cow;
-
-use polars_core::prelude::{AnyValue, Column, DataType, IntoColumn};
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ComputeNode;
@@ -60,6 +60,9 @@ impl ComputeNode for RleIdNode {
         _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
+        assert_eq!(recv_ports.len(), 1);
+        assert_eq!(send_ports.len(), 1);
+
         let mut recv = recv_ports[0].take().unwrap().serial();
         let mut send = send_ports[0].take().unwrap().serial();
 
@@ -71,27 +74,19 @@ impl ComputeNode for RleIdNode {
                     continue;
                 }
 
-                let column = if df.width() == 1 {
-                    Cow::Borrowed(&df[0])
-                } else {
-                    Cow::Owned(
-                        std::mem::take(df)
-                            .into_struct(PlSmallStr::EMPTY)
-                            .into_column(),
-                    )
-                };
-                let column = column.as_ref();
+                assert_eq!(df.width(), 1);
+                let column = &df[0];
 
                 lengths.clear();
                 polars_ops::series::rle_lengths(column, &mut lengths)?;
 
                 // If the last value seen is different from this first value here, bump the index
                 // by 1.
-                self.index += IdxSize::from(self.last.take().is_some_and(|last| {
+                if let Some(last) = self.last.take() {
                     let fst = Scalar::new(self.dtype.clone(), column.get(0).unwrap().into_static());
                     let last = Scalar::new(self.dtype.clone(), last);
-                    fst != last
-                }));
+                    self.index += IdxSize::from(fst != last);
+                }
                 self.last = Some(column.get(column.len() - 1).unwrap().into_static());
 
                 let column = if lengths.len() == 1 {
@@ -113,20 +108,7 @@ impl ComputeNode for RleIdNode {
                     column
                 };
 
-                // SAFETY:
-                // - No name collision, because we insert only one column.
-                // - Height updated to that columns length.
-                // - Schema cache cleared after.
-                unsafe {
-                    df.set_height(column.len());
-                    let columns = df.get_columns_mut();
-                    if columns.len() != 1 {
-                        *columns = vec![column];
-                    } else {
-                        columns[0] = column;
-                    }
-                }
-                df.clear_schema();
+                *df = unsafe { DataFrame::new_no_checks(column.len(), vec![column]) };
 
                 if send.send(m).await.is_err() {
                     break;
