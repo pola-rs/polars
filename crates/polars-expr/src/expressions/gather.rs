@@ -1,8 +1,9 @@
-use arrow::legacy::utils::CustomIterTools;
-use polars_core::chunked_array::builder::get_list_builder;
+use polars_core::chunked_array::cast::CastOptions;
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
-use polars_ops::prelude::{convert_to_unsigned_index, is_positive_idx_uncertain_col};
+use polars_ops::prelude::lst_get;
+use polars_ops::series::convert_to_unsigned_index;
+use polars_utils::index::ToIdx;
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -21,7 +22,9 @@ impl PhysicalExpr for GatherExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
-        self.finish(df, state, series)
+        let idx = self.idx.evaluate(df, state)?;
+        let idx = convert_to_unsigned_index(idx.as_materialized_series(), series.len())?;
+        series.take(&idx)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -34,51 +37,74 @@ impl PhysicalExpr for GatherExpr {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
 
-        let c_idx = idx.get_values();
-        match c_idx.dtype() {
-            DataType::List(inner) => {
-                polars_ensure!(inner.is_integer(), InvalidOperation: "expected numeric dtype as index, got {:?}", inner)
-            },
-            dt if dt.is_integer() => {
-                // Unsigned integers will fall through and will use faster paths.
-                if !is_positive_idx_uncertain_col(c_idx) {
-                    return self.process_negative_indices_agg(ac, idx, groups);
-                }
-            },
-            dt => polars_bail!(InvalidOperation: "expected numeric dtype as index, got {:?}", dt),
+        let ac_list = ac.aggregated_as_list();
+
+        if self.returns_scalar {
+            polars_ensure!(
+                !matches!(idx.agg_state(), AggState::AggregatedList(_) | AggState::NotAggregated(_)),
+                ComputeError: "expected single index"
+            );
+
+            // For returns_scalar=true, we can dispatch to `list.get`.
+            let idx = idx.flat_naive();
+            let idx = idx.cast(&DataType::Int64)?;
+            let idx = idx.i64().unwrap();
+            let taken = lst_get(ac_list.as_ref(), idx, true)?.unwrap();
+
+            ac.with_values_and_args(taken, true, Some(&self.expr), false, true)?;
+            ac.with_update_groups(UpdateGroups::No);
+            return Ok(ac);
         }
 
-        let idx = match idx.state {
-            AggState::AggregatedScalar(s) => {
-                let idx = s.cast(&IDX_DTYPE)?;
-                return self.process_positive_indices_agg_scalar(ac, idx.idx().unwrap());
+        // Cast the indices to
+        // - IdxSize, if the idx only contains positive integers.
+        // - Int64,   if the idx contains negative numbers.
+        // This may give false positives if there are masked out elements.
+        let idx = idx.aggregated_as_list();
+        let idx = idx.apply_to_inner(&|s| match s.dtype() {
+            dtype if dtype == &IDX_DTYPE => Ok(s),
+            dtype if dtype.is_unsigned_integer() => {
+                s.cast_with_options(&IDX_DTYPE, CastOptions::Strict)
             },
-            AggState::AggregatedList(s) => {
-                polars_ensure!(!self.returns_scalar, ComputeError: "expected single index");
-                s.list().unwrap().clone()
-            },
-            // Maybe a literal as well, this needs a different path.
-            AggState::NotAggregated(_) => {
-                polars_ensure!(!self.returns_scalar, ComputeError: "expected single index");
-                let s = idx.aggregated();
-                s.list().unwrap().clone()
-            },
-            AggState::Literal(s) => {
-                let idx = s.cast(&IDX_DTYPE)?;
-                return self.process_positive_indices_agg_literal(ac, idx.idx().unwrap());
-            },
-        };
 
-        let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;
-        let idx = s.list().unwrap();
+            dtype if dtype.is_signed_integer() => {
+                let has_negative_integers = s.lt(0)?.any();
+                if has_negative_integers && dtype == &DataType::Int64 {
+                    Ok(s)
+                } else if has_negative_integers {
+                    s.cast_with_options(&DataType::Int64, CastOptions::Strict)
+                } else {
+                    s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
+                }
+            },
+            _ => unreachable!(),
+        })?;
 
-        let taken = {
-            ac.aggregated()
-                .list()
-                .unwrap()
+        let taken = if idx.inner_dtype() == &IDX_DTYPE {
+            // Fast path: all indices are positive.
+
+            ac_list
                 .amortized_iter()
                 .zip(idx.amortized_iter())
                 .map(|(s, idx)| Some(s?.as_ref().take(idx?.as_ref().idx().unwrap())))
+                .map(|opt_res| opt_res.transpose())
+                .collect::<PolarsResult<ListChunked>>()?
+                .with_name(ac.get_values().name().clone())
+        } else {
+            // Slower path: some indices may be negative.
+            assert!(idx.inner_dtype() == &DataType::Int64);
+
+            ac_list
+                .amortized_iter()
+                .zip(idx.amortized_iter())
+                .map(|(s, idx)| {
+                    let s = s?;
+                    let idx = idx?;
+                    let idx = idx.as_ref().i64().unwrap();
+                    let target_len = s.as_ref().len() as u64;
+                    let idx = unary_elementwise_values(idx, |v| v.to_idx(target_len));
+                    Some(s.as_ref().take(&idx))
+                })
                 .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?
                 .with_name(ac.get_values().name().clone())
@@ -95,191 +121,5 @@ impl PhysicalExpr for GatherExpr {
 
     fn is_scalar(&self) -> bool {
         self.returns_scalar
-    }
-}
-
-impl GatherExpr {
-    fn finish(
-        &self,
-        df: &DataFrame,
-        state: &ExecutionState,
-        series: Column,
-    ) -> PolarsResult<Column> {
-        let idx = self.idx.evaluate(df, state)?;
-        let idx = convert_to_unsigned_index(idx.as_materialized_series(), series.len())?;
-        series.take(&idx)
-    }
-
-    fn oob_err(&self) -> PolarsResult<()> {
-        polars_bail!(expr = self.expr, OutOfBounds: "index out of bounds");
-    }
-
-    fn process_positive_indices_agg_scalar<'b>(
-        &self,
-        mut ac: AggregationContext<'b>,
-        idx: &IdxCa,
-    ) -> PolarsResult<AggregationContext<'b>> {
-        if ac.is_not_aggregated() {
-            // A previous aggregation may have updated the groups.
-            let groups = ac.groups();
-
-            // Determine the gather indices.
-            let idx: IdxCa = match groups.as_ref().as_ref() {
-                GroupsType::Idx(groups) => {
-                    if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
-                        None => false,
-                        Some(idx) => idx >= g.len() as IdxSize,
-                    }) {
-                        self.oob_err()?;
-                    }
-
-                    idx.into_iter()
-                        .zip(groups.iter())
-                        .map(|(idx, (_first, groups))| {
-                            idx.map(|idx| {
-                                // SAFETY:
-                                // we checked bounds
-                                unsafe { *groups.get_unchecked(usize::try_from(idx).unwrap()) }
-                            })
-                        })
-                        .collect_trusted()
-                },
-                GroupsType::Slice { groups, .. } => {
-                    if groups.iter().zip(idx).any(|(g, idx)| match idx {
-                        None => false,
-                        Some(idx) => idx >= g[1],
-                    }) {
-                        self.oob_err()?;
-                    }
-
-                    idx.into_iter()
-                        .zip(groups.iter())
-                        .map(|(idx, g)| idx.map(|idx| idx + g[0]))
-                        .collect_trusted()
-                },
-            };
-
-            let taken = ac.flat_naive().take(&idx)?;
-            let taken = if self.returns_scalar {
-                taken
-            } else {
-                taken.as_list().into_column()
-            };
-
-            ac.with_values_and_args(taken, true, Some(&self.expr), false, self.returns_scalar)?;
-
-            if self.returns_scalar {
-                ac.with_update_groups(UpdateGroups::No);
-            } else {
-                ac.with_update_groups(UpdateGroups::WithSeriesLen);
-            }
-            Ok(ac)
-        } else {
-            self.gather_aggregated_expensive(ac, idx)
-        }
-    }
-
-    fn gather_aggregated_expensive<'b>(
-        &self,
-        mut ac: AggregationContext<'b>,
-        idx: &IdxCa,
-    ) -> PolarsResult<AggregationContext<'b>> {
-        let out = ac
-            .aggregated()
-            .list()
-            .unwrap()
-            .try_apply_amortized(|s| s.as_ref().take(idx))?;
-
-        ac.with_values(out.into_column(), true, Some(&self.expr))?;
-        ac.with_update_groups(UpdateGroups::WithSeriesLen);
-        Ok(ac)
-    }
-
-    fn process_positive_indices_agg_literal<'b>(
-        &self,
-        mut ac: AggregationContext<'b>,
-        idx: &IdxCa,
-    ) -> PolarsResult<AggregationContext<'b>> {
-        if idx.len() == 1 {
-            match idx.get(0) {
-                None => polars_bail!(ComputeError: "cannot take by a null"),
-                Some(idx) => {
-                    // Make sure that we look at the updated groups.
-                    let groups = ac.groups();
-
-                    // We offset the groups first by idx.
-                    let idx: NoNull<IdxCa> = match groups.as_ref().as_ref() {
-                        GroupsType::Idx(groups) => {
-                            if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
-                                self.oob_err()?;
-                            }
-
-                            groups
-                                .iter()
-                                .map(|(_, group)| {
-                                    // SAFETY: we just bound checked.
-                                    unsafe { *group.get_unchecked(idx as usize) }
-                                })
-                                .collect_trusted()
-                        },
-                        GroupsType::Slice { groups, .. } => {
-                            if groups.iter().any(|g| idx >= g[1]) {
-                                self.oob_err()?;
-                            }
-
-                            groups.iter().map(|g| g[0] + idx).collect_trusted()
-                        },
-                    };
-                    let taken = ac.flat_naive().take(&idx.into_inner())?;
-
-                    let taken = if self.returns_scalar {
-                        taken
-                    } else {
-                        taken.as_list().into_column()
-                    };
-
-                    ac.with_values(taken, true, Some(&self.expr))?;
-
-                    if self.returns_scalar {
-                        ac.with_update_groups(UpdateGroups::No);
-                    } else {
-                        ac.with_update_groups(UpdateGroups::WithSeriesLen);
-                    }
-                    Ok(ac)
-                },
-            }
-        } else {
-            self.gather_aggregated_expensive(ac, idx)
-        }
-    }
-
-    fn process_negative_indices_agg<'b>(
-        &self,
-        mut ac: AggregationContext<'b>,
-        mut idx: AggregationContext<'b>,
-        groups: &'b GroupsType,
-    ) -> PolarsResult<AggregationContext<'b>> {
-        let mut builder = get_list_builder(
-            ac.dtype(),
-            idx.get_values().len(),
-            groups.len(),
-            ac.get_values().name().clone(),
-        );
-
-        let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
-        for (s, idx) in iter {
-            match (s, idx) {
-                (Some(s), Some(idx)) => {
-                    let idx = convert_to_unsigned_index(idx.as_ref(), s.as_ref().len())?;
-                    let out = s.as_ref().take(&idx)?;
-                    builder.append_series(&out)?;
-                },
-                _ => builder.append_null(),
-            };
-        }
-        let out = builder.finish().into_column();
-        ac.with_agg_state(AggState::AggregatedList(out));
-        ac.with_update_groups(UpdateGroups::WithSeriesLen);
-        Ok(ac)
     }
 }

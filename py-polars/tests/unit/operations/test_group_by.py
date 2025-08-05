@@ -1145,13 +1145,21 @@ def test_absence_off_null_prop_8224() -> None:
     ]
 
 
-def test_grouped_slice_literals() -> None:
-    assert pl.DataFrame({"idx": [1, 2, 3]}).group_by(True).agg(
-        x=pl.lit([1, 2]).slice(
-            -1, 1
-        ),  # slices a list of 1 element, so remains the same element
-        x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
-    ).to_dict(as_series=False) == {"literal": [True], "x": [[1, 2]], "x2": [2]}
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_grouped_slice_literals(maintain_order: bool) -> None:
+    assert_frame_equal(
+        pl.DataFrame({"idx": [1, 2, 3]})
+        .group_by(True, maintain_order=maintain_order)
+        .agg(
+            x=pl.lit([1, 2]).slice(
+                -1, 1
+            ),  # slices a list of 1 element, so remains the same element
+            x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
+            x3=pl.lit(pl.Series([[1, 2]])).slice(-1, 1),
+        ),
+        pl.DataFrame({"literal": [True], "x": [[1, 2]], "x2": [[2]], "x3": [[[1, 2]]]}),
+        check_row_order=maintain_order,
+    )
 
 
 def test_positional_by_with_list_or_tuple_17540() -> None:
@@ -1381,4 +1389,25 @@ def test_group_by_filter_all_22955() -> None:
             }
         ),
         check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_series_lit_22103(maintain_order: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 1],
+        }
+    )
+    assert_frame_equal(
+        df.group_by("g", maintain_order=maintain_order).agg(
+            foo=pl.lit(pl.Series([42, 2, 3]))
+        ),
+        pl.DataFrame(
+            {
+                "g": [0, 1],
+                "foo": [[42, 2, 3], [42, 2, 3]],
+            }
+        ),
+        check_row_order=maintain_order,
     )

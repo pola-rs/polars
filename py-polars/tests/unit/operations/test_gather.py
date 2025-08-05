@@ -11,9 +11,11 @@ def test_negative_index() -> None:
     assert df.select(pl.col("a").gather([0, -1])).to_dict(as_series=False) == {
         "a": [1, 6]
     }
-    assert df.group_by(pl.col("a") % 2).agg(b=pl.col("a").gather([0, -1])).sort(
-        "a"
-    ).to_dict(as_series=False) == {"a": [0, 1], "b": [[2, 6], [1, 5]]}
+    assert_frame_equal(
+        df.group_by(pl.col("a") % 2).agg(b=pl.col("a").gather([0, -1])),
+        pl.DataFrame({"a": [0, 1], "b": [[2, 6], [1, 5]]}),
+        check_row_order=False,
+    )
 
 
 def test_gather_agg_schema() -> None:
@@ -334,3 +336,43 @@ def test_get_dt_truncate_21533() -> None:
         trunc_ts=pl.col.timestamp.get(0).dt.truncate("1m")
     )
     assert report.shape == (12, 2)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_gather_group_by_23696(maintain_order: bool) -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3, 4],
+                "b": [0, 0, 1, 1],
+                "c": [0, 0, -1, -1],
+            }
+        )
+        .group_by(pl.col.a % 2, maintain_order=maintain_order)
+        .agg(
+            get_first=pl.col.a.get(pl.col.b.get(0)),
+            get_last=pl.col.a.get(pl.col.b.get(1)),
+            normal=pl.col.a.gather(pl.col.b),
+            signed=pl.col.a.gather(pl.col.c),
+            drop_nulls=pl.col.a.gather(pl.col.b.drop_nulls()),
+            drop_nulls_signed=pl.col.a.gather(pl.col.c.drop_nulls()),
+            literal=pl.col.a.gather([0, 1]),
+            literal_signed=pl.col.a.gather([0, -1]),
+        )
+    )
+
+    expected = pl.DataFrame(
+        {
+            "a": [1, 0],
+            "get_first": [1, 2],
+            "get_last": [3, 4],
+            "normal": [[1, 3], [2, 4]],
+            "signed": [[1, 3], [2, 4]],
+            "drop_nulls": [[1, 3], [2, 4]],
+            "drop_nulls_signed": [[1, 3], [2, 4]],
+            "literal": [[1, 3], [2, 4]],
+            "literal_signed": [[1, 3], [2, 4]],
+        }
+    )
+
+    assert_frame_equal(df, expected, check_row_order=maintain_order)
