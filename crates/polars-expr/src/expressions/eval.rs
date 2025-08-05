@@ -215,7 +215,12 @@ impl EvalExpr {
 
         ca.rename(lst.name().clone());
 
-        Ok(ca.into_column())
+        // Cast may still be required in some cases, e.g. for an empty frame when running single-threaded
+        if ca.dtype() != &self.non_aggregated_output_dtype {
+            ca.cast(&self.non_aggregated_output_dtype).map(Column::from)
+        } else {
+            Ok(ca.into_column())
+        }
     }
 
     fn run_on_group_by_engine(
