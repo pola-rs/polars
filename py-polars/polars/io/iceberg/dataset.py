@@ -112,10 +112,6 @@ class IcebergDataset:
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
-            # TODO: Enable native scans by default after we have type casting support,
-            # currently it may fail if the dataset has changed types.
-            else "native scans disabled by default"
-            if reader_override != "native"
             else f"unsupported table format version: {tbl.format_version}"
             if not tbl.format_version <= 2
             else None
