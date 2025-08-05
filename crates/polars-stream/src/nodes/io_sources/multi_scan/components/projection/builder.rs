@@ -2,15 +2,18 @@ use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
+use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
+use polars_plan::dsl::default_values::IcebergIdentityTransformedPartitionFields;
 use polars_plan::dsl::{CastColumnsPolicy, ColumnMapping, MissingColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::{
-    ColumnSelector, ColumnSelectorBuilder,
+    ColumnSelector, ColumnSelectorBuilder, build_iceberg_default_value,
 };
+use crate::nodes::io_sources::multi_scan::components::default_field_values::IcebergDefaultValueProviderRef;
 use crate::nodes::io_sources::multi_scan::components::projection::{
     Projection, ProjectionTransform,
 };
@@ -24,6 +27,8 @@ pub enum ProjectionBuilder {
         projected_schema: SchemaRef,
         /// `(physical_id, iceberg_column)`
         projected_iceberg_schema: IcebergSchemaRef,
+        /// Used for filling missing fields.
+        identity_transformed_values: Option<Arc<IcebergIdentityTransformedPartitionFields>>,
     },
 }
 
@@ -38,7 +43,11 @@ impl ProjectionBuilder {
         }
     }
 
-    pub fn new(projected_schema: SchemaRef, column_mapping: Option<&ColumnMapping>) -> Self {
+    pub fn new(
+        projected_schema: SchemaRef,
+        column_mapping: Option<&ColumnMapping>,
+        identity_transformed_values: Option<Arc<IcebergIdentityTransformedPartitionFields>>,
+    ) -> Self {
         match column_mapping {
             None => ProjectionBuilder::Plain(projected_schema),
             Some(ColumnMapping::Iceberg(iceberg_schema)) => {
@@ -76,6 +85,7 @@ impl ProjectionBuilder {
                 Self::Iceberg {
                     projected_schema,
                     projected_iceberg_schema,
+                    identity_transformed_values,
                 }
             },
         }
@@ -87,12 +97,13 @@ impl ProjectionBuilder {
     /// Returns a `Plain` variant if `self` is a `Plain` variant and the `file_schema` is `None`.
     ///
     /// # Panics
-    /// * If `self` is the `Iceberg` variant and `file_iceberg_schema` is `None`.
+    /// * If `self` is the `Iceberg` variant and `file_iceberg_schema` is `None` or `scan_source_idx` is `usize::MAX`.
     pub fn build_projection(
         &self,
         file_schema: Option<&Schema>,
         file_iceberg_schema: Option<&IcebergSchema>,
         cast_columns_policy: CastColumnsPolicy,
+        scan_source_idx: usize,
     ) -> PolarsResult<Projection> {
         let selector_builder = ColumnSelectorBuilder {
             cast_columns_policy,
@@ -150,12 +161,14 @@ impl ProjectionBuilder {
                     projected_schema: projected_schema.clone(),
                     mapping: mapping.map(Arc::new),
                     missing_columns_mask: missing_columns_mask.map(|x| x.freeze()),
+                    missing_column_defaults: None,
                 }
             },
 
             Self::Iceberg {
                 projected_schema,
                 projected_iceberg_schema,
+                identity_transformed_values,
             } => (|| {
                 let file_iceberg_schema = file_iceberg_schema.ok_or_else(|| {
                     polars_err!(
@@ -164,8 +177,15 @@ impl ProjectionBuilder {
                     )
                 })?;
 
+                // usize::MAX is used as None.
+                assert_ne!(scan_source_idx, usize::MAX);
+
                 let mut mapping: Option<PlHashMap<usize, ProjectionTransform>> = None;
                 let mut missing_columns_mask: Option<MutableBitmap> = None;
+                let mut missing_column_defaults: Option<PlHashMap<usize, Scalar>> = None;
+                let iceberg_default_value_provider = identity_transformed_values
+                    .as_deref()
+                    .map(|x| IcebergDefaultValueProviderRef::new(x, scan_source_idx));
 
                 for (index, (physical_id, output_iceberg_column)) in
                     projected_iceberg_schema.iter().enumerate()
@@ -177,6 +197,20 @@ impl ProjectionBuilder {
                             })
                             .set(index, true);
 
+                        if let Some(iceberg_default_value_provider) = iceberg_default_value_provider
+                        {
+                            if let Some(default) = build_iceberg_default_value(
+                                iceberg_default_value_provider,
+                                output_iceberg_column,
+                            )? {
+                                missing_column_defaults
+                                    .get_or_insert_with(|| {
+                                        PlHashMap::with_capacity(projected_iceberg_schema.len())
+                                    })
+                                    .insert(index, default);
+                            }
+                        }
+
                         continue;
                     };
 
@@ -184,6 +218,7 @@ impl ProjectionBuilder {
                         ColumnSelector::Position(0),
                         incoming_iceberg_column,
                         output_iceberg_column,
+                        iceberg_default_value_provider,
                     )? {
                         ColumnSelector::Position(0) => {
                             assert_eq!(incoming_iceberg_column.name, output_iceberg_column.name);
@@ -211,6 +246,7 @@ impl ProjectionBuilder {
                     projected_schema: projected_schema.clone(),
                     mapping: mapping.map(Arc::new),
                     missing_columns_mask: missing_columns_mask.map(|x| x.freeze()),
+                    missing_column_defaults: missing_column_defaults.map(Arc::new),
                 })
             })()
             .map_err(|e| {

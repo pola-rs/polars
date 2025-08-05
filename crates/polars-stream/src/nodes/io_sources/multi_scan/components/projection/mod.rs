@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
 use polars_core::prelude::{DataType, PlHashMap};
+use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -29,6 +30,7 @@ pub enum Projection {
         /// Value: (source_name, source_dtype, transform).
         mapping: Option<Arc<PlHashMap<usize, ProjectionTransform>>>,
         missing_columns_mask: Option<Bitmap>,
+        missing_column_defaults: Option<Arc<PlHashMap<usize, Scalar>>>,
     },
 }
 
@@ -55,12 +57,14 @@ impl Projection {
                 projected_schema,
                 mapping: None,
                 missing_columns_mask: None,
+                missing_column_defaults: None,
             } => Projection::Plain(projected_schema.clone()),
 
             Projection::Mapped {
                 projected_schema,
                 mapping,
                 missing_columns_mask,
+                missing_column_defaults: _,
             } => {
                 let mut pre_projection = Schema::with_capacity(projected_schema.len());
 
@@ -121,6 +125,7 @@ impl Projection {
                 projected_schema,
                 mapping,
                 missing_columns_mask,
+                missing_column_defaults: _,
             } => {
                 let (output_name, output_dtype) = projected_schema.get_at_index(index)?;
 
@@ -186,17 +191,65 @@ impl Projection {
         }
     }
 
+    /// Removes all column mapping information from this projection.
+    pub fn clear_projection_transforms(&mut self) {
+        match self {
+            Projection::Plain(_) => {},
+
+            Projection::Mapped {
+                projected_schema: _,
+                mapping,
+                missing_columns_mask: _,
+                missing_column_defaults: _,
+            } => {
+                *mapping = None;
+            },
+        }
+    }
+
+    pub fn has_projection_transforms(&self) -> bool {
+        match self {
+            Projection::Plain(_) => false,
+
+            Projection::Mapped {
+                projected_schema: _,
+                mapping,
+                missing_columns_mask: _,
+                missing_column_defaults: _,
+            } => mapping.is_some(),
+        }
+    }
+
+    /// Retrieve a configured default value for when the column is missing from the file.
+    ///
+    /// # Panics
+    /// Panics if `output_name` is not in the projected schema.
+    pub fn get_default_value_by_output_name(&self, output_name: &str) -> Option<&Scalar> {
+        match self {
+            Projection::Plain(_) => None,
+
+            Projection::Mapped {
+                projected_schema,
+                missing_column_defaults,
+                ..
+            } => {
+                let missing_column_defaults = missing_column_defaults.as_ref()?;
+                missing_column_defaults.get(&projected_schema.index_of(output_name).unwrap())
+            },
+        }
+    }
+
     /// Returns an iterator of names in the projected schema that are missing from the file.
     ///
     /// # Panics
     /// Panics if `self` is a `Plain` variant and `reader_schema` is `None`.
     ///
     /// # Returns
-    /// `(output_name, output_dtype)`
+    /// `(output_name, output_dtype, default_value)`
     pub fn iter_missing_columns(
         &self,
         reader_schema: Option<&Schema>,
-    ) -> PolarsResult<impl Iterator<Item = (&PlSmallStr, &DataType)>> {
+    ) -> PolarsResult<impl Iterator<Item = (&PlSmallStr, &DataType, Option<&Scalar>)>> {
         let iter_len = match self {
             Projection::Plain(projected_schema) => projected_schema.len(),
 
@@ -204,6 +257,7 @@ impl Projection {
                 projected_schema,
                 mapping: _,
                 missing_columns_mask,
+                missing_column_defaults: _,
             } => {
                 // For the `Mapped` case, the missing columns will have been resolved to a bitmap
                 // by the `ProjectionBuilder`.
@@ -218,19 +272,24 @@ impl Projection {
             Projection::Plain(projected_schema) => {
                 let (projected_name, dtype) = projected_schema.get_at_index(i).unwrap();
 
-                (!reader_schema.unwrap().contains(projected_name))
-                    .then_some((projected_name, dtype))
+                (!reader_schema.unwrap().contains(projected_name)).then_some((
+                    projected_name,
+                    dtype,
+                    None,
+                ))
             },
 
             Projection::Mapped {
                 projected_schema,
                 mapping: _,
                 missing_columns_mask,
-            } => missing_columns_mask
-                .as_ref()
-                .unwrap()
-                .get_bit(i)
-                .then(|| projected_schema.get_at_index(i).unwrap()),
+                missing_column_defaults,
+            } => missing_columns_mask.as_ref().unwrap().get_bit(i).then(|| {
+                let (name, dtype) = projected_schema.get_at_index(i).unwrap();
+                let opt_default = missing_column_defaults.as_ref().and_then(|x| x.get(&i));
+
+                (name, dtype, opt_default)
+            }),
         }))
     }
 }

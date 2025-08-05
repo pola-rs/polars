@@ -20,8 +20,8 @@ pub fn resolve_arrow_field_projections(
     cast_columns_policy: CastColumnsPolicy,
 ) -> PolarsResult<Arc<[ArrowFieldProjection]>> {
     let projection: Projection = match projection {
-        Projection::Plain(projected_schema) => ProjectionBuilder::new(projected_schema, None)
-            .build_projection(Some(file_schema), None, cast_columns_policy)?,
+        Projection::Plain(projected_schema) => ProjectionBuilder::new(projected_schema, None, None)
+            .build_projection(Some(file_schema), None, cast_columns_policy, usize::MAX)?,
         Projection::Mapped { .. } => projection,
     };
 

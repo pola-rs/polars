@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import (
         ColumnMapping,
+        DefaultFieldValues,
         DeletionFiles,
         FileSource,
         ParallelStrategy,
@@ -424,6 +425,7 @@ def scan_parquet(
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
     _column_mapping: ColumnMapping | None = None,
+    _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
 ) -> LazyFrame:
     """
@@ -652,8 +654,9 @@ def scan_parquet(
             ),
             credential_provider=credential_provider_builder,
             retries=retries,
-            deletion_files=_deletion_files,
             column_mapping=_column_mapping,
+            default_values=_default_values,
+            deletion_files=_deletion_files,
         ),
     )
 

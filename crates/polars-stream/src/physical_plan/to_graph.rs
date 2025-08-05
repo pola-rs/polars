@@ -1026,7 +1026,7 @@ fn to_graph_rec<'a>(
             let sources = ScanSources::Paths(Arc::from([PlPath::from_str("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
-            let file_projection_builder = ProjectionBuilder::new(output_schema, None);
+            let file_projection_builder = ProjectionBuilder::new(output_schema, None, None);
             let row_index = None;
             let pre_slice = None;
             let predicate = None;

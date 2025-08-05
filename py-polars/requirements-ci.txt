@@ -5,3 +5,4 @@
 torch
 jax[cpu]
 pyiceberg>=0.7.1
+pyiceberg-core

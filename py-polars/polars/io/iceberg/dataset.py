@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any, Literal
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
-from polars.io.iceberg._utils import _scan_pyarrow_dataset_impl
+from polars.io.iceberg._utils import (
+    IdentityTransformedPartitionValuesBuilder,
+    _scan_pyarrow_dataset_impl,
+)
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
@@ -93,10 +96,6 @@ class IcebergDataset:
         def snapshot_id_not_found(snapshot_id: Any) -> ValueError:
             return ValueError(f"iceberg snapshot ID not found: {snapshot_id}")
 
-        if snapshot_id is not None:
-            if tbl.snapshot_by_id(snapshot_id) is None:
-                raise snapshot_id_not_found(snapshot_id)
-
         # Take from parameter first then envvar
         reader_override = self._reader_override or os.getenv(
             "POLARS_ICEBERG_READER_OVERRIDE"
@@ -109,7 +108,6 @@ class IcebergDataset:
             )
             raise ValueError(msg)
 
-        # Try native scan
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
@@ -117,10 +115,44 @@ class IcebergDataset:
             # currently it may fail if the dataset has changed types.
             else "native scans disabled by default"
             if reader_override != "native"
+            else f"unsupported table format version: {tbl.format_version}"
+            if not tbl.format_version <= 2
             else None
         )
 
+        schema_id = None
+
+        if snapshot_id is not None:
+            snapshot = tbl.snapshot_by_id(snapshot_id)
+
+            if snapshot is None:
+                raise snapshot_id_not_found(snapshot_id)
+
+            schema_id = snapshot.schema_id
+
+            if schema_id is None:
+                msg = (
+                    f"IcebergDataset: requested snapshot {snapshot_id} "
+                    "did not contain a schema ID"
+                )
+                raise ValueError(msg)
+
+            iceberg_schema = tbl.schemas()[schema_id]
+        else:
+            iceberg_schema = tbl.schema()
+            schema_id = tbl.metadata.current_schema_id
+
+        projected_iceberg_schema = (
+            iceberg_schema
+            if selected_fields == ("*",)
+            else iceberg_schema.select(*selected_fields)
+        )
+
         sources = []
+        missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
+            tbl,
+            projected_iceberg_schema,
+        )
         deletion_files: dict[int, list[str]] = {}
 
         if reader_override != "pyiceberg" and not fallback_reason:
@@ -132,7 +164,9 @@ class IcebergDataset:
             start_time = perf_counter()
 
             scan = tbl.scan(
-                snapshot_id=snapshot_id, limit=limit, selected_fields=selected_fields
+                snapshot_id=snapshot_id,
+                limit=limit,
+                selected_fields=selected_fields,
             )
 
             total_deletion_files = 0
@@ -168,6 +202,12 @@ class IcebergDataset:
                 if fallback_reason:
                     break
 
+                missing_field_defaults.push_partition_values(
+                    current_index=i,
+                    partition_spec_id=file_info.file.spec_id,
+                    partition_values=file_info.file.partition,
+                )
+
                 sources.append(file_info.file.file_path)
 
             if verbose:
@@ -178,28 +218,6 @@ class IcebergDataset:
                 )
 
         if not fallback_reason:
-            schema_id = None
-
-            if snapshot_id is not None:
-                snapshot = tbl.snapshot_by_id(snapshot_id)
-
-                if snapshot is None:
-                    raise snapshot_id_not_found(snapshot_id)
-
-                schema_id = snapshot.schema_id
-
-                if schema_id is None:
-                    msg = (
-                        f"IcebergDataset: requested snapshot {snapshot_id} "
-                        "did not contain a schema ID"
-                    )
-                    raise ValueError(msg)
-
-                iceberg_schema = tbl.schemas()[schema_id]
-            else:
-                iceberg_schema = tbl.schema()
-                schema_id = tbl.metadata.current_schema_id
-
             if verbose:
                 s = "" if len(sources) == 1 else "s"
                 s2 = "" if total_deletion_files == 1 else "s"
@@ -226,6 +244,7 @@ class IcebergDataset:
                     # 'PARQUET:field_id'
                     schema_to_pyarrow(iceberg_schema),
                 ),
+                _default_values=("iceberg", missing_field_defaults.finish()),
                 _deletion_files=("iceberg-position-delete", deletion_files),
             )
 

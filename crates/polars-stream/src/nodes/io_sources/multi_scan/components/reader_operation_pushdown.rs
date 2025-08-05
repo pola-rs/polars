@@ -49,7 +49,8 @@ impl ReaderOperationPushdown<'_> {
         let (projection_to_reader, projection_to_post) = if unsupported_resolved_mapped_projection {
             (file_projection.get_plain_pre_projection(), file_projection)
         } else {
-            let projection_to_post = Projection::Plain(file_projection.projected_schema().clone());
+            let mut projection_to_post = file_projection.clone();
+            projection_to_post.clear_projection_transforms();
             (file_projection, projection_to_post)
         };
 
