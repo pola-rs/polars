@@ -14,7 +14,7 @@ use crate::pipe::{RecvPort, SendPort};
 
 pub struct RleIdNode {
     name: PlSmallStr,
-    index: u32,
+    index: IdxSize,
 
     dtype: DataType,
     last: Option<AnyValue<'static>>,
@@ -87,7 +87,7 @@ impl ComputeNode for RleIdNode {
 
                 // If the last value seen is different from this first value here, bump the index
                 // by 1.
-                self.index += u32::from(self.last.take().is_some_and(|last| {
+                self.index += IdxSize::from(self.last.take().is_some_and(|last| {
                     let fst = Scalar::new(self.dtype.clone(), column.get(0).unwrap().into_static());
                     let last = Scalar::new(self.dtype.clone(), last);
                     fst != last
