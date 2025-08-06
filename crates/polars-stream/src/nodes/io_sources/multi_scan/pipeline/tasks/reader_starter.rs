@@ -574,12 +574,18 @@ async fn start_reader_impl(
             file_projection.iter_missing_columns(Some(&reader_file_schema))?
         {
             match &missing_columns_policy {
-                MissingColumnsPolicy::Insert => external_predicate_cols.push((
-                    missing_col_name.clone(),
-                    default_value
-                        .cloned()
-                        .unwrap_or_else(|| Scalar::null(dtype.clone())),
-                )),
+                MissingColumnsPolicy::Insert => {
+                    if predicate.live_columns.contains(missing_col_name) {
+                        external_predicate_cols.push((
+                            missing_col_name.clone(),
+                            default_value
+                                .cloned()
+                                .unwrap_or_else(|| Scalar::null(dtype.clone())),
+                        ));
+
+                        Arc::make_mut(&mut predicate.column_predicates).is_sumwise_complete = false;
+                    }
+                },
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),
             }
         }
