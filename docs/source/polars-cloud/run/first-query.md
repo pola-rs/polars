@@ -9,7 +9,7 @@ need it.
 
     This page assumes that you have created an organization and connected a workspace to your cloud environment. If you haven't yet, find more information on [Connect cloud environment](../connect-cloud.md) page
 
-## Define your local query
+## Define your query local
 
 If you're already familiar with Polars, you will immediately be productive with Polars Cloud. The
 same lazy evaluation and API you know works exactly the same way, with the addition of defining a
@@ -53,7 +53,7 @@ multiple nodes on the [distributed queries](distributed-engine.md) page.
 Once you've called `.remote(context=ctx)` on your query, you have several options for how to handle
 the results, each suited to different use cases and workflows.
 
-### Direct or intermediate storage with sink_parquet
+### Direct or intermediate storage of results
 
 The most straightforward approach for batch processing is to write results directly to cloud storage
 using `.sink_parquet()`. This method is ideal when you want to store processed data for later use or
@@ -66,7 +66,7 @@ in batch mode runs in your cloud environment, and the data and results remain se
 infrastructure. This approach is perfect for ETL workflows, scheduled jobs, or any time you need to
 persist large datasets without transferring them to your local machine.
 
-### Interactive workflow with collect and show
+### Inspect results in your local environment
 
 For exploratory analysis and interactive workflows, use `.collect()` or `.show()` to return query
 results:
