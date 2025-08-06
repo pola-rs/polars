@@ -417,6 +417,7 @@ pub enum IRFunctionExpr {
     ExtendConstant,
 
     RowEncode(RowEncodingVariant),
+    #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
 }
 
@@ -712,6 +713,7 @@ impl Hash for IRFunctionExpr {
             TopKBy { descending } => descending.hash(state),
 
             RowEncode(variants) => variants.hash(state),
+            #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 fs.hash(state);
                 variants.hash(state);
@@ -920,6 +922,7 @@ impl Display for IRFunctionExpr {
             ExtendConstant => "extend_constant",
 
             RowEncode(..) => "row_encode",
+            #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
         };
         write!(f, "{s}")
@@ -1400,6 +1403,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
 
             RowEncode(variants) => map_as_slice!(row_encode::encode, variants.clone()),
+            #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 map_as_slice!(row_encode::decode, fs.clone(), variants.clone())
             },
@@ -1610,7 +1614,9 @@ impl IRFunctionExpr {
             F::Reinterpret(_) => FunctionOptions::elementwise(),
             F::ExtendConstant => FunctionOptions::groupwise(),
 
-            F::RowEncode(..) | F::RowDecode(..) => FunctionOptions::elementwise(),
+            F::RowEncode(..) => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            F::RowDecode(..) => FunctionOptions::elementwise(),
         }
     }
 }

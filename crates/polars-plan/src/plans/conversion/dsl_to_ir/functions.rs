@@ -998,6 +998,7 @@ pub(super) fn convert_functions(
         },
 
         F::RowEncode(v) => I::RowEncode(v),
+        #[cfg(feature = "dtype-struct")]
         F::RowDecode(fs, v) => I::RowDecode(
             fs.into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))

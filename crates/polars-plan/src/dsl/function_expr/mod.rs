@@ -365,6 +365,7 @@ pub enum FunctionExpr {
     ExtendConstant,
 
     RowEncode(RowEncodingVariant),
+    #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
 }
 
@@ -655,6 +656,7 @@ impl Hash for FunctionExpr {
             TopKBy { descending } => descending.hash(state),
 
             RowEncode(variants) => variants.hash(state),
+            #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 fs.hash(state);
                 variants.hash(state);
@@ -859,6 +861,7 @@ impl Display for FunctionExpr {
             ExtendConstant => "extend_constant",
 
             RowEncode(..) => "row_encode",
+            #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
         };
         write!(f, "{s}")

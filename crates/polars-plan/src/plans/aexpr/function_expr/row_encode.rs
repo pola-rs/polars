@@ -1,6 +1,4 @@
-use polars_core::prelude::row_encode::{
-    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, row_encoding_decode,
-};
+use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::{Column, Field, IntoColumn, RowEncodingOptions};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -36,11 +34,14 @@ pub fn encode(c: &mut [Column], variant: RowEncodingVariant) -> PolarsResult<Col
     .map(IntoColumn::into_column)
 }
 
+#[cfg(feature = "dtype-struct")]
 pub fn decode(
     c: &mut [Column],
     fields: Vec<Field>,
     variant: RowEncodingVariant,
 ) -> PolarsResult<Column> {
+    use polars_core::prelude::row_encode::row_encoding_decode;
+
     assert_eq!(c.len(), 1);
     let ca = c[0].binary_offset()?;
 

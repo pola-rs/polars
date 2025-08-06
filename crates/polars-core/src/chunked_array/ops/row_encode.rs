@@ -245,6 +245,7 @@ pub fn _get_rows_encoded_ca_unordered(
         .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
 }
 
+#[cfg(feature = "dtype-struct")]
 pub fn row_encoding_decode(
     ca: &BinaryOffsetChunked,
     fields: &[Field],
