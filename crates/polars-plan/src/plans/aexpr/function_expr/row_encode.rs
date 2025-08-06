@@ -1,6 +1,5 @@
 use polars_core::prelude::row_encode::{
-    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
-    row_encoding_decode,
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, row_encoding_decode,
 };
 use polars_core::prelude::{Column, Field, IntoColumn, RowEncodingOptions};
 use polars_error::PolarsResult;
