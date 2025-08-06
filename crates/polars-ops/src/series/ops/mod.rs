@@ -11,6 +11,7 @@ mod cum_agg;
 mod cut;
 #[cfg(feature = "diff")]
 mod diff;
+mod eager;
 #[cfg(feature = "ewma")]
 mod ewm;
 #[cfg(feature = "ewma_by")]
@@ -79,6 +80,7 @@ pub use cum_agg::*;
 pub use cut::*;
 #[cfg(feature = "diff")]
 pub use diff::*;
+pub use eager::*;
 #[cfg(feature = "ewma")]
 pub use ewm::*;
 #[cfg(feature = "ewma_by")]

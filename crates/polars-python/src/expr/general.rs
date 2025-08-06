@@ -695,10 +695,6 @@ impl PyExpr {
         self.inner.clone().product().into()
     }
 
-    fn shrink_dtype(&self) -> Self {
-        self.inner.clone().shrink_dtype().into()
-    }
-
     #[pyo3(signature = (lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
     fn map_batches(
         &self,
