@@ -53,9 +53,9 @@ pub mod types;
 pub use crate::alloc::PolarsAllocator;
 mod ffi;
 
-pub use types::*;
 use once_cell::sync::Lazy;
 use pyo3::prelude::*;
+pub use types::*;
 
 pub(crate) static POLARS: Lazy<Py<PyModule>> =
     Lazy::new(|| Python::with_gil(|py| PyModule::import(py, "polars").unwrap().unbind()));

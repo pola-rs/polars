@@ -1,8 +1,9 @@
-use crate::error::PyPolarsErr;
-use polars::prelude::*;
 use arrow::ffi;
+use polars::prelude::*;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
+
+use crate::error::PyPolarsErr;
 
 pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct

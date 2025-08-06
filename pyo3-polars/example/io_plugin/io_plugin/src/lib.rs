@@ -1,9 +1,9 @@
 mod samplers;
 
 use polars::prelude::*;
-use pyo3_polars::{PyDataFrame, PyExpr, PySchema};
 use pyo3::prelude::*;
 use pyo3_polars::error::PyPolarsErr;
+use pyo3_polars::{PyDataFrame, PyExpr, PySchema};
 
 use crate::samplers::PySampler;
 
