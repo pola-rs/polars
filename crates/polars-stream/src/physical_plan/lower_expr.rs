@@ -8,6 +8,7 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_ops::frame::{JoinArgs, JoinType};
+use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
@@ -937,9 +938,46 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: IRFunctionExpr::RLE,
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+
+                let value_key = unique_column_name();
+                let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
+
+                let input = build_select_stream_with_ctx(input, inner_exprs, ctx)?;
+                let node_kind = PhysNodeKind::Rle {
+                    input,
+                    name: value_key.clone(),
+                };
+
+                let output_schema = Schema::from_iter([(
+                    value_key.clone(),
+                    DataType::Struct(vec![
+                        Field::new(
+                            PlSmallStr::from_static(RLE_VALUE_COLUMN_NAME),
+                            value_dtype.clone(),
+                        ),
+                        Field::new(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), IDX_DTYPE),
+                    ]),
+                )]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: IRFunctionExpr::RLEID,
                 options: _,
             } => {
+                assert_eq!(inner_exprs.len(), 1);
+
                 let value_key = unique_column_name();
 
                 let input = build_select_stream_with_ctx(input, inner_exprs, ctx)?;
@@ -948,7 +986,7 @@ fn lower_exprs_with_ctx(
                     name: value_key.clone(),
                 };
 
-                let output_schema = Schema::from_iter([(value_key.clone(), DataType::UInt32)]);
+                let output_schema = Schema::from_iter([(value_key.clone(), IDX_DTYPE)]);
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));

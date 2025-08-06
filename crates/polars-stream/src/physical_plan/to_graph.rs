@@ -498,6 +498,17 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Rle { input, name } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            assert_eq!(input_schema.len(), 1);
+            let dtype = input_schema.get_at_index(0).unwrap().1.clone();
+            ctx.graph.add_node(
+                nodes::rle::RleNode::new(name.clone(), dtype),
+                [(input_key, input.port)],
+            )
+        },
+
         RleId { input, name } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
