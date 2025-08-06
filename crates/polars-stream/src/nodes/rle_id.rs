@@ -84,11 +84,7 @@ impl ComputeNode for RleIdNode {
 
                 let column = if lengths.len() == 1 {
                     // If we only have one unique value, just give a Scalar column.
-                    Column::new_scalar(
-                        name,
-                        Scalar::from(self.index),
-                        lengths[0] as usize,
-                    )
+                    Column::new_scalar(name, Scalar::from(self.index), lengths[0] as usize)
                 } else {
                     let mut values = Vec::with_capacity(column.len());
                     values.extend(std::iter::repeat_n(self.index, lengths[0] as usize));
