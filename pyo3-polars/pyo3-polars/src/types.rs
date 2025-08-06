@@ -513,7 +513,7 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                     Series::from_arrow("category".into(), categories.categories().clone().boxed())
                         .unwrap();
                 let series = to_series(py, PySeries(s));
-                return class.call1((series,));
+                class.call1((series,))
             },
             DataType::Time => pl.getattr(intern!(py, "Time")),
             #[cfg(feature = "dtype-struct")]
