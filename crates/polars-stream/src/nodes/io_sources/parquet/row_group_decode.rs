@@ -710,7 +710,7 @@ mod tests {
         assert_eq!(
             [
                 calc_cols_per_thread(11_184_810, 16_777_216),
-                calc_cols_per_thread(11_184_811 + 1, 16_777_216),
+                calc_cols_per_thread(11_184_811, 16_777_216),
             ],
             [2, 1]
         );
