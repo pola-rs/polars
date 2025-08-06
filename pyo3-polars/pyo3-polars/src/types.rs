@@ -1,9 +1,5 @@
 use std::convert::Infallible;
 
-use super::*;
-
-use crate::error::PyPolarsErr;
-use crate::ffi::to_py::to_py_array;
 use arrow;
 use polars_core::datatypes::{CompatLevel, DataType};
 use polars_core::prelude::*;
@@ -21,12 +17,15 @@ use pyo3::ffi::Py_uintptr_t;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
+#[cfg(feature = "lazy")]
+use pyo3::types::PyBytes;
 #[cfg(feature = "dtype-struct")]
 use pyo3::types::PyList;
 use pyo3::types::{PyDict, PyString};
 
-#[cfg(feature = "lazy")]
-use pyo3::types::PyBytes;
+use super::*;
+use crate::error::PyPolarsErr;
+use crate::ffi::to_py::to_py_array;
 
 #[cfg(feature = "dtype-categorical")]
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
@@ -100,7 +99,7 @@ impl<'py> FromPyObject<'py> for PyTimeUnit {
                 return Err(PyValueError::new_err(format!(
                     "`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {v}",
                 )))
-            }
+            },
         };
         Ok(PyTimeUnit(parsed))
     }
@@ -309,7 +308,7 @@ impl<'py> IntoPyObject<'py> for PySeries {
                 }
 
                 Ok(pyseries)
-            }
+            },
             // Go via pyarrow
             Err(_) => {
                 let s = self.0.rechunk();
@@ -321,7 +320,7 @@ impl<'py> IntoPyObject<'py> for PySeries {
                 let s = polars.call_method1("from_arrow", (arg,)).unwrap();
                 let s = s.call_method1("rename", (name,)).unwrap();
                 Ok(s)
-            }
+            },
         }
     }
 }
@@ -351,13 +350,17 @@ impl<'py> IntoPyObject<'py> for PyLazyFrame {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        dbg!("into py");
+        use polars::prelude::PlanSerializationContext;
+
         let polars = POLARS.bind(py);
         let cls = polars.getattr("LazyFrame")?;
         let instance = cls.call_method1(intern!(py, "__new__"), (&cls,)).unwrap();
 
         let mut v = vec![];
-        self.0.logical_plan.serialize_versioned(&mut v, polars::prelude::PlanSerializationContext::default()).unwrap();
+        self.0
+            .logical_plan
+            .serialize_versioned(&mut v, PlanSerializationContext::default())
+            .unwrap();
         instance.call_method1("__setstate__", (&v,))?;
         Ok(instance)
     }
@@ -413,108 +416,105 @@ impl<'py> IntoPyObject<'py> for PyDataType {
             DataType::Int8 => {
                 let class = pl.getattr(intern!(py, "Int8")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Int16 => {
                 let class = pl.getattr(intern!(py, "Int16")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Int32 => {
                 let class = pl.getattr(intern!(py, "Int32")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Int64 => {
                 let class = pl.getattr(intern!(py, "Int64")).unwrap();
                 class.call0()
-            }
+            },
             DataType::UInt8 => {
                 let class = pl.getattr(intern!(py, "UInt8")).unwrap();
                 class.call0()
-            }
+            },
             DataType::UInt16 => {
                 let class = pl.getattr(intern!(py, "UInt16")).unwrap();
                 class.call0()
-            }
+            },
             DataType::UInt32 => {
                 let class = pl.getattr(intern!(py, "UInt32")).unwrap();
                 class.call0()
-            }
+            },
             DataType::UInt64 => {
                 let class = pl.getattr(intern!(py, "UInt64")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Float32 => {
                 let class = pl.getattr(intern!(py, "Float32")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Float64 | DataType::Unknown(UnknownKind::Float) => {
                 let class = pl.getattr(intern!(py, "Float64")).unwrap();
                 class.call0()
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let class = pl.getattr(intern!(py, "Decimal")).unwrap();
                 let args = (*precision, *scale);
                 class.call1(args)
-            }
+            },
             DataType::Boolean => {
                 let class = pl.getattr(intern!(py, "Boolean")).unwrap();
                 class.call0()
-            }
+            },
             DataType::String | DataType::Unknown(UnknownKind::Str) => {
                 let class = pl.getattr(intern!(py, "String")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Binary => {
                 let class = pl.getattr(intern!(py, "Binary")).unwrap();
                 class.call0()
-            }
+            },
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, size) => {
                 let class = pl.getattr(intern!(py, "Array")).unwrap();
                 let inner = PyDataType(*inner.clone()).into_pyobject(py)?;
                 let args = (inner, *size);
                 class.call1(args)
-            }
+            },
             DataType::List(inner) => {
                 let class = pl.getattr(intern!(py, "List")).unwrap();
                 let inner = PyDataType(*inner.clone()).into_pyobject(py)?;
                 class.call1((inner,))
-            }
+            },
             DataType::Date => {
                 let class = pl.getattr(intern!(py, "Date")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime")).unwrap();
                 datetime_class.call1((tu.to_ascii(), tz.as_ref().map(|s| s.as_str())))
-            }
+            },
             DataType::Duration(tu) => {
                 let duration_class = pl.getattr(intern!(py, "Duration")).unwrap();
                 duration_class.call1((tu.to_ascii(),))
-            }
+            },
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 let class = pl.getattr(intern!(py, "Object")).unwrap();
                 class.call0()
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, ordering) => {
+            DataType::Categorical(_, _) => {
                 let class = pl.getattr(intern!(py, "Categorical")).unwrap();
-                let ordering = match ordering {
-                    CategoricalOrdering::Physical => "physical",
-                    CategoricalOrdering::Lexical => "lexical",
-                };
-                class.call1((ordering,))
-            }
+                class.call1(())
+            },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(rev_map, _) => {
+            DataType::Enum(categories, _) => {
                 // we should always have an initialized rev_map coming from rust
-                let categories = rev_map.as_ref().unwrap().get_categories();
                 let class = pl.getattr(intern!(py, "Enum")).unwrap();
-                let s = Series::from_arrow("category".into(), categories.clone().boxed()).unwrap();
+                let s =
+                    Series::from_arrow("category".into(), categories.categories().clone().boxed())
+                        .unwrap();
                 let series = to_series(py, PySeries(s));
-                return class.call1((series,));
-            }
+                class.call1((series,))
+            },
             DataType::Time => pl.getattr(intern!(py, "Time")),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
@@ -530,21 +530,21 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 let fields = PyList::new(py, iter)?;
                 let struct_class = pl.getattr(intern!(py, "Struct")).unwrap();
                 struct_class.call1((fields,))
-            }
+            },
             DataType::Null => {
                 let class = pl.getattr(intern!(py, "Null")).unwrap();
                 class.call0()
-            }
+            },
             DataType::Unknown(UnknownKind::Int(v)) => {
                 PyDataType(materialize_dyn_int(*v).dtype()).into_pyobject(py)
-            }
+            },
             DataType::Unknown(_) => {
                 let class = pl.getattr(intern!(py, "Unknown")).unwrap();
                 class.call0()
-            }
+            },
             DataType::BinaryOffset => {
                 panic!("this type isn't exposed to python")
-            }
+            },
             #[allow(unreachable_patterns)]
             _ => panic!("activate dtype"),
         }
@@ -592,9 +592,13 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
                     #[cfg(feature = "dtype-categorical")]
-                    "Categorical" => DataType::Categorical(None, Default::default()),
+                    "Categorical" => DataType::Categorical(Categories::global(), Categories::global().mapping()),
                     #[cfg(feature = "dtype-categorical")]
-                    "Enum" => DataType::Enum(None, Default::default()),
+                    "Enum" => {
+                        let categories = FrozenCategories::new([]).unwrap();
+                        let mapping = categories.mapping().clone();
+                        DataType::Enum(categories, mapping)
+                    },
                     "Date" => DataType::Date,
                     "Time" => DataType::Time,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
@@ -632,26 +636,17 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Binary" => DataType::Binary,
             #[cfg(feature = "dtype-categorical")]
             "Categorical" => {
-                let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
-                let ordering = ordering.extract::<PyBackedStr>()?;
-                let ordering = match  ordering.as_bytes() {
-                    b"physical" => CategoricalOrdering::Physical,
-                    b"lexical" => CategoricalOrdering::Lexical,
-                    ordering => {
-                        let ordering = std::str::from_utf8(ordering).unwrap();
-                        return Err(PyValueError::new_err(format!("invalid ordering argument: {ordering}")))
-                    }
-                };
-
-                DataType::Categorical(None, ordering)
+                DataType::Categorical(Categories::global(), Categories::global().mapping())
             },
             #[cfg(feature = "dtype-categorical")]
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
-                let categories = ca.downcast_iter().next().unwrap().clone();
-                DataType::Enum(Some(Arc::new(RevMapping::build_local(categories))), Default::default())
+                let categories = ca.iter();
+                let categories = FrozenCategories::new(categories.map(|v| v.unwrap())).unwrap();
+                let mapping = categories.mapping().clone();
+                DataType::Enum(categories, mapping)
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,

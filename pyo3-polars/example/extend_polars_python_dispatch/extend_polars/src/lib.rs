@@ -3,10 +3,9 @@ mod parallel_jaccard_mod;
 use polars::prelude::*;
 use polars_lazy::frame::IntoLazy;
 use polars_lazy::prelude::LazyFrame;
-use pyo3_polars::{PyDataFrame, PyLazyFrame};
 use pyo3::prelude::*;
 use pyo3_polars::error::PyPolarsErr;
-use pyo3_polars::PolarsAllocator;
+use pyo3_polars::{PolarsAllocator, PyDataFrame, PyLazyFrame};
 
 #[global_allocator]
 static ALLOC: PolarsAllocator = PolarsAllocator::new();
