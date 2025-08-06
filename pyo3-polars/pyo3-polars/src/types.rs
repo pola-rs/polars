@@ -350,7 +350,8 @@ impl<'py> IntoPyObject<'py> for PyLazyFrame {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        dbg!("into py");
+        use polars::prelude::PlanSerializationContext;
+
         let polars = POLARS.bind(py);
         let cls = polars.getattr("LazyFrame")?;
         let instance = cls.call_method1(intern!(py, "__new__"), (&cls,)).unwrap();
@@ -358,7 +359,7 @@ impl<'py> IntoPyObject<'py> for PyLazyFrame {
         let mut v = vec![];
         self.0
             .logical_plan
-            .serialize_versioned(&mut v, polars::prelude::PlanSerializationContext::default())
+            .serialize_versioned(&mut v, PlanSerializationContext::default())
             .unwrap();
         instance.call_method1("__setstate__", (&v,))?;
         Ok(instance)
@@ -500,20 +501,17 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 class.call0()
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, ordering) => {
+            DataType::Categorical(_, _) => {
                 let class = pl.getattr(intern!(py, "Categorical")).unwrap();
-                let ordering = match ordering {
-                    CategoricalOrdering::Physical => "physical",
-                    CategoricalOrdering::Lexical => "lexical",
-                };
-                class.call1((ordering,))
+                class.call1(())
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(rev_map, _) => {
+            DataType::Enum(categories, _) => {
                 // we should always have an initialized rev_map coming from rust
-                let categories = rev_map.as_ref().unwrap().get_categories();
                 let class = pl.getattr(intern!(py, "Enum")).unwrap();
-                let s = Series::from_arrow("category".into(), categories.clone().boxed()).unwrap();
+                let s =
+                    Series::from_arrow("category".into(), categories.categories().clone().boxed())
+                        .unwrap();
                 let series = to_series(py, PySeries(s));
                 return class.call1((series,));
             },
@@ -594,9 +592,13 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
                     #[cfg(feature = "dtype-categorical")]
-                    "Categorical" => DataType::Categorical(None, Default::default()),
+                    "Categorical" => DataType::Categorical(Categories::global(), Categories::global().mapping()),
                     #[cfg(feature = "dtype-categorical")]
-                    "Enum" => DataType::Enum(None, Default::default()),
+                    "Enum" => {
+                        let categories = FrozenCategories::new([]).unwrap();
+                        let mapping = categories.mapping().clone();
+                        DataType::Enum(categories, mapping)
+                    },
                     "Date" => DataType::Date,
                     "Time" => DataType::Time,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
@@ -634,26 +636,17 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Binary" => DataType::Binary,
             #[cfg(feature = "dtype-categorical")]
             "Categorical" => {
-                let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
-                let ordering = ordering.extract::<PyBackedStr>()?;
-                let ordering = match  ordering.as_bytes() {
-                    b"physical" => CategoricalOrdering::Physical,
-                    b"lexical" => CategoricalOrdering::Lexical,
-                    ordering => {
-                        let ordering = std::str::from_utf8(ordering).unwrap();
-                        return Err(PyValueError::new_err(format!("invalid ordering argument: {ordering}")))
-                    }
-                };
-
-                DataType::Categorical(None, ordering)
+                DataType::Categorical(Categories::global(), Categories::global().mapping())
             },
             #[cfg(feature = "dtype-categorical")]
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
-                let categories = ca.downcast_iter().next().unwrap().clone();
-                DataType::Enum(Some(Arc::new(RevMapping::build_local(categories))), Default::default())
+                let categories = ca.iter();
+                let categories = FrozenCategories::new(categories.map(|v| v.unwrap())).unwrap();
+                let mapping = categories.mapping().clone();
+                DataType::Enum(categories, mapping)
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
