@@ -949,10 +949,7 @@ fn lower_exprs_with_ctx(
                 let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
 
                 let input = build_select_stream_with_ctx(input, inner_exprs, ctx)?;
-                let node_kind = PhysNodeKind::Rle {
-                    input,
-                    name: value_key.clone(),
-                };
+                let node_kind = PhysNodeKind::Rle(input);
 
                 let output_schema = Schema::from_iter([(
                     value_key.clone(),
@@ -981,10 +978,7 @@ fn lower_exprs_with_ctx(
                 let value_key = unique_column_name();
 
                 let input = build_select_stream_with_ctx(input, inner_exprs, ctx)?;
-                let node_kind = PhysNodeKind::RleId {
-                    input,
-                    name: value_key.clone(),
-                };
+                let node_kind = PhysNodeKind::RleId(input);
 
                 let output_schema = Schema::from_iter([(value_key.clone(), IDX_DTYPE)]);
                 let node_key = ctx

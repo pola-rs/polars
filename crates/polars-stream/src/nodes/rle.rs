@@ -58,10 +58,12 @@ impl ComputeNode for RleNode {
             recv[0] = PortState::Done;
             self.last_length = 0;
             self.last.take();
-        } else if self.last.is_some() {
-            send[0] = PortState::Ready;
         } else if recv[0] == PortState::Done {
-            send[0] = PortState::Done;
+            if self.last.is_some() {
+                send[0] = PortState::Ready;
+            } else {
+                send[0] = PortState::Done;
+            }
         } else {
             recv.swap_with_slice(send);
         }

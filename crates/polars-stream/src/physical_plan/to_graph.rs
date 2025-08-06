@@ -498,24 +498,26 @@ fn to_graph_rec<'a>(
             )
         },
 
-        Rle { input, name } => {
+        Rle(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             assert_eq!(input_schema.len(), 1);
-            let dtype = input_schema.get_at_index(0).unwrap().1.clone();
+            let (_, dtype) = input_schema.get_at_index(0).unwrap();
+            let (name, _) = node.output_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
-                nodes::rle::RleNode::new(name.clone(), dtype),
+                nodes::rle::RleNode::new(name.clone(), dtype.clone()),
                 [(input_key, input.port)],
             )
         },
 
-        RleId { input, name } => {
+        RleId(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             assert_eq!(input_schema.len(), 1);
-            let dtype = input_schema.get_at_index(0).unwrap().1.clone();
+            let (_, dtype) = input_schema.get_at_index(0).unwrap();
+            let (name, _) = node.output_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
-                nodes::rle_id::RleIdNode::new(name.clone(), dtype),
+                nodes::rle_id::RleIdNode::new(name.clone(), dtype.clone()),
                 [(input_key, input.port)],
             )
         },
