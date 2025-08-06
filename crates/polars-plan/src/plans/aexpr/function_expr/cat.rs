@@ -104,10 +104,11 @@ fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     let mapping = col.dtype().cat_mapping().unwrap();
     let cats =
         unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
-    let mut phys = col.to_physical_repr().as_materialized_series().clone();
+    let mut phys = col.to_physical_repr();
     if phys.dtype() != &IDX_DTYPE {
         phys = phys.cast(&IDX_DTYPE).unwrap();
     }
+    let phys = phys.as_materialized_series().clone();
     (cats, phys)
 }
 
