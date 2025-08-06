@@ -1073,6 +1073,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "reinterpret")]
         IF::Reinterpret(v) => F::Reinterpret(v),
         IF::ExtendConstant => F::ExtendConstant,
+
+        IF::RowEncode(v) => F::RowEncode(v),
+        IF::RowDecode(fs, v) => F::RowDecode(
+            fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
+            v,
+        ),
     };
 
     Expr::Function { input, function }

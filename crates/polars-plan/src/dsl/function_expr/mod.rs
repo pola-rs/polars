@@ -363,6 +363,9 @@ pub enum FunctionExpr {
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
     ExtendConstant,
+
+    RowEncode(RowEncodingVariant),
+    RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
 }
 
 impl Hash for FunctionExpr {
@@ -650,6 +653,12 @@ impl Hash for FunctionExpr {
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
+
+            RowEncode(variants) => variants.hash(state),
+            RowDecode(fs, variants) => {
+                fs.hash(state);
+                variants.hash(state);
+            },
         }
     }
 }
@@ -848,6 +857,9 @@ impl Display for FunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
             ExtendConstant => "extend_constant",
+
+            RowEncode(..) => "row_encode",
+            RowDecode(..) => "row_decode",
         };
         write!(f, "{s}")
     }

@@ -57,6 +57,7 @@ mod rolling;
 mod rolling_by;
 #[cfg(feature = "round_series")]
 mod round;
+mod row_encode;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 pub(super) mod schema;
@@ -112,6 +113,7 @@ pub use self::range::IRRangeFunction;
 pub use self::rolling::IRRollingFunction;
 #[cfg(feature = "rolling_window_by")]
 pub use self::rolling_by::IRRollingFunctionBy;
+pub use self::row_encode::RowEncodingVariant;
 #[cfg(feature = "strings")]
 pub use self::strings::IRStringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -413,6 +415,9 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
     ExtendConstant,
+
+    RowEncode(RowEncodingVariant),
+    RowDecode(Vec<Field>, RowEncodingVariant),
 }
 
 impl Hash for IRFunctionExpr {
@@ -705,6 +710,12 @@ impl Hash for IRFunctionExpr {
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
+
+            RowEncode(variants) => variants.hash(state),
+            RowDecode(fs, variants) => {
+                fs.hash(state);
+                variants.hash(state);
+            },
         }
     }
 }
@@ -907,6 +918,9 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
             ExtendConstant => "extend_constant",
+
+            RowEncode(..) => "row_encode",
+            RowDecode(..) => "row_decode",
         };
         write!(f, "{s}")
     }
@@ -1384,6 +1398,11 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
+
+            RowEncode(variants) => map_as_slice!(row_encode::encode, variants.clone()),
+            RowDecode(fs, variants) => {
+                map_as_slice!(row_encode::decode, fs.clone(), variants.clone())
+            },
         }
     }
 }
@@ -1590,6 +1609,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "reinterpret")]
             F::Reinterpret(_) => FunctionOptions::elementwise(),
             F::ExtendConstant => FunctionOptions::groupwise(),
+
+            F::RowEncode(..) | F::RowDecode(..) => FunctionOptions::elementwise(),
         }
     }
 }

@@ -996,6 +996,14 @@ pub(super) fn convert_functions(
             polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             I::ExtendConstant
         },
+
+        F::RowEncode(v) => I::RowEncode(v),
+        F::RowDecode(fs, v) => I::RowDecode(
+            fs.into_iter()
+                .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
+                .collect::<PolarsResult<Vec<_>>>()?,
+            v,
+        ),
     };
 
     let mut options = ir_function.function_options();
