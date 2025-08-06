@@ -11,7 +11,6 @@ import pytest
 from hypothesis import example, given
 
 import polars as pl
-import polars.functions as F
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 

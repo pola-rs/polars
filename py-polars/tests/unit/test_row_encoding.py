@@ -11,7 +11,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
 from polars.testing.parametric.strategies.dtype import dtypes
 from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
-import polars.functions as F
 
 if TYPE_CHECKING:
     from typing import Any
@@ -41,23 +40,12 @@ def roundtrip_re(
     descending: list[bool] | None = None,
     nulls_last: list[bool] | None = None,
 ) -> None:
-    print(
-        df.lazy()
-        .select(
-            F._row_encode(
-                pl.all(),
-                unordered=unordered,
-                descending=descending,
-                nulls_last=nulls_last,
-            )
-        )
-        .explain()
+    row_encoded = df._row_encode(
+        unordered=unordered,
+        descending=descending,
+        nulls_last=nulls_last,
     )
-    row_encoded = df.select(
-        F._row_encode(
-            pl.all(), unordered=unordered, descending=descending, nulls_last=nulls_last
-        )
-    ).to_series()
+
     if unordered:
         return
 
