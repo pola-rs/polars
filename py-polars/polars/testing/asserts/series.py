@@ -25,8 +25,8 @@ def _assert_correct_input_type(left: Any, right: Any) -> bool:
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
-@deprecate_renamed_parameter("rel_tol", "rel_tol", version="1.33.0")
-@deprecate_renamed_parameter("abs_tol", "abs_tol", version="1.33.0")
+@deprecate_renamed_parameter("rtol", "rel_tol", version="1.33.0")
+@deprecate_renamed_parameter("atol", "abs_tol", version="1.33.0")
 def assert_series_equal(
     left: Series,
     right: Series,
@@ -131,8 +131,8 @@ def assert_series_equal(
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
-@deprecate_renamed_parameter("rel_tol", "rel_tol", version="1.33.0")
-@deprecate_renamed_parameter("abs_tol", "abs_tol", version="1.33.0")
+@deprecate_renamed_parameter("rtol", "rel_tol", version="1.33.0")
+@deprecate_renamed_parameter("atol", "abs_tol", version="1.33.0")
 def assert_series_not_equal(
     left: Series,
     right: Series,
