@@ -40,6 +40,10 @@ impl NullChunked {
     pub fn len(&self) -> usize {
         self.length as usize
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
 }
 impl PrivateSeriesNumeric for NullChunked {
     fn bit_repr(&self) -> Option<BitRepr> {
@@ -213,7 +217,7 @@ impl SeriesTrait for NullChunked {
     }
 
     fn has_nulls(&self) -> bool {
-        self.len() > 0
+        !self.is_empty()
     }
 
     fn rechunk(&self) -> Series {

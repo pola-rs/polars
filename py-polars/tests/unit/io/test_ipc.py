@@ -356,7 +356,7 @@ def test_ipc_decimal_15920(
     ).to_frame()  # fmt: skip
 
     for df in [base_df, base_df.drop_nulls()]:
-        path = f"{tmp_path}/data"
+        path = f"{tmp_path}/data.ipc"
         df.write_ipc(path)
         assert_frame_equal(pl.read_ipc(path), df)
 

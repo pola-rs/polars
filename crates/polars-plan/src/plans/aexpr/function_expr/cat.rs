@@ -104,13 +104,16 @@ fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     let mapping = col.dtype().cat_mapping().unwrap();
     let cats =
         unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
-    let phys = col.to_physical_repr().as_materialized_series().clone();
+    let mut phys = col.to_physical_repr();
+    if phys.dtype() != &IDX_DTYPE {
+        phys = phys.cast(&IDX_DTYPE).unwrap();
+    }
+    let phys = phys.as_materialized_series().clone();
     (cats, phys)
 }
 
 /// Fast path: apply a string function to the categories of a categorical column and broadcast the
 /// result back to the array.
-// fn apply_to_cats<F, T>(ca: &CategoricalChunked, mut op: F) -> PolarsResult<Column>
 fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(StringChunked) -> ChunkedArray<T>,

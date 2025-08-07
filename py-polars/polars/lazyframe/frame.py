@@ -105,7 +105,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, get_engine_affinity
+    from polars._plr import PyLazyFrame, get_engine_affinity
 
 if TYPE_CHECKING:
     import sys
@@ -116,7 +116,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr, PyPartitioning, PySelector
+        from polars._plr import PyExpr, PyPartitioning, PySelector
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -7402,6 +7402,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         for instance does an aggregation of a column, `predicate_pushdown` should not
         be allowed, as this prunes rows and will influence your aggregation results.
 
+        Notes
+        -----
+        A UDF passed to `map_batches` must be pure, meaning that it cannot modify or
+        depend on state other than its arguments.
+
         Examples
         --------
         >>> lf = (  # doctest: +SKIP
@@ -7957,7 +7962,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         context: pc.ComputeContext | None = None,
         plan_type: pc._typing.PlanTypePreference = "dot",
-    ) -> pc.LazyFrameExt:
+    ) -> pc.LazyFrameRemote:
         """
         Run a query remotely on Polars Cloud.
 
@@ -8010,7 +8015,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────────┘
 
         """
-        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
+        return pc.LazyFrameRemote(lf=self, context=context, plan_type=plan_type)
 
     @unstable()
     def match_to_schema(

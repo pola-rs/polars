@@ -41,7 +41,7 @@ fn build_group_by_fallback(
     let input_schema = phys_sm[input.node].output_schema.clone();
     let lmdf = Arc::new(LateMaterializedDataFrame::default());
     let mut lp_arena = Arena::default();
-    let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
+    let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
     let group_by_lp_node = lp_arena.add(IR::GroupBy {
         input: input_lp_node,
         keys: keys.to_vec(),
@@ -205,7 +205,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                         .entry(input_id)
                         .or_insert_with(unique_column_name)
                         .clone();
-                    let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
                     let trans_agg_node = expr_arena.add(AExpr::Function {
                         input: vec![ExprIR::from_node(input_col_node, expr_arena)],
                         function: IRFunctionExpr::Bitwise(inner_fn),
@@ -259,7 +259,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                         .entry(input_id)
                         .or_insert_with(unique_column_name)
                         .clone();
-                    let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
                     let trans_agg_node = expr_arena.add(AExpr::Function {
                         input: vec![ExprIR::from_node(input_col_node, expr_arena)],
                         function: IRFunctionExpr::Boolean(inner_fn),
@@ -298,7 +298,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 })
                 .collect::<Option<Vec<_>>>()?;
 
-            let mut new_node = node.clone();
+            let mut new_node = node;
             match &mut new_node {
                 AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
                     *input = new_input;
@@ -357,7 +357,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                                 .entry(input_id)
                                 .or_insert_with(unique_column_name)
                                 .clone();
-                            let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                            let input_col_node = expr_arena.add(AExpr::Column(input_col));
                             trans_agg.set_input(input_col_node);
                             let trans_agg_node = expr_arena.add(AExpr::Agg(trans_agg));
 

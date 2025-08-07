@@ -158,7 +158,9 @@ def test_generalized_ufunc_scalar() -> None:
     assert_frame_equal(indirect, pl.DataFrame({"values": 15}))
     indirect = df.select(
         pl.col("values").map_batches(
-            custom_sum, returns_scalar=False, return_dtype=pl.self_dtype()
+            lambda s: pl.Series([custom_sum(s)]),
+            returns_scalar=False,
+            return_dtype=pl.self_dtype(),
         )
     )
     assert_frame_equal(indirect, pl.DataFrame({"values": [15]}))

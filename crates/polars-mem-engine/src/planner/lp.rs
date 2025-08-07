@@ -365,7 +365,7 @@ fn create_physical_plan_impl(
                     // Use cache so that this runs during the cache pre-filling stage and not on the
                     // thread pool, it could deadlock since the streaming engine uses the thread
                     // pool internally.
-                    cache_nodes.insert(
+                    let existing = cache_nodes.insert(
                         id,
                         Box::new(executors::CacheExec {
                             input: Some(executor),
@@ -374,6 +374,8 @@ fn create_physical_plan_impl(
                             is_new_streaming_scan: false,
                         }),
                     );
+
+                    assert!(existing.is_none());
 
                     Ok(Box::new(executors::CacheExec {
                         id,
@@ -514,7 +516,7 @@ fn create_physical_plan_impl(
                     // insert a cache if multiple executions are not desirable.
                     let id = UniqueId::new();
 
-                    cache_nodes.insert(
+                    let existing = cache_nodes.insert(
                         id,
                         Box::new(executors::CacheExec {
                             input: Some(executor),
@@ -524,6 +526,8 @@ fn create_physical_plan_impl(
                             is_new_streaming_scan: true,
                         }),
                     );
+
+                    assert!(existing.is_none());
 
                     Ok(Box::new(executors::CacheExec {
                         id,

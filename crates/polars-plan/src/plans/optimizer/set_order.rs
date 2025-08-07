@@ -63,11 +63,7 @@ fn is_order_independent_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 }
 
 // Not exhaustive - can give false negatives.
-pub(crate) fn all_order_independent<'a, N>(
-    nodes: &'a [N],
-    expr_arena: &Arena<AExpr>,
-    _ctx: Context,
-) -> bool
+pub(crate) fn all_order_independent<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,
 {
@@ -153,8 +149,8 @@ pub(super) fn set_order_flags(
                     continue;
                 }
 
-                maintain_order_above = !(all_elementwise(keys, expr_arena)
-                    && all_order_independent(aggs, expr_arena, Context::Aggregation));
+                maintain_order_above =
+                    !(all_elementwise(keys, expr_arena) && all_order_independent(aggs, expr_arena));
             },
             // Conservative now.
             IR::HStack { exprs, .. } | IR::Select { expr: exprs, .. } => {

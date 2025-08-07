@@ -14,11 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:count]
 
     // --8<-- [start:isnull]
-    let is_null_series = df
-        .clone()
-        .lazy()
-        .select([col("value").is_null()])
-        .collect()?;
+    let is_null_series = df.lazy().select([col("value").is_null()]).collect()?;
     println!("{is_null_series}");
     // --8<-- [end:isnull]
 
@@ -71,7 +67,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:fillinterpolate]
     let fill_interpolation_df = df
-        .clone()
         .lazy()
         .with_column(col("col2").interpolate(InterpolationMethod::Linear))
         .collect()?;
@@ -93,7 +88,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let result = df
-        .clone()
         .lazy()
         .select([col("dividend") / col("divisor")])
         .collect()?;
@@ -103,7 +97,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:nanfill]
     let mean_nan_df = nan_df
-        .clone()
         .lazy()
         .with_column(col("value").fill_nan(Null {}.lit()).alias("replaced"))
         .select([

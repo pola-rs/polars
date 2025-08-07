@@ -308,6 +308,26 @@ impl DataType {
         }
     }
 
+    /// Get the inner data type of a nested type.
+    pub fn into_inner_dtype(self) -> Option<DataType> {
+        match self {
+            DataType::List(inner) => Some(*inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    /// Get the inner data type of a nested type.
+    pub fn try_into_inner_dtype(self) -> PolarsResult<DataType> {
+        match self {
+            DataType::List(inner) => Ok(*inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Ok(*inner),
+            dt => polars_bail!(InvalidOperation: "cannot get inner datatype of `{dt}`"),
+        }
+    }
+
     /// Get the absolute inner data type of a nested type.
     pub fn leaf_dtype(&self) -> &DataType {
         let mut prev = self;
@@ -1206,7 +1226,7 @@ mod tests {
     fn test_unpack_primitive_dtypes() {
         let inner_type = DataType::Float64;
         let array_type = DataType::Array(Box::new(inner_type), 10);
-        let list_type = DataType::List(Box::new(array_type.clone()));
+        let list_type = DataType::List(Box::new(array_type));
 
         let result = unpack_dtypes(&list_type, false);
 
@@ -1226,8 +1246,8 @@ mod tests {
         let result = unpack_dtypes(&list_type, true);
 
         let mut expected = PlHashSet::new();
-        expected.insert(list_type.clone());
-        expected.insert(array_type.clone());
+        expected.insert(list_type);
+        expected.insert(array_type);
         expected.insert(DataType::Float64);
 
         assert_eq!(result, expected)

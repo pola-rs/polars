@@ -476,7 +476,7 @@ pub fn ndjson_file_info(
     let owned = &mut vec![];
 
     let mut schema = if let Some(schema) = ndjson_options.schema.clone() {
-        schema.clone()
+        schema
     } else {
         let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
         let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);

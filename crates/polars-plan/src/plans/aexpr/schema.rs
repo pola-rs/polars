@@ -10,7 +10,6 @@ use super::*;
 fn validate_expr(node: Node, arena: &Arena<AExpr>, schema: &Schema) -> PolarsResult<()> {
     let mut ctx = ToFieldContext {
         schema,
-        ctx: Context::Default,
         arena,
         validate: true,
     };
@@ -19,24 +18,19 @@ fn validate_expr(node: Node, arena: &Arena<AExpr>, schema: &Schema) -> PolarsRes
 
 struct ToFieldContext<'a> {
     schema: &'a Schema,
-    ctx: Context,
     arena: &'a Arena<AExpr>,
     // Traverse all expressions to validate they are in the schema.
     validate: bool,
 }
 
 impl AExpr {
-    pub fn to_dtype(
-        &self,
-        schema: &Schema,
-        ctx: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<DataType> {
-        self.to_field(schema, ctx, arena).map(|f| f.dtype)
+    pub fn to_dtype(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<DataType> {
+        self.to_field(schema, arena).map(|f| f.dtype)
     }
 
-    /// Get Field result of the expression. The schema is the input data.
-    pub fn to_field(
+    /// Get Field result of the expression. The schema is the input data. The provided
+    /// context will be used to coerce the type into a List if needed, also known as auto-implode.
+    pub fn to_field_with_ctx(
         &self,
         schema: &Schema,
         ctx: Context,
@@ -48,7 +42,6 @@ impl AExpr {
         let agg_list = matches!(ctx, Context::Aggregation);
         let mut ctx = ToFieldContext {
             schema,
-            ctx,
             arena,
             validate: true,
         };
@@ -63,30 +56,16 @@ impl AExpr {
         Ok(field)
     }
 
-    /// Get Field result of the expression. The schema is the input data.
-    pub fn to_field_and_validate(
-        &self,
-        schema: &Schema,
-        ctx: Context,
-        arena: &Arena<AExpr>,
-    ) -> PolarsResult<Field> {
-        // Indicates whether we should auto-implode the result. This is initialized to true if we are
-        // in an aggregation context, so functions that return scalars should explicitly set this
-        // to false in `to_field_impl`.
-        let agg_list = matches!(ctx, Context::Aggregation);
+    /// Get Field result of the expression. The schema is the input data. The result will
+    /// not be coerced (also known as auto-implode): this is the responsibility of the caller.
+    pub fn to_field(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<Field> {
         let mut ctx = ToFieldContext {
             schema,
-            ctx,
             arena,
             validate: true,
         };
-        let mut field = self.to_field_impl(&mut ctx)?;
 
-        if agg_list {
-            if !self.is_scalar(arena) {
-                field.coerce(field.dtype().clone().implode());
-            }
-        }
+        let field = self.to_field_impl(&mut ctx)?;
 
         Ok(field)
     }
@@ -263,7 +242,7 @@ impl AExpr {
                     Quantile { expr, .. } => {
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                         let mapper = FieldsMapper::new(&field);
-                        mapper.map_numeric_to_float_dtype()
+                        mapper.map_numeric_to_float_dtype(true)
                     },
                 }
             },
@@ -289,18 +268,15 @@ impl AExpr {
                 Ok(truthy)
             },
             AnonymousFunction {
-                output_type,
                 input,
+                function,
                 fmt_str,
                 ..
             } => {
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
-                let out = output_type
-                    .clone()
-                    .materialize()?
-                    .get_field(ctx.schema, ctx.ctx, &fields)?;
-
+                let function = function.clone().materialize()?;
+                let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
             },
             Eval {
@@ -315,7 +291,6 @@ impl AExpr {
 
                 let mut ctx = ToFieldContext {
                     schema: &schema,
-                    ctx: Context::Default,
                     arena: ctx.arena,
                     validate: ctx.validate,
                 };
@@ -337,7 +312,7 @@ impl AExpr {
             } => {
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
-                let out = function.get_field(ctx.schema, ctx.ctx, &fields)?;
+                let out = function.get_field(ctx.schema, &fields)?;
 
                 Ok(out)
             },
@@ -401,7 +376,7 @@ impl AExpr {
             Function {
                 input, function, ..
             } => match function.output_name().and_then(|v| v.into_inner()) {
-                Some(name) => name.clone(),
+                Some(name) => name,
                 None if input.is_empty() => format_pl_smallstr!("{}", &function),
                 None => input[0].output_name().clone(),
             },

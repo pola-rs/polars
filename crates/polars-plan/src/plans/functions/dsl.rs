@@ -98,7 +98,7 @@ impl DslFunction {
                     on: on.into_iter().collect(),
                     index: index.into_iter().collect(),
                     variable_name: args.variable_name.clone(),
-                    value_name: args.value_name.clone(),
+                    value_name: args.value_name,
                 };
 
                 FunctionIR::Unpivot {

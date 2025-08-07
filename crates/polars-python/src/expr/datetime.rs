@@ -35,9 +35,9 @@ impl PyExpr {
                 |s| {
                     s.take_materialized_series()
                         .timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| Some((ca / 1000).into_column()))
+                        .map(|ca| (ca / 1000).into_column())
                 },
-                GetOutput::from_type(DataType::Int64),
+                |_, f| Ok(Field::new(f.name().clone(), DataType::Int64)),
             )
             .into()
     }
@@ -174,6 +174,9 @@ impl PyExpr {
     }
     fn dt_month(&self) -> Self {
         self.inner.clone().dt().month().into()
+    }
+    fn dt_days_in_month(&self) -> Self {
+        self.inner.clone().dt().days_in_month().into()
     }
     fn dt_week(&self) -> Self {
         self.inner.clone().dt().week().into()

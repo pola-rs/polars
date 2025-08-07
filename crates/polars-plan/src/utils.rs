@@ -194,15 +194,11 @@ pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item 
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub fn expressions_to_schema(
-    expr: &[Expr],
-    schema: &Schema,
-    ctxt: Context,
-) -> PolarsResult<Schema> {
+pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> PolarsResult<Schema> {
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
     expr.iter()
         .map(|expr| {
-            let mut field = expr.to_field_amortized(schema, ctxt, &mut expr_arena)?;
+            let mut field = expr.to_field_amortized(schema, &mut expr_arena)?;
 
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
@@ -252,29 +248,22 @@ pub(crate) fn check_input_column_node(
 pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
     expr: I,
     schema: &Schema,
-    ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
-        .map(|node| {
-            arena
-                .get(node.into())
-                .to_field(schema, ctxt, arena)
-                .unwrap()
-        })
+        .map(|node| arena.get(node.into()).to_field(schema, arena).unwrap())
         .collect()
 }
 
 pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,
-    ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
     expr.into_iter()
         .map(|e| {
             let e = e.as_ref();
-            let mut field = e.field(schema, ctxt, arena).expect("should be resolved");
+            let mut field = e.field(schema, arena).expect("should be resolved");
 
             // TODO! (can this be removed?)
             if let Some(name) = e.get_alias() {

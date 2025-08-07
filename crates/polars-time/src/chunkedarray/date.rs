@@ -52,6 +52,14 @@ pub trait DateMethods: AsDate {
         ca.physical().apply_kernel_cast::<Int8Type>(&date_to_month)
     }
 
+    /// Returns the number of days in the month of the underlying NaiveDate
+    /// representation.
+    fn days_in_month(&self) -> Int8Chunked {
+        let ca = self.as_date();
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&date_to_days_in_month)
+    }
+
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {

@@ -5,7 +5,7 @@ import contextlib
 from polars._utils.various import qualified_type_name
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 import polars._reexport as pl
 
 

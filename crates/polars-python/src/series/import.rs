@@ -55,24 +55,35 @@ pub(crate) fn import_array_pycapsules(
     schema_capsule: &Bound<PyCapsule>,
     array_capsule: &Bound<PyCapsule>,
 ) -> PyResult<(arrow::datatypes::Field, Box<dyn Array>)> {
-    validate_pycapsule_name(schema_capsule, "arrow_schema")?;
+    let field = import_schema_pycapsule(schema_capsule)?;
+
     validate_pycapsule_name(array_capsule, "arrow_array")?;
+
+    // # Safety
+    // array_capsule holds a valid C ArrowArray pointer, as defined by the Arrow PyCapsule
+    // Interface
+    unsafe {
+        let array_ptr = std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty());
+        let array = ffi::import_array_from_c(array_ptr, field.dtype().clone()).unwrap();
+
+        Ok((field, array))
+    }
+}
+
+pub(crate) fn import_schema_pycapsule(
+    schema_capsule: &Bound<PyCapsule>,
+) -> PyResult<arrow::datatypes::Field> {
+    validate_pycapsule_name(schema_capsule, "arrow_schema")?;
 
     // # Safety
     // schema_capsule holds a valid C ArrowSchema pointer, as defined by the Arrow PyCapsule
     // Interface
-    // array_capsule holds a valid C ArrowArray pointer, as defined by the Arrow PyCapsule
-    // Interface
-    let (field, array) = unsafe {
+    unsafe {
         let schema_ptr = schema_capsule.reference::<ArrowSchema>();
-        let array_ptr = std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty());
-
         let field = ffi::import_field_from_c(schema_ptr).unwrap();
-        let array = ffi::import_array_from_c(array_ptr, field.dtype().clone()).unwrap();
-        (field, array)
-    };
 
-    Ok((field, array))
+        Ok(field)
+    }
 }
 
 /// Import `__arrow_c_stream__` across Python boundary.

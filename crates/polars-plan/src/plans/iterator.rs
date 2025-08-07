@@ -11,7 +11,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Column(_) | Literal(_) | Len => {},
+            DataTypeFunction(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),
@@ -141,9 +141,9 @@ impl Expr {
         push_expr!(self, container, push, push, iter);
     }
 
-    pub fn nodes_owned(self, container: &mut UnitVec<Expr>) {
-        let push_arc = |c: &mut UnitVec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
-        let push_owned = |c: &mut UnitVec<Expr>, e: Expr| c.push(e);
+    pub fn nodes_owned(self, container: &mut Vec<Expr>) {
+        let push_arc = |c: &mut Vec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
+        let push_owned = |c: &mut Vec<Expr>, e: Expr| c.push(e);
         push_expr!(self, container, push_arc, push_owned, into_iter);
     }
 

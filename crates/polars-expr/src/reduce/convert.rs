@@ -25,7 +25,7 @@ pub fn into_reduction(
     let get_dt = |node| {
         expr_arena
             .get(node)
-            .to_dtype(schema, Context::Default, expr_arena)?
+            .to_dtype(schema, expr_arena)?
             .materialize_unknown(false)
     };
     let out = match expr_arena.get(node) {

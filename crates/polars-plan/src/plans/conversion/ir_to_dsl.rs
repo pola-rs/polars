@@ -178,13 +178,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => Expr::AnonymousFunction {
             input: expr_irs_to_exprs(input, expr_arena),
             function,
-            output_type,
             options,
             fmt_str,
         },
@@ -520,6 +518,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::IsoYear => B::IsoYear,
                 IB::Quarter => B::Quarter,
                 IB::Month => B::Month,
+                IB::DaysInMonth => B::DaysInMonth,
                 IB::Week => B::Week,
                 IB::WeekDay => B::WeekDay,
                 IB::Day => B::Day,
@@ -798,6 +797,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                         corr_cov_options,
                         is_corr,
                     },
+                    IR::Map(f) => R::Map(f),
                 },
                 options,
             }

@@ -9,7 +9,7 @@ from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
+    import polars._plr as plr
 
 from typing import Literal
 

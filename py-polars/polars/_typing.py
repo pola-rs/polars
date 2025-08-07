@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from polars.selectors import Selector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyPartitioning
+        from polars._plr import PyPartitioning
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -53,6 +53,12 @@ class ArrowStreamExportable(Protocol):
     """Type protocol for Arrow C Stream Interface via Arrow PyCapsule Interface."""
 
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
+
+
+class ArrowSchemaExportable(Protocol):
+    """Type protocol for Arrow C Schema Interface via Arrow PyCapsule Interface."""
+
+    def __arrow_c_schema__(self) -> object: ...
 
 
 # Data types
@@ -107,6 +113,9 @@ CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 ColumnMapping: TypeAlias = tuple[Literal["iceberg-column-mapping"], "pa.Schema"]
+DefaultFieldValues: TypeAlias = tuple[
+    Literal["iceberg"], dict[int, Union["Series", str]]
+]
 DeletionFiles: TypeAlias = tuple[
     Literal["iceberg-position-delete"], dict[int, list[str]]
 ]

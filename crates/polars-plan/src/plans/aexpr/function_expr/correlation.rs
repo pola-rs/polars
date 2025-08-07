@@ -72,7 +72,7 @@ fn pearson_corr(s: &[Column]) -> PolarsResult<Column> {
     let ret = match a.dtype() {
         DataType::Float32 => {
             let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap()).map(|v| v as f32);
-            return Ok(Column::new(name.clone(), &[ret]));
+            return Ok(Column::new(name, &[ret]));
         },
         DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap()),
         DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap()),

@@ -667,7 +667,7 @@ impl Buffer {
 
             Buffer::Utf8(v) => {
                 let arr = v.mutable.freeze();
-                StringChunked::with_chunk(v.name.clone(), unsafe { arr.to_utf8view_unchecked() })
+                StringChunked::with_chunk(v.name, unsafe { arr.to_utf8view_unchecked() })
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]

@@ -12,7 +12,6 @@ pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursiv
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;

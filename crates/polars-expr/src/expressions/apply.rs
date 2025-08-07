@@ -99,15 +99,7 @@ impl ApplyExpr {
 
     /// Evaluates and flattens `Option<Column>` to `Column`.
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
-        if let Some(out) = self.function.call_udf(inputs)? {
-            Ok(out)
-        } else {
-            Ok(Column::full_null(
-                self.output_field.name().clone(),
-                1,
-                self.output_field.dtype(),
-            ))
-        }
+        self.function.call_udf(inputs)
     }
     fn apply_single_group_aware<'a>(
         &self,
@@ -144,10 +136,11 @@ impl ApplyExpr {
                 if self.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY) {
                     s.rename(name.clone());
                 }
-                Ok(self
-                    .function
-                    .call_udf(&mut [Column::from(s)])?
-                    .map(|c| c.as_materialized_series().clone()))
+                Ok(Some(
+                    self.function
+                        .call_udf(&mut [Column::from(s)])?
+                        .take_materialized_series(),
+                ))
             },
         };
 
@@ -252,9 +245,9 @@ impl ApplyExpr {
                 let out = self
                     .function
                     .call_udf(&mut container)
-                    .map(|r| r.map(|c| c.as_materialized_series().clone()))?;
+                    .map(|c| c.take_materialized_series())?;
 
-                builder.append_opt_series(out.as_ref())?
+                builder.append_series(&out)?
             }
             builder.finish()
         } else {
@@ -268,9 +261,11 @@ impl ApplyExpr {
                             Some(s) => container.push(s.deep_clone().into()),
                         }
                     }
-                    self.function
-                        .call_udf(&mut container)
-                        .map(|r| r.map(|c| c.as_materialized_series().clone()))
+                    Ok(Some(
+                        self.function
+                            .call_udf(&mut container)?
+                            .take_materialized_series(),
+                    ))
                 })
                 .collect::<PolarsResult<ListChunked>>()?
                 .with_name(field.name.clone())
@@ -374,7 +369,7 @@ impl PhysicalExpr for ApplyExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.expr.to_field(input_schema, Context::Default)
+        self.expr.to_field(input_schema)
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         if self.inputs.len() == 1 && self.flags.is_elementwise() {
@@ -413,7 +408,6 @@ fn apply_multiple_elementwise<'a>(
                 args.extend_from_slice(&other);
                 Ok(function
                     .call_udf(&mut args)?
-                    .unwrap()
                     .as_materialized_series()
                     .clone())
             })?;
@@ -422,7 +416,7 @@ fn apply_multiple_elementwise<'a>(
             Ok(ac)
         },
         first_as => {
-            let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
+            let check_lengths = check_lengths && !matches!(first_as, AggState::LiteralScalar(_));
             let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal())
                 && acs.iter().any(|ac| ac.is_aggregated());
             let mut c = acs
@@ -440,7 +434,7 @@ fn apply_multiple_elementwise<'a>(
                 .collect::<Vec<_>>();
 
             let input_len = c[0].len();
-            let c = function.call_udf(&mut c)?.unwrap();
+            let c = function.call_udf(&mut c)?;
             if check_lengths {
                 check_map_output_len(input_len, c.len(), expr)?;
             }

@@ -45,7 +45,7 @@ static FALLBACK_ALLOCATOR_CAPSULE: AllocatorCapsule = AllocatorCapsule {
     realloc: fallback_realloc,
 };
 
-static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars.polars._allocator\0";
+static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars._plr._allocator\0";
 
 /// A memory allocator that relays allocations to the allocator used by Polars.
 ///
@@ -58,7 +58,7 @@ static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars.polars._allocator\0";
 /// static ALLOC: PolarsAllocator = PolarsAllocator::new();
 /// ```
 ///
-/// If the allocator capsule (`polars.polars._allocator`) is not available,
+/// If the allocator capsule (`polars._plr._allocator`) is not available,
 /// this allocator fallbacks to [`std::alloc::System`].
 pub struct PolarsAllocator(OnceRef<'static, AllocatorCapsule>);
 
@@ -80,9 +80,13 @@ impl PolarsAllocator {
             if r.is_none() {
                 // Do not use eprintln; it may alloc.
                 let msg = b"failed to get allocator capsule\n";
-                // Message length type is platform-dependent.
-                let msg_len = msg.len();
-                unsafe { libc::write(2, msg.as_ptr() as *const libc::c_void, msg_len) };
+                unsafe {
+                    libc::write(
+                        2,
+                        msg.as_ptr() as *const libc::c_void,
+                        msg.len() as libc::size_t,
+                    )
+                };
             }
             r.unwrap_or(&FALLBACK_ALLOCATOR_CAPSULE)
         })

@@ -9,6 +9,7 @@ from threading import Thread
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -1062,3 +1063,129 @@ def test_parquet_prefiltering_inserted_column_23268() -> None:
         ),
         pl.DataFrame(schema={"a": pl.Int8, "b": pl.Int16}),
     )
+
+
+def test_scan_parquet_prefilter_with_cast(
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame(
+        {
+            "a": ["A", "B", "C", "D", "E", "F"],
+            "b": pl.Series([1, 1, 1, 1, 0, 1], dtype=pl.UInt8),
+        }
+    )
+
+    df.write_parquet(f, row_group_size=3)
+
+    md = pq.read_metadata(f)
+
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [3, 3]
+
+    q = pl.scan_parquet(
+        f,
+        schema={"a": pl.String, "b": pl.Int16},
+        cast_options=pl.ScanCastOptions(integer_cast="upcast"),
+        include_file_paths="file_path",
+    ).filter(pl.col("b") - 1 == pl.lit(-1, dtype=pl.Int16))
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect()
+        capture = capfd.readouterr().err
+
+    assert (
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live, 1 non-live)"
+        in capture
+    )
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 1 / 2 row groups" in capture
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "a": "E",
+                "b": pl.Series([0], dtype=pl.Int16),
+                "file_path": "in-mem",
+            }
+        ),
+    )
+
+
+def test_prefilter_with_n_rows_23790() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["A", "B", "C", "D", "E", "F"],
+            "b": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    f = io.BytesIO()
+
+    df.write_parquet(f, row_group_size=2)
+
+    md = pq.read_metadata(f)
+
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
+
+    q = pl.scan_parquet(f, n_rows=3).filter(pl.col("b").is_in([1, 3]))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": ["A", "C"], "b": [1, 3]}))
+
+    # With row index / file_path
+
+    df = pl.DataFrame(
+        {
+            "a": ["A", "B", "C", "D", "E", "F"],
+            "b": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    f = io.BytesIO()
+
+    df.write_parquet(f, row_group_size=2)
+
+    md = pq.read_metadata(f)
+
+    assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [2, 2, 2]
+
+    q = pl.scan_parquet(
+        f,
+        n_rows=3,
+        row_index_name="index",
+        include_file_paths="file_path",
+    ).filter(pl.col("b").is_in([1, 3]))
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "index": pl.Series([0, 2], dtype=pl.get_index_type()),
+                "a": ["A", "C"],
+                "b": [1, 3],
+                "file_path": "in-mem",
+            }
+        ),
+    )
+
+
+def test_scan_parquet_filter_index_panic_23849(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD", "5")
+    num_rows = 3
+    num_cols = 5
+
+    f = io.BytesIO()
+
+    pl.select(
+        pl.int_range(0, num_rows).alias(f"col_{i}") for i in range(num_cols)
+    ).write_parquet(f)
+
+    for parallel in ["auto", "columns", "row_groups", "prefiltered", "none"]:
+        pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
+            pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
+        ).collect()

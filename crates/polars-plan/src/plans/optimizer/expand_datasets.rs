@@ -29,13 +29,19 @@ impl OptimizationRule for ExpandDatasets {
         _expr_arena: &mut Arena<crate::prelude::AExpr>,
         node: Node,
     ) -> PolarsResult<Option<IR>> {
-        let ir = lp_arena.get(node);
-
+        // # Note
+        // This function mutates the IR node in-place rather than returning the new IR - the
+        // StackOptimizer will re-call this function otherwise.
         if let IR::Scan {
+            sources,
             scan_type,
             unified_scan_args,
-            ..
-        } = ir
+
+            file_info: _,
+            hive_parts: _,
+            predicate: _,
+            output_schema: _,
+        } = lp_arena.get_mut(node)
         {
             let projection = unified_scan_args.projection.clone();
             let limit = match unified_scan_args.pre_slice.clone() {
@@ -43,36 +49,14 @@ impl OptimizationRule for ExpandDatasets {
                 _ => None,
             };
 
-            match scan_type.as_ref() {
+            match scan_type.as_mut() {
                 #[cfg(feature = "python")]
                 FileScanIR::PythonDataset {
                     dataset_object,
                     cached_ir,
                 } => {
                     let cached_ir = cached_ir.clone();
-
                     let mut guard = cached_ir.lock().unwrap();
-
-                    // Note: We always get called twice in succession from the stack optimizer,
-                    // as it was designed to optimize until fixed point. Ensure we return
-                    // Ok(None) if the mutex contains the initialized state.
-                    if match guard.as_ref() {
-                        // Reject cached if limit or projection does not match. This can happen if a scan is reused.
-                        Some(resolved) => {
-                            let ExpandedDataset {
-                                limit: cached_limit,
-                                projection: cached_projection,
-                                resolved_ir: _,
-                                python_scan: _,
-                            } = resolved;
-
-                            cached_limit == &limit && cached_projection == &projection
-                        },
-
-                        None => false,
-                    } {
-                        return Ok(None);
-                    }
 
                     if config::verbose() {
                         eprintln!(
@@ -86,9 +70,46 @@ impl OptimizationRule for ExpandDatasets {
                         )
                     }
 
-                    let plan = dataset_object.to_dataset_scan(limit, projection.as_deref())?;
+                    let existing_resolved_version_key = match guard.as_ref() {
+                        Some(resolved) => {
+                            let ExpandedDataset {
+                                version,
+                                limit: cached_limit,
+                                projection: cached_projection,
+                                expanded_dsl: _,
+                                python_scan: _,
+                            } = resolved;
 
-                    let (resolved_ir, python_scan) = match plan {
+                            (cached_limit == &limit && cached_projection == &projection)
+                                .then_some(version.as_str())
+                        },
+
+                        None => None,
+                    };
+
+                    if let Some((expanded_dsl, version)) = dataset_object.to_dataset_scan(
+                        existing_resolved_version_key,
+                        limit,
+                        projection.as_deref(),
+                    )? {
+                        *guard = Some(ExpandedDataset {
+                            version,
+                            limit,
+                            projection,
+                            expanded_dsl,
+                            python_scan: None,
+                        })
+                    }
+
+                    let ExpandedDataset {
+                        version: _,
+                        limit: _,
+                        projection: _,
+                        expanded_dsl,
+                        python_scan,
+                    } = guard.as_mut().unwrap();
+
+                    match expanded_dsl {
                         DslPlan::Scan {
                             sources: resolved_sources,
                             unified_scan_args: resolved_unified_scan_args,
@@ -96,22 +117,6 @@ impl OptimizationRule for ExpandDatasets {
                             cached_ir: _,
                         } => {
                             use crate::dsl::FileScanDsl;
-
-                            let mut ir = ir.clone();
-
-                            let IR::Scan {
-                                sources,
-                                scan_type,
-                                unified_scan_args,
-
-                                file_info: _,
-                                hive_parts: _,
-                                predicate: _,
-                                output_schema: _,
-                            } = &mut ir
-                            else {
-                                unreachable!()
-                            };
 
                             // We only want a few configuration flags from here (e.g. column casting config).
                             // The rest we either expect to be None (e.g. projection / row_index), or ignore.
@@ -123,6 +128,8 @@ impl OptimizationRule for ExpandDatasets {
                                 cache,
                                 glob: _,
                                 projection: _projection @ None,
+                                column_mapping,
+                                default_values,
                                 row_index: _row_index @ None,
                                 pre_slice: _pre_slice @ None,
                                 cast_columns_policy,
@@ -130,8 +137,7 @@ impl OptimizationRule for ExpandDatasets {
                                 extra_columns_policy,
                                 include_file_paths: _include_file_paths @ None,
                                 deletion_files,
-                                column_mapping,
-                            } = *resolved_unified_scan_args
+                            } = resolved_unified_scan_args.as_ref()
                             else {
                                 panic!(
                                     "invalid scan args from python dataset resolve: {:?}",
@@ -139,17 +145,19 @@ impl OptimizationRule for ExpandDatasets {
                                 )
                             };
 
-                            unified_scan_args.cloud_options = cloud_options;
-                            unified_scan_args.rechunk = rechunk;
-                            unified_scan_args.cache = cache;
-                            unified_scan_args.cast_columns_policy = cast_columns_policy;
-                            unified_scan_args.missing_columns_policy = missing_columns_policy;
-                            unified_scan_args.extra_columns_policy = extra_columns_policy;
-                            unified_scan_args.deletion_files = deletion_files;
-                            unified_scan_args.column_mapping = column_mapping;
+                            unified_scan_args.cloud_options = cloud_options.clone();
+                            unified_scan_args.rechunk = *rechunk;
+                            unified_scan_args.cache = *cache;
+                            unified_scan_args.cast_columns_policy = cast_columns_policy.clone();
+                            unified_scan_args.missing_columns_policy = *missing_columns_policy;
+                            unified_scan_args.extra_columns_policy = *extra_columns_policy;
+                            unified_scan_args.column_mapping = column_mapping.clone();
+                            unified_scan_args.default_values = default_values.clone();
+                            unified_scan_args.deletion_files = deletion_files.clone();
 
-                            *sources = resolved_sources;
-                            *scan_type = Box::new(match *resolved_scan_type {
+                            *sources = resolved_sources.clone();
+
+                            *scan_type = Box::new(match *resolved_scan_type.clone() {
                                 #[cfg(feature = "csv")]
                                 FileScanDsl::Csv { options } => FileScanIR::Csv { options },
 
@@ -182,21 +190,14 @@ impl OptimizationRule for ExpandDatasets {
                                     file_info: _,
                                 } => FileScanIR::Anonymous { options, function },
                             });
-
-                            (ir, None)
                         },
 
                         DslPlan::PythonScan { options } => {
-                            assert!(options.scan_fn.is_some());
-
-                            (
-                                ir.clone(),
-                                Some((
-                                    dataset_object.name(),
-                                    options.scan_fn.expect("scan_fn is required"),
-                                    options.python_source,
-                                )),
-                            )
+                            *python_scan = Some(ExpandedPythonScan {
+                                name: dataset_object.name(),
+                                scan_fn: options.scan_fn.clone().unwrap(),
+                                variant: options.python_source.clone(),
+                            })
                         },
 
                         dsl => {
@@ -207,82 +208,89 @@ impl OptimizationRule for ExpandDatasets {
                             )
                         },
                     };
-
-                    let resolved = ExpandedDataset {
-                        limit,
-                        projection,
-                        resolved_ir,
-                        python_scan,
-                    };
-
-                    *guard = Some(resolved);
-
-                    let resolved_ir = guard.as_ref().map(|x| x.resolved_ir.clone()).unwrap();
-
-                    return Ok(Some(resolved_ir));
                 },
 
                 _ => {},
             }
         }
+
         Ok(None)
     }
 }
 
 #[derive(Clone)]
 pub struct ExpandedDataset {
+    version: PlSmallStr,
     limit: Option<usize>,
     projection: Option<Arc<[PlSmallStr]>>,
-    resolved_ir: IR,
+    expanded_dsl: DslPlan,
 
     /// Fallback python scan
     #[cfg(feature = "python")]
-    python_scan: Option<(PlSmallStr, PythonObject, PythonScanSource)>,
+    python_scan: Option<ExpandedPythonScan>,
+}
+
+#[cfg(feature = "python")]
+#[derive(Clone)]
+pub struct ExpandedPythonScan {
+    pub name: PlSmallStr,
+    pub scan_fn: PythonObject,
+    pub variant: PythonScanSource,
 }
 
 impl ExpandedDataset {
     #[cfg(feature = "python")]
-    pub fn python_scan(&self) -> Option<(&PlSmallStr, &PythonObject, &PythonScanSource)> {
-        self.python_scan.as_ref().map(|(a, b, c)| (a, b, c))
+    pub fn python_scan(&self) -> Option<&ExpandedPythonScan> {
+        self.python_scan.as_ref()
     }
 }
 
 impl Debug for ExpandedDataset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ExpandedDataset {
+            version,
             limit,
             projection,
-            resolved_ir,
+            expanded_dsl,
 
             #[cfg(feature = "python")]
             python_scan,
         } = self;
 
         return display::ExpandedDataset {
+            version,
             limit,
             projection,
-            resolved_ir,
-
+            expanded_dsl: &match expanded_dsl.display() {
+                Ok(v) => v.to_string(),
+                Err(e) => e.to_string(),
+            },
             #[cfg(feature = "python")]
-            python_scan: python_scan.as_ref().map(|(name, _, scan_type)| {
-                format_pl_smallstr!("python-scan[{} @ {:?}]", name, scan_type)
-            }),
+            python_scan: python_scan.as_ref().map(
+                |ExpandedPythonScan {
+                     name,
+                     scan_fn: _,
+                     variant,
+                 }| {
+                    format_pl_smallstr!("python-scan[{} @ {:?}]", name, variant)
+                },
+            ),
         }
         .fmt(f);
 
         mod display {
+            use std::fmt::Debug;
             use std::sync::Arc;
 
             use polars_utils::pl_str::PlSmallStr;
 
-            use crate::prelude::IR;
-
             #[derive(Debug)]
             #[expect(unused)]
             pub struct ExpandedDataset<'a> {
+                pub version: &'a str,
                 pub limit: &'a Option<usize>,
                 pub projection: &'a Option<Arc<[PlSmallStr]>>,
-                pub resolved_ir: &'a IR,
+                pub expanded_dsl: &'a str,
 
                 #[cfg(feature = "python")]
                 pub python_scan: Option<PlSmallStr>,

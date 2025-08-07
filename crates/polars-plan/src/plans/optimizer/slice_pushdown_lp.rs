@@ -148,11 +148,10 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .into_iter()
+            .map(|node| {
                 let alp = lp_arena.take(node);
                 // No state, so we do not push down the slice here.
                 let state = None;
@@ -160,8 +159,8 @@ impl SlicePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let lp = lp.with_exprs_and_input(exprs, new_inputs);
+            .collect::<PolarsResult<UnitVec<_>>>()?;
+        let lp = lp.with_inputs(new_inputs);
 
         self.no_pushdown_finish_opt(lp, state, lp_arena)
     }
@@ -175,18 +174,17 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-        let exprs = lp.get_exprs();
 
         let new_inputs = inputs
-            .iter()
-            .map(|&node| {
+            .into_iter()
+            .map(|node| {
                 let alp = lp_arena.take(node);
                 let alp = self.pushdown(alp, state, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(lp.with_exprs_and_input(exprs, new_inputs))
+            .collect::<PolarsResult<UnitVec<_>>>()?;
+        Ok(lp.with_inputs(new_inputs))
     }
 
     #[recursive]

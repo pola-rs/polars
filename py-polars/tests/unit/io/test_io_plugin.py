@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime
 import io
+import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -43,13 +45,7 @@ def test_io_plugin_predicate_no_serialization_21130() -> None:
     ).collect().to_dict(as_series=False) == {"json_val": ['{"a":"1"}']}
 
 
-def test_defer() -> None:
-    lf = pl.defer(
-        lambda: pl.DataFrame({"a": np.ones(3)}),
-        schema={"a": pl.Boolean},
-        validate_schema=False,
-    )
-    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
+def test_defer_validate_true() -> None:
     lf = pl.defer(
         lambda: pl.DataFrame({"a": np.ones(3)}),
         schema={"a": pl.Boolean},
@@ -57,6 +53,16 @@ def test_defer() -> None:
     )
     with pytest.raises(pl.exceptions.SchemaError):
         lf.collect()
+
+
+@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
+def test_defer_validate_false() -> None:
+    lf = pl.defer(
+        lambda: pl.DataFrame({"a": np.ones(3)}),
+        schema={"a": pl.Boolean},
+        validate_schema=False,
+    )
+    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
 
 
 def test_empty_iterator_io_plugin() -> None:
@@ -130,6 +136,7 @@ This allows it to read into multiple rows.
     )
 
 
+@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_datetime_io_predicate_pushdown_21790() -> None:
     recorded: dict[str, pl.Expr | None] = {"predicate": None}
     df = pl.DataFrame(
@@ -226,3 +233,54 @@ def test_reordered_columns_22731(validate: bool) -> None:
     assert_frame_equal(
         my_scan().with_columns("b", "a").collect(), expected_with_columns
     )
+
+
+def test_io_plugin_reentrant_deadlock() -> None:
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+from __future__ import annotations
+
+import os
+import sys
+
+os.environ["POLARS_MAX_THREADS"] = "1"
+
+import polars as pl
+from polars.io.plugins import register_io_source
+
+assert pl.thread_pool_size() == 1
+
+n = 3
+i = 0
+
+
+def reentrant(
+    with_columns: list[str] | None,
+    predicate: pl.Expr | None,
+    n_rows: int | None,
+    batch_size: int | None,
+):
+    global i
+
+    df = pl.DataFrame({"x": 1})
+
+    if i < n:
+        i += 1
+        yield register_io_source(io_source=reentrant, schema={"x": pl.Int64}).collect()
+
+    yield df
+
+
+register_io_source(io_source=reentrant, schema={"x": pl.Int64}).collect()
+
+print("OK", end="", file=sys.stderr)
+""",
+        ],
+        stderr=subprocess.STDOUT,
+        timeout=7,
+    )
+
+    assert out == b"OK"

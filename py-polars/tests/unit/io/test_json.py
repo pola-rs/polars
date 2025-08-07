@@ -20,7 +20,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_write_json() -> None:
@@ -75,6 +75,21 @@ def test_write_json_time() -> None:
     expected = (
         '[{"a":"02:01:31.000054321"},{"a":"15:05:21.000012345"},{"a":"23:59:59"}]'
     )
+    assert value == expected
+
+
+def test_write_json_list_of_arrays() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [[(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)], [(7.0, 8.0, 9.0)]],
+                dtype=pl.List(pl.Array(pl.Float32, 3)),
+            ),
+        }
+    )
+
+    value = df.write_json()
+    expected = '[{"a":[[1.0,2.0,3.0],[4.0,5.0,6.0]]},{"a":[[7.0,8.0,9.0]]}]'
     assert value == expected
 
 
@@ -632,3 +647,11 @@ def test_ndjson_22229() -> None:
     ]
 
     assert pl.read_ndjson(io.StringIO("\n".join(li))).to_dict(as_series=False)
+
+
+def test_json_encode_enum_23826() -> None:
+    s = pl.Series("a", ["b"], dtype=pl.Enum(["b"]))
+    assert_series_equal(
+        s.to_frame().select(c=pl.struct("a").struct.json_encode()).to_series(),
+        pl.Series("c", ['{"a":"0"}'], pl.String),
+    )

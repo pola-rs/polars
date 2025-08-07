@@ -7,7 +7,7 @@ extend-exclude = [
   "**/images/*",
   "**/py-polars/polars/_utils/nest_asyncio.py",
   "*.nix",
-  "crates/polars-plan/dsl-schema.sha256",
+  "**/crates/polars-plan/dsl-schema-hashes.json",
 ]
 ignore-hidden = false
 
@@ -37,3 +37,4 @@ NDJsonSinkNode = "NDJsonSinkNode"
 NDJsonReadOptions = "NDJsonReadOptions"
 NDJsonFileReader = "NDJsonFileReader"
 opt_nd = "opt_nd"
+tpe = "tpe"

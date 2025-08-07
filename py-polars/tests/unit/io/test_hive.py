@@ -987,6 +987,30 @@ def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
 
 
 @pytest.mark.write_disk
+def test_hive_file_as_uri_with_hive_start_idx_23830(
+    tmp_path: Path,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "a=1").mkdir(exist_ok=True)
+
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "a=1/1")
+
+    # ensure we have a trailing "/"
+    uri = tmp_path.resolve().as_posix().rstrip("/") + "/"
+    uri = "file://" + uri
+
+    lf = pl.scan_parquet(uri, hive_schema={"a": pl.UInt8})
+
+    assert_frame_equal(
+        lf.collect(),
+        pl.select(
+            pl.Series("x", [1]),
+            pl.Series("a", [1], dtype=pl.UInt8),
+        ),
+    )
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize("force_single_thread", [True, False])
 def test_hive_parquet_prefiltered_20894_21327(
     tmp_path: Path, force_single_thread: bool

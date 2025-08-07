@@ -142,9 +142,7 @@ def test_csv_null_values() -> None:
     # note: after reading, the buffer position in StringIO will have been
     # advanced; reading again will raise NoDataError, so we provide a hint
     # in the error string about this, suggesting "seek(0)" as a possible fix...
-    with pytest.raises(
-        NoDataError, match=r"empty data .* position = 20; try seek\(0\)"
-    ):
+    with pytest.raises(NoDataError, match=r"empty"):
         pl.read_csv(f)
 
     # ... unless we explicitly tell read_csv not to raise an
@@ -456,6 +454,7 @@ def test_read_csv_columns_argument(
     assert df.columns == col_out
 
 
+@pytest.mark.may_fail_cloud  # read->scan_csv dispatch
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_buffer_ownership() -> None:
     bts = b"\xf0\x9f\x98\x80,5.55,333\n\xf0\x9f\x98\x86,-5.0,666"
@@ -2302,6 +2301,8 @@ def test_write_csv_to_dangling_file_17328(
     df_no_lists.write_csv((tmp_path / "dangling.csv").open("w"))
 
 
+@pytest.mark.may_fail_cloud  # really hard to mimic this error
+@pytest.mark.write_disk
 def test_write_csv_raise_on_non_utf8_17328(
     df_no_lists: pl.DataFrame, tmp_path: Path
 ) -> None:
@@ -2724,6 +2725,7 @@ def test_write_csv_decimal_comma(
             decimal_comma=decimal_comma,
             include_header=True,
         )
+        buf.seek(0)
         out = pl.read_csv(
             buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
         )
@@ -2740,6 +2742,7 @@ def test_write_csv_decimal_comma(
             decimal_comma=decimal_comma,
             include_header=True,
         )
+        buf.seek(0)
         out = pl.scan_csv(
             buf, decimal_comma=decimal_comma, separator=separator, schema=df.schema
         ).collect()
@@ -2781,3 +2784,10 @@ def test_stop_split_fields_simd_23651() -> None:
     df = pl.read_csv(buf, truncate_ragged_lines=True, has_header=False, schema=schema)
     assert df.shape == (7, 27)
     assert df["column_26"].null_count() == 7
+
+
+def test_read_csv_decimal_header_only_200008() -> None:
+    csv = "a,b"
+
+    df = pl.read_csv(csv.encode(), schema={"a": pl.Decimal(scale=2), "b": pl.String})
+    assert df.dtypes == [pl.Decimal(scale=2), pl.String]

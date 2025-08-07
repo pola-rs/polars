@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
@@ -20,6 +19,7 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
+use polars_utils::relaxed_cell::RelaxedCell;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
@@ -31,9 +31,9 @@ use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
 use crate::nodes::io_sinks::partition::PerPartitionSortBy;
-use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -487,6 +487,28 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Repeat { value, repeats } => {
+            let value_key = to_graph_rec(value.node, ctx)?;
+            let repeats_key = to_graph_rec(repeats.node, ctx)?;
+            let value_schema = ctx.phys_sm[value.node].output_schema.clone();
+            let repeats_schema = ctx.phys_sm[repeats.node].output_schema.clone();
+            ctx.graph.add_node(
+                nodes::repeat::RepeatNode::new(value_schema, repeats_schema),
+                [(value_key, value.port), (repeats_key, repeats.port)],
+            )
+        },
+
+        RleId { input, name } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            assert_eq!(input_schema.len(), 1);
+            let dtype = input_schema.get_at_index(0).unwrap().1.clone();
+            ctx.graph.add_node(
+                nodes::rle_id::RleIdNode::new(name.clone(), dtype),
+                [(input_key, input.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()
@@ -526,16 +548,16 @@ fn to_graph_rec<'a>(
             scan_sources,
             file_reader_builder,
             cloud_options,
-            projected_file_schema,
+            file_projection_builder,
             output_schema,
             row_index,
             pre_slice,
             predicate,
             hive_parts,
             missing_columns_policy,
-            extra_columns_policy,
             cast_columns_policy,
             include_file_paths,
+            forbid_extra_columns,
             deletion_files,
             file_schema,
         } => {
@@ -564,45 +586,41 @@ fn to_graph_rec<'a>(
             let cloud_options = cloud_options.clone();
 
             let final_output_schema = output_schema.clone();
-            let projected_file_schema = projected_file_schema.clone();
-            let full_file_schema = file_schema.clone();
+            let file_projection_builder = file_projection_builder.clone();
 
             let row_index = row_index.clone();
             let pre_slice = pre_slice.clone();
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
             let missing_columns_policy = *missing_columns_policy;
-            let extra_columns_policy = *extra_columns_policy;
+            let forbid_extra_columns = forbid_extra_columns.clone();
             let cast_columns_policy = cast_columns_policy.clone();
             let deletion_files = deletion_files.clone();
 
             let verbose = config::verbose();
 
             ctx.graph.add_node(
-                nodes::io_sources::multi_file_reader::MultiFileReader::new(Arc::new(
-                    MultiFileReaderConfig {
-                        sources,
-                        file_reader_builder,
-                        cloud_options,
-                        final_output_schema,
-                        projected_file_schema,
-                        full_file_schema,
-                        row_index,
-                        pre_slice,
-                        predicate,
-                        hive_parts,
-                        include_file_paths,
-                        missing_columns_policy,
-                        extra_columns_policy,
-                        cast_columns_policy,
-                        deletion_files,
-                        // Initialized later
-                        num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init: AtomicUsize::new(0),
-                        max_concurrent_scans: AtomicUsize::new(0),
-                        verbose,
-                    },
-                )),
+                nodes::io_sources::multi_scan::MultiScan::new(Arc::new(MultiScanConfig {
+                    sources,
+                    file_reader_builder,
+                    cloud_options,
+                    final_output_schema,
+                    file_projection_builder,
+                    row_index,
+                    pre_slice,
+                    predicate,
+                    hive_parts,
+                    include_file_paths,
+                    missing_columns_policy,
+                    forbid_extra_columns,
+                    cast_columns_policy,
+                    deletion_files,
+                    // Initialized later
+                    num_pipelines: RelaxedCell::new_usize(0),
+                    n_readers_pre_init: RelaxedCell::new_usize(0),
+                    max_concurrent_scans: RelaxedCell::new_usize(0),
+                    verbose,
+                })),
                 [],
             )
         },
@@ -854,6 +872,7 @@ fn to_graph_rec<'a>(
         PythonScan { options } => {
             use polars_plan::dsl::python_dsl::PythonScanSource as S;
             use polars_plan::plans::PythonPredicate;
+            use polars_utils::relaxed_cell::RelaxedCell;
             use pyo3::exceptions::PyStopIteration;
             use pyo3::prelude::*;
             use pyo3::types::{PyBytes, PyNone};
@@ -991,71 +1010,67 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
+            use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
+            use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 
-            let mut reader = BatchFnReader {
+            let reader = BatchFnReader {
                 name: name.clone(),
                 // If validate_schema is false, the schema of the morsels may not match the
                 // configured schema. In this case we set this to `None` and the reader will
                 // retrieve the schema from the first morsel.
                 output_schema: validate_schema.then(|| output_schema.clone()),
                 get_batch_state: Some(GetBatchState::from(get_batch_fn)),
+                execution_state: None,
                 verbose: config::verbose(),
             };
-
-            // Note: This will potentially override the output schema if `validate_schema` is `false`.
-            let output_schema = reader._file_schema()?;
 
             let file_reader_builder = Arc::new(BatchFnReaderBuilder {
                 name,
                 reader: std::sync::Mutex::new(Some(reader)),
+                execution_state: Default::default(),
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
             let sources = ScanSources::Paths(Arc::from([PlPath::from_str("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
-            let projected_file_schema = output_schema.clone();
-            let full_file_schema = output_schema.clone();
+            let file_projection_builder = ProjectionBuilder::new(output_schema, None, None);
             let row_index = None;
             let pre_slice = None;
             let predicate = None;
             let hive_parts = None;
             let include_file_paths = None;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
-            let extra_columns_policy = ExtraColumnsPolicy::Ignore;
+            let forbid_extra_columns = None;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
             let deletion_files = None;
             let verbose = config::verbose();
 
             ctx.graph.add_node(
-                nodes::io_sources::multi_file_reader::MultiFileReader::new(Arc::new(
-                    MultiFileReaderConfig {
-                        sources,
-                        file_reader_builder,
-                        cloud_options,
-                        final_output_schema,
-                        projected_file_schema,
-                        full_file_schema,
-                        row_index,
-                        pre_slice,
-                        predicate,
-                        hive_parts,
-                        include_file_paths,
-                        missing_columns_policy,
-                        extra_columns_policy,
-                        cast_columns_policy,
-                        deletion_files,
-                        // Initialized later
-                        num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init: AtomicUsize::new(0),
-                        max_concurrent_scans: AtomicUsize::new(0),
-                        verbose,
-                    },
-                )),
+                nodes::io_sources::multi_scan::MultiScan::new(Arc::new(MultiScanConfig {
+                    sources,
+                    file_reader_builder,
+                    cloud_options,
+                    final_output_schema,
+                    file_projection_builder,
+                    row_index,
+                    pre_slice,
+                    predicate,
+                    hive_parts,
+                    include_file_paths,
+                    missing_columns_policy,
+                    forbid_extra_columns,
+                    cast_columns_policy,
+                    deletion_files,
+                    // Initialized later
+                    num_pipelines: RelaxedCell::new_usize(0),
+                    n_readers_pre_init: RelaxedCell::new_usize(0),
+                    max_concurrent_scans: RelaxedCell::new_usize(0),
+                    verbose,
+                })),
                 [],
             )
         },

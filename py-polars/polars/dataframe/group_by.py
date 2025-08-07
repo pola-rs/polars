@@ -160,7 +160,7 @@ class GroupBy:
 
         Examples
         --------
-        Filter groups that contain only one element.
+        Only keep groups that contain more than one element.
 
         >>> df = pl.DataFrame(
         ...     {

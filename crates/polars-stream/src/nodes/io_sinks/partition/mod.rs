@@ -37,9 +37,8 @@ pub struct PerPartitionSortBy {
     pub maintain_order: bool,
 }
 
-pub type CreateNewSinkFn = Arc<
-    dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>,
->;
+pub type CreateNewSinkFn =
+    Arc<dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send>>>;
 
 pub fn get_create_new_fn(
     file_type: FileType,
@@ -56,7 +55,7 @@ pub fn get_create_new_fn(
                 sink_options.clone(),
                 ipc_writer_options,
                 cloud_options.clone(),
-            )) as Box<dyn SinkNode + Send + Sync>;
+            )) as Box<dyn SinkNode + Send>;
             Ok(sink)
         }) as _,
         #[cfg(feature = "json")]
@@ -65,7 +64,7 @@ pub fn get_create_new_fn(
                 target,
                 sink_options.clone(),
                 cloud_options.clone(),
-            )) as Box<dyn SinkNode + Send + Sync>;
+            )) as Box<dyn SinkNode + Send>;
             Ok(sink)
         }) as _,
         #[cfg(feature = "parquet")]
@@ -78,7 +77,7 @@ pub fn get_create_new_fn(
                     &parquet_writer_options,
                     cloud_options.clone(),
                     collect_metrics,
-                )?) as Box<dyn SinkNode + Send + Sync>;
+                )?) as Box<dyn SinkNode + Send>;
                 Ok(sink)
             }) as _
         },
@@ -90,7 +89,7 @@ pub fn get_create_new_fn(
                 sink_options.clone(),
                 csv_writer_options.clone(),
                 cloud_options.clone(),
-            )) as Box<dyn SinkNode + Send + Sync>;
+            )) as Box<dyn SinkNode + Send>;
             Ok(sink)
         }) as _,
         #[cfg(not(any(
@@ -173,7 +172,7 @@ async fn open_new_sink(
     Option<(
         FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
         SinkSender,
-        Box<dyn SinkNode + Send + Sync>,
+        Box<dyn SinkNode + Send>,
     )>,
 > {
     let separator = '/'; // note: accepted by both Windows and Linux
@@ -300,6 +299,7 @@ async fn open_new_sink(
     }
 
     let (mut sink_input_tx, sink_input_rx) = connector::connector();
+    node.initialize(state)?;
     node.spawn_sink(sink_input_rx, state, &mut join_handles);
     let mut join_handles =
         FuturesUnordered::from_iter(join_handles.into_iter().map(AbortOnDropHandle::new));

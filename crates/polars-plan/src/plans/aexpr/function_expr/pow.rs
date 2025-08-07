@@ -65,10 +65,7 @@ where
     broadcast_binary_elementwise(base, exponent, |b, e| Some(Pow::pow(b?, e?)))
 }
 
-fn pow_on_floats<T>(
-    base: &ChunkedArray<T>,
-    exponent: &ChunkedArray<T>,
-) -> PolarsResult<Option<Column>>
+fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
@@ -78,11 +75,7 @@ where
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
-            return Ok(Some(Column::full_null(
-                base.name().clone(),
-                base.len(),
-                &dtype,
-            )));
+            return Ok(Column::full_null(base.name().clone(), base.len(), &dtype));
         };
         let s = match exponent_value.to_f64().unwrap() {
             1.0 => base.clone().into_column(),
@@ -101,16 +94,16 @@ where
                 .apply_values(|v| Pow::pow(v, exponent_value))
                 .into_column(),
         };
-        Ok(Some(s))
+        Ok(s)
     } else {
-        Ok(Some(pow_on_chunked_arrays(base, exponent).into_column()))
+        Ok(pow_on_chunked_arrays(base, exponent).into_column())
     }
 }
 
 fn pow_to_uint_dtype<T, F>(
     base: &ChunkedArray<T>,
     exponent: &ChunkedArray<F>,
-) -> PolarsResult<Option<Column>>
+) -> PolarsResult<Column>
 where
     T: PolarsIntegerType,
     F: PolarsIntegerType,
@@ -121,11 +114,7 @@ where
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
-            return Ok(Some(Column::full_null(
-                base.name().clone(),
-                base.len(),
-                &dtype,
-            )));
+            return Ok(Column::full_null(base.name().clone(), base.len(), &dtype));
         };
         let s = match exponent_value.to_u64().unwrap() {
             1 => base.clone().into_column(),
@@ -141,13 +130,13 @@ where
                 .apply_values(|v| Pow::pow(v, exponent_value))
                 .into_column(),
         };
-        Ok(Some(s))
+        Ok(s)
     } else {
-        Ok(Some(pow_on_chunked_arrays(base, exponent).into_column()))
+        Ok(pow_on_chunked_arrays(base, exponent).into_column())
     }
 }
 
-fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Option<Column>> {
+fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Column> {
     use DataType::*;
 
     let base_dtype = base.dtype();
@@ -203,7 +192,7 @@ fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Option<Column
     }
 }
 
-pub(super) fn pow(s: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn pow(s: &mut [Column]) -> PolarsResult<Column> {
     let base = &s[0];
     let exponent = &s[1];
 
