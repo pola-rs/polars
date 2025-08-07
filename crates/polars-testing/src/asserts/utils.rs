@@ -2,7 +2,7 @@ use std::ops::Not;
 
 use polars_core::datatypes::unpack_dtypes;
 use polars_core::prelude::*;
-use polars_ops::series::abs;
+use polars_ops::series::is_close;
 
 /// Configuration options for comparing Series equality.
 ///
@@ -18,9 +18,9 @@ pub struct SeriesEqualOptions {
     /// Whether to check for exact equality (true) or approximate equality (false) for floating point values.
     pub check_exact: bool,
     /// Relative tolerance for approximate equality of floating point values.
-    pub rtol: f64,
+    pub rel_tol: f64,
     /// Absolute tolerance for approximate equality of floating point values.
-    pub atol: f64,
+    pub abs_tol: f64,
     /// Whether to compare categorical values as strings.
     pub categorical_as_str: bool,
 }
@@ -39,8 +39,8 @@ impl Default for SeriesEqualOptions {
             check_names: true,
             check_order: true,
             check_exact: true,
-            rtol: 1e-5,
-            atol: 1e-8,
+            rel_tol: 1e-5,
+            abs_tol: 1e-8,
             categorical_as_str: false,
         }
     }
@@ -77,14 +77,14 @@ impl SeriesEqualOptions {
     }
 
     /// Sets the relative tolerance for approximate equality of floating point values.
-    pub fn with_rtol(mut self, value: f64) -> Self {
-        self.rtol = value;
+    pub fn with_rel_tol(mut self, value: f64) -> Self {
+        self.rel_tol = value;
         self
     }
 
     /// Sets the absolute tolerance for approximate equality of floating point values.
-    pub fn with_atol(mut self, value: f64) -> Self {
-        self.atol = value;
+    pub fn with_abs_tol(mut self, value: f64) -> Self {
+        self.abs_tol = value;
         self
     }
 
@@ -220,8 +220,8 @@ fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult
 /// * `left` - The first Series to compare
 /// * `right` - The second Series to compare
 /// * `unequal` - Boolean ChunkedArray indicating which elements to check (true = check this element)
-/// * `rtol` - Relative tolerance (multiplied by the absolute value of the right Series)
-/// * `atol` - Absolute tolerance added to the relative tolerance
+/// * `rel_tol` - Relative tolerance (multiplied by the absolute value of the right Series)
+/// * `abs_tol` - Absolute tolerance added to the relative tolerance
 ///
 /// # Returns
 ///
@@ -231,32 +231,18 @@ fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult
 /// # Formula
 ///
 /// Values are considered within tolerance if:
-/// `|left - right| <= (rtol * |right| + atol)` OR values are exactly equal
+/// `|left - right| <= (rel_tol * |right| + abs_tol)` OR values are exactly equal
 ///
 fn assert_series_values_within_tolerance(
     left: &Series,
     right: &Series,
     unequal: &ChunkedArray<BooleanType>,
-    rtol: f64,
-    atol: f64,
+    rel_tol: f64,
+    abs_tol: f64,
 ) -> PolarsResult<()> {
     let left_unequal = left.filter(unequal)?;
     let right_unequal = right.filter(unequal)?;
-
-    let difference = (&left_unequal - &right_unequal)?;
-    let abs_difference = abs(&difference)?;
-
-    let right_abs = abs(&right_unequal)?;
-
-    let rtol_part = &right_abs * rtol;
-    let tolerance = &rtol_part + atol;
-
-    let finite_mask = right_unequal.is_finite()?;
-    let diff_within_tol = abs_difference.lt_eq(&tolerance)?;
-    let equal_values = left_unequal.equal(&right_unequal)?;
-
-    let within_tolerance = (diff_within_tol & finite_mask) | equal_values;
-
+    let within_tolerance = is_close(left, right, abs_tol, rel_tol, false)?;
     if within_tolerance.all() {
         Ok(())
     } else {
@@ -310,8 +296,8 @@ fn assert_series_values_equal(
     right: &Series,
     check_order: bool,
     check_exact: bool,
-    rtol: f64,
-    atol: f64,
+    rel_tol: f64,
+    abs_tol: f64,
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
     let (left, right) = if categorical_as_str {
@@ -352,8 +338,8 @@ fn assert_series_values_equal(
             &filtered_left,
             &filtered_right,
             check_exact,
-            rtol,
-            atol,
+            rel_tol,
+            abs_tol,
             categorical_as_str,
         ) {
             Ok(_) => return Ok(()),
@@ -383,7 +369,7 @@ fn assert_series_values_equal(
 
     assert_series_null_values_match(&left, &right)?;
     assert_series_nan_values_match(&left, &right)?;
-    assert_series_values_within_tolerance(&left, &right, &unequal, rtol, atol)?;
+    assert_series_values_within_tolerance(&left, &right, &unequal, rel_tol, abs_tol)?;
 
     Ok(())
 }
@@ -424,8 +410,8 @@ fn assert_series_nested_values_equal(
     left: &Series,
     right: &Series,
     check_exact: bool,
-    rtol: f64,
-    atol: f64,
+    rel_tol: f64,
+    abs_tol: f64,
     categorical_as_str: bool,
 ) -> PolarsResult<()> {
     if are_both_lists(left.dtype(), right.dtype()) {
@@ -451,8 +437,8 @@ fn assert_series_nested_values_equal(
                     &s2_series.explode(false)?,
                     true,
                     check_exact,
-                    rtol,
-                    atol,
+                    rel_tol,
+                    abs_tol,
                     categorical_as_str,
                 ) {
                     Ok(_) => continue,
@@ -476,8 +462,8 @@ fn assert_series_nested_values_equal(
                 s2_series,
                 true,
                 check_exact,
-                rtol,
-                atol,
+                rel_tol,
+                abs_tol,
                 categorical_as_str,
             ) {
                 Ok(_) => continue,
@@ -565,8 +551,8 @@ pub fn assert_series_equal(
         right,
         options.check_order,
         options.check_exact,
-        options.rtol,
-        options.atol,
+        options.rel_tol,
+        options.abs_tol,
         options.categorical_as_str,
     )
 }
@@ -585,9 +571,9 @@ pub struct DataFrameEqualOptions {
     /// Whether to check for exact equality (true) or approximate equality (false) for floating point values.
     pub check_exact: bool,
     /// Relative tolerance for approximate equality of floating point values.
-    pub rtol: f64,
+    pub rel_tol: f64,
     /// Absolute tolerance for approximate equality of floating point values.
-    pub atol: f64,
+    pub abs_tol: f64,
     /// Whether to compare categorical values as strings.
     pub categorical_as_str: bool,
 }
@@ -606,8 +592,8 @@ impl Default for DataFrameEqualOptions {
             check_column_order: true,
             check_dtypes: true,
             check_exact: false,
-            rtol: 1e-5,
-            atol: 1e-8,
+            rel_tol: 1e-5,
+            abs_tol: 1e-8,
             categorical_as_str: false,
         }
     }
@@ -644,14 +630,14 @@ impl DataFrameEqualOptions {
     }
 
     /// Sets the relative tolerance for approximate equality of floating point values.
-    pub fn with_rtol(mut self, value: f64) -> Self {
-        self.rtol = value;
+    pub fn with_rel_tol(mut self, value: f64) -> Self {
+        self.rel_tol = value;
         self
     }
 
     /// Sets the absolute tolerance for approximate equality of floating point values.
-    pub fn with_atol(mut self, value: f64) -> Self {
-        self.atol = value;
+    pub fn with_abs_tol(mut self, value: f64) -> Self {
+        self.abs_tol = value;
         self
     }
 
@@ -873,8 +859,8 @@ pub fn assert_dataframe_equal(
             s_right_series,
             true,
             options.check_exact,
-            options.rtol,
-            options.atol,
+            options.rel_tol,
+            options.abs_tol,
             options.categorical_as_str,
         ) {
             Ok(_) => {},

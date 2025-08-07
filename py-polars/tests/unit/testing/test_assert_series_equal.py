@@ -634,13 +634,13 @@ def test_assert_series_equal_uint_overflow() -> None:
         AssertionError,
         match=r"Series are different \(exact value mismatch\)",
     ):
-        assert_series_equal(s1, s2, atol=0)
+        assert_series_equal(s1, s2, abs_tol=0)
 
     with pytest.raises(
         AssertionError,
         match=r"Series are different \(exact value mismatch\)",
     ):
-        assert_series_equal(s1, s2, atol=1)
+        assert_series_equal(s1, s2, abs_tol=1)
 
     left = pl.Series(
         values=[2810428175213635359],
@@ -662,7 +662,7 @@ def test_assert_series_equal_uint_always_checked_exactly() -> None:
         AssertionError,
         match=r"Series are different \(exact value mismatch\)",
     ):
-        assert_series_equal(s1, s2, atol=1, check_dtypes=False)
+        assert_series_equal(s1, s2, abs_tol=1, check_dtypes=False)
 
 
 def test_assert_series_equal_nested_int_always_checked_exactly() -> None:
@@ -673,7 +673,7 @@ def test_assert_series_equal_nested_int_always_checked_exactly() -> None:
         AssertionError,
         match=r"Series are different \(exact value mismatch\)",
     ):
-        assert_series_equal(s1, s2, atol=1)
+        assert_series_equal(s1, s2, abs_tol=1)
     with pytest.raises(
         AssertionError,
         match=r"Series are different \(exact value mismatch\)",

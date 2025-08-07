@@ -154,7 +154,7 @@ def test_ewm_std_var() -> None:
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
     expected = pl.Series("a", [0.0, 4.5, 1.9285714285714288])
-    assert np.allclose(var, std**2, rtol=1e-16)
+    assert np.allclose(var, std**2, rel_tol=1e-16)
     assert_series_equal(var, expected)
 
 
@@ -299,14 +299,14 @@ def test_ewm_methods(
                 # https://github.com/pola-rs/polars/pull/5011#issuecomment-1262318124
                 ewm_mean_pl = ewm_mean_pl.fill_null(strategy="forward")
 
-            assert_series_equal(ewm_mean_pl, ewm_mean_pd, atol=1e-07)
+            assert_series_equal(ewm_mean_pl, ewm_mean_pd, abs_tol=1e-07)
 
             # std:
             ewm_std_pl = s.ewm_std(bias=bias, **pl_params).fill_nan(None)
             ewm_std_pd = pl.Series(p.ewm(**pd_params).std(bias=bias))
-            assert_series_equal(ewm_std_pl, ewm_std_pd, atol=1e-07)
+            assert_series_equal(ewm_std_pl, ewm_std_pd, abs_tol=1e-07)
 
             # var:
             ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nan(None)
             ewm_var_pd = pl.Series(p.ewm(**pd_params).var(bias=bias))
-            assert_series_equal(ewm_var_pl, ewm_var_pd, atol=1e-07)
+            assert_series_equal(ewm_var_pl, ewm_var_pd, abs_tol=1e-07)

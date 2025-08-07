@@ -25,6 +25,8 @@ def _assert_correct_input_type(left: Any, right: Any) -> bool:
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
+@deprecate_renamed_parameter("rel_tol", "rel_tol", version="1.33.0")
+@deprecate_renamed_parameter("abs_tol", "abs_tol", version="1.33.0")
 def assert_series_equal(
     left: Series,
     right: Series,
@@ -33,8 +35,8 @@ def assert_series_equal(
     check_names: bool = True,
     check_order: bool = True,
     check_exact: bool = False,
-    rtol: float = 1e-5,
-    atol: float = 1e-8,
+    rel_tol: float = 1e-5,
+    abs_tol: float = 1e-8,
     categorical_as_str: bool = False,
 ) -> None:
     """
@@ -60,12 +62,12 @@ def assert_series_equal(
         Requires elements to appear in the same order.
     check_exact
         Requires float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
+        equal when within tolerance of each other (see `rel_tol` and `abs_tol`).
         Only affects columns with a Float data type.
-    rtol
+    rel_tol
         Relative tolerance for inexact checking, given as a fraction of the values in
         `right`.
-    atol
+    abs_tol
         Absolute tolerance for inexact checking.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
@@ -118,13 +120,15 @@ def assert_series_equal(
         check_names=check_names,
         check_order=check_order,
         check_exact=check_exact,
-        rtol=rtol,
-        atol=atol,
+        rel_tol=rel_tol,
+        abs_tol=abs_tol,
         categorical_as_str=categorical_as_str,
     )
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
+@deprecate_renamed_parameter("rel_tol", "rel_tol", version="1.33.0")
+@deprecate_renamed_parameter("abs_tol", "abs_tol", version="1.33.0")
 def assert_series_not_equal(
     left: Series,
     right: Series,
@@ -133,8 +137,8 @@ def assert_series_not_equal(
     check_names: bool = True,
     check_order: bool = True,
     check_exact: bool = False,
-    rtol: float = 1e-5,
-    atol: float = 1e-8,
+    rel_tol: float = 1e-5,
+    abs_tol: float = 1e-8,
     categorical_as_str: bool = False,
 ) -> None:
     """
@@ -159,12 +163,12 @@ def assert_series_not_equal(
         Requires elements to appear in the same order.
     check_exact
         Requires float values to match exactly. If set to `False`, values are considered
-        equal when within tolerance of each other (see `rtol` and `atol`).
+        equal when within tolerance of each other (see `rel_tol` and `abs_tol`).
         Only affects columns with a Float data type.
-    rtol
+    rel_tol
         Relative tolerance for inexact checking, given as a fraction of the values in
         `right`.
-    atol
+    abs_tol
         Absolute tolerance for inexact checking.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
@@ -196,8 +200,8 @@ def assert_series_not_equal(
             check_names=check_names,
             check_order=check_order,
             check_exact=check_exact,
-            rtol=rtol,
-            atol=atol,
+            rel_tol=rel_tol,
+            abs_tol=abs_tol,
             categorical_as_str=categorical_as_str,
         )
     except AssertionError:
