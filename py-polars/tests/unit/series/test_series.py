@@ -2290,7 +2290,7 @@ def test_is_close_invalid_abs_tol() -> None:
 
 def test_is_close_invalid_rel_tol() -> None:
     with pytest.raises(pl.exceptions.ComputeError):
-        pl.select(pl.lit(1.0).is_close(1, rel_tol=1.0))
+        pl.select(pl.lit(1.0).is_close(1, rel_tol=-1.0))
 
 
 def test_comparisons_structs_raise() -> None:

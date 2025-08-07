@@ -154,7 +154,7 @@ def test_ewm_std_var() -> None:
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
     expected = pl.Series("a", [0.0, 4.5, 1.9285714285714288])
-    assert np.allclose(var, std**2, rel_tol=1e-16)
+    assert np.allclose(var, std**2, rtol=1e-16)
     assert_series_equal(var, expected)
 
 
