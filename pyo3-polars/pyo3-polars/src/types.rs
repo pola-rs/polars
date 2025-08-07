@@ -429,6 +429,10 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 let class = pl.getattr(intern!(py, "Int64")).unwrap();
                 class.call0()
             },
+            DataType::Int128 => {
+                let class = pl.getattr(intern!(py, "Int128")).unwrap();
+                class.call0()
+            },
             DataType::UInt8 => {
                 let class = pl.getattr(intern!(py, "UInt8")).unwrap();
                 class.call0()
@@ -582,6 +586,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
+                    "Int128" => DataType::Int128,
                     "UInt8" => DataType::UInt8,
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
@@ -625,6 +630,7 @@ impl<'py> FromPyObject<'py> for PyDataType {
             "Int16" => DataType::Int16,
             "Int32" => DataType::Int32,
             "Int64" => DataType::Int64,
+            "Int128" => DataType::Int128,
             "UInt8" => DataType::UInt8,
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
