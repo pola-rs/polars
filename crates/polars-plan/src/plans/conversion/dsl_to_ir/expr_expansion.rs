@@ -83,6 +83,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
             | F::ReduceHorizontal { .. }
             | F::SumHorizontal { .. }
             | F::MeanHorizontal { .. }
+            | F::RowEncode(..)
     );
     let mut allow_empty_inputs = matches!(
         function,
@@ -728,7 +729,6 @@ fn expand_expression_rec(
         Expr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => {
@@ -749,7 +749,6 @@ fn expand_expression_rec(
                 out.push(Expr::AnonymousFunction {
                     input: expanded_input,
                     function: function.clone(),
-                    output_type: output_type.clone(),
                     options: *options,
                     fmt_str: fmt_str.clone(),
                 });
@@ -763,7 +762,6 @@ fn expand_expression_rec(
                     |e| Expr::AnonymousFunction {
                         input: e.to_vec(),
                         function: function.clone(),
-                        output_type: output_type.clone(),
                         options: *options,
                         fmt_str: fmt_str.clone(),
                     },

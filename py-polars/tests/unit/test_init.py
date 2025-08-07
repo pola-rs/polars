@@ -1,3 +1,5 @@
+import importlib
+
 import pytest
 
 import polars as pl
@@ -41,3 +43,8 @@ def test_type_aliases_deprecated() -> None:
 
 def test_import_all() -> None:
     exec("from polars import *")
+
+
+def test_version() -> None:
+    # This has already gone wrong once (#23940), preventing future problems.
+    assert pl.__version__ == importlib.metadata.version("polars")

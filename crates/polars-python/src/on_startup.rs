@@ -16,21 +16,17 @@ use pyo3::{IntoPyObjectExt, intern};
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
-use crate::map::lazy::{ToSeries, call_lambda_with_series};
+use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
 use crate::series::PySeries;
 
 fn python_function_caller_series(
-    s: Column,
+    s: &[Column],
     output_dtype: Option<DataType>,
     lambda: &PyObject,
 ) -> PolarsResult<Column> {
-    Python::with_gil(|py| {
-        let object =
-            call_lambda_with_series(py, s.as_materialized_series(), Some(output_dtype), lambda)?;
-        object.to_series(py, polars(py), s.name()).map(Column::from)
-    })
+    Python::with_gil(|py| call_lambda_with_series(py, s, output_dtype, lambda))
 }
 
 fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame> {

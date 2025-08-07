@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::named_serde::ExprRegistry;
 use super::*;
 
-impl Serialize for SpecialEq<Arc<dyn ColumnsUdf>> {
+impl Serialize for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -96,7 +96,7 @@ impl<T: schemars::JsonSchema + Clone> schemars::JsonSchema for LazySerde<T> {
     }
 }
 
-pub(super) fn deserialize_column_udf(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
+pub(super) fn deserialize_column_udf(buf: &[u8]) -> PolarsResult<Arc<dyn AnonymousColumnsUdf>> {
     #[cfg(feature = "python")]
     if buf.starts_with(crate::dsl::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
         return crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(buf);
@@ -112,12 +112,11 @@ pub(super) fn deserialize_column_udf(buf: &[u8]) -> PolarsResult<Arc<dyn Columns
             polars_bail!(ComputeError: msg)
         }
     } else {
-        polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function"
-        )
+        polars_bail!(ComputeError: "deserialization not supported for this 'opaque' function")
     }
 }
 // impl<T: Deserialize> Deserialize for crate::dsl::expr::LazySerde<T> {
-impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
+impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'a>,
@@ -132,94 +131,13 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
 }
 
 #[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for SpecialEq<Arc<dyn ColumnsUdf>> {
+impl schemars::JsonSchema for SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
     fn schema_name() -> String {
-        "ColumnsUdf".to_owned()
+        "AnonymousColumnsUdf".to_owned()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "ColumnsUdf"))
-    }
-
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        Vec::<u8>::json_schema(generator)
-    }
-}
-
-impl Serialize for GetOutput {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::Error;
-        let mut buf = vec![];
-
-        match self {
-            LazySerde::Bytes(b) => serializer.serialize_bytes(b),
-            LazySerde::Named {
-                name,
-                payload,
-                value: _,
-            } => serialize_named(serializer, name, payload.as_deref()),
-            LazySerde::Deserialized(s) => {
-                s.as_ref()
-                    .try_serialize(&mut buf)
-                    .map_err(|e| S::Error::custom(format!("{e}")))?;
-                serializer.serialize_bytes(&buf)
-            },
-        }
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for GetOutput {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        use serde::de::Error;
-        #[cfg(feature = "python")]
-        {
-            deserialize_map_bytes(deserializer, |buf| {
-                if buf.starts_with(self::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                    let get_output = self::python_dsl::PythonGetOutput::try_deserialize(&buf)
-                        .map_err(|e| D::Error::custom(format!("{e}")))?;
-                    Ok(LazySerde::Deserialized(SpecialEq::new(get_output)))
-                } else if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
-                    let (reg, name, payload) = deserialize_named_registry(&buf)
-                        .map_err(|e| D::Error::custom(format!("{e}")))?;
-                    if let Some(func) = reg.get_output(name, payload) {
-                        Ok(LazySerde::Deserialized(SpecialEq::new(func)))
-                    } else {
-                        let msg = "name not found in named serde registry";
-                        Err(D::Error::custom(msg))
-                    }
-                } else {
-                    Err(D::Error::custom(
-                        "deserialization not supported for this output field",
-                    ))
-                }
-            })?
-        }
-        #[cfg(not(feature = "python"))]
-        {
-            _ = deserializer;
-
-            Err(D::Error::custom(
-                "deserialization not supported for this output field",
-            ))
-        }
-    }
-}
-
-#[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for GetOutput {
-    fn schema_name() -> String {
-        "GetOutput".to_owned()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed(std::concat!(std::module_path!(), "::", "GetOutput"))
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "AnonymousColumnsUdf"))
     }
 
     fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {

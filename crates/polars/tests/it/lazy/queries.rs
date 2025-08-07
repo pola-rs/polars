@@ -195,16 +195,14 @@ fn test_unknown_supertype_ignore() -> PolarsResult<()> {
 fn test_apply_multiple_columns() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    let multiply = |s: &mut [Column]| (&(&s[0] * &s[0])? * &s[1]).map(Some);
+    let multiply = |s: &mut [Column]| (&(&s[0] * &s[0])? * &s[1]);
 
     let out = df
         .clone()
         .lazy()
-        .select([map_multiple(
-            multiply,
-            [col("A"), col("B")],
-            GetOutput::from_type(DataType::Int32),
-        )])
+        .select([map_multiple(multiply, [col("A"), col("B")], |_, f| {
+            Ok(Field::new(f[0].name().clone(), DataType::Int32))
+        })])
         .collect()?;
     let out = out.column("A")?;
     let out = out.i32()?;
@@ -219,7 +217,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .agg([apply_multiple(
             multiply,
             [col("A"), col("B")],
-            GetOutput::from_type(DataType::Int32),
+            |_, f| Ok(Field::new(f[0].name().clone(), DataType::Int32)),
             false,
         )])
         .collect()?;

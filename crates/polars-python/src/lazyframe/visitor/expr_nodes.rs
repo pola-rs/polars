@@ -1379,6 +1379,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"));
                 },
+                IRFunctionExpr::RowEncode(_) => {
+                    return Err(PyNotImplementedError::new_err("row_encode"));
+                },
+                IRFunctionExpr::RowDecode(..) => {
+                    return Err(PyNotImplementedError::new_err("row_decode"));
+                },
             }?,
             options: py.None(),
         }

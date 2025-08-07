@@ -596,17 +596,26 @@ def test_assert_series_equal_nested_struct_float() -> None:
         assert_series_equal(s1, s2)
 
 
-def test_assert_series_equal_full_null_incompatible_dtypes_raises() -> None:
+def test_assert_series_equal_all_null_different_dtypes_fails_with_check_dtypes_true() -> (
+    None
+):
     s1 = pl.Series([None, None], dtype=pl.Categorical)
     s2 = pl.Series([None, None], dtype=pl.Int16)
 
-    # You could argue this should pass, but it's rare enough not to warrant the
-    # additional check
     with pytest.raises(
         AssertionError,
-        match="incompatible data types",
+        match="dtype mismatch",
     ):
-        assert_series_equal(s1, s2, check_dtypes=False)
+        assert_series_equal(s1, s2, check_dtypes=True)
+
+
+def test_assert_series_equal_all_null_different_dtypes_passes_with_check_dtypes_false() -> (
+    None
+):
+    s1 = pl.Series([None, None], dtype=pl.Categorical)
+    s2 = pl.Series([None, None], dtype=pl.Int16)
+
+    assert_series_equal(s1, s2, check_dtypes=False)
 
 
 def test_assert_series_equal_full_null_nested_list() -> None:

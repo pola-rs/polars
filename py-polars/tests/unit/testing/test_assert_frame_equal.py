@@ -404,6 +404,25 @@ def test_assert_frame_equal_check_dtype_deprecated() -> None:
         assert_frame_not_equal(df1, df3, check_dtype=False)  # type: ignore[call-arg]
 
 
+def test_assert_dataframe_equal_all_nulls_passes_when_ignoring_dtypes() -> None:
+    x = pl.from_dict({"A": [None, None, None]})
+    y = pl.from_dict(
+        {"A": [None, None, None]}, schema_overrides={"A": pl.List(pl.Float64())}
+    )
+
+    assert_frame_equal(x, y, check_dtypes=False)
+
+
+def test_assert_dataframe_equal_all_nulls_fails_when_checking_dtypes() -> None:
+    x = pl.from_dict({"A": [None, None, None]})
+    y = pl.from_dict(
+        {"A": [None, None, None]}, schema_overrides={"A": pl.List(pl.Float64())}
+    )
+
+    with pytest.raises(AssertionError, match="dtypes do not match"):
+        assert_frame_equal(x, y, check_dtypes=True)
+
+
 def test_tracebackhide(testdir: pytest.Testdir) -> None:
     testdir.makefile(
         ".py",

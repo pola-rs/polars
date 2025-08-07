@@ -89,7 +89,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal_width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
+        .select([col("sepal_width").map(|s| Ok(s * 200.0), |_, f| Ok(f.clone()))])
         .collect()
         .unwrap();
     assert_eq!(
@@ -248,7 +248,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(Some(s * 2)), GetOutput::same_type()))
+        .with_column(col("a").map(|s| Ok(s * 2), |_, f| Ok(f.clone())))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
@@ -284,10 +284,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
         .agg([
             col("day").alias("day"),
             col("cumcases")
-                .apply(
-                    |s: Column| (&s - &(s.shift(1))).map(Some),
-                    GetOutput::same_type(),
-                )
+                .apply(|s: Column| (&s - &(s.shift(1))), |_, f| Ok(f.clone()))
                 .alias("diff_cases"),
         ])
         .explode(by_name(["day", "diff_cases"], true))
@@ -731,8 +728,8 @@ fn test_lazy_group_by_apply() {
     df.lazy()
         .group_by([col("fruits")])
         .agg([col("cars").apply(
-            |s: Column| Ok(Some(Column::new("".into(), &[s.len() as u32]))),
-            GetOutput::from_type(DataType::UInt32),
+            |s: Column| Ok(Column::new("".into(), &[s.len() as u32])),
+            |_, f| Ok(Field::new(f.name().clone(), DataType::UInt32)),
         )])
         .collect()
         .unwrap();

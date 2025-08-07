@@ -5,22 +5,18 @@ use polars_utils::IdxSize;
 
 use super::ListNameSpaceImpl;
 
-pub fn lst_get(
-    ca: &ListChunked,
-    index: &Int64Chunked,
-    null_on_oob: bool,
-) -> PolarsResult<Option<Column>> {
+pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Column> {
     match index.len() {
         1 => {
             let index = index.get(0);
             if let Some(index) = index {
-                ca.lst_get(index, null_on_oob).map(Column::from).map(Some)
+                ca.lst_get(index, null_on_oob).map(Column::from)
             } else {
-                Ok(Some(Column::full_null(
+                Ok(Column::full_null(
                     ca.name().clone(),
                     ca.len(),
                     ca.inner_dtype(),
-                )))
+                ))
             }
         },
         len if len == ca.len() => {
@@ -79,15 +75,14 @@ pub fn lst_get(
             unsafe { s.take_unchecked(&take_by) }
                 .cast(ca.inner_dtype())
                 .map(Column::from)
-                .map(Some)
         },
         _ if ca.len() == 1 => {
             if ca.null_count() > 0 {
-                return Ok(Some(Column::full_null(
+                return Ok(Column::full_null(
                     ca.name().clone(),
                     index.len(),
                     ca.inner_dtype(),
-                )));
+                ));
             }
             let tmp = ca.rechunk();
             let arr = tmp.downcast_as_array();
@@ -121,7 +116,6 @@ pub fn lst_get(
             unsafe { s.take_unchecked(&take_by) }
                 .cast(ca.inner_dtype())
                 .map(Column::from)
-                .map(Some)
         },
         len => polars_bail!(
             ComputeError:

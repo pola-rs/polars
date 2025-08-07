@@ -1,6 +1,10 @@
 #[cfg(feature = "allocator")]
 pub mod allocator;
 
+// Since Python Polars cannot share its version into here and we need to be able to build this
+// package correctly without `py-polars`, we need to mirror the version here.
+pub static PYPOLARS_VERSION: &str = "1.32.2";
+
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
@@ -210,7 +214,8 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::map_expr))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
@@ -414,7 +419,7 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
 
     // Build info
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add("__version__", PYPOLARS_VERSION)?;
 
     // Plugins
     #[cfg(feature = "ffi_plugin")]
