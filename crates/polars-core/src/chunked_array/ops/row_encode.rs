@@ -244,3 +244,54 @@ pub fn _get_rows_encoded_ca_unordered(
     _get_rows_encoded_unordered(by)
         .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
 }
+
+#[cfg(feature = "dtype-struct")]
+pub fn row_encoding_decode(
+    ca: &BinaryOffsetChunked,
+    fields: &[Field],
+    opts: &[RowEncodingOptions],
+) -> PolarsResult<StructChunked> {
+    let (ctxts, dtypes) = fields
+        .iter()
+        .map(|f| {
+            (
+                get_row_encoding_context(f.dtype()),
+                f.dtype().to_physical().to_arrow(CompatLevel::newest()),
+            )
+        })
+        .collect::<(Vec<_>, Vec<_>)>();
+
+    let struct_arrow_dtype = ArrowDataType::Struct(
+        fields
+            .iter()
+            .map(|v| v.to_physical().to_arrow(CompatLevel::newest()))
+            .collect(),
+    );
+
+    let mut rows = Vec::new();
+    let chunks = ca
+        .downcast_iter()
+        .map(|array| {
+            let decoded_arrays = unsafe {
+                polars_row::decode::decode_rows_from_binary(array, opts, &ctxts, &dtypes, &mut rows)
+            };
+            assert_eq!(decoded_arrays.len(), fields.len());
+
+            StructArray::new(
+                struct_arrow_dtype.clone(),
+                array.len(),
+                decoded_arrays,
+                None,
+            )
+            .to_boxed()
+        })
+        .collect::<Vec<_>>();
+
+    Ok(unsafe {
+        StructChunked::from_chunks_and_dtype(
+            ca.name().clone(),
+            chunks,
+            DataType::Struct(fields.to_vec()),
+        )
+    })
+}
