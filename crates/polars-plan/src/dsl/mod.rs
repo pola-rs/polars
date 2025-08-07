@@ -441,23 +441,28 @@ impl Expr {
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
+    pub fn map<F, DT>(self, function: F, output_type: DT) -> Self
     where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
     {
         self.map_with_fmt_str(function, output_type, "map")
     }
 
-    pub fn map_with_fmt_str<F>(
+    pub fn map_with_fmt_str<F, DT>(
         self,
         function: F,
-        output_type: GetOutput,
+        output_type: DT,
         fmt_str: impl Into<PlSmallStr>,
     ) -> Self
     where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        let f = BaseColumnUdf::new(
+            move |c: &mut [Column]| function(std::mem::take(&mut c[0])),
+            move |schema: &Schema, fields: &[Field]| output_type(schema, &fields[0]),
+        );
 
         let options =
             FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT);
@@ -465,51 +470,56 @@ impl Expr {
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
-            output_type,
             options,
             fmt_str,
         }
     }
 
-    pub fn agg_with_fmt_str<F>(
+    pub fn agg_with_fmt_str<F, DT>(
         self,
         function: F,
-        output_type: GetOutput,
+        output_type: DT,
         fmt_str: impl Into<PlSmallStr>,
     ) -> Self
     where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        let f = BaseColumnUdf::new(
+            move |c: &mut [Column]| function(std::mem::take(&mut c[0])),
+            move |schema: &Schema, fields: &[Field]| output_type(schema, &fields[0]),
+        );
 
         let options = FunctionOptions::aggregation();
         let fmt_str = Box::new(fmt_str.into());
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
-            output_type,
             options,
             fmt_str,
         }
     }
 
-    pub fn apply_with_fmt_str<F>(
+    pub fn apply_with_fmt_str<F, DT>(
         self,
         function: F,
-        output_type: GetOutput,
+        output_type: DT,
         fmt_str: impl Into<PlSmallStr>,
     ) -> Self
     where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
+        let f = BaseColumnUdf::new(
+            move |c: &mut [Column]| function(std::mem::take(&mut c[0])),
+            move |schema: &Schema, fields: &[Field]| output_type(schema, &fields[0]),
+        );
 
         let options = FunctionOptions::groupwise();
         let fmt_str = Box::new(fmt_str.into());
         Expr::AnonymousFunction {
             input: vec![self],
             function: new_column_udf(f),
-            output_type,
             options,
             fmt_str,
         }
@@ -518,18 +528,20 @@ impl Expr {
     /// Apply a function/closure once the logical plan get executed with many arguments.
     ///
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
-    pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
+    pub fn map_many<F, DT>(self, function: F, arguments: &[Expr], output_type: DT) -> Self
     where
-        F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
+
+        let function = BaseColumnUdf::new(function, output_type);
 
         let options = FunctionOptions::elementwise();
         Expr::AnonymousFunction {
             input,
             function: new_column_udf(function),
-            output_type,
             options,
             fmt_str: Box::new(PlSmallStr::EMPTY),
         }
@@ -544,37 +556,31 @@ impl Expr {
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-    pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
+    pub fn apply<F, DT>(self, function: F, output_type: DT) -> Self
     where
-        F: Fn(Column) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(Column) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &Field) -> PolarsResult<Field> + 'static + Send + Sync,
     {
-        let f = move |c: &mut [Column]| function(std::mem::take(&mut c[0]));
-
-        let options = FunctionOptions::groupwise();
-        Expr::AnonymousFunction {
-            input: vec![self],
-            function: new_column_udf(f),
-            output_type,
-            options,
-            fmt_str: Box::new(PlSmallStr::EMPTY),
-        }
+        self.apply_with_fmt_str(function, output_type, PlSmallStr::EMPTY)
     }
 
     /// Apply a function/closure over the groups with many arguments. This should only be used in a group_by aggregation.
     ///
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
-    pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
+    pub fn apply_many<F, DT>(self, function: F, arguments: &[Expr], output_type: DT) -> Self
     where
-        F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+        F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+        DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
+
+        let function = BaseColumnUdf::new(function, output_type);
 
         let options = FunctionOptions::groupwise();
         Expr::AnonymousFunction {
             input,
             function: new_column_udf(function),
-            output_type,
             options,
             fmt_str: Box::new(PlSmallStr::EMPTY),
         }
@@ -1612,18 +1618,20 @@ impl Expr {
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
-pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+pub fn map_multiple<F, DT, E>(function: F, expr: E, output_type: DT) -> Expr
 where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+    DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
+
+    let function = BaseColumnUdf::new(function, output_type);
 
     let options = FunctionOptions::elementwise();
     Expr::AnonymousFunction {
         input,
         function: new_column_udf(function),
-        output_type,
         options,
         fmt_str: Box::new(PlSmallStr::EMPTY),
     }
@@ -1638,14 +1646,10 @@ where
 ///
 /// * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-pub fn apply_multiple<F, E>(
-    function: F,
-    expr: E,
-    output_type: GetOutput,
-    returns_scalar: bool,
-) -> Expr
+pub fn apply_multiple<F, DT, E>(function: F, expr: E, output_type: DT, returns_scalar: bool) -> Expr
 where
-    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + 'static + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Column> + 'static + Send + Sync,
+    DT: Fn(&Schema, &[Field]) -> PolarsResult<Field> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -1653,10 +1657,10 @@ where
         f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
         f
     });
+    let function = BaseColumnUdf::new(function, output_type);
     Expr::AnonymousFunction {
         input,
         function: new_column_udf(function),
-        output_type,
         options,
         fmt_str: Box::new(PlSmallStr::EMPTY),
     }

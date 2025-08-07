@@ -728,7 +728,6 @@ fn expand_expression_rec(
         Expr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => {
@@ -749,7 +748,6 @@ fn expand_expression_rec(
                 out.push(Expr::AnonymousFunction {
                     input: expanded_input,
                     function: function.clone(),
-                    output_type: output_type.clone(),
                     options: *options,
                     fmt_str: fmt_str.clone(),
                 });
@@ -763,7 +761,6 @@ fn expand_expression_rec(
                     |e| Expr::AnonymousFunction {
                         input: e.to_vec(),
                         function: function.clone(),
-                        output_type: output_type.clone(),
                         options: *options,
                         fmt_str: fmt_str.clone(),
                     },

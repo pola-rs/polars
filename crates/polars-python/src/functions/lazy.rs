@@ -473,16 +473,23 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
 }
 
 #[pyfunction]
-#[pyo3(signature = (pyexpr, lambda, output_type, map_groups, returns_scalar))]
-pub fn map_mul(
-    py: Python<'_>,
+#[pyo3(signature = (pyexpr, lambda, output_type, is_elementwise, returns_scalar, is_ufunc))]
+pub fn map_expr(
     pyexpr: Vec<PyExpr>,
     lambda: PyObject,
-    output_type: Option<Wrap<DataType>>,
-    map_groups: bool,
+    output_type: Option<PyDataTypeExpr>,
+    is_elementwise: bool,
     returns_scalar: bool,
+    is_ufunc: bool,
 ) -> PyExpr {
-    map::lazy::map_mul(&pyexpr, py, lambda, output_type, map_groups, returns_scalar)
+    map::lazy::map_expr(
+        &pyexpr,
+        lambda,
+        output_type,
+        is_elementwise,
+        returns_scalar,
+        is_ufunc,
+    )
 }
 
 #[pyfunction]

@@ -19,8 +19,8 @@ c = pl.col
     ("e", "equiv"),
     [
         (
-            c.a.map_batches(lambda x: str(x), pl.dtype_of("b")),
-            c.a.map_batches(lambda x: str(x), pl.String),
+            c.a.map_batches(lambda x: x.cast(pl.String), pl.dtype_of("b")),
+            c.a.map_batches(lambda x: x.cast(pl.String), pl.String),
         ),
         (
             c.a.replace_strict([1, 2, 3, 4, 5], "X", return_dtype=pl.dtype_of("b")),

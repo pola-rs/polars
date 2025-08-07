@@ -934,7 +934,7 @@ macro_rules! wrap {
 macro_rules! map_as_slice {
     ($func:path) => {{
         let f = move |s: &mut [Column]| {
-            $func(s).map(Some)
+            $func(s)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -942,7 +942,7 @@ macro_rules! map_as_slice {
 
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Column]| {
-            $func(s, $($args),*).map(Some)
+            $func(s, $($args),*)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -956,7 +956,7 @@ macro_rules! map_owned {
     ($func:path) => {{
         let f = move |c: &mut [Column]| {
             let c = std::mem::take(&mut c[0]);
-            $func(c).map(Some)
+            $func(c)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -965,7 +965,7 @@ macro_rules! map_owned {
     ($func:path, $($args:expr),*) => {{
         let f = move |c: &mut [Column]| {
             let c = std::mem::take(&mut c[0]);
-            $func(c, $($args),*).map(Some)
+            $func(c, $($args),*)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -978,7 +978,7 @@ macro_rules! map {
     ($func:path) => {{
         let f = move |c: &mut [Column]| {
             let c = &c[0];
-            $func(c).map(Some)
+            $func(c)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -987,7 +987,7 @@ macro_rules! map {
     ($func:path, $($args:expr),*) => {{
         let f = move |c: &mut [Column]| {
             let c = &c[0];
-            $func(c, $($args),*).map(Some)
+            $func(c, $($args),*)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -1024,10 +1024,7 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NullCount => {
                 let f = |s: &mut [Column]| {
                     let s = &s[0];
-                    Ok(Some(Column::new(
-                        s.name().clone(),
-                        [s.null_count() as IdxSize],
-                    )))
+                    Ok(Column::new(s.name().clone(), [s.null_count() as IdxSize]))
                 };
                 wrap!(f)
             },

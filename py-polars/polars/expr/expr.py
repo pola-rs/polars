@@ -4336,30 +4336,6 @@ class Expr:
         """
         return self.filter(predicate)
 
-    class _map_batches_wrapper:
-        def __init__(
-            self,
-            function: Callable[[Series], Series | Any],
-        ) -> None:
-            self.function = function
-
-        def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            return_dtype = kwargs["return_dtype"]
-
-            # ufunc and numba don't expect return_dtype
-            try:
-                result = self.function(*args, **kwargs)
-            except TypeError as e:
-                if "unexpected keyword argument 'return_dtype'" in e.args[0]:
-                    kwargs.pop("return_dtype")
-                    result = self.function(*args, **kwargs)
-                else:
-                    raise
-
-            if _check_for_numpy(result) and isinstance(result, np.ndarray):
-                result = pl.Series(result, dtype=return_dtype)
-            return result
-
     def map_batches(
         self,
         function: Callable[[Series], Series | Any],
@@ -4397,8 +4373,11 @@ class Expr:
 
                 Use `expr.implode().map_batches(..)` instead.
         is_elementwise
-            If set to true this can run in the streaming engine, but may yield
-            incorrect results in group-by. Ensure you know what you are doing!
+            Set to true if the operations is elementwise for better performance
+            and optimization.
+
+            An elementwise operations has unit or equal length for all inputs
+            and can be ran sequentially on slices without results being affected.
         returns_scalar
             If the function returns a scalar, by default it will be wrapped in
             a list in the output, since the assumption is that the function
@@ -4431,7 +4410,9 @@ class Expr:
         ... )
         >>> df.select(
         ...     pl.all().map_batches(
-        ...         lambda x: x.to_numpy().argmax(), return_dtype=pl.Int64
+        ...         lambda x: x.to_numpy().argmax(),
+        ...         return_dtype=pl.Int64,
+        ...         returns_scalar=True,
         ...     )
         ... )
         shape: (1, 2)
@@ -4500,17 +4481,17 @@ class Expr:
 Consider using {self}.implode() instead"""
             raise DeprecationWarning(msg)
             self = self.implode()
-        elif return_dtype is not None:
-            return_dtype = parse_into_datatype_expr(return_dtype)._pydatatype_expr
 
-        return wrap_expr(
-            self._pyexpr.map_batches(
-                self._map_batches_wrapper(function),
-                return_dtype,
-                is_elementwise,
-                returns_scalar,
-                _is_ufunc,
-            )
+        def _wrap(sl: list[pl.Series], *args: Any, **kwargs: Any) -> pl.Series:
+            return function(sl[0], *args, **kwargs)
+
+        return F.map_batches(
+            [self],
+            _wrap,
+            return_dtype,
+            is_elementwise=is_elementwise,
+            returns_scalar=returns_scalar,
+            _is_ufunc=_is_ufunc,
         )
 
     def map_elements(

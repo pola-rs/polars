@@ -268,18 +268,15 @@ impl AExpr {
                 Ok(truthy)
             },
             AnonymousFunction {
-                output_type,
                 input,
+                function,
                 fmt_str,
                 ..
             } => {
                 let fields = func_args_to_fields(input, ctx)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", fmt_str);
-                let out = output_type
-                    .clone()
-                    .materialize()?
-                    .get_field(ctx.schema, &fields)?;
-
+                let function = function.clone().materialize()?;
+                let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
             },
             Eval {

@@ -425,7 +425,7 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     list.lst_shift(periods).map(|ok| ok.into_column())
 }
 
-pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let list_ca = s.list()?;
     let offset_s = &args[1];
@@ -439,7 +439,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
                 .unwrap()
                 .extract::<usize>()
                 .unwrap_or(usize::MAX);
-            return Ok(Some(list_ca.lst_slice(offset, slice_len).into_column()));
+            return Ok(list_ca.lst_slice(offset, slice_len).into_column());
         },
         (1, length_slice_len) => {
             check_slice_arg_shape(length_slice_len, list_ca.len(), "length")?;
@@ -502,10 +502,10 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
         },
     };
     out.rename(s.name().clone());
-    Ok(Some(out.into_column()))
+    Ok(out.into_column())
 }
 
-pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
@@ -528,10 +528,10 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
         }
     }
 
-    first_ca.lst_concat(other).map(|ca| Some(ca.into_column()))
+    first_ca.lst_concat(other).map(IntoColumn::into_column)
 }
 
-pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Option<Column>> {
+pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();

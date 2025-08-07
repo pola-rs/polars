@@ -269,7 +269,7 @@ fn is_between(s: &[Column], closed: ClosedInterval) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "is_in")]
-fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Option<Column>> {
+fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Column> {
     let left = &s[0];
     let other = &s[1];
     polars_ops::prelude::is_in(
@@ -277,7 +277,7 @@ fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Option<Column>> {
         other.as_materialized_series(),
         nulls_equal,
     )
-    .map(|ca| Some(ca.into_column()))
+    .map(IntoColumn::into_column)
 }
 
 #[cfg(feature = "is_close")]
@@ -286,7 +286,7 @@ fn is_close(
     abs_tol: TotalOrdWrap<f64>,
     rel_tol: TotalOrdWrap<f64>,
     nans_equal: bool,
-) -> PolarsResult<Option<Column>> {
+) -> PolarsResult<Column> {
     let left = &s[0];
     let right = &s[1];
     polars_ops::prelude::is_close(
@@ -296,7 +296,7 @@ fn is_close(
         rel_tol.0,
         nans_equal,
     )
-    .map(|ca| Some(ca.into_column()))
+    .map(IntoColumn::into_column)
 }
 
 fn not(s: &Column) -> PolarsResult<Column> {

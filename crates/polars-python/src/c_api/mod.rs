@@ -214,7 +214,8 @@ pub fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::map_expr))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
