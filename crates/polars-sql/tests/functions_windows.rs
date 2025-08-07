@@ -24,7 +24,7 @@ fn create_expected(exprs: &[Expr], sql: &str) -> (DataFrame, DataFrame) {
       "#
     );
 
-    let expected = df.clone().select(&exprs).collect().unwrap();
+    let expected = df.clone().select(exprs).collect().unwrap();
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
 
@@ -46,13 +46,11 @@ fn ensure_error(sql: &str, expected_error: &str) {
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
     match ctx.execute(&query) {
-        Ok(_) => panic!("expected error: {}", expected_error),
+        Ok(_) => panic!("expected error: {expected_error}"),
         Err(e) => {
             assert!(
                 e.to_string().contains(expected_error),
-                "expected error: {}, got: {}",
-                expected_error,
-                e.to_string()
+                "expected error: {expected_error}, got: {e}",
             )
         },
     };
