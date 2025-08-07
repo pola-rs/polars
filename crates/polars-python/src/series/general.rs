@@ -448,6 +448,31 @@ impl PySeries {
     pub fn not_(&self, py: Python) -> PyResult<Self> {
         py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series))
     }
+
+    fn str_to_datetime_infer(
+        &self,
+        py: Python,
+        time_unit: Option<Wrap<TimeUnit>>,
+        strict: bool,
+        exact: bool,
+        ambiguous: PySeries,
+    ) -> PyResult<Self> {
+        Ok(py
+            .enter_polars(|| {
+                let datetime_strings = self.series.str()?;
+                let ambiguous = ambiguous.series.str()?;
+
+                polars_time::prelude::string::infer::to_datetime_with_inferred_tz(
+                    datetime_strings,
+                    time_unit.map_or(TimeUnit::Microseconds, |v| v.0),
+                    strict,
+                    exact,
+                    ambiguous,
+                )
+            })?
+            .into_series()
+            .into())
+    }
 }
 
 macro_rules! impl_set_with_mask {

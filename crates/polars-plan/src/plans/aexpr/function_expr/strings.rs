@@ -180,6 +180,7 @@ impl IRStringFunction {
                         .format
                         .as_ref()
                         .is_some_and(|format| TZ_AWARE_RE.is_match(format.as_str()))
+                        && time_zone.is_none()
                     {
                         time_zone = Some(time_zone.unwrap_or(TimeZone::UTC));
                     }
@@ -889,6 +890,7 @@ fn to_datetime(
                 tz_aware,
                 time_zone,
                 ambiguous,
+                true,
             )?
             .into_column()
     };
