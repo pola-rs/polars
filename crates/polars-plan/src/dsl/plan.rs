@@ -66,8 +66,7 @@ pub enum DslPlan {
         aggs: Vec<Expr>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
+        apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
     },
     /// Join operation
     Join {

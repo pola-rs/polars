@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Callable
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecated
+from polars._utils.wrap import wrap_df
 
 if TYPE_CHECKING:
     import sys

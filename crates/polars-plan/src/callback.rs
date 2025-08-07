@@ -199,7 +199,8 @@ mod _python {
         String
     }
     impl_registrycb_type! {
-        (polars_core::series::Series, series, series)
+        (polars_core::series::Series, series, series),
+        (polars_core::frame::DataFrame, df, df)
     }
 }
 
