@@ -1,5 +1,6 @@
-import pytest
 import importlib
+
+import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
