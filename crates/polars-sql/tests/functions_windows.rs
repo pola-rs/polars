@@ -48,15 +48,24 @@ fn ensure_error(sql: &str, expected_error: &str) {
     match ctx.execute(&query) {
         Ok(_) => panic!("expected error: {}", expected_error),
         Err(e) => {
-            assert!(e.to_string().contains(expected_error), "expected error: {}, got: {}", expected_error, e.to_string())
-        }
+            assert!(
+                e.to_string().contains(expected_error),
+                "expected error: {}, got: {}",
+                expected_error,
+                e.to_string()
+            )
+        },
     };
 }
 
 #[test]
 fn test_lead_lag() {
     for shift in [-2, -1, 1, 2] {
-        let (sql_func, sql_shift) = if shift > 0 { ("LAG", shift) } else { ("LEAD", -shift) };
+        let (sql_func, sql_shift) = if shift > 0 {
+            ("LAG", shift)
+        } else {
+            ("LEAD", -shift)
+        };
         let exprs = [
             col("a"),
             col("b"),
@@ -71,7 +80,8 @@ fn test_lead_lag() {
                 .alias("c"),
         ];
 
-        let sql_expr = format!("a, b, {sql_func}(b, {sql_shift}) OVER (PARTITION BY a ORDER BY b) as c");
+        let sql_expr =
+            format!("a, b, {sql_func}(b, {sql_shift}) OVER (PARTITION BY a ORDER BY b) as c");
         let (expected, actual) = create_expected(&exprs, &sql_expr);
 
         assert_eq!(expected, actual, "shift: {shift}");
@@ -107,20 +117,47 @@ fn test_lead_lag_default() {
 fn test_incorrect_shift() {
     for func in ["LAG", "LEAD"] {
         // Type of second argument is not an integer
-        ensure_error(&format!("a, b, {func}(b, '1') OVER (PARTITION BY a ORDER BY b) as c"), "offset must be an integer");
-        ensure_error(&format!("a, b, {func}(b, 1.0) OVER (PARTITION BY a ORDER BY b) as c"), "offset must be an integer");
-        ensure_error(&format!("a, b, {func}(b, 1.0) OVER (PARTITION BY a ORDER BY b) as c"), "offset must be an integer");
+        ensure_error(
+            &format!("a, b, {func}(b, '1') OVER (PARTITION BY a ORDER BY b) as c"),
+            "offset must be an integer",
+        );
+        ensure_error(
+            &format!("a, b, {func}(b, 1.0) OVER (PARTITION BY a ORDER BY b) as c"),
+            "offset must be an integer",
+        );
+        ensure_error(
+            &format!("a, b, {func}(b, 1.0) OVER (PARTITION BY a ORDER BY b) as c"),
+            "offset must be an integer",
+        );
 
         // Number of arguments is incorrect
-        ensure_error(&format!("a, b, {func}() OVER (PARTITION BY a ORDER BY b) as c"), "expects 1 or 2 arguments");
-        ensure_error(&format!("a, b, {func}(b, 1, 2) OVER (PARTITION BY a ORDER BY b) as c"), "expects 1 or 2 arguments");
+        ensure_error(
+            &format!("a, b, {func}() OVER (PARTITION BY a ORDER BY b) as c"),
+            "expects 1 or 2 arguments",
+        );
+        ensure_error(
+            &format!("a, b, {func}(b, 1, 2) OVER (PARTITION BY a ORDER BY b) as c"),
+            "expects 1 or 2 arguments",
+        );
 
         // Second argument is not a constant
-        ensure_error(&format!("a, b, {func}(b, a) OVER (PARTITION BY a ORDER BY b) as c"), "offset must be an integer");
-        ensure_error(&format!("a, b, {func}(b, a + 1) OVER (PARTITION BY a ORDER BY b) as c"), "offset must be an integer");
+        ensure_error(
+            &format!("a, b, {func}(b, a) OVER (PARTITION BY a ORDER BY b) as c"),
+            "offset must be an integer",
+        );
+        ensure_error(
+            &format!("a, b, {func}(b, a + 1) OVER (PARTITION BY a ORDER BY b) as c"),
+            "offset must be an integer",
+        );
 
         // Second argument is not positive
-        ensure_error(&format!("a, b, {func}(b, -1) OVER (PARTITION BY a ORDER BY b) as c"), "offset must be positive");
-        ensure_error(&format!("a, b, {func}(b, 0) OVER (PARTITION BY a ORDER BY b) as c"), "offset must be positive");        
+        ensure_error(
+            &format!("a, b, {func}(b, -1) OVER (PARTITION BY a ORDER BY b) as c"),
+            "offset must be positive",
+        );
+        ensure_error(
+            &format!("a, b, {func}(b, 0) OVER (PARTITION BY a ORDER BY b) as c"),
+            "offset must be positive",
+        );
     }
 }

@@ -754,13 +754,13 @@ pub(crate) enum PolarsSQLFunctions {
     // SQL 'lag' function.
     /// Returns the value of the expression evaluated at the row n rows before the current row.
     /// ```sql
-    /// SELECT lag(column_1, 1) FROM df;
+    /// SELECT lag(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
     /// ```
     Lag,
     // SQL 'lead' function.
     /// Returns the value of the expression evaluated at the row n rows after the current row.
     /// ```sql
-    /// SELECT lead(column_1, 1) FROM df;
+    /// SELECT lead(column_1, 1) OVER (PARTITION BY column_2 ORDER BY column_3) FROM df;
     /// ```
     Lead,
 
@@ -1746,7 +1746,7 @@ impl SQLFunctionVisitor<'_> {
 
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
-                let expr = parse_sql_expr(&sql_expr, self.ctx, self.active_schema)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
                 Ok(expr.shift(offset_multiplier.into()))
             },
             [FunctionArgExpr::Expr(sql_expr), FunctionArgExpr::Expr(offset_expr)] => {
