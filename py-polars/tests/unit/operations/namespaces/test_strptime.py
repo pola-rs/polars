@@ -824,3 +824,27 @@ def test_matching_strings_but_different_format_22495(value: str) -> None:
     s = pl.Series("my_strings", [value])
     result = s.str.to_date("%Y-%m-%d", strict=False).item()
     assert result is None
+
+
+@pytest.mark.parametrize("length", [1, 5])
+def test_eager_inference_on_expr(length: int) -> None:
+    s = pl.Series("a", ["2025-04-06T18:57:42.77123Z"] * length)
+
+    assert_series_equal(
+        s.str.strptime(pl.Datetime),
+        pl.Series(
+            "a",
+            [
+                datetime(
+                    2025, 4, 6, 18, 57, 42, 771230, tzinfo=timezone(timedelta(hours=0))
+                )
+            ]
+            * length,
+        ),
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
+    ):
+        s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))

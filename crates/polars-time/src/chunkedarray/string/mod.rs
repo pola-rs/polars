@@ -157,8 +157,11 @@ pub trait StringMethods: AsString {
         tz_aware: bool,
         tz: Option<&TimeZone>,
         _ambiguous: &StringChunked,
+        // Ensure that the inferred time_zone matches the given time_zone.
+        ensure_matching_tz: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let string_ca = self.as_string();
+        let had_format = fmt.is_some();
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_datetime(string_ca)?,
@@ -201,6 +204,12 @@ pub trait StringMethods: AsString {
             None
         })
         .with_name(string_ca.name().clone());
+
+        polars_ensure!(
+            !ensure_matching_tz || had_format || !(tz_aware && tz.is_none()),
+            to_datetime_tz_mismatch
+        );
+
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
             (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
@@ -270,7 +279,7 @@ pub trait StringMethods: AsString {
         let string_ca = self.as_string();
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => return infer::to_datetime(string_ca, tu, tz, ambiguous),
+            None => return infer::to_datetime(string_ca, tu, tz, ambiguous, true),
         };
         let fmt = strptime::compile_fmt(fmt)?;
         let use_cache = use_cache && string_ca.len() > 50;

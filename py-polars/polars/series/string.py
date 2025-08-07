@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import polars._reexport as pl
+import polars.functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
+from polars._utils.wrap import wrap_s
 from polars.datatypes import Int64
+from polars.datatypes.classes import Datetime
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
@@ -95,8 +99,8 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        ambiguous: Ambiguous | Series = "raise",
-    ) -> Series:
+        ambiguous: Ambiguous | pl.Series = "raise",
+    ) -> pl.Series:
         """
         Convert a String column into a Datetime column.
 
@@ -154,6 +158,38 @@ class StringNameSpace:
                 2020-01-01 02:00:00 UTC
         ]
         """
+        if format is None and time_zone is None:
+            if isinstance(ambiguous, str):
+                ambiguous_s = pl.Series([ambiguous])
+            else:
+                ambiguous_s = ambiguous
+
+            return wrap_s(
+                self._s.str_to_datetime_infer(
+                    time_unit,
+                    strict,
+                    exact,
+                    ambiguous_s._s,
+                )
+            )
+        else:
+            ambiguous_expr = F.lit(ambiguous)
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(
+                    F.col(s.name).str.to_datetime(
+                        format,
+                        time_unit=time_unit,
+                        time_zone=time_zone,
+                        strict=strict,
+                        exact=exact,
+                        cache=cache,
+                        ambiguous=ambiguous_expr,
+                    )
+                )
+                .to_series()
+            )
 
     def to_time(
         self,
@@ -278,6 +314,38 @@ class StringNameSpace:
                 2001-07-08
         ]
         """
+        if format is None and (
+            dtype is Datetime
+            or (isinstance(dtype, Datetime) and dtype.time_zone is None)
+        ):
+            time_unit = None
+            if isinstance(dtype, Datetime):
+                time_unit = dtype.time_unit
+
+            return self.to_datetime(
+                time_unit=time_unit,
+                strict=strict,
+                exact=exact,
+                cache=cache,
+                ambiguous=ambiguous,
+            )
+        else:
+            ambiguous_expr = F.lit(ambiguous)
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(
+                    F.col(s.name).str.strptime(
+                        dtype,
+                        format,
+                        strict=strict,
+                        exact=exact,
+                        cache=cache,
+                        ambiguous=ambiguous_expr,
+                    )
+                )
+                .to_series()
+            )
 
     @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
