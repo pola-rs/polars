@@ -220,7 +220,7 @@ fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult
 /// * `left` - The first Series to compare
 /// * `right` - The second Series to compare
 /// * `unequal` - Boolean ChunkedArray indicating which elements to check (true = check this element)
-/// * `rel_tol` - Relative tolerance (multiplied by the absolute value of the right Series)
+/// * `rel_tol` - Relative tolerance (relative to the maximum absolute value of the two Series)
 /// * `abs_tol` - Absolute tolerance added to the relative tolerance
 ///
 /// # Returns
@@ -242,7 +242,8 @@ fn assert_series_values_within_tolerance(
 ) -> PolarsResult<()> {
     let left_unequal = left.filter(unequal)?;
     let right_unequal = right.filter(unequal)?;
-    let within_tolerance = is_close(left, right, abs_tol, rel_tol, false)?;
+
+    let within_tolerance = is_close(&left_unequal, &right_unequal, abs_tol, rel_tol, false)?;
     if within_tolerance.all() {
         Ok(())
     } else {
