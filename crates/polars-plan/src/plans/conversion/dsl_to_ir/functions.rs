@@ -238,16 +238,7 @@ pub(super) fn convert_functions(
                 S::LenChars => IS::LenChars,
                 S::Lowercase => IS::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
-                S::JsonDecode {
-                    dtype,
-                    infer_schema_len,
-                } => IS::JsonDecode {
-                    dtype: match dtype {
-                        Some(dtype) => Some(dtype.into_datatype(ctx.schema)?),
-                        None => None,
-                    },
-                    infer_schema_len,
-                },
+                S::JsonDecode(dtype) => IS::JsonDecode(dtype.into_datatype(ctx.schema)?),
                 #[cfg(feature = "extract_jsonpath")]
                 S::JsonPathMatch => IS::JsonPathMatch,
                 #[cfg(feature = "regex")]

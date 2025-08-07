@@ -506,7 +506,7 @@ def test_json_infer_3_dtypes() -> None:
     df = pl.DataFrame({"a": ["{}", "1", "[1, 2]"]})
 
     with pytest.raises(pl.exceptions.ComputeError):
-        df.select(pl.col("a").str.json_decode())
+        df.select(pl.col("a").str.json_decode(pl.Int64))
 
     df = pl.DataFrame({"a": [None, "1", "[1, 2]"]})
     out = df.select(pl.col("a").str.json_decode(dtype=pl.List(pl.String)))

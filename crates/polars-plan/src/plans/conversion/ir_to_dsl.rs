@@ -408,13 +408,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::LenChars => B::LenChars,
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
-                IB::JsonDecode {
-                    dtype,
-                    infer_schema_len,
-                } => B::JsonDecode {
-                    dtype: dtype.map(Into::into),
-                    infer_schema_len,
-                },
+                IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonPathMatch => B::JsonPathMatch,
                 #[cfg(feature = "regex")]
