@@ -749,6 +749,22 @@ pub(crate) enum PolarsSQLFunctions {
     Columns,
 
     // ----
+    // Window functions
+    // ----
+    // SQL 'lag' function.
+    /// Returns the value of the expression evaluated at the row n rows before the current row.
+    /// ```sql
+    /// SELECT lag(column_1, 1) FROM df;
+    /// ```
+    Lag,
+    // SQL 'lead' function.
+    /// Returns the value of the expression evaluated at the row n rows after the current row.
+    /// ```sql
+    /// SELECT lead(column_1, 1) FROM df;
+    /// ```
+    Lead,
+
+    // ----
     // User-defined
     // ----
     Udf(String),
@@ -1027,6 +1043,12 @@ impl PolarsSQLFunctions {
             // Column selection
             // ----
             "columns" => Self::Columns,
+
+            // ----
+            // Window functions
+            // ----
+            "lag" => Self::Lag,
+            "lead" => Self::Lead,
 
             other => {
                 if ctx.function_registry.contains(other) {
@@ -1709,12 +1731,38 @@ impl SQLFunctionVisitor<'_> {
                 let row_num_expr = int_range(lit(0i64), len(), 1, DataType::UInt32) + lit(1u32);
                 self.apply_window_spec(row_num_expr, &self.func.over)
             },
+            Lag => self.visit_window_offset_function(1),
+            Lead => self.visit_window_offset_function(-1),
 
             // ----
             // User-defined
             // ----
             Udf(func_name) => self.visit_udf(&func_name),
         }
+    }
+
+    fn visit_window_offset_function(&mut self, offset_multiplier: i64) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => {
+                let expr = parse_sql_expr(&sql_expr, self.ctx, self.active_schema)?;
+                Ok(expr.shift(offset_multiplier.into()))
+            },
+            [FunctionArgExpr::Expr(sql_expr), FunctionArgExpr::Expr(offset_expr)] => {
+                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+                let offset = parse_sql_expr(offset_expr, self.ctx, self.active_schema)?;
+                if let Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) = offset {
+                    if n <= 0 {
+                        polars_bail!(SQLSyntax: "offset must be positive (found {})", n)
+                    }
+                    Ok(expr.shift((offset_multiplier * n as i64).into()))
+                } else {
+                    polars_bail!(SQLSyntax: "offset must be an integer (found {:?})", offset)
+                }
+            },
+            _ => polars_bail!(SQLSyntax: "{} expects 1 or 2 arguments (found {})", self.func.name, args.len()),
+        }.and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
