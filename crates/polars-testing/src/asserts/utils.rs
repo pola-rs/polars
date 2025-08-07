@@ -305,11 +305,13 @@ fn assert_series_values_within_tolerance(
 ///    - Verifies NaN values match using `assert_series_nan_values_match`
 ///    - Verifies float values are within tolerance using `assert_series_values_within_tolerance`
 ///
+#[allow(clippy::too_many_arguments)]
 fn assert_series_values_equal(
     left: &Series,
     right: &Series,
     check_order: bool,
     check_exact: bool,
+    check_dtypes: bool,
     rtol: f64,
     atol: f64,
     categorical_as_str: bool,
@@ -332,6 +334,14 @@ fn assert_series_values_equal(
         (left, right)
     };
 
+    // When `check_dtypes` is `false` and both series are entirely null,
+    // consider them equal regardless of their underlying data types
+    if !check_dtypes && left.dtype() != right.dtype() {
+        if left.null_count() == left.len() && right.null_count() == right.len() {
+            return Ok(());
+        }
+    }
+
     let unequal = match left.not_equal_missing(&right) {
         Ok(result) => result,
         Err(_) => {
@@ -352,6 +362,7 @@ fn assert_series_values_equal(
             &filtered_left,
             &filtered_right,
             check_exact,
+            check_dtypes,
             rtol,
             atol,
             categorical_as_str,
@@ -424,6 +435,7 @@ fn assert_series_nested_values_equal(
     left: &Series,
     right: &Series,
     check_exact: bool,
+    check_dtypes: bool,
     rtol: f64,
     atol: f64,
     categorical_as_str: bool,
@@ -451,6 +463,7 @@ fn assert_series_nested_values_equal(
                     &s2_series.explode(false)?,
                     true,
                     check_exact,
+                    check_dtypes,
                     rtol,
                     atol,
                     categorical_as_str,
@@ -476,6 +489,7 @@ fn assert_series_nested_values_equal(
                 s2_series,
                 true,
                 check_exact,
+                check_dtypes,
                 rtol,
                 atol,
                 categorical_as_str,
@@ -565,6 +579,7 @@ pub fn assert_series_equal(
         right,
         options.check_order,
         options.check_exact,
+        options.check_dtypes,
         options.rtol,
         options.atol,
         options.categorical_as_str,
@@ -873,6 +888,7 @@ pub fn assert_dataframe_equal(
             s_right_series,
             true,
             options.check_exact,
+            options.check_dtypes,
             options.rtol,
             options.atol,
             options.categorical_as_str,
