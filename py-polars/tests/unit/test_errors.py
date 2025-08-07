@@ -714,3 +714,11 @@ def test_raise_on_different_results_20104() -> None:
             .gather_every(2, offset=1)
             .map_batches(pl.Series.min, return_dtype=pl.Float64)
         )
+
+
+def test_error_with_bad_fmt_strptime() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"%B can't be used without %d",
+    ):
+        pl.select(pl.lit("Ferbruary 2025").str.strptime(pl.Date, ("%B %Y")))
