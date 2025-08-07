@@ -1265,6 +1265,31 @@ def map_groups(
     )
 
 
+def _row_encode(
+    exprs: pl.Selector | pl.Expr | Sequence[str | pl.Expr],
+    *,
+    unordered: bool = False,
+    descending: list[bool] | None = None,
+    nulls_last: list[bool] | None = None,
+) -> Expr:
+    if isinstance(exprs, pl.Selector):
+        exprs = [exprs.as_expr()]
+    elif isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    exprs = parse_into_list_of_expressions(exprs)
+
+    if unordered:
+        assert descending is None
+        assert nulls_last is None
+
+        result = plr.PyExpr.row_encode_unordered(exprs)
+    else:
+        result = plr.PyExpr.row_encode_ordered(exprs, descending, nulls_last)
+
+    return wrap_expr(result)
+
+
 def _wrap_acc_lamba(
     function: Callable[[Series, Series], Series],
 ) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:

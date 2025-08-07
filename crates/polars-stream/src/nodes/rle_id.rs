@@ -3,7 +3,6 @@ use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
-use polars_utils::pl_str::PlSmallStr;
 
 use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
@@ -12,7 +11,6 @@ use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
 
 pub struct RleIdNode {
-    name: PlSmallStr,
     index: IdxSize,
 
     dtype: DataType,
@@ -20,9 +18,8 @@ pub struct RleIdNode {
 }
 
 impl RleIdNode {
-    pub fn new(name: PlSmallStr, dtype: DataType) -> Self {
+    pub fn new(dtype: DataType) -> Self {
         Self {
-            name,
             index: 0,
             dtype,
             last: None,
@@ -71,6 +68,8 @@ impl ComputeNode for RleIdNode {
                 assert_eq!(df.width(), 1);
                 let column = &df[0];
 
+                let name = column.name().clone();
+
                 lengths.clear();
                 polars_ops::series::rle_lengths(column, &mut lengths)?;
 
@@ -85,11 +84,7 @@ impl ComputeNode for RleIdNode {
 
                 let column = if lengths.len() == 1 {
                     // If we only have one unique value, just give a Scalar column.
-                    Column::new_scalar(
-                        self.name.clone(),
-                        Scalar::from(self.index),
-                        lengths[0] as usize,
-                    )
+                    Column::new_scalar(name, Scalar::from(self.index), lengths[0] as usize)
                 } else {
                     let mut values = Vec::with_capacity(column.len());
                     values.extend(std::iter::repeat_n(self.index, lengths[0] as usize));
@@ -97,7 +92,7 @@ impl ComputeNode for RleIdNode {
                         self.index += 1;
                         values.extend(std::iter::repeat_n(self.index, *length as usize));
                     }
-                    let mut column = Column::new(self.name.clone(), values);
+                    let mut column = Column::new(name, values);
                     column.set_sorted_flag(polars_core::series::IsSorted::Ascending);
                     column
                 };

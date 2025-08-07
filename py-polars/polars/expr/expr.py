@@ -11136,6 +11136,43 @@ Consider using {self}.implode() instead"""
             return None
         return wrap_expr(result)
 
+    def _row_encode(
+        self,
+        *,
+        unordered: bool = False,
+        descending: bool | None = None,
+        nulls_last: bool | None = None,
+    ) -> Expr:
+        return F._row_encode(
+            [self],
+            unordered=unordered,
+            descending=None if descending is None else [descending],
+            nulls_last=None if nulls_last is None else [nulls_last],
+        )
+
+    def _row_decode(
+        self,
+        names: list[str],
+        dtypes: list[pl.DataTypeExpr | PolarsDataType],
+        *,
+        unordered: bool = False,
+        descending: list[bool] | None = None,
+        nulls_last: list[bool] | None = None,
+    ) -> Expr:
+        dtypes = [parse_into_datatype_expr(dtype)._pydatatype_expr for dtype in dtypes]
+
+        if unordered:
+            assert descending is None
+            assert nulls_last is None
+
+            result = self._pyexpr.row_decode_unordered(names, dtypes)
+        else:
+            result = self._pyexpr.row_decode_ordered(
+                names, dtypes, descending, nulls_last
+            )
+
+        return wrap_expr(result)
+
 
 def _prepare_alpha(
     com: float | int | None = None,
