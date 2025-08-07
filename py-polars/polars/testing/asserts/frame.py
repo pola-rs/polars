@@ -54,6 +54,10 @@ def assert_frame_equal(
     .. versionchanged:: 0.20.31
         The `check_dtype` parameter was renamed `check_dtypes`.
 
+    .. versionchanged:: 1.33.0
+        The `rtol` and `atol` parameters were renamed to `rel_tol` and `abs_tol`,
+        respectively.
+
     Parameters
     ----------
     left
@@ -160,6 +164,10 @@ def assert_frame_not_equal(
 
     .. versionchanged:: 0.20.31
         The `check_dtype` parameter was renamed `check_dtypes`.
+
+    .. versionchanged:: 1.33.0
+        The `rtol` and `atol` parameters were renamed to `rel_tol` and `abs_tol`,
+        respectively.
 
     Parameters
     ----------

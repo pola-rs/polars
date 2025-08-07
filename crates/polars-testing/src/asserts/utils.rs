@@ -231,7 +231,7 @@ fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult
 /// # Formula
 ///
 /// Values are considered within tolerance if:
-/// `|left - right| <= (rel_tol * |right| + abs_tol)` OR values are exactly equal
+/// `|left - right| <= max(rel_tol * max(abs(left), abs(right)), abs_tol)` OR values are exactly equal
 ///
 fn assert_series_values_within_tolerance(
     left: &Series,
@@ -271,8 +271,8 @@ fn assert_series_values_within_tolerance(
 /// * `right` - The second Series to compare
 /// * `check_order` - If true, elements must be in the same order; if false, Series will be sorted before comparison
 /// * `check_exact` - If true, requires exact equality; if false, allows approximate equality for floats within tolerance
-/// * `rtol` - Relative tolerance for float comparison (used when `check_exact` is false)
-/// * `atol` - Absolute tolerance for float comparison (used when `check_exact` is false)
+/// * `rel_tol` - Relative tolerance for float comparison (used when `check_exact` is false)
+/// * `abs_tol` - Absolute tolerance for float comparison (used when `check_exact` is false)
 /// * `categorical_as_str` - If true, converts categorical Series to strings before comparison
 ///
 /// # Returns
@@ -384,8 +384,8 @@ fn assert_series_values_equal(
 /// * `left` - The first nested Series to compare
 /// * `right` - The second nested Series to compare
 /// * `check_exact` - If true, requires exact equality; if false, allows approximate equality for floats
-/// * `rtol` - Relative tolerance for float comparison (used when `check_exact` is false)
-/// * `atol` - Absolute tolerance for float comparison (used when `check_exact` is false)
+/// * `rel_tol` - Relative tolerance for float comparison (used when `check_exact` is false)
+/// * `abs_tol` - Absolute tolerance for float comparison (used when `check_exact` is false)
 /// * `categorical_as_str` - If true, converts categorical Series to strings before comparison
 ///
 /// # Returns
@@ -489,8 +489,8 @@ fn assert_series_nested_values_equal(
 ///   * `check_dtypes` - If true, verifies data types match
 ///   * `check_order` - If true, elements must be in the same order
 ///   * `check_exact` - If true, requires exact equality for float values
-///   * `rtol` - Relative tolerance for float comparison
-///   * `atol` - Absolute tolerance for float comparison
+///   * `rel_tol` - Relative tolerance for float comparison
+///   * `abs_tol` - Absolute tolerance for float comparison
 ///   * `categorical_as_str` - If true, converts categorical Series to strings before comparison
 ///
 /// # Returns
@@ -785,8 +785,8 @@ fn assert_dataframe_schema_equal(
 ///   * `check_column_order` - If true, columns must be in the same order
 ///   * `check_dtypes` - If true, verifies data types match for corresponding columns
 ///   * `check_exact` - If true, requires exact equality for float values
-///   * `rtol` - Relative tolerance for float comparison
-///   * `atol` - Absolute tolerance for float comparison
+///   * `rel_tol` - Relative tolerance for float comparison
+///   * `abs_tol` - Absolute tolerance for float comparison
 ///   * `categorical_as_str` - If true, converts categorical values to strings before comparison
 ///
 /// # Returns
