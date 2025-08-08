@@ -476,6 +476,10 @@ def from_arrow(
     This operation will be zero copy for the most part. Types that are not
     supported by Polars may be cast to the closest supported type.
 
+    Note, it is generally recommended to directly use `pl.DataFrame()` or
+    `pl.Series()` instead if the types of the input/output objects are known
+    and do not need to be dynamic.
+
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
@@ -636,6 +640,10 @@ def from_pandas(
     - Call :meth:`DataFrame.clone` on the output of `from_pandas`.
 
     This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
+
+    Note, it is generally recommended to directly use `pl.DataFrame()` or
+    `pl.Series()` instead if the types of the input/output objects are known
+    and do not need to be dynamic.
 
     Parameters
     ----------
