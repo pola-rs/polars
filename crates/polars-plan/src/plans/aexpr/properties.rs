@@ -42,6 +42,19 @@ impl AExpr {
         }
     }
 
+    /// Checks whether this expression is row-separable. This only checks the top level expression.
+    pub(crate) fn is_row_separable_top_level(&self) -> bool {
+        use AExpr::*;
+
+        match self {
+            AnonymousFunction { options, .. } => options.is_row_separable(),
+            Function { options, .. } => options.is_row_separable(),
+            Literal(v) => v.is_scalar(),
+            Explode { .. } | Filter { .. } => true,
+            _ => self.is_elementwise_top_level(),
+        }
+    }
+
     pub(crate) fn does_not_modify_top_level(&self) -> bool {
         match self {
             AExpr::Column(_) => true,
@@ -97,14 +110,15 @@ pub fn does_not_modify_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, does_not_modify)
 }
 
-// Properties
-
-/// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
-/// be extended further with any nested expression nodes.
-pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+pub fn is_prop<P: Fn(&AExpr) -> bool>(
+    stack: &mut UnitVec<Node>,
+    ae: &AExpr,
+    expr_arena: &Arena<AExpr>,
+    prop_top_level: P,
+) -> bool {
     use AExpr::*;
 
-    if !ae.is_elementwise_top_level() {
+    if !prop_top_level(ae) {
         return false;
     }
 
@@ -135,6 +149,12 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
     true
 }
 
+/// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
+/// be extended further with any nested expression nodes.
+pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+    is_prop(stack, ae, expr_arena, |ae| ae.is_elementwise_top_level())
+}
+
 pub fn all_elementwise<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,
@@ -147,6 +167,26 @@ where
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
+}
+
+/// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
+/// be extended further with any nested expression nodes.
+pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+    is_prop(stack, ae, expr_arena, |ae| ae.is_row_separable_top_level())
+}
+
+pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
+where
+    Node: From<&'a N>,
+{
+    nodes
+        .iter()
+        .all(|n| is_row_separable_rec(n.into(), expr_arena))
+}
+
+/// Recursive variant of `is_row_separable`
+pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, is_row_separable)
 }
 
 #[derive(Debug, Clone)]

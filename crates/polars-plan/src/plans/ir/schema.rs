@@ -22,7 +22,7 @@ impl IR {
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
-            Filter { .. } => "selection",
+            Filter { .. } => "filter",
             DataFrameScan { .. } => "df",
             Select { .. } => "projection",
             Sort { .. } => "sort",
