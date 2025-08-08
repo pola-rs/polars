@@ -60,8 +60,8 @@ mod tests {
         assert!(options.check_names);
         assert!(options.check_order);
         assert!(options.check_exact);
-        assert_eq!(options.rtol, 1e-5);
-        assert_eq!(options.atol, 1e-8);
+        assert_eq!(options.rel_tol, 1e-5);
+        assert_eq!(options.abs_tol, 1e-8);
         assert!(!options.categorical_as_str);
     }
 
@@ -198,26 +198,26 @@ mod tests {
     }
 
     #[test]
-    fn test_series_float_custom_rtol() {
+    fn test_series_float_custom_rel_tol() {
         let s1 = Series::new("".into(), &[10.0, 100.0, 1000.0]);
         let s2 = Series::new("".into(), &[10.05, 100.1, 1000.2]);
 
         let options = crate::asserts::SeriesEqualOptions::default()
             .with_check_exact(false)
-            .with_rtol(0.01);
+            .with_rel_tol(0.01);
 
         assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
     #[should_panic(expected = "values not within tolerance")]
-    fn test_series_float_custom_atol() {
+    fn test_series_float_custom_abs_tol() {
         let s1 = Series::new("".into(), &[0.001, 0.01, 0.1]);
         let s2 = Series::new("".into(), &[0.001, 0.02, 0.1]);
 
         let options = crate::asserts::SeriesEqualOptions::default()
             .with_check_exact(false)
-            .with_atol(0.005);
+            .with_abs_tol(0.005);
 
         assert_series_equal!(&s1, &s2, options);
     }

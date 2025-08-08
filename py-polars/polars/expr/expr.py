@@ -5986,7 +5986,7 @@ Consider using {self}.implode() instead"""
             two values. Must be non-negative.
         rel_tol
             Relative tolerance. This is the maximum allowed difference between two
-            values, relative to the larger absolute value. Must be in the range [0, 1).
+            values, relative to the larger absolute value. Must be non-negative.
         nans_equal
             Whether NaN values should be considered equal.
 
