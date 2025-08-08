@@ -80,15 +80,14 @@ impl PolarsAllocator {
             if r.is_none() {
                 // Do not use eprintln; it may alloc.
                 let msg = b"failed to get allocator capsule\n";
+                #[allow(clippy::useless_conversion)]
                 unsafe {
-                    {
-                        libc::write(
-                            2,
-                            msg.as_ptr() as *const libc::c_void,
-                            // Use try_into as types differ per OS
-                            msg.len().try_into().unwrap(),
-                        )
-                    }
+                    libc::write(
+                        2,
+                        msg.as_ptr() as *const libc::c_void,
+                        // Use try_into as types differ per OS
+                        msg.len().try_into().unwrap(),
+                    )
                 };
             }
             r.unwrap_or(&FALLBACK_ALLOCATOR_CAPSULE)
