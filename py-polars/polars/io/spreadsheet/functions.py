@@ -324,7 +324,7 @@ def read_excel(
         `x` being an enumeration over every column in the dataset, starting at 1.
     columns
         Columns to read from the sheet; if not specified, all columns are read. Can
-        be given as a sequence of column names or indices.
+        be given as a sequence of column names or indices, or a single column name.
     schema_overrides
         Support type specification or override of one or more columns.
     infer_schema_length
