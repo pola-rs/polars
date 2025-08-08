@@ -93,6 +93,7 @@ pub(crate) fn get_file_chunks_iterator(
 
 struct ChunkOffsetIter<'a> {
     bytes: &'a [u8],
+    // (begin, end, number of lines)
     offsets: VecDeque<(usize, usize, usize)>,
     last_offset: usize,
     n_chunks: usize,
@@ -103,6 +104,7 @@ struct ChunkOffsetIter<'a> {
 }
 
 impl Iterator for ChunkOffsetIter<'_> {
+    // (begin, end, number of lines)
     type Item = PolarsResult<(usize, usize, usize)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -142,6 +144,11 @@ impl Iterator for ChunkOffsetIter<'_> {
     }
 }
 
+// ChunkOffsetReader was created because when using `BatchSizeOptions::TotalNextBatchesNRows`,
+// the full offset scanning settings are only known after `BatchedCsvReader::next_batches` is
+// called, so an iterator model is not a good fit. On the other had, when using
+// `BatchSizeOptions::EachBatchNBytes`, `ChunkOffsetIter` is more suitable. That's why there are
+// two options (tied together by `ChunkOffsetScanner`).
 struct ChunkOffsetReader<'a> {
     bytes: &'a [u8],
     offsets: VecDeque<(usize, usize, usize)>,
@@ -189,12 +196,15 @@ impl ChunkOffsetReader<'_> {
     }
 }
 
-enum ChunkOffsetAccess<'a> {
+// A helper used to perform the initial scanning to determine byte ranges
+// of CSV rows. There are two variants, because each of them is suitable for
+// different values of `BatchSizeOptions`
+enum ChunkOffsetScanner<'a> {
     Iter(ChunkOffsetIter<'a>),
     Reader(ChunkOffsetReader<'a>),
 }
 
-impl<'a> ChunkOffsetAccess<'a> {
+impl<'a> ChunkOffsetScanner<'a> {
     fn from_options(
         bytes: &'a [u8],
         n_threads: usize,
@@ -288,7 +298,8 @@ impl<'a> CoreReader<'a> {
         // extend lifetime. It is bound to `readerbytes` and we keep track of that
         // lifetime so this is sound.
         let bytes = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(bytes) };
-        let file_chunks = ChunkOffsetAccess::from_options(
+
+        let file_chunks_scanner = ChunkOffsetScanner::from_options(
             bytes,
             n_threads,
             self.parse_options.quote_char,
@@ -302,7 +313,7 @@ impl<'a> CoreReader<'a> {
             reader_bytes,
             parse_options: self.parse_options,
             batch_size_options: self.batch_size_options.clone(),
-            file_chunks_iter: file_chunks,
+            file_chunks_scanner,
             file_chunks: vec![],
             projection,
             starting_point_offset,
@@ -321,7 +332,7 @@ pub struct BatchedCsvReader<'a> {
     reader_bytes: ReaderBytes<'a>,
     parse_options: CsvParseOptions,
     batch_size_options: BatchSizeOptions,
-    file_chunks_iter: ChunkOffsetAccess<'a>,
+    file_chunks_access: ChunkOffsetScanner<'a>,
     file_chunks: Vec<(usize, usize, usize)>,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
@@ -340,8 +351,14 @@ impl BatchedCsvReader<'_> {
             return Ok(None);
         }
 
-        let chunks = match &mut self.file_chunks_iter {
-            ChunkOffsetAccess::Iter(chunk_offset_iter) => {
+        // The CSV file is first pre-scanned using `self.file_chunks_scanner` to determine
+        // the byte ranges of CSV rows. This procedure is influenced by `self.batch_size_options`
+        // in two ways: `CoreReader::batched` sets `self.file_chunks_scanner` to a `ChunkOffsetAccess`
+        // instance that is suitable for given `batch_size_options`, and the options are further
+        // used here to perform the correct action with `self.file_chunks_iter`
+
+        let chunks = match &mut self.file_chunks_access {
+            ChunkOffsetScanner::Iter(chunk_offset_iter) => {
                 // get next `n` offset positions.
                 let file_chunks_iter = chunk_offset_iter.take(n);
                 for file_chunk in file_chunks_iter {
@@ -356,7 +373,7 @@ impl BatchedCsvReader<'_> {
                 }
                 &self.file_chunks
             },
-            ChunkOffsetAccess::Reader(chunk_offset_reader) => {
+            ChunkOffsetScanner::Reader(chunk_offset_reader) => {
                 let n_rows = match self.batch_size_options {
                     BatchSizeOptions::TotalNextBatchesNRows(n) => n,
                     BatchSizeOptions::EachBatchNRows(n_) => n * n_,
@@ -391,6 +408,7 @@ impl BatchedCsvReader<'_> {
                         self.ignore_errors,
                         &self.projection,
                         bytes_offset_thread,
+                        // Use the actual number of lines for buffers capacity
                         lines_count,
                         self.null_values.as_ref(),
                         usize::MAX,
