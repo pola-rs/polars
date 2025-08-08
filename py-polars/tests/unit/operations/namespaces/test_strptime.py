@@ -36,7 +36,7 @@ def test_str_strptime() -> None:
     assert_series_equal(s.str.strptime(pl.Time, "%H:%M:%S"), expected)
 
 
-def test_date_parse_omit_day() -> None:
+def test_date_parse_omit_day_numeric() -> None:
     df = pl.DataFrame({"month": ["2022-01"]})
     assert df.select(pl.col("month").str.to_date(format="%Y-%m")).item() == date(
         2022, 1, 1
@@ -44,6 +44,26 @@ def test_date_parse_omit_day() -> None:
     assert df.select(
         pl.col("month").str.to_datetime(format="%Y-%m")
     ).item() == datetime(2022, 1, 1)
+
+
+def test_date_parse_omit_day_abbrev() -> None:
+    df = pl.DataFrame({"month": ["2022-Jan"]})
+    assert df.select(pl.col("month").str.to_date(format="%Y-%b")).item() == date(
+        2022, 1, 1
+    )
+    assert df.select(
+        pl.col("month").str.to_datetime(format="%Y-%b")
+    ).item() == datetime(2022, 1, 1)
+
+
+def test_date_parse_omit_day_month() -> None:
+    df = (
+        pl.select(date=pl.date_range(pl.date(2022, 1, 1), pl.date(2022, 12, 1), "1mo"))
+        .with_columns(strdate=pl.col("date").dt.strftime("%Y %B"))
+        .with_columns(round_trip=pl.col("strdate").str.strptime(pl.Date, "%Y %B"))
+    )
+
+    assert df.filter(pl.col("date") != pl.col("round_trip")).height == 0
 
 
 def test_to_datetime_precision() -> None:
