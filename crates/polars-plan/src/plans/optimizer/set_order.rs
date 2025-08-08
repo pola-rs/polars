@@ -159,6 +159,12 @@ pub(super) fn set_order_flags(
                 }
                 maintain_order_above = true;
             },
+            IR::Filter { predicate, .. } => {
+                if !maintain_order_above && is_elementwise_rec(predicate.node(), expr_arena) {
+                    continue;
+                }
+                maintain_order_above = true;
+            },
             _ => {
                 // FIXME:
                 // `maintain_order_above` is not correctly propagated in recursion for IR nodes with
