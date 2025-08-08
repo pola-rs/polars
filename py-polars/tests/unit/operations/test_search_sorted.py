@@ -1,8 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -89,3 +97,37 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
+
+
+def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:
+    series = pl.Series(values, dtype=dtype)
+    for descending in [True, False]:
+        for nulls_last in [True, False]:
+            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
+            as_list = sorted_series.to_list()
+            for value in values:
+                idx = sorted_series.search_sorted(value, "left", descending=descending)
+                assert as_list.index(value) == idx
+                lookup = sorted_series[idx]
+                if isinstance(lookup, pl.Series):
+                    lookup = lookup.to_list()
+                assert lookup == value
+
+
+def test_search_sorted_enum() -> None:
+    assert_can_find_values(["a", None, "b", "c"], pl.Categorical())
+
+
+def test_search_sorted_categorical() -> None:
+    assert_can_find_values(["a", None, "b", "c"], pl.Categorical())
+
+
+@pytest.mark.parametrize("value", [0, 0.1])
+def test_categorical_wrong_type_keys_dont_work(value: int | float) -> None:
+    series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
+    msg = "got invalid or ambiguous dtypes"
+    with pytest.raises(InvalidOperationError, match=msg):
+        series.search_sorted(value)
+    df = pl.DataFrame({"s": series})
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(pl.col("s").search_sorted(value))
