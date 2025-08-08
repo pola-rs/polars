@@ -25,7 +25,7 @@ fn partitionable_gb(
     aggs: &[ExprIR],
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
-    apply: &Option<Arc<dyn DataFrameUdf>>,
+    apply: &Option<PlanCallback<DataFrame, DataFrame>>,
 ) -> bool {
     // checks:
     //      1. complex expressions in the group_by itself are also not partitionable

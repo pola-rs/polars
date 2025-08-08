@@ -2198,10 +2198,7 @@ impl LazyGroupBy {
     ///
     /// **It is not recommended that you use this as materializing the DataFrame is very
     /// expensive.**
-    pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
-    where
-        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
-    {
+    pub fn apply(self, f: PlanCallback<DataFrame, DataFrame>, schema: SchemaRef) -> LazyFrame {
         if !self.predicates.is_empty() {
             panic!("not yet implemented: `apply` cannot be used with `having` predicates");
         }
@@ -2221,7 +2218,7 @@ impl LazyGroupBy {
             keys: self.keys,
             predicates: vec![],
             aggs: vec![],
-            apply: Some((Arc::new(f), schema)),
+            apply: Some((f, schema)),
             maintain_order: self.maintain_order,
             options: Arc::new(options),
         };
