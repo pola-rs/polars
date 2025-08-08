@@ -277,7 +277,7 @@ def df() -> pl.DataFrame:
     ],
 )
 def test_group_by_shorthands(
-    df: pl.DataFrame, method: str, expected: list[tuple[Any]]
+    df: pl.DataFrame, method: str, expected: list[tuple[Any, ...]]
 ) -> None:
     gb = df.group_by("b", maintain_order=True)
     result = getattr(gb, method)()
