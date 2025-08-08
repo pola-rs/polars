@@ -426,7 +426,9 @@ def test_default_value_enum() -> None:
 @pytest.mark.parametrize("numeric_to_one", [False, True])
 def test_default_value_n(n: int, numeric_to_one: bool) -> None:
     dtype = pl.Int64()
-    result = pl.select(dtype.to_dtype_expr().default_value(n, numeric_to_one=numeric_to_one)).to_series()
+    result = pl.select(
+        dtype.to_dtype_expr().default_value(n, numeric_to_one=numeric_to_one)
+    ).to_series()
     assert result.dtype == dtype
     assert result.len() == n
     assert result.to_list() == [(1 if numeric_to_one else 0)] * n
