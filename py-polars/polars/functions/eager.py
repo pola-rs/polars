@@ -31,14 +31,14 @@ def concat(
     parallel: bool = True,
 ) -> PolarsType:
     """
-    Combine multiple DataFrames, LazyFrames, or Series into a single object.
+    Combine multiple DataFrames, LazyFrames, Series, or Expr into a single object.
 
     Parameters
     ----------
     items
-        DataFrames, LazyFrames, or Series to concatenate.
+        DataFrames, LazyFrames, Series, or Expr to concatenate.
     how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
-        Note that `Series` only support the `vertical` strategy.
+        Series and Expr only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
@@ -164,6 +164,19 @@ def concat(
     │ i64 ┆ i64 ┆ i64 ┆ i64 │
     ╞═════╪═════╪═════╪═════╡
     └─────┴─────┴─────┴─────┘
+    >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    >>> df.select(pl.concat([pl.col("a"), pl.col("b")]))
+    shape: (4, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 2   │
+    │ 3   │
+    │ 4   │
+    └─────┘
     """  # noqa: W505
     # unpack/standardise (handles generator input)
     elems = list(items)
@@ -296,7 +309,11 @@ def concat(
             raise ValueError(msg)
 
     elif isinstance(first, pl.Expr):
-        return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
+        if how == "vertical":
+            return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
+        else:
+            msg = "Expr only supports 'vertical' concat strategy"
+            raise ValueError(msg)
     else:
         msg = f"did not expect type: {qualified_type_name(first)!r} in `concat`"
         raise TypeError(msg)
