@@ -43,7 +43,7 @@ impl AExpr {
     }
 
     /// Checks whether this expression is elementwise. This only checks the top level expression.
-    pub(crate) fn is_row_seperable_top_level(&self) -> bool {
+    pub(crate) fn is_row_separable_top_level(&self) -> bool {
         use AExpr::*;
 
         match self {
@@ -173,24 +173,24 @@ pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
 }
 
-/// Checks if the top-level expression node is row-seperable. If this is the case, then `stack` will
+/// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
-pub fn is_row_seperable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
-    is_prop(stack, ae, expr_arena, |ae| ae.is_row_seperable_top_level())
+pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+    is_prop(stack, ae, expr_arena, |ae| ae.is_row_separable_top_level())
 }
 
-pub fn all_row_seperable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
+pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,
 {
     nodes
         .iter()
-        .all(|n| is_row_seperable_rec(n.into(), expr_arena))
+        .all(|n| is_row_separable_rec(n.into(), expr_arena))
 }
 
 /// Recursive variant of `is_elementwise`
-pub fn is_row_seperable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    property_rec(node, expr_arena, is_row_seperable)
+pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, is_row_separable)
 }
 
 #[derive(Debug, Clone)]
