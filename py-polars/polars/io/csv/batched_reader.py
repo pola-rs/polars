@@ -45,6 +45,8 @@ class BatchedCsvReader:
         n_threads: int | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 50_000,
+        batch_size_options: tuple[str, int] | None = None,
+        total_batches_size: int | None = None,
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
@@ -76,9 +78,13 @@ class BatchedCsvReader:
         processed_null_values = _process_null_values(null_values)
         projection, columns = parse_columns_arg(columns)
 
+        if batch_size_options is None:
+            if batch_size is not None:
+                batch_size_options = ("rows", batch_size)
+
         self._reader = PyBatchedCsv.new(
             infer_schema_length=infer_schema_length,
-            chunk_size=batch_size,
+            batch_size_options=batch_size_options,
             has_header=has_header,
             ignore_errors=ignore_errors,
             n_rows=n_rows,

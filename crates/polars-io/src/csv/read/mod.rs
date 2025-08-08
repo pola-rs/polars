@@ -25,8 +25,14 @@ pub mod schema_inference;
 mod splitfields;
 mod utils;
 
-pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
-pub use parser::{count_rows, count_rows_from_slice_par, count_rows_from_slice_raw};
+pub use options::{
+    BatchSizeOptions, CommentPrefix, CommentPrefix, CsvEncoding, CsvEncoding, CsvParseOptions,
+    CsvParseOptions, CsvReadOptions, CsvReadOptions, NullValues, NullValues,
+};
+pub use parser::{
+    count_rows, count_rows_from_slice, count_rows_from_slice_par, count_rows_from_slice_par,
+    count_rows_from_slice_raw,
+};
 pub use read_impl::batched::{BatchedCsvReader, OwnedBatchedCsvReader};
 pub use reader::CsvReader;
 pub use schema_inference::infer_file_schema;

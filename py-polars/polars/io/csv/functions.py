@@ -752,7 +752,11 @@ def read_csv_batched(
     try_parse_dates: bool = False,
     n_threads: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
-    batch_size: int = 50_000,
+    batch_size: int | None = None,
+    batch_size_options: tuple[
+        Literal["default" | "bytes" | "bytes-strict" | "rows" | "rows-strict"], int
+    ]
+    | None = None,
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
@@ -845,7 +849,25 @@ def read_csv_batched(
     batch_size
         Number of lines to read into the buffer at once.
 
-        Modify this to change performance.
+        This field is only considered if `batch_size_options` is not `None`.
+        `batch_size=None` is treaded the same as `batch_size_options=('default', 0)`
+        and batch_size=n is treaded the same as `batch_size_options=('rows', n)`
+    batch_size_options
+        Allowed options:
+        - ('bytes', n: int): Batched reader will try to read csv file in batches of n bytes.
+            Each batch will contain the amount of rows that originally occupied not more
+            than n bytes in the CSV file. If at some point the n-byte buffer contains 0
+            full rows, it will be extended. It will then stay extended even if later rows
+            would fit in the original buffer size.
+        - ('bytes-strict', n: int): Same as above, but the buffer will not be extended if a row
+            that is too large to bit in n bytes is encountered. Instead, an error will be thrown.
+        - ('rows', n: int): Each batch will contain exactly n rows, unless at the end of file.
+        - ('rows-total', n: int): Each call to `next_batches` on the returned instance of `BatchedCsvReader`
+            will return n rows in total. For example if `batch_size_options=('rows-total', 1000)`, and
+            `reader.next_batches(7)` is called, it will return 7 data frames of heights respectively
+            [143, 143, 143, 143, 143, 143, 142].
+        - ('default', _): Same as above (second tuple item is ignored)
+        - None: Treated like ('default', 0)
     n_rows
         Stop reading from CSV file after reading `n_rows`.
         During multi-threaded parsing, an upper bound of `n_rows`
@@ -1035,6 +1057,7 @@ def read_csv_batched(
         n_threads=n_threads,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,
+        batch_size_options=batch_size_options,
         n_rows=n_rows,
         encoding=encoding if encoding == "utf8-lossy" else "utf8",
         low_memory=low_memory,
