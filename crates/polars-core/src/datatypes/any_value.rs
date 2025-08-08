@@ -151,16 +151,21 @@ impl AnyValue<'static> {
             DT::Int128 => AV::Int128(numeric_to_one.into()),
             DT::Float32 => AV::Float32(numeric_to_one.into()),
             DT::Float64 => AV::Float64(numeric_to_one.into()),
+            #[cfg(feature = "dtype-decimal")]
             DT::Decimal(_, scale) => AV::Decimal(0, scale.unwrap()),
             DT::String => AV::String(""),
             DT::Binary => AV::Binary(&[]),
             DT::BinaryOffset => AV::Binary(&[]),
-            DT::Date => AV::Date(0),
-            DT::Datetime(time_unit, time_zone) => {
+            DT::Date => feature_gated!("dtype-date", AV::Date(0)),
+            DT::Datetime(time_unit, time_zone) => feature_gated!(
+                "dtype-datetime",
                 AV::DatetimeOwned(0, *time_unit, time_zone.clone().map(Arc::new))
+            ),
+            DT::Duration(time_unit) => {
+                feature_gated!("dtype-duration", AV::Duration(0, *time_unit))
             },
-            DT::Duration(time_unit) => AV::Duration(0, *time_unit),
-            DT::Time => AV::Time(0),
+            DT::Time => feature_gated!("dtype-time", AV::Time(0)),
+            #[cfg(feature = "dtype-array")]
             DT::Array(inner_dtype, width) => {
                 let inner_value =
                     AnyValue::default_value(inner_dtype, numeric_to_one, num_list_values);
@@ -181,13 +186,17 @@ impl AnyValue<'static> {
                     .into_series(PlSmallStr::EMPTY)
                     .new_from_index(0, num_list_values)
             }),
+            #[cfg(feature = "object")]
             DT::Object(_) => AV::Null,
             DT::Null => AV::Null,
+            #[cfg(feature = "dtype-categorical")]
             DT::Categorical(_, _) => AV::Null,
+            #[cfg(feature = "dtype-categorical")]
             DT::Enum(categories, mapping) => match categories.categories().is_empty() {
                 true => AV::Null,
                 false => AV::EnumOwned(0, mapping.clone()),
             },
+            #[cfg(feature = "dtype-struct")]
             DT::Struct(fields) => AV::StructOwned(Box::new((
                 fields
                     .iter()
