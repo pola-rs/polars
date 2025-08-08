@@ -50,6 +50,92 @@ fn parse_month_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)> {
     }
 }
 
+#[inline]
+fn parse_month_full(val: &[u8], offset: usize) -> Option<(u32, usize)> {
+    let min_offset = offset + 3;
+    match &val[offset..min_offset] {
+        b"Jan" => {
+            let new_offset = min_offset + 4;
+            match &val[min_offset..new_offset] {
+                b"uary" => Some((1, new_offset)),
+                _ => None,
+            }
+        },
+        b"Feb" => {
+            let new_offset = min_offset + 5;
+            match &val[min_offset..new_offset] {
+                b"ruary" => Some((2, new_offset)),
+                _ => None,
+            }
+        },
+        b"Mar" => {
+            let new_offset = min_offset + 2;
+            match &val[min_offset..new_offset] {
+                b"ch" => Some((3, new_offset)),
+                _ => None,
+            }
+        },
+        b"Apr" => {
+            let new_offset = min_offset + 2;
+            match &val[min_offset..new_offset] {
+                b"il" => Some((4, new_offset)),
+                _ => None,
+            }
+        },
+        b"May" => Some((5, min_offset)),
+        b"Jun" => {
+            let new_offset = min_offset + 1;
+            match &val[min_offset..new_offset] {
+                b"e" => Some((6, new_offset)),
+                _ => None,
+            }
+        },
+        b"Jul" => {
+            let new_offset = min_offset + 1;
+            match &val[min_offset..new_offset] {
+                b"y" => Some((7, new_offset)),
+                _ => None,
+            }
+        },
+        b"Aug" => {
+            let new_offset = min_offset + 3;
+            match &val[min_offset..new_offset] {
+                b"ust" => Some((8, new_offset)),
+                _ => None,
+            }
+        },
+        b"Sep" => {
+            let new_offset = min_offset + 6;
+            match &val[min_offset..new_offset] {
+                b"tember" => Some((9, new_offset)),
+                _ => None,
+            }
+        },
+        b"Oct" => {
+            let new_offset = min_offset + 4;
+            match &val[min_offset..new_offset] {
+                b"ober" => Some((10, new_offset)),
+                _ => None,
+            }
+        },
+        b"Nov" => {
+            let new_offset = min_offset + 5;
+            match &val[min_offset..new_offset] {
+                b"ember" => Some((11, new_offset)),
+                _ => None,
+            }
+        },
+        b"Dec" => {
+            let new_offset = min_offset + 5;
+            match &val[min_offset..new_offset] {
+                b"ember" => Some((12, new_offset)),
+                _ => None,
+            }
+        },
+        _ => None,
+    }
+}
+
 /// Tries to convert a chrono `fmt` to a `fmt` that the polars parser consumes.
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
@@ -90,7 +176,7 @@ impl StrpTimeState {
         &mut self,
         val: &[u8],
         fmt: &[u8],
-        fmt_len: u16,
+        fmt_len_val: u16,
     ) -> Option<NaiveDateTime> {
         let mut offset = 0;
         let mut negative = false;
@@ -98,7 +184,10 @@ impl StrpTimeState {
             offset = 1;
             negative = true;
         }
-        if val.len() - offset != (fmt_len as usize) {
+        let variable_fmt_len = fmt.windows(2).any(|w| w == b"%B");
+        // SAFETY: this still ensures get_unchecked won't be out of bounds as val will be at least as big as we expect
+        let ok_flex = variable_fmt_len && val.len() - offset < (fmt_len_val as usize);
+        if (!variable_fmt_len && val.len() - offset != (fmt_len_val as usize)) || ok_flex {
             return None;
         }
 
@@ -137,6 +226,15 @@ impl StrpTimeState {
                     },
                     b'b' => {
                         (month, offset) = parse_month_abbrev(val, offset)?;
+                    },
+                    b'B' => {
+                        (month, offset) = parse_month_full(val, offset)?;
+                        // double check remaining fmt_len
+                        let new_fmt_len = fmt_len(&fmt_iter.as_slice())?;
+                        let remaining_val_len = val.len() - (offset as usize);
+                        if remaining_val_len != (new_fmt_len as usize) {
+                            return None;
+                        }
                     },
                     b'd' => {
                         (day, offset) = update_and_parse(2, offset, val)?;
@@ -205,7 +303,6 @@ impl StrpTimeState {
 pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
     let mut iter = fmt.iter();
     let mut cnt = 0;
-
     while let Some(&val) = iter.next() {
         match val {
             b'%' => match iter.next() {
@@ -215,6 +312,7 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                     b'd' => cnt += 2,
                     b'm' => cnt += 2,
                     b'b' => cnt += 3,
+                    b'B' => cnt += 3,
                     b'H' => cnt += 2,
                     b'M' => cnt += 2,
                     b'S' => cnt += 2,

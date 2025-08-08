@@ -15,15 +15,6 @@ use super::*;
 use crate::chunkedarray::date::naive_date_to_date;
 use crate::prelude::string::strptime::StrpTimeState;
 
-fn check_invalid_pattern(pattern: &str) -> PolarsResult<()> {
-    if pattern.contains("%B") && !pattern.contains("%d") {
-        polars_bail!(InvalidOperation:"%B can't be used without %d")
-    } else if pattern.contains("%U") && !pattern.contains("%w") {
-        polars_bail!(InvalidOperation:"%U can't be used without %w")
-    } else {
-        Ok(())
-    }
-}
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> PolarsResult
@@ -229,10 +220,7 @@ pub trait StringMethods: AsString {
     fn as_date(&self, fmt: Option<&str>, use_cache: bool) -> PolarsResult<DateChunked> {
         let string_ca = self.as_string();
         let fmt = match fmt {
-            Some(fmt) => {
-                check_invalid_pattern(fmt)?;
-                fmt
-            },
+            Some(fmt) => fmt,
             None => return infer::to_date(string_ca),
         };
         let use_cache = use_cache && string_ca.len() > 50;
@@ -281,10 +269,7 @@ pub trait StringMethods: AsString {
     ) -> PolarsResult<DatetimeChunked> {
         let string_ca = self.as_string();
         let fmt = match fmt {
-            Some(fmt) => {
-                check_invalid_pattern(fmt)?;
-                fmt
-            },
+            Some(fmt) => fmt,
             None => return infer::to_datetime(string_ca, tu, tz, ambiguous),
         };
         let fmt = strptime::compile_fmt(fmt)?;
