@@ -1598,6 +1598,47 @@ def test_rolling_quantile_nearest_with_nulls_23932() -> None:
     assert_series_equal(out["a"], expected)
 
 
+def test_wtd_min_periods_less_window() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_mean": [1.333333, 2, 3, 4, 4.666667]}
+    )
+
+    assert_frame_equal(df, expected)
+
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_sum(
+            window_size=3, weights=[0.25, 0.5, 0.25], min_samples=2, center=True
+        )
+        .alias("kernel_sum")
+    )
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_sum": [1.0, 2.0, 3.0, 4.0, 3.5]}
+    )
+
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]}).with_columns(
+        pl.col("a")
+        .rolling_mean(
+            window_size=3, weights=[0.2, 0.3, 0.5], min_samples=2, center=False
+        )
+        .alias("kernel_mean")
+    )
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5], "kernel_mean": [None, 1.625, 2.3, 3.3, 4.3]}
+    )
+
+    assert_frame_equal(df, expected)
+
+
 def test_rolling_median_23480() -> None:
     vals = [None] * 17 + [3262645.8, 856191.4, 1635379.0, 34707156.0]
     evals = [None] * 19 + [1635379.0, (3262645.8 + 1635379.0) / 2]

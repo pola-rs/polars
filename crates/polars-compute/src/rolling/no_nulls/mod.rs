@@ -83,7 +83,7 @@ pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     weights: &[T],
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType,
+    T: NativeType + num_traits::Zero + std::ops::Div<Output = T> + Copy,
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Fa: Fn(&[T], &[T]) -> T,
 {
@@ -93,8 +93,18 @@ where
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
-
-            aggregator(vals, weights)
+            let win_len = end - start;
+            let weights_slice = if start == 0 {
+                // Truncated at the start: take the last win_len weights
+                &weights[weights.len() - win_len..]
+            } else if end == len {
+                // Truncated at the end: take the first win_len weights
+                &weights[..win_len]
+            } else {
+                // Full window
+                weights
+            };
+            aggregator(vals, weights_slice)
         })
         .collect_trusted::<Vec<T>>();
 
@@ -110,19 +120,16 @@ fn compute_var_weights<T>(vals: &[T], weights: &[T]) -> T
 where
     T: Float + std::ops::AddAssign,
 {
-    // Assumes the weights have already been standardized to 1
-    debug_assert!(
-        weights.iter().fold(T::zero(), |acc, x| acc + *x) == T::one(),
-        "Rolling weighted variance Weights don't sum to 1"
+    // Compute weighted mean and weighted sum of squares in a single pass
+    let (wssq, wmean, total_weight) = vals.iter().zip(weights).fold(
+        (T::zero(), T::zero(), T::zero()),
+        |(wssq, wsum, wtot), (&v, &w)| (wssq + v * v * w, wsum + v * w, wtot + w),
     );
-    let (wssq, wmean) = vals
-        .iter()
-        .zip(weights)
-        .fold((T::zero(), T::zero()), |(wssq, wsum), (&v, &w)| {
-            (wssq + v * v * w, wsum + v * w)
-        });
-
-    wssq - wmean * wmean
+    if total_weight.is_zero() {
+        panic!("Weighted variance is undefined if weights sum to 0");
+    }
+    let mean = wmean / total_weight;
+    (wssq / total_weight) - (mean * mean)
 }
 
 pub(crate) fn compute_sum_weights<T>(values: &[T], weights: &[T]) -> T
@@ -130,6 +137,28 @@ where
     T: std::iter::Sum<T> + Copy + std::ops::Mul<Output = T>,
 {
     values.iter().zip(weights).map(|(v, w)| *v * *w).sum()
+}
+
+/// Compute the weighted mean of values, given weights (not necessarily normalized).
+/// Returns sum_i(values[i] * weights[i]) / sum_i(weights[i])
+pub(crate) fn compute_mean_weights<T>(values: &[T], weights: &[T]) -> T
+where
+    T: std::iter::Sum<T>
+        + Copy
+        + std::ops::Mul<Output = T>
+        + std::ops::Div<Output = T>
+        + num_traits::Zero,
+{
+    let (weighted_sum, total_weight) = values
+        .iter()
+        .zip(weights)
+        .fold((T::zero(), T::zero()), |(wsum, wtot), (&v, &w)| {
+            (wsum + v * w, wtot + w)
+        });
+    if total_weight.is_zero() {
+        panic!("Weighted mean is undefined if weights sum to 0");
+    }
+    weighted_sum / total_weight
 }
 
 pub(super) fn coerce_weights<T: NumCast>(weights: &[f64]) -> Vec<T>
