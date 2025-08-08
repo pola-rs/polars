@@ -23,6 +23,7 @@ use super::schema_inference::infer_file_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
+use crate::csv::read::options::BatchSizeOptions;
 use crate::csv::read::parser::skip_this_line_naive;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
@@ -117,7 +118,7 @@ pub(crate) struct CoreReader<'a> {
     n_threads: Option<usize>,
     has_header: bool,
     chunk_size: usize,
-    chunk_n_rows: Option<usize>,
+    batch_size_options: BatchSizeOptions,
     null_values: Option<NullValuesCompiled>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
@@ -152,7 +153,7 @@ impl<'a> CoreReader<'a> {
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
         chunk_size: usize,
-        chunk_n_rows: Option<usize>,
+        batch_size_options: BatchSizeOptions,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         mut to_cast: Vec<Field>,
         skip_rows_after_header: usize,
@@ -248,7 +249,7 @@ impl<'a> CoreReader<'a> {
             n_threads,
             has_header,
             chunk_size,
-            chunk_n_rows,
+            batch_size_options,
             null_values,
             predicate,
             to_cast,
