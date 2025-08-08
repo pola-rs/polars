@@ -804,10 +804,10 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     Parameters
     ----------
     f_string
-        A string that with placeholders.
-        For example: "hello_{}" or "{}_world
+        A string with placeholders, for example: "hello_{}" or "{}_world".
+
     args
-        Expression(s) that fill the placeholders
+        Expression(s) that fill the placeholders.
 
     Examples
     --------
