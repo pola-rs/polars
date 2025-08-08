@@ -33,7 +33,7 @@ pub struct CsvReadOptions {
     pub parse_options: Arc<CsvParseOptions>,
     pub has_header: bool,
     pub chunk_size: usize,
-    pub chunk_n_rows: Option<usize>,
+    pub batch_size_options: BatchSizeOptions,
     /// Skip rows according to the CSV spec.
     pub skip_rows: usize,
     /// Skip lines according to newline char (e.g. escaping will be ignored)
@@ -82,7 +82,7 @@ impl Default for CsvReadOptions {
             parse_options: Default::default(),
             has_header: true,
             chunk_size: 1 << 18,
-            chunk_n_rows: None,
+            batch_size_options: Default::default(),
             skip_rows: 0,
             skip_lines: 0,
             skip_rows_after_header: 0,
@@ -206,11 +206,10 @@ impl CsvReadOptions {
         self
     }
 
-    /// If chunk_n_rows is Some, the batched csv reader will output exactly chunk_n_rows
-    /// rows per batch. (Unless for the last chunk, which can be smaller). This only applies
-    /// to batched csv reader.
-    pub fn with_chunk_n_rows(mut self, chunk_n_rows: Option<usize>) -> Self {
-        self.chunk_n_rows = chunk_n_rows;
+    /// Controls the batch size settings for the BatchedCsvReader
+    /// Not applicable for non-batched CsvReader
+    pub fn with_batch_size_options(mut self, batch_size_options: BatchSizeOptions) -> Self {
+        self.batch_size_options = batch_size_options;
         self
     }
 
@@ -443,5 +442,22 @@ impl NullValuesCompiled {
                 v.get_unchecked(index).as_bytes() == field
             },
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum BatchSizeOptions {
+    UseDefault,
+    EachBatchNBytes(usize),
+    EachBatchNBytesStrict(usize),
+    EachBatchNRows(usize),
+    TotalNextBatchesNRows(usize),
+}
+
+impl Default for BatchSizeOptions {
+    fn default() -> Self {
+        Self::UseDefault
     }
 }
