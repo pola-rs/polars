@@ -1,0 +1,6 @@
+﻿polars.exceptions.MapWithoutReturnDtypeWarning
+==============================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: MapWithoutReturnDtypeWarning

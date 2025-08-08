@@ -1,0 +1,198 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-core/src/chunked_array/object/extension/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="polars_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../../../static.files/storage-4e99c027.js"></script><script defer src="../../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_core/chunked_array/object/extension/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>drop;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">mod </span>list;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>polars_extension;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>std::mem;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>arrow::array::FixedSizeBinaryArray;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>arrow::bitmap::BitmapBuilder;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>arrow::buffer::Buffer;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>arrow::datatypes::ExtensionType;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>polars_extension::PolarsExtension;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>polars_utils::format_pl_smallstr;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>polars_utils::relaxed_cell::RelaxedCell;
+<a href=#14 id=14 data-nosnippet>14</a>
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><span class="kw">crate</span>::PROCESS_ID;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><span class="kw">crate</span>::prelude::<span class="kw-2">*</span>;
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">static </span>POLARS_ALLOW_EXTENSION: RelaxedCell&lt;bool&gt; = RelaxedCell::new_bool(<span class="bool-val">false</span>);
+<a href=#19 id=19 data-nosnippet>19</a>
+<a href=#20 id=20 data-nosnippet>20</a><span class="doccomment">/// Control whether extension types may be created.
+<a href=#21 id=21 data-nosnippet>21</a>///
+<a href=#22 id=22 data-nosnippet>22</a>/// If the environment variable POLARS_ALLOW_EXTENSION is set, this function has no effect.
+<a href=#23 id=23 data-nosnippet>23</a></span><span class="kw">pub fn </span>set_polars_allow_extension(toggle: bool) {
+<a href=#24 id=24 data-nosnippet>24</a>    POLARS_ALLOW_EXTENSION.store(toggle)
+<a href=#25 id=25 data-nosnippet>25</a>}
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="doccomment">/// Invariants
+<a href=#28 id=28 data-nosnippet>28</a>/// `ptr` must point to start a `T` allocation
+<a href=#29 id=29 data-nosnippet>29</a>/// `n_t_vals` must represent the correct number of `T` values in that allocation
+<a href=#30 id=30 data-nosnippet>30</a></span><span class="kw">unsafe fn </span>create_drop&lt;T: Sized&gt;(<span class="kw-2">mut </span>ptr: <span class="kw-2">*const </span>u8, n_t_vals: usize) -&gt; Box&lt;<span class="kw">dyn </span>FnMut()&gt; {
+<a href=#31 id=31 data-nosnippet>31</a>    Box::new(<span class="kw">move </span>|| {
+<a href=#32 id=32 data-nosnippet>32</a>        <span class="kw">let </span>t_size = size_of::&lt;T&gt;() <span class="kw">as </span>isize;
+<a href=#33 id=33 data-nosnippet>33</a>        <span class="kw">for _ in </span><span class="number">0</span>..n_t_vals {
+<a href=#34 id=34 data-nosnippet>34</a>            <span class="kw">let _ </span>= std::ptr::read_unaligned(ptr <span class="kw">as </span><span class="kw-2">*const </span>T);
+<a href=#35 id=35 data-nosnippet>35</a>            ptr = ptr.offset(t_size)
+<a href=#36 id=36 data-nosnippet>36</a>        }
+<a href=#37 id=37 data-nosnippet>37</a>    })
+<a href=#38 id=38 data-nosnippet>38</a>}
+<a href=#39 id=39 data-nosnippet>39</a>
+<a href=#40 id=40 data-nosnippet>40</a><span class="attr">#[allow(clippy::type_complexity)]
+<a href=#41 id=41 data-nosnippet>41</a></span><span class="kw">struct </span>ExtensionSentinel {
+<a href=#42 id=42 data-nosnippet>42</a>    drop_fn: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>FnMut()&gt;&gt;,
+<a href=#43 id=43 data-nosnippet>43</a>    <span class="comment">// A function on the heap that take a `array: FixedSizeBinary` and a `name: PlSmallStr`
+<a href=#44 id=44 data-nosnippet>44</a>    // and returns a `Series` of `ObjectChunked&lt;T&gt;`
+<a href=#45 id=45 data-nosnippet>45</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) to_series_fn: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Fn(<span class="kw-2">&amp;</span>FixedSizeBinaryArray, <span class="kw-2">&amp;</span>PlSmallStr) -&gt; Series&gt;&gt;,
+<a href=#46 id=46 data-nosnippet>46</a>}
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a><span class="kw">impl </span>Drop <span class="kw">for </span>ExtensionSentinel {
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#50 id=50 data-nosnippet>50</a>        <span class="kw">let </span><span class="kw-2">mut </span>drop_fn = <span class="self">self</span>.drop_fn.take().unwrap();
+<a href=#51 id=51 data-nosnippet>51</a>        drop_fn()
+<a href=#52 id=52 data-nosnippet>52</a>    }
+<a href=#53 id=53 data-nosnippet>53</a>}
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a><span class="comment">// https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8d
+<a href=#56 id=56 data-nosnippet>56</a>// not entirely sure if padding bytes in T are initialized or not.
+<a href=#57 id=57 data-nosnippet>57</a></span><span class="kw">unsafe fn </span>any_as_u8_slice&lt;T: Sized&gt;(p: <span class="kw-2">&amp;</span>T) -&gt; <span class="kw-2">&amp;</span>[u8] {
+<a href=#58 id=58 data-nosnippet>58</a>    std::slice::from_raw_parts((p <span class="kw">as </span><span class="kw-2">*const </span>T) <span class="kw">as </span><span class="kw-2">*const </span>u8, size_of::&lt;T&gt;())
+<a href=#59 id=59 data-nosnippet>59</a>}
+<a href=#60 id=60 data-nosnippet>60</a>
+<a href=#61 id=61 data-nosnippet>61</a><span class="doccomment">/// Create an extension Array that can be sent to arrow and (once wrapped in [`PolarsExtension`] will
+<a href=#62 id=62 data-nosnippet>62</a>/// also call drop on `T`, when the array is dropped.
+<a href=#63 id=63 data-nosnippet>63</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>create_extension&lt;I: Iterator&lt;Item = <span class="prelude-ty">Option</span>&lt;T&gt;&gt; + TrustedLen, T: Sized + Default&gt;(
+<a href=#64 id=64 data-nosnippet>64</a>    iter: I,
+<a href=#65 id=65 data-nosnippet>65</a>) -&gt; PolarsExtension {
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="kw">let </span>env = <span class="string">"POLARS_ALLOW_EXTENSION"</span>;
+<a href=#67 id=67 data-nosnippet>67</a>    <span class="kw">if </span>!(POLARS_ALLOW_EXTENSION.load() || std::env::var(env).is_ok()) {
+<a href=#68 id=68 data-nosnippet>68</a>        <span class="macro">panic!</span>(<span class="string">"creating extension types not allowed - try setting the environment variable {env}"</span>)
+<a href=#69 id=69 data-nosnippet>69</a>    }
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="kw">let </span>t_size = size_of::&lt;T&gt;();
+<a href=#71 id=71 data-nosnippet>71</a>    <span class="kw">let </span>t_alignment = align_of::&lt;T&gt;();
+<a href=#72 id=72 data-nosnippet>72</a>    <span class="kw">let </span>n_t_vals = iter.size_hint().<span class="number">1</span>.unwrap();
+<a href=#73 id=73 data-nosnippet>73</a>
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="kw">let </span><span class="kw-2">mut </span>buf = Vec::with_capacity(n_t_vals * t_size);
+<a href=#75 id=75 data-nosnippet>75</a>    <span class="kw">let </span><span class="kw-2">mut </span>validity = BitmapBuilder::with_capacity(n_t_vals);
+<a href=#76 id=76 data-nosnippet>76</a>
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="comment">// when we transmute from &amp;[u8] to T, T must be aligned correctly,
+<a href=#78 id=78 data-nosnippet>78</a>    // so we pad with bytes until the alignment matches
+<a href=#79 id=79 data-nosnippet>79</a>    </span><span class="kw">let </span>n_padding = (buf.as_ptr() <span class="kw">as </span>usize) % t_alignment;
+<a href=#80 id=80 data-nosnippet>80</a>    buf.extend(std::iter::repeat_n(<span class="number">0</span>, n_padding));
+<a href=#81 id=81 data-nosnippet>81</a>
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="comment">// transmute T as bytes and copy in buffer
+<a href=#83 id=83 data-nosnippet>83</a>    </span><span class="kw">for </span>opt_t <span class="kw">in </span>iter.into_iter() {
+<a href=#84 id=84 data-nosnippet>84</a>        <span class="kw">match </span>opt_t {
+<a href=#85 id=85 data-nosnippet>85</a>            <span class="prelude-val">Some</span>(t) =&gt; {
+<a href=#86 id=86 data-nosnippet>86</a>                <span class="kw">unsafe </span>{
+<a href=#87 id=87 data-nosnippet>87</a>                    buf.extend_from_slice(any_as_u8_slice(<span class="kw-2">&amp;</span>t));
+<a href=#88 id=88 data-nosnippet>88</a>                    <span class="comment">// SAFETY: we allocated upfront
+<a href=#89 id=89 data-nosnippet>89</a>                    </span>validity.push_unchecked(<span class="bool-val">true</span>)
+<a href=#90 id=90 data-nosnippet>90</a>                }
+<a href=#91 id=91 data-nosnippet>91</a>                mem::forget(t);
+<a href=#92 id=92 data-nosnippet>92</a>            },
+<a href=#93 id=93 data-nosnippet>93</a>            <span class="prelude-val">None </span>=&gt; {
+<a href=#94 id=94 data-nosnippet>94</a>                <span class="kw">unsafe </span>{
+<a href=#95 id=95 data-nosnippet>95</a>                    buf.extend_from_slice(any_as_u8_slice(<span class="kw-2">&amp;</span>T::default()));
+<a href=#96 id=96 data-nosnippet>96</a>                    <span class="comment">// SAFETY: we allocated upfront
+<a href=#97 id=97 data-nosnippet>97</a>                    </span>validity.push_unchecked(<span class="bool-val">false</span>)
+<a href=#98 id=98 data-nosnippet>98</a>                }
+<a href=#99 id=99 data-nosnippet>99</a>            },
+<a href=#100 id=100 data-nosnippet>100</a>        }
+<a href=#101 id=101 data-nosnippet>101</a>    }
+<a href=#102 id=102 data-nosnippet>102</a>
+<a href=#103 id=103 data-nosnippet>103</a>    <span class="comment">// we slice the buffer because we want to ignore the padding bytes from here
+<a href=#104 id=104 data-nosnippet>104</a>    // they can be forgotten
+<a href=#105 id=105 data-nosnippet>105</a>    </span><span class="kw">let </span>buf: Buffer&lt;u8&gt; = buf.into();
+<a href=#106 id=106 data-nosnippet>106</a>    <span class="kw">let </span>len = buf.len() - n_padding;
+<a href=#107 id=107 data-nosnippet>107</a>    <span class="kw">let </span>buf = buf.sliced(n_padding, len);
+<a href=#108 id=108 data-nosnippet>108</a>
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="comment">// ptr to start of T, not to start of padding
+<a href=#110 id=110 data-nosnippet>110</a>    </span><span class="kw">let </span>ptr = buf.as_slice().as_ptr();
+<a href=#111 id=111 data-nosnippet>111</a>
+<a href=#112 id=112 data-nosnippet>112</a>    <span class="comment">// SAFETY:
+<a href=#113 id=113 data-nosnippet>113</a>    // ptr and t are correct
+<a href=#114 id=114 data-nosnippet>114</a>    </span><span class="kw">let </span>drop_fn = <span class="kw">unsafe </span>{ create_drop::&lt;T&gt;(ptr, n_t_vals) };
+<a href=#115 id=115 data-nosnippet>115</a>    <span class="kw">let </span>et = Box::new(ExtensionSentinel {
+<a href=#116 id=116 data-nosnippet>116</a>        drop_fn: <span class="prelude-val">Some</span>(drop_fn),
+<a href=#117 id=117 data-nosnippet>117</a>        to_series_fn: <span class="prelude-val">None</span>,
+<a href=#118 id=118 data-nosnippet>118</a>    });
+<a href=#119 id=119 data-nosnippet>119</a>    <span class="kw">let </span>et_ptr = <span class="kw-2">&amp;*</span>et <span class="kw">as </span><span class="kw-2">*const </span>ExtensionSentinel;
+<a href=#120 id=120 data-nosnippet>120</a>    std::mem::forget(et);
+<a href=#121 id=121 data-nosnippet>121</a>
+<a href=#122 id=122 data-nosnippet>122</a>    <span class="kw">let </span>metadata = <span class="macro">format_pl_smallstr!</span>(<span class="string">"{};{}"</span>, <span class="kw-2">*</span>PROCESS_ID, et_ptr <span class="kw">as </span>usize);
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a>    <span class="kw">let </span>physical_type = ArrowDataType::FixedSizeBinary(t_size);
+<a href=#125 id=125 data-nosnippet>125</a>    <span class="kw">let </span>extension_type = ArrowDataType::Extension(Box::new(ExtensionType {
+<a href=#126 id=126 data-nosnippet>126</a>        name: PlSmallStr::from_static(EXTENSION_NAME),
+<a href=#127 id=127 data-nosnippet>127</a>        inner: physical_type,
+<a href=#128 id=128 data-nosnippet>128</a>        metadata: <span class="prelude-val">Some</span>(metadata),
+<a href=#129 id=129 data-nosnippet>129</a>    }));
+<a href=#130 id=130 data-nosnippet>130</a>
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="kw">let </span>array = FixedSizeBinaryArray::new(extension_type, buf, validity.into_opt_validity());
+<a href=#132 id=132 data-nosnippet>132</a>
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="comment">// SAFETY: we just heap allocated the ExtensionSentinel, so its alive.
+<a href=#134 id=134 data-nosnippet>134</a>    </span><span class="kw">unsafe </span>{ PolarsExtension::new(array) }
+<a href=#135 id=135 data-nosnippet>135</a>}
+<a href=#136 id=136 data-nosnippet>136</a>
+<a href=#137 id=137 data-nosnippet>137</a><span class="attr">#[cfg(test)]
+<a href=#138 id=138 data-nosnippet>138</a></span><span class="kw">mod </span>test {
+<a href=#139 id=139 data-nosnippet>139</a>    <span class="kw">use </span>std::fmt::{Display, Formatter};
+<a href=#140 id=140 data-nosnippet>140</a>    <span class="kw">use </span>std::hash::{Hash, Hasher};
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="kw">use </span>polars_utils::total_ord::TotalHash;
+<a href=#143 id=143 data-nosnippet>143</a>
+<a href=#144 id=144 data-nosnippet>144</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#145 id=145 data-nosnippet>145</a>
+<a href=#146 id=146 data-nosnippet>146</a>    <span class="attr">#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+<a href=#147 id=147 data-nosnippet>147</a>    </span><span class="kw">struct </span>Foo {
+<a href=#148 id=148 data-nosnippet>148</a>        <span class="kw">pub </span>a: i32,
+<a href=#149 id=149 data-nosnippet>149</a>        <span class="kw">pub </span>b: u8,
+<a href=#150 id=150 data-nosnippet>150</a>        <span class="kw">pub </span>other_heap: String,
+<a href=#151 id=151 data-nosnippet>151</a>    }
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a>    <span class="kw">impl </span>TotalEq <span class="kw">for </span>Foo {
+<a href=#154 id=154 data-nosnippet>154</a>        <span class="kw">fn </span>tot_eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool {
+<a href=#155 id=155 data-nosnippet>155</a>            <span class="self">self </span>== other
+<a href=#156 id=156 data-nosnippet>156</a>        }
+<a href=#157 id=157 data-nosnippet>157</a>    }
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a>    <span class="kw">impl </span>TotalHash <span class="kw">for </span>Foo {
+<a href=#160 id=160 data-nosnippet>160</a>        <span class="kw">fn </span>tot_hash&lt;H&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span>H)
+<a href=#161 id=161 data-nosnippet>161</a>        <span class="kw">where
+<a href=#162 id=162 data-nosnippet>162</a>            </span>H: Hasher,
+<a href=#163 id=163 data-nosnippet>163</a>        {
+<a href=#164 id=164 data-nosnippet>164</a>            <span class="self">self</span>.hash(state);
+<a href=#165 id=165 data-nosnippet>165</a>        }
+<a href=#166 id=166 data-nosnippet>166</a>    }
+<a href=#167 id=167 data-nosnippet>167</a>
+<a href=#168 id=168 data-nosnippet>168</a>    <span class="kw">impl </span>Display <span class="kw">for </span>Foo {
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; std::fmt::Result {
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="macro">write!</span>(f, <span class="string">"{self:?}"</span>)
+<a href=#171 id=171 data-nosnippet>171</a>        }
+<a href=#172 id=172 data-nosnippet>172</a>    }
+<a href=#173 id=173 data-nosnippet>173</a>
+<a href=#174 id=174 data-nosnippet>174</a>    <span class="kw">impl </span>PolarsObject <span class="kw">for </span>Foo {
+<a href=#175 id=175 data-nosnippet>175</a>        <span class="kw">fn </span>type_name() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
+<a href=#176 id=176 data-nosnippet>176</a>            <span class="string">"object"
+<a href=#177 id=177 data-nosnippet>177</a>        </span>}
+<a href=#178 id=178 data-nosnippet>178</a>    }
+<a href=#179 id=179 data-nosnippet>179</a>
+<a href=#180 id=180 data-nosnippet>180</a>    <span class="attr">#[test]
+<a href=#181 id=181 data-nosnippet>181</a>    </span><span class="kw">fn </span>test_create_extension() {
+<a href=#182 id=182 data-nosnippet>182</a>        set_polars_allow_extension(<span class="bool-val">true</span>);
+<a href=#183 id=183 data-nosnippet>183</a>        <span class="comment">// Run this under MIRI.
+<a href=#184 id=184 data-nosnippet>184</a>        </span><span class="kw">let </span>foo = Foo {
+<a href=#185 id=185 data-nosnippet>185</a>            a: <span class="number">1</span>,
+<a href=#186 id=186 data-nosnippet>186</a>            b: <span class="number">1</span>,
+<a href=#187 id=187 data-nosnippet>187</a>            other_heap: <span class="string">"foo"</span>.into(),
+<a href=#188 id=188 data-nosnippet>188</a>        };
+<a href=#189 id=189 data-nosnippet>189</a>        <span class="kw">let </span>foo2 = Foo {
+<a href=#190 id=190 data-nosnippet>190</a>            a: <span class="number">1</span>,
+<a href=#191 id=191 data-nosnippet>191</a>            b: <span class="number">1</span>,
+<a href=#192 id=192 data-nosnippet>192</a>            other_heap: <span class="string">"bar"</span>.into(),
+<a href=#193 id=193 data-nosnippet>193</a>        };
+<a href=#194 id=194 data-nosnippet>194</a>
+<a href=#195 id=195 data-nosnippet>195</a>        <span class="kw">let </span>vals = <span class="macro">vec!</span>[<span class="prelude-val">Some</span>(foo), <span class="prelude-val">Some</span>(foo2)];
+<a href=#196 id=196 data-nosnippet>196</a>        create_extension(vals.into_iter());
+<a href=#197 id=197 data-nosnippet>197</a>    }
+<a href=#198 id=198 data-nosnippet>198</a>}</code></pre></div></section></main></body></html>
