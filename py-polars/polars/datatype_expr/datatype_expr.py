@@ -214,6 +214,17 @@ class DataTypeExpr:
         """
         Get a default value of a specific type.
 
+        - Integers and floats are their zero value as default, unless otherwise
+          specified
+        - Temporals are a physical zero as default
+        - `pl.Decimal` is zero as default
+        - `pl.String` and `pl.Binary` are an empty string
+        - `pl.List` is an empty list, unless otherwise specified
+        - `pl.Array` is the inner default value repeated over the shape
+        - `pl.Struct` is the inner default value for all fields
+        - `pl.Enum` is the first category if it exists
+        - `pl.Null`, `pl.Object` and `pl.Categorical` are `null`.
+
         Parameters
         ----------
         n
