@@ -204,6 +204,44 @@ class DataTypeExpr:
             self._pydatatype_expr.to_signed_integer()
         )
 
+    def default_value(
+        self,
+        n: int = 1,
+        *,
+        numeric_to_one: bool = False,
+        num_list_values: int = 0,
+    ) -> pl.Expr:
+        """
+        Get a default value of a specific type.
+
+        Parameters
+        ----------
+        n
+            Number of types you want the value
+        numeric_to_one
+            Use `1` instead of `0` as the default value for numeric types
+        num_list_values
+            The amount of values a list contains
+
+        Examples
+        --------
+        >>> uint32 = pl.UInt32.to_dtype_expr()
+        >>> pl.select(default=uint32.default_value())
+        shape: (1, 1)
+        ┌─────────┐
+        │ default │
+        │ ---     │
+        │ u32     │
+        ╞═════════╡
+        │ 0       │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(
+            self._pydatatype_expr.default_value(
+                n=n, numeric_to_one=numeric_to_one, num_list_values=num_list_values
+            )
+        )
+
     @property
     def list(self) -> DataTypeExprListNameSpace:
         """Create an object namespace of all list related methods."""
