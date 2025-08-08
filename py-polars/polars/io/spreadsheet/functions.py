@@ -650,7 +650,7 @@ def _read_spreadsheet(
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     include_file_paths: str | None = None,
-    columns: Sequence[int] | Sequence[str] | None = None,
+    columns: Sequence[int] | Sequence[str] | str | None = None,
     has_header: bool = True,
     raise_if_empty: bool = True,
     drop_empty_rows: bool = True,
@@ -660,6 +660,9 @@ def _read_spreadsheet(
         source = normalize_filepath(source)
         if looks_like_url(source):
             source = process_file_url(source)
+
+    if isinstance(columns, str):
+        columns = [columns]
 
     read_options = _get_read_options(
         read_options,

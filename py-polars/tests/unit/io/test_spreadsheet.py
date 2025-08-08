@@ -1458,3 +1458,7 @@ def test_excel_read_columns_nonlist_sequence(engine: ExcelSpreadsheetEngine) -> 
     xldf = pl.read_excel(xls, engine=engine, columns=("colx", "coly"))
     expected = df.select("colx", "coly")
     assert_frame_equal(xldf, expected)
+
+    xldf = pl.read_excel(xls, engine=engine, columns="colx")
+    expected = df.select("colx")
+    assert_frame_equal(xldf, expected)
