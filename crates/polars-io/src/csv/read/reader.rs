@@ -126,6 +126,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
             self.options.schema_overwrite.clone(),
             self.options.dtype_overwrite.clone(),
             self.options.chunk_size,
+            self.options.chunk_n_rows,
             self.predicate.clone(),
             self.options.fields_to_cast.clone(),
             self.options.skip_rows_after_header,
