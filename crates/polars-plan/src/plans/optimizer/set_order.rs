@@ -149,18 +149,18 @@ pub(super) fn set_order_flags(
                     continue;
                 }
 
-                maintain_order_above =
-                    !(all_elementwise(keys, expr_arena) && all_order_independent(aggs, expr_arena));
+                maintain_order_above = !(all_row_seperable(keys, expr_arena)
+                    && all_order_independent(aggs, expr_arena));
             },
             // Conservative now.
             IR::HStack { exprs, .. } | IR::Select { expr: exprs, .. } => {
-                if !maintain_order_above && all_elementwise(exprs, expr_arena) {
+                if !maintain_order_above && all_row_seperable(exprs, expr_arena) {
                     continue;
                 }
                 maintain_order_above = true;
             },
             IR::Filter { predicate, .. } => {
-                if !maintain_order_above && is_elementwise_rec(predicate.node(), expr_arena) {
+                if !maintain_order_above && is_row_seperable_rec(predicate.node(), expr_arena) {
                     continue;
                 }
                 maintain_order_above = true;
