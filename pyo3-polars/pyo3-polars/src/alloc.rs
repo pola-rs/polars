@@ -45,7 +45,7 @@ static FALLBACK_ALLOCATOR_CAPSULE: AllocatorCapsule = AllocatorCapsule {
     realloc: fallback_realloc,
 };
 
-static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars._plr._allocator\0";
+static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars.polars._allocator\0";
 
 /// A memory allocator that relays allocations to the allocator used by Polars.
 ///
@@ -58,7 +58,7 @@ static ALLOCATOR_CAPSULE_NAME: &[u8] = b"polars._plr._allocator\0";
 /// static ALLOC: PolarsAllocator = PolarsAllocator::new();
 /// ```
 ///
-/// If the allocator capsule (`polars._plr._allocator`) is not available,
+/// If the allocator capsule (`polars.polars._allocator`) is not available,
 /// this allocator fallbacks to [`std::alloc::System`].
 pub struct PolarsAllocator(OnceRef<'static, AllocatorCapsule>);
 
