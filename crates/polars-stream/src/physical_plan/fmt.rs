@@ -9,6 +9,7 @@ use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::nodes::cum_agg::CumAggKind;
 
 /// A style of a graph node.
 enum NodeStyle {
@@ -338,6 +339,19 @@ fn visualize_plan_rec(
             )
         },
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        PhysNodeKind::CumAgg { input, kind } => (
+            format!(
+                "cum_{}",
+                match kind {
+                    CumAggKind::Min => "min",
+                    CumAggKind::Max => "max",
+                    CumAggKind::Sum => "sum",
+                    CumAggKind::Count => "count",
+                    CumAggKind::Prod => "prod",
+                }
+            ),
+            &[*input][..],
+        ),
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),

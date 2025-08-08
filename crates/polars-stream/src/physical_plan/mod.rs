@@ -33,6 +33,7 @@ use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;
+use crate::nodes::cum_agg::CumAggKind;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
@@ -206,6 +207,11 @@ pub enum PhysNodeKind {
         repeats: PhysStream,
     },
 
+    CumAgg {
+        input: PhysStream,
+        kind: CumAggKind,
+    },
+
     // Parameter is the input stream
     Rle(PhysStream),
     RleId(PhysStream),
@@ -347,6 +353,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::CumAgg { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::GroupBy { input, .. } => {
