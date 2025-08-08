@@ -110,10 +110,6 @@ pub fn does_not_modify_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, does_not_modify)
 }
 
-// Properties
-
-/// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
-/// be extended further with any nested expression nodes.
 pub fn is_prop<P: Fn(&AExpr) -> bool>(
     stack: &mut UnitVec<Node>,
     ae: &AExpr,
