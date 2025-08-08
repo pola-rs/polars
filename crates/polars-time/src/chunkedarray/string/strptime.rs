@@ -230,8 +230,8 @@ impl StrpTimeState {
                     b'B' => {
                         (month, offset) = parse_month_full(val, offset)?;
                         // double check remaining fmt_len
-                        let new_fmt_len = fmt_len(&fmt_iter.as_slice())?;
-                        let remaining_val_len = val.len() - (offset as usize);
+                        let new_fmt_len = fmt_len(fmt_iter.as_slice())?;
+                        let remaining_val_len = val.len() - offset;
                         if remaining_val_len != (new_fmt_len as usize) {
                             return None;
                         }
