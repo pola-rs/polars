@@ -20,6 +20,7 @@ use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+use crate::nodes::cum_agg::CumAggKind;
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 
 type ExprNodeKey = Node;
@@ -932,6 +933,46 @@ fn lower_exprs_with_ctx(
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(left_col_expr);
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function:
+                    ref function @ (IRFunctionExpr::CumMin { reverse }
+                    | IRFunctionExpr::CumMax { reverse }
+                    | IRFunctionExpr::CumSum { reverse }
+                    | IRFunctionExpr::CumCount { reverse }
+                    | IRFunctionExpr::CumProd { reverse }),
+                options: _,
+            } if !reverse => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+
+                let value_key = unique_column_name();
+                let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let kind = match function {
+                    IRFunctionExpr::CumMin { .. } => CumAggKind::Min,
+                    IRFunctionExpr::CumMax { .. } => CumAggKind::Max,
+                    IRFunctionExpr::CumSum { .. } => CumAggKind::Sum,
+                    IRFunctionExpr::CumCount { .. } => CumAggKind::Count,
+                    IRFunctionExpr::CumProd { .. } => CumAggKind::Prod,
+                    _ => unreachable!(),
+                };
+                let node_kind = PhysNodeKind::CumAgg { input, kind };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), value_dtype.clone())]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
             AExpr::Function {
