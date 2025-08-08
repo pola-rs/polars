@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{InitHashMaps, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{
-    AExpr, DataFrameUdf, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by,
-};
+use polars_plan::plans::{AExpr, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by};
 use polars_plan::prelude::{GroupbyOptions, *};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -33,7 +32,7 @@ fn build_group_by_fallback(
     output_schema: Arc<Schema>,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     format_str: Option<String>,
@@ -402,7 +401,7 @@ fn try_build_streaming_group_by(
     aggs: &[ExprIR],
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
@@ -531,7 +530,7 @@ pub fn build_group_by_stream(
     output_schema: Arc<Schema>,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
@@ -560,7 +559,7 @@ pub fn build_group_by_stream(
                 expr_arena,
                 keys,
                 aggs,
-                apply.as_deref(),
+                apply.as_ref(),
                 maintain_order,
             )
             .unwrap();
