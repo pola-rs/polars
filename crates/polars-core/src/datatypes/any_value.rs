@@ -130,6 +130,74 @@ impl AnyValue<'static> {
     pub fn can_have_dtype(&self, dtype: &DataType) -> bool {
         matches!(self, AnyValue::Null) || dtype == &self.dtype()
     }
+
+    /// Generate a default dummy value for a given datatype.
+    pub fn default_value(
+        dtype: &DataType,
+        numeric_to_one: bool,
+        num_list_values: usize,
+    ) -> AnyValue<'static> {
+        use {AnyValue as AV, DataType as DT};
+        match dtype {
+            DT::Boolean => AV::Boolean(false),
+            DT::UInt8 => AV::UInt8(numeric_to_one.into()),
+            DT::UInt16 => AV::UInt16(numeric_to_one.into()),
+            DT::UInt32 => AV::UInt32(numeric_to_one.into()),
+            DT::UInt64 => AV::UInt64(numeric_to_one.into()),
+            DT::Int8 => AV::Int8(numeric_to_one.into()),
+            DT::Int16 => AV::Int16(numeric_to_one.into()),
+            DT::Int32 => AV::Int32(numeric_to_one.into()),
+            DT::Int64 => AV::Int64(numeric_to_one.into()),
+            DT::Int128 => AV::Int128(numeric_to_one.into()),
+            DT::Float32 => AV::Float32(numeric_to_one.into()),
+            DT::Float64 => AV::Float64(numeric_to_one.into()),
+            DT::Decimal(_, scale) => AV::Decimal(0, scale.unwrap()),
+            DT::String => AV::String(""),
+            DT::Binary => AV::Binary(&[]),
+            DT::BinaryOffset => AV::Binary(&[]),
+            DT::Date => AV::Date(0),
+            DT::Datetime(time_unit, time_zone) => {
+                AV::DatetimeOwned(0, *time_unit, time_zone.clone().map(Arc::new))
+            },
+            DT::Duration(time_unit) => AV::Duration(0, *time_unit),
+            DT::Time => AV::Time(0),
+            DT::Array(inner_dtype, width) => {
+                let inner_value =
+                    AnyValue::default_value(inner_dtype, numeric_to_one, num_list_values);
+                AV::Array(
+                    Scalar::new(inner_dtype.as_ref().clone(), inner_value)
+                        .into_series(PlSmallStr::EMPTY)
+                        .new_from_index(0, *width),
+                    *width,
+                )
+            },
+            DT::List(inner_dtype) => AV::List(if num_list_values == 0 {
+                Series::new_empty(PlSmallStr::EMPTY, inner_dtype.as_ref())
+            } else {
+                let inner_value =
+                    AnyValue::default_value(inner_dtype, numeric_to_one, num_list_values);
+
+                Scalar::new(inner_dtype.as_ref().clone(), inner_value)
+                    .into_series(PlSmallStr::EMPTY)
+                    .new_from_index(0, num_list_values)
+            }),
+            DT::Object(_) => AV::Null,
+            DT::Null => AV::Null,
+            DT::Categorical(_, _) => AV::Null,
+            DT::Enum(categories, mapping) => match categories.categories().is_empty() {
+                true => AV::Null,
+                false => AV::EnumOwned(0, mapping.clone()),
+            },
+            DT::Struct(fields) => AV::StructOwned(Box::new((
+                fields
+                    .iter()
+                    .map(|f| AnyValue::default_value(f.dtype(), numeric_to_one, num_list_values))
+                    .collect(),
+                fields.clone(),
+            ))),
+            DT::Unknown(_) => unreachable!(),
+        }
+    }
 }
 
 impl<'a> AnyValue<'a> {
