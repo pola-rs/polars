@@ -158,16 +158,12 @@ impl PartialEq for ScanSources {
 impl Eq for ScanSources {}
 
 impl ScanSources {
-    pub fn expand_paths(
-        &self,
-        scan_args: &UnifiedScanArgs,
-        #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
-    ) -> PolarsResult<Self> {
+    pub fn expand_paths(&self, scan_args: &UnifiedScanArgs) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => Ok(Self::Paths(expand_paths(
                 paths,
                 scan_args.glob,
-                cloud_options,
+                scan_args.cloud_options.as_ref(),
             )?)),
             v => Ok(v.clone()),
         }
@@ -179,14 +175,13 @@ impl ScanSources {
     pub fn expand_paths_with_hive_update(
         &self,
         scan_args: &mut UnifiedScanArgs,
-        #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => {
                 let (expanded_paths, hive_start_idx) = expand_paths_hive(
                     paths,
                     scan_args.glob,
-                    cloud_options,
+                    scan_args.cloud_options.as_ref(),
                     scan_args.hive_options.enabled.unwrap_or(false),
                 )?;
 
