@@ -2087,7 +2087,7 @@ class Expr:
         k_pyexpr = parse_into_expression(k)
         by_pyexprs = parse_into_list_of_expressions(by)
 
-        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        reverse = extend_bool(reverse, len(by_pyexprs), "reverse", "by")
 
         return wrap_expr(self._pyexpr.top_k_by(by_pyexprs, k=k_pyexpr, reverse=reverse))
 
@@ -2264,7 +2264,7 @@ class Expr:
         """  # noqa: W505
         k_pyexpr = parse_into_expression(k)
         by_pyexpr = parse_into_list_of_expressions(by)
-        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        reverse = extend_bool(reverse, len(by_pyexpr), "reverse", "by")
         return wrap_expr(
             self._pyexpr.bottom_k_by(by_pyexpr, k=k_pyexpr, reverse=reverse)
         )
@@ -2589,8 +2589,8 @@ class Expr:
         └───────┴────────┴────────┘
         """
         by_pyexprs = parse_into_list_of_expressions(by, *more_by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
+        descending = extend_bool(descending, len(by_pyexprs), "descending", "by")
+        nulls_last = extend_bool(nulls_last, len(by_pyexprs), "nulls_last", "by")
         return wrap_expr(
             self._pyexpr.sort_by(
                 by_pyexprs, descending, nulls_last, multithreaded, maintain_order
@@ -2650,7 +2650,7 @@ class Expr:
         ):
             indices_lit_pyexpr = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
-            indices_lit_pyexpr = parse_into_expression(indices)  # type: ignore[arg-type]
+            indices_lit_pyexpr = parse_into_expression(indices)
         return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr))
 
     def get(self, index: int | Expr) -> Expr:
@@ -4503,7 +4503,7 @@ Consider using {self}.implode() instead"""
             raise DeprecationWarning(msg)
             self = self.implode()
 
-        def _wrap(sl: list[pl.Series], *args: Any, **kwargs: Any) -> pl.Series:
+        def _wrap(sl: Sequence[pl.Series], *args: Any, **kwargs: Any) -> pl.Series:
             return function(sl[0], *args, **kwargs)
 
         return F.map_batches(

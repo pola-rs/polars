@@ -114,6 +114,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        import polars._plr as plr
+
     from collections.abc import Collection, Generator, Mapping
 
     import jax
@@ -256,7 +259,7 @@ class Series:
     """
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
-    _s: PySeries = None
+    _s: PySeries = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
         "cat",
@@ -573,12 +576,15 @@ class Series:
         This method is mainly intended for use with the dataframe interchange protocol.
         """
         if isinstance(data, Series):
-            data = [data._s]
+            data_lst = [data._s]
         else:
-            data = [s._s for s in data]
+            data_lst = [s._s for s in data]
+        validity_series: plr.PySeries | None = None
         if validity is not None:
-            validity = validity._s
-        return cls._from_pyseries(PySeries._from_buffers(dtype, data, validity))
+            validity_series = validity._s
+        return cls._from_pyseries(
+            PySeries._from_buffers(dtype, data_lst, validity_series)
+        )
 
     @staticmethod
     def _newest_compat_level() -> int:
@@ -587,7 +593,7 @@ class Series:
 
         This is for pyo3-polars.
         """
-        return CompatLevel._newest()._version  # type: ignore[attr-defined]
+        return CompatLevel._newest()._version
 
     @property
     def dtype(self) -> DataType:
@@ -1495,7 +1501,7 @@ class Series:
                     phys_arg = arg.to_physical()
                     if phys_arg._s.n_chunks() > 1:
                         phys_arg._s.rechunk(in_place=True)
-                    args.append(phys_arg._s.to_numpy_view())
+                    args.append(phys_arg._s.to_numpy_view())  # type: ignore[arg-type]
                 else:
                     msg = f"unsupported type {qualified_type_name(arg)!r} for {arg!r}"
                     raise TypeError(msg)
@@ -4409,7 +4415,11 @@ class Series:
         1
         """
         opt_s = self._s.rechunk(in_place)
-        return self if in_place else self._from_pyseries(opt_s)
+        if in_place:
+            return self
+        else:
+            assert opt_s is not None
+            return self._from_pyseries(opt_s)
 
     def reverse(self) -> Series:
         """
@@ -4813,11 +4823,15 @@ class Series:
           3
         ]
         """
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = False  # type: ignore[assignment]
+            compat_level_py = False
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
-        return self._s.to_arrow(compat_level)
+            compat_level_py = compat_level._version
+        else:
+            msg = f"`compat_level` has invalid type: {qualified_type_name(compat_level)!r}"
+            raise TypeError(msg)
+        return self._s.to_arrow(compat_level_py)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any
@@ -9014,6 +9028,68 @@ class Series:
         """
         return self._s.approx_n_unique()
 
+    def _row_encode(
+        self,
+        *,
+        unordered: bool = False,
+        descending: bool | None = None,
+        nulls_last: bool | None = None,
+    ) -> Series:
+        """Encode to the row encoding."""
+        return (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name)._row_encode(
+                    unordered=unordered, descending=descending, nulls_last=nulls_last
+                )
+            )
+            .to_series()
+        )
+
+    def _row_decode(
+        self,
+        names: list[str],
+        dtypes: list[PolarsDataType],
+        *,
+        unordered: bool = False,
+        descending: list[bool] | None = None,
+        nulls_last: list[bool] | None = None,
+    ) -> Series:
+        """Decode from the row encoding."""
+        return (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name)._row_decode(
+                    names,
+                    dtypes,
+                    unordered=unordered,
+                    descending=descending,
+                    nulls_last=nulls_last,
+                )
+            )
+            .to_series()
+        )
+
+    def repeat_by(self, by: int | IntoExprColumn) -> Self:
+        """
+        Repeat the elements in this Series as specified in the given expression.
+
+        The repeated elements are expanded into a List.
+
+        Parameters
+        ----------
+        by
+            Numeric column that determines how often the values will be repeated.
+            The column will be coerced to UInt32. Give this dtype to make the coercion
+            a no-op.
+
+        Returns
+        -------
+        Expr
+            Expression of data type List, where the inner data type is equal to the
+            original data type.
+        """
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 
@@ -9108,68 +9184,6 @@ class Series:
             msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
         return SeriesPlot(self)
-
-    def _row_encode(
-        self,
-        *,
-        unordered: bool = False,
-        descending: bool | None = None,
-        nulls_last: bool | None = None,
-    ) -> Self:
-        """Encode to the row encoding."""
-        return (
-            self.to_frame()
-            .select_seq(
-                F.col(self.name)._row_encode(
-                    unordered=unordered, descending=descending, nulls_last=nulls_last
-                )
-            )
-            .to_series()
-        )
-
-    def _row_decode(
-        self,
-        names: list[str],
-        dtypes: list[PolarsDataType],
-        *,
-        unordered: bool = False,
-        descending: list[bool] | None = None,
-        nulls_last: list[bool] | None = None,
-    ) -> Self:
-        """Decode from the row encoding."""
-        return (
-            self.to_frame()
-            .select_seq(
-                F.col(self.name)._row_decode(
-                    names,
-                    dtypes,
-                    unordered=unordered,
-                    descending=descending,
-                    nulls_last=nulls_last,
-                )
-            )
-            .to_series()
-        )
-
-    def repeat_by(self, by: int | IntoExprColumn) -> Self:
-        """
-        Repeat the elements in this Series as specified in the given expression.
-
-        The repeated elements are expanded into a List.
-
-        Parameters
-        ----------
-        by
-            Numeric column that determines how often the values will be repeated.
-            The column will be coerced to UInt32. Give this dtype to make the coercion
-            a no-op.
-
-        Returns
-        -------
-        Expr
-            Expression of data type List, where the inner data type is equal to the
-            original data type.
-        """
 
 
 def _resolve_temporal_dtype(

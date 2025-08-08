@@ -180,10 +180,12 @@ def linear_space(
     │ 5   ┆ 1.0  │
     └─────┴──────┘
     """
-    start = parse_into_expression(start)
-    end = parse_into_expression(end)
-    num_samples = parse_into_expression(num_samples)
-    result = wrap_expr(plr.linear_space(start, end, num_samples, closed))
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
+    num_samples_pyexpr = parse_into_expression(num_samples)
+    result = wrap_expr(
+        plr.linear_space(start_pyexpr, end_pyexpr, num_samples_pyexpr, closed)
+    )
 
     if eager:
         return F.select(result).to_series()
@@ -294,10 +296,14 @@ def linear_spaces(
     │ -1    ┆ 2   ┆ 5           ┆ [-1.0, 0.5, 2.0] │
     └───────┴─────┴─────────────┴──────────────────┘
     """
-    start = parse_into_expression(start)
-    end = parse_into_expression(end)
-    num_samples = parse_into_expression(num_samples)
-    result = wrap_expr(plr.linear_spaces(start, end, num_samples, closed, as_array))
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
+    num_samples_pyexpr = parse_into_expression(num_samples)
+    result = wrap_expr(
+        plr.linear_spaces(
+            start_pyexpr, end_pyexpr, num_samples_pyexpr, closed, as_array
+        )
+    )
 
     if eager:
         return F.select(result).to_series()

@@ -281,7 +281,7 @@ impl PyDataFrame {
         Ok(())
     }
 
-    #[pyo3(signature = (offset, length=None))]
+    #[pyo3(signature = (offset, length))]
     pub fn slice(&self, py: Python<'_>, offset: i64, length: Option<usize>) -> PyResult<Self> {
         py.enter_polars_df(|| {
             Ok(self
@@ -449,7 +449,7 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    #[pyo3(signature = (columns, separator, drop_first=false, drop_nulls=false))]
+    #[pyo3(signature = (columns, separator, drop_first, drop_nulls))]
     pub fn to_dummies(
         &self,
         py: Python<'_>,

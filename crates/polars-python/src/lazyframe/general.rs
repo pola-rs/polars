@@ -633,7 +633,7 @@ impl PyLazyFrame {
         ldf.with_optimizations(optflags.inner).into()
     }
 
-    #[pyo3(signature = (lambda_post_opt=None))]
+    #[pyo3(signature = (lambda_post_opt))]
     fn profile(
         &self,
         py: Python<'_>,
@@ -652,7 +652,7 @@ impl PyLazyFrame {
         Ok((df.into(), time_df.into()))
     }
 
-    #[pyo3(signature = (engine, lambda_post_opt=None))]
+    #[pyo3(signature = (engine, lambda_post_opt))]
     fn collect(
         &self,
         py: Python<'_>,

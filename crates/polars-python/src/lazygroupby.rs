@@ -35,7 +35,7 @@ impl PyLazyGroupBy {
         lgb.tail(Some(n)).into()
     }
 
-    #[pyo3(signature = (lambda, schema=None))]
+    #[pyo3(signature = (lambda, schema))]
     fn map_groups(
         &mut self,
         lambda: PyObject,
