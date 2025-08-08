@@ -42,7 +42,7 @@ impl AExpr {
         }
     }
 
-    /// Checks whether this expression is elementwise. This only checks the top level expression.
+    /// Checks whether this expression is row-separable. This only checks the top level expression.
     pub(crate) fn is_row_separable_top_level(&self) -> bool {
         use AExpr::*;
 
@@ -188,7 +188,7 @@ where
         .all(|n| is_row_separable_rec(n.into(), expr_arena))
 }
 
-/// Recursive variant of `is_elementwise`
+/// Recursive variant of `is_row_separable`
 pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_row_separable)
 }
