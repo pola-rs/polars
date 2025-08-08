@@ -25,6 +25,7 @@ pub(crate) fn get_file_chunks_iterator(
     bytes: &[u8],
     quote_char: Option<u8>,
     eol_char: u8,
+    n_rows: Option<usize>,
 ) {
     let cl = CountLines::new(quote_char, eol_char);
 
@@ -39,7 +40,11 @@ pub(crate) fn get_file_chunks_iterator(
 
         loop {
             let b = &bytes[..(*chunk_size).min(bytes.len())];
-            let (count, position_) = cl.count(b);
+            let (count, position_) = if let Some(n_rows) = n_rows {
+                cl.count_at_most_n_rows(b, n_rows)
+            } else {
+                cl.count(b)
+            };
 
             let (count, position_) = if b.len() == bytes.len() {
                 (if count != 0 { count } else { 1 }, b.len())
@@ -58,6 +63,13 @@ pub(crate) fn get_file_chunks_iterator(
             if count == 0 {
                 *chunk_size *= 2;
                 continue;
+            } else if b.len() < bytes.len() {
+                if let Some(n_rows) = n_rows {
+                    if count < n_rows {
+                        *chunk_size *= 2;
+                        continue;
+                    }
+                }
             }
 
             position = position_;
@@ -75,9 +87,7 @@ struct ChunkOffsetIter<'a> {
     last_offset: usize,
     n_chunks: usize,
     chunk_size: usize,
-    // not a promise, but something we want
-    #[allow(unused)]
-    rows_per_batch: usize,
+    rows_per_batch: Option<usize>,
     quote_char: Option<u8>,
     eol_char: u8,
 }
@@ -100,6 +110,7 @@ impl Iterator for ChunkOffsetIter<'_> {
                     self.bytes,
                     self.quote_char,
                     self.eol_char,
+                    self.rows_per_batch,
                 );
                 match self.offsets.pop_front() {
                     Some(offsets) => Some(offsets),
@@ -153,7 +164,7 @@ impl<'a> CoreReader<'a> {
             last_offset: 0,
             n_chunks: offset_batch_size,
             chunk_size,
-            rows_per_batch: self.chunk_size,
+            rows_per_batch: self.chunk_n_rows,
             quote_char: self.parse_options.quote_char,
             eol_char: self.parse_options.eol_char,
         };
