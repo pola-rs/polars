@@ -828,11 +828,9 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             ({}, True)
             if write_params.get("include_header", True)
             else (
-                (
-                    {"new_columns": ["dtm", "str", "val"]}
-                    if engine == "xlsx2csv"
-                    else {"column_names": ["dtm", "str", "val"]}
-                ),
+                {"new_columns": ["dtm", "str", "val"]}
+                if engine == "xlsx2csv"
+                else {"column_names": ["dtm", "str", "val"]},
                 False,
             )
         )
