@@ -445,6 +445,7 @@ impl NullValuesCompiled {
     }
 }
 
+// Used for BatchedCsvReader
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
