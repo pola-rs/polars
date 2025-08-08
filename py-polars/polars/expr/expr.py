@@ -2085,9 +2085,11 @@ class Expr:
         └────────┴─────┴─────┘
         """  # noqa: W505
         k_pyexpr = parse_into_expression(k)
-        by_pyexpr = parse_into_list_of_expressions(by)
+        by_pyexprs = parse_into_list_of_expressions(by)
+
         reverse = extend_bool(reverse, len(by), "reverse", "by")
-        return wrap_expr(self._pyexpr.top_k_by(by_pyexpr, k=k_pyexpr, reverse=reverse))
+
+        return wrap_expr(self._pyexpr.top_k_by(by_pyexprs, k=k_pyexpr, reverse=reverse))
 
     def bottom_k(self, k: int | IntoExprColumn = 5) -> Expr:
         r"""
@@ -2450,7 +2452,7 @@ class Expr:
         """
         element_pyexpr = parse_into_expression(
             element, str_as_lit=True, list_as_series=True
-        )  # type: ignore[arg-type]
+        )
         return wrap_expr(self._pyexpr.search_sorted(element_pyexpr, side, descending))
 
     def sort_by(
@@ -2878,6 +2880,8 @@ class Expr:
         elif strategy not in ("forward", "backward") and limit is not None:
             msg = "can only specify `limit` when strategy is set to 'backward' or 'forward'"
             raise ValueError(msg)
+
+        assert strategy is not None
 
         if value is not None:
             value_pyexpr = parse_into_expression(value, str_as_lit=True)
@@ -8589,7 +8593,7 @@ Consider using {self}.implode() instead"""
         if min_samples is None:
             min_samples = window_size
 
-        def _wrap(pys: PySeries) -> pl.Series:
+        def _wrap(pys: PySeries) -> PySeries:
             s = wrap_s(pys)
             rv = function(s)
             if isinstance(rv, pl.Series):
@@ -10791,20 +10795,22 @@ Consider using {self}.implode() instead"""
         old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
         new_pyexpr = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
-        dtype_expr: plr.PyDataTypeExpr | None = None
+        dtype_pyexpr: plr.PyDataTypeExpr | None = None
         if return_dtype is not None:
             dtype_pyexpr = parse_into_datatype_expr(return_dtype)._pydatatype_expr
         else:
             dtype_pyexpr = None
 
-        default = (
+        default_pyexpr = (
             None
             if default is no_default
             else parse_into_expression(default, str_as_lit=True)
         )
 
         return wrap_expr(
-            self._pyexpr.replace_strict(old_pyexpr, new_pyexpr, default, dtype_pyexpr)
+            self._pyexpr.replace_strict(
+                old_pyexpr, new_pyexpr, default_pyexpr, dtype_pyexpr
+            )
         )
 
     def bitwise_count_ones(self) -> Expr:
@@ -11009,6 +11015,45 @@ Consider using {self}.implode() instead"""
             pass_name_to_apply=pass_name_to_apply,
         )
 
+    def _row_encode(
+        self,
+        *,
+        unordered: bool = False,
+        descending: bool | None = None,
+        nulls_last: bool | None = None,
+    ) -> Expr:
+        return F._row_encode(
+            [self],
+            unordered=unordered,
+            descending=None if descending is None else [descending],
+            nulls_last=None if nulls_last is None else [nulls_last],
+        )
+
+    def _row_decode(
+        self,
+        names: Sequence[str],
+        dtypes: Sequence[pl.DataTypeExpr | PolarsDataType],
+        *,
+        unordered: bool = False,
+        descending: Sequence[bool] | None = None,
+        nulls_last: Sequence[bool] | None = None,
+    ) -> Expr:
+        dtypes_pyexprs = [
+            parse_into_datatype_expr(dtype)._pydatatype_expr for dtype in dtypes
+        ]
+
+        if unordered:
+            assert descending is None
+            assert nulls_last is None
+
+            result = self._pyexpr.row_decode_unordered(names, dtypes_pyexprs)
+        else:
+            result = self._pyexpr.row_decode_ordered(
+                names, dtypes_pyexprs, descending, nulls_last
+            )
+
+        return wrap_expr(result)
+
     @classmethod
     def from_json(cls, value: str) -> Expr:
         """
@@ -11171,43 +11216,6 @@ Consider using {self}.implode() instead"""
         result = self._pyexpr.skip_batch_predicate(schema)
         if result is None:
             return None
-        return wrap_expr(result)
-
-    def _row_encode(
-        self,
-        *,
-        unordered: bool = False,
-        descending: bool | None = None,
-        nulls_last: bool | None = None,
-    ) -> Expr:
-        return F._row_encode(
-            [self],
-            unordered=unordered,
-            descending=None if descending is None else [descending],
-            nulls_last=None if nulls_last is None else [nulls_last],
-        )
-
-    def _row_decode(
-        self,
-        names: list[str],
-        dtypes: list[pl.DataTypeExpr | PolarsDataType],
-        *,
-        unordered: bool = False,
-        descending: list[bool] | None = None,
-        nulls_last: list[bool] | None = None,
-    ) -> Expr:
-        dtypes = [parse_into_datatype_expr(dtype)._pydatatype_expr for dtype in dtypes]
-
-        if unordered:
-            assert descending is None
-            assert nulls_last is None
-
-            result = self._pyexpr.row_decode_unordered(names, dtypes)
-        else:
-            result = self._pyexpr.row_decode_ordered(
-                names, dtypes, descending, nulls_last
-            )
-
         return wrap_expr(result)
 
 

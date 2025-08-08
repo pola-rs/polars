@@ -10,6 +10,10 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import Self
 
+__version__: str = ...
+_allocator: Any = ...
+_debug: bool = ...
+
 CompatLevel: TypeAlias = int | bool
 UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 KeyValueMetadata: TypeAlias = Sequence[tuple[str, str]] | Any
@@ -520,6 +524,10 @@ class PySeries:
     # scatter
     def scatter(self, idx: PySeries, values: PySeries) -> None: ...
 
+    # interop
+    def to_numpy(self, writable: bool = False, allow_copy: bool = True) -> Any: ...
+    def to_numpy_view(self) -> Any | None: ...
+
     # Overloaded dunder methods for operator support
     def __and__(self, other: PySeries) -> Self: ...
     def __or__(self, other: PySeries) -> Self: ...
@@ -705,7 +713,7 @@ class PyDataFrame:
         encoding: Any = "utf8",
         n_threads: int | None = None,
         path: str | None = None,
-        overwrite_dtype: Sequence[tuple[str, DataType]] | None = None,
+        overwrite_dtype: dict[str, DataType] | None = None,
         overwrite_dtype_slice: Sequence[DataType] | None = None,
         low_memory: bool = False,
         comment_prefix: str | None = None,
@@ -767,6 +775,14 @@ class PyDataFrame:
     @staticmethod
     def deserialize_json(py_f: Any) -> PyDataFrame: ...
 
+    # interop
+    def to_numpy(
+        self,
+        order: IndexOrder,
+        writable: bool = False,
+        allow_copy: bool = True,
+    ) -> Any: ...
+
     # etc.
 
     def __len__(self) -> int: ...
@@ -794,7 +810,7 @@ class PyLazyFrame:
         row_index: tuple[str, int] | None = ...,
         ignore_errors: bool = ...,
         include_file_paths: str | None = ...,
-        cloud_options: Sequence[tuple[str, str]] | None = ...,
+        cloud_options: dict[str, str] | None = ...,
         credential_provider: Any | None = ...,
         retries: int = ...,
         file_cache_ttl: int | None = ...,
@@ -810,7 +826,7 @@ class PyLazyFrame:
         skip_lines: int = ...,
         n_rows: int | None = ...,
         cache: bool = ...,
-        overwrite_dtype: Sequence[tuple[str, Any]] | None = ...,
+        overwrite_dtype: dict[str, Any] | None = ...,
         low_memory: bool = ...,
         comment_prefix: str | None = ...,
         quote_char: str | None = ...,
@@ -829,7 +845,7 @@ class PyLazyFrame:
         decimal_comma: bool = ...,
         glob: bool = ...,
         schema: Any | None = ...,
-        cloud_options: Sequence[tuple[str, str]] | None = ...,
+        cloud_options: dict[str, str] | None = ...,
         credential_provider: Any | None = ...,
         retries: int = ...,
         file_cache_ttl: int | None = ...,
@@ -852,7 +868,7 @@ class PyLazyFrame:
         cache: bool = ...,
         rechunk: bool = ...,
         row_index: tuple[str, int] | None = ...,
-        cloud_options: Sequence[tuple[str, str]] | None = ...,
+        cloud_options: dict[str, str] | None = ...,
         credential_provider: Any | None = ...,
         hive_partitioning: bool | None = ...,
         hive_schema: Any | None = ...,
@@ -937,7 +953,7 @@ class PyLazyFrame:
         statistics: StatisticsOptions,
         row_group_size: int | None,
         data_page_size: int | None,
-        cloud_options: Sequence[tuple[str, str]] | None,
+        cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
         retries: int,
         sink_options: Any,
@@ -948,8 +964,8 @@ class PyLazyFrame:
         self,
         target: SinkTarget,
         compression: IpcCompression | None,
-        compat_level: PyCompatLevel,
-        cloud_options: Sequence[tuple[str, str]] | None,
+        compat_level: CompatLevel,
+        cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
         retries: int,
         sink_options: Any,
@@ -971,7 +987,7 @@ class PyLazyFrame:
         decimal_comma: bool,
         null_value: str | None,
         quote_style: QuoteStyle | None,
-        cloud_options: Sequence[tuple[str, str]] | None,
+        cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
         retries: int,
         sink_options: Any,
@@ -979,7 +995,7 @@ class PyLazyFrame:
     def sink_json(
         self,
         target: SinkTarget,
-        cloud_options: Sequence[tuple[str, str]] | None,
+        cloud_options: dict[str, str] | None,
         credential_provider: Any | None,
         retries: int,
         sink_options: Any,
@@ -2289,3 +2305,40 @@ class PyChainedThen:
     def otherwise(self, statement: PyExpr) -> PyExpr: ...
 
 def when(condition: PyExpr) -> PyWhen: ...
+
+# testing
+def assert_series_equal_py(
+    left: PySeries,
+    right: PySeries,
+    *,
+    check_dtypes: bool,
+    check_names: bool,
+    check_order: bool,
+    check_exact: bool,
+    rel_tol: float,
+    abs_tol: float,
+    categorical_as_str: bool,
+) -> None: ...
+def assert_dataframe_equal_py(
+    left: PyDataFrame,
+    right: PyDataFrame,
+    *,
+    check_row_order: bool,
+    check_column_order: bool,
+    check_dtypes: bool,
+    check_exact: bool,
+    rel_tol: float,
+    abs_tol: float,
+    categorical_as_str: bool,
+) -> None: ...
+
+# datatypes
+def _get_dtype_max(dt: DataType) -> PyExpr: ...
+def _get_dtype_min(dt: DataType) -> PyExpr: ...
+def _known_timezones() -> list[str]: ...
+
+# cloud_client
+def prepare_cloud_plan(lf: PyLazyFrame) -> bytes: ...
+
+# cloud_server
+def _execute_ir_plan_with_gpu(ir_plan_ser: Sequence[int]) -> PyDataFrame: ...
