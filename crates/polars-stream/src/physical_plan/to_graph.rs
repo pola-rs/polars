@@ -489,13 +489,15 @@ fn to_graph_rec<'a>(
 
         TopK {
             input,
-            by_column,
             k,
+            by_column,
             reverse,
             nulls_last,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
+            let k_key = to_graph_rec(k.node, ctx)?;
 
+            let k_schema = ctx.phys_sm[k.node].output_schema.clone();
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let key_schema = compute_output_schema(input_schema, by_column, ctx.expr_arena)?;
 
@@ -506,14 +508,13 @@ fn to_graph_rec<'a>(
 
             ctx.graph.add_node(
                 nodes::top_k::TopKNode::new(
-                    *k,
+                    k_schema,
                     reverse.clone(),
                     nulls_last.clone(),
-                    &key_schema,
+                    key_schema,
                     key_selectors,
-                    ctx.num_pipelines,
                 ),
-                [(input_key, input.port)],
+                [(input_key, input.port), (k_key, k.port)],
             )
         },
 

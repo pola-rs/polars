@@ -319,8 +319,8 @@ fn visualize_plan_rec(
         ),
         PhysNodeKind::TopK {
             input,
+            k,
             by_column,
-            k: _,
             reverse,
             nulls_last: _,
         } => {
@@ -334,7 +334,7 @@ fn visualize_plan_rec(
                     "{name}\\n{}",
                     fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
                 ),
-                from_ref(input),
+                &[*input, *k][..],
             )
         },
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),

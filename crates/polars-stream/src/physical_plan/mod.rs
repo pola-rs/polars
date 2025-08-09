@@ -195,8 +195,8 @@ pub enum PhysNodeKind {
 
     TopK {
         input: PhysStream,
+        k: PhysStream,
         by_column: Vec<ExprIR>,
-        k: usize,
         reverse: Vec<bool>,
         nulls_last: Vec<bool>,
     },
@@ -346,7 +346,6 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
-            | PhysNodeKind::TopK { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
@@ -391,6 +390,13 @@ fn visit_node_inputs_mut(
                 rec!(input_right.node);
                 visit(input_left);
                 visit(input_right);
+            },
+
+            PhysNodeKind::TopK { input, k, .. } => {
+                rec!(input.node);
+                rec!(k.node);
+                visit(input);
+                visit(k);
             },
 
             PhysNodeKind::DynamicSlice {

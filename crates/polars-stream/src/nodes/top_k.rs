@@ -15,6 +15,7 @@ use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
 new_key_type! {
@@ -174,8 +175,11 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         self.prune();
     }
 
-    pub fn finalize(&mut self) -> DataFrame {
+    pub fn finalize(&mut self) -> Option<DataFrame> {
         let mut gather_idx_buf = Vec::new();
+        if self.df_subsets.is_empty() {
+            return None;
+        }
         let ret = accumulate_dataframes_vertical(self.df_subsets.drain().map(|(_k, mut df)| {
             df.gather(&mut self.row_idxs, &mut gather_idx_buf);
             df.df
@@ -183,7 +187,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         self.heap.clear();
         self.row_idxs.clear();
         self.to_prune.clear();
-        ret.unwrap()
+        Some(ret.unwrap())
     }
 }
 
@@ -191,7 +195,7 @@ trait DfByKeyReducer: Any + Send + 'static {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer>;
     fn add(&mut self, df: DataFrame, keys: DataFrame);
     fn combine(&mut self, other: &dyn DfByKeyReducer);
-    fn finalize(self: Box<Self>) -> DataFrame;
+    fn finalize(self: Box<Self>) -> Option<DataFrame>;
 }
 
 struct PrimitiveBottomK<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> {
@@ -238,7 +242,7 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
         self.inner.combine(&other.inner);
     }
 
-    fn finalize(mut self: Box<Self>) -> DataFrame {
+    fn finalize(mut self: Box<Self>) -> Option<DataFrame> {
         self.inner.finalize()
     }
 }
@@ -286,7 +290,7 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
         self.inner.combine(&other.inner);
     }
 
-    fn finalize(mut self: Box<Self>) -> DataFrame {
+    fn finalize(mut self: Box<Self>) -> Option<DataFrame> {
         self.inner.finalize()
     }
 }
@@ -333,7 +337,7 @@ impl DfByKeyReducer for RowEncodedBottomK {
         self.inner.combine(&other.inner);
     }
 
-    fn finalize(mut self: Box<Self>) -> DataFrame {
+    fn finalize(mut self: Box<Self>) -> Option<DataFrame> {
         self.inner.finalize()
     }
 }
@@ -377,6 +381,8 @@ fn new_top_k_reducer(
 }
 
 enum TopKState {
+    WaitingForK(InMemorySinkNode),
+
     Sink {
         key_selectors: Vec<StreamExpr>,
         reducers: Vec<Box<dyn DfByKeyReducer>>,
@@ -388,28 +394,27 @@ enum TopKState {
 }
 
 pub struct TopKNode {
-    k: usize,
     reverse: Vec<bool>,
+    nulls_last: Vec<bool>,
+    key_schema: Arc<Schema>,
+    key_selectors: Vec<StreamExpr>,
     state: TopKState,
 }
 
 impl TopKNode {
     pub fn new(
-        k: usize,
+        k_schema: Arc<Schema>,
         reverse: Vec<bool>,
         nulls_last: Vec<bool>,
-        key_schema: &Schema,
+        key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
-        num_pipelines: usize,
     ) -> Self {
-        let reducer = new_top_k_reducer(k, &reverse, &nulls_last, key_schema);
         Self {
-            k,
             reverse,
-            state: TopKState::Sink {
-                key_selectors,
-                reducers: (0..num_pipelines).map(|_| reducer.new_empty()).collect(),
-            },
+            nulls_last,
+            key_schema,
+            key_selectors,
+            state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema)),
         }
     }
 }
@@ -429,43 +434,76 @@ impl ComputeNode for TopKNode {
         send: &mut [PortState],
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
-        assert!(recv.len() == 1 && send.len() == 1);
+        assert!(recv.len() == 2 && send.len() == 1);
 
         // State transitions.
-        if self.k == 0 {
-            self.state = TopKState::Done;
-        }
-
         match &mut self.state {
             // If the output doesn't want any more data, transition to being done.
             _ if send[0] == PortState::Done => {
                 self.state = TopKState::Done;
             },
+            // We've received k, transition to being a sink.
+            TopKState::WaitingForK(inner) if recv[1] == PortState::Done => {
+                let k_frame = inner.get_output()?.unwrap();
+                polars_ensure!(k_frame.height() == 1, ComputeError: "got more than one value for 'k' in top_k");
+                let k_item = k_frame.get_columns()[0].get(0)?;
+                let k = k_item.extract::<usize>().ok_or_else(
+                    || polars_err!(ComputeError: "invalid value of 'k' in top_k: {:?}", k_item),
+                )?;
+
+                if k > 0 {
+                    let reducer =
+                        new_top_k_reducer(k, &self.reverse, &self.nulls_last, &self.key_schema);
+                    let reducers = (0..state.num_pipelines)
+                        .map(|_| reducer.new_empty())
+                        .collect();
+                    self.state = TopKState::Sink {
+                        key_selectors: core::mem::take(&mut self.key_selectors),
+                        reducers,
+                    };
+                } else {
+                    self.state = TopKState::Done;
+                }
+            },
             // Input is done, transition to being a source.
-            TopKState::Sink { reducers, .. } if matches!(recv[0], PortState::Done) => {
+            TopKState::Sink { reducers, .. } if recv[0] == PortState::Done => {
                 let mut reducer = reducers.pop().unwrap();
                 for r in reducers {
                     reducer.combine(&**r);
                 }
-                let df = reducer.finalize();
-                self.state =
-                    TopKState::Source(InMemorySourceNode::new(Arc::new(df), MorselSeq::default()));
+                if let Some(df) = reducer.finalize() {
+                    self.state = TopKState::Source(InMemorySourceNode::new(
+                        Arc::new(df),
+                        MorselSeq::default(),
+                    ));
+                } else {
+                    self.state = TopKState::Done;
+                }
             },
             // Nothing to change.
-            TopKState::Done | TopKState::Sink { .. } | TopKState::Source(_) => {},
+            _ => {},
         }
 
         // Communicate our state.
         match &mut self.state {
+            TopKState::WaitingForK(inner) => {
+                send[0] = PortState::Blocked;
+                recv[0] = PortState::Blocked;
+                inner.update_state(&mut recv[1..2], &mut [], state)?;
+            },
             TopKState::Sink { .. } => {
                 send[0] = PortState::Blocked;
                 recv[0] = PortState::Ready;
+                recv[1] = PortState::Done;
             },
             TopKState::Source(src) => {
                 src.update_state(&mut [], send, state)?;
+                recv[0] = PortState::Done;
+                recv[1] = PortState::Done;
             },
             TopKState::Done => {
                 recv[0] = PortState::Done;
+                recv[1] = PortState::Done;
                 send[0] = PortState::Done;
             },
         }
@@ -480,13 +518,19 @@ impl ComputeNode for TopKNode {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(send_ports.len() == 1 && recv_ports.len() == 1);
+        assert!(recv_ports.len() == 2 && send_ports.len() == 1);
         match &mut self.state {
+            TopKState::WaitingForK(inner) => {
+                assert!(send_ports[0].is_none());
+                assert!(recv_ports[0].is_none());
+                inner.spawn(scope, &mut recv_ports[1..2], &mut [], state, join_handles);
+            },
             TopKState::Sink {
                 key_selectors,
                 reducers,
             } => {
                 assert!(send_ports[0].is_none());
+                assert!(recv_ports[1].is_none());
                 let receivers = recv_ports[0].take().unwrap().parallel();
 
                 for (mut recv, reducer) in receivers.into_iter().zip(reducers) {
@@ -511,6 +555,7 @@ impl ComputeNode for TopKNode {
 
             TopKState::Source(src) => {
                 assert!(recv_ports[0].is_none());
+                assert!(recv_ports[1].is_none());
                 src.spawn(scope, &mut [], send_ports, state, join_handles);
             },
 
