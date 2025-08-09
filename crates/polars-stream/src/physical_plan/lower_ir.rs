@@ -429,11 +429,43 @@ pub fn lower_ir(
             by_column,
             slice,
             sort_options,
-        } => PhysNodeKind::Sort {
-            by_column: by_column.clone(),
-            slice: *slice,
-            sort_options: sort_options.clone(),
-            input: lower_ir!(*input)?,
+        } => {
+            let by_column = by_column.clone();
+            let slice = *slice;
+            let sort_options = sort_options.clone();
+            let phys_input = lower_ir!(*input)?;
+
+            // See if we can insert a top k.
+            let mut limit = usize::MAX;
+            if let Some((0, l)) = slice {
+                limit = limit.min(l);
+            }
+            if let Some(l) = sort_options.limit {
+                limit = limit.min(l as usize);
+            };
+
+            let sort_in_stream = if limit < usize::MAX && !sort_options.maintain_order {
+                let node = phys_sm.insert(PhysNode {
+                    output_schema: output_schema.clone(),
+                    kind: PhysNodeKind::TopK {
+                        input: phys_input,
+                        by_column: by_column.clone(),
+                        k: limit,
+                        reverse: sort_options.descending.iter().map(|x| !x).collect(),
+                        nulls_last: sort_options.nulls_last.clone(),
+                    },
+                });
+                PhysStream::first(node)
+            } else {
+                phys_input
+            };
+
+            PhysNodeKind::Sort {
+                input: sort_in_stream,
+                by_column,
+                slice,
+                sort_options,
+            }
         },
 
         IR::Union { inputs, options } => {

@@ -193,6 +193,14 @@ pub enum PhysNodeKind {
         sort_options: SortMultipleOptions,
     },
 
+    TopK {
+        input: PhysStream,
+        by_column: Vec<ExprIR>,
+        k: usize,
+        reverse: Vec<bool>,
+        nulls_last: Vec<bool>,
+    },
+
     Repeat {
         value: PhysStream,
         repeats: PhysStream,
@@ -338,6 +346,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
+            | PhysNodeKind::TopK { input, .. }
             | PhysNodeKind::Multiplexer { input }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
