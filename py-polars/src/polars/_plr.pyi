@@ -900,7 +900,14 @@ class PyLazyFrame:
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
     @staticmethod
     def scan_from_python_function_arrow_schema(
-        schema: Any, scan_fn: Any, pyarrow: bool, validate_schema: bool, is_pure: bool
+        schema: Any,
+        scan_fn: Any,
+        pyarrow: bool,
+        validate_schema: bool,
+        is_pure: bool,
+        *,
+        explain_name: str | None = None,
+        explain_detail: str | None = None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def scan_from_python_function_pl_schema(
@@ -909,10 +916,19 @@ class PyLazyFrame:
         pyarrow: bool,
         validate_schema: bool,
         is_pure: bool,
+        *,
+        explain_name: str | None = None,
+        explain_detail: str | None = None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def scan_from_python_function_schema_function(
-        schema_fn: Any, scan_fn: Any, validate_schema: bool, is_pure: bool
+        schema_fn: Any,
+        scan_fn: Any,
+        validate_schema: bool,
+        is_pure: bool,
+        *,
+        explain_name: str | None = None,
+        explain_detail: str | None = None,
     ) -> PyLazyFrame: ...
     def pipe_with_schema(
         self, callback: Callable[[tuple[PyLazyFrame, Schema]], PyLazyFrame]
