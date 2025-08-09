@@ -101,6 +101,7 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => Exprs::Empty,
+                SinkTypeIR::Callback(_) => Exprs::Empty,
                 SinkTypeIR::File(_) => Exprs::Empty,
                 SinkTypeIR::Partition(p) => {
                     let key_iter = match &p.variant {
@@ -173,6 +174,7 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => ExprsMut::Empty,
+                SinkTypeIR::Callback(_) => ExprsMut::Empty,
                 SinkTypeIR::File(_) => ExprsMut::Empty,
                 SinkTypeIR::Partition(p) => {
                     let key_iter = match &mut p.variant {
