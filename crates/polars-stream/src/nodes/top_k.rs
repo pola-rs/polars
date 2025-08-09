@@ -275,7 +275,7 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
             df,
             key_ca
                 .iter()
-                .map(|opt_x| ReorderWithNulls::<_, REVERSE, NULLS_LAST>(opt_x)),
+                .map(ReorderWithNulls::<_, REVERSE, NULLS_LAST>),
             |l, r| l < &ReorderWithNulls(r.0.as_deref()),
             |x| ReorderWithNulls(x.0.map(<[u8]>::to_vec)),
         );
