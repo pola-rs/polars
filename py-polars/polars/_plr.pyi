@@ -329,7 +329,7 @@ class PySeries:
     def _get_buffer_info(self) -> BufferInfo: ...
     def _get_buffers(self) -> tuple[PySeries, PySeries | None, PySeries | None]: ...
 
-    # c_inferface
+    # c_interface
     @staticmethod
     def _import_arrow_from_c(
         name: str, chunks: Sequence[tuple[int, int]]

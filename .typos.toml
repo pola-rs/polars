@@ -25,6 +25,8 @@ strat = "strat"
 [type.py.extend-identifiers]
 ba = "ba"
 ody = "ody"
+ND = "ND"
+nd = "nd"
 
 [type.rust.extend-identifiers]
 ANDed = "ANDed"
