@@ -184,6 +184,36 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
     assert column.meta == pl.col("timestamp")
 
 
+def test_io_plugin_custom_explain() -> None:
+    def _source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        yield pl.DataFrame({"a": [1, 2, 3]})
+
+    inner = pl.LazyFrame({"b": [1, 2, 3]}).filter(pl.col("b") > 1)
+    for explain in (inner, lambda: inner):
+        lf = register_io_source(
+            io_source=_source,
+            schema={"a": pl.Int64},
+            name="myplug",
+            detail="custom detail",
+            explain=explain,
+        )
+        plan = lf.explain()
+        # Header and projection lines
+        assert "PYTHON[myplug] SCAN" in plan
+        assert "PROJECT */1 COLUMNS" in plan
+        # Custom info line
+        assert "INFO: custom detail" in plan
+        # Nested/internal subplan content (allow for indentation differences)
+        assert "INTERNAL:" in plan
+        assert 'FILTER [(col("b")) > (1)]' in plan
+        assert 'DF ["b"]; PROJECT */1 COLUMNS' in plan
+
+
 @pytest.mark.parametrize(("validate"), [(True), (False)])
 def test_reordered_columns_22731(validate: bool) -> None:
     def my_scan() -> pl.LazyFrame:

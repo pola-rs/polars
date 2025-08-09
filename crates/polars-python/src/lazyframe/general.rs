@@ -434,11 +434,15 @@ impl PyLazyFrame {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (schema, scan_fn, pyarrow, validate_schema, *, explain_name=None, explain_detail=None, explain_subplan=None))]
     fn scan_from_python_function_arrow_schema(
         schema: &Bound<'_, PyList>,
         scan_fn: PyObject,
         pyarrow: bool,
         validate_schema: bool,
+        explain_name: Option<PyBackedStr>,
+        explain_detail: Option<PyBackedStr>,
+        explain_subplan: Option<PyBackedStr>,
     ) -> PyResult<Self> {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
@@ -447,16 +451,23 @@ impl PyLazyFrame {
             scan_fn,
             pyarrow,
             validate_schema,
+            explain_name.as_deref().map(Into::into),
+            explain_detail.as_deref().map(Into::into),
+            explain_subplan.as_deref().map(Into::into),
         )
         .into())
     }
 
     #[staticmethod]
+    #[pyo3(signature = (schema, scan_fn, pyarrow, validate_schema, *, explain_name=None, explain_detail=None, explain_subplan=None))]
     fn scan_from_python_function_pl_schema(
         schema: Vec<(PyBackedStr, Wrap<DataType>)>,
         scan_fn: PyObject,
         pyarrow: bool,
         validate_schema: bool,
+        explain_name: Option<PyBackedStr>,
+        explain_detail: Option<PyBackedStr>,
+        explain_subplan: Option<PyBackedStr>,
     ) -> PyResult<Self> {
         let schema = Arc::new(Schema::from_iter(
             schema
@@ -468,21 +479,31 @@ impl PyLazyFrame {
             scan_fn,
             pyarrow,
             validate_schema,
+            explain_name.as_deref().map(Into::into),
+            explain_detail.as_deref().map(Into::into),
+            explain_subplan.as_deref().map(Into::into),
         )
         .into())
     }
 
     #[staticmethod]
+    #[pyo3(signature = (schema_fn, scan_fn, validate_schema, *, explain_name=None, explain_detail=None, explain_subplan=None))]
     fn scan_from_python_function_schema_function(
         schema_fn: PyObject,
         scan_fn: PyObject,
         validate_schema: bool,
+        explain_name: Option<PyBackedStr>,
+        explain_detail: Option<PyBackedStr>,
+        explain_subplan: Option<PyBackedStr>,
     ) -> PyResult<Self> {
         Ok(LazyFrame::scan_from_python_function(
             Either::Left(schema_fn),
             scan_fn,
             false,
             validate_schema,
+            explain_name.as_deref().map(Into::into),
+            explain_detail.as_deref().map(Into::into),
+            explain_subplan.as_deref().map(Into::into),
         )
         .into())
     }
