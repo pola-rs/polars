@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use polars_utils::format_pl_smallstr;
 
 use super::*;
@@ -17,6 +18,7 @@ pub trait ToDummies {
         &self,
         separator: Option<&str>,
         drop_first: bool,
+        categories: Option<&Vec<PlSmallStr>>,
         drop_nulls: bool,
     ) -> PolarsResult<DataFrame>;
 }
@@ -26,6 +28,7 @@ impl ToDummies for Series {
         &self,
         separator: Option<&str>,
         drop_first: bool,
+        categories: Option<&Vec<PlSmallStr>>,
         drop_nulls: bool,
     ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
@@ -33,34 +36,69 @@ impl ToDummies for Series {
         let groups = self.group_tuples(true, drop_first)?;
 
         // SAFETY: groups are in bounds
-        let columns = unsafe { self.agg_first(&groups) };
-        let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
-        let columns = columns
-            .filter_map(|(av, group)| {
-                // strings are formatted with extra \" \" in polars, so we
-                // extract the string
-                let name = if let Some(s) = av.get_str() {
-                    format_pl_smallstr!("{col_name}{sep}{s}")
-                } else {
-                    // other types don't have this formatting issue
-                    format_pl_smallstr!("{col_name}{sep}{av}")
-                };
+        let cols = unsafe { self.agg_first(&groups) };
+        let cols = cols.iter().zip(groups.iter());
 
-                if av.is_null() && drop_nulls {
-                    return None;
-                }
+        let mut columns: IndexMap<String, GroupsIndicator<'_>> = IndexMap::new();
+        for (av, group) in cols {
+            let name = match av.get_str() {
+                Some(s) => s.to_string(),
+                None => format!("{av}"),
+            };
+            if av.is_null() && drop_nulls {
+                continue;
+            }
+            if columns.contains_key(&name) {
+                polars_bail!(Duplicate: "column with name '{name}' has more than one occurrence")
+            }
+            columns.insert(name, group);
+        }
 
-                let ca = match group {
-                    GroupsIndicator::Idx((_, group)) => dummies_helper_idx(group, self.len(), name),
-                    GroupsIndicator::Slice([offset, len]) => {
-                        dummies_helper_slice(offset, len, self.len(), name)
-                    },
-                };
-                Some(ca.into_column())
-            })
-            .collect::<Vec<_>>();
+        let columns = match categories {
+            Some(cats) => {
+                // if categories are provided, we create dummies for only those categories, but all
+                // of them, even if they are not present in the data
+                // The resulting columns stay in the same order as the categories
+                cats.iter()
+                    .skip(drop_first as usize)
+                    .map(|cat| {
+                        let name = format_pl_smallstr!("{col_name}{sep}{cat}");
+                        match columns.get(cat.as_str()) {
+                            // // category observed in data, default case
+                            Some(GroupsIndicator::Idx((_, idxs))) => {
+                                dummies_helper_idx(idxs, self.len(), name).into_column()
+                            },
+                            Some(GroupsIndicator::Slice([offset, len])) => {
+                                dummies_helper_slice(*offset, *len, self.len(), name).into_column()
+                            },
+                            // category not present in data -> all-zero column
+                            None => UInt8Chunked::full(name, 0u8, self.len()).into_column(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            },
+            None => sort_columns(
+                columns
+                    .iter()
+                    .skip(drop_first as usize)
+                    .map(|(name, group)| {
+                        let name = format_pl_smallstr!("{col_name}{sep}{name}");
 
-        DataFrame::new(sort_columns(columns))
+                        let ca = match group {
+                            GroupsIndicator::Idx((_, group)) => {
+                                dummies_helper_idx(group, self.len(), name)
+                            },
+                            GroupsIndicator::Slice([offset, len]) => {
+                                dummies_helper_slice(*offset, *len, self.len(), name)
+                            },
+                        };
+                        ca.into_column()
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+        };
+
+        DataFrame::new(columns)
     }
 }
 

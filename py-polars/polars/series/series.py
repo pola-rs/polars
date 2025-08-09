@@ -114,7 +114,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Generator, Mapping
+    from collections.abc import Collection, Generator, Hashable, Mapping
 
     import jax
     import numpy.typing as npt
@@ -2277,6 +2277,7 @@ class Series:
         *,
         separator: str = "_",
         drop_first: bool = False,
+        categories: Sequence[Hashable] | None = None,
         drop_nulls: bool = False,
     ) -> DataFrame:
         """
@@ -2288,6 +2289,10 @@ class Series:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variable being encoded.
+        categories
+            Optional list of all categories that should be represented.
+            Categories that are not present in the data get an all-zero column.
+            Values that are not in the categories will be ignored.
         drop_nulls
             If there are `None` values in the series, a `null` column is not generated
 
@@ -2318,7 +2323,11 @@ class Series:
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator, drop_first, drop_nulls))
+        if categories is not None:
+            categories = [str(c) for c in categories]
+        return wrap_df(
+            self._s.to_dummies(separator, drop_first, categories, drop_nulls)
+        )
 
     @unstable()
     def cut(

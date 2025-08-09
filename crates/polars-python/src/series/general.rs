@@ -295,15 +295,21 @@ impl PySeries {
         py.enter_polars_series(|| self.series.zip_with(mask, &other.series))
     }
 
-    #[pyo3(signature = (separator, drop_first=false, drop_nulls=false))]
+    #[pyo3(signature = (separator, drop_first=false, categories=None, drop_nulls=false))]
     fn to_dummies(
         &self,
         py: Python<'_>,
         separator: Option<&str>,
         drop_first: bool,
+        categories: Option<Vec<String>>,
         drop_nulls: bool,
     ) -> PyResult<PyDataFrame> {
-        py.enter_polars_df(|| self.series.to_dummies(separator, drop_first, drop_nulls))
+        let categories =
+            categories.map(|cats| cats.into_iter().map(PlSmallStr::from).collect::<Vec<_>>());
+        py.enter_polars_df(|| {
+            self.series
+                .to_dummies(separator, drop_first, categories.as_ref(), drop_nulls)
+        })
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {

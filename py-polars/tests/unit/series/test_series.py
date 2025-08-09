@@ -1391,9 +1391,24 @@ def test_to_dummies_drop_nulls() -> None:
 
 def test_to_dummies_null_clash_19096() -> None:
     with pytest.raises(
-        DuplicateError, match="column with name '_null' has more than one occurrence"
+        DuplicateError, match="column with name 'null' has more than one occurrence"
     ):
-        pl.Series([None, "null"]).to_dummies()
+        print(pl.Series([None, "null"]).to_dummies())
+
+
+def test_to_dummies_categories() -> None:
+    s: pl.Series = pl.Series("pet", ["cat", "dog", "cat"])
+    df: pl.DataFrame = s.to_dummies(categories=["cat", "dog", "bird"])
+
+    expected: pl.DataFrame = pl.DataFrame(
+        {
+            "pet_cat": [1, 0, 1],
+            "pet_dog": [0, 1, 0],
+            "pet_bird": [0, 0, 0],
+        },
+        schema={"pet_cat": pl.UInt8, "pet_dog": pl.UInt8, "pet_bird": pl.UInt8},
+    )
+    assert_frame_equal(df, expected)
 
 
 def test_chunk_lengths() -> None:
