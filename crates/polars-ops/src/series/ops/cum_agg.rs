@@ -122,13 +122,13 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         return ca.clone();
     }
 
-    if init == Some(false) {
+    if init == Some(true) {
         return unsafe {
             BooleanChunked::from_chunks(
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        arr.with_values(Bitmap::new_with_value(false, arr.len()))
+                        arr.with_values(Bitmap::new_with_value(true, arr.len()))
                             .to_boxed()
                     })
                     .collect(),
@@ -164,13 +164,13 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         return ca.clone();
     }
 
-    if init == Some(true) {
+    if init == Some(false) {
         return unsafe {
             BooleanChunked::from_chunks(
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        arr.with_values(Bitmap::new_with_value(true, arr.len()))
+                        arr.with_values(Bitmap::new_with_value(false, arr.len()))
                             .to_boxed()
                     })
                     .collect(),
