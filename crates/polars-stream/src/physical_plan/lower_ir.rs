@@ -442,7 +442,7 @@ pub fn lower_ir(
             if let Some((0, l)) = slice {
                 limit = limit.min(l as u64);
             }
-            #[allow(clippy::useless_cast)]
+            #[allow(clippy::unnecessary_cast)]
             if let Some(l) = sort_options.limit {
                 limit = limit.min(l as u64);
             };
