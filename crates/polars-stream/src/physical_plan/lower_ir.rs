@@ -442,8 +442,9 @@ pub fn lower_ir(
             if let Some((0, l)) = slice {
                 limit = limit.min(l as u64);
             }
+            #[allow(clippy::useless_conversion)]
             if let Some(l) = sort_options.limit {
-                limit = limit.min(l.into());
+                limit = limit.min(l as u64);
             };
 
             let sort_in_stream = if limit < u64::MAX && !sort_options.maintain_order {
