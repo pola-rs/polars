@@ -487,6 +487,37 @@ fn to_graph_rec<'a>(
             )
         },
 
+        TopK {
+            input,
+            k,
+            by_column,
+            reverse,
+            nulls_last,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let k_key = to_graph_rec(k.node, ctx)?;
+
+            let k_schema = ctx.phys_sm[k.node].output_schema.clone();
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let key_schema = compute_output_schema(input_schema, by_column, ctx.expr_arena)?;
+
+            let key_selectors = by_column
+                .iter()
+                .map(|e| create_stream_expr(e, ctx, input_schema))
+                .try_collect_vec()?;
+
+            ctx.graph.add_node(
+                nodes::top_k::TopKNode::new(
+                    k_schema,
+                    reverse.clone(),
+                    nulls_last.clone(),
+                    key_schema,
+                    key_selectors,
+                ),
+                [(input_key, input.port), (k_key, k.port)],
+            )
+        },
+
         Repeat { value, repeats } => {
             let value_key = to_graph_rec(value.node, ctx)?;
             let repeats_key = to_graph_rec(repeats.node, ctx)?;
