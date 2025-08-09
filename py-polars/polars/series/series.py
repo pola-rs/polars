@@ -9048,12 +9048,12 @@ class Series:
 
     def _row_decode(
         self,
-        names: list[str],
-        dtypes: list[PolarsDataType],
+        names: Sequence[str],
+        dtypes: Sequence[PolarsDataType],
         *,
         unordered: bool = False,
-        descending: list[bool] | None = None,
-        nulls_last: list[bool] | None = None,
+        descending: Sequence[bool] | None = None,
+        nulls_last: Sequence[bool] | None = None,
     ) -> Series:
         """Decode from the row encoding."""
         return (

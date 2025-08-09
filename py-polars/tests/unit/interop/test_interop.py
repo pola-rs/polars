@@ -827,15 +827,15 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
     oldest = CompatLevel.oldest()
     assert oldest is CompatLevel.oldest()  # test singleton
-    assert oldest._version == 0  # type: ignore[attr-defined]
+    assert oldest._version == 0
     with pytest.warns(UnstableWarning):
         newest = CompatLevel.newest()
         assert newest is CompatLevel.newest()
-    assert newest._version == 1  # type: ignore[attr-defined]
+    assert newest._version == 1
 
     str_col = pl.Series(["awd"])
     bin_col = pl.Series([b"dwa"])
-    assert str_col._newest_compat_level() == newest._version  # type: ignore[attr-defined]
+    assert str_col._newest_compat_level() == newest._version
     assert isinstance(str_col.to_arrow(), pa.LargeStringArray)
     assert isinstance(str_col.to_arrow(compat_level=oldest), pa.LargeStringArray)
     assert isinstance(str_col.to_arrow(compat_level=newest), pa.StringViewArray)

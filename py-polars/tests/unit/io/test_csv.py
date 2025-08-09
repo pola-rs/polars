@@ -2096,7 +2096,7 @@ def test_read_csv_invalid_schema_overrides_length() -> None:
         err = TypeError
         match = "expected 'schema_overrides' dict, found 'list'"
     else:
-        err = InvalidOperationError
+        err = InvalidOperationError  # type: ignore[assignment]
         match = "The number of schema overrides must be less than or equal to the number of fields"
 
     with pytest.raises(err, match=match):
