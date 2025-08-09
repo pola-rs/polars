@@ -669,10 +669,15 @@ pub fn write_ir_non_recursive(
                 PythonPredicate::PyArrow(_) => None,
                 PythonPredicate::None => None,
             };
+            let header_name = if let Some(name) = &options.explain_name {
+                format!("PYTHON[{name}]")
+            } else {
+                "PYTHON".to_string()
+            };
 
             write_scan(
                 f,
-                "PYTHON",
+                &header_name,
                 &ScanSources::default(),
                 indent,
                 n_columns,
@@ -683,7 +688,23 @@ pub fn write_ir_non_recursive(
                     .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len }),
                 None,
                 None,
-            )
+            )?;
+
+            // Extra explain details for Python scans
+            if let Some(detail) = &options.explain_detail {
+                write!(f, "\n{:indent$}INFO: {}", "", detail)?;
+            }
+
+            if let Some(subplan) = &options.explain_subplan {
+                // Print nested/internal plan indented under the scan node
+                let sub_indent = indent + INDENT_INCREMENT;
+                write!(f, "\n{:indent$}INTERNAL:", "")?;
+                for line in subplan.lines() {
+                    write!(f, "\n{:sub_indent$}{line}", "")?;
+                }
+            }
+
+            Ok(())
         },
         IR::Slice {
             input: _,

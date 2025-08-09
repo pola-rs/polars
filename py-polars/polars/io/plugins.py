@@ -24,6 +24,15 @@ def register_io_source(
     *,
     schema: Callable[[], SchemaDict] | SchemaDict,
     validate_schema: bool = False,
+    name: str | None = None,
+    detail: str | None = None,
+    explain: (
+        str
+        | LazyFrame
+        | list[LazyFrame]
+        | Callable[[], str | LazyFrame | list[LazyFrame]]
+        | None
+    ) = None,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -63,6 +72,20 @@ def register_io_source(
         the given schema. It's an implementation error if this isn't
         the case and can lead to bugs that are hard to solve.
 
+    Other Parameters
+    ----------------
+    name
+        Custom label for the scan node in the query plan, shown as
+        ``PYTHON[<name>] SCAN ...``.
+    detail
+        Short, single-line detail appended under the scan header (eg, a summary
+        of source configuration).
+    explain
+        Optional nested/internal explanation to include under the scan in the
+        query plan. Can be a string, a LazyFrame (whose optimized explain is
+        used), a list of LazyFrames, or a zero-arg callable returning any of
+        these. If provided, the content is shown under an "INTERNAL:" section.
+
     Returns
     -------
     LazyFrame
@@ -91,8 +114,46 @@ def register_io_source(
             with_columns, parsed_predicate, n_rows, batch_size
         ), parsed_predicate_success
 
+    # Normalize optional explain details
+    def _normalize_explain(obj: object | None) -> str | None:
+        if obj is None:
+            return None
+        if callable(obj):
+            try:
+                obj = obj()
+            except Exception:
+                # fall back to no explain on failure
+                return None
+        # If it's a LazyFrame, get its explain string
+        if hasattr(obj, "explain") and not isinstance(obj, (str, bytes)):
+            try:
+                # type: ignore[call-arg]
+                return obj.explain(optimized=True)  # type: ignore[no-any-return]
+            except Exception:
+                return None
+        # If it's a list/tuple of LazyFrames
+        if isinstance(obj, (list, tuple)):
+            parts: list[str] = []
+            for i, item in enumerate(obj):
+                if hasattr(item, "explain"):
+                    try:
+                        parts.append(f"PLAN {i}:\n" + item.explain(optimized=True))
+                    except Exception:
+                        continue
+            return "\n".join(parts) if parts else None
+        # If it's already a string
+        if isinstance(obj, str):
+            return obj
+        return None
+
     return pl.LazyFrame._scan_python_function(
-        schema=schema, scan_fn=wrap, pyarrow=False, validate_schema=validate_schema
+        schema=schema,
+        scan_fn=wrap,
+        pyarrow=False,
+        validate_schema=validate_schema,
+        explain_name=name,
+        explain_detail=detail,
+        explain_subplan=_normalize_explain(explain),
     )
 
 

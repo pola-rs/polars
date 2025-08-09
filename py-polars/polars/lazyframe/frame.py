@@ -438,6 +438,9 @@ class LazyFrame:
         *,
         pyarrow: bool = False,
         validate_schema: bool = False,
+        explain_name: str | None = None,
+        explain_detail: str | None = None,
+        explain_subplan: str | None = None,
     ) -> LazyFrame:
         self = cls.__new__(cls)
         if isinstance(schema, Mapping):
@@ -446,14 +449,28 @@ class LazyFrame:
                 scan_fn,
                 pyarrow=pyarrow,
                 validate_schema=validate_schema,
+                explain_name=explain_name,
+                explain_detail=explain_detail,
+                explain_subplan=explain_subplan,
             )
         elif _PYARROW_AVAILABLE and isinstance(schema, pa.Schema):
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
-                list(schema), scan_fn, pyarrow=pyarrow, validate_schema=validate_schema
+                list(schema),
+                scan_fn,
+                pyarrow=pyarrow,
+                validate_schema=validate_schema,
+                explain_name=explain_name,
+                explain_detail=explain_detail,
+                explain_subplan=explain_subplan,
             )
         else:
             self._ldf = PyLazyFrame.scan_from_python_function_schema_function(
-                schema, scan_fn, validate_schema=validate_schema
+                schema,
+                scan_fn,
+                validate_schema=validate_schema,
+                explain_name=explain_name,
+                explain_detail=explain_detail,
+                explain_subplan=explain_subplan,
             )
         return self
 
