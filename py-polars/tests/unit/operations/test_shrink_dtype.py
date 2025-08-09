@@ -2,7 +2,7 @@ import polars as pl
 
 
 def test_shrink_dtype() -> None:
-    out = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 2, 3],
             "b": [1, 2, 2 << 32],
@@ -16,7 +16,9 @@ def test_shrink_dtype() -> None:
             "j": pl.Series([None, None, None], dtype=pl.Int64),
             "k": pl.Series([None, None, None], dtype=pl.Float64),
         }
-    ).select(pl.all().shrink_dtype())
+    )
+    out = df.select(pl.all().shrink_dtype())
+
     assert out.dtypes == [
         pl.Int8,
         pl.Int64,
@@ -44,3 +46,7 @@ def test_shrink_dtype() -> None:
         "j": [None, None, None],
         "k": [None, None, None],
     }
+
+    q = df.lazy().select(pl.all().shrink_dtype())
+    schema = q.collect_schema()
+    assert all(dt == pl.Unknown for dt in schema.dtypes())
