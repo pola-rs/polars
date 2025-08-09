@@ -311,7 +311,7 @@ def test_default_value_parametric(dtype: pl.DataType) -> None:
     assert pl.select(dtype.to_dtype_expr().default_value()).to_series().dtype == dtype
 
 
-@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize("dtype", sorted(INTEGER_DTYPES, key=lambda v: str(v)))
 @pytest.mark.parametrize("numeric_to_one", [False, True])
 def test_default_value_int(dtype: pl.DataType, numeric_to_one: bool) -> None:
     result = pl.select(
@@ -321,7 +321,7 @@ def test_default_value_int(dtype: pl.DataType, numeric_to_one: bool) -> None:
     assert result.item() == (1 if numeric_to_one else 0)
 
 
-@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("dtype", sorted(FLOAT_DTYPES, key=lambda v: str(v)))
 @pytest.mark.parametrize("numeric_to_one", [False, True])
 def test_default_value_float(dtype: pl.DataType, numeric_to_one: bool) -> None:
     result = pl.select(
@@ -349,7 +349,7 @@ def test_default_value_decimal() -> None:
     assert result.item() == 0
 
 
-@pytest.mark.parametrize("dtype", TEMPORAL_DTYPES)
+@pytest.mark.parametrize("dtype", sorted(TEMPORAL_DTYPES, key=lambda v: str(v)))
 def test_default_value_temporal(dtype: pl.DataType) -> None:
     result = pl.select(dtype.to_dtype_expr().default_value()).to_series()
     assert result.dtype == dtype
