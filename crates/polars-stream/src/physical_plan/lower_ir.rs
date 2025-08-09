@@ -443,7 +443,7 @@ pub fn lower_ir(
                 limit = limit.min(l as u64);
             }
             if let Some(l) = sort_options.limit {
-                limit = limit.min(l as u64);
+                limit = limit.min(l.into());
             };
 
             let sort_in_stream = if limit < u64::MAX && !sort_options.maintain_order {

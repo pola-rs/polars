@@ -1180,6 +1180,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(sorted_col_expr);
             },
 
+            #[cfg(feature = "top_k")]
             AExpr::Function {
                 input: inner_exprs,
                 function: function @ (IRFunctionExpr::TopK { .. } | IRFunctionExpr::TopKBy { .. }),
