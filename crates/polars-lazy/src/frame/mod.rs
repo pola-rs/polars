@@ -661,7 +661,9 @@ impl LazyFrame {
         if engine == Engine::Auto {
             engine = match payload {
                 #[cfg(feature = "new_streaming")]
-                SinkType::File { .. } | SinkType::Partition { .. } => Engine::Streaming,
+                SinkType::Callback { .. } | SinkType::File { .. } | SinkType::Partition { .. } => {
+                    Engine::Streaming
+                },
                 _ => Engine::InMemory,
             };
         }
@@ -1060,6 +1062,17 @@ impl LazyFrame {
             cloud_options,
             per_partition_sort_by,
             finish_callback,
+        }))
+    }
+
+    pub fn sink_batches(
+        self,
+        function: PlanCallback<DataFrame, bool>,
+        maintain_order: bool,
+    ) -> PolarsResult<Self> {
+        self.sink(SinkType::Callback(CallbackSinkType {
+            function,
+            maintain_order,
         }))
     }
 

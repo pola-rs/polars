@@ -118,6 +118,9 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyExpr, PyPartitioning, PySelector
 
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        import polars._plr as plr
+
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
         AsofJoinStrategy,
@@ -3565,6 +3568,96 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ldf.collect(engine=engine)
             return None
         return LazyFrame._from_pyldf(ldf_py)
+
+    @overload
+    def sink_batches(
+        self,
+        function: Callable[[DataFrame], bool | None],
+        *,
+        maintain_order: bool = True,
+        lazy: Literal[False],
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> None: ...
+    @overload
+    def sink_batches(
+        self,
+        function: Callable[[DataFrame], bool | None],
+        *,
+        maintain_order: bool = True,
+        lazy: Literal[True],
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> pl.LazyFrame: ...
+    def sink_batches(
+        self,
+        function: Callable[[DataFrame], bool | None],
+        *,
+        maintain_order: bool = True,
+        lazy: bool = False,
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> pl.LazyFrame | None:
+        def _wrap(pydf: plr.PyDataFrame) -> bool:
+            df = wrap_df(pydf)
+            rv = function(df)
+            if rv is None:
+                return True
+            return rv
+
+        ldf = self._ldf.sink_batches(
+            function=_wrap,
+            maintain_order=maintain_order,
+        )
+
+        if not lazy:
+            ldf = ldf.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf)
+            ldf.collect(engine=engine)
+            return None
+        return LazyFrame._from_pyldf(ldf)
+
+    def sink_batch_iter(
+        self,
+        *,
+        maintain_order: bool = True,
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> Iterable[DataFrame]:
+        def batch_generator() -> Iterable[DataFrame]:
+            import threading
+            from queue import Queue
+
+            q = Queue(maxsize=1)
+
+            def task() -> None:
+                def _wrap(df: DataFrame) -> bool | None:
+                    q.put(df)
+                    return True
+
+                try:
+                    self.sink_batches(
+                        _wrap,
+                        maintain_order=maintain_order,
+                        engine=engine,
+                        optimizations=optimizations,
+                        lazy=False,
+                    )
+                finally:
+                    q.put(None)
+
+            t = threading.Thread(target=task)
+            t.start()
+
+            while True:
+                df = q.get()
+                if df is None:
+                    break
+                yield df
+
+            t.join()
+
+        return batch_generator()
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "

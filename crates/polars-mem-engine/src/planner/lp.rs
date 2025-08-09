@@ -276,6 +276,17 @@ fn create_physical_plan_impl(
                     name: "mem".to_string(),
                     f: Box::new(move |df, _state| Ok(Some(df))),
                 })),
+                SinkTypeIR::Callback(CallbackSinkType {
+                    function,
+                    maintain_order: _,
+                }) => Ok(Box::new(SinkExecutor {
+                    input,
+                    name: "batches".to_string(),
+                    f: Box::new(move |df, _state| {
+                        function.call(df)?;
+                        Ok(Some(DataFrame::empty()))
+                    }),
+                })),
                 SinkTypeIR::File(FileSinkType {
                     file_type,
                     target,

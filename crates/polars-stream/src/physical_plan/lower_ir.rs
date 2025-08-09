@@ -13,8 +13,8 @@ use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR,
-    SinkTypeIR,
+    CallbackSinkType, ExtraColumnsPolicy, FileScanIR, FileSinkType, PartitionSinkTypeIR,
+    PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
@@ -242,6 +242,19 @@ pub fn lower_ir(
             SinkTypeIR::Memory => {
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
+            },
+            SinkTypeIR::Callback(CallbackSinkType {
+                function,
+                maintain_order,
+            }) => {
+                let function = function.clone();
+                let maintain_order = *maintain_order;
+                let phys_input = lower_ir!(*input)?;
+                PhysNodeKind::CallbackSink {
+                    input: phys_input,
+                    function,
+                    maintain_order,
+                }
             },
             SinkTypeIR::File(FileSinkType {
                 target,

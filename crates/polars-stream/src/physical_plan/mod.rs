@@ -24,7 +24,7 @@ mod lower_ir;
 mod to_graph;
 
 pub use fmt::visualize_plan;
-use polars_plan::prelude::FileType;
+use polars_plan::prelude::{FileType, PlanCallback};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::plpath::PlPath;
@@ -150,6 +150,12 @@ pub enum PhysNodeKind {
 
     InMemorySink {
         input: PhysStream,
+    },
+
+    CallbackSink {
+        input: PhysStream,
+        function: PlanCallback<DataFrame, bool>,
+        maintain_order: bool,
     },
 
     FileSink {
@@ -355,6 +361,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }
+            | PhysNodeKind::CallbackSink { input, .. }
             | PhysNodeKind::FileSink { input, .. }
             | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
