@@ -318,7 +318,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "search_sorted")]
-    #[pyo3(signature = (element, side, descending=false))]
+    #[pyo3(signature = (element, side, descending))]
     fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>, descending: bool) -> Self {
         self.inner
             .clone()
@@ -358,7 +358,7 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (n, fill_value=None))]
+    #[pyo3(signature = (n, fill_value))]
     fn shift(&self, n: Self, fill_value: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match fill_value {
@@ -475,7 +475,7 @@ impl PyExpr {
         self.inner.clone().ceil().into()
     }
 
-    #[pyo3(signature = (min=None, max=None))]
+    #[pyo3(signature = (min, max))]
     fn clip(&self, min: Option<Self>, max: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match (min, max) {
@@ -723,7 +723,7 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
-    #[pyo3(signature = (method, descending, seed=None))]
+    #[pyo3(signature = (method, descending, seed))]
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
@@ -882,7 +882,7 @@ impl PyExpr {
         self.inner.clone().replace(old.inner, new.inner).into()
     }
 
-    #[pyo3(signature = (old, new, default=None, return_dtype=None))]
+    #[pyo3(signature = (old, new, default, return_dtype))]
     fn replace_strict(
         &self,
         old: PyExpr,

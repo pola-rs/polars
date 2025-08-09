@@ -57,7 +57,7 @@ class DataTypeExpr:
     """
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
-    _pydatatype_expr: PyDataTypeExpr = None
+    _pydatatype_expr: PyDataTypeExpr = None  # type: ignore[assignment]
     _accessors: ClassVar[set[str]] = {
         "arr",
         "enum",

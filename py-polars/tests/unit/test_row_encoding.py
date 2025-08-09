@@ -66,14 +66,14 @@ def roundtrip_series_re(
     descending: bool | None = None,
     nulls_last: bool | None = False,
 ) -> None:
-    descending = None if descending is None else [descending]
-    nulls_last = None if nulls_last is None else [nulls_last]
+    descending_lst = None if descending is None else [descending]
+    nulls_last_lst = None if nulls_last is None else [nulls_last]
 
     roundtrip_re(
         pl.Series("series", values, dtype).to_frame(),
         unordered=unordered,
-        descending=descending,
-        nulls_last=nulls_last,
+        descending=descending_lst,
+        nulls_last=nulls_last_lst,
     )
 
 

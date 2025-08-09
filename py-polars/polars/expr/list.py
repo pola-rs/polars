@@ -188,17 +188,19 @@ class ExprListNameSpace:
             raise ValueError(msg)
 
         if fraction is not None:
-            fraction = parse_into_expression(fraction)
+            fraction_pyexpr = parse_into_expression(fraction)
             return wrap_expr(
                 self._pyexpr.list_sample_fraction(
-                    fraction, with_replacement, shuffle, seed
+                    fraction_pyexpr, with_replacement, shuffle, seed
                 )
             )
 
         if n is None:
             n = 1
-        n = parse_into_expression(n)
-        return wrap_expr(self._pyexpr.list_sample_n(n, with_replacement, shuffle, seed))
+        n_pyexpr = parse_into_expression(n)
+        return wrap_expr(
+            self._pyexpr.list_sample_n(n_pyexpr, with_replacement, shuffle, seed)
+        )
 
     def sum(self) -> Expr:
         """
@@ -552,8 +554,8 @@ class ExprListNameSpace:
         │ [1, 2]    ┆ 1    │
         └───────────┴──────┘
         """
-        index = parse_into_expression(index)
-        return wrap_expr(self._pyexpr.list_get(index, null_on_oob))
+        index_pyexpr = parse_into_expression(index)
+        return wrap_expr(self._pyexpr.list_get(index_pyexpr, null_on_oob))
 
     def gather(
         self,
@@ -592,8 +594,8 @@ class ExprListNameSpace:
         │ [1, 2, … 5] ┆ [1, 5]       │
         └─────────────┴──────────────┘
         """
-        indices = parse_into_expression(indices)
-        return wrap_expr(self._pyexpr.list_gather(indices, null_on_oob))
+        indices_pyexpr = parse_into_expression(indices)
+        return wrap_expr(self._pyexpr.list_gather(indices_pyexpr, null_on_oob))
 
     def gather_every(
         self,
@@ -635,9 +637,9 @@ class ExprListNameSpace:
         │ [9, 10, … 12] ┆ 3   ┆ 0      ┆ [9, 12]      │
         └───────────────┴─────┴────────┴──────────────┘
         """
-        n = parse_into_expression(n)
-        offset = parse_into_expression(offset)
-        return wrap_expr(self._pyexpr.list_gather_every(n, offset))
+        n_pyexpr = parse_into_expression(n)
+        offset_pyexpr = parse_into_expression(offset)
+        return wrap_expr(self._pyexpr.list_gather_every(n_pyexpr, offset_pyexpr))
 
     def first(self) -> Expr:
         """
@@ -712,8 +714,8 @@ class ExprListNameSpace:
         │ [1, 2]    ┆ true     │
         └───────────┴──────────┘
         """
-        item = parse_into_expression(item, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_contains(item, nulls_equal))
+        item_pyexpr = parse_into_expression(item, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_contains(item_pyexpr, nulls_equal))
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
@@ -764,8 +766,8 @@ class ExprListNameSpace:
         │ ["x", "y"]      ┆ _         ┆ x_y   │
         └─────────────────┴───────────┴───────┘
         """
-        separator = parse_into_expression(separator, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_join(separator, ignore_nulls))
+        separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_join(separator_pyexpr, ignore_nulls))
 
     def arg_min(self) -> Expr:
         """
@@ -920,8 +922,8 @@ class ExprListNameSpace:
         │ [4, 5]    ┆ [null, null]    │
         └───────────┴─────────────────┘
         """
-        n = parse_into_expression(n)
-        return wrap_expr(self._pyexpr.list_shift(n))
+        n_pyexpr = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.list_shift(n_pyexpr))
 
     def slice(
         self, offset: int | str | Expr, length: int | str | Expr | None = None
@@ -951,9 +953,9 @@ class ExprListNameSpace:
         │ [10, 2, 1]  ┆ [2, 1]    │
         └─────────────┴───────────┘
         """
-        offset = parse_into_expression(offset)
-        length = parse_into_expression(length)
-        return wrap_expr(self._pyexpr.list_slice(offset, length))
+        offset_pyexpr = parse_into_expression(offset)
+        length_pyexpr = parse_into_expression(length)
+        return wrap_expr(self._pyexpr.list_slice(offset_pyexpr, length_pyexpr))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
         """
@@ -1003,8 +1005,8 @@ class ExprListNameSpace:
         │ [10, 2, 1]  ┆ [2, 1]    │
         └─────────────┴───────────┘
         """
-        n = parse_into_expression(n)
-        return wrap_expr(self._pyexpr.list_tail(n))
+        n_pyexpr = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
     def explode(self) -> Expr:
         """
@@ -1065,8 +1067,8 @@ class ExprListNameSpace:
         │ [4, 4]      ┆ 0              │
         └─────────────┴────────────────┘
         """
-        element = parse_into_expression(element, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_count_matches(element))
+        element_pyexpr = parse_into_expression(element, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_count_matches(element_pyexpr))
 
     def to_array(self, width: int) -> Expr:
         """
@@ -1309,10 +1311,10 @@ class ExprListNameSpace:
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
-            other = F.lit(other)._pyexpr
+            other_pyexpr = F.lit(other)._pyexpr
         else:
-            other = parse_into_expression(other)
-        return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
+            other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.list_set_operation(other_pyexpr, "union"))
 
     def set_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
@@ -1351,10 +1353,10 @@ class ExprListNameSpace:
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
-            other = F.lit(other)._pyexpr
+            other_pyexpr = F.lit(other)._pyexpr
         else:
-            other = parse_into_expression(other)
-        return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
+            other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.list_set_operation(other_pyexpr, "difference"))
 
     def set_intersection(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
@@ -1389,10 +1391,10 @@ class ExprListNameSpace:
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
-            other = F.lit(other)._pyexpr
+            other_pyexpr = F.lit(other)._pyexpr
         else:
-            other = parse_into_expression(other)
-        return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
+            other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.list_set_operation(other_pyexpr, "intersection"))
 
     def set_symmetric_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
@@ -1427,7 +1429,9 @@ class ExprListNameSpace:
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
-            other = F.lit(other)._pyexpr
+            other_pyexpr = F.lit(other)._pyexpr
         else:
-            other = parse_into_expression(other)
-        return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+            other_pyexpr = parse_into_expression(other)
+        return wrap_expr(
+            self._pyexpr.list_set_operation(other_pyexpr, "symmetric_difference")
+        )

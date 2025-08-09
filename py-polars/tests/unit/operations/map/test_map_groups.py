@@ -165,7 +165,7 @@ def test_map_groups_numpy_output_3057() -> None:
 
 
 def test_map_groups_return_all_null_15260() -> None:
-    def foo(x: pl.Series) -> pl.Series:
+    def foo(x: Sequence[pl.Series]) -> pl.Series:
         return pl.Series([x[0][0]], dtype=x[0].dtype)
 
     assert_frame_equal(
@@ -178,7 +178,7 @@ def test_map_groups_return_all_null_15260() -> None:
                 returns_scalar=True,
                 return_dtype=pl.self_dtype(),
             )
-        )  # type: ignore[arg-type]
+        )
         .sort("key"),
         pl.DataFrame({"key": [0, 1], "a": [None, None]}),
     )
