@@ -11,6 +11,7 @@ fn get_breaks<T>(
     ca: &ChunkedArray<T>,
     bin_count: Option<usize>,
     bins: Option<&[f64]>,
+    temporal_check: bool,
 ) -> PolarsResult<(Vec<f64>, bool)>
 where
     T: PolarsNumericType,
@@ -56,6 +57,16 @@ where
                 // Determine outer bin edges from the data itself
                 let min_value = ca.min().unwrap().to_f64().unwrap();
                 let max_value = ca.max().unwrap().to_f64().unwrap();
+
+                // If we're dealing with temporals, ensure that the bin count isn't larger than the
+                // number of values between the upper and lower bin limits.
+                // Note that this check is not completely accurate for large floats.
+                if temporal_check {
+                    polars_ensure!(
+                        (max_value - min_value) as usize >= bin_count,
+                        ComputeError: "data type is too coarse to create {bin_count} bins in specified data range"
+                    )
+                }
 
                 // All data points are identical--use unit interval.
                 if min_value == max_value {
@@ -165,14 +176,13 @@ fn compute_hist<T>(
     ca: &ChunkedArray<T>,
     bin_count: Option<usize>,
     bins: Option<&[f64]>,
-    include_category: bool,
-    include_breakpoint: bool,
-) -> PolarsResult<Series>
+    temporal_check: bool, // Ensure break range is valid
+) -> PolarsResult<(Vec<IdxSize>, Vec<f64>, usize)>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    let (breaks, uniform) = get_breaks(ca, bin_count, bins)?;
+    let (breaks, uniform) = get_breaks(ca, bin_count, bins, temporal_check)?;
     let num_bins = std::cmp::max(breaks.len(), 1) - 1;
     let count = if num_bins > 0 && ca.len() > ca.null_count() {
         if uniform {
@@ -183,53 +193,28 @@ where
     } else {
         vec![0; num_bins]
     };
+    Ok((count, breaks, num_bins))
+}
 
-    // Generate output: breakpoint (optional), breaks (optional), count
-    let mut fields = Vec::with_capacity(3);
-
-    if include_breakpoint {
-        let breakpoints = if num_bins > 0 {
-            Series::new(PlSmallStr::from_static("breakpoint"), &breaks[1..])
-        } else {
-            let empty: &[f64; 0] = &[];
-            Series::new(PlSmallStr::from_static("breakpoint"), empty)
-        };
-        fields.push(breakpoints)
-    }
-
-    if include_category {
-        let mut categories =
-            StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
-        if num_bins > 0 {
-            let mut lower = AnyValue::Float64(breaks[0]);
-            let mut buf = String::new();
-            let mut open_bracket = "[";
-            for br in &breaks[1..] {
-                let br = AnyValue::Float64(*br);
-                buf.clear();
-                write!(buf, "{open_bracket}{lower}, {br}]").unwrap();
-                open_bracket = "(";
-                categories.append_value(buf.as_str());
-                lower = br;
-            }
+fn build_categories(num_bins: usize, breaks: &Series) -> Series {
+    let mut categories =
+        StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
+    if num_bins > 0 {
+        let mut lower = breaks.get(0).unwrap();
+        let mut buf = String::new();
+        let mut open_bracket = "[";
+        for value in breaks.iter().skip(1) {
+            buf.clear();
+            write!(buf, "{open_bracket}{lower}, {value}]").unwrap();
+            open_bracket = "(";
+            categories.append_value(buf.as_str());
+            lower = value;
         }
-        let categories = categories
-            .finish()
-            .cast(&DataType::from_categories(Categories::global()))
-            .unwrap();
-        fields.push(categories);
-    };
-
-    let count = Series::new(PlSmallStr::from_static("count"), count);
-    fields.push(count);
-
-    Ok(if fields.len() == 1 {
-        fields.pop().unwrap().with_name(ca.name().clone())
-    } else {
-        StructChunked::from_series(ca.name().clone(), fields[0].len(), fields.iter())
-            .unwrap()
-            .into_series()
-    })
+    }
+    categories
+        .finish()
+        .cast(&DataType::from_categories(Categories::global()))
+        .unwrap()
 }
 
 pub fn hist_series(
@@ -240,7 +225,6 @@ pub fn hist_series(
     include_breakpoint: bool,
 ) -> PolarsResult<Series> {
     let mut bins_arg = None;
-
     let owned_bins;
     if let Some(bins) = bins {
         polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
@@ -251,11 +235,51 @@ pub fn hist_series(
         let bins = bins.cont_slice().unwrap();
         bins_arg = Some(bins);
     };
-    polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
+    let dt = s.dtype();
+    let dt_is_temporal = dt.is_temporal();
+    let s = if dt_is_temporal {
+        &s.to_physical_repr().into_owned()
+    } else if dt.is_primitive_numeric() {
+        s
+    } else {
+        polars_bail!(InvalidOperation: "'hist' is only supported for numeric or temporal data")
+    };
 
-    let out = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-         compute_hist(ca, bin_count, bins_arg, include_category, include_breakpoint)?
+    let (count, breaks, num_bins) = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+        compute_hist(ca, bin_count, bins_arg, dt_is_temporal)?
     });
-    Ok(out)
+
+    // Generate output columns: breakpoint (optional), breaks (optional) count
+    let mut fields = Vec::with_capacity(3);
+
+    if include_breakpoint || include_category {
+        let mut breaks = if num_bins > 0 {
+            Series::new(PlSmallStr::from_static("breakpoint"), &breaks)
+        } else {
+            let empty: &[f64; 0] = &[];
+            Series::new(PlSmallStr::from_static("breakpoint"), empty)
+        };
+        if dt_is_temporal {
+            breaks = breaks.cast(&DataType::Int64)?.cast(dt)?.into_series();
+        }
+        if include_breakpoint {
+            fields.push(breaks.slice(1, breaks.len()));
+        }
+        if include_category {
+            let categories = build_categories(num_bins, &breaks);
+            fields.push(categories);
+        };
+    }
+
+    let count = Series::new(PlSmallStr::from_static("count"), count);
+    fields.push(count);
+
+    Ok(if fields.len() == 1 {
+        fields.pop().unwrap().with_name(s.name().clone())
+    } else {
+        StructChunked::from_series(s.name().clone(), fields[0].len(), fields.iter())
+            .unwrap()
+            .into_series()
+    })
 }
