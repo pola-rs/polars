@@ -69,6 +69,8 @@ pub enum ListFunction {
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
+    #[cfg(feature = "list_zip")]
+    Zip(bool),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStruct),
 }
@@ -133,6 +135,8 @@ impl Display for ListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_zip")]
+            Zip(_) => "zip",
         };
         write!(f, "list.{name}")
     }
