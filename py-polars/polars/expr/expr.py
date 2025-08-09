@@ -2881,12 +2881,11 @@ class Expr:
             msg = "can only specify `limit` when strategy is set to 'backward' or 'forward'"
             raise ValueError(msg)
 
-        assert strategy is not None
-
         if value is not None:
             value_pyexpr = parse_into_expression(value, str_as_lit=True)
             return wrap_expr(self._pyexpr.fill_null(value_pyexpr))
         else:
+            assert strategy is not None
             return wrap_expr(self._pyexpr.fill_null_with_strategy(strategy, limit))
 
     def fill_nan(self, value: int | float | Expr | None) -> Expr:

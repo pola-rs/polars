@@ -223,7 +223,9 @@ def int_range(
 
     start_pyexpr = parse_into_expression(start)
     end_pyexpr = parse_into_expression(end)
-    result = wrap_expr(plr.int_range(start_pyexpr, end_pyexpr, step, dtype_expr._pydatatype_expr))
+    result = wrap_expr(
+        plr.int_range(start_pyexpr, end_pyexpr, step, dtype_expr._pydatatype_expr)
+    )
 
     if eager:
         return F.select(result).to_series()
@@ -334,7 +336,11 @@ def int_ranges(
     start_pyexpr = parse_into_expression(start)
     end_pyexpr = parse_into_expression(end)
     step_pyexpr = parse_into_expression(step)
-    result = wrap_expr(plr.int_ranges(start_pyexpr, end_pyexpr, step_pyexpr, dtype_expr._pydatatype_expr))
+    result = wrap_expr(
+        plr.int_ranges(
+            start_pyexpr, end_pyexpr, step_pyexpr, dtype_expr._pydatatype_expr
+        )
+    )
 
     if eager:
         return F.select(result).to_series()

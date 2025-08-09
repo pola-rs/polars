@@ -3,7 +3,6 @@
 
 import builtins
 import sys
-from typing import Any
 
 if hasattr(builtins, "__POLARS_PLR"):
     sys.modules[__name__] = builtins.__POLARS_PLR
@@ -13,7 +12,3 @@ else:
     import polars.polars as plr
 
     sys.modules[__name__] = plr
-
-def __getattr__(name: str) -> Any:
-    return sys.modules[__name__][name]
-

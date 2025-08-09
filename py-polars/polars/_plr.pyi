@@ -1,14 +1,8 @@
-import sys
 from collections.abc import Sequence
 from typing import Any, Literal, overload
 
 from numpy.typing import NDArray
 from typing_extensions import TypeAlias
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 __version__: str
 __build__: Any
