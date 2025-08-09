@@ -935,6 +935,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(left_col_expr);
             },
 
+            #[cfg(feature = "cum_agg")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function:
