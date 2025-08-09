@@ -1180,32 +1180,6 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(sorted_col_expr);
             },
 
-            // AExpr::Function {
-            //     input: inner_exprs,
-            //     function: IRFunctionExpr::TopK { descending } | IRFunctionExpr::TopKBy { descending },
-            //     options: _
-            // } => {
-            //     assert!(inner_exprs.len() == 2);
-            //     // As we'll refer to the sorted column twice, ensure the inner
-            //     // expr is available as a column by selecting first.
-            //     let out_name = unique_column_name();
-            //     let inner_data_expr = ExprIR::new(inner_exprs[0].node(), OutputName::Alias(out_name.clone()));
-            //     let data_stream = build_select_stream_with_ctx(input, &[inner_data_expr], ctx)?;
-            //     let k_stream = build_select_stream_with_ctx(input, &inner_exprs[1..2], ctx)?;
-            //     let out_col_node = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
-            //     let out_col_expr = ExprIR::new(out_col_node, OutputName::Alias(out_name));
-            //     let kind = PhysNodeKind::TopK {
-            //         input: data_stream,
-            //         k: k_stream,
-            //         by_column: vec![out_col_expr.clone()],
-            //         reverse: vec![descending],
-            //         nulls_last: vec![true],
-            //     };
-            //     let output_schema = ctx.phys_sm[data_stream.node].output_schema.clone();
-            //     let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-            //     input_streams.insert(PhysStream::first(node_key));
-            //     transformed_exprs.push(out_col_node);
-            // },
             AExpr::Function {
                 input: inner_exprs,
                 function: function @ (IRFunctionExpr::TopK { .. } | IRFunctionExpr::TopKBy { .. }),
