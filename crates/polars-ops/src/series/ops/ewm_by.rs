@@ -59,7 +59,7 @@ pub fn ewm_mean_by(
         #[cfg(feature = "dtype-date")]
         (_, DataType::Date) => ewm_mean_by(
             s,
-            &times.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+            &times.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
             half_life,
             times_is_sorted,
         ),

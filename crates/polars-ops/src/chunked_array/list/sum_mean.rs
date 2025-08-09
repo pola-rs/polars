@@ -3,6 +3,7 @@ use std::ops::Div;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
 
@@ -187,13 +188,12 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
         },
         #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
-            const MS_IN_DAY: i64 = 86_400_000;
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| {
-                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (MS_IN_DAY as f64)) as i64))
+                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (US_IN_DAY as f64)) as i64))
                 })
                 .with_name(ca.name().clone());
-            out.into_datetime(TimeUnit::Milliseconds, None)
+            out.into_datetime(TimeUnit::Microseconds, None)
                 .into_series()
         },
         dt if dt.is_temporal() => {

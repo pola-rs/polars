@@ -168,8 +168,8 @@ impl Series {
                 .agg_mean(groups)
                 .cast(&Float64)
                 .unwrap()
-                * (MS_IN_DAY as f64))
-                .cast(&Datetime(TimeUnit::Milliseconds, None))
+                * (US_IN_DAY as f64))
+                .cast(&Datetime(TimeUnit::Microseconds, None))
                 .unwrap(),
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
@@ -224,8 +224,8 @@ impl Series {
                 .agg_median(groups)
                 .cast(&Float64)
                 .unwrap()
-                * (MS_IN_DAY as f64))
-                .cast(&Datetime(TimeUnit::Milliseconds, None))
+                * (US_IN_DAY as f64))
+                .cast(&Datetime(TimeUnit::Microseconds, None))
                 .unwrap(),
             _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }

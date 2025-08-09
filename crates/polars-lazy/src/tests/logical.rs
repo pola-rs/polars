@@ -17,7 +17,7 @@ fn test_duration() -> PolarsResult<()> {
         })])
         .with_column(
             col("date")
-                .cast(DataType::Datetime(TimeUnit::Milliseconds, None))
+                .cast(DataType::Datetime(TimeUnit::Microseconds, None))
                 .alias("datetime"),
         )
         .group_by([col("groups")])
@@ -28,13 +28,17 @@ fn test_duration() -> PolarsResult<()> {
         .explode(by_name(["date", "datetime"], true))
         .collect()?;
 
+    assert!(matches!(
+        out.column("date")?.dtype(),
+        DataType::Duration(TimeUnit::Microseconds)
+    ));
+    assert!(matches!(
+        out.column("datetime")?.dtype(),
+        DataType::Duration(TimeUnit::Milliseconds)
+    ));
+
     for c in ["date", "datetime"] {
         let column = out.column(c)?;
-        assert!(matches!(
-            column.dtype(),
-            DataType::Duration(TimeUnit::Milliseconds)
-        ));
-
         assert_eq!(
             column.get(0)?,
             AnyValue::Duration(0, TimeUnit::Milliseconds)

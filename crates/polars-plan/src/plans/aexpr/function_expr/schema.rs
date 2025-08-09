@@ -206,7 +206,7 @@ impl IRFunctionExpr {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, _) => DataType::Duration(*tu),
                 #[cfg(feature = "dtype-date")]
-                DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
+                DataType::Date => DataType::Duration(TimeUnit::Microseconds),
                 #[cfg(feature = "dtype-time")]
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
@@ -690,7 +690,7 @@ impl<'a> FieldsMapper<'a> {
 
         let new_dt = match dt {
             #[cfg(feature = "dtype-datetime")]
-            Date => Datetime(TimeUnit::Milliseconds, None),
+            Date => Datetime(TimeUnit::Microseconds, None),
             dt if dt.is_temporal() => dt,
             Float32 => Float32,
             _ => Float64,
