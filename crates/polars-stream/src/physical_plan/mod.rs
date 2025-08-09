@@ -207,6 +207,7 @@ pub enum PhysNodeKind {
         repeats: PhysStream,
     },
 
+    #[cfg(feature = "cum_agg")]
     CumAgg {
         input: PhysStream,
         kind: CumAggKind,
@@ -353,10 +354,15 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
-            | PhysNodeKind::CumAgg { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::GroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "cum_agg")]
+            PhysNodeKind::CumAgg { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },

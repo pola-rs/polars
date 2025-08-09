@@ -529,6 +529,7 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "cum_agg")]
         CumAgg { input, kind } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(

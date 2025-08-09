@@ -339,6 +339,7 @@ fn visualize_plan_rec(
             )
         },
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        #[cfg(feature = "cum_agg")]
         PhysNodeKind::CumAgg { input, kind } => (
             format!(
                 "cum_{}",
