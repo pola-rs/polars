@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use arrow::temporal_conversions::MICROSECONDS as US_IN_DAY;
+use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use num_traits::{AsPrimitive, Zero};
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -53,9 +53,10 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
         },
         #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
+            const US_IN_DAY: f64 = MICROSECONDS_IN_DAY as f64;
             let ca: Int64Chunked = values
                 .into_iter()
-                .map(|(s, c)| (c != 0).then(|| (s / c as f64 * US_IN_DAY as f64) as i64))
+                .map(|(s, c)| (c != 0).then(|| (s * US_IN_DAY / c as f64) as i64))
                 .collect_ca(PlSmallStr::EMPTY);
             ca.into_datetime(TimeUnit::Microseconds, None).into_series()
         },
