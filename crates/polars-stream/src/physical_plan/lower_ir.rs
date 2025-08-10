@@ -4,10 +4,12 @@ use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
+use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
@@ -429,11 +431,56 @@ pub fn lower_ir(
             by_column,
             slice,
             sort_options,
-        } => PhysNodeKind::Sort {
-            by_column: by_column.clone(),
-            slice: *slice,
-            sort_options: sort_options.clone(),
-            input: lower_ir!(*input)?,
+        } => {
+            let by_column = by_column.clone();
+            let slice = *slice;
+            let sort_options = sort_options.clone();
+            let phys_input = lower_ir!(*input)?;
+
+            // See if we can insert a top k.
+            let mut limit = u64::MAX;
+            if let Some((0, l)) = slice {
+                limit = limit.min(l as u64);
+            }
+            #[allow(clippy::unnecessary_cast)]
+            if let Some(l) = sort_options.limit {
+                limit = limit.min(l as u64);
+            };
+
+            let sort_in_stream = if limit < u64::MAX && !sort_options.maintain_order {
+                let k_node =
+                    expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(limit))));
+                let k_selector = ExprIR::from_node(k_node, expr_arena);
+                let k_output_schema =
+                    Schema::from_iter([(get_literal_name().clone(), DataType::UInt64)]);
+                let k_node = phys_sm.insert(PhysNode::new(
+                    Arc::new(k_output_schema),
+                    PhysNodeKind::InputIndependentSelect {
+                        selectors: vec![k_selector],
+                    },
+                ));
+
+                let node = phys_sm.insert(PhysNode {
+                    output_schema: output_schema.clone(),
+                    kind: PhysNodeKind::TopK {
+                        input: phys_input,
+                        k: PhysStream::first(k_node),
+                        by_column: by_column.clone(),
+                        reverse: sort_options.descending.iter().map(|x| !x).collect(),
+                        nulls_last: sort_options.nulls_last.clone(),
+                    },
+                });
+                PhysStream::first(node)
+            } else {
+                phys_input
+            };
+
+            PhysNodeKind::Sort {
+                input: sort_in_stream,
+                by_column,
+                slice,
+                sort_options,
+            }
         },
 
         IR::Union { inputs, options } => {
