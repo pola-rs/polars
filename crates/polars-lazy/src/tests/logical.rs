@@ -17,7 +17,7 @@ fn test_duration() -> PolarsResult<()> {
         })])
         .with_column(
             col("date")
-                .cast(DataType::Datetime(TimeUnit::Microseconds, None))
+                .cast(DataType::Datetime(TimeUnit::Milliseconds, None))
                 .alias("datetime"),
         )
         .group_by([col("groups")])
