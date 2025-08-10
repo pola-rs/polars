@@ -59,6 +59,7 @@ impl AnyValueArbitrarySelection {
 pub struct AnyValueArbitraryOptions {
     pub allowed_dtypes: AnyValueArbitrarySelection,
     pub vector_length_range: RangeInclusive<usize>,
+    pub decimal_precision_range: RangeInclusive<usize>,
     // TODO: Add fields later
 }
 
@@ -67,6 +68,7 @@ impl Default for AnyValueArbitraryOptions {
         Self {
             allowed_dtypes: AnyValueArbitrarySelection::all(),
             vector_length_range: 0..=100,
+            decimal_precision_range: 1..=38,
             // TODO: Add fields later
         }
     }
@@ -130,9 +132,68 @@ pub fn anyvalue_strategy(
             },
             #[cfg(feature = "object")]
             _ if selection == S::OBJECT => unimplemented!(),
+            #[cfg(feature = "object")]
+            _ if selection == S::OBJECT_OWNED => unimplemented!(),
+            #[cfg(feature = "dtype-datetime")]
+            _ if selection == S::DATETIME => datetime_strategy().boxed(),
+            #[cfg(feature = "dtype-datetime")]
+            _ if selection == S::DATETIME_OWNED => datetime_owned_strategy().boxed(),
+            #[cfg(feature = "dtype-duration")]
+            _ if selection == S::DURATION => duration_strategy().boxed(),
+            #[cfg(feature = "dtype-decimal")]
+            _ if selection == S::DECIMAL => {
+                decimal_strategy(options.decimal_precision_range.clone()).boxed()
+            },
             _ => unreachable!(), // TODO: Rest of strategies
         }
     })
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn datetime_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    (
+        any::<i64>(),
+        proptest::prop_oneof![
+            Just(TimeUnit::Nanoseconds),
+            Just(TimeUnit::Microseconds),
+            Just(TimeUnit::Milliseconds),
+        ],
+    )
+        .prop_map(|(timestamp, time_unit)| AnyValue::Datetime(timestamp, time_unit, None))
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn datetime_owned_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    (
+        any::<i64>(),
+        proptest::prop_oneof![
+            Just(TimeUnit::Nanoseconds),
+            Just(TimeUnit::Microseconds),
+            Just(TimeUnit::Milliseconds),
+        ],
+    )
+        .prop_map(|(timestamp, time_unit)| AnyValue::Datetime(timestamp, time_unit, None))
+}
+
+#[cfg(feature = "dtype-duration")]
+fn duration_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    (
+        any::<i64>(),
+        proptest::prop_oneof![
+            Just(TimeUnit::Nanoseconds),
+            Just(TimeUnit::Microseconds),
+            Just(TimeUnit::Milliseconds),
+        ],
+    )
+        .prop_map(|(timestamp, time_unit)| AnyValue::Duration(timestamp, time_unit))
+}
+
+#[cfg(feature = "dtype-decimal")]
+fn decimal_strategy(
+    decimal_precision_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = AnyValue<'static>> {
+    (any::<i128>(), decimal_precision_range)
+        .prop_map(|(value, scale)| AnyValue::Decimal(value, scale))
 }
 
 // TODO: More complex strategies
