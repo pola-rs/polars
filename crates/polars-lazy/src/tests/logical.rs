@@ -29,18 +29,18 @@ fn test_duration() -> PolarsResult<()> {
         .collect()?;
 
     let column = out.column("date")?;
-    let (scale, tu) = (MICROSECONDS_IN_DAY, TimeUnit::Microseconds);
-    assert!(matches!(column.dtype(), DataType::Duration(tu)));
-    assert_eq!(column.get(0)?, AnyValue::Duration(0, tu));
-    assert_eq!(column.get(1)?, AnyValue::Duration(scale, tu));
-    assert_eq!(column.get(2)?, AnyValue::Duration(2 * scale, tu));
+    let (scale, _tu) = (MICROSECONDS_IN_DAY, TimeUnit::Microseconds);
+    assert!(matches!(column.dtype(), DataType::Duration(_tu)));
+    assert_eq!(column.get(0)?, AnyValue::Duration(0, _tu));
+    assert_eq!(column.get(1)?, AnyValue::Duration(scale, _tu));
+    assert_eq!(column.get(2)?, AnyValue::Duration(2 * scale, _tu));
 
     let column = out.column("datetime")?;
-    let (scale, tu) = (MILLISECONDS_IN_DAY, TimeUnit::Milliseconds);
-    assert!(matches!(column.dtype(), DataType::Duration(tu)));
-    assert_eq!(column.get(0)?, AnyValue::Duration(0, tu));
-    assert_eq!(column.get(1)?, AnyValue::Duration(scale, tu));
-    assert_eq!(column.get(2)?, AnyValue::Duration(2 * scale, tu));
+    let (scale, _tu) = (MILLISECONDS_IN_DAY, TimeUnit::Milliseconds);
+    assert!(matches!(column.dtype(), DataType::Duration(_tu)));
+    assert_eq!(column.get(0)?, AnyValue::Duration(0, _tu));
+    assert_eq!(column.get(1)?, AnyValue::Duration(scale, _tu));
+    assert_eq!(column.get(2)?, AnyValue::Duration(2 * scale, _tu));
     Ok(())
 }
 
