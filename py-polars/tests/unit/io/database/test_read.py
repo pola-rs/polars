@@ -308,7 +308,7 @@ def test_read_database(
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
-        with connect_using(tmp_sqlite_db) as conn, conn.cursor():
+        with connect_using(tmp_sqlite_db) as conn:
             df = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
@@ -371,16 +371,16 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
             expected,
         )
 
-    batches = list(
-        pl.read_database(
-            selectable_query,
-            connection=conn,
-            iter_batches=True,
-            batch_size=1,
+        batches = list(
+            pl.read_database(
+                selectable_query,
+                connection=conn,
+                iter_batches=True,
+                batch_size=1,
+            )
         )
-    )
-    assert len(batches) == 1
-    assert_frame_equal(batches[0], expected)
+        assert len(batches) == 1
+        assert_frame_equal(batches[0], expected)
 
 
 def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
@@ -406,16 +406,16 @@ def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
             expected,
         )
 
-    batches = list(
-        pl.read_database(
-            textclause_query,
-            connection=conn,
-            iter_batches=True,
-            batch_size=1,
+        batches = list(
+            pl.read_database(
+                textclause_query,
+                connection=conn,
+                iter_batches=True,
+                batch_size=1,
+            )
         )
-    )
-    assert len(batches) == 1
-    assert_frame_equal(batches[0], expected)
+        assert len(batches) == 1
+        assert_frame_equal(batches[0], expected)
 
 
 def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
