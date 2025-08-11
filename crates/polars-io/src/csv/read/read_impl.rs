@@ -117,6 +117,7 @@ pub(crate) struct CoreReader<'a> {
     n_rows: Option<usize>,
     n_threads: Option<usize>,
     has_header: bool,
+    #[allow(unused)]
     chunk_size: usize,
     batch_size_options: BatchSizeOptions,
     null_values: Option<NullValuesCompiled>,

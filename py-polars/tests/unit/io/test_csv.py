@@ -1602,11 +1602,11 @@ def test_batched_csv_reader_precise_batch_size_larger() -> None:
         for j in range(n_rows):
             if j % 2 == 0:
                 # short row
-                tmp.write((",".join([f"0.0" for i in range(n_cols)])).encode("utf-8"))
+                tmp.write((",".join(["0.0" for i in range(n_cols)])).encode("utf-8"))
             else:
                 # long row
                 tmp.write(
-                    (",".join([f"3.1415926" for i in range(n_cols)])).encode("utf-8")
+                    (",".join(["3.1415926" for i in range(n_cols)])).encode("utf-8")
                 )
             if j + 1 < n_rows:
                 tmp.write(b"\n")
@@ -1617,8 +1617,9 @@ def test_batched_csv_reader_precise_batch_size_larger() -> None:
         tmp.seek(0)
         dfs = []
         reader = pl.read_csv_batched(tmp.name, batch_size_options=("rows", 4))
-        for j in range(25):
+        for _ in range(25):
             batches = reader.next_batches(2)
+            assert batches is not None
             if not batches:
                 break
             for batch in batches:
@@ -1629,8 +1630,9 @@ def test_batched_csv_reader_precise_batch_size_larger() -> None:
         tmp.seek(0)
         dfs = []
         reader = pl.read_csv_batched(tmp.name, batch_size_options=("rows-total", 8))
-        for j in range(25):
+        for _ in range(25):
             batches = reader.next_batches(2)
+            assert batches is not None
             if not batches:
                 break
             for batch in batches:
@@ -1643,8 +1645,9 @@ def test_batched_csv_reader_precise_batch_size_larger() -> None:
         reader = pl.read_csv_batched(
             tmp.name, batch_size_options=("bytes", 10 * n_cols + 16)
         )
-        for j in range(100):
+        for _ in range(100):
             batches = reader.next_batches(2)
+            assert batches is not None
             if not batches:
                 break
             for batch in batches:
@@ -1658,15 +1661,18 @@ def test_batched_csv_reader_precise_batch_size_larger() -> None:
             tmp.name, batch_size_options=("bytes", 4 * n_cols + 16)
         )
         batches = reader.next_batches(2)
+        assert batches is not None
         assert batches[0].height == 1
         assert batches[1].height == 2
         dfs.extend(batches)
-        for j in range(49):
+        for _ in range(49):
             batches = reader.next_batches(2)
+            assert batches is not None
             for batch in batches:
                 assert batch.height == 2
             dfs.extend(batches)
         batches = reader.next_batches(2)
+        assert batches is not None
         assert batches[0].height == 1
         assert len(batches) == 1
         dfs.extend(batches)

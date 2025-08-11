@@ -332,7 +332,7 @@ pub struct BatchedCsvReader<'a> {
     reader_bytes: ReaderBytes<'a>,
     parse_options: CsvParseOptions,
     batch_size_options: BatchSizeOptions,
-    file_chunks_access: ChunkOffsetScanner<'a>,
+    file_chunks_scanner: ChunkOffsetScanner<'a>,
     file_chunks: Vec<(usize, usize, usize)>,
     projection: Vec<usize>,
     starting_point_offset: Option<usize>,
@@ -357,7 +357,7 @@ impl BatchedCsvReader<'_> {
         // instance that is suitable for given `batch_size_options`, and the options are further
         // used here to perform the correct action with `self.file_chunks_iter`
 
-        let chunks = match &mut self.file_chunks_access {
+        let chunks = match &mut self.file_chunks_scanner {
             ChunkOffsetScanner::Iter(chunk_offset_iter) => {
                 // get next `n` offset positions.
                 let file_chunks_iter = chunk_offset_iter.take(n);

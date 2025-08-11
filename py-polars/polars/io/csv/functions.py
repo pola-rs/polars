@@ -754,7 +754,7 @@ def read_csv_batched(
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = None,
     batch_size_options: tuple[
-        Literal["default" | "bytes" | "bytes-strict" | "rows" | "rows-strict"], int
+        Literal["default" | "bytes" | "bytes-strict" | "rows" | "rows-total"], int
     ]
     | None = None,
     n_rows: int | None = None,
@@ -854,17 +854,21 @@ def read_csv_batched(
         and batch_size=n is treaded the same as `batch_size_options=('rows', n)`
     batch_size_options
         Allowed options:
-        - ('bytes', n: int): Batched reader will try to read csv file in batches of n bytes.
-            Each batch will contain the amount of rows that originally occupied not more
-            than n bytes in the CSV file. If at some point the n-byte buffer contains 0
-            full rows, it will be extended. It will then stay extended even if later rows
+        - ('bytes', n: int): Batched reader will try to read csv file in batches
+            of n bytes. Each batch will contain the amount of rows that
+            originally occupied not more than n bytes in the CSV file.
+            If at some point the n-byte buffer contains 0 full rows,
+            it will be extended. It will then stay extended even if later rows
             would fit in the original buffer size.
-        - ('bytes-strict', n: int): Same as above, but the buffer will not be extended if a row
-            that is too large to bit in n bytes is encountered. Instead, an error will be thrown.
-        - ('rows', n: int): Each batch will contain exactly n rows, unless at the end of file.
-        - ('rows-total', n: int): Each call to `next_batches` on the returned instance of `BatchedCsvReader`
-            will return n rows in total. For example if `batch_size_options=('rows-total', 1000)`, and
-            `reader.next_batches(7)` is called, it will return 7 data frames of heights respectively
+        - ('bytes-strict', n: int): Same as above, but the buffer will not be extended
+            if a row that is too large to bit in n bytes is encountered.
+            Instead, an error will be thrown.
+        - ('rows', n: int): Each batch will contain exactly n rows,
+            unless at the end of file.
+        - ('rows-total', n: int): Each call to `next_batches` on the returned instance
+            of `BatchedCsvReader` will return n rows in total. For example if
+            `batch_size_options=('rows-total', 1000)`, and `reader.next_batches(7)`
+            is called, it will return 7 data frames of heights respectively
             [143, 143, 143, 143, 143, 143, 142].
         - ('default', _): Same as above (second tuple item is ignored)
         - None: Treated like ('default', 0)
