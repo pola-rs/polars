@@ -60,13 +60,13 @@ class _GeventDataFrameResult(Generic[T]):
 
     def _callback(self, obj: PyDataFrame | Exception) -> None:
         if not isinstance(obj, Exception):
-            obj = wrap_df(obj)
+            obj = wrap_df(obj)  # type: ignore[assignment]
         self._value = obj
         self._watcher.send()
 
     def _callback_all(self, obj: list[PyDataFrame] | Exception) -> None:
         if not isinstance(obj, Exception):
-            obj = [wrap_df(pydf) for pydf in obj]
+            obj = [wrap_df(pydf) for pydf in obj]  # type: ignore[misc]
         self._value = obj
         self._watcher.send()
 

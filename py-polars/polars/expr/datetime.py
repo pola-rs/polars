@@ -164,7 +164,7 @@ class ExprDateTimeNameSpace:
         return wrap_expr(
             self._pyexpr.dt_add_business_days(
                 n_pyexpr,
-                week_mask,
+                list(week_mask),
                 [(holiday - unix_epoch).days for holiday in holidays],
                 roll,
             )
@@ -291,8 +291,8 @@ class ExprDateTimeNameSpace:
         """
         if isinstance(every, dt.timedelta):
             every = parse_as_duration_string(every)
-        every = parse_into_expression(every, str_as_lit=True)
-        return wrap_expr(self._pyexpr.dt_truncate(every))
+        every_pyexpr = parse_into_expression(every, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_truncate(every_pyexpr))
 
     def round(self, every: str | dt.timedelta | IntoExprColumn) -> Expr:
         """
@@ -394,8 +394,8 @@ class ExprDateTimeNameSpace:
         """
         if isinstance(every, dt.timedelta):
             every = parse_as_duration_string(every)
-        every = parse_into_expression(every, str_as_lit=True)
-        return wrap_expr(self._pyexpr.dt_round(every))
+        every_pyexpr = parse_into_expression(every, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_round(every_pyexpr))
 
     def replace(
         self,
@@ -472,21 +472,27 @@ class ExprDateTimeNameSpace:
         │ 2025-03-16 ┆ 15      ┆ 1800-03-16 │
         └────────────┴─────────┴────────────┘
         """
-        day, month, year, hour, minute, second, microsecond = (
-            parse_into_list_of_expressions(
-                day, month, year, hour, minute, second, microsecond
-            )
+        (
+            day_pyexpr,
+            month_pyexpr,
+            year_pyexpr,
+            hour_pyexpr,
+            minute_pyexpr,
+            second_pyexpr,
+            microsecond_pyexpr,
+        ) = parse_into_list_of_expressions(
+            day, month, year, hour, minute, second, microsecond
         )
         ambiguous_expr = parse_into_expression(ambiguous, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.dt_replace(
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-                microsecond,
+                year_pyexpr,
+                month_pyexpr,
+                day_pyexpr,
+                hour_pyexpr,
+                minute_pyexpr,
+                second_pyexpr,
+                microsecond_pyexpr,
                 ambiguous_expr,
             )
         )
@@ -548,8 +554,8 @@ class ExprDateTimeNameSpace:
         if not isinstance(time, (dt.time, pl.Expr)):
             msg = f"expected 'time' to be a Python time or Polars expression, found {qualified_type_name(time)!r}"
             raise TypeError(msg)
-        time = parse_into_expression(time)
-        return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
+        time_pyexpr = parse_into_expression(time)
+        return wrap_expr(self._pyexpr.dt_combine(time_pyexpr, time_unit))
 
     def to_string(self, format: str | None = None) -> Expr:
         """
@@ -988,7 +994,7 @@ class ExprDateTimeNameSpace:
         unix_epoch = dt.date(1970, 1, 1)
         return wrap_expr(
             self._pyexpr.dt_is_business_day(
-                week_mask,
+                list(week_mask),
                 [(holiday - unix_epoch).days for holiday in holidays],
             )
         )
@@ -2434,8 +2440,8 @@ class ExprDateTimeNameSpace:
         │ 2005-01-01 00:00:00 ┆ 1y     ┆ 2006-01-01 00:00:00 │
         └─────────────────────┴────────┴─────────────────────┘
         """
-        by = parse_into_expression(by, str_as_lit=True)
-        return wrap_expr(self._pyexpr.dt_offset_by(by))
+        by_pyexpr = parse_into_expression(by, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_offset_by(by_pyexpr))
 
     def month_start(self) -> Expr:
         """

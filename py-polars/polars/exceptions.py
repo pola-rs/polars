@@ -26,7 +26,7 @@ except ImportError:
     class PolarsError(Exception):  # type: ignore[no-redef]
         """Base class for all Polars errors."""
 
-    class ColumnNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
+    class ColumnNotFoundError(PolarsError):  # type: ignore[no-redef]
         """
         Exception raised when a specified column is not found.
 
@@ -37,10 +37,10 @@ except ImportError:
         polars.exceptions.ColumnNotFoundError: b
         """
 
-    class ComputeError(PolarsError):  # type: ignore[no-redef, misc]
+    class ComputeError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when Polars could not perform an underlying computation."""
 
-    class DuplicateError(PolarsError):  # type: ignore[no-redef, misc]
+    class DuplicateError(PolarsError):  # type: ignore[no-redef]
         """
         Exception raised when a column name is duplicated.
 
@@ -51,7 +51,7 @@ except ImportError:
         polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
         """  # noqa: W505
 
-    class InvalidOperationError(PolarsError):  # type: ignore[no-redef, misc]
+    class InvalidOperationError(PolarsError):  # type: ignore[no-redef]
         """
         Exception raised when an operation is not allowed (or possible) against a given object or data structure.
 
@@ -62,50 +62,50 @@ except ImportError:
         polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data
         """  # noqa: W505
 
-    class NoDataError(PolarsError):  # type: ignore[no-redef, misc]
+    class NoDataError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when an operation cannot be performed on an empty data structure."""  # noqa: W505
 
-    class OutOfBoundsError(PolarsError):  # type: ignore[no-redef, misc]
+    class OutOfBoundsError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when the given index is out of bounds."""
 
-    class PanicException(PolarsError):  # type: ignore[no-redef, misc]
+    class PanicException(PolarsError):  # type: ignore[no-redef]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
-    class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
+    class SchemaError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when an unexpected schema mismatch causes an error."""
 
-    class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
+    class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
 
-    class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
+    class ShapeError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
 
-    class SQLInterfaceError(PolarsError):  # type: ignore[no-redef, misc]
+    class SQLInterfaceError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when an error occurs in the SQL interface."""
 
-    class SQLSyntaxError(PolarsError):  # type: ignore[no-redef, misc]
+    class SQLSyntaxError(PolarsError):  # type: ignore[no-redef]
         """Exception raised from the SQL interface when encountering invalid syntax."""
 
-    class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
+    class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when string caches come from different sources."""
 
-    class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
+    class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef]
         """Exception raised when a specified Struct field is not found."""
 
     class PolarsWarning(Exception):  # type: ignore[no-redef]
         """Base class for all Polars warnings."""
 
-    class PerformanceWarning(PolarsWarning):  # type: ignore[no-redef, misc]
+    class PerformanceWarning(PolarsWarning):  # type: ignore[no-redef]
         """Warning issued to indicate potential performance pitfalls."""
 
-    class CategoricalRemappingWarning(PerformanceWarning):  # type: ignore[no-redef, misc]
+    class CategoricalRemappingWarning(PerformanceWarning):  # type: ignore[no-redef]
         """Warning issued when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
 
-    class MapWithoutReturnDtypeWarning(PolarsWarning):  # type: ignore[no-redef, misc]
+    class MapWithoutReturnDtypeWarning(PolarsWarning):  # type: ignore[no-redef]
         """Warning issued when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
-class RowsError(PolarsError):  # type: ignore[misc]
+class RowsError(PolarsError):
     """Exception raised when the number of returned rows does not match expectation."""
 
 
@@ -121,15 +121,15 @@ class ModuleUpgradeRequiredError(ModuleNotFoundError):
     """Exception raised when a module is installed but needs to be upgraded."""
 
 
-class ParameterCollisionError(PolarsError):  # type: ignore[misc]
+class ParameterCollisionError(PolarsError):
     """Exception raised when the same parameter occurs multiple times."""
 
 
-class UnsuitableSQLError(PolarsError):  # type: ignore[misc]
+class UnsuitableSQLError(PolarsError):
     """Exception raised when unsuitable SQL is given to a database method."""
 
 
-class ChronoFormatWarning(PolarsWarning):  # type: ignore[misc]
+class ChronoFormatWarning(PolarsWarning):
     """
     Warning issued when a chrono format string contains dubious patterns.
 
@@ -141,11 +141,11 @@ class ChronoFormatWarning(PolarsWarning):  # type: ignore[misc]
     """
 
 
-class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
+class CustomUFuncWarning(PolarsWarning):
     """Warning issued when a custom ufunc is handled differently than numpy ufunc would."""  # noqa: W505
 
 
-class DataOrientationWarning(PolarsWarning):  # type: ignore[misc]
+class DataOrientationWarning(PolarsWarning):
     """
     Warning issued to indicate row orientation was inferred from the inputs.
 
@@ -185,11 +185,11 @@ class DataOrientationWarning(PolarsWarning):  # type: ignore[misc]
     """  # noqa: W505
 
 
-class PolarsInefficientMapWarning(PerformanceWarning):  # type: ignore[misc]
+class PolarsInefficientMapWarning(PerformanceWarning):
     """Warning issued when a potentially slow `map_*` operation is performed."""
 
 
-class UnstableWarning(PolarsWarning):  # type: ignore[misc]
+class UnstableWarning(PolarsWarning):
     """Warning issued when unstable functionality is used."""
 
 

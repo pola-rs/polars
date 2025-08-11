@@ -295,7 +295,7 @@ impl PySeries {
         py.enter_polars_series(|| self.series.zip_with(mask, &other.series))
     }
 
-    #[pyo3(signature = (separator, drop_first=false, drop_nulls=false))]
+    #[pyo3(signature = (separator, drop_first, drop_nulls))]
     fn to_dummies(
         &self,
         py: Python<'_>,
@@ -439,7 +439,7 @@ impl PySeries {
         })
     }
 
-    #[pyo3(signature = (offset, length=None))]
+    #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let length = length.unwrap_or_else(|| self.series.len());
         self.series.slice(offset, length).into()
