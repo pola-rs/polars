@@ -184,10 +184,12 @@ impl StrpTimeState {
             offset = 1;
             negative = true;
         }
-        let variable_fmt_len = fmt.windows(2).any(|w| w == b"%B");
-        // SAFETY: this still ensures get_unchecked won't be out of bounds as val will be at least as big as we expect
-        let ok_flex = variable_fmt_len && val.len() - offset < (fmt_len_val as usize);
-        if (!variable_fmt_len && val.len() - offset != (fmt_len_val as usize)) || ok_flex {
+        #[allow(non_snake_case)]
+        let has_B_code = fmt.windows(2).any(|w| w == b"%B");
+        // SAFETY: this still ensures get_unchecked won't be out of bounds as val will be at least as big as we expect.
+        // After consuming the full month name, we'll double check remaining len is exactly equal.
+        let is_too_short = has_B_code && val.len() - offset < (fmt_len_val as usize);
+        if (!has_B_code && val.len() - offset != (fmt_len_val as usize)) || is_too_short {
             return None;
         }
 
@@ -229,7 +231,7 @@ impl StrpTimeState {
                     },
                     b'B' => {
                         (month, offset) = parse_month_full(val, offset)?;
-                        // double check remaining fmt_len
+                        // After variable sized month is consumed, verify remaining is exact len
                         let new_fmt_len = fmt_len(fmt_iter.as_slice())?;
                         let remaining_val_len = val.len() - offset;
                         if remaining_val_len != (new_fmt_len as usize) {
@@ -312,7 +314,7 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                     b'd' => cnt += 2,
                     b'm' => cnt += 2,
                     b'b' => cnt += 3,
-                    b'B' => cnt += 3,
+                    b'B' => cnt += 3, // This is minimum size for full month
                     b'H' => cnt += 2,
                     b'M' => cnt += 2,
                     b'S' => cnt += 2,
