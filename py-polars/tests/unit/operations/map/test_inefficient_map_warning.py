@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from functools import partial
 from math import cosh
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import numpy as np
 import pytest
