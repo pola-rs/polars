@@ -195,6 +195,7 @@ fn upsample_single_impl(
 ) -> PolarsResult<DataFrame> {
     index_column.ensure_sorted_arg("upsample")?;
     let index_col_name = index_column.name();
+
     use DataType::*;
     match index_column.dtype() {
         Datetime(tu, tz) => {
