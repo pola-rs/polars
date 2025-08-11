@@ -26,7 +26,7 @@ impl fmt::Display for DotNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DotNode::Plain(n) => write!(f, "p{n}"),
-            DotNode::Cache(n) => write!(f, "c{n}"),
+            DotNode::Cache(n) => write!(f, "\"{n}\""),
         }
     }
 }
