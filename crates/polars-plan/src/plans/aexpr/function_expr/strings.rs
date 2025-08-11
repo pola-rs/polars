@@ -112,7 +112,9 @@ pub enum IRStringFunction {
     Strptime(DataType, StrptimeOptions),
     Split(bool),
     #[cfg(feature = "dtype-decimal")]
-    ToDecimal(usize),
+    ToDecimal {
+        scale: usize,
+    },
     #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,
@@ -192,7 +194,7 @@ impl IRStringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
+            ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(None, Some(*scale))),
             #[cfg(feature = "string_encoding")]
             HexEncode => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
@@ -277,7 +279,7 @@ impl IRStringFunction {
             #[cfg(feature = "nightly")]
             S::Titlecase => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-decimal")]
-            S::ToDecimal(_) => FunctionOptions::elementwise_with_infer(),
+            S::ToDecimal { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "string_encoding")]
             S::HexEncode | S::Base64Encode => FunctionOptions::elementwise(),
             #[cfg(feature = "binary_encoding")]
@@ -387,7 +389,7 @@ impl Display for IRStringFunction {
             #[cfg(feature = "nightly")]
             Titlecase => "titlecase",
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal(_) => "to_decimal",
+            ToDecimal { .. } => "to_decimal",
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",
@@ -493,7 +495,7 @@ impl From<IRStringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "binary_encoding")]
             Base64Decode(strict) => map!(strings::base64_decode, strict),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
+            ToDecimal { scale } => map!(strings::to_decimal, scale),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode {
                 dtype,
@@ -1206,9 +1208,9 @@ pub(super) fn base64_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "dtype-decimal")]
-pub(super) fn to_decimal(s: &Column, infer_len: usize) -> PolarsResult<Column> {
+pub(super) fn to_decimal(s: &Column, scale: usize) -> PolarsResult<Column> {
     let ca = s.str()?;
-    ca.to_decimal(infer_len).map(Column::from)
+    ca.to_decimal(scale).map(Column::from)
 }
 
 #[cfg(feature = "extract_jsonpath")]

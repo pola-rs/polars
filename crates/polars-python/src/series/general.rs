@@ -483,6 +483,13 @@ impl PySeries {
             .into_series()
             .into())
     }
+
+    pub fn str_to_decimal_infer(&self, py: Python, inference_length: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| {
+            let ca = self.series.str()?;
+            ca.to_decimal_infer(inference_length).map(Series::from)
+        })
+    }
 }
 
 macro_rules! impl_set_with_mask {

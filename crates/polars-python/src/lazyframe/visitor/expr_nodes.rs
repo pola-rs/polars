@@ -886,8 +886,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRStringFunction::Split(inclusive) => {
                         (PyStringFunction::Split, inclusive).into_py_any(py)
                     },
-                    IRStringFunction::ToDecimal(inference_length) => {
-                        (PyStringFunction::ToDecimal, inference_length).into_py_any(py)
+                    IRStringFunction::ToDecimal { scale } => {
+                        (PyStringFunction::ToDecimal, scale).into_py_any(py)
                     },
                     #[cfg(feature = "nightly")]
                     IRStringFunction::Titlecase => (PyStringFunction::Titlecase,).into_py_any(py),

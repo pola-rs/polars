@@ -351,11 +351,14 @@ class StringNameSpace:
     def to_decimal(
         self,
         inference_length: int = 100,
+        *,
+        scale: int | None = None,
     ) -> Series:
         """
         Convert a String column into a Decimal column.
 
-        This method infers the needed parameters `precision` and `scale`.
+        This method infers the needed parameters `precision` and `scale` if not
+        given.
 
         .. versionchanged:: 1.20.0
             Parameter `inference_length` should now be passed as a keyword argument.
@@ -364,6 +367,8 @@ class StringNameSpace:
         ----------
         inference_length
             Number of elements to parse to determine the `precision` and `scale`
+        scale
+            Number of digits after the comma to use for the decimals.
 
         Examples
         --------
@@ -383,6 +388,17 @@ class StringNameSpace:
             143.90
         ]
         """
+        if scale is not None:
+            s = wrap_s(self._s)
+            return (
+                s.to_frame()
+                .select_seq(F.col(s.name).str.to_decimal(scale=scale))
+                .to_series()
+            )
+        else:
+            return wrap_s(
+                self._s.str_to_decimal_infer(inference_length=inference_length)
+            )
 
     def len_bytes(self) -> Series:
         """
