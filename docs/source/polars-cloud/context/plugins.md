@@ -55,7 +55,7 @@ shape: (3, 3)
 Plugins generally offer better performance than UDFs since they run compiled code. However, UDFs
 provide more flexibility for custom logic.
 
-### Using Other Libaries in Remote Execution
+### Using Other Libraries in Remote Execution
 
 The process of using a
 [user-defined function](https://docs.pola.rs/user-guide/expressions/user-defined-python-functions/)
