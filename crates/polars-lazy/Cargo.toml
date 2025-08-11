@@ -138,9 +138,14 @@ dtype-duration = [
   "polars-expr/dtype-duration",
   "polars-mem-engine/dtype-duration",
 ]
-dtype-i16 = ["polars-plan/dtype-i16", "polars-expr/dtype-i16", "polars-mem-engine/dtype-i16"]
-dtype-i128 = ["polars-plan/dtype-i128", "polars-expr/dtype-i128"]
-dtype-i8 = ["polars-plan/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8"]
+dtype-i16 = [
+  "polars-plan/dtype-i16",
+  "polars-expr/dtype-i16",
+  "polars-mem-engine/dtype-i16",
+  "polars-stream?/dtype-i16",
+]
+dtype-i128 = ["polars-plan/dtype-i128", "polars-expr/dtype-i128", "polars-stream?/dtype-i128"]
+dtype-i8 = ["polars-plan/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8", "polars-stream?/dtype-i8"]
 dtype-struct = [
   "polars-plan/dtype-struct",
   "polars-ops/dtype-struct",
@@ -154,8 +159,13 @@ dtype-time = [
   "polars-expr/dtype-time",
   "polars-mem-engine/dtype-time",
 ]
-dtype-u16 = ["polars-plan/dtype-u16", "polars-expr/dtype-u16", "polars-mem-engine/dtype-u16"]
-dtype-u8 = ["polars-plan/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8"]
+dtype-u16 = [
+  "polars-plan/dtype-u16",
+  "polars-expr/dtype-u16",
+  "polars-mem-engine/dtype-u16",
+  "polars-stream?/dtype-u16",
+]
+dtype-u8 = ["polars-plan/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8", "polars-stream?/dtype-u8"]
 
 object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
 month_start = ["polars-plan/month_start"]
@@ -252,7 +262,7 @@ search_sorted = ["polars-plan/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted", "polars-mem-engine/merge_sorted"]
 meta = ["polars-plan/meta"]
 pivot = ["polars-core/rows", "polars-ops/pivot", "polars-plan/pivot"]
-top_k = ["polars-plan/top_k"]
+top_k = ["polars-plan/top_k", "polars-stream?/top_k"]
 semi_anti_join = ["polars-plan/semi_anti_join", "polars-stream?/semi_anti_join"]
 cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-expr/propagate_nans"]

@@ -317,6 +317,29 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
+        PhysNodeKind::TopK {
+            input,
+            k,
+            by_column,
+            reverse,
+            nulls_last: _,
+        } => {
+            let name = if reverse.iter().all(|r| *r) {
+                "bottom-k"
+            } else {
+                "top-k"
+            };
+            (
+                format!(
+                    "{name}\\n{}",
+                    fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
+                ),
+                &[*input, *k][..],
+            )
+        },
+        PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
+        PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,

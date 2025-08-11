@@ -94,7 +94,7 @@ impl ArrowSchema {
 
         let metadata = if let ArrowDataType::Extension(ext) = field.dtype() {
             // append extension information.
-            let mut metadata = metadata.clone();
+            let mut metadata = metadata;
 
             // metadata
             if let Some(extension_metadata) = &ext.metadata {

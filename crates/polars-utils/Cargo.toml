@@ -13,6 +13,7 @@ bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
 compact_str = { workspace = true }
+either = { workspace = true }
 flate2 = { workspace = true, default-features = true, optional = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
@@ -29,8 +30,8 @@ regex = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-serde_ignored = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+serde_stacker = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
@@ -54,10 +55,10 @@ serde = [
   "dep:bincode",
   "dep:flate2",
   "dep:serde_json",
+  "dep:serde_stacker",
   "uuid/serde",
 ]
 dsl-schema = ["dep:schemars"]
-polars_cloud_server = ["dep:serde_ignored"]
 python = ["pyo3", "polars-error/python"]
 
 [lints]

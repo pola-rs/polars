@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import abc
 import os
-from functools import lru_cache
+import threading
 from typing import TYPE_CHECKING, Any, Callable, Literal, Union
 
 import polars._utils.logging
+from polars._utils.cache import LRUCache
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
-from polars.io.cloud._utils import NoPickleOption, ZeroHashWrap
+from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
+    CachingCredentialProvider,
     CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
@@ -81,8 +83,17 @@ class CredentialProviderBuilder:
     # Note: The rust-side expects this exact function name.
     def build_credential_provider(
         self,
+        clear_cached_credentials: bool = False,  # noqa: FBT001
     ) -> CredentialProviderBuilderReturn:
-        """Instantiate a credential provider from configuration."""
+        """
+        Instantiate a credential provider from configuration.
+
+        Parameters
+        ----------
+        clear_cached_credentials
+            If the built provider is an instance of `CachingCredentialProvider`,
+            clears any cached credentials on that object.
+        """
         verbose = polars._utils.logging.verbose()
 
         if verbose:
@@ -103,6 +114,14 @@ class CredentialProviderBuilder:
                 eprint(
                     f"[CredentialProviderBuilder]: No provider initialized "
                     f"from {self.credential_provider_init!r}"
+                )
+
+        if clear_cached_credentials and isinstance(v, CachingCredentialProvider):
+            v.clear_cached_credentials()
+
+            if verbose:
+                eprint(
+                    f"[CredentialProviderBuilder]: Clear cached credentials for {v!r}"
                 )
 
         return v
@@ -149,7 +168,7 @@ class CredentialProviderBuilderImpl(abc.ABC):
         return f"{provider_repr} @ {builder_name}"
 
 
-# Wraps an already ininitialized credential provider into the builder interface.
+# Wraps an already initialized credential provider into the builder interface.
 # Used for e.g. user-provided credential providers.
 class InitializedCredentialProvider(CredentialProviderBuilderImpl):
     """Wraps an already initialized credential provider."""
@@ -165,47 +184,50 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         return repr(self.credential_provider)
 
 
-AUTO_INIT_LRU_CACHE: (
-    Callable[
-        [bytes, ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]]],
-        CredentialProviderBuilderReturn,
-    ]
-    | None
-) = None
+AUTO_INIT_LRU_CACHE: LRUCache[bytes, CredentialProviderBuilderReturn] | None = None
+AUTO_INIT_LRU_CACHE_LOCK: threading.RLock = threading.RLock()
 
 
 def _auto_init_with_cache(
     get_cache_key_func: Callable[[], bytes],
-    build_provider_func: ZeroHashWrap[Callable[[], CredentialProviderBuilderReturn]],
+    build_provider_func: Callable[[], CredentialProviderBuilderReturn],
 ) -> CredentialProviderBuilderReturn:
     global AUTO_INIT_LRU_CACHE
 
     if (
-        maxsize := int(os.getenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", 8))
+        max_items := int(
+            os.getenv(
+                "POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE",
+                8,
+            )
+        )
     ) <= 0:
-        AUTO_INIT_LRU_CACHE = None
+        if AUTO_INIT_LRU_CACHE_LOCK.acquire(blocking=False):
+            AUTO_INIT_LRU_CACHE = None
+            AUTO_INIT_LRU_CACHE_LOCK.release()
 
-        return build_provider_func.get()()
+        return build_provider_func()
 
-    if AUTO_INIT_LRU_CACHE is None:
-        if verbose():
-            eprint(f"Create credential provider AutoInit LRU cache ({maxsize = })")
+    verbose = polars._utils.logging.verbose()
 
-        @lru_cache(maxsize=maxsize)
-        def cache(
-            _cache_key: bytes,
-            build_provider_func: ZeroHashWrap[
-                Callable[[], CredentialProviderBuilderReturn]
-            ],
-        ) -> CredentialProviderBuilderReturn:
-            return build_provider_func.get()()
+    with AUTO_INIT_LRU_CACHE_LOCK:
+        if AUTO_INIT_LRU_CACHE is None:
+            if verbose:
+                eprint(
+                    f"Create credential provider AutoInit LRU cache ({max_items = })"
+                )
 
-        AUTO_INIT_LRU_CACHE = cache
+            AUTO_INIT_LRU_CACHE = LRUCache(max_items)
 
-    return AUTO_INIT_LRU_CACHE(
-        get_cache_key_func(),
-        build_provider_func,
-    )
+        cache_key = get_cache_key_func()
+
+        try:
+            provider = AUTO_INIT_LRU_CACHE[cache_key]
+        except KeyError:
+            provider = build_provider_func()
+            AUTO_INIT_LRU_CACHE[cache_key] = provider
+
+        return provider
 
 
 # Represents an automatic initialization configuration. This is created for
@@ -222,7 +244,7 @@ class AutoInit(CredentialProviderBuilderImpl):
         try:
             return _auto_init_with_cache(
                 self.get_or_init_cache_key,
-                ZeroHashWrap(lambda: self.cls(**self.kw)),
+                lambda: self.cls(**self.kw),
             )
         except ImportError as e:
             if verbose():
@@ -234,18 +256,20 @@ class AutoInit(CredentialProviderBuilderImpl):
         cache_key = self._cache_key.get()
 
         if cache_key is None:
-            import hashlib
-            import pickle
-
-            hash = hashlib.sha256(pickle.dumps(self))
-            self._cache_key.set(hash.digest())
-            cache_key = self._cache_key.get()
-            assert isinstance(cache_key, bytes)
+            cache_key = self.get_cache_key_impl()
+            self._cache_key.set(cache_key)
 
             if verbose():
-                eprint(f"{self!r}: AutoInit cache key: {hash.hexdigest()}")
+                eprint(f"{self!r}: AutoInit cache key: {cache_key.hex()}")
 
         return cache_key
+
+    def get_cache_key_impl(self) -> bytes:
+        import hashlib
+        import pickle
+
+        hash = hashlib.sha256(pickle.dumps(self))
+        return hash.digest()[:16]
 
     @property
     def provider_repr(self) -> str:

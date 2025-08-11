@@ -2135,7 +2135,7 @@ def test_decimal_precision_nested_roundtrip(
 
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
-    monkeypatch: Any, capfd: Any, parallel: pl.ParallelStrategy
+    monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: pl.ParallelStrategy
 ) -> None:
     f = io.BytesIO()
 
@@ -3406,7 +3406,7 @@ def test_read_parquet_duplicate_range_start_fetch_23139(tmp_path: Path) -> None:
         # ),
     ],
 )
-def test_scan_parquet_filter_with_cast(
+def test_scan_parquet_skip_row_groups_with_cast(
     value: Any,
     scan_dtype: pl.DataType,
     filter_expr: pl.Expr,
@@ -3463,7 +3463,7 @@ def test_scan_parquet_filter_with_cast(
         ),
     ],
 )
-def test_scan_parquet_filter_with_cast_inclusions(
+def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     value: Any,
     scan_dtype: pl.DataType,
     filter_expr: pl.Expr,
@@ -3513,3 +3513,13 @@ def test_write_nested_categoricals() -> None:
 
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), df)
+
+
+def test_literal_predicate_23901() -> None:
+    df = pl.DataFrame({"x": range(10)})
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=1)
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).filter(pl.lit(1) == 1).collect(), df)

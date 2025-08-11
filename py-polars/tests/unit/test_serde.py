@@ -229,3 +229,18 @@ def test_pickle_class_objects_21021() -> None:
     assert isinstance(pickle.loads(pickle.dumps(pl.col))("A"), pl.Expr)
     assert isinstance(pickle.loads(pickle.dumps(pl.DataFrame))(), pl.DataFrame)
     assert isinstance(pickle.loads(pickle.dumps(pl.LazyFrame))(), pl.LazyFrame)
+
+
+def test_serialize_does_not_overflow_stack() -> None:
+    n = 2000
+    lf = pl.DataFrame({"a": 0}).lazy()
+
+    for i in range(1, n):
+        lf = pl.concat([lf, pl.DataFrame({"a": i}).lazy()])
+
+    f = io.BytesIO()
+    f.write(lf.serialize())
+    f.seek(0)
+    actual = pl.LazyFrame.deserialize(f).collect()
+    expected = pl.DataFrame({"a": range(n)})
+    assert_frame_equal(actual, expected)

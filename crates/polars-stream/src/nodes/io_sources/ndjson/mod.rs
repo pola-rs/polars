@@ -21,15 +21,15 @@ use polars_utils::priority::Priority;
 use polars_utils::slice_enum::Slice;
 use row_index_limit_pass::ApplyRowIndexOrLimit;
 
-use super::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
-use super::multi_file_reader::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
+use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
+use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::Projection;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
 mod chunk_reader;
 mod line_batch_distributor;
@@ -209,7 +209,7 @@ impl FileReader for NDJsonFileReader {
 
         let opt_post_process_handle = if is_negative_slice {
             // Note: This is right-to-left
-            let negative_slice = global_slice.clone().unwrap();
+            let negative_slice = global_slice.unwrap();
 
             if verbose {
                 eprintln!("[NDJsonFileReader]: Initialize morsel stream reverser");
@@ -329,7 +329,7 @@ impl FileReader for NDJsonFileReader {
                         } else {
                             LineBatchProcessorOutputPort::Direct {
                                 tx: morsel_senders.pop().unwrap(),
-                                source_token: source_token.clone(),
+                                source_token,
                             }
                         },
                         needs_total_row_count,

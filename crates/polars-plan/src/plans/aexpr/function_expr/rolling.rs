@@ -28,6 +28,7 @@ pub enum IRRollingFunction {
         // Whether is Corr or Cov
         is_corr: bool,
     },
+    Map(PlanCallback<Series, Series>),
 }
 
 impl Display for IRRollingFunction {
@@ -54,6 +55,7 @@ impl Display for IRRollingFunction {
                     "cov"
                 }
             },
+            Map(_) => "map",
         };
 
         write!(f, "rolling_{name}")
@@ -208,7 +210,7 @@ pub(super) fn rolling_corr_cov(
 
     if is_corr {
         let var_x = x.rolling_var(rolling_options.clone())?;
-        let var_y = y.rolling_var(rolling_options.clone())?;
+        let var_y = y.rolling_var(rolling_options)?;
 
         let base = (var_x * var_y).unwrap();
         let sc = Scalar::new(
@@ -217,11 +219,23 @@ pub(super) fn rolling_corr_cov(
         );
         let denominator = pow(&mut [base.into_column(), sc.into_column("".into())])
             .unwrap()
-            .unwrap()
             .take_materialized_series();
 
         Ok((numerator / denominator)?.into_column())
     } else {
         Ok(numerator.into_column())
     }
+}
+
+pub fn rolling_map(
+    c: &Column,
+    rolling_options: RollingOptionsFixedWindow,
+    f: PlanCallback<Series, Series>,
+) -> PolarsResult<Column> {
+    c.as_materialized_series()
+        .rolling_map(
+            &(|s: &Series| f.call(s.clone())?.strict_cast(s.dtype())) as &_,
+            rolling_options,
+        )
+        .map(Column::from)
 }

@@ -428,7 +428,7 @@ impl Series {
                     new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
                         let dtype = cast_dtype(&field.dtype).unwrap_or(field.dtype);
                         Field {
-                            name: field.name.clone(),
+                            name: field.name,
                             dtype,
                         }
                     }));
@@ -1163,7 +1163,7 @@ mod test {
         }
 
         {
-            let mut s2 = s2.clone();
+            let mut s2 = s2;
             s2.extend(&s1).unwrap();
             assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
         }

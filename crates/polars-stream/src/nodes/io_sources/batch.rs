@@ -10,27 +10,28 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::async_executor::{JoinHandle, TaskPriority, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::{
+use crate::nodes::io_sources::multi_scan::reader_interface::output::{
     FileReaderOutputRecv, FileReaderOutputSend,
 };
-use crate::nodes::io_sources::multi_file_reader::reader_interface::{
+use crate::nodes::io_sources::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks,
 };
 
 pub mod builder {
-
     use std::sync::{Arc, Mutex};
 
     use polars_utils::pl_str::PlSmallStr;
 
     use super::BatchFnReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::FileReader;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-    use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
+    use crate::execute::StreamingExecutionState;
+    use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
+    use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+    use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 
     pub struct BatchFnReaderBuilder {
         pub name: PlSmallStr,
         pub reader: Mutex<Option<BatchFnReader>>,
+        pub execution_state: Mutex<Option<StreamingExecutionState>>,
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
@@ -42,6 +43,10 @@ pub mod builder {
             ReaderCapabilities::empty()
         }
 
+        fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
+            *self.execution_state.lock().unwrap() = Some(execution_state.clone());
+        }
+
         fn build_file_reader(
             &self,
             _source: polars_plan::prelude::ScanSource,
@@ -50,13 +55,16 @@ pub mod builder {
         ) -> Box<dyn FileReader> {
             assert_eq!(scan_source_idx, 0);
 
-            Box::new(
-                self.reader
-                    .try_lock()
-                    .unwrap()
-                    .take()
-                    .expect("BatchFnReaderBuilder called more than once"),
-            ) as Box<dyn FileReader>
+            let mut reader = self
+                .reader
+                .try_lock()
+                .unwrap()
+                .take()
+                .expect("BatchFnReaderBuilder called more than once");
+
+            reader.execution_state = Some(self.execution_state.lock().unwrap().clone().unwrap());
+
+            Box::new(reader) as Box<dyn FileReader>
         }
     }
 
@@ -73,33 +81,77 @@ pub mod builder {
 pub type GetBatchFn =
     Box<dyn Fn(&StreamingExecutionState) -> PolarsResult<Option<DataFrame>> + Send + Sync>;
 
-/// Wraps `GetBatchFn` to support peeking.
-pub struct GetBatchState {
-    func: GetBatchFn,
-    peek: Option<DataFrame>,
-}
+pub use get_batch_state::GetBatchState;
 
-impl GetBatchState {
-    pub fn peek(&mut self, state: &StreamingExecutionState) -> PolarsResult<Option<&DataFrame>> {
-        if self.peek.is_none() {
-            self.peek = (self.func)(state)?;
-        }
+mod get_batch_state {
+    use polars_io::pl_async::get_runtime;
 
-        Ok(self.peek.as_ref())
+    use super::{DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
+
+    /// Wraps `GetBatchFn` to support peeking.
+    pub struct GetBatchState {
+        func: GetBatchFn,
+        peek: Option<DataFrame>,
     }
 
-    pub fn next(&mut self, state: &StreamingExecutionState) -> PolarsResult<Option<DataFrame>> {
-        if let Some(df) = self.peek.take() {
-            Ok(Some(df))
-        } else {
-            (self.func)(state)
+    impl GetBatchState {
+        pub async fn next(
+            mut slf: Self,
+            execution_state: StreamingExecutionState,
+        ) -> PolarsResult<(Self, Option<DataFrame>)> {
+            get_runtime()
+                .spawn_blocking({
+                    move || unsafe { slf.next_impl(&execution_state).map(|x| (slf, x)) }
+                })
+                .await
+                .unwrap()
+        }
+
+        pub async fn peek(
+            mut slf: Self,
+            execution_state: StreamingExecutionState,
+        ) -> PolarsResult<(Self, Option<DataFrame>)> {
+            get_runtime()
+                .spawn_blocking({
+                    move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
+                })
+                .await
+                .unwrap()
+        }
+
+        /// # Safety
+        /// This may deadlock if the caller is an async executor thread, as the `GetBatchFn` may
+        /// be a Python function that re-enters the streaming engine before returning.
+        pub unsafe fn peek_impl(
+            &mut self,
+            state: &StreamingExecutionState,
+        ) -> PolarsResult<Option<DataFrame>> {
+            if self.peek.is_none() {
+                self.peek = (self.func)(state)?;
+            }
+
+            Ok(self.peek.clone())
+        }
+
+        /// # Safety
+        /// This may deadlock if the caller is an async executor thread, as the `GetBatchFn` may
+        /// be a Python function that re-enters the streaming engine before returning.
+        unsafe fn next_impl(
+            &mut self,
+            state: &StreamingExecutionState,
+        ) -> PolarsResult<Option<DataFrame>> {
+            if let Some(df) = self.peek.take() {
+                Ok(Some(df))
+            } else {
+                (self.func)(state)
+            }
         }
     }
-}
 
-impl From<GetBatchFn> for GetBatchState {
-    fn from(func: GetBatchFn) -> Self {
-        Self { func, peek: None }
+    impl From<GetBatchFn> for GetBatchState {
+        fn from(func: GetBatchFn) -> Self {
+            Self { func, peek: None }
+        }
     }
 }
 
@@ -107,6 +159,7 @@ pub struct BatchFnReader {
     pub name: PlSmallStr,
     pub output_schema: Option<SchemaRef>,
     pub get_batch_state: Option<GetBatchState>,
+    pub execution_state: Option<StreamingExecutionState>,
     pub verbose: bool,
 }
 
@@ -129,7 +182,7 @@ impl FileReader for BatchFnReader {
             num_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
-                    file_schema_tx,
+                    mut file_schema_tx,
                     n_rows_in_file_tx,
                     row_position_on_end_tx,
                 },
@@ -138,9 +191,13 @@ impl FileReader for BatchFnReader {
             panic!("unsupported args: {:?}", &args)
         };
 
-        // Must send this first before we `take()` the GetBatchState.
-        if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(self._file_schema()?);
+        let execution_state = self.execution_state().clone();
+
+        if file_schema_tx.is_some() && self.output_schema.is_some() {
+            _ = file_schema_tx
+                .take()
+                .unwrap()
+                .try_send(self.output_schema.clone().unwrap());
         }
 
         let mut get_batch_state = self
@@ -148,9 +205,6 @@ impl FileReader for BatchFnReader {
             .take()
             // If this is ever needed we can buffer
             .expect("unimplemented: BatchFnReader called more than once");
-
-        // FIXME: Propagate this from BeginReadArgs.
-        let exec_state = StreamingExecutionState::default();
 
         let verbose = self.verbose;
 
@@ -161,13 +215,32 @@ impl FileReader for BatchFnReader {
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
         let handle = spawn(TaskPriority::Low, async move {
+            if let Some(mut file_schema_tx) = file_schema_tx {
+                let opt_df;
+
+                (get_batch_state, opt_df) =
+                    GetBatchState::peek(get_batch_state, execution_state.clone()).await?;
+
+                _ = file_schema_tx
+                    .try_send(opt_df.map(|df| df.schema().clone()).unwrap_or_default())
+            }
+
             let mut seq: u64 = 0;
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
 
             let mut n_rows_seen: usize = 0;
 
-            while let Some(df) = get_batch_state.next(&exec_state)? {
+            loop {
+                let opt_df;
+
+                (get_batch_state, opt_df) =
+                    GetBatchState::next(get_batch_state, execution_state.clone()).await?;
+
+                let Some(df) = opt_df else {
+                    break;
+                };
+
                 n_rows_seen = n_rows_seen.saturating_add(df.height());
 
                 if morsel_sender
@@ -192,7 +265,16 @@ impl FileReader for BatchFnReader {
                     eprintln!("[BatchFnReader]: read to end for full row count");
                 }
 
-                while let Some(df) = get_batch_state.next(&exec_state)? {
+                loop {
+                    let opt_df;
+
+                    (get_batch_state, opt_df) =
+                        GetBatchState::next(get_batch_state, execution_state.clone()).await?;
+
+                    let Some(df) = opt_df else {
+                        break;
+                    };
+
                     n_rows_seen = n_rows_seen.saturating_add(df.height());
                 }
 
@@ -210,20 +292,9 @@ impl FileReader for BatchFnReader {
 }
 
 impl BatchFnReader {
-    pub fn _file_schema(&mut self) -> PolarsResult<SchemaRef> {
-        if self.output_schema.is_none() {
-            let exec_state = StreamingExecutionState::default();
-
-            let schema =
-                if let Some(df) = self.get_batch_state.as_mut().unwrap().peek(&exec_state)? {
-                    df.schema().clone()
-                } else {
-                    SchemaRef::default()
-                };
-
-            self.output_schema = Some(schema);
-        }
-
-        Ok(self.output_schema.clone().unwrap())
+    /// # Panics
+    /// Panics if `self.execution_state` is `None`.
+    fn execution_state(&self) -> &StreamingExecutionState {
+        self.execution_state.as_ref().unwrap()
     }
 }

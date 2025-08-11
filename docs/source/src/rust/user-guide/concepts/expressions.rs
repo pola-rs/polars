@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([
             bmi.clone().alias("bmi"),
-            bmi.clone().mean().alias("avg_bmi"),
+            bmi.mean().alias("avg_bmi"),
             lit(25).alias("ideal_max_bmi"),
         ])
         .collect()?;
@@ -121,7 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let expr = (dtype_col(&DataType::Float64).as_selector().as_expr() * lit(1.1))
         .name()
         .suffix("*1.1");
-    let result = df.clone().lazy().select([expr.clone()]).collect()?;
+    let result = df.lazy().select([expr.clone()]).collect()?;
     println!("{result}");
     // --8<-- [end:expression-expansion-1]
 
@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "letters" => ["A", "B", "C", "D"],
     )
     .unwrap();
-    let result = df2.clone().lazy().select([expr.clone()]).collect()?;
+    let result = df2.lazy().select([expr]).collect()?;
     println!("{result}");
     // --8<-- [end:expression-expansion-2]
 

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.32.0-beta.1"
+version = "1.32.2"
 edition = "2021"
 
 [lib]
@@ -11,18 +11,9 @@ crate-type = ["cdylib"]
 libc = { workspace = true }
 # Explicit dependency is needed to add bigidx in CI during release
 polars = { workspace = true }
-polars-python = { workspace = true, features = ["pymethods", "iejoin"] }
+polars-python = { workspace = true, features = ["allocator", "c_api", "pymethods", "iejoin"] }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "extension-module", "multiple-pymethods"] }
 
-[target.'cfg(all(any(not(target_family = "unix"), target_os = "emscripten", allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
-mimalloc = { version = "0.1", default-features = false }
-
-# Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
-[target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten"), not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"] }
-
-[target.'cfg(all(target_family = "unix", target_os = "macos", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"] }
 either = { workspace = true }
 
 [features]
@@ -111,7 +102,7 @@ full = [
   "performant",
 ]
 
-default_alloc = []
+default_alloc = ["polars-python/default_alloc"]
 default = ["full", "nightly"]
 
 [lints]

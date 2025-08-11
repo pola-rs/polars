@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use super::*;
+use crate::dsl::default_values::DefaultFieldValues;
+pub mod default_values;
 pub mod deletion;
 
 #[cfg(feature = "python")]
@@ -237,6 +239,9 @@ pub struct UnifiedScanArgs {
     pub glob: bool,
 
     pub projection: Option<Arc<[PlSmallStr]>>,
+    pub column_mapping: Option<ColumnMapping>,
+    /// Default values for missing columns.
+    pub default_values: Option<DefaultFieldValues>,
     pub row_index: Option<RowIndex>,
     /// Slice applied before predicates
     pub pre_slice: Option<Slice>,
@@ -247,7 +252,6 @@ pub struct UnifiedScanArgs {
     pub include_file_paths: Option<PlSmallStr>,
 
     pub deletion_files: Option<DeletionFilesList>,
-    pub column_mapping: Option<ColumnMapping>,
 }
 
 impl Default for UnifiedScanArgs {
@@ -260,6 +264,8 @@ impl Default for UnifiedScanArgs {
             cache: false,
             glob: true,
             projection: None,
+            column_mapping: None,
+            default_values: None,
             row_index: None,
             pre_slice: None,
             cast_columns_policy: CastColumnsPolicy::default(),
@@ -267,7 +273,6 @@ impl Default for UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::default(),
             include_file_paths: None,
             deletion_files: None,
-            column_mapping: None,
         }
     }
 }

@@ -22,7 +22,7 @@ mod map;
 mod numpy_ufunc;
 #[cfg(feature = "pymethods")]
 mod scatter;
-
+pub(crate) use import::import_schema_pycapsule;
 use polars::prelude::{Column, Series};
 use pyo3::pyclass;
 

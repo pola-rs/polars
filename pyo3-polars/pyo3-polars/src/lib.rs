@@ -48,4 +48,17 @@ pub mod error;
 #[cfg(feature = "derive")]
 pub mod export;
 
+pub mod types;
+
 pub use crate::alloc::PolarsAllocator;
+mod ffi;
+
+use once_cell::sync::Lazy;
+use pyo3::prelude::*;
+pub use types::*;
+
+pub(crate) static POLARS: Lazy<Py<PyModule>> =
+    Lazy::new(|| Python::with_gil(|py| PyModule::import(py, "polars").unwrap().unbind()));
+
+pub(crate) static SERIES: Lazy<Py<PyAny>> =
+    Lazy::new(|| Python::with_gil(|py| POLARS.getattr(py, "Series").unwrap()));

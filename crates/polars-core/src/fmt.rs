@@ -713,7 +713,7 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = vec![ellipsis.clone(); self.columns.len()];
+                let dots: Vec<String> = vec![ellipsis; self.columns.len()];
                 table.add_row(dots);
             }
             let tbl_fallback_width = 100;

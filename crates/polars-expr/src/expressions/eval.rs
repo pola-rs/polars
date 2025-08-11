@@ -292,7 +292,7 @@ impl EvalExpr {
                     .map(|len| {
                         let c = input.slice(0, len);
                         if (len - c.null_count()) >= min_samples {
-                            let df = c.clone().into_frame();
+                            let df = c.into_frame();
                             let out = self
                                 .evaluation
                                 .evaluate(&df, state)?

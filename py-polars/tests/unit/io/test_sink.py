@@ -106,3 +106,40 @@ def test_sink_to_file(tmp_path: Path, sink: Any, scan: Any) -> None:
             scan(f).collect(),
             df,
         )
+
+
+@pytest.mark.parametrize(("scan", "sink"), SINKS)
+def test_sink_empty(sink: Any, scan: Any) -> None:
+    df = pl.LazyFrame(data={"col1": ["a"]})
+
+    df_empty = pl.LazyFrame(
+        data={"col1": []},
+        schema={"col1": str},
+    )
+
+    expected = df_empty.join(df, how="cross").collect()
+    expected_schema = expected.schema
+
+    kwargs = {}
+    if scan == pl.scan_ndjson:
+        kwargs["schema"] = expected_schema
+
+    # right empty
+    f = io.BytesIO()
+    sink(df.join(df_empty, how="cross"), f)
+    f.seek(0)
+    assert_frame_equal(scan(f, **kwargs), expected.lazy())
+
+    # left empty
+    f.seek(0)
+    sink(df_empty.join(df, how="cross"), f)
+    f.truncate()
+    f.seek(0)
+    assert_frame_equal(scan(f, **kwargs), expected.lazy())
+
+    # both empty
+    f.seek(0)
+    sink(df_empty.join(df_empty, how="cross"), f)
+    f.truncate()
+    f.seek(0)
+    assert_frame_equal(scan(f, **kwargs), expected.lazy())

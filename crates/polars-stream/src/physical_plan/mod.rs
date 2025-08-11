@@ -33,9 +33,9 @@ use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::ForbidExtraColumns;
-use crate::nodes::io_sources::multi_file_reader::initialization::projection::ProjectionBuilder;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
+use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -193,6 +193,23 @@ pub enum PhysNodeKind {
         sort_options: SortMultipleOptions,
     },
 
+    TopK {
+        input: PhysStream,
+        k: PhysStream,
+        by_column: Vec<ExprIR>,
+        reverse: Vec<bool>,
+        nulls_last: Vec<bool>,
+    },
+
+    Repeat {
+        value: PhysStream,
+        repeats: PhysStream,
+    },
+
+    // Parameter is the input stream
+    Rle(PhysStream),
+    RleId(PhysStream),
+
     OrderedUnion {
         inputs: Vec<PhysStream>,
     },
@@ -330,6 +347,8 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
             | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::Rle(input)
+            | PhysNodeKind::RleId(input)
             | PhysNodeKind::GroupBy { input, .. } => {
                 rec!(input.node);
                 visit(input);
@@ -373,6 +392,13 @@ fn visit_node_inputs_mut(
                 visit(input_right);
             },
 
+            PhysNodeKind::TopK { input, k, .. } => {
+                rec!(input.node);
+                rec!(k.node);
+                visit(input);
+                visit(k);
+            },
+
             PhysNodeKind::DynamicSlice {
                 input,
                 offset,
@@ -384,6 +410,13 @@ fn visit_node_inputs_mut(
                 visit(input);
                 visit(offset);
                 visit(length);
+            },
+
+            PhysNodeKind::Repeat { value, repeats } => {
+                rec!(value.node);
+                rec!(repeats.node);
+                visit(value);
+                visit(repeats);
             },
 
             PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {

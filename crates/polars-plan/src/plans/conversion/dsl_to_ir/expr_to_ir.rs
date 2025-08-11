@@ -314,7 +314,6 @@ pub(super) fn to_aexpr_impl(
         Expr::AnonymousFunction {
             input,
             function,
-            output_type,
             options,
             fmt_str,
         } => {
@@ -327,17 +326,11 @@ pub(super) fn to_aexpr_impl(
 
             let fields = input
                 .iter()
-                .map(|e| e.field(ctx.schema, Context::Default, ctx.arena))
+                .map(|e| e.field(ctx.schema, ctx.arena))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             let function = function.materialize()?;
-            let output_type = output_type.materialize()?;
-            function
-                .as_ref()
-                .resolve_dsl(ctx.schema, fields.first().map(|f| f.dtype()))?;
-            output_type.as_ref().resolve_dsl(ctx.schema)?;
-
-            let out = output_type.get_field(ctx.schema, Context::Default, &fields)?;
+            let out = function.get_field(ctx.schema, &fields)?;
             let output_dtype = out.dtype();
 
             #[cfg(feature = "python")]
@@ -364,7 +357,6 @@ pub(super) fn to_aexpr_impl(
                 AExpr::AnonymousFunction {
                     input,
                     function: LazySerde::Deserialized(function),
-                    output_type: LazySerde::Deserialized(output_type),
                     options,
                     fmt_str,
                 },
@@ -423,10 +415,7 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let expr_dtype =
-                ctx.arena
-                    .get(expr)
-                    .to_dtype(ctx.schema, Context::Default, ctx.arena)?;
+            let expr_dtype = ctx.arena.get(expr).to_dtype(ctx.schema, ctx.arena)?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
             // Perform this before schema resolution so that we can better error messages.

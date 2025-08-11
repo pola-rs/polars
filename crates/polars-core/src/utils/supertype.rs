@@ -600,7 +600,7 @@ fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
 pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
     into_iter: I,
 ) -> PolarsResult<DataType> {
-    let mut iter = into_iter.clone().into_iter();
+    let mut iter = into_iter.into_iter();
 
     let mut st = iter
         .next()

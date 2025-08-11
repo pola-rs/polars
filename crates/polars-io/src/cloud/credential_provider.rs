@@ -3,7 +3,7 @@ use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 #[cfg(feature = "aws")]
@@ -65,11 +65,16 @@ impl PlCredentialProvider {
     /// credential provider.
     ///
     /// This returns `Option` as the auto-initialization case is fallible and falls back to None.
-    pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+    pub(crate) fn try_into_initialized(
+        self,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Option<Self>> {
         match self {
             Self::Function(_) => Ok(Some(self)),
             #[cfg(feature = "python")]
-            Self::Python(v) => Ok(v.try_into_initialized()?.map(Self::Python)),
+            Self::Python(v) => Ok(v
+                .try_into_initialized(clear_cached_credentials)?
+                .map(Self::Python)),
         }
     }
 }
@@ -431,15 +436,7 @@ impl<C: Clone> FetchedCredentialsCache<C> {
             .unwrap()
             .as_secs();
 
-        // Ensure the credential is valid for at least this many seconds to
-        // accommodate for latency.
-        const MIN_REMAINING_TIME: u64 = 3;
-
-        let remaining = last_fetched_expiry.saturating_sub(current_time);
-
-        if remaining < MIN_REMAINING_TIME {
-            tokio::time::sleep(Duration::from_secs(MIN_REMAINING_TIME)).await;
-
+        if *last_fetched_expiry <= current_time {
             if verbose {
                 eprintln!(
                     "[FetchedCredentialsCache]: \
@@ -504,10 +501,10 @@ mod python_impl {
     use polars_error::{PolarsError, PolarsResult};
     use polars_utils::pl_str::PlSmallStr;
     use polars_utils::python_function::PythonObject;
-    use pyo3::Python;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+    use pyo3::{Python, intern};
 
     use super::IntoCredentialProvider;
 
@@ -540,13 +537,17 @@ mod python_impl {
         /// This exists as a separate step that must be called beforehand. This approach is easier
         /// as the alternative is to refactor the `IntoCredentialProvider` trait to return
         /// `PolarsResult<Option<T>>` for every single function.
-        pub(super) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+        pub(super) fn try_into_initialized(
+            self,
+            clear_cached_credentials: bool,
+        ) -> PolarsResult<Option<Self>> {
             match self {
                 Self::Builder(py_object) => {
                     let opt_initialized_py_object = Python::with_gil(|py| {
-                        let build_fn = py_object.getattr(py, "build_credential_provider")?;
+                        let build_fn =
+                            py_object.getattr(py, intern!(py, "build_credential_provider"))?;
 
-                        let v = build_fn.call0(py)?;
+                        let v = build_fn.call1(py, (clear_cached_credentials,))?;
                         let v = (!v.is_none(py)).then_some(v);
 
                         pyo3::PyResult::Ok(v)

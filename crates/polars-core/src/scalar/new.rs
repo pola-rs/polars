@@ -86,13 +86,13 @@ impl Scalar {
         use polars_dtype::categorical::Categories;
 
         let categories = Categories::new(name, namespace, physical);
-        let dt_mapping = categories.mapping().clone();
-        let av_mapping = categories.mapping().clone();
+        let dt_mapping = categories.mapping();
+        let av_mapping = categories.mapping();
 
         let value = av_mapping.insert_cat(value)?;
 
         Ok(Scalar::new(
-            DataType::Categorical(categories.clone(), dt_mapping),
+            DataType::Categorical(categories, dt_mapping),
             AnyValue::CategoricalOwned(value, av_mapping),
         ))
     }

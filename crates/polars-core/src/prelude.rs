@@ -7,6 +7,7 @@ pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
 pub use polars_compute::rolling::{QuantileMethod, RollingFnParams, RollingVarParams};
+pub use polars_row::RowEncodingOptions;
 pub use polars_utils::aliases::*;
 pub use polars_utils::index::{ChunkId, IdxSize, NullableIdxSize};
 pub use polars_utils::pl_str::PlSmallStr;
@@ -55,6 +56,7 @@ pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
 pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 pub use crate::series::arithmetic::{LhsNumOps, NumOpsDispatch};
+pub use crate::series::implementations::null::NullChunked;
 pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;

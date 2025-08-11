@@ -8,6 +8,7 @@ import subprocess
 import sys
 import zoneinfo
 from datetime import datetime
+from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -62,8 +63,22 @@ class CredentialProvider(abc.ABC):
     Base class for credential providers.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+    """
+
+    @abc.abstractmethod
+    def __call__(self) -> CredentialProviderFunctionReturn:
+        """Fetches the credentials."""
+
+
+class CachingCredentialProvider(CredentialProvider, abc.ABC):
+    """
+    Base class for credential providers that has built-in caching.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(self) -> None:
@@ -78,52 +93,71 @@ class CredentialProvider(abc.ABC):
             )
 
     def __call__(self) -> CredentialProviderFunctionReturn:
-        """Fetches the credentials."""
         if os.getenv("POLARS_DISABLE_PYTHON_CREDENTIAL_CACHING") == "1":
             self._cached_credentials.set(None)
+
             return self.retrieve_credentials_impl()
 
-        if not isinstance(getattr(self, "_cached_credentials", None), NoPickleOption):
-            msg = (
-                f"[{type(self).__name__} @ {hex(id(self))}]: `_cached_credentials` attribute "
-                "not found. This can happen if a subclass forgets to call "
-                f"super().__init__() ({type(self) = })"
-            )
-            raise AttributeError(msg)  # noqa: TRY004
+        credentials = self._cached_credentials.get()
 
-        cached = self._cached_credentials.get()
-
-        if cached is None or (
-            (expiry := cached[1]) is not None
+        if credentials is None or (
+            (expiry := credentials[1]) is not None
             and expiry <= int(datetime.now().timestamp())
         ):
-            self._cached_credentials.set(self.retrieve_credentials_impl())
+            credentials = self.retrieve_credentials_impl()
+            self._cached_credentials.set(credentials)
             self._has_logged_use_cache = False
-            cached = self._cached_credentials.get()
-            assert cached is not None
 
         elif verbose() and not self._has_logged_use_cache:
-            expiry = cached[1]
+            expiry = credentials[1]
             eprint(
                 f"[{type(self).__name__} @ {hex(id(self))}]: Using cached credentials ({expiry = })"
             )
             self._has_logged_use_cache = True
 
-        return cached
+        creds, expiry = credentials
+
+        return {**creds}, expiry
 
     @abc.abstractmethod
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn: ...
 
+    def clear_cached_credentials(self) -> None:
+        self._cached_credentials.set(None)
 
-class CredentialProviderAWS(CredentialProvider):
+
+class CachedCredentialProvider(CachingCredentialProvider):
+    """
+    Wrapper that adds caching on top of a credential provider.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+    """
+
+    def __init__(
+        self, provider: CredentialProvider | CredentialProviderFunction
+    ) -> None:
+        self._provider = provider
+
+        super().__init__()
+
+    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
+        return self._provider()
+
+    def __repr__(self) -> str:
+        return f"CachedCredentialProvider[{self._provider!r}]"
+
+
+class CredentialProviderAWS(CachingCredentialProvider):
     """
     AWS Credential Provider.
 
     Using this requires the `boto3` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -152,6 +186,7 @@ class CredentialProviderAWS(CredentialProvider):
         super().__init__()
 
         self._ensure_module_availability()
+
         self.profile_name = profile_name
         self.region_name = region_name
         self.assume_role = assume_role
@@ -277,15 +312,15 @@ class CredentialProviderAWS(CredentialProvider):
         """
 
 
-class CredentialProviderAzure(CredentialProvider):
+class CredentialProviderAzure(CachingCredentialProvider):
     """
     Azure Credential Provider.
 
     Using this requires the `azure-identity` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -354,13 +389,9 @@ class CredentialProviderAzure(CredentialProvider):
         ) is not None:
             return v
 
-        # Done like this to bypass mypy, we don't have stubs for azure.identity
-        credential = (
-            self.credential
-            or importlib.import_module("azure.identity").__dict__[
-                "DefaultAzureCredential"
-            ]()
-        )
+        import azure.identity
+
+        credential = self.credential or azure.identity.DefaultAzureCredential()
         token = credential.get_token(*self.scopes, tenant_id=self.tenant_id)
 
         return {
@@ -473,15 +504,15 @@ class CredentialProviderAzure(CredentialProvider):
         )
 
 
-class CredentialProviderGCP(CredentialProvider):
+class CredentialProviderGCP(CachingCredentialProvider):
     """
     GCP Credential Provider.
 
     Using this requires the `google-auth` Python package to be installed.
 
     .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
     """
 
     def __init__(
@@ -508,15 +539,8 @@ class CredentialProviderGCP(CredentialProvider):
 
         import google.auth
 
-        # CI runs with both `mypy` and `mypy --allow-untyped-calls` depending on
-        # Python version. If we add a `type: ignore[no-untyped-call]`, then the
-        # check that runs with `--allow-untyped-calls` will complain about an
-        # unused "type: ignore" comment. And if we don't add the ignore, then
-        # he check that runs `mypy` will complain.
-        #
-        # So we just bypass it with a __dict__[] (because ruff complains about
-        # getattr) :|
-        creds, _ = google.auth.__dict__["default"](
+        self._init_creds = partial(
+            google.auth.default,
             scopes=(
                 scopes
                 if scopes is not None
@@ -526,15 +550,15 @@ class CredentialProviderGCP(CredentialProvider):
             quota_project_id=quota_project_id,
             default_scopes=default_scopes,
         )
-        self.creds = creds
 
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         import google.auth.transport.requests
 
-        self.creds.refresh(google.auth.transport.requests.__dict__["Request"]())
+        creds, _project_id = self._init_creds()
+        creds.refresh(google.auth.transport.requests.Request())  # type: ignore[no-untyped-call, unused-ignore]
 
-        return {"bearer_token": self.creds.token}, (
+        return {"bearer_token": creds.token}, (
             int(
                 (
                     expiry.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
@@ -542,7 +566,7 @@ class CredentialProviderGCP(CredentialProvider):
                     else expiry
                 ).timestamp()
             )
-            if (expiry := self.creds.expiry) is not None
+            if (expiry := creds.expiry) is not None
             else None
         )
 
@@ -560,10 +584,6 @@ class UserProvidedGCPToken(CredentialProvider):
         self.token = token
 
     def __call__(self) -> CredentialProviderFunctionReturn:
-        return self.retrieve_credentials_impl()
-
-    def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
-        """Fetches the credentials."""
         return {"bearer_token": self.token}, None
 
 
@@ -589,5 +609,11 @@ def _get_credentials_from_provider_expiry_aware(
 
         sleep(1 + expires_in)
         creds, _ = credential_provider()
+
+    # Loads the endpoint_url
+    if isinstance(credential_provider, CredentialProviderAWS) and (
+        v := credential_provider._storage_update_options()
+    ):
+        creds = {**creds, **v}
 
     return creds

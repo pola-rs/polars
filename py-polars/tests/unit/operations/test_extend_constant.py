@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -42,11 +42,11 @@ def test_extend_constant(const: Any, dtype: PolarsDataType) -> None:
 
     # test n expr
     expected = pl.Series("s", [None, const, const], dtype=dtype)
-    assert_series_equal(s.extend_constant(const, pl.Series([2])), expected)
+    assert_series_equal(s.extend_constant(const, pl.lit(2)), expected)
 
     # test value expr
     expected = pl.Series("s", [None, const, const, const], dtype=dtype)
-    assert_series_equal(s.extend_constant(pl.Series([const], dtype=dtype), 3), expected)
+    assert_series_equal(s.extend_constant(pl.lit(const, dtype=dtype), 3), expected)
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,7 @@ def test_extend_constant_arr(const: Any, dtype: PolarsDataType) -> None:
 
 def test_extend_by_not_uint_expr() -> None:
     s = pl.Series("s", [1])
-    with pytest.raises(ComputeError, match="value and n should have unit length"):
+    with pytest.raises(ShapeError, match="'value' must be a scalar value"):
         s.extend_constant(pl.Series([2, 3]), 3)
-    with pytest.raises(ComputeError, match="value and n should have unit length"):
+    with pytest.raises(ShapeError, match="'n' must be a scalar value"):
         s.extend_constant(2, pl.Series([3, 4]))

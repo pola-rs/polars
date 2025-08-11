@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
@@ -112,6 +113,10 @@ impl SinkNode for MaxSizePartitionSinkNode {
         self.sink_options.maintain_order
     }
 
+    fn initialize(&mut self, _state: &StreamingExecutionState) -> PolarsResult<()> {
+        Ok(())
+    }
+
     fn spawn_sink(
         &mut self,
         mut recv_port_recv: Receiver<(PhaseOutcome, SinkInputPort)>,
@@ -127,7 +132,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
         // Main Task.
         //
         // Takes the morsels coming in and passes them to underlying sink.
-        let state = state.clone();
+        let task_state = state.clone();
         let input_schema = self.input_schema.clone();
         let max_size = self.max_size;
         let base_path = self.base_path.clone();
@@ -141,7 +146,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
                 num_remaining: IdxSize,
-                node: Box<dyn SinkNode + Send + Sync>,
+                node: Box<dyn SinkNode + Send>,
             }
 
             let verbose = config::verbose();
@@ -172,7 +177,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     "max-size",
                                     ext.as_str(),
                                     verbose,
-                                    &state,
+                                    &task_state,
                                     per_partition_sort_by.as_ref(),
                                 )
                                 .await?;
@@ -263,10 +268,11 @@ impl SinkNode for MaxSizePartitionSinkNode {
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
             let global_partition_metrics = self.partition_metrics.clone();
             let has_error_occurred = has_error_occurred.clone();
+            let task_state = state.clone();
             spawn(TaskPriority::High, async move {
                 let mut partition_metrics = Vec::new();
 
-                while let Ok((mut join_handles, node)) = retire_rx.recv().await {
+                while let Ok((mut join_handles, mut node)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
                         ret.inspect_err(|_| {
                             has_error_occurred.store(true);
@@ -275,7 +281,11 @@ impl SinkNode for MaxSizePartitionSinkNode {
                     if let Some(metrics) = node.get_metrics()? {
                         partition_metrics.push(metrics);
                     }
-                    node.finish()?;
+                    if let Some(finalize) = node.finalize(&task_state) {
+                        finalize.await.inspect_err(|_| {
+                            has_error_occurred.store(true);
+                        })?;
+                    }
                 }
 
                 {
@@ -284,23 +294,31 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         .unwrap()
                         .push(partition_metrics);
                 }
-
                 Ok(())
             })
         }));
     }
 
-    fn finish(&self) -> PolarsResult<()> {
-        if let Some(finish_callback) = &self.finish_callback {
-            let mut partition_metrics = self.partition_metrics.lock().unwrap();
-            let partition_metrics =
-                std::mem::take::<Vec<Vec<WriteMetrics>>>(partition_metrics.as_mut())
-                    .into_iter()
-                    .flatten()
-                    .collect();
-            let df = WriteMetrics::collapse_to_df(partition_metrics, &self.input_schema, None);
-            finish_callback.call(df)?;
-        }
-        Ok(())
+    fn finalize(
+        &mut self,
+        _state: &StreamingExecutionState,
+    ) -> Option<Pin<Box<dyn Future<Output = PolarsResult<()>> + Send>>> {
+        let finish_callback = self.finish_callback.clone();
+        let partition_metrics = self.partition_metrics.clone();
+        let input_schema = self.input_schema.clone();
+
+        Some(Box::pin(async move {
+            if let Some(finish_callback) = &finish_callback {
+                let mut partition_metrics = partition_metrics.lock().unwrap();
+                let partition_metrics =
+                    std::mem::take::<Vec<Vec<WriteMetrics>>>(partition_metrics.as_mut())
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                let df = WriteMetrics::collapse_to_df(partition_metrics, &input_schema, None);
+                finish_callback.call(df)?;
+            }
+            Ok(())
+        }))
     }
 }

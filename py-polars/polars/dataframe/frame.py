@@ -112,9 +112,9 @@ from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
-    from polars.polars import dtype_str_repr as _dtype_str_repr
-    from polars.polars import write_clipboard_string as _write_clipboard_string
+    from polars._plr import PyDataFrame
+    from polars._plr import dtype_str_repr as _dtype_str_repr
+    from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
     import sys
@@ -1733,12 +1733,13 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = False  # type: ignore[assignment]
+            compat_level_py = False
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
+            compat_level_py = compat_level._version
 
-        record_batches = self._df.to_arrow(compat_level)
+        record_batches = self._df.to_arrow(compat_level_py)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -3922,15 +3923,16 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = True  # type: ignore[assignment]
+            compat_level_py = True
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
+            compat_level_py = compat_level._version
 
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc_stream(file, compression, compat_level)
+        self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
@@ -4872,9 +4874,12 @@ class DataFrame:
         └────────┴─────┴─────┴─────┘
         """
         keep_names_as = header_name if include_header else None
+        column_names_: Sequence[str] | None
         if isinstance(column_names, Generator):
-            column_names = [next(column_names) for _ in range(self.height)]
-        return self._from_pydf(self._df.transpose(keep_names_as, column_names))
+            column_names_ = [next(column_names) for _ in range(self.height)]
+        else:
+            column_names_ = column_names  # type: ignore[assignment]
+        return self._from_pydf(self._df.transpose(keep_names_as, column_names_))
 
     def reverse(self) -> DataFrame:
         """
@@ -12385,7 +12390,10 @@ class DataFrame:
 
     def _row_encode(
         self,
-        fields: list[tuple[bool, bool, bool]],
+        *,
+        unordered: bool = False,
+        descending: list[bool] | None = None,
+        nulls_last: list[bool] | None = None,
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -12398,7 +12406,14 @@ class DataFrame:
         - nulls_last
         - no_order
         """
-        return pl.Series._from_pyseries(self._df._row_encode(fields))
+        return self.select_seq(
+            F._row_encode(
+                F.all(),
+                unordered=unordered,
+                descending=descending,
+                nulls_last=nulls_last,
+            )
+        ).to_series()
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

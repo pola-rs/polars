@@ -99,7 +99,7 @@ impl<'a> AnonymousListBuilder<'a> {
             if slf.fast_explode {
                 ca.set_fast_explode();
             }
-            ca.field = Arc::new(Field::new(slf.name.clone(), list_dtype_logical));
+            ca.field = Arc::new(Field::new(slf.name, list_dtype_logical));
             ca
         }
     }
@@ -165,7 +165,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         if slf.fast_explode {
             ca.set_fast_explode();
         }
-        ca.field = Arc::new(Field::new(slf.name.clone(), list_dtype_logical));
+        ca.field = Arc::new(Field::new(slf.name, list_dtype_logical));
         ca
     }
 }

@@ -16,6 +16,7 @@ pub mod chunks;
 pub mod clmul;
 mod config;
 pub mod cpuid;
+pub mod enum_unit_vec;
 pub mod error;
 pub mod floor_divmod;
 pub mod functions;

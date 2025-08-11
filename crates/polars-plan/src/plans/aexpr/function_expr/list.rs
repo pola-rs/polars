@@ -425,7 +425,7 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     list.lst_shift(periods).map(|ok| ok.into_column())
 }
 
-pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let list_ca = s.list()?;
     let offset_s = &args[1];
@@ -439,7 +439,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
                 .unwrap()
                 .extract::<usize>()
                 .unwrap_or(usize::MAX);
-            return Ok(Some(list_ca.lst_slice(offset, slice_len).into_column()));
+            return Ok(list_ca.lst_slice(offset, slice_len).into_column());
         },
         (1, length_slice_len) => {
             check_slice_arg_shape(length_slice_len, list_ca.len(), "length")?;
@@ -502,10 +502,10 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Option<Column>> {
         },
     };
     out.rename(s.name().clone());
-    Ok(Some(out.into_column()))
+    Ok(out.into_column())
 }
 
-pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
@@ -528,133 +528,15 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
         }
     }
 
-    first_ca.lst_concat(other).map(|ca| Some(ca.into_column()))
+    first_ca.lst_concat(other).map(IntoColumn::into_column)
 }
 
-pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Option<Column>> {
+pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
 
-    match index.len() {
-        1 => {
-            let index = index.get(0);
-            if let Some(index) = index {
-                ca.lst_get(index, null_on_oob).map(Column::from).map(Some)
-            } else {
-                Ok(Some(Column::full_null(
-                    ca.name().clone(),
-                    ca.len(),
-                    ca.inner_dtype(),
-                )))
-            }
-        },
-        len if len == ca.len() => {
-            let tmp = ca.rechunk();
-            let arr = tmp.downcast_as_array();
-            let offsets = arr.offsets().as_slice();
-            let take_by = if ca.null_count() == 0 {
-                index
-                    .iter()
-                    .enumerate()
-                    .map(|(i, opt_idx)| match opt_idx {
-                        Some(idx) => {
-                            let (start, end) = unsafe {
-                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
-                            };
-                            let offset = if idx >= 0 { start + idx } else { end + idx };
-                            if offset >= end || offset < start || start == end {
-                                if null_on_oob {
-                                    Ok(None)
-                                } else {
-                                    polars_bail!(ComputeError: "get index is out of bounds");
-                                }
-                            } else {
-                                Ok(Some(offset as IdxSize))
-                            }
-                        },
-                        None => Ok(None),
-                    })
-                    .collect::<Result<IdxCa, _>>()?
-            } else {
-                index
-                    .iter()
-                    .zip(arr.validity().unwrap())
-                    .enumerate()
-                    .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
-                        (true, Some(idx)) => {
-                            let (start, end) = unsafe {
-                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
-                            };
-                            let offset = if idx >= 0 { start + idx } else { end + idx };
-                            if offset >= end || offset < start || start == end {
-                                if null_on_oob {
-                                    Ok(None)
-                                } else {
-                                    polars_bail!(ComputeError: "get index is out of bounds");
-                                }
-                            } else {
-                                Ok(Some(offset as IdxSize))
-                            }
-                        },
-                        _ => Ok(None),
-                    })
-                    .collect::<Result<IdxCa, _>>()?
-            };
-            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }
-                .cast(ca.inner_dtype())
-                .map(Column::from)
-                .map(Some)
-        },
-        _ if ca.len() == 1 => {
-            if ca.null_count() > 0 {
-                return Ok(Some(Column::full_null(
-                    ca.name().clone(),
-                    index.len(),
-                    ca.inner_dtype(),
-                )));
-            }
-            let tmp = ca.rechunk();
-            let arr = tmp.downcast_as_array();
-            let offsets = arr.offsets().as_slice();
-            let start = offsets[0];
-            let end = offsets[1];
-            let out_of_bounds = |offset| offset >= end || offset < start || start == end;
-            let take_by: IdxCa = index
-                .iter()
-                .map(|opt_idx| match opt_idx {
-                    Some(idx) => {
-                        let offset = if idx >= 0 { start + idx } else { end + idx };
-                        if out_of_bounds(offset) {
-                            if null_on_oob {
-                                Ok(None)
-                            } else {
-                                polars_bail!(ComputeError: "get index is out of bounds");
-                            }
-                        } else {
-                            let Ok(offset) = IdxSize::try_from(offset) else {
-                                polars_bail!(ComputeError: "get index is out of bounds");
-                            };
-                            Ok(Some(offset))
-                        }
-                    },
-                    None => Ok(None),
-                })
-                .collect::<Result<IdxCa, _>>()?;
-
-            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }
-                .cast(ca.inner_dtype())
-                .map(Column::from)
-                .map(Some)
-        },
-        len => polars_bail!(
-            ComputeError:
-            "`list.get` expression got an index array of length {} while the list has {} elements",
-            len, ca.len()
-        ),
-    }
+    lst_get(ca, index, null_on_oob)
 }
 
 #[cfg(feature = "list_gather")]

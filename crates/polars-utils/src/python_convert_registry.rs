@@ -11,6 +11,7 @@ pub type ToPython = Arc<dyn Fn(Box<dyn Any>) -> PyResult<Py<PyAny>> + Send + Syn
 pub struct FromPythonConvertRegistry {
     pub partition_target_cb_result: FromPython,
     pub series: FromPython,
+    pub df: FromPython,
 }
 
 #[derive(Clone)]

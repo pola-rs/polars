@@ -9,7 +9,7 @@ from polars.dependencies import numpy as np
 
 # Module not available when building docs
 try:
-    from polars.polars import PySeries
+    from polars._plr import PySeries
 
     _DOCUMENTING = False
 except ImportError:

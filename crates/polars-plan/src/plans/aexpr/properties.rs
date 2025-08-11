@@ -42,6 +42,19 @@ impl AExpr {
         }
     }
 
+    /// Checks whether this expression is row-separable. This only checks the top level expression.
+    pub(crate) fn is_row_separable_top_level(&self) -> bool {
+        use AExpr::*;
+
+        match self {
+            AnonymousFunction { options, .. } => options.is_row_separable(),
+            Function { options, .. } => options.is_row_separable(),
+            Literal(v) => v.is_scalar(),
+            Explode { .. } | Filter { .. } => true,
+            _ => self.is_elementwise_top_level(),
+        }
+    }
+
     pub(crate) fn does_not_modify_top_level(&self) -> bool {
         match self {
             AExpr::Column(_) => true,
@@ -97,14 +110,15 @@ pub fn does_not_modify_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, does_not_modify)
 }
 
-// Properties
-
-/// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
-/// be extended further with any nested expression nodes.
-pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+pub fn is_prop<P: Fn(&AExpr) -> bool>(
+    stack: &mut UnitVec<Node>,
+    ae: &AExpr,
+    expr_arena: &Arena<AExpr>,
+    prop_top_level: P,
+) -> bool {
     use AExpr::*;
 
-    if !ae.is_elementwise_top_level() {
+    if !prop_top_level(ae) {
         return false;
     }
 
@@ -135,6 +149,12 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
     true
 }
 
+/// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
+/// be extended further with any nested expression nodes.
+pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+    is_prop(stack, ae, expr_arena, |ae| ae.is_elementwise_top_level())
+}
+
 pub fn all_elementwise<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,
@@ -147,6 +167,26 @@ where
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
+}
+
+/// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
+/// be extended further with any nested expression nodes.
+pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+    is_prop(stack, ae, expr_arena, |ae| ae.is_row_separable_top_level())
+}
+
+pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
+where
+    Node: From<&'a N>,
+{
+    nodes
+        .iter()
+        .all(|n| is_row_separable_rec(n.into(), expr_arena))
+}
+
+/// Recursive variant of `is_row_separable`
+pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, is_row_separable)
 }
 
 #[derive(Debug, Clone)]
@@ -212,25 +252,28 @@ impl ExprPushdownGroup {
                     } => {
                         debug_assert!(input.len() <= 2);
 
-                        strptime_options.strict
-                            || input
-                                .get(1)
-                                .map(|x| expr_arena.get(x.node()))
-                                .is_some_and(|ae| match ae {
-                                    AExpr::Literal(lv) => {
-                                        lv.extract_str().is_some_and(|ambiguous| match ambiguous {
-                                            "raise" => true,
-                                            "earliest" | "latest" | "null" => false,
-                                            v => {
-                                                if cfg!(debug_assertions) {
-                                                    panic!("unhandled parameter to ambiguous: {v}")
-                                                }
-                                                true
-                                            },
-                                        })
-                                    },
-                                    _ => true,
-                                })
+                        let ambiguous_arg_is_infallible_scalar = input
+                            .get(1)
+                            .map(|x| expr_arena.get(x.node()))
+                            .is_some_and(|ae| match ae {
+                                AExpr::Literal(lv) => {
+                                    lv.extract_str().is_some_and(|ambiguous| match ambiguous {
+                                        "earliest" | "latest" | "null" => true,
+                                        "raise" => false,
+                                        v => {
+                                            if cfg!(debug_assertions) {
+                                                panic!("unhandled parameter to ambiguous: {v}")
+                                            }
+                                            false
+                                        },
+                                    })
+                                },
+                                _ => false,
+                            });
+
+                        let ambiguous_is_fallible = !ambiguous_arg_is_infallible_scalar;
+
+                        strptime_options.strict || ambiguous_is_fallible
                     },
                     AExpr::Cast {
                         expr,
@@ -327,7 +370,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                         matches!(
                             expr_arena
                                 .get(agg)
-                                .get_type(_input_schema, Context::Default, expr_arena)
+                                .get_dtype(_input_schema, expr_arena)
                                 .map(|dt| { dt.is_primitive_numeric() }),
                             Ok(true)
                         )

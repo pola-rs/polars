@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{InitHashMaps, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{
-    AExpr, DataFrameUdf, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by,
-};
+use polars_plan::plans::{AExpr, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by};
 use polars_plan::prelude::{GroupbyOptions, *};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -33,7 +32,7 @@ fn build_group_by_fallback(
     output_schema: Arc<Schema>,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     format_str: Option<String>,
@@ -41,7 +40,7 @@ fn build_group_by_fallback(
     let input_schema = phys_sm[input.node].output_schema.clone();
     let lmdf = Arc::new(LateMaterializedDataFrame::default());
     let mut lp_arena = Arena::default();
-    let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
+    let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
     let group_by_lp_node = lp_arena.add(IR::GroupBy {
         input: input_lp_node,
         keys: keys.to_vec(),
@@ -205,7 +204,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                         .entry(input_id)
                         .or_insert_with(unique_column_name)
                         .clone();
-                    let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
                     let trans_agg_node = expr_arena.add(AExpr::Function {
                         input: vec![ExprIR::from_node(input_col_node, expr_arena)],
                         function: IRFunctionExpr::Bitwise(inner_fn),
@@ -259,7 +258,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                         .entry(input_id)
                         .or_insert_with(unique_column_name)
                         .clone();
-                    let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                    let input_col_node = expr_arena.add(AExpr::Column(input_col));
                     let trans_agg_node = expr_arena.add(AExpr::Function {
                         input: vec![ExprIR::from_node(input_col_node, expr_arena)],
                         function: IRFunctionExpr::Boolean(inner_fn),
@@ -298,7 +297,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 })
                 .collect::<Option<Vec<_>>>()?;
 
-            let mut new_node = node.clone();
+            let mut new_node = node;
             match &mut new_node {
                 AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
                     *input = new_input;
@@ -357,7 +356,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                                 .entry(input_id)
                                 .or_insert_with(unique_column_name)
                                 .clone();
-                            let input_col_node = expr_arena.add(AExpr::Column(input_col.clone()));
+                            let input_col_node = expr_arena.add(AExpr::Column(input_col));
                             trans_agg.set_input(input_col_node);
                             let trans_agg_node = expr_arena.add(AExpr::Agg(trans_agg));
 
@@ -402,7 +401,7 @@ fn try_build_streaming_group_by(
     aggs: &[ExprIR],
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
@@ -531,7 +530,7 @@ pub fn build_group_by_stream(
     output_schema: Arc<Schema>,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    apply: Option<Arc<dyn DataFrameUdf>>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
@@ -560,7 +559,7 @@ pub fn build_group_by_stream(
                 expr_arena,
                 keys,
                 aggs,
-                apply.as_deref(),
+                apply.as_ref(),
                 maintain_order,
             )
             .unwrap();

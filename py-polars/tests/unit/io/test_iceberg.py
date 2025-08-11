@@ -4,15 +4,33 @@ from __future__ import annotations
 import contextlib
 import itertools
 import os
-from datetime import datetime
+import zoneinfo
+from datetime import date, datetime
+from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.parquet as pq
+import pyiceberg
 import pytest
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.partitioning import (
+    BucketTransform,
+    IdentityTransform,
+    PartitionField,
+    PartitionSpec,
+)
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.types import (
+    BinaryType,
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
     IntegerType,
     ListType,
     LongType,
@@ -21,9 +39,13 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
+    TimeType,
+    UUIDType,
 )
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.io.iceberg._utils import _convert_predicate, _to_ast
 from polars.io.iceberg.dataset import IcebergDataset
 from polars.testing import assert_frame_equal
@@ -53,18 +75,18 @@ class TestIcebergScanIO:
     """Test coverage for `iceberg` scan ops."""
 
     def test_scan_iceberg_plain(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
         }
 
     def test_scan_iceberg_snapshot_id(self, iceberg_path: str) -> None:
-        df = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
-        assert len(df.collect()) == 3
-        assert df.collect_schema() == {
+        q = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
+        assert len(q.collect()) == 3
+        assert q.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
@@ -303,6 +325,65 @@ def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
                 "file_path": pl.String,
             },
         ),
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", ["pyiceberg", "native"])
+def test_scan_iceberg_collect_without_version_scans_latest(
+    tmp_path: Path,
+    reader_override: str,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "a", LongType()),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    q = pl.scan_iceberg(tbl, reader_override=reader_override)  # type: ignore[arg-type]
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema={"a": pl.Int64}))
+
+    pl.DataFrame({"a": 1}).write_iceberg(tbl, mode="append")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1}))
+
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    snapshot_id = snapshot.snapshot_id
+
+    q_with_id = pl.scan_iceberg(
+        tbl,
+        reader_override=reader_override,  # type: ignore[arg-type]
+        snapshot_id=snapshot_id,
+    )
+
+    assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
+
+    pl.DataFrame({"a": 2}).write_iceberg(tbl, mode="append")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 1]}))
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    assert_frame_equal(q_with_id.collect(), pl.DataFrame({"a": 1}))
+
+    assert (
+        "IcebergDataset: to_dataset_scan(): early return (snapshot_id_key = "
+        in capfd.readouterr().err
     )
 
 
@@ -1018,3 +1099,399 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
 
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(), df)
     assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), df)
+
+
+def test_scan_iceberg_parquet_prefilter_with_column_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count())
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(
+                field_id=next_field_id(),
+                name="column_1",
+                field_type=StringType(),
+                required=False,
+            ),
+            NestedField(
+                field_id=next_field_id(),
+                name="column_2",
+                field_type=IntegerType(),
+                required=False,
+            ),
+            NestedField(
+                field_id=next_field_id(),
+                name="column_3",
+                field_type=StringType(),
+                required=False,
+            ),
+        ),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    df = pl.DataFrame(
+        {
+            "column_1": ["A", "B", "C", "D", "E", "F"],
+            "column_2": pl.Series([1, 2, 3, 4, 5, 6], dtype=pl.Int32),
+            "column_3": ["P", "Q", "R", "S", "T", "U"],
+        }
+    )
+
+    df.slice(0, 3).write_iceberg(tbl, mode="append")
+    df.slice(3).write_iceberg(tbl, mode="append")
+
+    with tbl.update_schema() as sch:
+        sch.update_column("column_2", LongType())
+
+    with tbl.update_schema() as sch:
+        sch.delete_column("column_1")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("column_3", "column_1")
+
+    with tbl.update_schema() as sch:
+        sch.rename_column("column_2", "column_3")
+
+    with tbl.update_schema() as sch:
+        sch.move_first("column_1")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect().sort("column_3"),
+        pl.DataFrame(
+            {
+                "column_1": ["P", "Q", "R", "S", "T", "U"],
+                "column_3": pl.Series([1, 2, 3, 4, 5, 6], dtype=pl.Int64),
+            }
+        ),
+    )
+
+    q = pl.scan_iceberg(tbl, reader_override="native").filter(pl.col("column_3") == 5)
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        cx.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+        capfd.readouterr()
+        out = q.collect()
+        capture = capfd.readouterr().err
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "column_1": ["T"],
+                "column_3": pl.Series([5], dtype=pl.Int64),
+            }
+        ),
+    )
+
+    # First file
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 0 / 1 row groups" in capture
+    )
+    # Second file
+    assert (
+        "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups" in capture
+    )
+    assert (
+        "[ParquetFileReader]: Pre-filtered decode enabled (1 live, 1 non-live)"
+        in capture
+    )
+
+
+# Note: This test also generally covers primitive type round-tripping.
+@pytest.mark.parametrize("test_uuid", [True, False])
+def test_fill_missing_fields_with_identity_partition_values(
+    test_uuid: bool, tmp_path: Path
+) -> None:
+    from datetime import time
+
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    min_version = parse_version(pyiceberg.__version__) >= (0, 10, 0)
+
+    test_decimal_and_fixed = min_version
+    test_uuid = test_uuid and min_version
+
+    next_field_id = partial(next, itertools.count(1))
+
+    iceberg_schema = IcebergSchema(
+        NestedField(next_field_id(), "height_provider", IntegerType()),
+        NestedField(next_field_id(), "BooleanType", BooleanType()),
+        NestedField(next_field_id(), "IntegerType", IntegerType()),
+        NestedField(next_field_id(), "LongType", LongType()),
+        NestedField(next_field_id(), "FloatType", FloatType()),
+        NestedField(next_field_id(), "DoubleType", DoubleType()),
+        NestedField(next_field_id(), "DateType", DateType()),
+        NestedField(next_field_id(), "TimeType", TimeType()),
+        NestedField(next_field_id(), "TimestampType", TimestampType()),
+        NestedField(next_field_id(), "TimestamptzType", TimestamptzType()),
+        NestedField(next_field_id(), "StringType", StringType()),
+        NestedField(next_field_id(), "BinaryType", BinaryType()),
+        *(
+            [
+                NestedField(next_field_id(), "DecimalType", DecimalType(18, 2)),
+                NestedField(next_field_id(), "FixedType", FixedType(1)),
+            ]
+            if test_decimal_and_fixed
+            else []
+        ),
+        *([NestedField(next_field_id(), "UUIDType", UUIDType())] if test_uuid else []),
+    )
+
+    arrow_tbl = pa.Table.from_pydict(
+        {
+            "height_provider": [1],
+            "BooleanType": [True],
+            "IntegerType": [1],
+            "LongType": [1],
+            "FloatType": [1.0],
+            "DoubleType": [1.0],
+            "DateType": [date(2025, 1, 1)],
+            "TimeType": [time(11, 30)],
+            "TimestampType": [datetime(2025, 1, 1)],
+            "TimestamptzType": [datetime(2025, 1, 1)],
+            "StringType": ["A"],
+            "BinaryType": [b"A"],
+            **(
+                {"DecimalType": [D("1.0")], "FixedType": [b"A"]}
+                if test_decimal_and_fixed
+                else {}
+            ),
+            **({"UUIDType": [b"0000111100001111"]} if test_uuid else {}),
+        },
+        schema=schema_to_pyarrow(iceberg_schema, include_field_ids=False),
+    )
+
+    tbl = catalog.create_table(
+        "namespace.table",
+        iceberg_schema,
+        partition_spec=PartitionSpec(
+            # We have this to offset the indices
+            PartitionField(
+                iceberg_schema.fields[0].field_id, 0, BucketTransform(32), "bucket"
+            ),
+            *(
+                PartitionField(field.field_id, 0, IdentityTransform(), field.name)
+                for field in iceberg_schema.fields[1:]
+            ),
+        ),
+    )
+
+    if test_uuid:
+        # Note: If this starts working one day we can include it in tests.
+        with pytest.raises(
+            pa.ArrowNotImplementedError, match="Keys of type extension<arrow.uuid>"
+        ):
+            tbl.append(arrow_tbl)
+
+        return
+
+    tbl.append(arrow_tbl)
+
+    expect = pl.DataFrame(
+        [
+            pl.Series('height_provider', [1], dtype=pl.Int32),
+            pl.Series('BooleanType', [True], dtype=pl.Boolean),
+            pl.Series('IntegerType', [1], dtype=pl.Int32),
+            pl.Series('LongType', [1], dtype=pl.Int64),
+            pl.Series('FloatType', [1.0], dtype=pl.Float32),
+            pl.Series('DoubleType', [1.0], dtype=pl.Float64),
+            pl.Series('DateType', [date(2025, 1, 1)], dtype=pl.Date),
+            pl.Series('TimeType', [time(11, 30)], dtype=pl.Time),
+            pl.Series('TimestampType', [datetime(2025, 1, 1, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
+            pl.Series('TimestamptzType', [datetime(2025, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC'))], dtype=pl.Datetime(time_unit='us', time_zone='UTC')),
+            pl.Series('StringType', ['A'], dtype=pl.String),
+            pl.Series('BinaryType', [b'A'], dtype=pl.Binary),
+            *(
+                [
+                    pl.Series('DecimalType', [D('1.00')], dtype=pl.Decimal(precision=18, scale=2)),
+                    pl.Series('FixedType', [b'A'], dtype=pl.Binary),
+                ]
+                if test_decimal_and_fixed
+                else []
+            ),
+        ]
+    )  # fmt: skip
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(),
+        expect,
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        expect,
+    )
+
+    dfiles = [*tbl.scan().plan_files()]
+
+    assert len(dfiles) == 1
+
+    p = dfiles[0].file.file_path.removeprefix("file://")
+
+    # Drop every column except 'height_provider'
+    pq.write_table(
+        pa.Table.from_pydict(
+            {"height_provider": [1]},
+            schema=schema_to_pyarrow(iceberg_schema.select("height_provider")),
+        ),
+        p,
+    )
+
+    out = pl.DataFrame(tbl.scan().to_arrow())
+
+    exclude_from_pyiceberg_check = ["TimeType"]
+
+    # Issues with reads from PyIceberg:
+    # * Int32 / Float32 get upcast to 64-bit
+    # * Logical types load as physical. TimeType cannot pass even with cast due
+    #   to it being in microseconds, whereas polars uses nanoseconds.
+    for name in exclude_from_pyiceberg_check:
+        # xfail, these are known problematic
+        with pytest.raises(AssertionError):
+            assert_frame_equal(out.select(name), expect.select(name))
+
+    assert_frame_equal(
+        out.select(
+            pl.col(c).cast(dt)
+            for c, dt in expect.drop(exclude_from_pyiceberg_check).schema.items()
+        ),
+        expect.drop(exclude_from_pyiceberg_check),
+    )
+
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
+
+
+@pytest.mark.skipif(
+    parse_version(pyiceberg.__version__) < (0, 10, 0),
+    reason="PyIceberg support for partitioning on nested primitive fields",
+)
+def test_fill_missing_fields_with_identity_partition_values_nested(
+    tmp_path: Path,
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("namespace")
+
+    next_field_id = partial(next, itertools.count())
+    next_field_id()
+
+    iceberg_schema = IcebergSchema(
+        NestedField(next_field_id(), "height_provider", IntegerType()),
+        NestedField(
+            next_field_id(),
+            "struct_1",
+            StructType(
+                NestedField(
+                    next_field_id(),
+                    "struct_2",
+                    StructType(NestedField(2001, "field_1", LongType())),
+                )
+            ),
+        ),
+    )
+
+    tbl = catalog.create_table(
+        "namespace.table",
+        iceberg_schema,
+        partition_spec=PartitionSpec(
+            PartitionField(2001, 0, IdentityTransform(), "field_1")
+        ),
+    )
+
+    pl.DataFrame(
+        {"height_provider": [0], "struct_1": [{"struct_2": {"field_1": 300}}]},
+        schema=pl.Schema(iceberg_schema.as_arrow()),
+    ).write_iceberg(tbl, mode="append")
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("height_provider", [0], dtype=pl.Int32),
+            pl.Series(
+                "struct_1",
+                [{"struct_2": {"field_1": 300}}],
+                dtype=pl.Struct({"struct_2": pl.Struct({"field_1": pl.Int64})}),
+            ),
+        ]
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="pyiceberg").collect(),
+        expect,
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        expect,
+    )
+
+    # Note: We will still match even if the partition field is renamed, since it still
+    # has the same source field ID.
+    with tbl.update_spec() as spu:
+        spu.rename_field("field_1", "AAA")
+
+    pl.DataFrame(
+        {"height_provider": [None], "struct_1": [{"struct_2": {"field_1": 301}}]},
+        schema=pl.Schema(iceberg_schema.as_arrow()),
+    ).write_iceberg(tbl, mode="append")
+
+    with tbl.update_spec() as spu:
+        spu.remove_field("AAA")
+
+    pl.DataFrame(
+        {"height_provider": [None], "struct_1": [{"struct_2": {"field_1": 302}}]},
+        schema=pl.Schema(iceberg_schema.as_arrow()),
+    ).write_iceberg(tbl, mode="append")
+
+    for i, data_file in enumerate(tbl.scan().plan_files()):
+        p = data_file.file.file_path
+
+        pq.write_table(
+            pa.Table.from_pydict(
+                {"height_provider": [i]},
+                schema=schema_to_pyarrow(iceberg_schema.select("height_provider")),
+            ),
+            p,
+        )
+
+    # Deleting partitions only takes effect for newly added files.
+    expect = pl.DataFrame(
+        [
+            pl.Series("height_provider", [0, 1, 2], dtype=pl.Int32),
+            pl.Series(
+                "struct_1",
+                [
+                    None,
+                    {"struct_2": {"field_1": 301}},
+                    {"struct_2": {"field_1": 300}},
+                ],
+                dtype=pl.Struct({"struct_2": pl.Struct({"field_1": pl.Int64})}),
+            ),
+        ]
+    )
+
+    assert_frame_equal(pl.scan_iceberg(tbl, reader_override="native").collect(), expect)
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").select("struct_1").collect(),
+        expect.select("struct_1"),
+    )

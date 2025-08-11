@@ -2086,16 +2086,16 @@ def test_from_epoch_seq_input() -> None:
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # float
     a = pl.Series("a", [1.0])
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # duration
     a = pl.Series("a", [1], dtype=pl.Duration("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
     # datetime
     a = pl.Series("a", [1], dtype=pl.Datetime("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+    assert (a - a.max()).name == (a.max() - a).name == a.name  # type: ignore[union-attr]
 
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
@@ -2290,7 +2290,7 @@ def test_is_close_invalid_abs_tol() -> None:
 
 def test_is_close_invalid_rel_tol() -> None:
     with pytest.raises(pl.exceptions.ComputeError):
-        pl.select(pl.lit(1.0).is_close(1, rel_tol=1.0))
+        pl.select(pl.lit(1.0).is_close(1, rel_tol=-1.0))
 
 
 def test_comparisons_structs_raise() -> None:

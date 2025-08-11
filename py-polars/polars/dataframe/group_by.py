@@ -309,10 +309,10 @@ class GroupBy:
             msg = "cannot call `map_groups` when grouping by an expression"
             raise TypeError(msg)
 
+        by_strs: list[str] = self.by  # type: ignore[assignment]
+
         return self.df.__class__._from_pydf(
-            self.df._df.group_by_map_groups(
-                list(self.by), function, self.maintain_order
-            )
+            self.df._df.group_by_map_groups(by_strs, function, self.maintain_order)
         )
 
     def head(self, n: int = 5) -> DataFrame:

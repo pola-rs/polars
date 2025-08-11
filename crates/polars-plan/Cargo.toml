@@ -3,7 +3,6 @@ name = "polars-plan"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
-exclude = ["dsl-schema-hashes.json"]
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
@@ -212,7 +211,7 @@ allow_unused = ["polars-io/allow_unused", "polars-ops/allow_unused", "polars-tim
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
 polars_cloud_client = ["serde"]
-polars_cloud_server = ["serde", "polars-utils/polars_cloud_server"]
+polars_cloud_server = ["serde"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
 [package.metadata.docs.rs]

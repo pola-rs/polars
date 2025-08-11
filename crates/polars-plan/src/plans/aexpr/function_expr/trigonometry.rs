@@ -74,7 +74,7 @@ pub(super) fn apply_trigonometric_function(
     }
 }
 
-pub(super) fn apply_arctan2(s: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn apply_arctan2(s: &mut [Column]) -> PolarsResult<Column> {
     let y = &s[0];
     let x = &s[1];
 
@@ -92,7 +92,7 @@ pub(super) fn apply_arctan2(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     }
 }
 
-fn arctan2_on_columns(y: &Column, x: &Column) -> PolarsResult<Option<Column>> {
+fn arctan2_on_columns(y: &Column, x: &Column) -> PolarsResult<Column> {
     use DataType::*;
     match y.dtype() {
         Float32 => {
@@ -110,7 +110,7 @@ fn arctan2_on_columns(y: &Column, x: &Column) -> PolarsResult<Option<Column>> {
     }
 }
 
-fn arctan2_on_floats<T>(y: &ChunkedArray<T>, x: &Column) -> PolarsResult<Option<Column>>
+fn arctan2_on_floats<T>(y: &ChunkedArray<T>, x: &Column) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
@@ -122,9 +122,7 @@ where
         .unpack_series_matching_type(x.as_materialized_series())
         .unwrap();
 
-    Ok(Some(
-        broadcast_binary_elementwise(y, x, |yv, xv| Some(yv?.atan2(xv?))).into_column(),
-    ))
+    Ok(broadcast_binary_elementwise(y, x, |yv, xv| Some(yv?.atan2(xv?))).into_column())
 }
 
 fn apply_trigonometric_function_to_float<T>(

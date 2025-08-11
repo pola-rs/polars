@@ -31,14 +31,15 @@ rayon = { workspace = true }
 recursive = { workspace = true }
 slotmap = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = ["rt"] }
 
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
-polars-ops = { workspace = true, features = ["rle"] }
+polars-ops = { workspace = true, features = ["rle", "unique_counts", "dtype-struct"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["cse", "rle"] }
+polars-plan = { workspace = true, features = ["cse", "rle", "unique_counts", "dtype-struct"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -59,13 +60,20 @@ csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 dtype-array = ["polars-core/dtype-array"]
+dtype-u8 = ["polars-core/dtype-u8", "polars-plan/dtype-u8"]
+dtype-u16 = ["polars-core/dtype-u16", "polars-plan/dtype-u16"]
+dtype-i8 = ["polars-core/dtype-i8", "polars-plan/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16", "polars-plan/dtype-i16"]
+dtype-i128 = ["polars-core/dtype-i128", "polars-plan/dtype-i128"]
 dtype-categorical = ["polars-core/dtype-categorical", "polars-plan/dtype-categorical"]
+dtype-decimal = ["polars-core/dtype-decimal", "polars-plan/dtype-decimal"]
 object = ["polars-ops/object"]
 python = ["pyo3", "polars-plan/python", "polars-mem-engine/python", "polars-error/python"]
 semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
 is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
 replace = ["polars-ops/replace", "polars-plan/replace"]
 range = ["polars-plan/range"]
+top_k = ["polars-plan/top_k"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.

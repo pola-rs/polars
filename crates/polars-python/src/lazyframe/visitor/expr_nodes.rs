@@ -225,6 +225,7 @@ pub enum PyTemporalFunction {
     IsoYear,
     Quarter,
     Month,
+    DaysInMonth,
     Week,
     WeekDay,
     Day,
@@ -971,6 +972,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     IRTemporalFunction::Nanosecond => {
                         (PyTemporalFunction::Nanosecond,).into_py_any(py)
                     },
+                    IRTemporalFunction::DaysInMonth => {
+                        (PyTemporalFunction::DaysInMonth,).into_py_any(py)
+                    },
                     IRTemporalFunction::TotalDays => {
                         (PyTemporalFunction::TotalDays,).into_py_any(py)
                     },
@@ -1374,6 +1378,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 IRFunctionExpr::TopKBy { descending } => ("top_k_by", descending).into_py_any(py),
                 IRFunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"));
+                },
+                IRFunctionExpr::RowEncode(_) => {
+                    return Err(PyNotImplementedError::new_err("row_encode"));
+                },
+                IRFunctionExpr::RowDecode(..) => {
+                    return Err(PyNotImplementedError::new_err("row_decode"));
                 },
             }?,
             options: py.None(),
