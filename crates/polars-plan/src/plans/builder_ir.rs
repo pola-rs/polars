@@ -95,22 +95,30 @@ impl<'a> IRBuilder<'a> {
         } else {
             let input_schema = self.schema();
             let mut count = 0;
+            let mut is_noop = true;
             let schema = names
-                .map(|name| {
-                    let dtype = input_schema.try_get(name)?;
+                .enumerate()
+                .map(|(i, name)| {
+                    let (j, _, dtype) = input_schema.try_get_full(name)?;
+                    is_noop &= i == j;
                     count += 1;
                     Ok(Field::new(name.clone(), dtype.clone()))
                 })
                 .collect::<PolarsResult<Schema>>()?;
+            is_noop &= count == input_schema.len();
 
             polars_ensure!(count == schema.len(), Duplicate: "found duplicate columns");
 
-            let lp = IR::SimpleProjection {
-                input: self.root,
-                columns: Arc::new(schema),
-            };
-            let node = self.lp_arena.add(lp);
-            Ok(IRBuilder::new(node, self.expr_arena, self.lp_arena))
+            if is_noop {
+                Ok(self)
+            } else {
+                let lp = IR::SimpleProjection {
+                    input: self.root,
+                    columns: Arc::new(schema),
+                };
+                let node = self.lp_arena.add(lp);
+                Ok(IRBuilder::new(node, self.expr_arena, self.lp_arena))
+            }
         }
     }
 

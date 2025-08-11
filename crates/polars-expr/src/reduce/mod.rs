@@ -50,10 +50,10 @@ pub trait GroupedReduction: Any + Send + Sync {
         seq_id: u64,
     ) -> PolarsResult<()>;
 
-    /// Updates this GroupedReduction with new values. values[subset[i]] should
-    /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
-    /// reductions, seq_id can be used to resolve order between calls/multiple
-    /// reductions.
+    /// Updates this GroupedReduction with new values. `values[subset[i]]`
+    /// should be added to reduction `self[group_idxs[i]]`. For order-sensitive
+    /// grouped reductions, seq_id can be used to resolve order between
+    /// calls/multiple reductions.
     ///
     /// # Safety
     /// The subset and group_idxs are in-bounds.
