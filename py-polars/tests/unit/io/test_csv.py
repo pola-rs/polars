@@ -1593,13 +1593,18 @@ def test_batched_csv_reader_precise_batch_size_simple(foods_file_path: Path) -> 
     assert_frame_equal(out, pl.read_csv(foods_file_path).slice(8, 4))
 
 
-def test_batched_csv_reader_chunk_size_opts_bytes_strict(foods_file_path: Path) -> None:
+def test_batched_csv_reader_chunk_size_opts_exceptions(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(
         foods_file_path, batch_size_options=("bytes-strict", 15)
     )
 
     with pytest.raises(pl.exceptions.ComputeError):
         reader.next_batches(4)
+
+    reader = pl.read_csv_batched(foods_file_path, batch_size_options=("rows-total", 4))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        reader.next_batches(6)
 
 
 @pytest.mark.slow
@@ -1631,6 +1636,8 @@ def test_batched_csv_reader_all_batch_sizes(foods_file_path: Path) -> None:
 
     for inner_batch_len in range(1, h + 5):
         for outer_batch_len in range(1, h + 4, 3):
+            if outer_batch_len > inner_batch_len:
+                continue
             reader = pl.read_csv_batched(
                 foods_file_path, batch_size_options=("rows-total", inner_batch_len)
             )
