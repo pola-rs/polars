@@ -25,7 +25,6 @@ pub(crate) fn get_file_chunks_iterator(
     bytes: &[u8],
     quote_char: Option<u8>,
     eol_char: u8,
-    n_rows: Option<usize>,
     chunk_size_strict: bool,
 ) -> PolarsResult<()> {
     let cl = CountLines::new(quote_char, eol_char);
@@ -42,11 +41,7 @@ pub(crate) fn get_file_chunks_iterator(
 
         loop {
             let b = &bytes[..(*chunk_size).min(bytes.len())];
-            let (count_, position_) = if let Some(n_rows) = n_rows {
-                cl.count_at_most_n_rows(b, n_rows)
-            } else {
-                cl.count(b)
-            };
+            let (count_, position_) = cl.count(b);
 
             let (count_, position_) = if b.len() == bytes.len() {
                 (if count_ != 0 { count_ } else { 1 }, b.len())
@@ -70,15 +65,7 @@ pub(crate) fn get_file_chunks_iterator(
                 }
                 *chunk_size *= 2;
                 continue;
-            } else if b.len() < bytes.len() {
-                if let Some(n_rows) = n_rows {
-                    if count_ < n_rows {
-                        *chunk_size *= 2;
-                        continue;
-                    }
-                }
             }
-
             position = position_;
             count = count_;
             break;
@@ -93,7 +80,7 @@ pub(crate) fn get_file_chunks_iterator(
 
 struct ChunkOffsetIter<'a> {
     bytes: &'a [u8],
-    // (begin, end, number of lines)
+    // (begin, end, number of lines(not guaranteed))
     offsets: VecDeque<(usize, usize, usize)>,
     last_offset: usize,
     n_chunks: usize,
@@ -122,7 +109,6 @@ impl Iterator for ChunkOffsetIter<'_> {
                     self.bytes,
                     self.quote_char,
                     self.eol_char,
-                    None,
                     self.chunk_size_strict,
                 ) {
                     return Some(Err(e));
@@ -144,28 +130,33 @@ impl Iterator for ChunkOffsetIter<'_> {
     }
 }
 
-// ChunkOffsetReader was created because when using `BatchSizeOptions::TotalNextBatchesNRows`,
+// ChunkOffsetNRowsScanner was created because when using `BatchSizeOptions::TotalNextBatchesNRows`,
 // the full offset scanning settings are only known after `BatchedCsvReader::next_batches` is
 // called, so an iterator model is not a good fit. On the other had, when using
 // `BatchSizeOptions::EachBatchNBytes`, `ChunkOffsetIter` is more suitable. That's why there are
 // two options (tied together by `ChunkOffsetScanner`).
-struct ChunkOffsetReader<'a> {
+struct ChunkOffsetNRowsScanner<'a> {
     bytes: &'a [u8],
+    // (begin, end, number of lines(not guaranteed) )
     offsets: VecDeque<(usize, usize, usize)>,
     last_offset: usize,
-    chunk_size: usize,
     quote_char: Option<u8>,
     eol_char: u8,
     batches_n_rows: Vec<usize>,
 }
 
-impl ChunkOffsetReader<'_> {
+impl ChunkOffsetNRowsScanner<'_> {
     fn n_batches_n_rows(
         &mut self,
         n_batches: usize,
         n_rows: usize,
+        // (begin, end, number of lines(not guaranteed) )
         out: &mut Vec<(usize, usize, usize)>,
     ) -> PolarsResult<()> {
+        if self.last_offset == self.bytes.len() {
+            return Ok(());
+        }
+
         self.batches_n_rows.resize(n_batches, 0);
         self.batches_n_rows.fill(n_rows / n_batches);
 
@@ -174,18 +165,49 @@ impl ChunkOffsetReader<'_> {
             *batch_n_rows += 1;
         }
 
+        let cl = CountLines::new(self.quote_char, self.eol_char);
+
         for batch_n_rows in self.batches_n_rows.iter().copied() {
-            get_file_chunks_iterator(
-                &mut self.offsets,
-                &mut self.last_offset,
-                1,
-                &mut self.chunk_size,
-                self.bytes,
-                self.quote_char,
-                self.eol_char,
-                Some(batch_n_rows),
-                false,
-            )?;
+            let b = &self.bytes[self.last_offset..];
+            // position_ always points to an end of line character
+            let (count_, position_) = cl.count_at_most_n_rows(b, batch_n_rows);
+
+            // case 0: count_ == batch_n_rows
+            //   In this case all we have to do is to increase position_ by 1.
+            //   This is necessary, because position_ points to an EOL character,
+            //   and we need it to point to the beginning of next chunk
+            // case 1: 0 < count_ < batch_n_rows
+            //   We reached the end of input. We return everything that is left.
+            //   The count_at_most_n_rows function will only place position_ at
+            //   EOL characters. However, if input does not end with an EOL character,
+            //   there could be one more row than reported by count_. We don't have
+            //   to care about this, because count returned by this function is
+            //   approximate, only used to guess buffers capacity.
+            //   The count is raised by 1, because getting the capacity too large by one
+            //   is less expensive than getting it too small by one. Anyway this
+            //   is not particularly significant as this will happen only once.
+            // case 2: count_ == 0
+            //   case 2.1: There were some bytes at the end without a trailing EOL char
+            //       This can be handled exactly the same as case 1
+            //   case 2.2: The input ended at the last EOL char.
+            //       In this case there are no more bytes to read, and we cannot
+            //       push anything to offsets.
+            //       This case should be unreachable
+
+            let (count_, position_) = if count_ < batch_n_rows {
+                (count_ + 1, b.len())
+            } else {
+                // 1+ for the '\n'
+                (count_, position_ + 1)
+            };
+
+            self.offsets
+                .push_back((self.last_offset, self.last_offset + position_, count_));
+            self.last_offset += position_;
+
+            if self.last_offset == self.bytes.len() {
+                break;
+            }
         }
 
         while let Some(offset) = self.offsets.pop_front() {
@@ -201,7 +223,7 @@ impl ChunkOffsetReader<'_> {
 // different values of `BatchSizeOptions`
 enum ChunkOffsetScanner<'a> {
     Iter(ChunkOffsetIter<'a>),
-    Reader(ChunkOffsetReader<'a>),
+    NRows(ChunkOffsetNRowsScanner<'a>),
 }
 
 impl<'a> ChunkOffsetScanner<'a> {
@@ -260,20 +282,18 @@ impl<'a> ChunkOffsetScanner<'a> {
                 eol_char,
                 chunk_size_strict: true,
             }),
-            BatchSizeOptions::EachBatchNRows(_) => Self::Reader(ChunkOffsetReader {
+            BatchSizeOptions::EachBatchNRows(_) => Self::NRows(ChunkOffsetNRowsScanner {
                 bytes,
                 offsets: VecDeque::with_capacity(offset_batch_size),
                 last_offset: 0,
-                chunk_size,
                 quote_char,
                 eol_char,
                 batches_n_rows: Vec::with_capacity(offset_batch_size),
             }),
-            BatchSizeOptions::TotalNextBatchesNRows(_) => Self::Reader(ChunkOffsetReader {
+            BatchSizeOptions::TotalNextBatchesNRows(_) => Self::NRows(ChunkOffsetNRowsScanner {
                 bytes,
                 offsets: VecDeque::with_capacity(offset_batch_size),
                 last_offset: 0,
-                chunk_size,
                 quote_char,
                 eol_char,
                 batches_n_rows: Vec::with_capacity(offset_batch_size),
@@ -373,16 +393,17 @@ impl BatchedCsvReader<'_> {
                 }
                 &self.file_chunks
             },
-            ChunkOffsetScanner::Reader(chunk_offset_reader) => {
+            ChunkOffsetScanner::NRows(chunk_offset_reader) => {
                 let n_rows = match self.batch_size_options {
                     BatchSizeOptions::TotalNextBatchesNRows(n) => n,
                     BatchSizeOptions::EachBatchNRows(n_) => n * n_,
                     _ => panic!(
-                        "ChunkOffsetsAccess::Reader is only created with BatchSizeOptions::TotalNextBatchesNRows or BatchSizeOptions::EachBatchNRows."
+                        "ChunkOffsetsScanner::Reader is only created with BatchSizeOptions::TotalNextBatchesNRows or BatchSizeOptions::EachBatchNRows."
                     ),
                 };
                 self.file_chunks.clear();
                 chunk_offset_reader.n_batches_n_rows(n, n_rows, &mut self.file_chunks)?;
+
                 // depleted the offsets iterator, we are done as well.
                 if self.file_chunks.is_empty() {
                     return Ok(None);
