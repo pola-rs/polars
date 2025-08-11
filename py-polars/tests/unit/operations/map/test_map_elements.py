@@ -60,12 +60,18 @@ def test_map_elements_struct() -> None:
             "E": [None, [1], [2, 3]],
         }
     )
+
+    def _e(s: pl.Series) -> pl.Series:
+        print(s)
+        print(s["E"])
+        return s["E"]
+
     out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         pl.col("struct").map_elements(lambda x: x["A"]).alias("A_field"),
         pl.col("struct").map_elements(lambda x: x["B"]).alias("B_field"),
         pl.col("struct").map_elements(lambda x: x["C"]).alias("C_field"),
         pl.col("struct").map_elements(lambda x: x["D"]).alias("D_field"),
-        pl.col("struct").map_elements(lambda x: x["E"]).alias("E_field"),
+        pl.col("struct").map_elements(_e).alias("E_field"),
     )
     expected = pl.DataFrame(
         {

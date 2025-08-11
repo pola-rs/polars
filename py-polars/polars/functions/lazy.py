@@ -1092,7 +1092,6 @@ def map_batches(
     *,
     is_elementwise: bool = False,
     returns_scalar: bool = False,
-    _is_ufunc: bool = False,
 ) -> Expr:
     """
     Map a custom function over multiple columns/expressions.
@@ -1169,7 +1168,6 @@ def map_batches(
             return_dtype_expr,
             is_elementwise=is_elementwise,
             returns_scalar=returns_scalar,
-            is_ufunc=_is_ufunc,
         )
     )
 
@@ -1264,7 +1262,6 @@ def map_groups(
         return_dtype,
         is_elementwise=is_elementwise,
         returns_scalar=returns_scalar,
-        _is_ufunc=False,
     )
 
 
