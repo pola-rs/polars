@@ -5,6 +5,7 @@ import polars as pl
 
 __all__ = ["RandomSource", "new_bernoulli", "new_uniform", "scan_random"]
 
+
 def scan_random(samplers: list[Any], size: int = 1000) -> pl.LazyFrame:
     def source_generator(
         with_columns: list[str] | None,

@@ -2791,3 +2791,21 @@ def test_read_csv_decimal_header_only_200008() -> None:
 
     df = pl.read_csv(csv.encode(), schema={"a": pl.Decimal(scale=2), "b": pl.String})
     assert df.dtypes == [pl.Decimal(scale=2), pl.String]
+
+
+@pytest.mark.parametrize(
+    "dt",
+    [
+        pl.Enum(["a"]),
+        pl.Categorical(["a"]),
+    ],
+)
+def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
+    n_rows = pl.thread_pool_size() * 1024 + 1
+    df = pl.DataFrame(
+        {
+            "b": pl.Series(["a"] * n_rows, dtype=dt),
+        }
+    )
+    expected = "b\n" + "a\n" * n_rows
+    assert df.write_csv() == expected
