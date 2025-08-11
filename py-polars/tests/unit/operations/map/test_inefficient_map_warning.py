@@ -357,7 +357,7 @@ def test_parse_apply_functions(
     elif dtype is None:
         return_dtype = None
     else:
-        return_dtype = dtype.to_dtype_expr()
+        return_dtype = dtype.to_dtype_expr()  # type: ignore[union-attr]
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r"(?s)Expr\.map_elements.*with this one instead",
