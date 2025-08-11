@@ -468,6 +468,15 @@ pub fn lower_ir(
                         },
                     }));
 
+                    // Add row index to sort columns.
+                    let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
+                    by_column.push(ExprIR::new(
+                        row_idx_node,
+                        OutputName::ColumnLhs(row_idx_name.clone()),
+                    ));
+                    sort_options.descending.push(false);
+                    sort_options.nulls_last.push(true);
+
                     // No longer needed for the actual sort itself, handled by row index.
                     sort_options.maintain_order = false;
                 }
@@ -494,17 +503,6 @@ pub fn lower_ir(
                         nulls_last: sort_options.nulls_last.clone(),
                     },
                 }));
-            }
-
-            // Add row index to sort-by columns if we introduced one.
-            if let Some(row_idx_name) = &with_row_idx {
-                let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
-                by_column.push(ExprIR::new(
-                    row_idx_node,
-                    OutputName::ColumnLhs(row_idx_name.clone()),
-                ));
-                sort_options.descending.push(false);
-                sort_options.nulls_last.push(true);
             }
 
             stream = PhysStream::first(phys_sm.insert(PhysNode {
