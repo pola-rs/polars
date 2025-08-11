@@ -20,7 +20,6 @@ use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
-use crate::nodes::cum_agg::CumAggKind;
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 
 type ExprNodeKey = Node;
@@ -946,6 +945,8 @@ fn lower_exprs_with_ctx(
                     | IRFunctionExpr::CumProd { reverse }),
                 options: _,
             } if !reverse => {
+                use crate::nodes::cum_agg::CumAggKind;
+
                 assert_eq!(inner_exprs.len(), 1);
 
                 let input_schema = &ctx.phys_sm[input.node].output_schema;
