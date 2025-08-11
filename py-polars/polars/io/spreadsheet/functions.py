@@ -1043,7 +1043,7 @@ def _read_spreadsheet_calamine(
 
     if columns:
         if not isinstance(columns, list):
-            columns = list(columns)
+            columns = list(columns)  # type: ignore[assignment]
         read_options["use_columns"] = columns
 
     schema_overrides = schema_overrides or {}
