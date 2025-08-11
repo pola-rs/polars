@@ -29,7 +29,8 @@ minutes, though allow up to an hour for status propagation.
 
 After subscribing via Marketplace, you'll be redirected to the Polars Cloud organization dashboard.
 Under `Billing`, the status will update to show your organization is connected to AWS Marketplace.
-If the status doesn't update within 15 minutes, contact our support team at [support@polars.tech](mailto:support@polars.tech).
+If the status doesn't update within 15 minutes, contact our support team at
+[support@polars.tech](mailto:support@polars.tech).
 
 ### Request and Accept Private Offers
 

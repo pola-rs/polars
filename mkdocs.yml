@@ -124,6 +124,7 @@ nav:
                 - polars-cloud/context/plugins.md
           - Organizations:
                 - polars-cloud/organization/organizations.md
+                - polars-cloud/organization/start-trial.md
                 - polars-cloud/organization/billing.md
                 - polars-cloud/organization/members.md
           - Workspaces:
