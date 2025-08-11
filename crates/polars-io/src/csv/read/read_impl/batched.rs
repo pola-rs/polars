@@ -366,10 +366,41 @@ pub struct BatchedCsvReader<'a> {
 }
 
 impl BatchedCsvReader<'_> {
+    fn check(&self, n: usize) -> PolarsResult<()> {
+        match self.batch_size_options {
+            BatchSizeOptions::EachBatchNBytes(n) | BatchSizeOptions::EachBatchNBytesStrict(n) => {
+                if n == 0 {
+                    return Err(
+                        polars_err!(InvalidOperation: "Batch size of 0 bytes cannot be used"),
+                    );
+                }
+            },
+            BatchSizeOptions::EachBatchNRows(n) => {
+                if n == 0 {
+                    return Err(
+                        polars_err!(InvalidOperation: "Batch size of 0 rows cannot be used"),
+                    );
+                }
+            },
+            BatchSizeOptions::TotalNextBatchesNRows(n_) => {
+                if n > n_ {
+                    return Err(
+                        polars_err!(InvalidOperation: "When specifying the total amount of rows returned by next_batches, there must be at least one row per batch"),
+                    );
+                }
+            },
+            _ => {},
+        }
+
+        Ok(())
+    }
+
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if n == 0 || self.remaining == 0 {
             return Ok(None);
         }
+
+        self.check(n)?;
 
         // The CSV file is first pre-scanned using `self.file_chunks_scanner` to determine
         // the byte ranges of CSV rows. This procedure is influenced by `self.batch_size_options`
