@@ -9,7 +9,8 @@ from pathlib import Path
 from types import GeneratorType
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
-import adbc_driver_sqlite.dbapi
+with suppress(ModuleNotFoundError):  # not available on windows
+    import adbc_driver_sqlite.dbapi
 import pyarrow as pa
 import pytest
 import sqlalchemy
@@ -33,11 +34,8 @@ if TYPE_CHECKING:
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
-    with suppress(ModuleNotFoundError):  # not available on windows
-        from adbc_driver_sqlite.dbapi import connect
-
-        args = tuple(str(a) if isinstance(a, Path) else a for a in args)
-        return connect(*args, **kwargs)
+    args = tuple(str(a) if isinstance(a, Path) else a for a in args)
+    return adbc_driver_sqlite.dbapi.connect(*args, **kwargs)
 
 
 class MockConnection:
