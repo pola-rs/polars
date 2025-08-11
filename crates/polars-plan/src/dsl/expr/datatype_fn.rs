@@ -14,6 +14,17 @@ pub enum DataTypeFunction {
     /// Return a boolean literal signifying whether the datatype is a specific kind.
     Matches(DataTypeExpr, DataTypeSelector),
 
+    /// Return a boolean literal signifying whether the datatype is a specific kind.
+    DefaultValue {
+        dt_expr: DataTypeExpr,
+        // The amount of values to return.
+        n: usize,
+        // Use 1 instead of 0 for the numeric types
+        numeric_to_one: bool,
+        // The amount of values that are present in a list.
+        num_list_values: usize,
+    },
+
     Array(DataTypeExpr, ArrayDataTypeFunction),
     Struct(DataTypeExpr, StructDataTypeFunction),
 }
@@ -41,6 +52,17 @@ impl fmt::Debug for DataTypeFunction {
             Self::Eq(l, r) => write!(f, "[{l:?} == {r:?}]"),
             Self::Matches(dt_expr, selector) => {
                 write!(f, "{dt_expr:?}.matches({selector})")
+            },
+            Self::DefaultValue {
+                dt_expr,
+                n,
+                numeric_to_one,
+                num_list_values,
+            } => {
+                write!(
+                    f,
+                    "{dt_expr:?}.default_value({n}, numeric_to_one={numeric_to_one}, num_list_values={num_list_values})"
+                )
             },
             Self::Array(dt_expr, t) => {
                 fmt::Debug::fmt(dt_expr, f)?;
