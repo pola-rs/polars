@@ -2797,7 +2797,7 @@ def test_read_csv_decimal_header_only_200008() -> None:
     "dt",
     [
         pl.Enum(["a"]),
-        pl.Categorical(["a"]),
+        pl.Categorical(),
     ],
 )
 def test_write_csv_categorical_23939(dt: pl.DataType) -> None:
