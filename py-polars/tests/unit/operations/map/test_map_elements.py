@@ -49,7 +49,6 @@ def test_map_elements_arithmetic_consistency() -> None:
         )["B"].to_list() == [[3.0, 4.0]]
 
 
-@pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_map_elements_struct() -> None:
     df = pl.DataFrame(
         {
@@ -61,17 +60,12 @@ def test_map_elements_struct() -> None:
         }
     )
 
-    def _e(s: pl.Series) -> pl.Series:
-        print(s)
-        print(s["E"])
-        return s["E"]
-
     out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         pl.col("struct").map_elements(lambda x: x["A"]).alias("A_field"),
         pl.col("struct").map_elements(lambda x: x["B"]).alias("B_field"),
         pl.col("struct").map_elements(lambda x: x["C"]).alias("C_field"),
         pl.col("struct").map_elements(lambda x: x["D"]).alias("D_field"),
-        pl.col("struct").map_elements(_e).alias("E_field"),
+        pl.col("struct").map_elements(lambda x: x["E"]).alias("E_field"),
     )
     expected = pl.DataFrame(
         {

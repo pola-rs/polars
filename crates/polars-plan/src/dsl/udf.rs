@@ -1,6 +1,5 @@
 use polars_core::prelude::{AnyValue, Column, DataType, Field};
 use polars_core::scalar::Scalar;
-use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -56,6 +55,9 @@ pub fn infer_udf_output_dtype(
     f: &dyn Fn(&[Column]) -> PolarsResult<Column>,
     input_fields: &[Field],
 ) -> Option<DataType> {
+    // NOTE! It is important that this does not start having less capability as that would mess
+    // API. We can add more passes though.
+
     // Pass 1: Provide default values for all columns.
     {
         let numeric_to_one = true; // A lot of functions error on 0, just give a 1.
@@ -66,6 +68,7 @@ pub fn infer_udf_output_dtype(
                 let av = AnyValue::default_value(f.dtype(), numeric_to_one, num_list_values);
                 let scalar = Scalar::new(f.dtype().clone(), av);
 
+                // Give each column with 2 dummy values.
                 Column::new_scalar(f.name().clone(), scalar, 2)
             })
             .collect::<Vec<_>>();
@@ -78,6 +81,9 @@ pub fn infer_udf_output_dtype(
     None
 }
 
+/// Try to infer the output datatype of a UDF.
+///
+/// This will call the UDF in a few ways and see if it can get an output type without erroring.
 pub fn try_infer_udf_output_dtype(
     f: &dyn Fn(&[Column]) -> PolarsResult<Column>,
     input_fields: &[Field],

@@ -5,7 +5,6 @@ use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
-use polars_core::prelude::UnknownKind;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
