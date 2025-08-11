@@ -303,8 +303,8 @@ impl StringNameSpace {
 
     /// Convert a String column into a Decimal column.
     #[cfg(feature = "dtype-decimal")]
-    pub fn to_decimal(self, infer_length: usize) -> Expr {
-        self.0.map_unary(StringFunction::ToDecimal(infer_length))
+    pub fn to_decimal(self, scale: usize) -> Expr {
+        self.0.map_unary(StringFunction::ToDecimal { scale })
     }
 
     /// Concat the values into a string array.

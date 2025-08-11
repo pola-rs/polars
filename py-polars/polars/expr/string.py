@@ -324,22 +324,22 @@ class ExprStringNameSpace:
             raise ValueError(msg)
 
     @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
-    def to_decimal(
-        self,
-        inference_length: int = 100,
-    ) -> Expr:
+    @unstable()
+    def to_decimal(self, *, scale: int) -> Expr:
         """
         Convert a String column into a Decimal column.
 
-        This method infers the needed parameters `precision` and `scale`.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         .. versionchanged:: 1.20.0
             Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
-        inference_length
-            Number of elements to parse to determine the `precision` and `scale`.
+        scale
+            Number of digits after the comma to use for the decimals.
 
         Examples
         --------
@@ -356,7 +356,7 @@ class ExprStringNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(numbers_decimal=pl.col("numbers").str.to_decimal())
+        >>> df.with_columns(numbers_decimal=pl.col("numbers").str.to_decimal(scale=2))
         shape: (7, 2)
         ┌───────────┬─────────────────┐
         │ numbers   ┆ numbers_decimal │
@@ -372,7 +372,7 @@ class ExprStringNameSpace:
         │ 143.9     ┆ 143.90          │
         └───────────┴─────────────────┘
         """
-        return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
+        return wrap_expr(self._pyexpr.str_to_decimal(scale=scale))
 
     def len_bytes(self) -> Expr:
         """

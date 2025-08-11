@@ -298,7 +298,7 @@ pub(super) fn convert_functions(
                 },
                 S::Split(v) => IS::Split(v),
                 #[cfg(feature = "dtype-decimal")]
-                S::ToDecimal(v) => IS::ToDecimal(v),
+                S::ToDecimal { scale } => IS::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
                 S::Titlecase => IS::Titlecase,
                 S::Uppercase => IS::Uppercase,

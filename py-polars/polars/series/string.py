@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import polars.functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
+from polars._utils.wrap import wrap_s
 from polars.datatypes import Int64
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
@@ -283,6 +285,8 @@ class StringNameSpace:
     def to_decimal(
         self,
         inference_length: int = 100,
+        *,
+        scale: int | None = None,
     ) -> Series:
         """
         Convert a String column into a Decimal column.
@@ -315,6 +319,13 @@ class StringNameSpace:
             143.90
         ]
         """
+        if scale is not None:
+            s = wrap_s(self)
+            return (
+                s.to_frame().select_seq(F.col(s.name).str.to_decimal(scale)).to_series()
+            )
+        else:
+            return wrap_s(s._s.str_to_decimal_infer(inference_length))
 
     def len_bytes(self) -> Series:
         """

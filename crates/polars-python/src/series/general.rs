@@ -448,6 +448,13 @@ impl PySeries {
     pub fn not_(&self, py: Python) -> PyResult<Self> {
         py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series))
     }
+
+    pub fn str_to_decimal_infer(&self, py: Python, inference_length: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| {
+            let ca = self.series.str()?;
+            ca.to_decimal(inference_length).map(Series::from)
+        })
+    }
 }
 
 macro_rules! impl_set_with_mask {

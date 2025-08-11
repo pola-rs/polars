@@ -313,8 +313,8 @@ impl PyExpr {
         self.inner.clone().str().splitn(by.inner, n).into()
     }
 
-    fn str_to_decimal(&self, infer_len: usize) -> Self {
-        self.inner.clone().str().to_decimal(infer_len).into()
+    fn str_to_decimal(&self, scale: usize) -> Self {
+        self.inner.clone().str().to_decimal(scale).into()
     }
 
     #[cfg(feature = "find_many")]
