@@ -44,7 +44,7 @@ class BatchedCsvReader:
         try_parse_dates: bool = False,
         n_threads: int | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
-        batch_size: int = 50_000,
+        batch_size: int | None = None,
         batch_size_options: tuple[str, int] | None = None,
         total_batches_size: int | None = None,
         n_rows: int | None = None,
