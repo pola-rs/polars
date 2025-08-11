@@ -847,3 +847,38 @@ def test_date_parse_omit_day_month() -> None:
         )
     )
     assert check.height == 0
+
+    s = pl.Series(
+        [
+            "2022 January",
+            "2022 February",
+            "2022 March",
+            "2022 April",
+            "2022 May",
+            "2022 June",
+            "2022 July",
+            "2022 August",
+            "2022 September",
+            "2022 October",
+            "2022 November",
+            "2022 December",
+        ]
+    )
+    result = s.str.strptime(pl.Date, "%Y %B")
+    expected = pl.Series(
+        [
+            date(2022, 1, 1),
+            date(2022, 2, 1),
+            date(2022, 3, 1),
+            date(2022, 4, 1),
+            date(2022, 5, 1),
+            date(2022, 6, 1),
+            date(2022, 7, 1),
+            date(2022, 8, 1),
+            date(2022, 9, 1),
+            date(2022, 10, 1),
+            date(2022, 11, 1),
+            date(2022, 12, 1),
+        ]
+    )
+    assert_series_equal(result, expected)
