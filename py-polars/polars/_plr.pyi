@@ -177,6 +177,7 @@ class PySeries:
     def slice(self, offset: int, length: int | None) -> PySeries: ...
     def not_(self) -> PySeries: ...
     def str_to_datetime_infer(
+        self,
         time_unit: TimeUnit | None,
         strict: bool,
         exact: bool,

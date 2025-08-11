@@ -473,7 +473,7 @@ pub fn to_datetime(
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     _ambiguous: &StringChunked,
-    // Ensure that the time_zone matches the
+    // Ensure that the inferred time_zone matches the given time_zone.
     ensure_matching_time_zone: bool,
 ) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {

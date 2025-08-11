@@ -160,17 +160,20 @@ class StringNameSpace:
         """
         if format is None and time_zone is None:
             if isinstance(ambiguous, str):
-                ambiguous = pl.Series([ambiguous])
+                ambiguous_s = pl.Series([ambiguous])
+            else:
+                ambiguous_s = ambiguous
 
             return wrap_s(
                 self._s.str_to_datetime_infer(
                     time_unit,
                     strict,
                     exact,
-                    ambiguous._s,
+                    ambiguous_s._s,
                 )
             )
         else:
+            ambiguous_expr = F.lit(ambiguous)
             s = wrap_s(self._s)
             return (
                 s.to_frame()
@@ -182,7 +185,7 @@ class StringNameSpace:
                         strict=strict,
                         exact=exact,
                         cache=cache,
-                        ambiguous=ambiguous,
+                        ambiguous=ambiguous_expr,
                     )
                 )
                 .to_series()
@@ -327,6 +330,7 @@ class StringNameSpace:
                 ambiguous=ambiguous,
             )
         else:
+            ambiguous_expr = F.lit(ambiguous)
             s = wrap_s(self._s)
             return (
                 s.to_frame()
@@ -337,7 +341,7 @@ class StringNameSpace:
                         strict=strict,
                         exact=exact,
                         cache=cache,
-                        ambiguous=ambiguous,
+                        ambiguous=ambiguous_expr,
                     )
                 )
                 .to_series()

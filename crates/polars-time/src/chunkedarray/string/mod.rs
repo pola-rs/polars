@@ -157,6 +157,7 @@ pub trait StringMethods: AsString {
         tz_aware: bool,
         tz: Option<&TimeZone>,
         _ambiguous: &StringChunked,
+        // Ensure that the inferred time_zone matches the given time_zone.
         ensure_matching_tz: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let string_ca = self.as_string();
