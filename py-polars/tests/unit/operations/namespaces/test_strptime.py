@@ -824,3 +824,26 @@ def test_matching_strings_but_different_format_22495(value: str) -> None:
     s = pl.Series("my_strings", [value])
     result = s.str.to_date("%Y-%m-%d", strict=False).item()
     assert result is None
+
+
+def test_date_parse_omit_day_month() -> None:
+    fmt_B = "%Y %B"
+    fmt_b = "%Y %b"
+    df = (
+        pl.select(date=pl.date_range(pl.date(2022, 1, 1), pl.date(2022, 12, 1), "1mo"))
+        .with_columns(
+            strdateB=pl.col("date").dt.strftime(fmt_B),
+            strdateb=pl.col("date").dt.strftime(fmt_b),
+        )
+        .with_columns(
+            round_tripB=pl.col("strdateB").str.strptime(pl.Date, fmt_B),
+            round_tripb=pl.col("strdateb").str.strptime(pl.Date, fmt_b),
+        )
+    )
+    check = df.filter(
+        ~pl.all_horizontal(
+            pl.col("date") == pl.col("round_tripB"),
+            pl.col("date") == pl.col("round_tripb"),
+        )
+    )
+    assert check.height == 0
