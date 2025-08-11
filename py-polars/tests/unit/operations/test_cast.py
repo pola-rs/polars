@@ -1014,7 +1014,7 @@ def test_not_prune_necessary_cast() -> None:
 def test_cast_optimizer_in_list_eval_23924(
     inner_dtype: PolarsDataType,
     target_dtype: PolarsDataType,
-    op: Callable[[pl.Series, pl.Series], pl.Series],
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
     print(inner_dtype, target_dtype)
     if target_dtype in INTEGER_DTYPES:
