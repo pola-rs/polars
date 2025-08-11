@@ -92,7 +92,7 @@ TEST_CASES = [
     ("e", "lambda x: math.asin(x)", 'pl.col("e").arcsin()', None),
     ("e", "lambda x: math.asinh(x)", 'pl.col("e").arcsinh()', None),
     ("e", "lambda x: math.atan(x)", 'pl.col("e").arctan()', None),
-    ("e", "lambda x: math.atanh(x)", 'pl.col("e").arctanh()', pl.self_dtype()),
+    ("e", "lambda x: math.atanh(x)", 'pl.col("e").arctanh()', "self"),
     ("e", "lambda x: math.cos(x)", 'pl.col("e").cos()', None),
     ("e", "lambda x: math.degrees(x)", 'pl.col("e").degrees()', None),
     ("e", "lambda x: math.exp(x)", 'pl.col("e").exp()', None),
@@ -113,7 +113,7 @@ TEST_CASES = [
     ("e", "lambda x: np.arcsin(x)", 'pl.col("e").arcsin()', None),
     ("e", "lambda x: np.arcsinh(x)", 'pl.col("e").arcsinh()', None),
     ("e", "lambda x: np.arctan(x)", 'pl.col("e").arctan()', None),
-    ("e", "lambda x: np.arctanh(x)", 'pl.col("e").arctanh()', pl.self_dtype()),
+    ("e", "lambda x: np.arctanh(x)", 'pl.col("e").arctanh()', "self"),
     ("a", "lambda x: 0 + np.cbrt(x)", '0 + pl.col("a").cbrt()', None),
     ("e", "lambda x: np.ceil(x)", 'pl.col("e").ceil()', None),
     ("e", "lambda x: np.cos(x)", 'pl.col("e").cos()', None),
@@ -234,7 +234,7 @@ TEST_CASES = [
         "c",
         "lambda x: json.loads(x)",
         'pl.col("c").str.json_decode()',
-        pl.Struct(dict.fromkeys(["a", "b", "c"], pl.Int64)).to_dtype_expr(),
+        pl.Struct(dict.fromkeys(["a", "b", "c"], pl.Int64)),
     ),
     # ---------------------------------------------
     # replace
@@ -349,8 +349,15 @@ def test_parse_invalid_function(func: str) -> None:
 )
 @pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_parse_apply_functions(
-    col: str, func: str, expr_repr: str, dtype: pl.DataTypeExpr | None
+    col: str, func: str, expr_repr: str, dtype: Literal["self"] | pl.DataType | None
 ) -> None:
+    return_dtype: pl.DataTypeExpr | None = None
+    if dtype == "self":
+        return_dtype = pl.self_dtype()
+    elif dtype is None:
+        return_dtype = None
+    else:
+        return_dtype = dtype.to_dtype_expr()
     with pytest.warns(
         PolarsInefficientMapWarning,
         match=r"(?s)Expr\.map_elements.*with this one instead",
@@ -380,7 +387,7 @@ def test_parse_apply_functions(
         )
         expected_frame = df.select(
             x=pl.col(col),
-            y=pl.col(col).map_elements(eval(func), return_dtype=dtype),
+            y=pl.col(col).map_elements(eval(func), return_dtype=return_dtype),
         )
         assert_frame_equal(
             result_frame,
