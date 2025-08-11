@@ -633,7 +633,7 @@ def test_read_database_parameterised_multiple(
     sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
 )
 def test_read_database_uri_parameterised_multiple(
-    params: str, param_value: Any, tmp_sqlite_db: Path
+    params: list[str], param_value: Any, tmp_sqlite_db: Path
 ) -> None:
     param_1, param_2 = params
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
