@@ -112,7 +112,9 @@ pub enum IRStringFunction {
     Strptime(DataType, StrptimeOptions),
     Split(bool),
     #[cfg(feature = "dtype-decimal")]
-    ToDecimal { scale: usize },
+    ToDecimal {
+        scale: usize,
+    },
     #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,

@@ -100,7 +100,9 @@ pub enum StringFunction {
     Strptime(DataTypeExpr, StrptimeOptions),
     Split(bool),
     #[cfg(feature = "dtype-decimal")]
-    ToDecimal { scale: usize },
+    ToDecimal {
+        scale: usize,
+    },
     #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,
