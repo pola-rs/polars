@@ -271,7 +271,8 @@ def test_err_nested_object() -> None:
     def mapper(x: object) -> list[object]:
         return [x]
 
-    with pytest.raises(ValueError):
+    # cannot infer datatype
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         df.select(pl.col("obj").map_elements(mapper))
 
     with pytest.raises(ValueError):

@@ -2139,7 +2139,6 @@ def map_expr(
     output_type: PyDataTypeExpr | None,
     is_elementwise: bool,
     returns_scalar: bool,
-    is_ufunc: bool,
 ) -> PyExpr: ...
 def pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr: ...
 def reduce(

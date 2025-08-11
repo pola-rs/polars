@@ -21,6 +21,7 @@ from polars.exceptions import (
     ShapeError,
     StructFieldNotFoundError,
 )
+from polars.testing import assert_frame_equal
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
@@ -53,9 +54,31 @@ def test_error_on_reducing_map() -> None:
             .map_batches(
                 lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
                 is_elementwise=True,
+                return_dtype=pl.Struct(
+                    {"breakpoint": pl.Int64, "cat": pl.Categorical()}
+                ),
             )
             .over("group")
         )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("x")
+            .map_batches(
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True),
+                is_elementwise=True,
+            )
+            .struct.unnest()
+            .over("group")
+        ),
+        pl.DataFrame(
+            {
+                "breakpoint": [1.0, 2.0, 3.0, float("inf")],
+                "category": ["(-inf, 1]", "(1, 2]", "(2, 3]", "(3, inf]"],
+            },
+            schema_overrides={"category": pl.Categorical()},
+        ),
+    )
 
 
 def test_error_on_invalid_by_in_asof_join() -> None:
@@ -464,7 +487,11 @@ def test_with_column_duplicates() -> None:
 
 def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
-    df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="UDF called without return type, but was not able to infer the output type.",
+    ):
+        df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
 
 @pytest.mark.parametrize(

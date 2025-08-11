@@ -328,9 +328,7 @@ class Expr:
             if not isinstance(inputs[0], Expr):
                 msg = "Input must be expression."
                 raise OutOfBoundsError(msg)
-            return inputs[0].map_batches(
-                ufunc, is_elementwise=not is_custom_ufunc, _is_ufunc=True
-            )
+            return inputs[0].map_batches(ufunc, is_elementwise=not is_custom_ufunc)
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
@@ -365,9 +363,7 @@ class Expr:
                     args.append(expr[0])
             return ufunc(*args, **kwargs)
 
-        return root_expr.map_batches(
-            function, is_elementwise=not is_custom_ufunc, _is_ufunc=True
-        )
+        return root_expr.map_batches(function, is_elementwise=not is_custom_ufunc)
 
     @classmethod
     def deserialize(
@@ -4364,7 +4360,6 @@ class Expr:
         agg_list: bool = False,
         is_elementwise: bool = False,
         returns_scalar: bool = False,
-        _is_ufunc: bool = False,
     ) -> Expr:
         """
         Apply a custom python function to a whole Series or sequence of Series.
@@ -4383,9 +4378,11 @@ class Expr:
         function
             Lambda/function to apply.
         return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be inferred based on the first non-null value
-            that is returned by the function.
+            Datatype of the output Series.
+
+            It is recommended to set this whenever possible. If this is `None`, it tries
+            to infer the datatype by calling the function with dummy data and looking at
+            the output.
         agg_list
             First implode when in a group-by aggregation.
 
@@ -4404,16 +4401,11 @@ class Expr:
             always returns something Series-like. If you want to keep the
             result as a scalar, set this argument to True.
 
-        Warnings
-        --------
-        If `return_dtype` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query. In the
-        future this will raise in `Lazy` queries.
-
         Notes
         -----
         A UDF passed to `map_batches` must be pure, meaning that it cannot modify
-        or depend on state other than its arguments.
+        or depend on state other than its arguments. Polars may call the function
+        with arbitrary input data.
 
         See Also
         --------
@@ -4431,7 +4423,6 @@ class Expr:
         >>> df.select(
         ...     pl.all().map_batches(
         ...         lambda x: x.to_numpy().argmax(),
-        ...         return_dtype=pl.Int64,
         ...         returns_scalar=True,
         ...     )
         ... )
@@ -4511,7 +4502,6 @@ Consider using {self}.implode() instead"""
             return_dtype,
             is_elementwise=is_elementwise,
             returns_scalar=returns_scalar,
-            _is_ufunc=_is_ufunc,
         )
 
     def map_elements(
@@ -4549,9 +4539,11 @@ Consider using {self}.implode() instead"""
         function
             Lambda/function to map.
         return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be inferred based on the first non-null value
-            that is returned by the function.
+            Datatype of the output Series.
+
+            It is recommended to set this whenever possible. If this is `None`, it tries
+            to infer the datatype by calling the function with dummy data and looking at
+            the output.
         skip_nulls
             Don't map the function over values that contain nulls (this is faster).
         pass_name
@@ -4574,11 +4566,6 @@ Consider using {self}.implode() instead"""
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
-        Warnings
-        --------
-        If `return_dtype` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
-
         Notes
         -----
         * Using `map_elements` is strongly discouraged as you will be effectively
@@ -4593,7 +4580,8 @@ Consider using {self}.implode() instead"""
           here, so `map_elements` can be used to map functions over window groups.
 
         * A UDF passed to `map_elements` must be pure, meaning that it cannot modify or
-          depend on state other than its arguments.
+          depend on state other than its arguments. Polars may call the function
+          with arbitrary input data.
 
         Examples
         --------
