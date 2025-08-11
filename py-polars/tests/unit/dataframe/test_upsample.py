@@ -281,3 +281,23 @@ def test_upsample_sorted_only_within_group_but_no_group_by_provided() -> None:
         match=r"argument in operation 'upsample' is not sorted, please sort the 'expr/series/column' first",
     ):
         df.upsample(time_column="time", every="1mo")
+
+
+def test_upsample_fill_in_groups() -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 2, 1),
+                datetime(2021, 2, 3),
+                datetime(2021, 2, 4),
+                datetime(2021, 2, 6),
+            ],
+            "groups": ["A", "A", "B", "B"],
+            "values": [0, 1, 2, 3],
+        }
+    )
+
+    result = df.upsample(
+        time_column="time", every="1d", group_by="groups", maintain_order=True
+    )
+    assert not result.select(pl.col("groups").is_null().any()).item()

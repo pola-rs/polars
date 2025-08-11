@@ -166,14 +166,24 @@ fn upsample_impl(
         upsample_single_impl(source, index_column.as_materialized_series(), every)
     } else {
         let gb = if stable {
-            source.group_by_stable(by)
+            source.group_by_stable(by.clone())
         } else {
-            source.group_by(by)
+            source.group_by(by.clone())
         };
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
             let index_column = df.column(index_column)?;
-            upsample_single_impl(&df, index_column.as_materialized_series(), every)
+            let mut df = upsample_single_impl(&df, index_column.as_materialized_series(), every)?;
+            for by_col in &by {
+                let col = df.column(by_col)?;
+                if col.has_nulls() {
+                    let s = col.as_materialized_series();
+                    // either max/min strategy is fine here since they should all be the same value
+                    let s = s.fill_null(FillNullStrategy::Max)?;
+                    df.replace(by_col, s)?;
+                }
+            }
+            Ok(df)
         })
     }
 }
