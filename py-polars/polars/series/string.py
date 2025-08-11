@@ -320,12 +320,16 @@ class StringNameSpace:
         ]
         """
         if scale is not None:
-            s = wrap_s(self)
+            s = wrap_s(self._s)
             return (
-                s.to_frame().select_seq(F.col(s.name).str.to_decimal(scale)).to_series()
+                s.to_frame()
+                .select_seq(F.col(s.name).str.to_decimal(scale=scale))
+                .to_series()
             )
         else:
-            return wrap_s(s._s.str_to_decimal_infer(inference_length))
+            return wrap_s(
+                self._s.str_to_decimal_infer(inference_length=inference_length)
+            )
 
     def len_bytes(self) -> Series:
         """
