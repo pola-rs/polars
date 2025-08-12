@@ -1,9 +1,11 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use polars_core::prelude::{InitHashMaps, PlHashSet};
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
+use recursive::recursive;
 
 use super::format::ExprIRSliceDisplay;
 use crate::prelude::ir::format::ColumnsDisplay;
@@ -69,11 +71,13 @@ impl<'a> IRDotDisplay<'a> {
         }
     }
 
+    #[recursive]
     fn _format(
         &self,
         f: &mut fmt::Formatter<'_>,
         parent: Option<DotNode>,
         last: &mut usize,
+        visited_caches: &mut PlHashSet<UniqueId>,
     ) -> std::fmt::Result {
         use fmt::Write;
 
@@ -89,29 +93,44 @@ impl<'a> IRDotDisplay<'a> {
             writeln!(f, "{INDENT}{id} -> {parent}")?;
         }
 
+        macro_rules! recurse {
+            ($input:expr) => {
+                self.with_root($input)
+                    ._format(f, Some(id), last, visited_caches)?;
+            };
+        }
+
         use IR::*;
         match root {
             Union { inputs, .. } => {
                 for input in inputs {
-                    self.with_root(*input)._format(f, Some(id), last)?;
+                    recurse!(*input);
                 }
 
                 write_label(f, id, |f| f.write_str("UNION"))?;
             },
             HConcat { inputs, .. } => {
                 for input in inputs {
-                    self.with_root(*input)._format(f, Some(id), last)?;
+                    recurse!(*input);
                 }
 
                 write_label(f, id, |f| f.write_str("HCONCAT"))?;
             },
-            Cache { input, .. } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+            Cache {
+                input,
+                id: cache_id,
+                ..
+            } => {
+                if !visited_caches.contains(cache_id) {
+                    visited_caches.insert(*cache_id);
 
-                write_label(f, id, |f| f.write_str("CACHE"))?;
+                    recurse!(*input);
+
+                    write_label(f, id, |f| f.write_str("CACHE"))?;
+                }
             },
             Filter { predicate, input } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
 
                 let pred = self.display_expr(predicate);
                 write_label(f, id, |f| write!(f, "FILTER BY {pred}"))?;
@@ -139,14 +158,14 @@ impl<'a> IRDotDisplay<'a> {
                 schema,
                 ..
             } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "π {}/{}", expr.len(), schema.len()))?;
             },
             Sort {
                 input, by_column, ..
             } => {
                 let by_column = self.display_exprs(by_column);
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "SORT BY {by_column}"))?;
             },
             GroupBy {
@@ -154,20 +173,20 @@ impl<'a> IRDotDisplay<'a> {
             } => {
                 let keys = self.display_exprs(keys);
                 let aggs = self.display_exprs(aggs);
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "AGG {aggs}\nBY\n{keys}"))?;
             },
             HStack { input, exprs, .. } => {
                 let exprs = self.display_exprs(exprs);
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
             Slice { input, offset, len } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;
             },
             Distinct { input, options, .. } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| {
                     f.write_str("DISTINCT")?;
 
@@ -242,8 +261,8 @@ impl<'a> IRDotDisplay<'a> {
                 options,
                 ..
             } => {
-                self.with_root(*input_left)._format(f, Some(id), last)?;
-                self.with_root(*input_right)._format(f, Some(id), last)?;
+                recurse!(*input_left);
+                recurse!(*input_right);
 
                 write_label(f, id, |f| {
                     write!(f, "JOIN {}", options.args.how)?;
@@ -259,15 +278,15 @@ impl<'a> IRDotDisplay<'a> {
             MapFunction {
                 input, function, ..
             } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| write!(f, "{function}"))?;
             },
             ExtContext { input, .. } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| f.write_str("EXTERNAL_CONTEXT"))?;
             },
             Sink { input, payload, .. } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
 
                 write_label(f, id, |f| {
                     f.write_str(match payload {
@@ -279,7 +298,7 @@ impl<'a> IRDotDisplay<'a> {
             },
             SinkMultiple { inputs } => {
                 for input in inputs {
-                    self.with_root(*input)._format(f, Some(id), last)?;
+                    recurse!(*input);
                 }
 
                 write_label(f, id, |f| f.write_str("SINK MULTIPLE"))?;
@@ -289,7 +308,7 @@ impl<'a> IRDotDisplay<'a> {
                 let total_columns = self.lp.lp_arena.get(*input).schema(self.lp.lp_arena).len();
 
                 let columns = ColumnsDisplay(columns.as_ref());
-                self.with_root(*input)._format(f, Some(id), last)?;
+                recurse!(*input);
                 write_label(f, id, |f| {
                     write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]")
                 })?;
@@ -300,8 +319,8 @@ impl<'a> IRDotDisplay<'a> {
                 input_right,
                 key,
             } => {
-                self.with_root(*input_left)._format(f, Some(id), last)?;
-                self.with_root(*input_right)._format(f, Some(id), last)?;
+                recurse!(*input_left);
+                recurse!(*input_right);
 
                 write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
             },
@@ -417,7 +436,8 @@ impl fmt::Display for IRDotDisplay<'_> {
         writeln!(f, "{INDENT}node [fontname=\"Monospace\", shape=\"box\"]")?;
 
         let mut last = 0;
-        self._format(f, None, &mut last)?;
+        let mut visited_caches = PlHashSet::new();
+        self._format(f, None, &mut last, &mut visited_caches)?;
 
         writeln!(f, "}}")?;
 
