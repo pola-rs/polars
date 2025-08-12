@@ -1,8 +1,6 @@
 mod attr;
 mod keywords;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, FnArg};
