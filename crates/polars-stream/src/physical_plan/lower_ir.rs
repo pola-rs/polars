@@ -843,11 +843,7 @@ pub fn lower_ir(
             options: options.clone(),
         },
 
-        IR::Cache {
-            input,
-            id,
-            cache_hits: _,
-        } => {
+        IR::Cache { input, id } => {
             let id = *id;
             if let Some(cached) = cache_nodes.get(&id) {
                 return Ok(*cached);

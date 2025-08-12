@@ -160,10 +160,7 @@ fn test_cse_union2_4925() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use IR::*;
             match lp {
-                Cache { id, cache_hits, .. } => {
-                    assert_eq!(*cache_hits, 1);
-                    Some(*id)
-                },
+                Cache { id, .. } => Some(*id),
                 _ => None,
             }
         })
@@ -213,13 +210,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use IR::*;
             match lp {
-                Cache {
-                    id,
-                    cache_hits,
-                    input,
-                    ..
-                } => {
-                    assert_eq!(*cache_hits, 1);
+                Cache { id, input, .. } => {
                     assert!(matches!(lp_arena.get(*input), IR::SimpleProjection { .. }));
 
                     Some(*id)
