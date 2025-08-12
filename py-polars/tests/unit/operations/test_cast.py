@@ -1026,6 +1026,7 @@ def test_cast_optimizer_in_list_eval_23924(
             (op(pl.element(), pl.element().cast(inner_dtype))).cast(target_dtype)
         )
     )
+    assert q.collect_schema() == q.collect().schema
 
 
 def test_lit_cast_arithmetic_23677() -> None:
@@ -1041,7 +1042,7 @@ def test_lit_cast_arithmetic_23677() -> None:
 def test_lit_cast_arithmetic_matrix_schema(
     col_dtype: PolarsDataType,
     lit_dtype: PolarsDataType,
-    op: Callable[[pl.Series, pl.Series], pl.Series],
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
     df = pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
     q = df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
