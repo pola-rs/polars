@@ -43,14 +43,10 @@ def test_union_duplicates() -> None:
     df_lazy = pl.DataFrame({}).lazy()
     lazy_dfs = [df_lazy for _ in range(n_dfs)]
 
-    result = len(
-        re.findall(
-            r".*CACHE\[id: .*, cache_hits: 9].*",
-            pl.concat(lazy_dfs).explain(),
-            flags=re.MULTILINE,
-        )
-    )
-    assert result
+    matches = re.findall(r"CACHE\[id: (.*)]", pl.concat(lazy_dfs).explain())
+
+    assert len(matches) == 10
+    assert len(set(matches)) == 1
 
 
 def test_cse_with_struct_expr_11116() -> None:
