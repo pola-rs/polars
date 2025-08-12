@@ -7,21 +7,6 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, FnArg};
 
-static INIT: AtomicBool = AtomicBool::new(false);
-
-fn insert_error_function() -> proc_macro2::TokenStream {
-    let is_init = INIT.swap(true, Ordering::Relaxed);
-
-    // Only expose the error retrieval function on the first expression.
-    if !is_init {
-        quote!(
-            pub use pyo3_polars::derive::_polars_plugin_get_last_error_message;
-        )
-    } else {
-        proc_macro2::TokenStream::new()
-    }
-}
-
 fn quote_get_kwargs() -> proc_macro2::TokenStream {
     quote!(
     let kwargs = std::slice::from_raw_parts(kwargs_ptr, kwargs_len);
@@ -130,7 +115,6 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
         .collect::<Vec<_>>();
 
     let fn_name = &ast.sig.ident;
-    let error_msg_fn = insert_error_function();
 
     // Get the tokenstream of the call logic.
     let quote_call = match args.len() {
@@ -152,9 +136,7 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
     let fn_name = get_expression_function_name(fn_name);
 
     quote!(
-        use pyo3_polars::export::*;
-
-        #error_msg_fn
+        use ::pyo3_polars::export::*;
 
         // create the outer public function
         #[no_mangle]
@@ -176,9 +158,8 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
 
             if panic_result.is_err() {
                 // Set latest to panic;
-                pyo3_polars::derive::_set_panic();
+                ::pyo3_polars::derive::_set_panic();
             }
-
         }
     )
 }
