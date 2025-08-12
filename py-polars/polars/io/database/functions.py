@@ -365,8 +365,9 @@ def read_database_uri(
     For `connectorx`, ensure that you have `connectorx>=0.3.2`. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
-    For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
-    with the backend you are connecting to, eg: `adbc-driver-postgresql`.
+    For `adbc` you will need to have installed the ADBC driver associated with the
+    backend you are connecting to, eg: `adbc-driver-postgresql`. For versions of
+    `adbc-driver-manager` < 1.7.0, `pyarrow` is also required.
 
     If your password contains special characters, you will need to escape them.
     This will usually require the use of a URL-escaping function, for example:
