@@ -197,21 +197,18 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         let mapping = self.get_mapping();
         let as_views = compat_level != CompatLevel::oldest();
 
-        let (keys, values);
-        if self.is_enum() {
-            keys = in_keys.clone();
-            values = mapping.to_arrow(as_views);
-        } else {
-            // To minimize dictionary size only include used categories.
-            let mut len = 0;
-            let bound = mapping.num_cats_upper_bound();
-            let bound_native = <T as PolarsCategoricalType>::Native::from_cat(bound as CatSize);
-            let mut new_key_idx_map = vec![bound_native; bound];
+        // To minimize dictionary size only include used categories.
+        let mut len = 0;
+        let bound = mapping.num_cats_upper_bound();
+        let bound_native = <T as PolarsCategoricalType>::Native::from_cat(bound as CatSize);
+        let mut new_key_idx_map = vec![bound_native; bound];
 
-            let new_key_idxs: Vec<_>;
-            if as_views {
-                let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
-                new_key_idxs = in_keys.iter().map(|opt_k| {
+        let new_key_idxs: Vec<_>;
+        let values = if as_views {
+            let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
+            new_key_idxs = in_keys
+                .iter()
+                .map(|opt_k| {
                     if let Some(k) = opt_k {
                         unsafe {
                             let mut new_k = *new_key_idx_map.get_unchecked(k.as_cat() as usize);
@@ -228,11 +225,14 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
                     } else {
                         <_>::from_cat(0)
                     }
-                }).collect();
-                values = builder.freeze().boxed();
-            } else {
-                let mut builder = MutableUtf8Array::new();
-                new_key_idxs = in_keys.iter().map(|opt_k| {
+                })
+                .collect();
+            builder.freeze().boxed()
+        } else {
+            let mut builder = MutableUtf8Array::new();
+            new_key_idxs = in_keys
+                .iter()
+                .map(|opt_k| {
                     if let Some(k) = opt_k {
                         unsafe {
                             let mut new_k = *new_key_idx_map.get_unchecked(k.as_cat() as usize);
@@ -249,14 +249,14 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
                     } else {
                         <_>::from_cat(0)
                     }
-                }).collect();
-                let arr: Utf8Array<i64> = builder.into();
-                values = arr.boxed();
-            }
+                })
+                .collect();
+            let arr: Utf8Array<i64> = builder.into();
+            arr.boxed()
+        };
 
-            keys = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(new_key_idxs)
-                .with_validity(in_keys.validity().cloned());
-        }
+        let keys = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(new_key_idxs)
+            .with_validity(in_keys.validity().cloned());
 
         let values_dtype = Box::new(values.dtype().clone());
         let dtype =
