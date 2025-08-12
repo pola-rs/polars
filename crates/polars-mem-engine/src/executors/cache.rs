@@ -1,55 +1,77 @@
-use std::sync::atomic::Ordering;
-
 #[cfg(feature = "async")]
 use polars_io::pl_async;
 use polars_utils::unique_id::UniqueId;
 
 use super::*;
 
+pub struct CachePrefill {
+    input: Box<dyn Executor>,
+    id: UniqueId,
+    hit_count: u32,
+    /// Signals that this is a scan executed async in the streaming engine and needs extra handling
+    is_new_streaming_scan: bool,
+}
+
+impl CachePrefill {
+    pub fn new_cache(input: Box<dyn Executor>, id: UniqueId) -> Self {
+        Self {
+            input,
+            id,
+            hit_count: 0,
+            is_new_streaming_scan: false,
+        }
+    }
+
+    pub fn new_scan(input: Box<dyn Executor>) -> Self {
+        Self {
+            input,
+            id: UniqueId::new(),
+            hit_count: 0,
+            is_new_streaming_scan: true,
+        }
+    }
+
+    pub fn new_sink(input: Box<dyn Executor>) -> Self {
+        Self {
+            input,
+            id: UniqueId::new(),
+            hit_count: 0,
+            is_new_streaming_scan: false,
+        }
+    }
+
+    pub fn id(&self) -> UniqueId {
+        self.id
+    }
+
+    /// Returns an executor that will read the prefilled cache.
+    /// Increments the cache hit count.
+    pub fn make_exec(&mut self) -> CacheExec {
+        self.hit_count += 1;
+        CacheExec { id: self.id }
+    }
+}
+
+impl Executor for CachePrefill {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        let df = self.input.execute(state)?;
+        state.set_df_cache(&self.id, df, self.hit_count);
+        Ok(DataFrame::empty())
+    }
+}
+
 pub struct CacheExec {
-    pub input: Option<Box<dyn Executor>>,
-    pub id: UniqueId,
-    /// `(cache_hits_before_drop - 1)`
-    pub count: u32,
-    pub is_new_streaming_scan: bool,
+    id: UniqueId,
 }
 
 impl Executor for CacheExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        match &mut self.input {
-            // Cache node
-            None => {
-                if state.verbose() {
-                    eprintln!("CACHE HIT: cache id: {:?}", self.id);
-                }
-                let cache = state.get_df_cache(&self.id, self.count);
-                let out = cache.1.get().expect("prefilled").clone();
-                let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
-                if previous == 0 {
-                    if state.verbose() {
-                        eprintln!("CACHE DROP: cache id: {:?}", self.id);
-                    }
-                    state.remove_df_cache(&self.id);
-                }
-
-                Ok(out)
-            },
-            // Cache Prefill node
-            Some(input) => {
-                if state.verbose() {
-                    eprintln!("CACHE SET: cache id: {:?}", self.id);
-                }
-                let df = input.execute(state)?;
-                let cache = state.get_df_cache(&self.id, self.count);
-                cache.1.set(df).expect("should be empty");
-                Ok(DataFrame::empty())
-            },
-        }
+        Ok(state.get_df_cache(&self.id))
     }
 }
 
 pub struct CachePrefiller {
-    pub caches: PlIndexMap<UniqueId, Box<CacheExec>>,
+    pub caches: PlIndexMap<UniqueId, CachePrefill>,
     pub phys_plan: Box<dyn Executor>,
 }
 
@@ -83,19 +105,26 @@ impl Executor for CachePrefiller {
 
         // Ensure we traverse in discovery order. This will ensure that caches aren't dependent on each
         // other.
-        for (_, mut cache_exec) in self.caches.drain(..) {
+        for (_, mut prefill) in self.caches.drain(..) {
+            assert_ne!(
+                prefill.hit_count,
+                0,
+                "cache without execs: {}",
+                prefill.id()
+            );
+
             let mut state = state.split();
             state.branch_idx += 1;
 
             #[cfg(feature = "async")]
-            if cache_exec.is_new_streaming_scan {
+            if prefill.is_new_streaming_scan {
                 let parallel_scan_exec_limit = parallel_scan_exec_limit.clone();
 
                 scan_handles.push(pl_async::get_runtime().spawn(async move {
                     let _permit = parallel_scan_exec_limit.acquire().await.unwrap();
 
                     tokio::task::spawn_blocking(move || {
-                        cache_exec.execute(&mut state)?;
+                        prefill.execute(&mut state)?;
 
                         Ok(())
                     })
@@ -122,7 +151,7 @@ impl Executor for CachePrefiller {
                 pl_async::get_runtime().block_on(handle).unwrap()?;
             }
 
-            let _df = cache_exec.execute(&mut state)?;
+            let _df = prefill.execute(&mut state)?;
         }
 
         #[cfg(feature = "async")]

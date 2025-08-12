@@ -351,7 +351,6 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
         let cache_node = IR::Cache {
             input: node.node(),
             id: cache_id,
-            cache_hits: cache_count - 1,
         };
         node.assign(cache_node, &mut arena.0);
         let (_count, nodes) = self

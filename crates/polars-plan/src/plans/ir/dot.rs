@@ -6,7 +6,6 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use super::format::ExprIRSliceDisplay;
-use crate::constants::UNLIMITED_CACHE;
 use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
@@ -106,16 +105,10 @@ impl<'a> IRDotDisplay<'a> {
 
                 write_label(f, id, |f| f.write_str("HCONCAT"))?;
             },
-            Cache {
-                input, cache_hits, ..
-            } => {
+            Cache { input, .. } => {
                 self.with_root(*input)._format(f, Some(id), last)?;
 
-                if *cache_hits == UNLIMITED_CACHE {
-                    write_label(f, id, |f| f.write_str("CACHE"))?;
-                } else {
-                    write_label(f, id, |f| write!(f, "CACHE: {cache_hits} times"))?;
-                };
+                write_label(f, id, |f| f.write_str("CACHE"))?;
             },
             Filter { predicate, input } => {
                 self.with_root(*input)._format(f, Some(id), last)?;
