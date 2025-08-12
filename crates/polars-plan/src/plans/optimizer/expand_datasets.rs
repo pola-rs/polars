@@ -219,6 +219,8 @@ impl OptimizationRule for ExpandDatasets {
 }
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ExpandedDataset {
     version: PlSmallStr,
     limit: Option<usize>,
@@ -231,6 +233,8 @@ pub struct ExpandedDataset {
 }
 
 #[cfg(feature = "python")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone)]
 pub struct ExpandedPythonScan {
     pub name: PlSmallStr,
