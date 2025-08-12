@@ -585,7 +585,7 @@ def test_read_database_mocked(
                 query=["SELECT * FROM test_data", "SELECT * FROM test_data"],
                 protocol="sqlite",
                 errclass=ValueError,
-                errmsg="only a single SQL query string is accepted for adbc",
+                errmsg="only a single SQL query string is accepted for adbc, got a 'list' type",
                 engine="adbc",
             ),
             id="Unavailable list of queries for adbc",
