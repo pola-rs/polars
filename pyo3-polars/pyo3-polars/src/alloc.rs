@@ -70,9 +70,10 @@ impl PolarsAllocator {
             let r = (unsafe { Py_IsInitialized() } != 0)
                 .then(|| {
                     Python::with_gil(|_| unsafe {
-                        let capsule = (PyCapsule_Import(ALLOCATOR_CAPSULE_NAME.as_ptr() as *const c_char, 0)
-                            as *const AllocatorCapsule)
-                            .as_ref();
+                        let capsule =
+                            (PyCapsule_Import(ALLOCATOR_CAPSULE_NAME.as_ptr() as *const c_char, 0)
+                                as *const AllocatorCapsule)
+                                .as_ref();
                         if capsule.is_none() {
                             pyo3::ffi::PyErr_Clear();
                         }
