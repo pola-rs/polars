@@ -6578,7 +6578,7 @@ class DataFrame:
         if isinstance(column_names, (pl.Selector, pl.Expr)):
             from polars.selectors import expand_selector
 
-            c_names = expand_selector(self, column_names)
+            c_names = list(expand_selector(self, column_names))
         elif isinstance(column_names, str):
             c_names = [column_names]
         else:
