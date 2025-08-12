@@ -39,13 +39,89 @@ pub fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
         let set_per_8 = (set_per_4 + (set_per_4 >> 4)) & 0x0f0f0f0f;
         let set_per_16 = (set_per_8 + (set_per_8 >> 8)) & 0x00ff00ff;
         let set_per_32 = (set_per_16 + (set_per_16 >> 16)) & 0xff;
+
         if n >= set_per_32 {
             return None;
         }
 
         let mut idx = 0;
         let mut n = n;
+
         let next16 = set_per_16 & 0xff;
+        if n >= next16 {
+            n -= next16;
+            idx += 16;
+        }
+        let next8 = (set_per_8 >> idx) & 0xff;
+        if n >= next8 {
+            n -= next8;
+            idx += 8;
+        }
+        let next4 = (set_per_4 >> idx) & 0b1111;
+        if n >= next4 {
+            n -= next4;
+            idx += 4;
+        }
+        let next2 = (set_per_2 >> idx) & 0b11;
+        if n >= next2 {
+            n -= next2;
+            idx += 2;
+        }
+        let next1 = (w >> idx) & 0b1;
+        if n >= next1 {
+            idx += 1;
+        }
+        Some(idx)
+    }
+}
+
+/// Returns the nth set bit in w, if n+1 bits are set. The indexing is
+/// zero-based, nth_set_bit_u64(w, 0) returns the least significant set bit in w.
+#[inline]
+pub fn nth_set_bit_u64(w: u64, n: u64) -> Option<u64> {
+    // If we have BMI2's PDEP available, we use it. It takes the lower order
+    // bits of the first argument and spreads it along its second argument
+    // where those bits are 1. So PDEP(abcdefgh, 11001001) becomes ef00g00h.
+    // We use this by setting the first argument to 1 << n, which means the
+    // first n-1 zero bits of it will spread to the first n-1 one bits of w,
+    // after which the one bit will exactly get copied to the nth one bit of w.
+    #[cfg(all(not(miri), target_feature = "bmi2"))]
+    {
+        if n >= 64 {
+            return None;
+        }
+
+        let nth_set_bit = unsafe { core::arch::x86_64::_pdep_u64(1 << n, w) };
+        if nth_set_bit == 0 {
+            return None;
+        }
+
+        Some(nth_set_bit.trailing_zeros())
+    }
+
+    #[cfg(any(miri, not(target_feature = "bmi2")))]
+    {
+        // Each block of 2/4/8/16/32 bits contains how many set bits there are in that block.
+        let set_per_2 = w - ((w >> 1) & 0x5555555555555555);
+        let set_per_4 = (set_per_2 & 0x3333333333333333) + ((set_per_2 >> 2) & 0x3333333333333333);
+        let set_per_8 = (set_per_4 + (set_per_4 >> 4)) & 0x0f0f0f0f0f0f0f0f;
+        let set_per_16 = (set_per_8 + (set_per_8 >> 8)) & 0x00ff00ff00ff00ff;
+        let set_per_32 = (set_per_16 + (set_per_16 >> 16)) & 0x0000ffff0000ffff;
+        let set_per_64 = (set_per_32 + (set_per_32 >> 32)) & 0xffffffff;
+
+        if n >= set_per_64 {
+            return None;
+        }
+
+        let mut idx = 0;
+        let mut n = n;
+
+        let next32 = set_per_32 & 0xffff;
+        if n >= next32 {
+            n -= next32;
+            idx += 32;
+        }
+        let next16 = (set_per_16 >> idx) & 0xffff;
         if n >= next16 {
             n -= next16;
             idx += 16;
@@ -315,8 +391,21 @@ impl<'a> BitMask<'a> {
 mod test {
     use super::*;
 
-    fn naive_nth_bit_set(mut w: u32, mut n: u32) -> Option<u32> {
+    fn naive_nth_bit_set_u32(mut w: u32, mut n: u32) -> Option<u32> {
         for i in 0..32 {
+            if w & (1 << i) != 0 {
+                if n == 0 {
+                    return Some(i);
+                }
+                n -= 1;
+                w ^= 1 << i;
+            }
+        }
+        None
+    }
+
+    fn naive_nth_bit_set_u64(mut w: u64, mut n: u64) -> Option<u64> {
+        for i in 0..64 {
             if w & (1 << i) != 0 {
                 if n == 0 {
                     return Some(i);
@@ -342,7 +431,26 @@ mod test {
         for i in 0..10000 {
             let rnd = (0xbdbc9d8ec9d5c461u64.wrapping_mul(i as u64) >> 32) as u32;
             for i in 0..=32 {
-                assert_eq!(nth_set_bit_u32(rnd, i), naive_nth_bit_set(rnd, i));
+                assert_eq!(nth_set_bit_u32(rnd, i), naive_nth_bit_set_u32(rnd, i));
+            }
+        }
+    }
+
+    #[test]
+    fn test_nth_set_bit_u64() {
+        for n in 0..256 {
+            assert_eq!(nth_set_bit_u64(0, n), None);
+        }
+
+        for i in 0..64 {
+            assert_eq!(nth_set_bit_u64(1 << i, 0), Some(i));
+            assert_eq!(nth_set_bit_u64(1 << i, 1), None);
+        }
+
+        for i in 0..10000 {
+            let rnd = 0xbdbc9d8ec9d5c461u64.wrapping_mul(i as u64) >> 32;
+            for i in 0..=64 {
+                assert_eq!(nth_set_bit_u64(rnd, i), naive_nth_bit_set_u64(rnd, i));
             }
         }
     }
