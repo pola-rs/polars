@@ -6512,7 +6512,12 @@ class DataFrame:
         **kwargs: P.kwargs,
     ) -> DataFrame:
         """
-        Apply a user-defined function (UDF) to columns.
+        Apply eager functions to columns of a DataFrame.
+
+        Users should always prefer :meth:`with_columns` unless they are using
+        expressions that are only possible on `Series` and not on `Expr`. This is almost
+        never the case, except for a very select few functions that cannot know the
+        output datatype without looking at the data.
 
         Parameters
         ----------
@@ -6573,6 +6578,10 @@ class DataFrame:
         │ {"b"}     ┆ {2,false} │
         │ null      ┆ null      │
         └───────────┴───────────┘
+
+        See Also
+        --------
+        with_columns
         """
         c_names: list[str]
         if isinstance(column_names, (pl.Selector, pl.Expr)):
