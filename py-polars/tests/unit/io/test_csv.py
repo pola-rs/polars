@@ -620,6 +620,16 @@ def test_compressed_csv(io_files_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     )
     assert_frame_equal(out, expected)
 
+    # different levels of zlib create different magic strings,
+    # try to cover them all.
+    for level in range(10):
+        csv_bytes = zlib.compress(csv.encode(), level=level)
+        out = pl.read_csv(csv_bytes)
+        expected = pl.DataFrame(
+            {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+        )
+        assert_frame_equal(out, expected)
+
     # zstd compression
     csv_bytes = zstandard.compress(csv.encode())
     out = pl.read_csv(csv_bytes)
