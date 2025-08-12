@@ -576,3 +576,12 @@ def test_bottom_k_by() -> None:
     assert_series_equal(
         s.bottom_k_by("a", 4), pl.Series("a", [3, 2, 1, 5]), check_order=False
     )
+
+
+def test_sort_head_maintain_order() -> None:
+    df = pl.DataFrame(
+        {"x": [2, 0, 8, 0, 0, 0, 7, 0, 9, 0], "y": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}
+    )
+    expected = pl.DataFrame({"x": [0, 0, 0, 0], "y": [1, 3, 4, 5]})
+    q = df.lazy().sort(by="x", maintain_order=True).head(4)
+    assert_frame_equal(q.collect(), expected)

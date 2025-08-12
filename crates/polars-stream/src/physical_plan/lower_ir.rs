@@ -432,10 +432,13 @@ pub fn lower_ir(
             slice,
             sort_options,
         } => {
-            let by_column = by_column.clone();
             let slice = *slice;
-            let sort_options = sort_options.clone();
+            let mut by_column = by_column.clone();
+            let mut sort_options = sort_options.clone();
             let phys_input = lower_ir!(*input)?;
+
+            let mut cur_out_schema = (*output_schema).clone();
+            let mut with_row_idx = None;
 
             // See if we can insert a top k.
             let mut limit = u64::MAX;
@@ -447,7 +450,37 @@ pub fn lower_ir(
                 limit = limit.min(l as u64);
             };
 
-            let sort_in_stream = if limit < u64::MAX && !sort_options.maintain_order {
+            let mut stream = phys_input;
+            if limit < u64::MAX {
+                // If we need to maintain order augment with row index.
+                if sort_options.maintain_order {
+                    let row_idx_name = unique_column_name();
+                    with_row_idx = Some(row_idx_name.clone());
+                    cur_out_schema
+                        .insert_at_index(0, row_idx_name.clone(), DataType::IDX_DTYPE)
+                        .unwrap();
+                    stream = PhysStream::first(phys_sm.insert(PhysNode {
+                        output_schema: Arc::new(cur_out_schema.clone()),
+                        kind: PhysNodeKind::WithRowIndex {
+                            input: stream,
+                            name: row_idx_name.clone(),
+                            offset: None,
+                        },
+                    }));
+
+                    // Add row index to sort columns.
+                    let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
+                    by_column.push(ExprIR::new(
+                        row_idx_node,
+                        OutputName::ColumnLhs(row_idx_name.clone()),
+                    ));
+                    sort_options.descending.push(false);
+                    sort_options.nulls_last.push(true);
+
+                    // No longer needed for the actual sort itself, handled by row index.
+                    sort_options.maintain_order = false;
+                }
+
                 let k_node =
                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(limit))));
                 let k_selector = ExprIR::from_node(k_node, expr_arena);
@@ -460,27 +493,41 @@ pub fn lower_ir(
                     },
                 ));
 
-                let node = phys_sm.insert(PhysNode {
-                    output_schema: output_schema.clone(),
+                stream = PhysStream::first(phys_sm.insert(PhysNode {
+                    output_schema: Arc::new(cur_out_schema.clone()),
                     kind: PhysNodeKind::TopK {
-                        input: phys_input,
+                        input: stream,
                         k: PhysStream::first(k_node),
                         by_column: by_column.clone(),
                         reverse: sort_options.descending.iter().map(|x| !x).collect(),
                         nulls_last: sort_options.nulls_last.clone(),
                     },
-                });
-                PhysStream::first(node)
-            } else {
-                phys_input
-            };
-
-            PhysNodeKind::Sort {
-                input: sort_in_stream,
-                by_column,
-                slice,
-                sort_options,
+                }));
             }
+
+            stream = PhysStream::first(phys_sm.insert(PhysNode {
+                output_schema: Arc::new(cur_out_schema),
+                kind: PhysNodeKind::Sort {
+                    input: stream,
+                    by_column,
+                    slice,
+                    sort_options,
+                },
+            }));
+
+            // Remove the temporary row index column we added.
+            if with_row_idx.is_some() {
+                let exprs: Vec<_> = output_schema
+                    .iter_names()
+                    .map(|name| {
+                        let node = expr_arena.add(AExpr::Column(name.clone()));
+                        ExprIR::new(node, OutputName::ColumnLhs(name.clone()))
+                    })
+                    .collect();
+                stream = build_select_stream(stream, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+            }
+
+            return Ok(stream);
         },
 
         IR::Union { inputs, options } => {
