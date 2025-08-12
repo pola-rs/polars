@@ -86,7 +86,7 @@ impl<'a> IRDotDisplay<'a> {
         };
 
         if let Some(parent) = parent {
-            writeln!(f, "{INDENT}{parent} -- {id}")?;
+            writeln!(f, "{INDENT}{id} -> {parent}")?;
         }
 
         use IR::*;
@@ -412,7 +412,9 @@ impl fmt::Write for EscapeLabel<'_> {
 
 impl fmt::Display for IRDotDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "graph  polars_query {{")?;
+        writeln!(f, "digraph polars_query {{")?;
+        writeln!(f, "{INDENT}rankdir=\"BT\"")?;
+        writeln!(f, "{INDENT}node [fontname=\"Monospace\", shape=\"box\"]")?;
 
         let mut last = 0;
         self._format(f, None, &mut last)?;
