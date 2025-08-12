@@ -360,6 +360,11 @@ def test_slice_slice_pushdown() -> None:
             for inner_offset in range(-10, 10):
                 for inner_len in range(10):
                     assert_frame_equal(
-                        df.slice(inner_offset, inner_len).slice(outer_offset, outer_len),
-                        df.lazy().slice(inner_offset, inner_len).slice(outer_offset, outer_len).collect()
+                        df.slice(inner_offset, inner_len).slice(
+                            outer_offset, outer_len
+                        ),
+                        df.lazy()
+                        .slice(inner_offset, inner_len)
+                        .slice(outer_offset, outer_len)
+                        .collect(),
                     )
