@@ -20,13 +20,13 @@ impl SupportedCompression {
             return None;
         }
         match bytes[..4] {
-            [0x1f, 0x8B, _, _] => Some(Self::GZIP),
+            [0x1f, 0x8b, _, _] => Some(Self::GZIP),
             // Different zlib compression levels without preset dictionary.
             [0x78, 0x01, _, _] => Some(Self::ZLIB),
-            [0x78, 0x5E, _, _] => Some(Self::ZLIB),
-            [0x78, 0x9C, _, _] => Some(Self::ZLIB),
-            [0x78, 0xDA, _, _] => Some(Self::ZLIB),
-            [0x28, 0xB5, 0x2F, 0xFD] => Some(Self::ZSTD),
+            [0x78, 0x5e, _, _] => Some(Self::ZLIB),
+            [0x78, 0x9c, _, _] => Some(Self::ZLIB),
+            [0x78, 0xda, _, _] => Some(Self::ZLIB),
+            [0x28, 0xb5, 0x2f, 0xfd] => Some(Self::ZSTD),
             _ => None,
         }
     }
