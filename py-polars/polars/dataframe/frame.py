@@ -6504,9 +6504,9 @@ class DataFrame:
         """
         return function(self, *args, **kwargs)
 
-    def pipe_columns(
+    def map_columns(
         self,
-        column_names: str | Sequence[str],
+        column_names: str | Sequence[str] | pl.Selector,
         function: Callable[[Series], Series],
         *args: P.args,
         **kwargs: P.kwargs,
@@ -6529,7 +6529,7 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
-        >>> df.pipe_columns("a", lambda s: s.shrink_dtype())
+        >>> df.map_columns("a", lambda s: s.shrink_dtype())
         shape: (4, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -6548,7 +6548,20 @@ class DataFrame:
         ...         "b": ['{"a":1, "b": true}', None, '{"a":2, "b": false}', None],
         ...     }
         ... )
-        >>> df.pipe_columns(["a", "b"], lambda s: s.str.json_decode())
+        >>> df.map_columns(["a", "b"], lambda s: s.str.json_decode())
+        shape: (4, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ struct[1] ┆ struct[2] │
+        ╞═══════════╪═══════════╡
+        │ {"a"}     ┆ {1,true}  │
+        │ null      ┆ null      │
+        │ {"b"}     ┆ {2,false} │
+        │ null      ┆ null      │
+        └───────────┴───────────┘
+        >>> import polars.selectors as cs
+        >>> df.map_columns(cs.all(), lambda s: s.str.json_decode())
         shape: (4, 2)
         ┌───────────┬───────────┐
         │ a         ┆ b         │
@@ -6561,11 +6574,18 @@ class DataFrame:
         │ null      ┆ null      │
         └───────────┴───────────┘
         """
-        if isinstance(column_names, str):
-            column_names = [column_names]
+        c_names: list[str]
+        if isinstance(column_names, (pl.Selector, pl.Expr)):
+            from polars.selectors import expand_selector
+
+            c_names = expand_selector(self, column_names)
+        elif isinstance(column_names, str):
+            c_names = [column_names]
+        else:
+            c_names = list(column_names)
 
         return self.with_columns(
-            **{c: function(self[c], *args, **kwargs) for c in column_names}
+            **{c: function(self[c], *args, **kwargs) for c in c_names}
         )
 
     def with_row_index(self, name: str = "index", offset: int = 0) -> DataFrame:
