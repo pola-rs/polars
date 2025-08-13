@@ -24,7 +24,7 @@ concurrency:
 
 env:
   RUSTFLAGS: -C link-self-contained=no -C debuginfo=0
-  CFLAGS: -fPIC
+  CFLAGS: -fPIC -fwasm-exceptions
 
 defaults:
   run:

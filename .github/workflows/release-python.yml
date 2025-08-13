@@ -345,7 +345,7 @@ jobs:
 
       - name: Set CFLAGS and RUSTFLAGS for wasm32
         run: |
-            echo "CFLAGS=-fPIC" >> $GITHUB_ENV
+            echo "CFLAGS=-fPIC -fwasm-exceptions" >> $GITHUB_ENV
             echo "RUSTFLAGS=-C link-self-contained=no" >> $GITHUB_ENV
 
       - name: Build wheel
