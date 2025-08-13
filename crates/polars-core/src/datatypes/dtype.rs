@@ -1138,6 +1138,7 @@ impl std::fmt::Debug for DataType {
                     write!(f, "Datetime('{unit}')")
                 }
             },
+            #[cfg(feature = "dtype-decimal")]
             Decimal(opt_p, s) => {
                 if let Some(p) = opt_p {
                     write!(f, "Decimal({}, {})", p, s.unwrap_or(0))
@@ -1145,8 +1146,10 @@ impl std::fmt::Debug for DataType {
                     write!(f, "Decimal(None, {})", s.unwrap_or(0))
                 }
             },
+            #[cfg(feature = "dtype-array")]
             Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
             List(inner) => write!(f, "List({inner:?})"),
+            #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let mut first = true;
                 write!(f, "Struct({{")?;
@@ -1159,6 +1162,7 @@ impl std::fmt::Debug for DataType {
                 }
                 write!(f, "}})")
             },
+            #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
                 if cats.is_global() {
                     write!(f, "Categorical")
@@ -1175,7 +1179,9 @@ impl std::fmt::Debug for DataType {
                     )
                 }
             },
+            #[cfg(feature = "dtype-categorical")]
             Enum(_, _) => write!(f, "Enum([...])"),
+            #[cfg(feature = "object")]
             Object(_) => write!(f, "Object"),
             Null => write!(f, "Null"),
             Unknown(kind) => write!(f, "Unknown({kind:?})"),
