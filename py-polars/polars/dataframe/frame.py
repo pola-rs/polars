@@ -1733,12 +1733,13 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = False  # type: ignore[assignment]
+            compat_level_py = False
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
+            compat_level_py = compat_level._version
 
-        record_batches = self._df.to_arrow(compat_level)
+        record_batches = self._df.to_arrow(compat_level_py)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -3922,15 +3923,16 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        compat_level_py: int | bool
         if compat_level is None:
-            compat_level = True  # type: ignore[assignment]
+            compat_level_py = True
         elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
+            compat_level_py = compat_level._version
 
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc_stream(file, compression, compat_level)
+        self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
@@ -4872,9 +4874,12 @@ class DataFrame:
         └────────┴─────┴─────┴─────┘
         """
         keep_names_as = header_name if include_header else None
+        column_names_: Sequence[str] | None
         if isinstance(column_names, Generator):
-            column_names = [next(column_names) for _ in range(self.height)]
-        return self._from_pydf(self._df.transpose(keep_names_as, column_names))
+            column_names_ = [next(column_names) for _ in range(self.height)]
+        else:
+            column_names_ = column_names  # type: ignore[assignment]
+        return self._from_pydf(self._df.transpose(keep_names_as, column_names_))
 
     def reverse(self) -> DataFrame:
         """

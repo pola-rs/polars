@@ -479,7 +479,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()
+                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
 
         return config_state
 

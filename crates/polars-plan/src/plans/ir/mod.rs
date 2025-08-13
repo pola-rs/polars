@@ -93,8 +93,6 @@ pub enum IR {
         input: Node,
         /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
         id: UniqueId,
-        /// How many hits the cache must be saved in memory.
-        cache_hits: u32,
     },
     GroupBy {
         input: Node,

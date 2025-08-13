@@ -6,6 +6,7 @@ use super::*;
 
 pub trait AnonymousColumnsUdf: ColumnsUdf {
     fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf>;
+    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf>;
 
     fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
         polars_bail!(ComputeError: "serialization not supported for this 'opaque' function")
@@ -50,6 +51,12 @@ impl<T> SpecialEq<T> {
 
     pub fn into_inner(self) -> T {
         self.0
+    }
+}
+
+impl SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
+    pub fn deep_clone(self) -> Self {
+        SpecialEq(self.0.deep_clone())
     }
 }
 
@@ -115,6 +122,9 @@ where
 {
     fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf> {
         self as _
+    }
+    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf> {
+        self
     }
 
     fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field> {

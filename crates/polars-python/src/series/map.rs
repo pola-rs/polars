@@ -258,7 +258,11 @@ impl PySeries {
                         PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                pl_series(py).call1(py, ("", out, &dtype_py))
+                                if out.is_none(py) {
+                                    Ok(py.None())
+                                } else {
+                                    pl_series(py).call1(py, ("", out, &dtype_py))
+                                }
                             })
                         })?
                         .into_any()
