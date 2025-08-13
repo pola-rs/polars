@@ -336,7 +336,7 @@ jobs:
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
 
       - name: Setup emsdk
-        uses: mymindstorm/setup-emsdk@v14
+        uses: pyodide/setup-emsdk@v15
         with:
           # This should match the exact version of Emscripten used by Pyodide
           # UPDATE; set to latest due to breaking build
