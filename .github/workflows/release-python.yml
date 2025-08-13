@@ -339,8 +339,9 @@ jobs:
         uses: pyodide/setup-emsdk@v15
         with:
           # This should match the exact version of Emscripten used by Pyodide
-          # UPDATE; set to latest due to breaking build
-          version: latest
+          # Pyodide 0.28 uses Emscripten 4.0.9:
+          # https://github.com/pyodide/pyodide/blob/0db5ff79f310694a7d72ae0b3279e9809ab836d6/Makefile.envs
+          version: 4.0.9
 
       - name: Set CFLAGS and RUSTFLAGS for wasm32
         run: |

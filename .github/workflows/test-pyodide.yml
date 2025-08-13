@@ -50,7 +50,9 @@ jobs:
         uses: pyodide/setup-emsdk@v15
         with:
           # This should match the exact version of Emscripten used by Pyodide
-          version: 3.1.58
+          # Pyodide 0.28 uses Emscripten 4.0.9:
+          # https://github.com/pyodide/pyodide/blob/0db5ff79f310694a7d72ae0b3279e9809ab836d6/Makefile.envs
+          version: 4.0.9
 
       - name: Install LLVM
         # This should match the major version of LLVM expected by Emscripten
