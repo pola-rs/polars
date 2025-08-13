@@ -570,7 +570,7 @@ class GroupBy:
 
     def max(self) -> DataFrame:
         """
-        Reduce the groups to the maximal value.
+        Reduce the groups to the maximal value, ignoring null values.
 
         Examples
         --------
@@ -652,7 +652,7 @@ class GroupBy:
 
     def min(self) -> DataFrame:
         """
-        Reduce the groups to the minimal value.
+        Reduce the groups to the minimal value, ignoring null values.
 
         Examples
         --------
