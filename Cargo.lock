@@ -3336,6 +3336,7 @@ name = "polars-lazy"
 version = "0.50.0"
 dependencies = [
  "bitflags",
+ "bytes",
  "chrono",
  "either",
  "futures",
