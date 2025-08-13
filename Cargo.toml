@@ -25,7 +25,7 @@ repository = "https://github.com/pola-rs/polars"
 [workspace.dependencies]
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
-async-channel = { version = "2.3.1" }
+async-channel = { version = "2.5.0" }
 async-trait = { version = "0.1.59" }
 atoi_simd = "0.16"
 atomic-waker = "1"
@@ -70,7 +70,7 @@ pyo3 = "0.25"
 rand = "0.9"
 rand_distr = "0.5"
 raw-cpuid = "11"
-rayon = "1.9"
+rayon = "1.11"
 recursive = "0.1"
 regex = "1.9"
 regex-syntax = "0.8.5"
@@ -92,12 +92,12 @@ streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
 strum = "0.27"
 strum_macros = "0.27"
-tokio = { version = "1.44", default-features = false }
+tokio = { version = "1.47", default-features = false }
 tokio-util = "0.7.8"
 unicode-normalization = "0.1.24"
 unicode-reverse = "1.0.8"
 url = "2.4"
-uuid = { version = "1.15.1", features = ["v4"] }
+uuid = { version = "1.18.0", features = ["v4"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
