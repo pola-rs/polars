@@ -36,7 +36,10 @@ def _patched_cloud(
             InteractiveQuery,
             set_compute_context,
         )
-        from polars_cloud.polars_cloud import ClientOptions, SchedulerClient
+        from polars_cloud.polars_cloud import (
+            ClientOptions,
+            SchedulerClient,  # type: ignore[attr-defined]
+        )
 
         TIMEOUT_SECS = 20
 
