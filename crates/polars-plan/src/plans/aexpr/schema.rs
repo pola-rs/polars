@@ -703,6 +703,10 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let scale = _get_decimal_scale_div(*scale_left);
             Decimal(None, Some(scale))
         },
+        #[cfg(feature = "dtype-u8")]
+        (UInt8 | Int8, Float32) => Float32,
+        #[cfg(feature = "dtype-u16")]
+        (UInt16 | Int16, Float32) => Float32,
         (dt, _) if dt.is_primitive_numeric() => Float64,
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,
