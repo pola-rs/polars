@@ -86,7 +86,7 @@ impl UnknownKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -1106,6 +1106,80 @@ impl Display for DataType {
             DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
+    }
+}
+
+impl std::fmt::Debug for DataType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use DataType::*;
+        match self {
+            Boolean => write!(f, "Boolean"),
+            UInt8 => write!(f, "UInt8"),
+            UInt16 => write!(f, "UInt16"),
+            UInt32 => write!(f, "UInt32"),
+            UInt64 => write!(f, "UInt64"),
+            Int8 => write!(f, "Int8"),
+            Int16 => write!(f, "Int16"),
+            Int32 => write!(f, "Int32"),
+            Int64 => write!(f, "Int64"),
+            Int128 => write!(f, "Int128"),
+            Float32 => write!(f, "Float32"),
+            Float64 => write!(f, "Float64"),
+            String => write!(f, "String"),
+            Binary => write!(f, "Binary"),
+            BinaryOffset => write!(f, "BinaryOffset"),
+            Date => write!(f, "Date"),
+            Time => write!(f, "Time"),
+            Duration(unit) => write!(f, "Duration('{unit}')"),
+            Datetime(unit, opt_tz) => {
+                if let Some(tz) = opt_tz {
+                    write!(f, "Datetime('{unit}', '{tz}')")
+                } else {
+                    write!(f, "Datetime('{unit}')")
+                }
+            },
+            Decimal(opt_p, s) => {
+                if let Some(p) = opt_p {
+                    write!(f, "Decimal({}, {})", p, s.unwrap_or(0))
+                } else {
+                    write!(f, "Decimal(None, {})", s.unwrap_or(0))
+                }
+            },
+            Array(inner, size) => write!(f, "Array({inner:?}, {size})"),
+            List(inner) => write!(f, "List({inner:?})"),
+            Struct(fields) => {
+                let mut first = true;
+                write!(f, "Struct({{")?;
+                for field in fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "'{}': {:?}", field.name(), field.dtype())?;
+                    first = false;
+                }
+                write!(f, "}})")
+            },
+            Categorical(cats, _) => {
+                if cats.is_global() {
+                    write!(f, "Categorical")
+                } else if cats.namespace().is_empty() && cats.physical() == CategoricalPhysical::U32
+                {
+                    write!(f, "Categorical('{}')", cats.name())
+                } else {
+                    write!(
+                        f,
+                        "Categorical('{}', '{}', {:?})",
+                        cats.name(),
+                        cats.namespace(),
+                        cats.physical()
+                    )
+                }
+            },
+            Enum(_, _) => write!(f, "Enum([...])"),
+            Object(_) => write!(f, "Object"),
+            Null => write!(f, "Null"),
+            Unknown(kind) => write!(f, "Unknown({kind:?})"),
+        }
     }
 }
 
