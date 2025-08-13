@@ -509,17 +509,21 @@ impl<'a> FieldsMapper<'a> {
 
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
+            DataType::Boolean => DataType::Float64,
+            DataType::Float32 => DataType::Float32,
+            DataType::Float64 => DataType::Float64,
+            dt if dt.is_primitive_numeric() => DataType::Float64,
             #[cfg(feature = "dtype-datetime")]
             dt @ DataType::Datetime(_, _) => dt.clone(),
             #[cfg(feature = "dtype-duration")]
             dt @ DataType::Duration(_) => dt.clone(),
             #[cfg(feature = "dtype-time")]
             dt @ DataType::Time => dt.clone(),
-            DataType::Float32 => DataType::Float32,
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(..) => DataType::Float64,
-            DataType::Boolean => DataType::Float64,
-            _ => DataType::Float64,
+
+            // All other types get mapped to a single `null` of the same type.
+            dt => dt.clone(),
         };
 
         self.map_dtype(|dt| match dt {
