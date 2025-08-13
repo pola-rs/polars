@@ -62,7 +62,6 @@ ctx = pc.ComputeContext(
     workspace="environmental-analysis",
     memory=32,
     cpus=8,
-    interactive=True  # Enable interactive mode
 )
 # --8<-- [end:set-compute]
 

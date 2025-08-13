@@ -117,7 +117,7 @@ nav:
 
           - Queries:
                 - polars-cloud/run/first-query.md
-                - polars-cloud/run/example-interactive.md
+                - polars-cloud/run/example-workflow.md
                 - polars-cloud/run/distributed-engine.md
           - Context:
                 - polars-cloud/context/compute-context.md

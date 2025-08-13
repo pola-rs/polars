@@ -7,9 +7,9 @@ need it.
 
 !!! note "Polars Cloud is set up and connected"
 
-    This page assumes that you have created an organization and connected a workspace to your cloud environment. If you haven't yet, find more information on [Connect cloud environment](../connect-cloud.md) page
+    This page assumes that you have created an organization and connected a workspace to your cloud environment. If you haven't yet, find more information on [Connect cloud environment](../connect-cloud.md) page.
 
-## Define your query local
+## Define your query locally
 
 If you're already familiar with Polars, you will immediately be productive with Polars Cloud. The
 same lazy evaluation and API you know works exactly the same way, with the addition of defining a
@@ -23,19 +23,20 @@ Below we define a query that you would typically write on your local machine.
 ## Scale to the cloud
 
 To execute your query in the cloud, we must define a compute context. The compute context defines
-the hardware to use when executing the query in the cloud. It allows to set compute resources and
-define if you want to execute in interactive or batch mode. More elaborate options can be found on
-the [Compute context introduction page](../context/compute-context.md)
+the hardware to use when executing the query in the cloud. It allows to define the workspace to
+execute your query, set compute resources and define if you want to execute in job mode. More
+elaborate options can be found on the
+[Compute context introduction page](../context/compute-context.md)
 
 {{code_block('polars-cloud/first-query','context',[])}}
 
-### Batch mode
+### Job mode
 
-Batch mode is used for systematic data processing pipelines, written for scheduled execution. They
+Job mode is used for systematic data processing pipelines, written for scheduled execution. They
 typically process large volumes of data in scheduled intervals (e.g. hourly, daily, etc.). A key
-characteristic is that the executed job has a defined lifetime.
+characteristic the jobs typically runs without a human in the loop.
 
-You can use batch mode by leaving `interactive=True` out of the compute context.
+Read more about the differences on the [compute context page](../context/compute-context.md)
 
 ### Distributed execution
 
@@ -62,7 +63,7 @@ as part of a data pipeline:
 {{code_block('polars-cloud/first-query','distributed',[])}}
 
 Running `.sink_parquet()` will write the results to the defined bucket on S3. The query you execute
-in batch mode runs in your cloud environment, and the data and results remain secure in your own
+in job mode runs in your cloud environment, and the data and results remain secure in your own
 infrastructure. This approach is perfect for ETL workflows, scheduled jobs, or any time you need to
 persist large datasets without transferring them to your local machine.
 
@@ -73,12 +74,12 @@ results:
 
 {{code_block('polars-cloud/first-query','interactive',[])}}
 
-The `.show()` method is perfect for interactive data exploration where you want to understand the
-structure and content of your results without the overhead of transferring large datasets. It
-displays a sample of rows in your console or notebook.
+The `.show()` method is perfect for data exploration where you want to understand the structure and
+content of your results without the overhead of transferring large datasets. It displays a sample of
+rows in your console or notebook.
 
 When calling `.collect()` on your remote query execution, the intermediate results are written to a
 temporary location on S3. These intermediate result files are automatically deleted after several
 hours. The output of the remote query is a LazyFrame, which means you can continue chaining
-operations on the returned results for further analysis. Find a more elaborate interactive example
-on the [Interactive mode page](example-interactive.md)
+operations on the returned results for further analysis. Find a more elaborate example on the
+[Example workflow page](example-workflow.md)

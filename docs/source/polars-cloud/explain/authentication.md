@@ -1,7 +1,7 @@
 # Logging in
 
-Polars Cloud allows authentication through short-lived authentication tokens. Authentication
-supports both interactive and programmatic workflows.
+Polars Cloud allows authentication through short-lived authentication tokens. Authentication also
+supports programmatic workflows.
 
 1. `authenticate` loads cached tokens when available, falling back to browser-based login when
    needed. This is the recommended method for most development workflows since it reuses existing

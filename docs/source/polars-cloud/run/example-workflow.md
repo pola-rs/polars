@@ -1,20 +1,4 @@
-# Interactive mode
-
-Polars Cloud supports interactive workflows. Interactive mode allows for exploratory workflows where
-a user interacts with the dataset and requires more compute resources than locally available. When
-using interactive mode, the cluster stays active and intermediate state can be accessed.
-
-In interactive mode you directly communicate with the compute nodes. Therefore, logs and metrics
-stay in your environment and will not be available in the dashboard.
-
-You can go interactive by setting `interactive=True` when
-[defining your compute context](../context/compute-context.md).
-
-```python
-pc.ComputeContext(workspace="your-workspace", interactive=True)
-```
-
-## Interactive example workflow
+# Remote execution of query
 
 Data processing and analytics often begins small but can quickly grow beyond the capabilities of
 your local machine. A typical workflow starts with exploring a sample dataset locally, developing
@@ -61,8 +45,8 @@ For more details on configuring ComputeContext parameters, see the
 
 ### Explore query results
 
-In interactive mode, calling `.collect()` on your remote query stores results in a temporary
-location and returns a LazyFrame that you can continue working with:
+Calling `.collect()` on your remote query stores results in a temporary location and returns a
+LazyFrame that you can continue working with:
 
 {{code_block('polars-cloud/workflow','remote-collect',[])}}
 

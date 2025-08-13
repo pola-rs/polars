@@ -8,15 +8,11 @@ when querying large datasets from cloud storage, performance is often constraine
 limitations of a single node. By scaling horizontally, these download limitations can be
 significantly reduced, allowing users to process data at scale.
 
-<!-- dprint-ignore-start -->
-
 !!! info "Distributed engine is early stage"
 
-    The distributed engine is still in the very early stages of development. Major performance improvements are planned for the near future. When an operation is not yet available in a distributed manner, Polars Cloud will execute it on a single node.
+    The distributed engine is in alpha and some operations are not supported yet.
 
     Find out which operations are [currently supported in the distributed engine](https://github.com/pola-rs/polars/issues/21487).
-
-<!-- dprint-ignore-end-->
 
 ## Using distributed engine
 
@@ -34,28 +30,7 @@ result = (
 
 ### Example
 
-```python
-import polars as pl
-import polars_cloud as pc
-from datetime import date
-
-query = (
-    pl.scan_parquet("s3://dataset/")
-    .filter(pl.col("l_shipdate") <= date(1998, 9, 2))
-    .group_by("l_returnflag", "l_linestatus")
-    .agg(
-        avg_price=pl.mean("l_extendedprice"),
-        avg_disc=pl.mean("l_discount"),
-        count_order=pl.len(),
-    )
-)
-
-result = (
-    query.remote(pc.ComputeContext(cpus=16, memory=64, cluster_size=32))
-    .distributed()
-    .sink_parquet("s3://output/result.parquet")
-)
-```
+{{code_block('polars-cloud/distributed','example',[])}}
 
 ## Working with large datasets in the distributed engine
 

@@ -22,7 +22,6 @@ ctx = pc.ComputeContext(
     workspace="your-workspace",
     memory=48,
     cpus=24,
-    interactive=True
 )
 
 # Your query remains the same
