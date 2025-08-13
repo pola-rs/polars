@@ -223,7 +223,7 @@ unsafe fn decode(
             D::UInt8 => return decode_cat::<u8>(rows, opt, ctx).to_boxed(),
             D::UInt16 => return decode_cat::<u16>(rows, opt, ctx).to_boxed(),
             D::UInt32 => return decode_cat::<u32>(rows, opt, ctx).to_boxed(),
-            D::Struct(_) | D::FixedSizeList(..) | D::List(_) | D::LargeList(_) => {
+            D::FixedSizeList(..) | D::List(_) | D::LargeList(_) => {
                 // Nested type, handled below.
             },
             _ => unreachable!(),
