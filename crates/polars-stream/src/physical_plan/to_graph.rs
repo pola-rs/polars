@@ -551,6 +551,14 @@ fn to_graph_rec<'a>(
             )
         },
 
+        PeakMinMax { input, is_peak_max } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::peak_minmax::PeakMinMaxNode::new(*is_peak_max),
+                [(input_key, input.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()

@@ -994,6 +994,31 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
             },
 
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: ref function @ (IRFunctionExpr::PeakMin | IRFunctionExpr::PeakMax),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let is_peak_max = matches!(function, IRFunctionExpr::PeakMax);
+                let node_kind = PhysNodeKind::PeakMinMax { input, is_peak_max };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), DataType::Boolean)]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
             // Lower arbitrary elementwise functions.
             ref node @ AExpr::Function {
                 input: ref inner_exprs,

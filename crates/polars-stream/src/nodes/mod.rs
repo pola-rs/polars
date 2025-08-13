@@ -14,6 +14,7 @@ pub mod merge_sorted;
 pub mod multiplexer;
 pub mod negative_slice;
 pub mod ordered_union;
+pub mod peak_minmax;
 pub mod reduce;
 pub mod repeat;
 pub mod rle;
