@@ -270,7 +270,7 @@ def test_group_by_list_cat_24049(maintain_order: bool) -> None:
         schema={"x": pl.List(pl.Categorical)},
     )
     assert_frame_equal(
-        df.group_by("x", maintain_order=maintain_order).select(pl.col.y.sum()),
+        df.group_by("x", maintain_order=maintain_order).agg(pl.col.y.sum()),
         expected,
         check_row_order=maintain_order,
     )
