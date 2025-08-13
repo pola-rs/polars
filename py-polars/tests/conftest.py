@@ -29,17 +29,7 @@ def _patched_cloud(
         import uuid
         from pathlib import Path
 
-        from polars_cloud import (
-            ClusterContext,
-            ComputeContext,
-            ComputeContextStatus,
-            InteractiveQuery,
-            set_compute_context,
-        )
-        from polars_cloud.polars_cloud import (
-            ClientOptions,
-            SchedulerClient,  # type: ignore[attr-defined]
-        )
+        from polars_cloud import ClusterContext, InteractiveQuery, set_compute_context
 
         TIMEOUT_SECS = 20
 
@@ -54,29 +44,6 @@ def _patched_cloud(
             signal.alarm(TIMEOUT_SECS)
 
             return f()
-
-        class PatchedComputeContext(ComputeContext):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                self._interactive = True
-                compute_address = os.environ.get("SCHEDULER_ADDRESS", "localhost")
-                client_options = ClientOptions()
-                client_options.insecure = True
-                self._interactive_client = SchedulerClient(
-                    compute_address, client_options
-                )
-
-            def get_status(self: ComputeContext) -> ComputeContextStatus:
-                """Get the status of the compute cluster."""
-                return ComputeContextStatus.RUNNING
-
-        monkeypatch.setattr(
-            "polars_cloud.context.compute.ComputeContext.__init__",
-            PatchedComputeContext.__init__,
-        )
-        monkeypatch.setattr(
-            "polars_cloud.context.compute.ComputeContext.get_status",
-            PatchedComputeContext.get_status,
-        )
 
         ctx = ClusterContext("localhost", insecure=True)
         set_compute_context(ctx)
