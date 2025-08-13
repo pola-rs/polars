@@ -184,7 +184,11 @@ pub enum Expr {
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
-    // Used by cloud
+    /// Named functions allow for serializing arbitrary Rust functions as long as both sides know
+    /// ahead of time which function it is. There is a registry of functions that both sides know
+    /// and every time we need serialize we serialize the function by name in the registry.
+    ///
+    /// Used by cloud.
     Named {
         // Name and payload are used by the NamedRegistry
         // To load the function `T` at runtime.

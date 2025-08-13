@@ -32,6 +32,7 @@ rayon = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+bytes = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]

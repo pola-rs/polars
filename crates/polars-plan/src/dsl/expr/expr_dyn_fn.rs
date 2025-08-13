@@ -142,12 +142,24 @@ impl OpaqueColumnUdf {
         match self {
             Self::Deserialized(t) => Ok(t),
             Self::Named {
-                name: _,
-                payload: _,
-                value: _,
-            } => {
-                panic!("should not be hit")
-            },
+                name,
+                payload,
+                value,
+            } => feature_gated!("serde", {
+                use super::named_serde::NAMED_SERDE_REGISTRY_EXPR;
+                match value {
+                    Some(v) => Ok(v),
+                    None => Ok(SpecialEq(
+                        NAMED_SERDE_REGISTRY_EXPR
+                            .read()
+                            .unwrap()
+                            .as_ref()
+                            .expect("NAMED EXPR REGISTRY NOT SET")
+                            .get_function(&name, payload.unwrap().as_ref())
+                            .expect("NAMED FUNCTION NOT FOUND"),
+                    )),
+                }
+            }),
             Self::Bytes(_b) => {
                 feature_gated!("serde";"python", {
                     serde_expr::deserialize_column_udf(_b.as_ref()).map(SpecialEq::new)
