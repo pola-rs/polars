@@ -129,6 +129,7 @@ def test_to_from_buffer(
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_cloud  # reason: chunking
 def test_read_parquet_respects_rechunk_16416(
     use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
 ) -> None:
@@ -145,7 +146,6 @@ def test_read_parquet_respects_rechunk_16416(
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
-    print(df)
     buf = io.BytesIO()
     # Writing lzo compressed parquet files is not supported for now.
     with pytest.raises(ComputeError):
@@ -630,12 +630,8 @@ def test_parquet_rle_non_nullable_12814() -> None:
 
     f = io.BytesIO()
     pq.write_table(table, f, data_page_size=1)
-    f.seek(0)
-
-    print(pq.read_table(f))
 
     f.seek(0)
-
     expect = pl.DataFrame(table).tail(10)
     actual = pl.read_parquet(f).tail(10)
 
@@ -899,8 +895,16 @@ def test_parquet_array_dtype_nulls() -> None:
         ([[1, 2, 3]], pl.Array(pl.Int64, 3)),
         ([[1, None, 3], None, [1, 2, None]], pl.Array(pl.Int64, 3)),
         ([[1, 2], None, [None, 3]], pl.Array(pl.Int64, 2)),
-        ([[], [], []], pl.Array(pl.Int64, 0)),
-        ([[], None, []], pl.Array(pl.Int64, 0)),
+        pytest.param(
+            [[], [], []],
+            pl.Array(pl.Int64, 0),
+            marks=pytest.mark.may_fail_cloud,
+        ),  # reason: zero-width array
+        pytest.param(
+            [[], None, []],
+            pl.Array(pl.Int64, 0),
+            marks=pytest.mark.may_fail_cloud,
+        ),
         (
             [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
             pl.Array(pl.Array(pl.Int8, 3), 2),
@@ -1359,6 +1363,7 @@ def test_parquet_pyarrow_map() -> None:
     # Test for https://github.com/pola-rs/polars/issues/21317
     # Specifying schema/allow_missing_columns
     for missing_columns in ["insert", "raise"]:
+        f.seek(0)
         assert_frame_equal(
             pl.read_parquet(
                 f,
@@ -2133,6 +2138,7 @@ def test_decimal_precision_nested_roundtrip(
     test_round_trip(df)
 
 
+@pytest.mark.may_fail_cloud  # reason: sortedness flag
 @pytest.mark.parametrize("parallel", ["prefiltered", "columns", "row_groups", "auto"])
 def test_conserve_sortedness(
     monkeypatch: Any, capfd: pytest.CaptureFixture[str], parallel: pl.ParallelStrategy
@@ -2303,7 +2309,9 @@ def test_invalid_utf8_binary() -> None:
         pl.Boolean,
         pl.Struct({"x": pl.Int32}),
         pl.List(pl.Int32),
-        pl.Array(pl.Int32, 0),
+        pytest.param(
+            pl.Array(pl.Int32, 0), marks=pytest.mark.may_fail_cloud
+        ),  # reason: zero-width array
         pl.Array(pl.Int32, 2),
     ],
 )
@@ -2890,8 +2898,6 @@ def test_equality_filter(
             print(f"needle: {needle}", file=sys.stderr)
             raise
 
-    pl.read_parquet(f)
-
 
 def test_nested_string_slice_utf8_21202() -> None:
     s = pl.Series(
@@ -3463,6 +3469,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
         ),
     ],
 )
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
 def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     value: Any,
     scan_dtype: pl.DataType,
@@ -3471,11 +3478,10 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     f = io.BytesIO()
-
     df = pl.select(x=value)
-
     df.write_parquet(f)
 
+    f.seek(0)
     q = pl.scan_parquet(
         f,
         schema={"x": scan_dtype},
