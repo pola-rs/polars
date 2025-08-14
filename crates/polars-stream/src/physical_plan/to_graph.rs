@@ -529,6 +529,15 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "cum_agg")]
+        CumAgg { input, kind } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::cum_agg::CumAggNode::new(*kind),
+                [(input_key, input.port)],
+            )
+        },
+
         Rle(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;

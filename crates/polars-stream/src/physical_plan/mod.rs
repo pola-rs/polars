@@ -206,6 +206,12 @@ pub enum PhysNodeKind {
         repeats: PhysStream,
     },
 
+    #[cfg(feature = "cum_agg")]
+    CumAgg {
+        input: PhysStream,
+        kind: crate::nodes::cum_agg::CumAggKind,
+    },
+
     // Parameter is the input stream
     Rle(PhysStream),
     RleId(PhysStream),
@@ -355,6 +361,12 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::PeakMinMax { input, .. }
             | PhysNodeKind::GroupBy { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "cum_agg")]
+            PhysNodeKind::CumAgg { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
