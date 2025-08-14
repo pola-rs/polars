@@ -739,3 +739,191 @@ def test_rolling_max_23066() -> None:
             {"data": [None, None, None, None, None, 40.0, 40.0, 10.0, 30.0, None]}
         ),
     )
+
+
+def test_rolling_window_size_zero_validation() -> None:
+    """Test that rolling operations with window_size=0 return empty results like empty series."""
+    # Test with non-empty series
+    s = pl.Series([1, 2, 3, 4, 5], dtype=pl.Int64)
+    
+    # Test rolling_sum with window_size=0
+    result_sum = s.rolling_sum(window_size=0)
+    empty_sum = pl.Series([], dtype=pl.Int64).sum()
+    expected_sum = pl.Series([empty_sum] * len(s), dtype=pl.Int64)
+    assert_series_equal(result_sum, expected_sum)
+    
+    # Test rolling_min with window_size=0
+    result_min = s.rolling_min(window_size=0)
+    empty_min = pl.Series([], dtype=pl.Int64).min()
+    expected_min = pl.Series([empty_min] * len(s), dtype=pl.Int64)
+    assert_series_equal(result_min, expected_min)
+    
+    # Test rolling_max with window_size=0
+    result_max = s.rolling_max(window_size=0)
+    empty_max = pl.Series([], dtype=pl.Int64).max()
+    expected_max = pl.Series([empty_max] * len(s), dtype=pl.Int64)
+    assert_series_equal(result_max, expected_max)
+    
+    # Test rolling_mean with window_size=0
+    s_float = s.cast(pl.Float64)
+    result_mean = s_float.rolling_mean(window_size=0)
+    # For float operations, empty aggregations return NaN, so we expect all NaN values
+    expected_mean = pl.Series([float('nan')] * len(s), dtype=pl.Float64)
+    assert_series_equal(result_mean, expected_mean)
+
+
+def test_rolling_window_size_zero_dynamic() -> None:
+    """Test dynamic rolling windows with window_size=0 and different closed options."""
+    from datetime import datetime
+    
+    df = pl.DataFrame({
+        'time': [
+            datetime(2020, 1, 1, 10, 0, 0),
+            datetime(2020, 1, 1, 10, 0, 1),
+            datetime(2020, 1, 1, 10, 0, 2),
+        ],
+        'value': [1, 2, 3]
+    })
+    
+    # Test closed="both" - should include current row (non-empty window)
+    result_both = df.rolling(index_column='time', period='0s', closed='both').agg(pl.col('value'))
+    expected_both = [[1], [2], [3]]
+    assert result_both['value'].to_list() == expected_both
+    
+    # Test closed="left", "right", "none" - should return empty windows
+    for closed in ['left', 'right', 'none']:
+        result = df.rolling(index_column='time', period='0s', closed=closed).agg(pl.col('value'))
+        expected = [[], [], []]
+        assert result['value'].to_list() == expected, f"Failed for closed={closed}"
+        
+    # Test with sum aggregation
+    result_sum = df.rolling(index_column='time', period='0s', closed='both').agg(pl.col('value').sum())
+    assert result_sum['value'].to_list() == [1, 2, 3]
+    
+    # Test with min/max aggregation
+    result_min = df.rolling(index_column='time', period='0s', closed='both').agg(pl.col('value').min())
+    assert result_min['value'].to_list() == [1, 2, 3]
+    
+    result_max = df.rolling(index_column='time', period='0s', closed='both').agg(pl.col('value').max())
+    assert result_max['value'].to_list() == [1, 2, 3]
+
+
+def test_rolling_sum_window_size_zero_float64() -> None:
+    """Test that rolling_sum with window_size=0 returns zeros for Float64, matching empty series behavior."""
+    # Test the specific example from the GitHub issue
+    df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+    result = df.with_columns(rolling_sum=pl.col("A").rolling_sum(window_size=0))
+    
+    # Verify the rolling_sum column contains all zeros
+    expected_rolling_sum = [0.0] * len(df)
+    assert result["rolling_sum"].to_list() == expected_rolling_sum
+    
+    # Verify this matches empty series behavior
+    empty_series = pl.Series().cast(pl.Float64)
+    empty_sum = empty_series.sum()
+    assert empty_sum == 0.0
+    assert all(val == empty_sum for val in result["rolling_sum"].to_list())
+    
+    # Verify data types are correct
+    assert result["rolling_sum"].dtype == pl.Float64
+    assert result["A"].dtype == pl.Float64
+
+
+def test_rolling_sum_window_size_zero_float32() -> None:
+    """Test that rolling_sum with window_size=0 returns zeros for Float32, matching empty series behavior."""
+    df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]}, schema={"A": pl.Float32})
+    result = df.with_columns(rolling_sum=pl.col("A").rolling_sum(window_size=0))
+    
+    # Verify the rolling_sum column contains all zeros
+    expected_rolling_sum = [0.0] * len(df)
+    assert result["rolling_sum"].to_list() == expected_rolling_sum
+    
+    # Verify this matches empty series behavior
+    empty_series = pl.Series().cast(pl.Float32)
+    empty_sum = empty_series.sum()
+    assert empty_sum == 0.0
+    assert all(val == empty_sum for val in result["rolling_sum"].to_list())
+    
+    # Verify data types are correct
+    assert result["rolling_sum"].dtype == pl.Float32
+    assert result["A"].dtype == pl.Float32
+
+
+def test_rolling_sum_window_size_zero_int64() -> None:
+    """Test that rolling_sum with window_size=0 returns zeros for Int64, matching empty series behavior."""
+    df = pl.DataFrame({"A": [1, 2, 3, 4, 5, 6]}, schema={"A": pl.Int64})
+    result = df.with_columns(rolling_sum=pl.col("A").rolling_sum(window_size=0))
+    
+    # Verify the rolling_sum column contains all zeros
+    expected_rolling_sum = [0] * len(df)
+    assert result["rolling_sum"].to_list() == expected_rolling_sum
+    
+    # Verify this matches empty series behavior
+    empty_series = pl.Series().cast(pl.Int64)
+    empty_sum = empty_series.sum()
+    assert empty_sum == 0
+    assert all(val == empty_sum for val in result["rolling_sum"].to_list())
+    
+    # Verify data types are correct
+    assert result["rolling_sum"].dtype == pl.Int64
+    assert result["A"].dtype == pl.Int64
+
+
+def test_rolling_sum_window_size_zero_int32() -> None:
+    """Test that rolling_sum with window_size=0 returns zeros for Int32, matching empty series behavior."""
+    df = pl.DataFrame({"A": [1, 2, 3, 4, 5, 6]}, schema={"A": pl.Int32})
+    result = df.with_columns(rolling_sum=pl.col("A").rolling_sum(window_size=0))
+    
+    # Verify the rolling_sum column contains all zeros
+    expected_rolling_sum = [0] * len(df)
+    assert result["rolling_sum"].to_list() == expected_rolling_sum
+    
+    # Verify this matches empty series behavior
+    empty_series = pl.Series().cast(pl.Int32)
+    empty_sum = empty_series.sum()
+    assert empty_sum == 0
+    assert all(val == empty_sum for val in result["rolling_sum"].to_list())
+    
+    # Verify data types are correct
+    assert result["rolling_sum"].dtype == pl.Int32
+    assert result["A"].dtype == pl.Int32
+
+
+def test_rolling_sum_window_size_zero_uint64() -> None:
+    """Test that rolling_sum with window_size=0 returns zeros for UInt64, matching empty series behavior."""
+    df = pl.DataFrame({"A": [1, 2, 3, 4, 5, 6]}, schema={"A": pl.UInt64})
+    result = df.with_columns(rolling_sum=pl.col("A").rolling_sum(window_size=0))
+    
+    # Verify the rolling_sum column contains all zeros
+    expected_rolling_sum = [0] * len(df)
+    assert result["rolling_sum"].to_list() == expected_rolling_sum
+    
+    # Verify this matches empty series behavior
+    empty_series = pl.Series().cast(pl.UInt64)
+    empty_sum = empty_series.sum()
+    assert empty_sum == 0
+    assert all(val == empty_sum for val in result["rolling_sum"].to_list())
+    
+    # Verify data types are correct
+    assert result["rolling_sum"].dtype == pl.UInt64
+    assert result["A"].dtype == pl.UInt64
+
+
+def test_rolling_sum_window_size_zero_uint32() -> None:
+    """Test that rolling_sum with window_size=0 returns zeros for UInt32, matching empty series behavior."""
+    df = pl.DataFrame({"A": [1, 2, 3, 4, 5, 6]}, schema={"A": pl.UInt32})
+    result = df.with_columns(rolling_sum=pl.col("A").rolling_sum(window_size=0))
+    
+    # Verify the rolling_sum column contains all zeros
+    expected_rolling_sum = [0] * len(df)
+    assert result["rolling_sum"].to_list() == expected_rolling_sum
+    
+    # Verify this matches empty series behavior
+    empty_series = pl.Series().cast(pl.UInt32)
+    empty_sum = empty_series.sum()
+    assert empty_sum == 0
+    assert all(val == empty_sum for val in result["rolling_sum"].to_list())
+    
+    # Verify data types are correct
+    assert result["rolling_sum"].dtype == pl.UInt32
+    assert result["A"].dtype == pl.UInt32

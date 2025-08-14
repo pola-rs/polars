@@ -53,16 +53,30 @@ mod inner_mod {
 
     /// utility
     fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
-        polars_ensure!(
-            min_periods <= window_size,
-            ComputeError: "`window_size`: {} should be >= `min_periods`: {}",
-            window_size, min_periods
-        );
+        // Allow window_size=0 for compatibility - it should return empty results like empty series
+        // Only check that min_periods is valid if window_size > 0
+        if window_size > 0 {
+            polars_ensure!(
+                min_periods <= window_size,
+                InvalidOperation: "`window_size`: {} should be >= `min_periods`: {}",
+                window_size, min_periods
+            );
+        } else if min_periods > 0 {
+            polars_ensure!(
+                false,
+                InvalidOperation: "`min_periods` must be 0 when `window_size` is 0"
+            );
+        }
         Ok(())
     }
 
     /// utility
     fn window_edges(idx: usize, len: usize, window_size: usize, center: bool) -> (usize, usize) {
+        if window_size == 0 {
+            // For window_size=0, return empty window (size 0)
+            return (idx, 0);
+        }
+        
         let (start, end) = if center {
             let right_window = window_size.div_ceil(2);
             (

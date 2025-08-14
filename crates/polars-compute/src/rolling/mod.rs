@@ -51,9 +51,25 @@ pub enum RollingFnParams {
 }
 
 fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
+    if window_size == 0 {
+        // For window_size=0, return empty window (start == end)
+        return (i, i);
+    }
+    debug_assert!(
+        window_size > 0,
+        "window_size must be positive, validation should happen at higher layers"
+    );
     (i.saturating_sub(window_size - 1), i + 1)
 }
 fn det_offsets_center(i: Idx, window_size: WindowSize, len: Len) -> (usize, usize) {
+    if window_size == 0 {
+        // For window_size=0, return empty window (start == end)
+        return (i, i);
+    }
+    debug_assert!(
+        window_size > 0,
+        "window_size must be positive, validation should happen at higher layers"
+    );
     let right_window = window_size.div_ceil(2);
     (
         i.saturating_sub(window_size - right_window),

@@ -121,9 +121,9 @@ impl Wrap<&DataFrame> {
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Column, GroupPositions)> {
         polars_ensure!(
-                        !options.period.is_zero() && !options.period.negative,
+                        !options.period.negative,
                         ComputeError:
-                        "rolling window period should be strictly positive",
+                        "rolling window period should not be negative",
         );
         let time = self.0.column(&options.index_column)?.clone();
         if group_by.is_none() {
