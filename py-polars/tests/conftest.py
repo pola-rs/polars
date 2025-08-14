@@ -144,6 +144,9 @@ def _patched_cloud(
             def _(
                 source: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.DataFrame:
+                if ext == "parquet" and kwargs.get("use_pyarrow", False):
+                    return prev_read(source, *args, **kwargs)  # type: ignore[no-any-return]
+
                 src = prepare_scan_sources(source)
                 return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
 
@@ -160,7 +163,26 @@ def _patched_cloud(
                 if args[0] == "placeholder-path" or isinstance(
                     args[0], PartitioningScheme
                 ):
-                    return prev_sink(lf, *args, **kwargs)  # type: ignore[no-any-return]
+                    prev_lazy = kwargs.get("lazy", False)
+                    kwargs["lazy"] = True
+                    lf = prev_sink(lf, *args, **kwargs)
+
+                    class SimpleLazyExe:
+                        def __init__(self, query: pl.LazyFrame) -> None:
+                            self._ldf = query._ldf
+                            self.query = query
+
+                        def collect(self, *args: Any, **kwargs: Any) -> pl.DataFrame:
+                            return prev_collect(self.query, *args, **kwargs)  # type: ignore[no-any-return]
+
+                    slf = SimpleLazyExe(lf)
+                    if prev_lazy:
+                        return slf  # type: ignore[return-value]
+
+                    slf.collect(
+                        optimizations=kwargs.get("optimizations", pl.QueryOptFlags()),
+                    )
+                    return None
 
                 prev_tgt = None
                 if isinstance(
@@ -176,6 +198,8 @@ def _patched_cloud(
                 # these are all the unsupported flags
                 for u in unsupported:
                     _ = kwargs.pop(u, None)
+
+                kwargs["sink_to_single_file"] = "True"
 
                 sink = getattr(
                     lf.remote(plan_type="plain").distributed(), f"sink_{ext}"
@@ -199,17 +223,12 @@ def _patched_cloud(
 
         # fix: these need to become supported somehow
         BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir", "retries"]
-        for ext, unsupported in [
-            ("parquet", ["metadata"]),
-            ("csv", []),
-            ("ipc", []),
-            ("ndjson", []),
-        ]:
+        for ext in ["parquet", "csv", "ipc", "ndjson"]:
             monkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
             monkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
             monkeypatch.setattr(
                 f"polars.LazyFrame.sink_{ext}",
-                create_cloud_sink(ext, BASE_UNSUPPORTED + unsupported),
+                create_cloud_sink(ext, BASE_UNSUPPORTED),
             )
 
         monkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)
