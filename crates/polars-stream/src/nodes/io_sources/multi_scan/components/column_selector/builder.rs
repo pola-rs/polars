@@ -252,6 +252,11 @@ impl ColumnSelectorBuilder {
         let incoming_dtype = incoming_dtype.as_ref();
         let target_dtype = target_dtype.as_ref();
 
+        // If the incoming type is always allowed to be cast.
+        if incoming_dtype.does_match_schema_type(target_dtype) {
+            return attach_cast(CastOptions::NonStrict);
+        }
+
         if target_dtype.is_integer() && incoming_dtype.is_integer() {
             if !self.cast_columns_policy.integer_upcast {
                 return mismatch_err(
