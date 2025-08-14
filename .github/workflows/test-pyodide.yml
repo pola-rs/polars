@@ -46,12 +46,27 @@ jobs:
           sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
 
-      - name: Build wheel
+      - name: Check out Emscripten v4.0.9 patches for Pyodide
+        uses: actions/checkout@v4
+        with:
+          ref: 0.28.1
+          path: pyodide-patches
+          repository: pyodide/pyodide
+          sparse-checkout: |
+            emsdk/patches/
+
+      - name: Build Pyodide wheel
         uses: pypa/cibuildwheel@v3.1.3
         with:
           package-dir: py-polars
+          output-dir: wasm-dist
+          # TODO: Add back cp312-pyodide_wasm32?
+          only: cp313-pyodide_wasm32
         env:
           CIBW_BEFORE_BUILD: |
+            # Apply Emscripten patches for Pyodide
+            git apply --directory=/home/runner/.cache/cibuildwheel/emsdk/upstream/emscripten/ pyodide-patches/emsdk/patches/*.patch
+
+            # Add Rust target
             rustup target add wasm32-unknown-emscripten
-          CIBW_PLATFORM: pyodide
           CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dev build-args=--manifest-path=Cargo.toml"
