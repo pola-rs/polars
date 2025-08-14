@@ -81,7 +81,7 @@ pub fn dtypes_strategy(
 
     (0..num_possible_types).prop_flat_map(move |i| {
         let selection =
-            S::from_bits_retain(1 << nth_set_bit_u32(options.allowed_dtypes.bits(), i).unwrap());
+            S::from_bits_retain(1 << nth_set_bit_u32(allowed_dtypes.bits(), i).unwrap());
 
         match selection {
             _ if selection == S::BOOLEAN => Just(DataType::Boolean).boxed(),
@@ -109,17 +109,17 @@ pub fn dtypes_strategy(
             #[cfg(feature = "object")]
             _ if selection == S::OBJECT => Just(DataType::Object("test_object")).boxed(),
             _ if selection == S::LIST => {
-                list_strategy(dtypes_strategy(options.clone(), nesting_level + 1)).boxed()
+                list_strategy(dtypes_strategy(Rc::clone(&options), nesting_level + 1)).boxed()
             },
             #[cfg(feature = "dtype-array")]
             _ if selection == S::ARRAY => array_strategy(
-                dtypes_strategy(options.clone(), nesting_level + 1),
+                dtypes_strategy(Rc::clone(&options), nesting_level + 1),
                 options.array_width_range.clone(),
             )
             .boxed(),
             #[cfg(feature = "dtype-struct")]
             _ if selection == S::STRUCT => struct_strategy(
-                dtypes_strategy(options.clone(), nesting_level + 1),
+                dtypes_strategy(Rc::clone(&options), nesting_level + 1),
                 options.struct_fields_range.clone(),
             )
             .boxed(),
