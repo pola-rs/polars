@@ -63,4 +63,4 @@ jobs:
             --profile dev
             --manifest-path py-polars/Cargo.toml
             --interpreter python3.13
-          maturin-version: 1.7.4
+          maturin-version: 1.9.3
