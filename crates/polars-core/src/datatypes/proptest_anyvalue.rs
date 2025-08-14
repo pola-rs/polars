@@ -76,19 +76,22 @@ impl Default for AnyValueArbitraryOptions {
 
 pub fn anyvalue_strategy(
     options: Rc<AnyValueArbitraryOptions>,
+    include_nested: bool,
     // TODO: Other input parameters
 ) -> impl Strategy<Value = AnyValue<'static>> {
     use AnyValueArbitrarySelection as S;
     let mut allowed_dtypes = options.allowed_dtypes;
 
-    // TODO: Nesting level
+    if include_nested == false {
+        allowed_dtypes &= !S::nested();
+    }
 
     let num_possible_types = allowed_dtypes.bits().count_ones();
     assert!(num_possible_types > 0);
 
     (0..num_possible_types).prop_flat_map(move |i| {
         let selection =
-            S::from_bits_retain(1 << nth_set_bit_u32(options.allowed_dtypes.bits(), i).unwrap());
+            S::from_bits_retain(1 << nth_set_bit_u32(allowed_dtypes.bits(), i).unwrap());
 
         match selection {
             _ if selection == S::NULL => Just(AnyValue::Null).boxed(),
@@ -114,9 +117,6 @@ pub fn anyvalue_strategy(
             _ if selection == S::DATE => any::<i32>().prop_map(AnyValue::Date).boxed(),
             #[cfg(feature = "dtype-time")]
             _ if selection == S::TIME => any::<i64>().prop_map(AnyValue::Time).boxed(),
-            // TODO: Make a note of this
-            // &'static = "must live for the entire program duration"
-            // Leaked memory = actually DOES live for the entire program duration
             _ if selection == S::BINARY => {
                 prop::collection::vec(any::<u8>(), options.vector_length_range.clone())
                     .prop_map(|vec| {
