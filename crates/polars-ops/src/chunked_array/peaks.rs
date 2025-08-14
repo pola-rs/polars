@@ -11,6 +11,11 @@ pub fn peak_min_max(
     let column = column.to_physical_repr();
     let column = column.as_materialized_series();
     match column.dtype() {
+        dt if dt.is_bool() => {
+            let series = column.cast(&DataType::Int8)?;
+            let column = series.into_column();
+            peak_min_max(&column, start, end, is_peak_max)
+        },
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = column.as_ref().as_ref().as_ref();

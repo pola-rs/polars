@@ -1562,14 +1562,30 @@ def test_dot() -> None:
         s1 @ [4, 5, 6, 7, 8]
 
 
-def test_peak_max_peak_min() -> None:
-    s = pl.Series("a", [4, 1, 3, 2, 5])
+@pytest.mark.parametrize(
+    ("dtype"),
+    [pl.Int8, pl.Int16, pl.Int32, pl.Float32, pl.Float64],
+)
+def test_peak_max_peak_min(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [4, 1, 3, 2, 5], dtype=dtype)
+
     result = s.peak_min()
     expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
     expected = pl.Series("a", [True, False, True, False, True])
+    assert_series_equal(result, expected)
+
+
+def test_peak_max_peak_min_bool() -> None:
+    s = pl.Series("a", [False, True, False, True, True, False], dtype=pl.Boolean)
+    result = s.peak_min()
+    expected = pl.Series("a", [False, False, True, False, False, False])
+    assert_series_equal(result, expected)
+
+    result = s.peak_max()
+    expected = pl.Series("a", [False, True, False, False, False, False])
     assert_series_equal(result, expected)
 
 
