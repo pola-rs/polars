@@ -129,6 +129,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
             Expr::Len => return Ok(get_len_name()),
             Expr::Literal(val) => return Ok(val.output_column_name().clone()),
 
+            #[cfg(feature = "dtype-struct")]
             Expr::Function {
                 input: _,
                 function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
