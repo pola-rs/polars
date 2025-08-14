@@ -185,3 +185,7 @@ def test_literal_output_name() -> None:
 
     e = pl.lit(pl.Series([1, 2, 3]))
     assert e.meta.output_name() == ""
+
+
+def test_struct_field_output_name_24003() -> None:
+    assert pl.col("ball").struct.field("radius").meta.output_name() == "radius"
