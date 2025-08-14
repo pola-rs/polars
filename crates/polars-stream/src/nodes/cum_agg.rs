@@ -1,4 +1,5 @@
 use polars_core::prelude::{AnyValue, IntoColumn};
+use polars_core::utils::last_non_null;
 use polars_error::PolarsResult;
 use polars_ops::series::{
     cum_count_with_init, cum_max_with_init, cum_min_with_init, cum_prod_with_init,
@@ -90,24 +91,13 @@ impl ComputeNode for CumAggNode {
                 }?;
 
                 // Find the last non-null value and set that as the state.
-                if out.null_count() != out.len() {
-                    let mut num_trailing_nulls = 0;
-                    if out.has_nulls() {
-                        for arr in out.chunks().iter().rev() {
-                            if arr.null_count() < arr.len() {
-                                if let Some(validity) = arr.validity() {
-                                    num_trailing_nulls += validity.trailing_zeros();
-                                }
-                                break;
-                            }
-
-                            num_trailing_nulls += arr.len();
-                        }
-                    }
-                    self.state = out
-                        .get(out.len() - num_trailing_nulls - 1)
-                        .unwrap()
-                        .into_static();
+                let last_non_null_idx = if out.has_nulls() {
+                    last_non_null(out.chunks().iter().map(|c| c.validity()), out.len())
+                } else {
+                    Some(out.len() - 1)
+                };
+                if let Some(idx) = last_non_null_idx {
+                    self.state = out.get(idx).unwrap().into_static();
                 }
                 *m.df_mut() = out.into_column().into_frame();
 
