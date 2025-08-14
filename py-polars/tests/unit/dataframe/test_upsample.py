@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -281,3 +281,20 @@ def test_upsample_sorted_only_within_group_but_no_group_by_provided() -> None:
         match=r"argument in operation 'upsample' is not sorted, please sort the 'expr/series/column' first",
     ):
         df.upsample(time_column="time", every="1mo")
+
+
+def test_upsample_date() -> None:
+    df = pl.DataFrame({"date": [date(2025, 1, 1), date(2026, 1, 1)]})
+    result = df.upsample(time_column="date", every="3mo")
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2025, 1, 1),
+                date(2025, 4, 1),
+                date(2025, 7, 1),
+                date(2025, 10, 1),
+                date(2026, 1, 1),
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)

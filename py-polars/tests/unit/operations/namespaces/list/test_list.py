@@ -1008,7 +1008,7 @@ def test_list_agg_all_null(
     ("inner_dtype", "expected_inner_dtype"),
     [
         (pl.Datetime("us"), pl.Duration("us")),
-        (pl.Date(), pl.Duration("ms")),
+        (pl.Date(), pl.Duration("us")),
         (pl.Time(), pl.Duration("ns")),
         (pl.UInt64(), pl.Int64()),
         (pl.UInt32(), pl.Int64()),

@@ -188,7 +188,7 @@ impl AExpr {
                     Median(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
                             _ => {
                                 let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                                 let mapper = FieldsMapper::new(&field);
@@ -200,7 +200,7 @@ impl AExpr {
                     Mean(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         match field.dtype {
-                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            Date => field.coerce(Datetime(TimeUnit::Microseconds, None)),
                             _ => {
                                 let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                                 let mapper = FieldsMapper::new(&field);

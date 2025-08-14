@@ -102,7 +102,7 @@ impl IRListFunction {
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(tu, _) => DataType::Duration(*tu),
                     #[cfg(feature = "dtype-date")]
-                    DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
+                    DataType::Date => DataType::Duration(TimeUnit::Microseconds),
                     #[cfg(feature = "dtype-time")]
                     DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                     DataType::UInt64 | DataType::UInt32 => DataType::Int64,
