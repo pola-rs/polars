@@ -340,6 +340,9 @@ jobs:
             echo "CFLAGS=-fPIC -fwasm-exceptions" >> $GITHUB_ENV
             echo "RUSTFLAGS=-C link-self-contained=no -Zemscripten-wasm-eh" >> $GITHUB_ENV
 
+      - name: Enable wasm32 target
+        run: rustup target add wasm32-unknown-emscripten
+
       - name: Build wheel
         uses: pypa/cibuildwheel@v3.1.3
         env:
