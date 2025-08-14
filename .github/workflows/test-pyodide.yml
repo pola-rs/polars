@@ -59,8 +59,8 @@ jobs:
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
-          sudo ./llvm.sh 20
-          echo "EM_LLVM_ROOT=/usr/lib/llvm-20/bin" >> $GITHUB_ENV
+          sudo ./llvm.sh 21
+          echo "EM_LLVM_ROOT=/usr/lib/llvm-21/bin" >> $GITHUB_ENV
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
