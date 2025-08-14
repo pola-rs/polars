@@ -648,10 +648,13 @@ def test_slice() -> None:
 @pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    assert_frame_equal(
-        pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
-        pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
-    )
+    with pytest.warns(DeprecationWarning):
+        assert_frame_equal(
+            pl.DataFrame({"a": [1, 2]}).with_columns(
+                pl.lit(5, pl.Int64).shrink_dtype().alias("b")
+            ),
+            pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int64)}),
+        )
 
 
 def test_concat_deprecation() -> None:

@@ -1,6 +1,7 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
+use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -447,6 +448,91 @@ impl PySeries {
 
     pub fn not_(&self, py: Python) -> PyResult<Self> {
         py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series))
+    }
+
+    pub fn shrink_dtype(&self, py: Python<'_>) -> PyResult<Self> {
+        py.enter_polars(|| {
+            self.series
+                .shrink_type()
+                .map(Into::into)
+                .map_err(PyPolarsErr::from)
+                .map_err(PyErr::from)
+        })
+    }
+
+    fn str_to_datetime_infer(
+        &self,
+        py: Python,
+        time_unit: Option<Wrap<TimeUnit>>,
+        strict: bool,
+        exact: bool,
+        ambiguous: PySeries,
+    ) -> PyResult<Self> {
+        Ok(py
+            .enter_polars(|| {
+                let datetime_strings = self.series.str()?;
+                let ambiguous = ambiguous.series.str()?;
+
+                polars_time::prelude::string::infer::to_datetime_with_inferred_tz(
+                    datetime_strings,
+                    time_unit.map_or(TimeUnit::Microseconds, |v| v.0),
+                    strict,
+                    exact,
+                    ambiguous,
+                )
+            })?
+            .into_series()
+            .into())
+    }
+
+    pub fn str_to_decimal_infer(&self, py: Python, inference_length: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| {
+            let ca = self.series.str()?;
+            ca.to_decimal_infer(inference_length).map(Series::from)
+        })
+    }
+
+    pub fn list_to_struct(
+        &self,
+        py: Python<'_>,
+        width_strat: Wrap<ListToStructWidthStrategy>,
+        name_gen: Option<PyObject>,
+    ) -> PyResult<Self> {
+        py.enter_polars(|| {
+            let get_index_name =
+                name_gen.map(|f| PlanCallback::<usize, String>::new_python(PythonObject(f)));
+            let get_index_name = get_index_name.map(|f| {
+                NameGenerator(Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>)
+            });
+            self.series
+                .list()?
+                .to_struct(&ListToStructArgs::InferWidth {
+                    infer_field_strategy: width_strat.0,
+                    get_index_name,
+                    max_fields: None,
+                })
+                .map(IntoSeries::into_series)
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
+    }
+
+    #[cfg(feature = "extract_jsonpath")]
+    fn str_json_decode(
+        &self,
+        py: Python<'_>,
+        infer_schema_length: Option<usize>,
+    ) -> PyResult<Self> {
+        py.enter_polars(|| {
+            self.series
+                .str()?
+                .json_decode(None, infer_schema_length)
+                .map(|s| s.with_name(self.series.name().clone()))
+        })
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
     }
 }
 

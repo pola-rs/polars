@@ -694,10 +694,6 @@ impl PyExpr {
         self.inner.clone().product().into()
     }
 
-    fn shrink_dtype(&self) -> Self {
-        self.inner.clone().shrink_dtype().into()
-    }
-
     fn dot(&self, other: Self) -> Self {
         self.inner.clone().dot(other.inner).into()
     }

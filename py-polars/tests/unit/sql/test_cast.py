@@ -186,6 +186,7 @@ def test_cast_errors(values: Any, cast_op: str, error: str) -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: eager construct to_struct
+@pytest.mark.xfail  # this is a construct we cannot deal with anymore
 def test_cast_json() -> None:
     df = pl.DataFrame({"txt": ['{"a":[1,2,3],"b":["x","y","z"],"c":5.0}']})
 

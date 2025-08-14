@@ -442,11 +442,39 @@ fn infer_pattern_time_single(val: &str) -> Option<Pattern> {
 }
 
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn to_datetime(
+pub fn to_datetime_with_inferred_tz(
+    ca: &StringChunked,
+    tu: TimeUnit,
+    strict: bool,
+    exact: bool,
+    ambiguous: &StringChunked,
+) -> PolarsResult<DatetimeChunked> {
+    use super::StringMethods;
+
+    let out = if exact {
+        to_datetime(ca, tu, None, ambiguous, false)
+    } else {
+        ca.as_datetime_not_exact(None, tu, false, None, ambiguous, false)
+    }?;
+
+    if strict && ca.null_count() != out.null_count() {
+        polars_core::utils::handle_casting_failures(
+            &ca.clone().into_series(),
+            &out.clone().into_series(),
+        )?;
+    }
+
+    Ok(out)
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub fn to_datetime(
     ca: &StringChunked,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     _ambiguous: &StringChunked,
+    // Ensure that the inferred time_zone matches the given time_zone.
+    ensure_matching_time_zone: bool,
 ) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {
         None => {
@@ -462,6 +490,11 @@ pub(crate) fn to_datetime(
             match pattern {
                 #[cfg(feature = "timezones")]
                 Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
+                    polars_ensure!(
+                        !ensure_matching_time_zone || tz.is_some(),
+                        to_datetime_tz_mismatch
+                    );
+
                     let mut ca = ca.clone();
                     // `tz` has already been validated.
                     ca.set_time_unit_and_time_zone(tu, tz.cloned().unwrap_or(TimeZone::UTC))?;

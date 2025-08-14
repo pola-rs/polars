@@ -226,29 +226,6 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
-            ShrinkType => {
-                // we return the smallest type this can return
-                // this might not be correct once the actual data
-                // comes in, but if we set the smallest datatype
-                // we have the least chance that the smaller dtypes
-                // get cast to larger types in type-coercion
-                // this will lead to an incorrect schema in polars
-                // but we because only the numeric types deviate in
-                // bit size this will likely not lead to issues
-                mapper.map_dtype(|dt| {
-                    if dt.is_primitive_numeric() {
-                        if dt.is_float() {
-                            DataType::Float32
-                        } else if dt.is_unsigned_integer() {
-                            DataType::Int8
-                        } else {
-                            DataType::UInt8
-                        }
-                    } else {
-                        dt.clone()
-                    }
-                })
-            },
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),
@@ -366,7 +343,6 @@ impl IRFunctionExpr {
                 Some(dtype) => mapper.with_dtype(dtype.clone()),
             },
             ReduceHorizontal { return_dtype, .. } => match return_dtype {
-                // @2.0: This should probably map to `Unknown`.
                 None => mapper.map_to_supertype(),
                 Some(dtype) => mapper.with_dtype(dtype.clone()),
             },
@@ -374,13 +350,11 @@ impl IRFunctionExpr {
             CumReduceHorizontal {
                 return_dtype, ..
             }=> match return_dtype {
-                // @2.0: This should probably map to `Unknown`.
                 None => mapper.with_dtype(DataType::Struct(fields.to_vec())),
                 Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
             },
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal { return_dtype, include_init, .. } => match return_dtype {
-                // @2.0: This should probably map to `Unknown`.
                 None => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), fields[0].dtype().clone())).collect())),
                 Some(dtype) => mapper.with_dtype(DataType::Struct(fields.iter().skip(usize::from(!include_init)).map(|f| Field::new(f.name().clone(), dtype.clone())).collect())),
             },
@@ -430,7 +404,7 @@ impl IRFunctionExpr {
             ExtendConstant => mapper.with_same_dtype(),
 
             RowEncode(_) => mapper.try_map_field(|_| Ok(Field::new(PlSmallStr::from_static("row-encode"), DataType::BinaryOffset))),
-#[cfg(feature = "dtype-struct")]
+            #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
         }
     }

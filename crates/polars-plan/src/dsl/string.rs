@@ -303,8 +303,8 @@ impl StringNameSpace {
 
     /// Convert a String column into a Decimal column.
     #[cfg(feature = "dtype-decimal")]
-    pub fn to_decimal(self, infer_length: usize) -> Expr {
-        self.0.map_unary(StringFunction::ToDecimal(infer_length))
+    pub fn to_decimal(self, scale: usize) -> Expr {
+        self.0.map_unary(StringFunction::ToDecimal { scale })
     }
 
     /// Concat the values into a string array.
@@ -477,15 +477,8 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_decode(
-        self,
-        dtype: Option<impl Into<DataTypeExpr>>,
-        infer_schema_len: Option<usize>,
-    ) -> Expr {
-        self.0.map_unary(StringFunction::JsonDecode {
-            dtype: dtype.map(Into::into),
-            infer_schema_len,
-        })
+    pub fn json_decode(self, dtype: impl Into<DataTypeExpr>) -> Expr {
+        self.0.map_unary(StringFunction::JsonDecode(dtype.into()))
     }
 
     #[cfg(feature = "extract_jsonpath")]

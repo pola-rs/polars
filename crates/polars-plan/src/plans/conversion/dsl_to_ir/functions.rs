@@ -238,16 +238,7 @@ pub(super) fn convert_functions(
                 S::LenChars => IS::LenChars,
                 S::Lowercase => IS::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
-                S::JsonDecode {
-                    dtype,
-                    infer_schema_len,
-                } => IS::JsonDecode {
-                    dtype: match dtype {
-                        Some(dtype) => Some(dtype.into_datatype(ctx.schema)?),
-                        None => None,
-                    },
-                    infer_schema_len,
-                },
+                S::JsonDecode(dtype) => IS::JsonDecode(dtype.into_datatype(ctx.schema)?),
                 #[cfg(feature = "extract_jsonpath")]
                 S::JsonPathMatch => IS::JsonPathMatch,
                 #[cfg(feature = "regex")]
@@ -298,7 +289,7 @@ pub(super) fn convert_functions(
                 },
                 S::Split(v) => IS::Split(v),
                 #[cfg(feature = "dtype-decimal")]
-                S::ToDecimal(v) => IS::ToDecimal(v),
+                S::ToDecimal { scale } => IS::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
                 S::Titlecase => IS::Titlecase,
                 S::Uppercase => IS::Uppercase,
@@ -814,7 +805,6 @@ pub(super) fn convert_functions(
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => I::ApproxNUnique,
         F::Coalesce => I::Coalesce,
-        F::ShrinkType => I::ShrinkType,
         #[cfg(feature = "diff")]
         F::Diff(n) => {
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");

@@ -5,11 +5,11 @@ use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
-use polars_core::prelude::UnknownKind;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 
+use crate::dsl::udf::try_infer_udf_output_dtype;
 use crate::prelude::*;
 
 // Will be overwritten on Python Polars start up.
@@ -157,12 +157,15 @@ impl AnonymousColumnsUdf for PythonUdfExpression {
         let field = match self.materialized_field.get() {
             Some(f) => f.clone(),
             None => {
-                let dtype = if let Some(output_type) = self.output_type.as_ref() {
-                    output_type
+                let dtype = match self.output_type.as_ref() {
+                    None => {
+                        let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
+                        let f = |s: &[Column]| func(s, None, &self.python_function);
+                        try_infer_udf_output_dtype(&f as _, fields)?
+                    },
+                    Some(output_type) => output_type
                         .clone()
-                        .into_datatype_with_self(input_schema, fields[0].dtype())?
-                } else {
-                    DataType::Unknown(UnknownKind::Any)
+                        .into_datatype_with_self(input_schema, fields[0].dtype())?,
                 };
 
                 // Take the name of first field, just like `map_field`.
