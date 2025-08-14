@@ -548,6 +548,11 @@ impl CastColumnsPolicy {
         let incoming_dtype = incoming_dtype.as_ref();
         let target_dtype = target_dtype.as_ref();
 
+        // If the incoming type is always allowed to be cast.
+        if incoming_dtype.does_match_schema_type(target_dtype) {
+            return Ok(true);
+        }
+
         //
         // After this point the dtypes are mismatching.
         //
