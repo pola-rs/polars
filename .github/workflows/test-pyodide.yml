@@ -23,8 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0 -Zemscripten-wasm-eh
-  CFLAGS: -fPIC -fwasm-exceptions
+  RUSTFLAGS: -C link-self-contained=no -C debuginfo=0
+  CFLAGS: -fPIC
 
 defaults:
   run:
