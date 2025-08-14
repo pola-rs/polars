@@ -93,8 +93,6 @@ pub enum IR {
         input: Node,
         /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
         id: UniqueId,
-        /// How many hits the cache must be saved in memory.
-        cache_hits: u32,
     },
     GroupBy {
         input: Node,
@@ -103,8 +101,7 @@ pub enum IR {
         schema: SchemaRef,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<PlanCallback<DataFrame, DataFrame>>,
     },
     Join {
         input_left: Node,

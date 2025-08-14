@@ -1,5 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
+use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::format_list_truncated;
@@ -791,15 +792,7 @@ pub fn write_ir_non_recursive(
             };
             write!(f, "{:indent$}SORT BY {by_column}", "")
         },
-        IR::Cache {
-            input: _,
-            id,
-            cache_hits,
-        } => write!(
-            f,
-            "{:indent$}CACHE[id: {}, cache_hits: {}]",
-            "", *id, *cache_hits
-        ),
+        IR::Cache { input: _, id } => write!(f, "{:indent$}CACHE[id: {id}]", ""),
         IR::GroupBy {
             input: _,
             keys,
@@ -814,7 +807,7 @@ pub fn write_ir_non_recursive(
             expr_arena,
             keys,
             aggs,
-            apply.as_deref(),
+            apply.as_ref(),
             *maintain_order,
         ),
         IR::Join {
@@ -910,7 +903,7 @@ pub fn write_group_by(
     expr_arena: &Arena<AExpr>,
     keys: &[ExprIR],
     aggs: &[ExprIR],
-    apply: Option<&dyn DataFrameUdf>,
+    apply: Option<&PlanCallback<DataFrame, DataFrame>>,
     maintain_order: bool,
 ) -> fmt::Result {
     let sub_indent = indent + INDENT_INCREMENT;

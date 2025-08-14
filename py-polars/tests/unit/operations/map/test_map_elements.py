@@ -387,3 +387,14 @@ def test_map_elements_list_of_named_tuple_15425() -> None:
     )
     expected = pl.DataFrame({"a": [[], [{"x": 0}], [{"x": 0}, {"x": 1}]]})
     assert_frame_equal(result, expected)
+
+
+def test_map_elements_list_dtype_24006() -> None:
+    values = [None, [1, 2], [2, 3]]
+    dtype = pl.List(pl.Int64)
+
+    s1 = pl.Series([0, 1, 2]).map_elements(lambda x: values[x])
+    s2 = pl.Series([0, 1, 2]).map_elements(lambda x: values[x], return_dtype=dtype)
+
+    assert_series_equal(s1, s2)
+    assert_series_equal(s1, pl.Series(values, dtype=dtype))

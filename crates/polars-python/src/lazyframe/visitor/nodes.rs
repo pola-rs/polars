@@ -230,8 +230,6 @@ pub struct Cache {
     input: usize,
     #[pyo3(get)]
     id_: u128,
-    #[pyo3(get)]
-    cache_hits: u32,
 }
 
 #[pyclass]
@@ -483,14 +481,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             slice: *slice,
         }
         .into_py_any(py),
-        IR::Cache {
-            input,
-            id,
-            cache_hits,
-        } => Cache {
+        IR::Cache { input, id } => Cache {
             input: input.0,
             id_: id.as_u128(),
-            cache_hits: *cache_hits,
         }
         .into_py_any(py),
         IR::GroupBy {

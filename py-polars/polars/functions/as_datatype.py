@@ -137,24 +137,22 @@ def datetime_(
     month_expr = parse_into_expression(month)
     day_expr = parse_into_expression(day)
 
-    if hour is not None:
-        hour = parse_into_expression(hour)
-    if minute is not None:
-        minute = parse_into_expression(minute)
-    if second is not None:
-        second = parse_into_expression(second)
-    if microsecond is not None:
-        microsecond = parse_into_expression(microsecond)
+    hour_expr = parse_into_expression(hour) if hour is not None else None
+    minute_expr = parse_into_expression(minute) if minute is not None else None
+    second_expr = parse_into_expression(second) if second is not None else None
+    microsecond_expr = (
+        parse_into_expression(microsecond) if microsecond is not None else None
+    )
 
     return wrap_expr(
         plr.datetime(
             year_expr,
             month_expr,
             day_expr,
-            hour,
-            minute,
-            second,
-            microsecond,
+            hour_expr,
+            minute_expr,
+            second_expr,
+            microsecond_expr,
             time_unit,
             time_zone,
             ambiguous_expr,
@@ -394,38 +392,37 @@ def duration(
     │ 2022-01-04 00:00:00 ┆ 2022-03-02 00:00:00 ┆ 2024-01-02 00:00:00 │
     └─────────────────────┴─────────────────────┴─────────────────────┘
     """  # noqa: W505
-    if weeks is not None:
-        weeks = parse_into_expression(weeks)
-    if days is not None:
-        days = parse_into_expression(days)
-    if hours is not None:
-        hours = parse_into_expression(hours)
-    if minutes is not None:
-        minutes = parse_into_expression(minutes)
-    if seconds is not None:
-        seconds = parse_into_expression(seconds)
-    if milliseconds is not None:
-        milliseconds = parse_into_expression(milliseconds)
-    if microseconds is not None:
-        microseconds = parse_into_expression(microseconds)
-    if nanoseconds is not None:
-        nanoseconds = parse_into_expression(nanoseconds)
-        if time_unit is None:
-            time_unit = "ns"
+    if nanoseconds is not None and time_unit is None:
+        time_unit = "ns"
+
+    weeks_expr = parse_into_expression(weeks) if weeks is not None else None
+    days_expr = parse_into_expression(days) if days is not None else None
+    hours_expr = parse_into_expression(hours) if hours is not None else None
+    minutes_expr = parse_into_expression(minutes) if minutes is not None else None
+    seconds_expr = parse_into_expression(seconds) if seconds is not None else None
+    milliseconds_expr = (
+        parse_into_expression(milliseconds) if milliseconds is not None else None
+    )
+    microseconds_expr = (
+        parse_into_expression(microseconds) if microseconds is not None else None
+    )
+    nanoseconds_expr = (
+        parse_into_expression(nanoseconds) if nanoseconds is not None else None
+    )
 
     if time_unit is None:
         time_unit = "us"
 
     return wrap_expr(
         plr.duration(
-            weeks,
-            days,
-            hours,
-            minutes,
-            seconds,
-            milliseconds,
-            microseconds,
-            nanoseconds,
+            weeks_expr,
+            days_expr,
+            hours_expr,
+            minutes_expr,
+            seconds_expr,
+            milliseconds_expr,
+            microseconds_expr,
+            nanoseconds_expr,
             time_unit,
         )
     )

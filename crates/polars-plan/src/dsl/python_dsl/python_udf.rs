@@ -122,6 +122,15 @@ impl AnonymousColumnsUdf for PythonUdfExpression {
     fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf> {
         self as _
     }
+    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf> {
+        Arc::new(Self {
+            python_function: Python::with_gil(|py| self.python_function.clone_ref(py)),
+            output_type: self.output_type.clone(),
+            materialized_field: OnceLock::new(),
+            is_elementwise: self.is_elementwise,
+            returns_scalar: self.returns_scalar,
+        }) as _
+    }
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {

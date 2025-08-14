@@ -734,8 +734,8 @@ def test_rolling_cov_corr_nulls() -> None:
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.62204709]})
 
-    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
-    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+    assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
     val_1 = df1.select(
         pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
@@ -747,8 +747,8 @@ def test_rolling_cov_corr_nulls() -> None:
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.009445]})
 
-    assert_frame_equal(val_1, df1_expected, atol=0.0000001)
-    assert_frame_equal(val_2, df2_expected, atol=0.0000001)
+    assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
+    assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])

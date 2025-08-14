@@ -237,15 +237,8 @@ impl<'a> TreeFmtNode<'a> {
                             .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
                             .collect(),
                     ),
-                    Cache {
-                        input,
-                        id,
-                        cache_hits,
-                    } => ND(
-                        wh(
-                            h,
-                            &format!("CACHE[id: {}, cache_hits: {}]", id, *cache_hits),
-                        ),
+                    Cache { input, id } => ND(
+                        wh(h, &format!("CACHE[id: {id}]")),
                         vec![self.lp_node(None, *input)],
                     ),
                     Filter { input, predicate } => ND(

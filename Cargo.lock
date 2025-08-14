@@ -3336,6 +3336,7 @@ name = "polars-lazy"
 version = "0.50.0"
 dependencies = [
  "bitflags",
+ "bytes",
  "chrono",
  "either",
  "futures",
@@ -3802,7 +3803,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "either",
  "libc",
@@ -3878,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars"
-version = "0.23.0"
+version = "0.23.1"
 dependencies = [
  "libc",
  "once_cell",
@@ -3899,7 +3900,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars-derive"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "polars-arrow",
  "polars-core",

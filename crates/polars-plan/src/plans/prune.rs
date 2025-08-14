@@ -58,17 +58,6 @@ pub fn prune(
 
     assert!(ctx.roots.values().all(|v| v.is_some()));
 
-    for (_, cache_node) in ctx.dst_caches {
-        // Any root nodes that directly point to this cache will be included in the cache hits.
-        // Subtract them, so that the number of hits is equal to the number of consumers in the
-        // pruned subgraph, minus one (this is a cache thing).
-        let count = dst_roots.iter().filter(|&&n| n == cache_node).count();
-        let IR::Cache { cache_hits, .. } = ctx.dst_ir.get_mut(cache_node) else {
-            unreachable!();
-        };
-        *cache_hits = cache_hits.saturating_sub(count as u32);
-    }
-
     dst_roots
 }
 
@@ -92,10 +81,6 @@ impl<'a> CopyContext<'a> {
         // This is before the root node check, so that the hit count gets bumped for every visit.
         if let IR::Cache { id, .. } = self.src_ir.get(src_node) {
             if let Some(cache) = self.dst_caches.get(id) {
-                let IR::Cache { cache_hits, .. } = self.dst_ir.get_mut(*cache) else {
-                    unreachable!()
-                };
-                *cache_hits += 1;
                 return *cache;
             }
         }
@@ -124,8 +109,7 @@ impl<'a> CopyContext<'a> {
         let dst_node = self.dst_ir.add(dst_ir);
 
         // If this is a cache, reset the hit count and store the dst node.
-        if let IR::Cache { cache_hits, id, .. } = self.dst_ir.get_mut(dst_node) {
-            *cache_hits = 0;
+        if let IR::Cache { id, .. } = self.dst_ir.get_mut(dst_node) {
             let prev = self.dst_caches.insert(*id, dst_node);
             assert!(prev.is_none(), "cache {id} was traversed twice");
         }
@@ -259,48 +243,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_pruned_cache_hit_count() {
-        let p = BranchedPlan::new();
-
-        #[rustfmt::skip]
-        let cases: &[(&[Node], u32)] = &[
-            (&[p.cache], 0),
-            (&[p.left_sink], 0),
-            (&[p.left_sink, p.right_sink], 1),
-            (&[p.left_sink, p.right_sink, p.extra_sink], 2),
-            (&[p.cache, p.cache], 0),
-            (&[p.left_sink, p.left_sink], 0),
-            (&[p.left_sink, p.cache], 0),
-            (&[p.cache, p.left_sink], 0),
-            (&[p.cache, p.left_sink, p.right_sink], 1),
-            (&[p.left_sink, p.cache, p.right_sink], 1),
-            (&[p.left_sink, p.right_sink, p.cache], 1),
-            (&[p.left_sink, p.right_sink, p.left_sink], 1),
-            (&[p.left_sink, p.cache, p.left_sink, p.right_sink, p.cache], 1),
-            (&[p.cache, p.left_sink, p.cache, p.right_sink], 1),
-        ];
-
-        for (i, &(roots, expected_cache_hits)) in cases.iter().enumerate() {
-            let (pruned, arenas) = p.prune(roots);
-            assert_eq!(
-                cache_hits(arenas.plan(pruned[0])).unwrap(),
-                expected_cache_hits,
-                "test case {i}"
-            );
-        }
-
-        /// Returns cache hits of the first reachable cache node
-        fn cache_hits(plan: IRPlanRef<'_>) -> Option<u32> {
-            for (_, ir) in plan.lp_arena.iter(plan.lp_top) {
-                if let &IR::Cache { cache_hits, .. } = ir {
-                    return Some(cache_hits);
-                }
-            }
-            None
-        }
-    }
-
     fn plans_equal(a: IRPlanRef<'_>, b: IRPlanRef<'_>) -> bool {
         let iter_a = a.lp_arena.iter(a.lp_top);
         let iter_b = b.lp_arena.iter(b.lp_top);
@@ -347,7 +289,6 @@ mod tests {
             let cache = ir_arena.add(IR::Cache {
                 input: filter,
                 id: UniqueId::new(),
-                cache_hits: 1,
             });
 
             let left_sink = ir_arena.add(IR::Sink {

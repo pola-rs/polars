@@ -92,6 +92,13 @@ impl PyDataTypeExpr {
         self.inner.clone().int().to_signed().into()
     }
 
+    pub fn default_value(&self, n: usize, numeric_to_one: bool, num_list_values: usize) -> PyExpr {
+        self.inner
+            .clone()
+            .default_value(n, numeric_to_one, num_list_values)
+            .into()
+    }
+
     pub fn list_inner_dtype(&self) -> Self {
         self.inner.clone().list().inner_dtype().into()
     }

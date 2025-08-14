@@ -732,6 +732,7 @@ fn expand_expression_rec(
             options,
             fmt_str,
         } => {
+            let function = function.clone().materialize()?;
             if options
                 .flags
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION)
@@ -748,7 +749,7 @@ fn expand_expression_rec(
                 }
                 out.push(Expr::AnonymousFunction {
                     input: expanded_input,
-                    function: function.clone(),
+                    function: LazySerde::Deserialized(function.deep_clone()),
                     options: *options,
                     fmt_str: fmt_str.clone(),
                 });
@@ -761,7 +762,7 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::AnonymousFunction {
                         input: e.to_vec(),
-                        function: function.clone(),
+                        function: LazySerde::Deserialized(function.clone().deep_clone()),
                         options: *options,
                         fmt_str: fmt_str.clone(),
                     },

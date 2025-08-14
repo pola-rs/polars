@@ -36,7 +36,7 @@ mod inner {
 
 pub(super) use inner::SlicePushDown;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct State {
     offset: i64,
     len: IdxSize,
@@ -354,34 +354,69 @@ impl SlicePushDown {
             (Slice {
                 input,
                 offset,
-                len
-            }, Some(previous_state)) => {
+                mut len
+            }, Some(outer_slice)) => {
                 let alp = lp_arena.take(input);
-                let state = Some(if previous_state.offset == offset  {
-                    State {
-                        offset,
-                        len: std::cmp::min(len, previous_state.len)
+
+                // Both are positive, can combine into a single slice.
+                if outer_slice.offset >= 0 && offset >= 0 {
+                    let state = State {
+                        offset: offset.checked_add(outer_slice.offset).unwrap(),
+                        len: if len as i64 > outer_slice.offset {
+                            (len - outer_slice.offset as IdxSize).min(outer_slice.len)
+                        } else {
+                            0
+                        },
+                    };
+                    return self.pushdown(alp, Some(state), lp_arena, expr_arena);
+                }
+
+                // If offset is negative the length can never be greater than it.
+                if offset < 0 {
+                    if len as i64 > -offset {
+                        len = (-offset) as IdxSize;
                     }
-                } else {
-                    State {
-                        offset,
-                        len
-                    }
-                });
-                let lp = self.pushdown(alp, state, lp_arena, expr_arena)?;
+                }
+
+                // Both are negative, can also combine (but not so simply).
+                if outer_slice.offset < 0 && offset < 0 {
+                    let inner_start_rel_end = offset;
+                    let inner_stop_rel_end = inner_start_rel_end + len as i64;
+                    let naive_outer_start_rel_end = inner_stop_rel_end + outer_slice.offset;
+                    let naive_outer_stop_rel_end = naive_outer_start_rel_end + outer_slice.len as i64;
+                    let clamped_outer_start_rel_end = naive_outer_start_rel_end.max(inner_start_rel_end);
+                    let clamped_outer_stop_rel_end = naive_outer_stop_rel_end.max(clamped_outer_start_rel_end);
+
+                    let state = State {
+                        offset: clamped_outer_start_rel_end,
+                        len: (clamped_outer_stop_rel_end - clamped_outer_start_rel_end) as IdxSize,
+                    };
+                    return self.pushdown(alp, Some(state), lp_arena, expr_arena);
+                }
+
+                let inner_slice = Some(State { offset, len });
+                let lp = self.pushdown(alp, inner_slice, lp_arena, expr_arena)?;
                 let input = lp_arena.add(lp);
                 Ok(Slice {
                     input,
-                    offset: previous_state.offset,
-                    len: previous_state.len
+                    offset: outer_slice.offset,
+                    len: outer_slice.len
                 })
             }
             (Slice {
                 input,
                 offset,
-                len
+                mut len
             }, None) => {
                 let alp = lp_arena.take(input);
+
+                // If offset is negative the length can never be greater than it.
+                if offset < 0 {
+                    if len as i64 > -offset {
+                        len = (-offset) as IdxSize;
+                    }
+                }
+
                 let state = Some(State {
                     offset,
                     len

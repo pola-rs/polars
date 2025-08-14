@@ -315,7 +315,8 @@ def _combine_as_selector(
 class Selector(Expr):
     """Base column selector expression/proxy."""
 
-    _pyselector: PySelector = None
+    # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
+    _pyselector: PySelector = None  # type: ignore[assignment]
 
     @classmethod
     def _from_pyselector(cls, pyselector: PySelector) -> Selector:
@@ -1939,22 +1940,23 @@ def datetime(
     └────────────┘
     """  # noqa: W505
     if time_unit is None:
-        time_unit = ["ms", "us", "ns"]
+        time_unit_lst = ["ms", "us", "ns"]
     else:
-        time_unit = (
+        time_unit_lst = (
             [time_unit] if isinstance(time_unit, str) else builtins.list(time_unit)
         )
 
+    time_zone_lst: builtins.list[str | pydatetime.timezone | None]
     if time_zone is None:
-        time_zone = [None]
+        time_zone_lst = [None]
     elif time_zone:
-        time_zone = (
+        time_zone_lst = (
             [time_zone]
             if isinstance(time_zone, (str, pydatetime.timezone))
             else builtins.list(time_zone)
         )
 
-    return Selector._from_pyselector(PySelector.datetime(time_unit, time_zone))
+    return Selector._from_pyselector(PySelector.datetime(time_unit_lst, time_zone_lst))
 
 
 def decimal() -> Selector:

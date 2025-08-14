@@ -250,8 +250,6 @@ impl<'a> AggregationContext<'a> {
                     .iter()
                     .map(|&o| {
                         let len = (o - previous) as IdxSize;
-                        // explode will fill empty rows with null, so we must increment the group
-                        // offset accordingly
                         let new_offset = offset + len;
 
                         previous = o;

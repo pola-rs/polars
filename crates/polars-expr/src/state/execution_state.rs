@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::sync::atomic::AtomicI64;
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
 use bitflags::bitflags;
@@ -99,13 +99,18 @@ impl From<u8> for StateFlags {
     }
 }
 
-type CachedValue = Arc<(AtomicI64, OnceLock<DataFrame>)>;
+struct CachedValue {
+    /// The number of times the cache will still be read.
+    /// Zero means that there will be no more reads and the cache can be dropped.
+    remaining_hits: AtomicI64,
+    df: DataFrame,
+}
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<RwLock<PlHashMap<UniqueId, CachedValue>>>,
+    df_cache: Arc<RwLock<PlHashMap<UniqueId, Arc<CachedValue>>>>,
     pub schema_cache: Arc<RwLock<Option<SchemaRef>>>,
     /// Used by Window Expressions to cache intermediate state
     pub window_cache: Arc<WindowCache>,
@@ -216,28 +221,40 @@ impl ExecutionState {
         lock.clone()
     }
 
-    pub fn get_df_cache(&self, key: &UniqueId, cache_hits: u32) -> CachedValue {
-        let guard = self.df_cache.read().unwrap();
-
-        match guard.get(key) {
-            Some(v) => v.clone(),
-            None => {
-                drop(guard);
-                let mut guard = self.df_cache.write().unwrap();
-
-                guard
-                    .entry(*key)
-                    .or_insert_with(|| {
-                        Arc::new((AtomicI64::new(cache_hits as i64), OnceLock::new()))
-                    })
-                    .clone()
-            },
+    pub fn set_df_cache(&self, id: &UniqueId, df: DataFrame, cache_hits: u32) {
+        if self.verbose() {
+            eprintln!("CACHE SET: cache id: {id}");
         }
+
+        let value = Arc::new(CachedValue {
+            remaining_hits: AtomicI64::new(cache_hits as i64),
+            df,
+        });
+
+        let prev = self.df_cache.write().unwrap().insert(*id, value);
+        assert!(prev.is_none(), "duplicate set cache: {id}");
     }
 
-    pub fn remove_df_cache(&self, key: &UniqueId) {
-        let mut guard = self.df_cache.write().unwrap();
-        let _ = guard.remove(key).unwrap();
+    pub fn get_df_cache(&self, id: &UniqueId) -> DataFrame {
+        let guard = self.df_cache.read().unwrap();
+        let value = guard.get(id).expect("cache not prefilled");
+        let remaining = value.remaining_hits.fetch_sub(1, Ordering::Relaxed);
+        if remaining < 0 {
+            panic!("cache used more times than expected: {id}");
+        }
+        if self.verbose() {
+            eprintln!("CACHE HIT: cache id: {id}");
+        }
+        if remaining == 1 {
+            drop(guard);
+            let value = self.df_cache.write().unwrap().remove(id).unwrap();
+            if self.verbose() {
+                eprintln!("CACHE DROP: cache id: {id}");
+            }
+            Arc::into_inner(value).unwrap().df
+        } else {
+            value.df.clone()
+        }
     }
 
     /// Clear the cache used by the Window expressions
