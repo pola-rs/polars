@@ -368,3 +368,9 @@ def test_scalar_agg_schema_20044() -> None:
         .group_by("c")
         .agg(pl.col("d").mean())
     ).schema == pl.Schema([("c", pl.String), ("d", pl.Float64)])
+
+
+def test_mean_on_invalid_type_24008() -> None:
+    df = pl.DataFrame({"s": ["bob", "foo"]})
+    q = df.lazy().select(pl.col("s").mean())
+    assert q.collect_schema() == q.collect().schema
