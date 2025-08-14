@@ -23,6 +23,7 @@ from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_write_json() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
     out = df.write_json()
@@ -218,6 +219,7 @@ def test_json_supertype_infer() -> None:
     assert_frame_equal(python_infer, polars_infer)
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_ndjson_sliced_list_serialization() -> None:
     data = {"col1": [0, 2], "col2": [[3, 4, 5], [6, 7, 8]]}
     df = pl.DataFrame(data)
@@ -357,6 +359,7 @@ def test_ndjson_expected_null_got_object_inference_22807() -> None:
     )
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 @pytest.mark.write_disk
 def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     # This shouldn't be passed, but still we test if we can handle it gracefully
@@ -600,6 +603,7 @@ def test_read_json_utf_8_sig_encoding() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_cloud  # reason: object
 def test_write_masked_out_list_22202() -> None:
     df = pl.DataFrame({"x": [1, 2], "y": [None, 3]})
 

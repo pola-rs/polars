@@ -3,6 +3,7 @@ import pytest
 import polars as pl
 
 
+@pytest.mark.may_fail_cloud
 def test_shrink_dtype() -> None:
     df = pl.DataFrame(
         {
