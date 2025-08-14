@@ -46,21 +46,9 @@ jobs:
           sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
 
-      - name: Setup emsdk
-        uses: pyodide/setup-emsdk@v15
-        with:
-          # This should match the exact version of Emscripten used by Pyodide
-          # Pyodide 0.28 uses Emscripten 4.0.9:
-          # https://github.com/pyodide/pyodide/blob/0db5ff79f310694a7d72ae0b3279e9809ab836d6/Makefile.envs
-          version: 4.0.9
-
       - name: Build wheel
-        uses: PyO3/maturin-action@v1
+        uses: pypa/cibuildwheel@v3.1.3
+        env:
+          CIBW_PLATFORM: pyodide
         with:
-          command: build
-          target: wasm32-unknown-emscripten
-          args: >
-            --profile dev
-            --manifest-path py-polars/Cargo.toml
-            --interpreter python3.13
-          maturin-version: 1.9.3
+          package-dir: py-polars
