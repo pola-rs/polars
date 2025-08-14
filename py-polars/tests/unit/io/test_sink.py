@@ -147,8 +147,8 @@ def test_sink_empty(sink: Any, scan: Any) -> None:
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
 def test_sink_null_upcast(scan: Any, sink: Any) -> None:
-    scan_kwargs = {}
-    sink_kwargs = {}
+    scan_kwargs: dict[str, Any] = {}
+    sink_kwargs: dict[str, Any] = {}
     if scan == pl.scan_csv:
         scan_kwargs["null_values"] = "<NULL>"
         scan_kwargs["schema"] = pl.Schema({"a": pl.Int64})
