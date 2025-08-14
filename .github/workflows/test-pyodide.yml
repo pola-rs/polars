@@ -54,14 +54,6 @@ jobs:
           # https://github.com/pyodide/pyodide/blob/0db5ff79f310694a7d72ae0b3279e9809ab836d6/Makefile.envs
           version: 4.0.9
 
-      - name: Install LLVM
-        # This should match the major version of LLVM expected by Emscripten
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 21
-          echo "EM_LLVM_ROOT=/usr/lib/llvm-21/bin" >> $GITHUB_ENV
-
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
