@@ -947,9 +947,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def pipe_with_schema(
         self,
-        function: Callable[Concatenate[LazyFrame, Schema, P], LazyFrame],
-        *args: P.args,
-        **kwargs: P.kwargs,
+        function: Callable[[LazyFrame, Schema], LazyFrame],
     ) -> LazyFrame:
         """
         Allows to alter the lazy frame during the plan stage with the resolved schema.
@@ -964,10 +962,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         function
             Callable; will receive the frame as the first parameter, the resolved schema
             as second parameter, followed by any given args/kwargs.
-        *args
-            Arguments to pass to the UDF.
-        **kwargs
-            Keyword arguments to pass to the UDF.
 
         See Also
         --------
@@ -1004,8 +998,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 lambda lf_and_schema: function(
                     self._from_pyldf(lf_and_schema[0]),
                     lf_and_schema[1],
-                    *args,
-                    **kwargs,
                 )._ldf
             )
         )
