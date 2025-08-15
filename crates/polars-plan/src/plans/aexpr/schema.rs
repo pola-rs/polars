@@ -98,10 +98,16 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 let mut field = e.to_field_impl(ctx)?;
 
-                if let WindowType::Over(WindowMapping::Join) = options {
-                    if !is_scalar_ae(*function, ctx.arena) {
-                        field.dtype = DataType::List(Box::new(field.dtype));
-                    }
+                let mut implicit_implode = false;
+
+                implicit_implode |= matches!(options, WindowType::Over(WindowMapping::Join));
+                #[cfg(feature = "dynamic_group_by")]
+                {
+                    implicit_implode |= matches!(options, WindowType::Rolling(_));
+                }
+
+                if implicit_implode && !is_scalar_ae(*function, ctx.arena) {
+                    field.dtype = field.dtype.implode();
                 }
 
                 Ok(field)
