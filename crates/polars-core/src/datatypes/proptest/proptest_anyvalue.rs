@@ -1,11 +1,13 @@
 use std::ops::RangeInclusive;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use arrow::bitmap::bitmask::nth_set_bit_u32;
 use polars_utils::pl_str::PlSmallStr;
 use proptest::prelude::*;
 
-use super::{AnyValue, DataType, TimeUnit};
+use super::super::{AnyValue, CategoricalMapping, OwnedObject, PolarsObjectSafe, TimeUnit};
+use crate::prelude::PolarsObject;
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +62,7 @@ pub struct AnyValueArbitraryOptions {
     pub allowed_dtypes: AnyValueArbitrarySelection,
     pub vector_length_range: RangeInclusive<usize>,
     pub decimal_precision_range: RangeInclusive<usize>,
+    pub categories_range: RangeInclusive<usize>,
     // TODO: Add fields later
 }
 
@@ -69,7 +72,7 @@ impl Default for AnyValueArbitraryOptions {
             allowed_dtypes: AnyValueArbitrarySelection::all(),
             vector_length_range: 0..=100,
             decimal_precision_range: 1..=38,
-            // TODO: Add fields later
+            categories_range: 0..=3, // TODO: Add fields later
         }
     }
 }
@@ -82,7 +85,7 @@ pub fn anyvalue_strategy(
     use AnyValueArbitrarySelection as S;
     let mut allowed_dtypes = options.allowed_dtypes;
 
-    if include_nested == false {
+    if !include_nested {
         allowed_dtypes &= !S::nested();
     }
 
@@ -131,9 +134,9 @@ pub fn anyvalue_strategy(
                     .boxed()
             },
             #[cfg(feature = "object")]
-            _ if selection == S::OBJECT => unimplemented!(),
+            _ if selection == S::OBJECT => object_strategy().boxed(),
             #[cfg(feature = "object")]
-            _ if selection == S::OBJECT_OWNED => unimplemented!(),
+            _ if selection == S::OBJECT_OWNED => object_owned_strategy().boxed(),
             #[cfg(feature = "dtype-datetime")]
             _ if selection == S::DATETIME => datetime_strategy().boxed(),
             #[cfg(feature = "dtype-datetime")]
@@ -144,9 +147,83 @@ pub fn anyvalue_strategy(
             _ if selection == S::DECIMAL => {
                 decimal_strategy(options.decimal_precision_range.clone()).boxed()
             },
+            #[cfg(feature = "dtype-categorical")]
+            _ if selection == S::CATEGORICAL => {
+                categorical_enum_strategy(options.categories_range.clone()).boxed()
+            },
+            #[cfg(feature = "dtype-categorical")]
+            _ if selection == S::CATEGORICAL_OWNED => {
+                categorical_enum_owned_strategy(options.categories_range.clone()).boxed()
+            },
+            #[cfg(feature = "dtype-categorical")]
+            _ if selection == S::ENUM => {
+                categorical_enum_strategy(options.categories_range.clone()).boxed()
+            },
+            #[cfg(feature = "dtype-categorical")]
+            _ if selection == S::ENUM_OWNED => {
+                categorical_enum_owned_strategy(options.categories_range.clone()).boxed()
+            },
+            _ if selection == S::LIST => unimplemented!(),
             _ => unreachable!(), // TODO: Rest of strategies
         }
     })
+}
+
+impl PolarsObject for u64 {
+    fn type_name() -> &'static str {
+        "test_u64"
+    }
+}
+
+impl PolarsObject for String {
+    fn type_name() -> &'static str {
+        "test_string"
+    }
+}
+
+impl PolarsObject for bool {
+    fn type_name() -> &'static str {
+        "test_bool"
+    }
+}
+
+#[cfg(feature = "object")]
+fn object_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    proptest::prop_oneof![
+        any::<u64>().prop_map(|u| {
+            let boxed: Box<dyn PolarsObjectSafe> = Box::new(u);
+            let leaked: &'static dyn PolarsObjectSafe = Box::leak(boxed);
+            AnyValue::Object(leaked)
+        }),
+        any::<String>().prop_map(|s| {
+            let boxed: Box<dyn PolarsObjectSafe> = Box::new(s);
+            let leaked: &'static dyn PolarsObjectSafe = Box::leak(boxed);
+            AnyValue::Object(leaked)
+        }),
+        any::<bool>().prop_map(|b| {
+            let boxed: Box<dyn PolarsObjectSafe> = Box::new(b);
+            let leaked: &'static dyn PolarsObjectSafe = Box::leak(boxed);
+            AnyValue::Object(leaked)
+        })
+    ]
+}
+
+#[cfg(feature = "object")]
+fn object_owned_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    proptest::prop_oneof![
+        any::<u64>().prop_map(|u| {
+            let boxed: Box<dyn PolarsObjectSafe> = Box::new(u);
+            AnyValue::ObjectOwned(OwnedObject(boxed))
+        }),
+        any::<String>().prop_map(|s| {
+            let boxed: Box<dyn PolarsObjectSafe> = Box::new(s);
+            AnyValue::ObjectOwned(OwnedObject(boxed))
+        }),
+        any::<bool>().prop_map(|b| {
+            let boxed: Box<dyn PolarsObjectSafe> = Box::new(b);
+            AnyValue::ObjectOwned(OwnedObject(boxed))
+        }),
+    ]
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -194,6 +271,51 @@ fn decimal_strategy(
 ) -> impl Strategy<Value = AnyValue<'static>> {
     (any::<i128>(), decimal_precision_range)
         .prop_map(|(value, scale)| AnyValue::Decimal(value, scale))
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn categorical_enum_strategy(
+    categories_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = AnyValue<'static>> {
+    categories_range
+        .prop_flat_map(|n_categories| (0..n_categories as u32, Just(n_categories)))
+        .prop_map(|(cat_size, n_categories)| {
+            let mapping = CategoricalMapping::new(n_categories.max(1));
+
+            for i in 0..n_categories {
+                let category_name = format!("category{i}");
+                mapping.insert_cat(&category_name).unwrap();
+            }
+
+            let leaked_mapping: &'static Arc<CategoricalMapping> =
+                Box::leak(Box::new(Arc::new(mapping)));
+
+            AnyValue::Categorical(cat_size, leaked_mapping)
+        })
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn categorical_enum_owned_strategy(
+    categories_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = AnyValue<'static>> {
+    categories_range
+        .prop_flat_map(|n_categories| (0..n_categories as u32, Just(n_categories)))
+        .prop_map(|(cat_size, n_categories)| {
+            let mapping = CategoricalMapping::new(n_categories.max(1));
+
+            for i in 0..n_categories {
+                let category_name = format!("category{i}");
+                mapping.insert_cat(&category_name).unwrap();
+            }
+
+            let arc_mapping = Arc::new(mapping);
+
+            AnyValue::CategoricalOwned(cat_size, arc_mapping)
+        })
+}
+
+fn _list_strategy() {
+    // TODO
 }
 
 // TODO: More complex strategies
