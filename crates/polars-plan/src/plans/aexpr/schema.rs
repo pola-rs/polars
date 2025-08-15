@@ -98,7 +98,7 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 let mut field = e.to_field_impl(ctx)?;
 
-                if let WindowType::Over(WindowMapping::Join) = options {
+                if let WindowType::Over(WindowMapping::Join) | WindowType::Rolling(_) = options {
                     if !is_scalar_ae(*function, ctx.arena) {
                         field.dtype = DataType::List(Box::new(field.dtype));
                     }
