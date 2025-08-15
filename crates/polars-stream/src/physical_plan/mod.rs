@@ -315,8 +315,6 @@ pub enum PhysNodeKind {
     MergeSorted {
         input_left: PhysStream,
         input_right: PhysStream,
-
-        key: PlSmallStr,
     },
 }
 

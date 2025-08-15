@@ -1020,6 +1020,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input_right = to_alp_impl(owned(input_right), ctxt)
                 .map_err(|e| e.context(failed_here!(merge_sorted)))?;
 
+            let left_schema = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
+            let right_schema = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
+
+            left_schema
+                .ensure_is_exact_match(&right_schema)
+                .map_err(|err| err.context("merge_sorted".into()))?;
+
+            left_schema
+                .try_get(key.as_str())
+                .map_err(|err| err.context("merge_sorted".into()))?;
+
             IR::MergeSorted {
                 input_left,
                 input_right,

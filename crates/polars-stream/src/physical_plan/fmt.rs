@@ -534,15 +534,7 @@ fn visualize_plan_rec(
         PhysNodeKind::MergeSorted {
             input_left,
             input_right,
-            key,
-        } => {
-            let mut out = "merge-sorted".to_string();
-            let mut f = EscapeLabel(&mut out);
-
-            write!(f, "\nkey: {key}").unwrap();
-
-            (out, &[*input_left, *input_right][..])
-        },
+        } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
     };
 
     let node_id = node_key.data().as_ffi();

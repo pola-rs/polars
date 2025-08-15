@@ -911,15 +911,11 @@ fn to_graph_rec<'a>(
         MergeSorted {
             input_left,
             input_right,
-            key,
         } => {
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
-
-            let input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
-
             ctx.graph.add_node(
-                nodes::merge_sorted::MergeSortedNode::new(input_schema, key.clone()),
+                nodes::merge_sorted::MergeSortedNode::new(),
                 [
                     (left_input_key, input_left.port),
                     (right_input_key, input_right.port),

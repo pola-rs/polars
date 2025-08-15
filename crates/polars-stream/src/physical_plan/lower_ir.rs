@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use polars_core::config;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
+use polars_core::prelude::{DataType, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -26,15 +26,13 @@ use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, unique_column_name};
 use slotmap::SlotMap;
 
+use super::lower_expr::build_hstack_stream;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-use crate::physical_plan::lower_expr::{
-    ExprCache, build_length_preserving_select_stream, build_select_stream,
-    is_elementwise_rec_cached, lower_exprs,
-};
+use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -169,42 +167,10 @@ pub fn lower_ir(
             );
         },
 
-        IR::HStack { input, exprs, .. }
-            if exprs
-                .iter()
-                .all(|e| is_elementwise_rec_cached(e.node(), expr_arena, expr_cache)) =>
-        {
-            let selectors = exprs.clone();
-            let phys_input = lower_ir!(*input)?;
-            PhysNodeKind::Select {
-                input: phys_input,
-                selectors,
-                extend_original: true,
-            }
-        },
-
         IR::HStack { input, exprs, .. } => {
-            // We already handled the all-streamable case above, so things get more complicated.
-            // For simplicity we just do a normal select with all the original columns prepended.
-            let exprs = exprs.clone();
+            let exprs = exprs.to_vec();
             let phys_input = lower_ir!(*input)?;
-            let input_schema = &phys_sm[phys_input.node].output_schema;
-            let mut selectors = PlIndexMap::with_capacity(input_schema.len() + exprs.len());
-            for name in input_schema.iter_names() {
-                let col_name = name.clone();
-                let col_expr = expr_arena.add(AExpr::Column(col_name.clone()));
-                selectors.insert(
-                    name.clone(),
-                    ExprIR::new(col_expr, OutputName::ColumnLhs(col_name)),
-                );
-            }
-            for expr in exprs {
-                selectors.insert(expr.output_name().clone(), expr);
-            }
-            let selectors = selectors.into_values().collect_vec();
-            return build_length_preserving_select_stream(
-                phys_input, &selectors, expr_arena, phys_sm, expr_cache, ctx,
-            );
+            return build_hstack_stream(phys_input, &exprs, expr_arena, phys_sm, expr_cache, ctx);
         },
 
         IR::Slice { input, offset, len } => {
@@ -370,13 +336,47 @@ pub fn lower_ir(
             let input_right = *input_right;
             let key = key.clone();
 
-            let phys_left = lower_ir!(input_left)?;
-            let phys_right = lower_ir!(input_right)?;
+            let mut phys_left = lower_ir!(input_left)?;
+            let mut phys_right = lower_ir!(input_right)?;
+
+            let left_schema = &phys_sm[phys_left.node].output_schema;
+            let right_schema = &phys_sm[phys_right.node].output_schema;
+
+            left_schema.ensure_is_exact_match(right_schema).unwrap();
+
+            let key_dtype = left_schema.try_get(key.as_str())?.clone();
+
+            let key_name = unique_column_name();
+            use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
+
+            // Add the key column as the last column for both inputs.
+            for s in [&mut phys_left, &mut phys_right] {
+                let key_dtype = key_dtype.clone();
+                let mut expr = AExprBuilder::col(key.clone(), expr_arena);
+                if key_dtype.is_nested() {
+                    expr = expr.row_encode_unary(
+                        RowEncodingVariant::Ordered {
+                            descending: None,
+                            nulls_last: None,
+                        },
+                        key_dtype,
+                        expr_arena,
+                    );
+                }
+
+                *s = build_hstack_stream(
+                    *s,
+                    &[expr.expr_ir(key_name.clone())],
+                    expr_arena,
+                    phys_sm,
+                    expr_cache,
+                    ctx,
+                )?;
+            }
 
             PhysNodeKind::MergeSorted {
                 input_left: phys_left,
                 input_right: phys_right,
-                key,
             }
         },
 
