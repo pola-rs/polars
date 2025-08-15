@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet};
+use polars_core::prelude::{
+    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap,
+};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -1677,6 +1679,63 @@ pub fn build_select_stream(
         prepare_visualization: ctx.prepare_visualization,
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
+}
+
+/// Builds a hstack node given an input stream and the expressions to add.
+pub fn build_hstack_stream(
+    input: PhysStream,
+    exprs: &[ExprIR],
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
+) -> PolarsResult<PhysStream> {
+    let input_schema = &phys_sm[input.node].output_schema;
+    if exprs
+        .iter()
+        .all(|e| is_elementwise_rec_cached(e.node(), expr_arena, expr_cache))
+    {
+        let mut output_schema = input_schema.as_ref().clone();
+        for expr in exprs {
+            output_schema.insert(
+                expr.output_name().clone(),
+                expr.dtype(input_schema, expr_arena)?.clone(),
+            );
+        }
+        let output_schema = Arc::new(output_schema);
+
+        let selectors = exprs.to_vec();
+        let kind = PhysNodeKind::Select {
+            input,
+            selectors,
+            extend_original: true,
+        };
+        let node_key = phys_sm.insert(PhysNode {
+            output_schema,
+            kind,
+        });
+
+        Ok(PhysStream::first(node_key))
+    } else {
+        // We already handled the all-streamable case above, so things get more complicated.
+        // For simplicity we just do a normal select with all the original columns prepended.
+        let mut selectors = PlIndexMap::with_capacity(input_schema.len() + exprs.len());
+        for name in input_schema.iter_names() {
+            let col_name = name.clone();
+            let col_expr = expr_arena.add(AExpr::Column(col_name.clone()));
+            selectors.insert(
+                name.clone(),
+                ExprIR::new(col_expr, OutputName::ColumnLhs(col_name)),
+            );
+        }
+        for expr in exprs {
+            selectors.insert(expr.output_name().clone(), expr.clone());
+        }
+        let selectors = selectors.into_values().collect_vec();
+        build_length_preserving_select_stream(
+            input, &selectors, expr_arena, phys_sm, expr_cache, ctx,
+        )
+    }
 }
 
 /// Builds a new selection node given an input stream and the expressions to

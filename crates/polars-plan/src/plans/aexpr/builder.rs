@@ -5,7 +5,7 @@ use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr};
+use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, RowEncodingVariant};
 use crate::dsl::Operator;
 use crate::plans::{ExprIR, LiteralValue, OutputName};
 
@@ -47,6 +47,19 @@ impl AExprBuilder {
                 function,
                 options,
             },
+            arena,
+        )
+    }
+
+    pub fn row_encode_unary(
+        self,
+        variant: RowEncodingVariant,
+        dtype: DataType,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
+        Self::function(
+            vec![ExprIR::from_node(self.node(), arena)],
+            IRFunctionExpr::RowEncode(vec![dtype], variant),
             arena,
         )
     }
