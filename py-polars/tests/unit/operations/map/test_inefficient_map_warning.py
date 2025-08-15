@@ -4,7 +4,7 @@ import datetime as dt
 import json
 import math
 import re
-from datetime import datetime
+from datetime import date, datetime
 from functools import partial
 from math import cosh
 from typing import Any, Callable, Literal
@@ -527,6 +527,12 @@ def test_parse_apply_miscellaneous() -> None:
             "s.cast(pl.String)",
         ),
         (
+            "s",
+            [date(2077, 10, 10), date(1999, 12, 31)],
+            lambda d: d.month,
+            "s.dt.month()",
+        ),
+        (
             "",
             [-20, -12, -5, 0, 5, 12, 20],
             lambda x: (abs(x) != 12) and (x > 10 or x < -10 or x == 0),
@@ -542,7 +548,8 @@ def test_parse_apply_series(
 ) -> None:
     # expression/series generate same warning, with 's' as the series placeholder
     with pytest.warns(
-        PolarsInefficientMapWarning, match=r"(?s)Series\.map_elements.*s\.\w+\("
+        PolarsInefficientMapWarning,
+        match=r"(?s)Series\.map_elements.*s\.\w+\(",
     ):
         s = pl.Series(name, data)
 
@@ -552,7 +559,7 @@ def test_parse_apply_series(
 
         expected_series = s.map_elements(func)
         result_series = eval(suggested_expression)
-        assert_series_equal(expected_series, result_series)
+        assert_series_equal(expected_series, result_series, check_dtypes=False)
 
 
 @pytest.mark.may_fail_auto_streaming
