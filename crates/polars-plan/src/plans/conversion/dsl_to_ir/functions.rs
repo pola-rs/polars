@@ -987,7 +987,13 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(v) => I::RowEncode(v),
+        F::RowEncode(v) => {
+            let dts = e
+                .iter()
+                .map(|e| Ok(e.dtype(ctx.schema, ctx.arena)?.clone()))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            I::RowEncode(dts, v)
+        },
         #[cfg(feature = "dtype-struct")]
         F::RowDecode(fs, v) => I::RowDecode(
             fs.into_iter()

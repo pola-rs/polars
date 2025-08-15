@@ -414,7 +414,7 @@ pub enum IRFunctionExpr {
     Reinterpret(bool),
     ExtendConstant,
 
-    RowEncode(RowEncodingVariant),
+    RowEncode(Vec<DataType>, RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
 }
@@ -709,7 +709,10 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(variants) => variants.hash(state),
+            RowEncode(dts, variants) => {
+                dts.hash(state);
+                variants.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 fs.hash(state);
@@ -1394,7 +1397,9 @@ impl From<IRFunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
 
-            RowEncode(variants) => map_as_slice!(row_encode::encode, variants.clone()),
+            RowEncode(dts, variants) => {
+                map_as_slice!(row_encode::encode, dts.clone(), variants.clone())
+            },
             #[cfg(feature = "dtype-struct")]
             RowDecode(fs, variants) => {
                 map_as_slice!(row_encode::decode, fs.clone(), variants.clone())

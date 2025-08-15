@@ -454,3 +454,21 @@ def test_nested_sorting_22557(dtype: pl.DataType, vs: list[Any]) -> None:
         pl.Series("a", [3, 0, 2, 1], pl.get_index_type()),
         check_names=False,
     )
+
+
+def test_row_encoding_null_chunks() -> None:
+    lf1 = pl.select(a=pl.lit(1, pl.Int64)).lazy()
+    lf2 = pl.select(a=None).lazy()
+
+    lf = pl.concat([lf1, lf2]).select(pl.col.a._row_encode())
+
+    out = (
+        lf.select(pl.all()._row_decode(["a"], [pl.Int64]))
+        .unnest(pl.all())
+        .collect(engine="streaming")
+    )
+
+    assert_frame_equal(
+        pl.concat([lf1, lf2]).collect(),
+        out,
+    )
