@@ -906,4 +906,3 @@ def test_eager_inference_on_expr(length: int) -> None:
         match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
     ):
         s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))
-
