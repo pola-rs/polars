@@ -64,15 +64,10 @@ jobs:
           only: cp313-pyodide_wasm32
         env:
           CIBW_BEFORE_BUILD: |
-            ls -la /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/
-            find /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/ -name "libdylink.js" -type f || echo "libdylink.js not found"
-
-            echo "Output from tree command start"
-            tree /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/
-            echo "Output from tree command end"
-
             # Apply Emscripten patches for Pyodide
-            git apply --directory=/home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/ pyodide-patches/emsdk/patches/*.patch
+            for patch in pyodide-patches/emsdk/patches/*.patch; do
+              patch -p1 --verbose -d /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/ < "$patch"
+            done
 
             # Add Rust target
             rustup target add wasm32-unknown-emscripten

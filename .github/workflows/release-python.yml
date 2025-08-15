@@ -359,7 +359,9 @@ jobs:
         env:
           CIBW_BEFORE_BUILD: |
             # Apply Emscripten patches for Pyodide
-            git apply --directory=/home/runner/.cache/cibuildwheel/emsdk/upstream/emscripten/ pyodide-patches/emsdk/patches/*.patch
+            for patch in pyodide-patches/emsdk/patches/*.patch; do
+              patch -p1 --verbose -d /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/ < "$patch"
+            done
 
             # Add Rust target
             rustup target add wasm32-unknown-emscripten
