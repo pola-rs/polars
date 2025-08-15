@@ -276,16 +276,16 @@ def test_list_to_struct() -> None:
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct(n_field_strategy="max_width").to_list() == [
+    assert df.to_series().list.to_struct("max_width").to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(
-        pl.col("lists").list.to_struct(upper_bound=3, _eager=True)
-    ).unnest("lists").sum().collect().columns == ["field_0", "field_1", "field_2"]
+    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
+        "lists"
+    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -1147,7 +1147,7 @@ def test_list_to_struct_19208() -> None:
         }
     )
     assert pl.concat([df[0], df[1], df[2]]).select(
-        pl.col("nested").list.to_struct(_eager=True)
+        pl.col("nested").list.to_struct(upper_bound=1)
     ).to_dict(as_series=False) == {
         "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
     }

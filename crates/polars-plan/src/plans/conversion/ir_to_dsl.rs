@@ -408,13 +408,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::LenChars => B::LenChars,
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
-                IB::JsonDecode {
-                    dtype,
-                    infer_schema_len,
-                } => B::JsonDecode {
-                    dtype: dtype.map(Into::into),
-                    infer_schema_len,
-                },
+                IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonPathMatch => B::JsonPathMatch,
                 #[cfg(feature = "regex")]
@@ -454,7 +448,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 },
                 IB::Split(v) => B::Split(v),
                 #[cfg(feature = "dtype-decimal")]
-                IB::ToDecimal(v) => B::ToDecimal(v),
+                IB::ToDecimal { scale } => B::ToDecimal { scale },
                 #[cfg(feature = "nightly")]
                 IB::Titlecase => B::Titlecase,
                 IB::Uppercase => B::Uppercase,
@@ -886,7 +880,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
         IF::Coalesce => F::Coalesce,
-        IF::ShrinkType => F::ShrinkType,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),
         #[cfg(feature = "pct_change")]

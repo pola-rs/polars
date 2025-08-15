@@ -436,11 +436,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .to_owned();
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(cache)))?;
-            IR::Cache {
-                input,
-                id,
-                cache_hits: crate::constants::UNLIMITED_CACHE,
-            }
+            IR::Cache { input, id }
         },
         DslPlan::GroupBy {
             input,

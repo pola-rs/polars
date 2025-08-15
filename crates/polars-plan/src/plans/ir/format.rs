@@ -792,15 +792,7 @@ pub fn write_ir_non_recursive(
             };
             write!(f, "{:indent$}SORT BY {by_column}", "")
         },
-        IR::Cache {
-            input: _,
-            id,
-            cache_hits,
-        } => write!(
-            f,
-            "{:indent$}CACHE[id: {}, cache_hits: {}]",
-            "", *id, *cache_hits
-        ),
+        IR::Cache { input: _, id } => write!(f, "{:indent$}CACHE[id: {id}]", ""),
         IR::GroupBy {
             input: _,
             keys,

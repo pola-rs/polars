@@ -54,7 +54,7 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_df
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     Array,
     Boolean,
@@ -8932,6 +8932,7 @@ class Series:
                 6
         ]
         """
+        return wrap_s(self._s.shrink_dtype())
 
     def get_chunks(self) -> list[Series]:
         """

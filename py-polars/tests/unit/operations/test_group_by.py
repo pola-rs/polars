@@ -74,7 +74,7 @@ def test_group_by() -> None:
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
             [datetime(2023, 1, 2, 8, 0, 0), datetime(2023, 1, 5)],
             pl.Date,
-            pl.Datetime("ms"),
+            pl.Datetime("us"),
         ),
         (
             [
@@ -138,7 +138,7 @@ def test_group_by_mean_by_dtype(
     # groups are defined by first 3 values, then last value
     name = str(input_dtype)
     key = ["a", "a", "a", "b"]
-    df = pl.DataFrame(
+    df = pl.LazyFrame(
         {
             "key": key,
             name: pl.Series(input, dtype=input_dtype),
@@ -151,7 +151,8 @@ def test_group_by_mean_by_dtype(
             name: pl.Series(expected, dtype=output_dtype),
         }
     )
-    assert_frame_equal(result, df_expected)
+    assert result.collect_schema() == df_expected.schema
+    assert_frame_equal(result.collect(), df_expected)
 
 
 @pytest.mark.parametrize(
@@ -171,7 +172,7 @@ def test_group_by_mean_by_dtype(
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
             [datetime(2023, 1, 2), datetime(2023, 1, 5)],
             pl.Date,
-            pl.Datetime("ms"),
+            pl.Datetime("us"),
         ),
         (
             [
@@ -235,7 +236,7 @@ def test_group_by_median_by_dtype(
     # groups are defined by first 3 values, then last value
     name = str(input_dtype)
     key = ["a", "a", "a", "b"]
-    df = pl.DataFrame(
+    df = pl.LazyFrame(
         {
             "key": key,
             name: pl.Series(input, dtype=input_dtype),
@@ -248,7 +249,8 @@ def test_group_by_median_by_dtype(
             name: pl.Series(expected, dtype=output_dtype),
         }
     )
-    assert_frame_equal(result, df_expected)
+    assert result.collect_schema() == df_expected.schema
+    assert_frame_equal(result.collect(), df_expected)
 
 
 @pytest.fixture

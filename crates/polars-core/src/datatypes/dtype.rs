@@ -934,6 +934,39 @@ impl DataType {
         }
     }
 
+    pub fn does_match_schema_type(&self, schema_type: &DataType) -> bool {
+        if self == schema_type {
+            return true;
+        }
+
+        match (self, schema_type) {
+            (DataType::List(l), DataType::List(r)) => l.does_match_schema_type(r),
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(l, sl), DataType::Array(r, sr)) => {
+                sl == sr && l.does_match_schema_type(r)
+            },
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(l), DataType::Struct(r)) => {
+                if l.len() != r.len() {
+                    return false;
+                }
+                let mut matches = true;
+                for (l, r) in l.iter().zip(r.iter()) {
+                    matches &= l.dtype.does_match_schema_type(&r.dtype);
+                }
+                matches
+            },
+            (DataType::Null, DataType::Null) => true,
+            #[cfg(feature = "dtype-decimal")]
+            (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => s1 == s2,
+            // We don't allow the other way around, only if our current type is
+            // null and the schema isn't we allow it.
+            (DataType::Null, _) => true,
+
+            _ => false,
+        }
+    }
+
     /// Answers if this type matches the given type of a schema.
     ///
     /// Allows (nested) Null types in this type to match any type in the schema,

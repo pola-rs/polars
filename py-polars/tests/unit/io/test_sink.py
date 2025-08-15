@@ -143,3 +143,29 @@ def test_sink_empty(sink: Any, scan: Any) -> None:
     f.truncate()
     f.seek(0)
     assert_frame_equal(scan(f, **kwargs), expected.lazy())
+
+
+@pytest.mark.parametrize(("scan", "sink"), SINKS)
+def test_sink_null_upcast(scan: Any, sink: Any) -> None:
+    scan_kwargs: dict[str, Any] = {}
+    sink_kwargs: dict[str, Any] = {}
+    if scan == pl.scan_csv:
+        scan_kwargs["null_values"] = "<NULL>"
+        scan_kwargs["schema"] = pl.Schema({"a": pl.Int64})
+        sink_kwargs["null_value"] = "<NULL>"
+
+    df1 = pl.DataFrame({"a": [1, 2, 3]})
+    df2 = pl.select(a=pl.lit(None))
+
+    f = io.BytesIO()
+    g = io.BytesIO()
+
+    sink(df1.lazy(), f, **sink_kwargs)
+    sink(df2.lazy(), g, **sink_kwargs)
+
+    f.seek(0)
+    g.seek(0)
+    assert_frame_equal(
+        scan([f, g], **scan_kwargs).collect(),
+        pl.concat([df1, df2]),
+    )

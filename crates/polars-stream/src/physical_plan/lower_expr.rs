@@ -934,6 +934,49 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(left_col_expr);
             },
 
+            #[cfg(feature = "cum_agg")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function:
+                    ref function @ (IRFunctionExpr::CumMin { reverse }
+                    | IRFunctionExpr::CumMax { reverse }
+                    | IRFunctionExpr::CumSum { reverse }
+                    | IRFunctionExpr::CumCount { reverse }
+                    | IRFunctionExpr::CumProd { reverse }),
+                options: _,
+            } if !reverse => {
+                use crate::nodes::cum_agg::CumAggKind;
+
+                assert_eq!(inner_exprs.len(), 1);
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+
+                let value_key = unique_column_name();
+                let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let kind = match function {
+                    IRFunctionExpr::CumMin { .. } => CumAggKind::Min,
+                    IRFunctionExpr::CumMax { .. } => CumAggKind::Max,
+                    IRFunctionExpr::CumSum { .. } => CumAggKind::Sum,
+                    IRFunctionExpr::CumCount { .. } => CumAggKind::Count,
+                    IRFunctionExpr::CumProd { .. } => CumAggKind::Prod,
+                    _ => unreachable!(),
+                };
+                let node_kind = PhysNodeKind::CumAgg { input, kind };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), value_dtype.clone())]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
+            },
+
             AExpr::Function {
                 input: ref inner_exprs,
                 function: IRFunctionExpr::RLE,
@@ -987,6 +1030,31 @@ fn lower_exprs_with_ctx(
                 let node_kind = PhysNodeKind::RleId(input);
 
                 let output_schema = Schema::from_iter([(value_key.clone(), IDX_DTYPE)]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: ref function @ (IRFunctionExpr::PeakMin | IRFunctionExpr::PeakMax),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let is_peak_max = matches!(function, IRFunctionExpr::PeakMax);
+                let node_kind = PhysNodeKind::PeakMinMax { input, is_peak_max };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), DataType::Boolean)]);
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));

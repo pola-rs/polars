@@ -338,8 +338,30 @@ fn visualize_plan_rec(
             )
         },
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        #[cfg(feature = "cum_agg")]
+        PhysNodeKind::CumAgg { input, kind } => {
+            use crate::nodes::cum_agg::CumAggKind;
+
+            (
+                format!(
+                    "cum_{}",
+                    match kind {
+                        CumAggKind::Min => "min",
+                        CumAggKind::Max => "max",
+                        CumAggKind::Sum => "sum",
+                        CumAggKind::Count => "count",
+                        CumAggKind::Prod => "prod",
+                    }
+                ),
+                &[*input][..],
+            )
+        },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
+        PhysNodeKind::PeakMinMax { input, is_peak_max } => (
+            if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
+            &[*input][..],
+        ),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::Zip {
             inputs,

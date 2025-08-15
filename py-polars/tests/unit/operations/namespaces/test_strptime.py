@@ -882,3 +882,28 @@ def test_date_parse_omit_day_month() -> None:
         ]
     )
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("length", [1, 5])
+def test_eager_inference_on_expr(length: int) -> None:
+    s = pl.Series("a", ["2025-04-06T18:57:42.77123Z"] * length)
+
+    assert_series_equal(
+        s.str.strptime(pl.Datetime),
+        pl.Series(
+            "a",
+            [
+                datetime(
+                    2025, 4, 6, 18, 57, 42, 771230, tzinfo=timezone(timedelta(hours=0))
+                )
+            ]
+            * length,
+        ),
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match="`strptime` / `to_datetime` was called with no format and no time zone, but a time zone is part of the data",
+    ):
+        s.to_frame().select(pl.col("a").str.strptime(pl.Datetime))
+

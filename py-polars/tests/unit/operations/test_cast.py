@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable
@@ -1005,3 +1006,44 @@ def test_not_prune_necessary_cast() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt16})
     result = lf.select(pl.col("a").cast(pl.UInt8))
     assert "strict_cast" in result.explain()
+
+
+@pytest.mark.parametrize("target_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("inner_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_cast_optimizer_in_list_eval_23924(
+    inner_dtype: PolarsDataType,
+    target_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    print(inner_dtype, target_dtype)
+    if target_dtype in INTEGER_DTYPES:
+        df = pl.Series("a", [[1]], dtype=pl.List(target_dtype)).to_frame()
+    else:
+        df = pl.Series("a", [[1.0]], dtype=pl.List(target_dtype)).to_frame()
+    q = df.lazy().select(
+        pl.col("a").list.eval(
+            (op(pl.element(), pl.element().cast(inner_dtype))).cast(target_dtype)
+        )
+    )
+    assert q.collect_schema() == q.collect().schema
+
+
+def test_lit_cast_arithmetic_23677() -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": pl.Float32})
+    q = df.lazy().select(pl.col("a") / pl.lit(1, pl.Int32))
+    expected = pl.Schema({"a": pl.Float64})
+    assert q.collect().schema == expected
+
+
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_lit_cast_arithmetic_matrix_schema(
+    col_dtype: PolarsDataType,
+    lit_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    q = df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    assert q.collect_schema() == q.collect().schema

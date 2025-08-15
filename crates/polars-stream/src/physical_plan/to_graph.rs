@@ -529,6 +529,15 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "cum_agg")]
+        CumAgg { input, kind } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::cum_agg::CumAggNode::new(*kind),
+                [(input_key, input.port)],
+            )
+        },
+
         Rle(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let input_schema = &ctx.phys_sm[input.node].output_schema;
@@ -547,6 +556,14 @@ fn to_graph_rec<'a>(
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
                 nodes::rle_id::RleIdNode::new(dtype.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        PeakMinMax { input, is_peak_max } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::peak_minmax::PeakMinMaxNode::new(*is_peak_max),
                 [(input_key, input.port)],
             )
         },
