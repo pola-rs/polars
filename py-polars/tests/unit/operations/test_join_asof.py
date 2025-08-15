@@ -1408,3 +1408,26 @@ def test_join_asof_nosuffix_dup_col_23834() -> None:
     b = pl.DataFrame({"b": [1, 2, 3], "c": [9, 10, 11]})
     with pytest.raises(DuplicateError):
         a.join_asof(b, left_on="a", right_on="b", suffix="")
+
+
+def test_join_asof_planner_schema_24000() -> None:
+    a = pl.DataFrame([pl.Series("index", [1, 2, 3]) * 10])
+    b = pl.DataFrame(
+        [
+            pl.Series("value", [10, 20, 30]),
+            pl.Series("index_right", [1, 2, 3]).cast(pl.UInt64) * 10,
+        ]
+    )
+    q = a.lazy().join_asof(b.lazy(), left_on="index", right_on="index_right")
+
+    assert q.collect().schema == q.collect_schema()
+
+    b = pl.DataFrame(
+        [
+            pl.Series("index_right", [1, 2, 3]).cast(pl.UInt64) * 10,
+            pl.Series("value", [10, 20, 30]),
+        ]
+    )
+    q = a.lazy().join_asof(b.lazy(), left_on="index", right_on="index_right")
+
+    assert q.collect().schema == q.collect_schema()

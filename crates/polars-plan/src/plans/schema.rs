@@ -161,75 +161,51 @@ pub(crate) fn det_join_schema(
 
             Ok(Arc::new(new_schema))
         },
-        _how => {
+        how => {
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
                 .hstack(schema_left.iter_fields())?;
 
             let is_coalesced = options.args.should_coalesce();
 
-            let mut _asof_pre_added_rhs_keys: PlHashSet<PlSmallStr> = PlHashSet::new();
-
-            // Handles coalescing of asof-joins.
-            // Asof joins are not equi-joins
-            // so the columns that are joined on, may have different
-            // values so if the right has a different name, it is added to the schema
-            #[cfg(feature = "asof_join")]
-            if matches!(_how, JoinType::AsOf(_)) {
-                for (left_on, right_on) in left_on.iter().zip(right_on) {
-                    let field_left = left_on.field(schema_left, expr_arena)?;
-                    let field_right = right_on.field(schema_right, expr_arena)?;
-
-                    if is_coalesced && field_left.name != field_right.name {
-                        _asof_pre_added_rhs_keys.insert(field_right.name.clone());
-
-                        // For the error message.
-                        let mut suffixed = None;
-                        let (name, dtype) = if schema_left.contains(&field_right.name) {
-                            suffixed =
-                                Some(_join_suffix_name(&field_right.name, options.args.suffix()));
-                            (suffixed.clone().unwrap(), field_right.dtype.clone())
-                        } else {
-                            (field_right.name.clone(), field_right.dtype.clone())
-                        };
-                        new_schema.try_insert(name, dtype).map_err(|e| {
-                            if let Some(column) = suffixed {
-                                join_suffix_duplicate_help_msg(&column)
-                            } else {
-                                e
-                            }
-                        })?;
-                    }
-                }
-            }
-
-            let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
+            let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(right_on.len());
             for e in right_on {
                 let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
-            for (name, dtype) in schema_right.iter() {
-                #[cfg(feature = "asof_join")]
-                {
-                    if let JoinType::AsOf(asof_options) = &options.args.how {
-                        // Asof adds keys earlier
-                        if _asof_pre_added_rhs_keys.contains(name) {
-                            continue;
-                        }
+            let mut right_by: PlHashSet<&PlSmallStr> = PlHashSet::default();
+            #[cfg(feature = "asof_join")]
+            if let JoinType::AsOf(asof_options) = &options.args.how {
+                if let Some(v) = &asof_options.right_by {
+                    right_by.extend(v.iter());
+                }
+            }
 
-                        // Asof join by columns are coalesced
-                        if asof_options
-                            .right_by
-                            .as_deref()
-                            .is_some_and(|x| x.contains(name))
-                        {
-                            // Do not add suffix. The column of the left table will be used
-                            continue;
-                        }
-                    }
+            for (name, dtype) in schema_right.iter() {
+                // Asof join by columns are coalesced
+                if right_by.contains(name) {
+                    // Do not add suffix. The column of the left table will be used
+                    continue;
                 }
 
-                if join_on_right.contains(name.as_str()) && is_coalesced {
+                if is_coalesced
+                    && let Some(idx) = join_on_right.get_index_of(name)
+                    && {
+                        let mut need_to_include_column = false;
+
+                        // Handles coalescing of asof-joins.
+                        // Asof joins are not equi-joins
+                        // so the columns that are joined on, may have different
+                        // values so if the right has a different name, it is added to the schema
+                        #[cfg(feature = "asof_join")]
+                        if matches!(how, JoinType::AsOf(_)) {
+                            let field_left = left_on[idx].field(schema_left, expr_arena)?;
+                            need_to_include_column = field_left.name != name;
+                        }
+
+                        !need_to_include_column
+                    }
+                {
                     // Column will be coalesced into an already added LHS column.
                     continue;
                 }
