@@ -19,7 +19,6 @@ mod temporal;
 
 #[cfg(feature = "proptest")]
 pub mod proptest;
-pub mod proptest_anyvalue;
 
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
