@@ -945,6 +945,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return function(self, *args, **kwargs)
 
+    @unstable()
     def pipe_with_schema(
         self,
         function: Callable[[LazyFrame, Schema], LazyFrame],
@@ -957,11 +958,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         to dynamically alter the lazy frame. This also means that any exceptions raised
         by `function` will only be emitted during the plan stage.
 
+        .. warning::
+            This functionality is considered **unstable**. It may be changed at any
+            point without it being considered a breaking change.
+
         Parameters
         ----------
         function
-            Callable; will receive the frame as the first parameter, the resolved schema
-            as second parameter, followed by any given args/kwargs.
+            Callable; will receive the frame as the first parameter and the resolved
+            schema as the second parameter.
 
         See Also
         --------
