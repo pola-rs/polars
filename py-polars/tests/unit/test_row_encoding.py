@@ -7,6 +7,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
 from polars.testing.parametric.strategies.dtype import dtypes
@@ -463,8 +464,8 @@ def test_row_encoding_null_chunks() -> None:
     lf = pl.concat([lf1, lf2]).select(pl.col.a._row_encode())
 
     out = (
-        lf.select(pl.all()._row_decode(["a"], [pl.Int64]))
-        .unnest(pl.all())
+        lf.select(cs.all()._row_decode(["a"], [pl.Int64]))
+        .unnest(cs.all())
         .collect(engine="streaming")
     )
 
