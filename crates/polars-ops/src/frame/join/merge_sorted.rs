@@ -112,6 +112,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .with_outer_validity(validity)
                 .into_series()
         },
+        #[cfg(feature = "dtype-array")]
         Array(_, _) => {
             // @Optimize. This is horrendous
             let lhs = lhs.row_encode_unordered()?;
@@ -187,10 +188,10 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
     }
 
     if lhs.dtype().is_nested() {
-        return series_to_merge_indicator(
-            &lhs.row_encode_ordered(false, false)?.into_series(),
-            &rhs.row_encode_ordered(false, false)?.into_series(),
-        );
+        return Ok(get_merge_indicator(
+            lhs.row_encode_ordered(false, false)?.into_iter(),
+            rhs.row_encode_ordered(false, false)?.into_iter(),
+        ));
     }
 
     let lhs_s = lhs.to_physical_repr().into_owned();

@@ -346,10 +346,6 @@ pub fn lower_ir(
 
             let key_dtype = left_schema.try_get(key.as_str())?.clone();
 
-            let mut key_needs_row_encoding = false;
-            key_needs_row_encoding |= key_dtype.is_nested(); // Merge into 1 key column
-            key_needs_row_encoding |= key_dtype.is_categorical(); // Physical as incorrect order
-
             let key_name = unique_column_name();
             use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
 
@@ -357,7 +353,7 @@ pub fn lower_ir(
             for s in [&mut phys_left, &mut phys_right] {
                 let key_dtype = key_dtype.clone();
                 let mut expr = AExprBuilder::col(key.clone(), expr_arena);
-                if key_needs_row_encoding {
+                if key_dtype.is_nested() {
                     expr = expr.row_encode_unary(
                         RowEncodingVariant::Ordered {
                             descending: None,
