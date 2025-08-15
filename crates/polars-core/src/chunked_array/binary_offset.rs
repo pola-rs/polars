@@ -1,8 +1,6 @@
-#[cfg(feature = "dtype-struct")]
 use polars_error::PolarsResult;
 use polars_row::RowEncodingOptions;
 
-use super::StructChunked;
 use crate::prelude::{BinaryOffsetChunked, Field};
 
 #[cfg(feature = "dtype-struct")]
@@ -12,7 +10,7 @@ impl BinaryOffsetChunked {
         fields: &[Field],
         descending: &[bool],
         nulls_last: &[bool],
-    ) -> PolarsResult<StructChunked> {
+    ) -> PolarsResult<super::StructChunked> {
         assert_eq!(fields.len(), descending.len());
         assert_eq!(fields.len(), nulls_last.len());
 
@@ -26,7 +24,7 @@ impl BinaryOffsetChunked {
         crate::prelude::row_encode::row_encoding_decode(self, fields, &opts)
     }
 
-    pub fn row_decode_unordered(&self, fields: &[Field]) -> PolarsResult<StructChunked> {
+    pub fn row_decode_unordered(&self, fields: &[Field]) -> PolarsResult<super::StructChunked> {
         let mut opts = Vec::with_capacity(fields.len());
         opts.extend(std::iter::repeat_n(
             RowEncodingOptions::new_unsorted(),
