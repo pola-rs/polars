@@ -403,7 +403,7 @@ impl IRFunctionExpr {
             },
             ExtendConstant => mapper.with_same_dtype(),
 
-            RowEncode(_) => mapper.try_map_field(|_| Ok(Field::new(PlSmallStr::from_static("row-encode"), DataType::BinaryOffset))),
+            RowEncode(..) => mapper.try_map_field(|_| Ok(Field::new(PlSmallStr::from_static("row_encoded"), DataType::BinaryOffset))),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
         }
