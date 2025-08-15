@@ -173,7 +173,7 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
-            let mut right_by: PlHashSet<_> = PlHashSet::default();
+            let mut right_by: PlHashSet<&PlSmallStr> = PlHashSet::default();
             #[cfg(feature = "asof_join")]
             if let JoinType::AsOf(asof_options) = &options.args.how {
                 if let Some(v) = &asof_options.right_by {
