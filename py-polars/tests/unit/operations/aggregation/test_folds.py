@@ -25,7 +25,7 @@ def test_cum_fold() -> None:
             "c": [10, 20, 30, 40],
         }
     )
-    result = df.select(pl.cum_fold(pl.lit(0), lambda a, b: a + b, pl.all()))
+    result = df.select(pl.cum_fold(pl.lit(0, pl.Int64), lambda a, b: a + b, pl.all()))
     expected = pl.DataFrame(
         {
             "cum_fold": [
