@@ -1330,6 +1330,13 @@ impl PyLazyFrame {
             .into())
     }
 
+    fn pipe_with_schema(&self, callback: PyObject) -> Self {
+        let ldf = self.ldf.clone();
+        let function = PythonObject(callback);
+        ldf.pipe_with_schema(PlanCallback::new_python(function))
+            .into()
+    }
+
     fn rename(&mut self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
         ldf.rename(existing, new, strict).into()

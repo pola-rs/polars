@@ -1698,6 +1698,12 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().pipe_with_schema(callback).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs, options).build();

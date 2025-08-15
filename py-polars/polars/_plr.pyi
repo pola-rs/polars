@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Literal, overload
 
 from numpy.typing import NDArray
@@ -884,6 +884,9 @@ class PyLazyFrame:
     @staticmethod
     def scan_from_python_function_schema_function(
         schema_fn: Any, scan_fn: Any, validate_schema: bool
+    ) -> PyLazyFrame: ...
+    def pipe_with_schema(
+        self, callback: Callable[[tuple[PyLazyFrame, Schema]], PyLazyFrame]
     ) -> PyLazyFrame: ...
     def describe_plan(self) -> str: ...
     def describe_optimized_plan(self) -> str: ...

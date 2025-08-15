@@ -16,6 +16,7 @@ use pyo3::{IntoPyObjectExt, intern};
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::lazyframe::PyLazyFrame;
 use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
@@ -146,6 +147,16 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                 df: Arc::new(|py_f| {
                     Python::with_gil(|py| Ok(Box::new(py_f.extract::<PyDataFrame>(py)?.df) as _))
                 }),
+                dsl_plan: Arc::new(|py_f| {
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<PyLazyFrame>(py)?.ldf.logical_plan) as _)
+                    })
+                }),
+                schema: Arc::new(|py_f| {
+                    Python::with_gil(|py| {
+                        Ok(Box::new(py_f.extract::<Wrap<polars_core::schema::Schema>>(py)?.0) as _)
+                    })
+                }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
@@ -154,6 +165,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                 series: Arc::new(|series| {
                     Python::with_gil(|py| {
                         PySeries::new(*series.downcast().unwrap()).into_py_any(py)
+                    })
+                }),
+                dsl_plan: Arc::new(|dsl_plan| {
+                    Python::with_gil(|py| {
+                        PyLazyFrame::from(LazyFrame::from(
+                            *dsl_plan.downcast::<polars_plan::dsl::DslPlan>().unwrap(),
+                        ))
+                        .into_py_any(py)
+                    })
+                }),
+                schema: Arc::new(|schema| {
+                    Python::with_gil(|py| {
+                        Wrap(*schema.downcast::<polars_core::schema::Schema>().unwrap())
+                            .into_py_any(py)
                     })
                 }),
             },
