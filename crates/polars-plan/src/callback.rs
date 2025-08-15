@@ -200,7 +200,9 @@ mod _python {
     }
     impl_registrycb_type! {
         (polars_core::series::Series, series, series),
-        (polars_core::frame::DataFrame, df, df)
+        (polars_core::frame::DataFrame, df, df),
+        (crate::dsl::DslPlan, dsl_plan, dsl_plan),
+        (polars_core::schema::Schema, schema, schema)
     }
 }
 

@@ -652,6 +652,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
             return run_conversion(lp, ctxt, "match_to_schema");
         },
+        DslPlan::PipeWithSchema { input, callback } => {
+            let input_owned = owned(input);
+
+            // Derive the schema from the input
+            let input = to_alp_impl(input_owned.clone(), ctxt)
+                .map_err(|e| e.context(failed_here!(pipe_with_schema)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            // Adjust the input and start conversion again
+            let input_adjusted =
+                callback.call((input_owned, Arc::unwrap_or_clone(input_schema.into_owned())))?;
+            return to_alp_impl(input_adjusted, ctxt);
+        },
         DslPlan::Distinct { input, options } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;

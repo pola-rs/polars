@@ -889,6 +889,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **kwargs
             Keyword arguments to pass to the UDF.
 
+        See Also
+        --------
+        pipe_with_schema
+
         Examples
         --------
         >>> def cast_str_to_int(lf: pl.LazyFrame, col_name: str) -> pl.LazyFrame:
@@ -940,6 +944,71 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         return function(self, *args, **kwargs)
+
+    def pipe_with_schema(
+        self,
+        function: Callable[Concatenate[LazyFrame, Schema, P], LazyFrame],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> LazyFrame:
+        """
+        Allows to alter the lazy frame during the plan stage with the resolved schema.
+
+        In contrast to `pipe`, this method does not execute `function` immediately but
+        only during the plan stage. This allows to use the resolved schema of the input
+        to dynamically alter the lazy frame. This also means that any exceptions raised
+        by `function` will only be emitted during the plan stage.
+
+        Parameters
+        ----------
+        function
+            Callable; will receive the frame as the first parameter, the resolved schema
+            as second parameter, followed by any given args/kwargs.
+        *args
+            Arguments to pass to the UDF.
+        **kwargs
+            Keyword arguments to pass to the UDF.
+
+        See Also
+        --------
+        pipe
+
+        Examples
+        --------
+        >>> def cast_to_float_if_necessary(
+        ...     lf: pl.LazyFrame, schema: pl.Schema
+        ... ) -> pl.LazyFrame:
+        ...     required_casts = [
+        ...         pl.col(name).cast(pl.Float64)
+        ...         for name, dtype in schema.items()
+        ...         if not dtype.is_float()
+        ...     ]
+        ...     return lf.with_columns(required_casts)
+        >>> lf = pl.LazyFrame(
+        ...     {"a": [1.0, 2.0], "b": ["1.0", "2.5"], "c": [2.0, 3.0]},
+        ...     schema={"a": pl.Float64, "b": pl.String, "c": pl.Float32},
+        ... )
+        >>> lf.pipe_with_schema(cast_to_float_if_necessary).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ f64 ┆ f64 ┆ f32 │
+        ╞═════╪═════╪═════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 │
+        │ 2.0 ┆ 2.5 ┆ 3.0 │
+        └─────┴─────┴─────┘
+        """
+        return self._from_pyldf(
+            self._ldf.pipe_with_schema(
+                lambda lf_and_schema: function(
+                    self._from_pyldf(lf_and_schema[0]),
+                    lf_and_schema[1],
+                    *args,
+                    **kwargs,
+                )._ldf
+            )
+        )
 
     def describe(
         self,
