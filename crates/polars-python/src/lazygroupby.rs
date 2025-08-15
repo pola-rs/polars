@@ -19,6 +19,15 @@ pub struct PyLazyGroupBy {
 
 #[pymethods]
 impl PyLazyGroupBy {
+    fn having(&mut self, predicates: Vec<PyExpr>) -> PyLazyGroupBy {
+        let mut lgb = self.lgb.clone().unwrap();
+        let predicates = predicates.to_exprs();
+        for predicate in predicates.into_iter() {
+            lgb = lgb.having(predicate);
+        }
+        PyLazyGroupBy { lgb: Some(lgb) }
+    }
+
     fn agg(&mut self, aggs: Vec<PyExpr>) -> PyLazyFrame {
         let lgb = self.lgb.clone().unwrap();
         let aggs = aggs.to_exprs();
