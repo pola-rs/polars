@@ -35,10 +35,9 @@ pub(super) fn resolve_is_in(
     if !is_contains && left_nl == right_nl {
         polars_warn!(
             Deprecation,
-            "`is_in` with a collection of the same datatype is ambiguous and deprecated.
-Please use `implode` to return to previous behavior.
-
-See https://github.com/pola-rs/polars/issues/22149 for more information."
+            "`is_in` with a collection of the same datatype is ambiguous and deprecated. \
+            Please use `implode` to return to previous behavior.\n\
+            See https://github.com/pola-rs/polars/issues/22149 for more information."
         );
         return Ok(Some(IsInTypeCoercionResult::Implode));
     }
@@ -104,20 +103,52 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
             polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left)
         },
+        (DataType::Date, DataType::Datetime(_, _)) => {
+            polars_warn!(
+                "Datetime values in the right-hand side of `is_in` must be converted to Date. This \
+                may result in loss of precision."
+            );
+            IsInTypeCoercionResult::OtherCast {
+                dtype: cast_type,
+                strict: false,
+            }
+        },
         // can't check for more granular time_unit in less-granular time_unit data,
         // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
         (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
-            if lhs_unit <= rhs_unit {
+            if lhs_unit == rhs_unit {
                 return Ok(None);
-            } else {
-                polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
+            } else if lhs_unit > rhs_unit {
+                // LHS is more precise than RHS; we cannot safely downcast RHS.
+                polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Datetime data", &lhs_unit, &rhs_unit)
+            }
+            polars_warn!(
+                "Values in the right-hand side of `is_in` have {:?} precision and must be \
+                converted to {:?} precision. This may result in loss of precision.",
+                &rhs_unit,
+                &lhs_unit
+            );
+            IsInTypeCoercionResult::OtherCast {
+                dtype: cast_type,
+                strict: false,
             }
         },
         (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
-            if lhs_unit <= rhs_unit {
+            if lhs_unit == rhs_unit {
                 return Ok(None);
-            } else {
-                polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
+            } else if lhs_unit > rhs_unit {
+                // LHS is more precise than RHS; we cannot safely downcast RHS.
+                polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Datetime data", &lhs_unit, &rhs_unit)
+            }
+            polars_warn!(
+                "Values in the right-hand side of `is_in` have {:?} precision and must be \
+                converted to {:?} precision. This may result in loss of precision.",
+                &rhs_unit,
+                &lhs_unit
+            );
+            IsInTypeCoercionResult::OtherCast {
+                dtype: cast_type,
+                strict: false,
             }
         },
         (_, DataType::List(_)) => {
@@ -156,7 +187,6 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     // @HACK: `is_in` does supertype casting between primitive numerics, which
                     // honestly makes very little sense. To stay backwards compatible we keep this,
                     // but please in 2.0 remove this.
-
                     let super_type =
                         polars_core::utils::try_get_supertype(&type_left, type_other_inner)?;
                     let other_type = match &type_other {
