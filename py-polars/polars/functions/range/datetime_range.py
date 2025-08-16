@@ -57,7 +57,7 @@ def datetime_range(
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-    eager: bool = ...,
+    eager: bool = False,
 ) -> Series | Expr: ...
 
 
@@ -75,9 +75,9 @@ def datetime_range(
     """
     Generate a datetime range.
 
-    Generally, exactly three of 'start', 'end', 'interval', and 'num_samples' must be
-    provided to construct the date range. However, if neither interval nor num_samples
-    is provided, an interval of 1 day is assumed.
+    A datetime range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
 
     Parameters
     ----------
@@ -315,7 +315,7 @@ def datetime_ranges(
     closed: ClosedInterval = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-    eager: bool = ...,
+    eager: bool = False,
 ) -> Series | Expr: ...
 
 
@@ -332,6 +332,10 @@ def datetime_ranges(
 ) -> Series | Expr:
     """
     Create a column of datetime ranges.
+
+    Each datetime range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
 
     Parameters
     ----------

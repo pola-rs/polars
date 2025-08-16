@@ -68,8 +68,9 @@ def date_range(
     """
     Generate a date range.
 
-    Exactly three of 'start', 'end', 'interval', and 'num_samples' mus be provided to
-    construct the date range.
+    A date range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
 
     Parameters
     ----------
@@ -291,8 +292,9 @@ def date_ranges(
     """
     Create a column of date ranges.
 
-    Exactly three of 'start', 'end', 'interval', and 'periods' must be provided to
-    construct the column of date ranges.
+    Each date range may be defined by any three of 'start', 'end', 'interval', and
+    'num_samples'. If only two of `start`, `end`, and `num_samples` are provided, the
+    interval defaults to 1 day.
 
     Parameters
     ----------
