@@ -852,9 +852,7 @@ def test_rolling_aggregations_with_over_11225() -> None:
     expected = pl.DataFrame(
         {
             "index": [0, 1, 2, 3, 4],
-            "date": pl.datetime_range(
-                date(2001, 1, 1), date(2001, 1, 5), time_unit="us", eager=True
-            ),
+            "date": pl.datetime_range(date(2001, 1, 1), date(2001, 1, 5), eager=True),
             "group": ["A", "A", "B", "B", "B"],
             "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
         },
@@ -1626,9 +1624,11 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         values.append(None)
     data = random.choices(values, k=1000)
     naive = [
-        sum(0 if x is None else x for x in data[max(0, i + 1 - 4) : i + 1])
-        if sum(x is not None for x in data[max(0, i + 1 - 4) : i + 1]) >= 2
-        else None
+        (
+            sum(0 if x is None else x for x in data[max(0, i + 1 - 4) : i + 1])
+            if sum(x is not None for x in data[max(0, i + 1 - 4) : i + 1]) >= 2
+            else None
+        )
         for i in range(1000)
     ]
     assert_series_equal(pl.Series(data).rolling_sum(4, min_samples=2), pl.Series(naive))
