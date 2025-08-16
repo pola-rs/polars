@@ -3593,6 +3593,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         function: Callable[[DataFrame], bool | None],
         *,
+        chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -3616,6 +3617,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         function
             Function to run with a batch that is ready. If the function returns
             `False`, this signals that no more results are needed.
+        chunk_size
+            The number of rows that are buffered before the callback is called.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3650,6 +3653,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ldf = self._ldf.sink_batches(
             function=_wrap,
             maintain_order=maintain_order,
+            chunk_size=chunk_size,
         )
 
         if not lazy:
@@ -3662,6 +3666,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def sink_generator(
         self,
         *,
+        chunk_size: int | None = None,
         maintain_order: bool = True,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -3684,6 +3689,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
+        chunk_size
+            The number of rows that are buffered before a chunk is given.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3719,6 +3726,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 try:
                     self.sink_batches(
                         _wrap,
+                        chunk_size=chunk_size,
                         maintain_order=maintain_order,
                         engine=engine,
                         optimizations=optimizations,

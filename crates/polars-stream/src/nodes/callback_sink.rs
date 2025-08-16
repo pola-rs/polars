@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_plan::prelude::PlanCallback;
@@ -12,15 +14,23 @@ pub struct CallbackSinkNode {
     function: PlanCallback<DataFrame, bool>,
     maintain_order: bool,
 
+    buffer: DataFrame,
+    chunk_size: Option<NonZeroUsize>,
     is_done: bool,
 }
 
 impl CallbackSinkNode {
-    pub fn new(function: PlanCallback<DataFrame, bool>, maintain_order: bool) -> Self {
+    pub fn new(
+        function: PlanCallback<DataFrame, bool>,
+        maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
+    ) -> Self {
         Self {
             function,
             maintain_order,
 
+            buffer: DataFrame::empty(),
+            chunk_size,
             is_done: false,
         }
     }
@@ -35,12 +45,31 @@ impl ComputeNode for CallbackSinkNode {
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.is_empty());
 
         if self.is_done || recv[0] == PortState::Done {
             recv[0] = PortState::Done;
+
+            // Flush the last buffer
+            if !self.buffer.is_empty() {
+                let function = self.function.clone();
+                let df = std::mem::take(&mut self.buffer);
+
+                assert!(
+                    self.chunk_size
+                        .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.into())
+                );
+                state.spawn_subphase_task(async move {
+                    polars_io::pl_async::get_runtime()
+                        .spawn_blocking(move || function.call(df))
+                        .await
+                        .unwrap()?;
+                    Ok(())
+                });
+                return Ok(());
+            }
         } else {
             recv[0] = PortState::Ready;
         }
@@ -63,11 +92,41 @@ impl ComputeNode for CallbackSinkNode {
             .serial_with_maintain_order(self.maintain_order);
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(m) = recv.recv().await {
-                if !self.function.call(m.into_df())? {
-                    self.is_done = true;
-                    break;
+            while !self.is_done
+                && let Ok(m) = recv.recv().await
+            {
+                let (df, _, _, consume_token) = m.into_inner();
+
+                // @NOTE: This also performs schema validation.
+                self.buffer.vstack_mut(&df)?;
+
+                while !self.buffer.is_empty()
+                    && self
+                        .chunk_size
+                        .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.into())
+                {
+                    let chunk_size = self.chunk_size.map_or(usize::MAX, Into::into);
+
+                    let df;
+                    (df, self.buffer) = self
+                        .buffer
+                        .split_at(self.buffer.height().min(chunk_size) as i64);
+
+                    let function = self.function.clone();
+                    let result = polars_io::pl_async::get_runtime()
+                        .spawn_blocking(move || function.call(df))
+                        .await
+                        .unwrap()?;
+
+                    if !result {
+                        self.is_done = true;
+                        break;
+                    }
                 }
+                drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
+                // morsel has started encoding in its entirety. This still
+                // allows for parallelism of Morsels, but prevents large
+                // bunches of Morsels from stacking up here.
             }
 
             Ok(())

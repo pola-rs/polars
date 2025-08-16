@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -156,6 +157,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         function: PlanCallback<DataFrame, bool>,
         maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
     },
 
     FileSink {

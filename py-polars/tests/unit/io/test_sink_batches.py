@@ -10,7 +10,7 @@ def test_sink_batches(engine: EngineType) -> None:
     df = pl.DataFrame({"a": range(100)})
     frames = []
 
-    df.lazy().sink_batches(lambda df: frames.append(df))
+    df.lazy().sink_batches(lambda df: frames.append(df), engine=engine)
 
     assert_frame_equal(pl.concat(frames), df)
 
@@ -36,3 +36,23 @@ def test_sink_generator() -> None:
         frames += [f]
 
     assert_frame_equal(pl.concat(frames), df)
+
+
+def test_chunk_size() -> None:
+    df = pl.DataFrame({"a": range(113)})
+
+    for f in df.lazy().sink_generator(chunk_size=17):
+        expected = df.head(17)
+        df = df.slice(17)
+
+        assert_frame_equal(f, expected)
+
+    df = pl.DataFrame({"a": range(10)})
+
+    for f in df.lazy().sink_generator(chunk_size=10):
+        assert not f.is_empty()
+
+        expected = df.head(10)
+        df = df.slice(10)
+
+        assert_frame_equal(f, expected)

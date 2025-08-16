@@ -1,5 +1,6 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -185,6 +186,7 @@ pub struct FileSinkType {
 pub struct CallbackSinkType {
     pub function: PlanCallback<DataFrame, bool>,
     pub maintain_order: bool,
+    pub chunk_size: Option<NonZeroUsize>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

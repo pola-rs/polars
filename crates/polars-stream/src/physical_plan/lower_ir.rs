@@ -246,14 +246,17 @@ pub fn lower_ir(
             SinkTypeIR::Callback(CallbackSinkType {
                 function,
                 maintain_order,
+                chunk_size,
             }) => {
                 let function = function.clone();
                 let maintain_order = *maintain_order;
+                let chunk_size = *chunk_size;
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::CallbackSink {
                     input: phys_input,
                     function,
                     maintain_order,
+                    chunk_size,
                 }
             },
             SinkTypeIR::File(FileSinkType {
