@@ -1010,7 +1010,7 @@ def test_list_agg_all_null(
         (pl.Datetime("us"), pl.Duration("us")),
         (pl.Date(), pl.Duration("us")),
         (pl.Time(), pl.Duration("ns")),
-        (pl.UInt64(), pl.Int64()),
+        (pl.UInt64(), pl.Int128()),
         (pl.UInt32(), pl.Int64()),
         (pl.UInt8(), pl.Int16()),
         (pl.Int8(), pl.Int8()),

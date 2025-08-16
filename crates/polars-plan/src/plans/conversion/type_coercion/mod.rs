@@ -201,6 +201,68 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, schema, node_left, op, node_right),
+            #[cfg(feature = "diff")]
+            AExpr::Function {
+                function: ref function @ IRFunctionExpr::Diff(_),
+                ref input,
+                options,
+            } => {
+                let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let new_dt = match dtype {
+                    DataType::UInt8 => DataType::Int16,
+                    DataType::UInt16 => DataType::Int32,
+                    DataType::UInt32 => DataType::Int64,
+                    DataType::UInt64 => DataType::Int128,
+                    _ => return Ok(None),
+                };
+                let mut input = input.clone();
+                let function = function.clone();
+                cast_expr_ir(
+                    &mut input[0],
+                    &dtype,
+                    &new_dt,
+                    expr_arena,
+                    CastOptions::NonStrict,
+                )?;
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(feature = "diff")]
+            AExpr::Function {
+                function: ref function @ IRFunctionExpr::ListExpr(IRListFunction::Diff { .. }),
+                ref input,
+                options,
+            } => {
+                let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                if let DataType::List(inner_dt) = dtype.clone() {
+                    let new_inner = match *inner_dt {
+                        DataType::UInt8 => DataType::Int16,
+                        DataType::UInt16 => DataType::Int32,
+                        DataType::UInt32 => DataType::Int64,
+                        DataType::UInt64 => DataType::Int128,
+                        _ => return Ok(None),
+                    };
+                    let mut input = input.clone();
+                    let function = function.clone();
+                    cast_expr_ir(
+                        &mut input[0],
+                        &dtype,
+                        &DataType::List(Box::new(new_inner)),
+                        expr_arena,
+                        CastOptions::NonStrict,
+                    )?;
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 ref function,
