@@ -1,12 +1,18 @@
 # Logging in
 
-Polars cloud allows authentication through short-lived authentication tokens. There are two main
-ways to authenticate:
+Polars Cloud allows authentication through short-lived authentication tokens. Authentication also
+supports programmatic workflows.
 
-1. `authenticate` Loads cached tokens, otherwise opens the browser to log in and caches them
-2. `login` Opens the browser to log in, caches tokens but does not reuse them
+1. `authenticate` loads cached tokens when available, falling back to browser-based login when
+   needed. This is the recommended method for most development workflows since it reuses existing
+   sessions.
+2. `login` always initiates browser-based authentication. Use this when you need to switch between
+   accounts.
 
-Generally you would use `authenticate` unless you want to switch between accounts.
+You can find more information about the usage of authentication options in the
+[API Reference documentation](https://docs.cloud.pola.rs/reference/auth/index.html).
+
+## Credential resolution
 
 Both methods will attempt to authenticate with the following priority:
 
@@ -14,7 +20,7 @@ Both methods will attempt to authenticate with the following priority:
 2. `POLARS_CLOUD_CLIENT_ID` / `POLARS_CLOUD_CLIENT_SECRET` service account environment variables
 3. Any cached access or refresh tokens
 
-If all methods fail, the user will be redirected to the browser to log in and get a new access
+When all methods fail, the user will be redirected to the browser to log in and get a new access
 token. If you are in a non-interactive workflow and want to fail if there is no valid token you can
 run `pc.authenticate(interactive=False)` instead.
 
@@ -28,22 +34,9 @@ After successful authentication, Polars Cloud stores the token in your OS config
 
 You can override this path by setting the environment variable `POLARS_CLOUD_ACCESS_TOKEN_PATH`.
 
-### Commands
-
-You can authenticate from the terminal:
-
-```bash
-pc authenticate
-pc login
-```
-
-Or in Python:
-
-{{code_block('polars-cloud/authentication','login',['login'])}}
-
 ## Service accounts
 
-Both flows described above are for interactive logins where a person is present in the process. For
-non-interactive workflows such as orchestration tools there are service accounts. These allow you to
-login programmatically. See the page on how to set up and
-[use service acccounts](service-accounts.md) for more information.
+Service accounts provide programmatic authentication for automated workflows, orchestration tools,
+and CI/CD pipelines. These accounts facilitate automated processes (typically in production
+environments) without requiring interactive login sessions. See the page on
+[service accounts](service-accounts.md) for more information.
