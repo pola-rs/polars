@@ -77,21 +77,41 @@ def test_struct_arithmetic() -> None:
             "c": [5, 6],
         }
     ).select(pl.cum_sum_horizontal("a", "c"))
-    assert df.select(pl.col("cum_sum") * 2).to_dict(as_series=False) == {
+
+    q = df.lazy().select(pl.col("cum_sum") * 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 2, "c": 12}, {"a": 4, "c": 16}]
     }
-    assert df.select(pl.col("cum_sum") - 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") - 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": -1, "c": 4}, {"a": 0, "c": 6}]
     }
-    assert df.select(pl.col("cum_sum") + 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") + 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 3, "c": 8}, {"a": 4, "c": 10}]
     }
-    assert df.select(pl.col("cum_sum") / 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") / 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 0.5, "c": 3.0}, {"a": 1.0, "c": 4.0}]
     }
-    assert df.select(pl.col("cum_sum") // 2).to_dict(as_series=False) == {
+    assert q.collect_schema() == out.schema
+
+    q = df.lazy().select(pl.col("cum_sum") // 2)
+    out = q.collect()
+    assert out.to_dict(as_series=False) == {
         "cum_sum": [{"a": 0, "c": 3}, {"a": 1, "c": 4}]
     }
+    assert q.collect_schema() == out.schema
 
     # inline, this checks cum_sum reports the right output type
     assert pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]}).select(
