@@ -30,7 +30,10 @@ pub use correlation::*;
 pub use horizontal::*;
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
-#[cfg(all(feature = "range", feature = "temporal"))]
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
 pub use range::date_range; // This shouldn't be necessary, but clippy complains about dead code
 #[cfg(all(feature = "range", feature = "dtype-time"))]
 pub use range::time_range; // This shouldn't be necessary, but clippy complains about dead code

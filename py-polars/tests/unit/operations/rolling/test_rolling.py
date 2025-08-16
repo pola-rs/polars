@@ -852,7 +852,9 @@ def test_rolling_aggregations_with_over_11225() -> None:
     expected = pl.DataFrame(
         {
             "index": [0, 1, 2, 3, 4],
-            "date": pl.datetime_range(date(2001, 1, 1), date(2001, 1, 5), eager=True),
+            "date": pl.datetime_range(
+                date(2001, 1, 1), date(2001, 1, 5), time_unit="us", eager=True
+            ),
             "group": ["A", "A", "B", "B", "B"],
             "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
         },
