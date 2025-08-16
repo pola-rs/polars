@@ -8,9 +8,11 @@ use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 
 use crate::datatypes::PolarsObjectSafe;
+#[cfg(feature = "dtype-categorical")]
+use crate::prelude::CategoricalMapping;
 use crate::prelude::{
-    AnyValue, ArrowDataType, ArrowField, CategoricalMapping, DataType, Field as PolarsField,
-    OwnedObject, PolarsObject, StructArray, TimeUnit,
+    AnyValue, ArrowDataType, ArrowField, DataType, Field as PolarsField, OwnedObject, PolarsObject,
+    StructArray, TimeUnit,
 };
 use crate::series::Series;
 
