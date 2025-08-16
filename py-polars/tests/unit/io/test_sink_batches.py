@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pytest
 
 import polars as pl
@@ -8,9 +9,9 @@ from polars.testing import assert_frame_equal
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_sink_batches(engine: EngineType) -> None:
     df = pl.DataFrame({"a": range(100)})
-    frames = []
+    frames: list[pl.DataFrame] = []
 
-    df.lazy().sink_batches(lambda df: frames.append(df), engine=engine)
+    df.lazy().sink_batches(lambda df: frames.append(df), engine=engine)  # type: ignore[call-overload]
 
     assert_frame_equal(pl.concat(frames), df)
 
@@ -19,13 +20,13 @@ def test_sink_batches_early_stop() -> None:
     df = pl.DataFrame({"a": range(100)})
     stopped = False
 
-    def cb(_: pl.DataFrame) -> bool:
+    def cb(_: pl.DataFrame) -> bool | None:
         nonlocal stopped
         assert not stopped
         stopped = True
         return False
 
-    df.lazy().sink_batches(cb)
+    df.lazy().sink_batches(cb)  # type: ignore[call-overload]
 
 
 def test_sink_generator() -> None:
