@@ -64,7 +64,7 @@ pub fn date_range(
         input,
     ))
 }
-/// Create a date range from `start`, `stop`, `interval`, and `num_sample` expressions.
+/// Create a date range from `start`, `stop`, `interval`, and `num_samples` expressions.
 #[cfg(feature = "dtype-date")]
 pub fn date_ranges(
     start: Option<Expr>,
