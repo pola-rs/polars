@@ -265,6 +265,7 @@ def test_is_nan_on_non_boolean() -> None:
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
@@ -485,6 +486,7 @@ def test_with_column_duplicates() -> None:
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
     with pytest.raises(
@@ -664,6 +666,7 @@ def test_raise_array_of_cats() -> None:
         pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
 
 
+@pytest.mark.may_fail_cloud  # reason: Object type not supported
 def test_raise_invalid_arithmetic() -> None:
     df = pl.Series("a", [object()]).to_frame()
 

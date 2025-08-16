@@ -893,6 +893,7 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 @pytest.mark.parametrize(
     ("engine", "list_dtype"),
     [

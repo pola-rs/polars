@@ -95,6 +95,7 @@ def times2(x: pl.Series) -> pl.Series:
     return x * 2
 
 
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_pickle_udf_expression() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 

@@ -339,6 +339,7 @@ def test_parse_invalid_function(func: str) -> None:
     "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
 @pytest.mark.may_fail_auto_streaming  # dtype not set
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_parse_apply_functions(
     col: str, func: str, expr_repr: str, dtype: Literal["self"] | pl.DataType | None
 ) -> None:
