@@ -176,13 +176,11 @@ pub fn anyvalue_strategy(
             _ if selection == S::STRUCT => struct_strategy(
                 anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
                 options.struct_fields_range.clone(),
-            )
-            .boxed(),
+            ),
             // #[cfg(feature = "dtype-struct")]
             // _ if selection == S::STRUCT_OWNED => struct_owned_strategy(
             //     anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
             //     options.struct_fields_range.clone(),
-            // ).boxed(),
             _ => unreachable!(),
         }
     })
@@ -382,30 +380,24 @@ fn struct_strategy(
     inner: impl Strategy<Value = AnyValue<'static>> + 'static,
     struct_fields_range: RangeInclusive<usize>,
 ) -> BoxedStrategy<AnyValue<'static>> {
-    let inner = inner.boxed();
-    struct_fields_range
-        .prop_flat_map(move |field_count| {
-            prop::collection::vec(inner.clone(), field_count..=field_count).prop_map(
-                move |field_values| {
-                    let fields: Vec<PolarsField> = field_values
-                        .iter()
-                        .enumerate()
-                        .map(|(i, _)| PolarsField::new(format!("field{i}").into(), DataType::Null))
-                        .collect();
+    prop::collection::vec(inner.boxed(), struct_fields_range)
+        .prop_map(|field_values| {
+            let fields: Vec<PolarsField> = field_values
+                .iter()
+                .enumerate()
+                .map(|(i, _)| PolarsField::new(format!("field{i}").into(), DataType::Null))
+                .collect();
 
-                    let arrow_fields: Vec<ArrowField> = fields
-                        .iter()
-                        .map(|f| ArrowField::new(f.name.clone(), ArrowDataType::Null, true))
-                        .collect();
+            let arrow_fields: Vec<ArrowField> = fields
+                .iter()
+                .map(|f| ArrowField::new(f.name.clone(), ArrowDataType::Null, true))
+                .collect();
 
-                    let struct_array = StructArray::new_empty(ArrowDataType::Struct(arrow_fields));
-                    let leaked_struct: &'static StructArray = Box::leak(Box::new(struct_array));
-                    let leaked_fields: &'static [PolarsField] =
-                        Box::leak(fields.into_boxed_slice());
+            let struct_array = StructArray::new_empty(ArrowDataType::Struct(arrow_fields));
+            let leaked_struct: &'static StructArray = Box::leak(Box::new(struct_array));
+            let leaked_fields: &'static [PolarsField] = Box::leak(fields.into_boxed_slice());
 
-                    AnyValue::Struct(0, leaked_struct, leaked_fields)
-                },
-            )
+            AnyValue::Struct(0, leaked_struct, leaked_fields)
         })
         .boxed()
 }
@@ -415,22 +407,15 @@ fn _struct_owned_strategy(
     inner: impl Strategy<Value = AnyValue<'static>> + 'static,
     struct_fields_range: RangeInclusive<usize>,
 ) -> BoxedStrategy<AnyValue<'static>> {
-    let inner = inner.boxed();
-    struct_fields_range
-        .prop_flat_map(move |field_count| {
-            prop::collection::vec(inner.clone(), field_count..=field_count).prop_map(
-                move |field_values| {
-                    let fields: Vec<PolarsField> = field_values
-                        .iter()
-                        .enumerate()
-                        .map(|(i, value)| {
-                            PolarsField::new(format!("field{i}").into(), value.dtype())
-                        })
-                        .collect();
+    prop::collection::vec(inner.boxed(), struct_fields_range)
+        .prop_map(|field_values| {
+            let fields: Vec<PolarsField> = field_values
+                .iter()
+                .enumerate()
+                .map(|(i, value)| PolarsField::new(format!("field{i}").into(), value.dtype()))
+                .collect();
 
-                    AnyValue::StructOwned(Box::new((field_values, fields)))
-                },
-            )
+            AnyValue::StructOwned(Box::new((field_values, fields)))
         })
         .boxed()
 }
