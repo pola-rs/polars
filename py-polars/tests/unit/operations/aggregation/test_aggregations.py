@@ -199,8 +199,7 @@ def test_duration_function_literal() -> None:
                         timedelta(days=30, seconds=1),
                         timedelta(seconds=1),
                     ],
-                ],
-                dtype=pl.List(pl.Duration("us")),
+                ]
             ),
         }
     )
