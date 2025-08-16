@@ -5,9 +5,14 @@ use std::sync::Arc;
 use arrow::bitmap::bitmask::nth_set_bit_u32;
 use polars_utils::pl_str::PlSmallStr;
 use proptest::prelude::*;
+use proptest::strategy::BoxedStrategy;
 
-use super::super::{AnyValue, CategoricalMapping, OwnedObject, PolarsObjectSafe, TimeUnit};
-use crate::prelude::PolarsObject;
+use crate::datatypes::PolarsObjectSafe;
+use crate::prelude::{
+    AnyValue, ArrowDataType, ArrowField, CategoricalMapping, DataType, Field as PolarsField,
+    OwnedObject, PolarsObject, StructArray, TimeUnit,
+};
+use crate::series::Series;
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,32 +65,36 @@ impl AnyValueArbitrarySelection {
 #[derive(Clone)]
 pub struct AnyValueArbitraryOptions {
     pub allowed_dtypes: AnyValueArbitrarySelection,
+    pub max_nesting_level: usize,
     pub vector_length_range: RangeInclusive<usize>,
     pub decimal_precision_range: RangeInclusive<usize>,
     pub categories_range: RangeInclusive<usize>,
-    // TODO: Add fields later
+    pub array_width_range: RangeInclusive<usize>,
+    pub struct_fields_range: RangeInclusive<usize>,
 }
 
 impl Default for AnyValueArbitraryOptions {
     fn default() -> Self {
         Self {
             allowed_dtypes: AnyValueArbitrarySelection::all(),
-            vector_length_range: 0..=100,
+            max_nesting_level: 3,
+            vector_length_range: 0..=5,
             decimal_precision_range: 1..=38,
-            categories_range: 0..=3, // TODO: Add fields later
+            categories_range: 0..=3,
+            array_width_range: 0..=3,
+            struct_fields_range: 0..=3,
         }
     }
 }
 
 pub fn anyvalue_strategy(
     options: Rc<AnyValueArbitraryOptions>,
-    include_nested: bool,
-    // TODO: Other input parameters
+    nesting_level: usize,
 ) -> impl Strategy<Value = AnyValue<'static>> {
     use AnyValueArbitrarySelection as S;
     let mut allowed_dtypes = options.allowed_dtypes;
 
-    if !include_nested {
+    if options.max_nesting_level <= nesting_level {
         allowed_dtypes &= !S::nested();
     }
 
@@ -99,12 +108,8 @@ pub fn anyvalue_strategy(
         match selection {
             _ if selection == S::NULL => Just(AnyValue::Null).boxed(),
             _ if selection == S::BOOLEAN => any::<bool>().prop_map(AnyValue::Boolean).boxed(),
-            _ if selection == S::STRING => ".*"
-                .prop_map(|s| AnyValue::String(Box::leak(s.into_boxed_str())))
-                .boxed(),
-            _ if selection == S::STRING_OWNED => any::<String>()
-                .prop_map(|s| AnyValue::StringOwned(PlSmallStr::from_string(s)))
-                .boxed(),
+            _ if selection == S::STRING => string_strategy().boxed(),
+            _ if selection == S::STRING_OWNED => string_owned_strategy().boxed(),
             _ if selection == S::UINT8 => any::<u8>().prop_map(AnyValue::UInt8).boxed(),
             _ if selection == S::UINT16 => any::<u16>().prop_map(AnyValue::UInt16).boxed(),
             _ if selection == S::UINT32 => any::<u32>().prop_map(AnyValue::UInt32).boxed(),
@@ -121,17 +126,10 @@ pub fn anyvalue_strategy(
             #[cfg(feature = "dtype-time")]
             _ if selection == S::TIME => any::<i64>().prop_map(AnyValue::Time).boxed(),
             _ if selection == S::BINARY => {
-                prop::collection::vec(any::<u8>(), options.vector_length_range.clone())
-                    .prop_map(|vec| {
-                        let leaked: &'static [u8] = Box::leak(vec.into_boxed_slice());
-                        AnyValue::Binary(leaked)
-                    })
-                    .boxed()
+                binary_strategy(options.vector_length_range.clone()).boxed()
             },
             _ if selection == S::BINARY_OWNED => {
-                prop::collection::vec(any::<u8>(), options.vector_length_range.clone())
-                    .prop_map(AnyValue::BinaryOwned)
-                    .boxed()
+                binary_owned_strategy(options.vector_length_range.clone()).boxed()
             },
             #[cfg(feature = "object")]
             _ if selection == S::OBJECT => object_strategy().boxed(),
@@ -163,10 +161,52 @@ pub fn anyvalue_strategy(
             _ if selection == S::ENUM_OWNED => {
                 categorical_enum_owned_strategy(options.categories_range.clone()).boxed()
             },
-            _ if selection == S::LIST => unimplemented!(),
-            _ => unreachable!(), // TODO: Rest of strategies
+            _ if selection == S::LIST => {
+                list_strategy(anyvalue_strategy(Rc::clone(&options), nesting_level + 1)).boxed()
+            },
+            #[cfg(feature = "dtype-array")]
+            _ if selection == S::ARRAY => array_strategy(
+                anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
+                options.array_width_range.clone(),
+            )
+            .boxed(),
+            #[cfg(feature = "dtype-struct")]
+            _ if selection == S::STRUCT => struct_strategy(
+                anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
+                options.struct_fields_range.clone(),
+            )
+            .boxed(),
+            // #[cfg(feature = "dtype-struct")]
+            // _ if selection == S::STRUCT_OWNED => struct_owned_strategy(
+            //     anyvalue_strategy(Rc::clone(&options), nesting_level + 1),
+            //     options.struct_fields_range.clone(),
+            // ).boxed(),
+            _ => unreachable!(),
         }
     })
+}
+
+fn string_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    ".*".prop_map(|s| AnyValue::String(Box::leak(s.into_boxed_str())))
+}
+
+fn string_owned_strategy() -> impl Strategy<Value = AnyValue<'static>> {
+    any::<String>().prop_map(|s| AnyValue::StringOwned(PlSmallStr::from_string(s)))
+}
+
+fn binary_strategy(
+    vector_length_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = AnyValue<'static>> {
+    prop::collection::vec(any::<u8>(), vector_length_range).prop_map(|vec| {
+        let leaked: &'static [u8] = Box::leak(vec.into_boxed_slice());
+        AnyValue::Binary(leaked)
+    })
+}
+
+fn binary_owned_strategy(
+    vector_length_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = AnyValue<'static>> {
+    prop::collection::vec(any::<u8>(), vector_length_range).prop_map(AnyValue::BinaryOwned)
 }
 
 impl PolarsObject for u64 {
@@ -249,7 +289,7 @@ fn datetime_owned_strategy() -> impl Strategy<Value = AnyValue<'static>> {
             Just(TimeUnit::Milliseconds),
         ],
     )
-        .prop_map(|(timestamp, time_unit)| AnyValue::Datetime(timestamp, time_unit, None))
+        .prop_map(|(timestamp, time_unit)| AnyValue::DatetimeOwned(timestamp, time_unit, None))
 }
 
 #[cfg(feature = "dtype-duration")]
@@ -314,8 +354,81 @@ fn categorical_enum_owned_strategy(
         })
 }
 
-fn _list_strategy() {
-    // TODO
+fn list_strategy(
+    inner: impl Strategy<Value = AnyValue<'static>>,
+) -> impl Strategy<Value = AnyValue<'static>> {
+    inner.prop_map(|inner| {
+        AnyValue::List(Series::from_any_values("".into(), &[inner], true).unwrap())
+    })
 }
 
-// TODO: More complex strategies
+#[cfg(feature = "dtype-array")]
+fn array_strategy(
+    inner: impl Strategy<Value = AnyValue<'static>>,
+    array_width_range: RangeInclusive<usize>,
+) -> impl Strategy<Value = AnyValue<'static>> {
+    (inner, array_width_range).prop_map(|(inner, width)| {
+        AnyValue::Array(
+            Series::from_any_values("".into(), &[inner], true).unwrap(),
+            width,
+        )
+    })
+}
+
+#[cfg(feature = "dtype-struct")]
+fn struct_strategy(
+    inner: impl Strategy<Value = AnyValue<'static>> + 'static,
+    struct_fields_range: RangeInclusive<usize>,
+) -> BoxedStrategy<AnyValue<'static>> {
+    let inner = inner.boxed();
+    struct_fields_range
+        .prop_flat_map(move |field_count| {
+            prop::collection::vec(inner.clone(), field_count..=field_count).prop_map(
+                move |field_values| {
+                    let fields: Vec<PolarsField> = field_values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, _)| PolarsField::new(format!("field{i}").into(), DataType::Null))
+                        .collect();
+
+                    let arrow_fields: Vec<ArrowField> = fields
+                        .iter()
+                        .map(|f| ArrowField::new(f.name.clone(), ArrowDataType::Null, true))
+                        .collect();
+
+                    let struct_array = StructArray::new_empty(ArrowDataType::Struct(arrow_fields));
+                    let leaked_struct: &'static StructArray = Box::leak(Box::new(struct_array));
+                    let leaked_fields: &'static [PolarsField] =
+                        Box::leak(fields.into_boxed_slice());
+
+                    AnyValue::Struct(0, leaked_struct, leaked_fields)
+                },
+            )
+        })
+        .boxed()
+}
+
+#[cfg(feature = "dtype-struct")]
+fn _struct_owned_strategy(
+    inner: impl Strategy<Value = AnyValue<'static>> + 'static,
+    struct_fields_range: RangeInclusive<usize>,
+) -> BoxedStrategy<AnyValue<'static>> {
+    let inner = inner.boxed();
+    struct_fields_range
+        .prop_flat_map(move |field_count| {
+            prop::collection::vec(inner.clone(), field_count..=field_count).prop_map(
+                move |field_values| {
+                    let fields: Vec<PolarsField> = field_values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, value)| {
+                            PolarsField::new(format!("field{i}").into(), value.dtype())
+                        })
+                        .collect();
+
+                    AnyValue::StructOwned(Box::new((field_values, fields)))
+                },
+            )
+        })
+        .boxed()
+}
