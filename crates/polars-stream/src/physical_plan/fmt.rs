@@ -84,9 +84,20 @@ fn fmt_expr(f: &mut dyn Write, expr: &ExprIR, expr_arena: &Arena<AExpr>) -> std:
     )
 }
 
+fn fmt_expr_no_name(
+    f: &mut dyn Write,
+    expr: &ExprIR,
+    expr_arena: &Arena<AExpr>,
+) -> std::fmt::Result {
+    // Remove the alias to make the display better
+    let without_alias = ExprIR::from_node(expr.node(), expr_arena);
+    write!(f, "{}", without_alias.display(expr_arena))
+}
+
 pub enum FormatExprStyle {
     Select,
     NoAliases,
+    NoOutputName,
 }
 
 pub fn fmt_exprs_to_label(
@@ -106,42 +117,57 @@ pub fn fmt_exprs(
     expr_arena: &Arena<AExpr>,
     style: FormatExprStyle,
 ) {
-    if matches!(style, FormatExprStyle::Select) {
-        let mut formatted = Vec::new();
+    match style {
+        FormatExprStyle::Select => {
+            let mut formatted = Vec::new();
 
-        let mut max_name_width = 0;
-        let mut max_expr_width = 0;
+            let mut max_name_width = 0;
+            let mut max_expr_width = 0;
 
-        for e in exprs {
-            let mut name = String::new();
-            let mut expr = String::new();
+            for e in exprs {
+                let mut name = String::new();
+                let mut expr = String::new();
 
-            // Remove the alias to make the display better
-            let without_alias = ExprIR::from_node(e.node(), expr_arena);
+                // Remove the alias to make the display better
+                let without_alias = ExprIR::from_node(e.node(), expr_arena);
 
-            write!(name, "{}", e.output_name()).unwrap();
-            write!(expr, "{}", without_alias.display(expr_arena)).unwrap();
+                write!(name, "{}", e.output_name()).unwrap();
+                write!(expr, "{}", without_alias.display(expr_arena)).unwrap();
 
-            max_name_width = max_name_width.max(name.chars().count());
-            max_expr_width = max_expr_width.max(expr.chars().count());
+                max_name_width = max_name_width.max(name.chars().count());
+                max_expr_width = max_expr_width.max(expr.chars().count());
 
-            formatted.push((name, expr));
-        }
+                formatted.push((name, expr));
+            }
 
-        for (name, expr) in formatted {
-            write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\\n").unwrap();
-        }
-    } else {
-        let Some(e) = exprs.first() else {
-            return;
-        };
+            for (name, expr) in formatted {
+                write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\\n").unwrap();
+            }
+        },
+        FormatExprStyle::NoAliases => {
+            let Some(e) = exprs.first() else {
+                return;
+            };
 
-        fmt_expr(f, e, expr_arena).unwrap();
-
-        for e in &exprs[1..] {
-            f.write_str("\\n").unwrap();
             fmt_expr(f, e, expr_arena).unwrap();
-        }
+
+            for e in &exprs[1..] {
+                f.write_str("\\n").unwrap();
+                fmt_expr(f, e, expr_arena).unwrap();
+            }
+        },
+        FormatExprStyle::NoOutputName => {
+            let Some(e) = exprs.first() else {
+                return;
+            };
+
+            fmt_expr_no_name(f, e, expr_arena).unwrap();
+
+            for e in &exprs[1..] {
+                f.write_str("\\n").unwrap();
+                fmt_expr_no_name(f, e, expr_arena).unwrap();
+            }
+        },
     }
 }
 
@@ -313,7 +339,7 @@ fn visualize_plan_rec(
         } => (
             format!(
                 "sort\\n{}",
-                fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
+                fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoOutputName)
             ),
             from_ref(input),
         ),
@@ -332,7 +358,7 @@ fn visualize_plan_rec(
             (
                 format!(
                     "{name}\\n{}",
-                    fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
+                    fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoOutputName)
                 ),
                 &[*input, *k][..],
             )
