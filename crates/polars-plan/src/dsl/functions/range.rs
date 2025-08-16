@@ -32,7 +32,7 @@ pub fn int_ranges(start: Expr, end: Expr, step: Expr, dtype: impl Into<DataTypeE
     )
 }
 
-/// Create a date range from `start`, `stop`, `interval`, and `num_sample` expressions.
+/// Create a date range from `start`, `end`, `interval`, and `num_samples` expressions.
 #[cfg(feature = "dtype-date")]
 pub fn date_range(
     start: Option<Expr>,
@@ -64,7 +64,8 @@ pub fn date_range(
         input,
     ))
 }
-/// Create a date range from `start`, `stop`, `interval`, and `num_samples` expressions.
+
+/// Create a column of date ranges from `start`, `end`, `interval`, and `num_samples` expressions.
 #[cfg(feature = "dtype-date")]
 pub fn date_ranges(
     start: Option<Expr>,
@@ -97,7 +98,7 @@ pub fn date_ranges(
     ))
 }
 
-/// Create a datetime range from `start`, `stop`, `interval`, and `num_sample` expressions.
+/// Create a datetime range from `start`, `end`, `interval`, and `num_samples` expressions.
 #[cfg(feature = "dtype-datetime")]
 pub fn datetime_range(
     start: Option<Expr>,
@@ -121,7 +122,7 @@ pub fn datetime_range(
     ))
 }
 
-/// Create a datetime range from `start`, `stop`, `interval`, and `num_sample` expressions.
+/// Create a column of datetime ranges from `start`, `end`, `interval`, and `num_samples` expressions.
 #[cfg(feature = "dtype-datetime")]
 pub fn datetime_ranges(
     start: Option<Expr>,
