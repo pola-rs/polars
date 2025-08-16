@@ -291,6 +291,7 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| {
                     f.write_str(match payload {
                         SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::Callback { .. } => "SINK (CALLBACK)",
                         SinkTypeIR::File { .. } => "SINK (FILE)",
                         SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
                     })

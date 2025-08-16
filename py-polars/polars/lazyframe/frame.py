@@ -118,6 +118,9 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyExpr, PyPartitioning, PySelector
 
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        import polars._plr as plr
+
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
         AsofJoinStrategy,
@@ -3559,6 +3562,187 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ldf.collect(engine=engine)
             return None
         return LazyFrame._from_pyldf(ldf_py)
+
+    @overload
+    def sink_batches(
+        self,
+        function: Callable[[DataFrame], bool | None],
+        *,
+        chunk_size: int | None = None,
+        maintain_order: bool = True,
+        lazy: Literal[False],
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> None: ...
+    @overload
+    def sink_batches(
+        self,
+        function: Callable[[DataFrame], bool | None],
+        *,
+        chunk_size: int | None = None,
+        maintain_order: bool = True,
+        lazy: Literal[True],
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> pl.LazyFrame: ...
+    def sink_batches(
+        self,
+        function: Callable[[DataFrame], bool | None],
+        *,
+        chunk_size: int | None = None,
+        maintain_order: bool = True,
+        lazy: bool = False,
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> pl.LazyFrame | None:
+        """
+        Evaluate the query in streaming mode and call a function with every ready batch.
+
+        This allows streaming results that are larger than RAM to be written to disk.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. warning::
+            This method is much slower than native sinks. Only use it if you cannot
+            implement your logic otherwise.
+
+        Parameters
+        ----------
+        function
+            Function to run with a batch that is ready. If the function returns
+            `False`, this signals that no more results are needed.
+        chunk_size
+            The number of rows that are buffered before the callback is called.
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will be slightly faster.
+        lazy: bool
+            Wait to start execution until `collect` is called.
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query is run
+            using the polars streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars streaming
+            engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+            This has no effect if `lazy` is set to `True`.
+
+        Examples
+        --------
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> lf.sink_batches(lambda df: print(df))  # doctest: +SKIP
+        """
+
+        def _wrap(pydf: plr.PyDataFrame) -> bool:
+            df = wrap_df(pydf)
+            rv = function(df)
+            if rv is None:
+                return True
+            return rv
+
+        ldf = self._ldf.sink_batches(
+            function=_wrap,
+            maintain_order=maintain_order,
+            chunk_size=chunk_size,
+        )
+
+        if not lazy:
+            ldf = ldf.with_optimizations(optimizations._pyoptflags)
+            lf = LazyFrame._from_pyldf(ldf)
+            lf.collect(engine=engine)
+            return None
+        return LazyFrame._from_pyldf(ldf)
+
+    def sink_generator(
+        self,
+        *,
+        chunk_size: int | None = None,
+        maintain_order: bool = True,
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> Iterable[DataFrame]:
+        """
+        Evaluate the query in streaming mode and get a generator that returns chunks.
+
+        This allows streaming results that are larger than RAM to be written to disk.
+
+        The query will always be fully executed, so you should call next until all
+        chunks have been seen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. warning::
+            This method is much slower than native sinks. Only use it if you cannot
+            implement your logic otherwise.
+
+        Parameters
+        ----------
+        chunk_size
+            The number of rows that are buffered before a chunk is given.
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will be slightly faster.
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query is run
+            using the polars streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars streaming
+            engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+        Examples
+        --------
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> for df in lf.sink_generator():
+        ...     print(df)  # doctest: +SKIP
+        """
+
+        def batch_generator() -> Iterable[DataFrame]:
+            import threading
+            from queue import Queue
+
+            q: Queue[pl.DataFrame | None] = Queue(maxsize=1)
+
+            def task() -> None:
+                def _wrap(df: DataFrame) -> bool | None:
+                    q.put(df)
+                    return True
+
+                try:
+                    self.sink_batches(
+                        _wrap,
+                        chunk_size=chunk_size,
+                        maintain_order=maintain_order,
+                        engine=engine,
+                        optimizations=optimizations,
+                        lazy=False,
+                    )
+                finally:
+                    q.put(None)
+
+            t = threading.Thread(target=task)
+            t.start()
+
+            while True:
+                df = q.get()
+                if df is None:
+                    break
+                yield df
+
+            t.join()
+
+        return batch_generator()
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
