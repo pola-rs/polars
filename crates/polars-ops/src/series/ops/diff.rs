@@ -6,7 +6,8 @@ pub fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Ser
     let s = match s.dtype() {
         UInt8 => s.cast(&Int16)?,
         UInt16 => s.cast(&Int32)?,
-        UInt32 | UInt64 => s.cast(&Int64)?,
+        UInt32 => s.cast(&Int64)?,
+        UInt64 => s.cast(&Int128)?,
         _ => s.clone(),
     };
 

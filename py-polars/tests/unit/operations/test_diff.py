@@ -32,3 +32,10 @@ def test_diff_scalarity() -> None:
 
     result = df.select(pl.col("a").diff(2))
     assert_frame_equal(result, expected)
+
+
+def test_diff_u64() -> None:
+    lf = pl.LazyFrame({"a": pl.Series([1, 2**63 + 10], dtype=pl.UInt64)})
+    expected = pl.DataFrame({"a": pl.Series([None, 2**63 + 9], dtype=pl.Int128)})
+    assert_frame_equal(lf.collect(), expected)
+    assert lf.collect_schema() == expected.schema
