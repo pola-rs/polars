@@ -3607,6 +3607,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
+        .. warning::
+            This method is much slower than native sinks. Only use it if you cannot
+            implement your logic otherwise.
+
         Parameters
         ----------
         function
@@ -3654,6 +3658,87 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ldf.collect(engine=engine)
             return None
         return LazyFrame._from_pyldf(ldf)
+
+    def sink_generator(
+        self,
+        *,
+        maintain_order: bool = True,
+        engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    ) -> Iterable[DataFrame]:
+        """
+        Evaluate the query in streaming mode and get a generator that returns chunks.
+
+        This allows streaming results that are larger than RAM to be written to disk.
+
+        The query will always be fully executed, so you should call next until all
+        chunks have been seen.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        .. warning::
+            This method is much slower than native sinks. Only use it if you cannot
+            implement your logic otherwise.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will be slightly faster.
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query is run
+            using the polars streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars streaming
+            engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+        Examples
+        --------
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> for df in lf.sink_generator():
+        ...     print(df)
+        """
+
+        def batch_generator() -> Iterable[DataFrame]:
+            import threading
+            from queue import Queue
+
+            q = Queue(maxsize=1)
+
+            def task() -> None:
+                def _wrap(df: DataFrame) -> bool | None:
+                    q.put(df)
+                    return True
+
+                try:
+                    self.sink_batches(
+                        _wrap,
+                        maintain_order=maintain_order,
+                        engine=engine,
+                        optimizations=optimizations,
+                        lazy=False,
+                    )
+                finally:
+                    q.put(None)
+
+            t = threading.Thread(target=task)
+            t.start()
+
+            while True:
+                df = q.get()
+                if df is None:
+                    break
+                yield df
+
+            t.join()
+
+        return batch_generator()
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
