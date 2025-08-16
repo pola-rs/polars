@@ -9,6 +9,7 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -1069,10 +1070,12 @@ impl LazyFrame {
         self,
         function: PlanCallback<DataFrame, bool>,
         maintain_order: bool,
+        chunk_size: Option<NonZeroUsize>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Callback(CallbackSinkType {
             function,
             maintain_order,
+            chunk_size,
         }))
     }
 
