@@ -242,16 +242,13 @@ fn struct_strategy(
     inner: impl Strategy<Value = DataType>,
     struct_fields_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = DataType> {
-    prop::collection::vec(inner, struct_fields_range).prop_map(|datatypes_vec| {
-        let fields_vec: Vec<Field> = datatypes_vec
+    prop::collection::vec(inner, struct_fields_range).prop_map(|fields_values| {
+        let fields: Vec<Field> = fields_values
             .into_iter()
             .enumerate()
-            .map(|(i, datatype)| {
-                let field_name = format!("field{i}");
-                Field::new(field_name.into(), datatype)
-            })
+            .map(|(i, datatype)| Field::new(format!("field{i}").into(), datatype))
             .collect();
 
-        DataType::Struct(fields_vec)
+        DataType::Struct(fields)
     })
 }
