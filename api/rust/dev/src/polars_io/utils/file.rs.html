@@ -1,0 +1,326 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-io/src/utils/file.rs`."><title>file.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars_io" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-nightly (b03b3a7ec 2025-06-26)" data-channel="nightly" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-4e99c027.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-340f468f.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_io/utils/</div>file.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>std::io;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>std::ops::{Deref, DerefMut};
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>std::path::Path;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#6 id=6 data-nosnippet>6</a></span><span class="kw">pub use </span>async_writeable::AsyncWriteable;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>polars_core::config;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>polars_error::{PolarsError, PolarsResult, feature_gated};
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>polars_utils::create_file;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>polars_utils::file::{ClosableFile, WriteClose};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>polars_utils::mmap::ensure_not_mapped;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>polars_utils::plpath::{CloudScheme, PlPathRef};
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><span class="kw">super</span>::sync_on_close::SyncOnCloseType;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><span class="kw">crate</span>::cloud::CloudOptions;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><span class="kw">crate</span>::resolve_homedir;
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">pub trait </span>DynWriteable: io::Write + Send {
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="comment">// Needed because trait upcasting is only stable in 1.86.
+<a href=#20 id=20 data-nosnippet>20</a>    </span><span class="kw">fn </span>as_dyn_write(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>(<span class="kw">dyn </span>io::Write + Send + <span class="lifetime">'static</span>);
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="kw">fn </span>as_mut_dyn_write(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>(<span class="kw">dyn </span>io::Write + Send + <span class="lifetime">'static</span>);
+<a href=#22 id=22 data-nosnippet>22</a>
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">fn </span>close(<span class="self">self</span>: Box&lt;<span class="self">Self</span>&gt;) -&gt; io::Result&lt;()&gt;;
+<a href=#24 id=24 data-nosnippet>24</a>    <span class="kw">fn </span>sync_on_close(<span class="kw-2">&amp;mut </span><span class="self">self</span>, sync_on_close: SyncOnCloseType) -&gt; io::Result&lt;()&gt;;
+<a href=#25 id=25 data-nosnippet>25</a>}
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">impl </span>DynWriteable <span class="kw">for </span>ClosableFile {
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="kw">fn </span>as_dyn_write(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>(<span class="kw">dyn </span>io::Write + Send + <span class="lifetime">'static</span>) {
+<a href=#29 id=29 data-nosnippet>29</a>        <span class="self">self </span><span class="kw">as _
+<a href=#30 id=30 data-nosnippet>30</a>    </span>}
+<a href=#31 id=31 data-nosnippet>31</a>    <span class="kw">fn </span>as_mut_dyn_write(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>(<span class="kw">dyn </span>io::Write + Send + <span class="lifetime">'static</span>) {
+<a href=#32 id=32 data-nosnippet>32</a>        <span class="self">self </span><span class="kw">as _
+<a href=#33 id=33 data-nosnippet>33</a>    </span>}
+<a href=#34 id=34 data-nosnippet>34</a>    <span class="kw">fn </span>close(<span class="self">self</span>: Box&lt;<span class="self">Self</span>&gt;) -&gt; io::Result&lt;()&gt; {
+<a href=#35 id=35 data-nosnippet>35</a>        ClosableFile::close(<span class="kw-2">*</span><span class="self">self</span>)
+<a href=#36 id=36 data-nosnippet>36</a>    }
+<a href=#37 id=37 data-nosnippet>37</a>    <span class="kw">fn </span>sync_on_close(<span class="kw-2">&amp;mut </span><span class="self">self</span>, sync_on_close: SyncOnCloseType) -&gt; io::Result&lt;()&gt; {
+<a href=#38 id=38 data-nosnippet>38</a>        <span class="kw">super</span>::sync_on_close::sync_on_close(sync_on_close, <span class="self">self</span>.as_mut())
+<a href=#39 id=39 data-nosnippet>39</a>    }
+<a href=#40 id=40 data-nosnippet>40</a>}
+<a href=#41 id=41 data-nosnippet>41</a>
+<a href=#42 id=42 data-nosnippet>42</a><span class="doccomment">/// Holds a non-async writeable file, abstracted over local files or cloud files.
+<a href=#43 id=43 data-nosnippet>43</a>///
+<a href=#44 id=44 data-nosnippet>44</a>/// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
+<a href=#45 id=45 data-nosnippet>45</a>///
+<a href=#46 id=46 data-nosnippet>46</a>/// Also see: `Writeable::try_into_async_writeable` and `AsyncWriteable`.
+<a href=#47 id=47 data-nosnippet>47</a></span><span class="attr">#[allow(clippy::large_enum_variant)] </span><span class="comment">// It will be boxed
+<a href=#48 id=48 data-nosnippet>48</a></span><span class="kw">pub enum </span>Writeable {
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="doccomment">/// An abstract implementation for writable.
+<a href=#50 id=50 data-nosnippet>50</a>    ///
+<a href=#51 id=51 data-nosnippet>51</a>    /// This is used to implement writing to in-memory and arbitrary file descriptors.
+<a href=#52 id=52 data-nosnippet>52</a>    </span>Dyn(Box&lt;<span class="kw">dyn </span>DynWriteable&gt;),
+<a href=#53 id=53 data-nosnippet>53</a>    Local(std::fs::File),
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#55 id=55 data-nosnippet>55</a>    </span>Cloud(<span class="kw">crate</span>::cloud::BlockingCloudWriter),
+<a href=#56 id=56 data-nosnippet>56</a>}
+<a href=#57 id=57 data-nosnippet>57</a>
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">impl </span>Writeable {
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="kw">pub fn </span>try_new(
+<a href=#60 id=60 data-nosnippet>60</a>        addr: PlPathRef,
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="attr">#[cfg_attr(not(feature = <span class="string">"cloud"</span>), allow(unused))] </span>cloud_options: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>CloudOptions&gt;,
+<a href=#62 id=62 data-nosnippet>62</a>    ) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#63 id=63 data-nosnippet>63</a>        <span class="kw">let </span>verbose = config::verbose();
+<a href=#64 id=64 data-nosnippet>64</a>
+<a href=#65 id=65 data-nosnippet>65</a>        <span class="kw">match </span>addr {
+<a href=#66 id=66 data-nosnippet>66</a>            PlPathRef::Cloud(p) =&gt; {
+<a href=#67 id=67 data-nosnippet>67</a>                <span class="macro">feature_gated!</span>(<span class="string">"cloud"</span>, {
+<a href=#68 id=68 data-nosnippet>68</a>                    <span class="kw">use </span><span class="kw">crate</span>::cloud::BlockingCloudWriter;
+<a href=#69 id=69 data-nosnippet>69</a>
+<a href=#70 id=70 data-nosnippet>70</a>                    <span class="kw">if </span>verbose {
+<a href=#71 id=71 data-nosnippet>71</a>                        <span class="macro">eprintln!</span>(<span class="string">"Writeable: try_new: cloud: {p}"</span>)
+<a href=#72 id=72 data-nosnippet>72</a>                    }
+<a href=#73 id=73 data-nosnippet>73</a>
+<a href=#74 id=74 data-nosnippet>74</a>                    <span class="kw">if </span>p.scheme() == CloudScheme::File {
+<a href=#75 id=75 data-nosnippet>75</a>                        create_file(Path::new(p.strip_scheme()))<span class="question-mark">?</span>;
+<a href=#76 id=76 data-nosnippet>76</a>                    }
+<a href=#77 id=77 data-nosnippet>77</a>
+<a href=#78 id=78 data-nosnippet>78</a>                    <span class="kw">let </span>writer = <span class="kw">crate</span>::pl_async::get_runtime().block_in_place_on(
+<a href=#79 id=79 data-nosnippet>79</a>                        BlockingCloudWriter::new(<span class="kw-2">&amp;</span>p.to_string(), cloud_options),
+<a href=#80 id=80 data-nosnippet>80</a>                    )<span class="question-mark">?</span>;
+<a href=#81 id=81 data-nosnippet>81</a>                    <span class="prelude-val">Ok</span>(<span class="self">Self</span>::Cloud(writer))
+<a href=#82 id=82 data-nosnippet>82</a>                })
+<a href=#83 id=83 data-nosnippet>83</a>            },
+<a href=#84 id=84 data-nosnippet>84</a>            PlPathRef::Local(path) <span class="kw">if </span>config::force_async() =&gt; {
+<a href=#85 id=85 data-nosnippet>85</a>                <span class="macro">feature_gated!</span>(<span class="string">"cloud"</span>, {
+<a href=#86 id=86 data-nosnippet>86</a>                    <span class="kw">use </span><span class="kw">crate</span>::cloud::BlockingCloudWriter;
+<a href=#87 id=87 data-nosnippet>87</a>
+<a href=#88 id=88 data-nosnippet>88</a>                    <span class="kw">let </span>path = resolve_homedir(<span class="kw-2">&amp;</span>path);
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a>                    <span class="kw">if </span>verbose {
+<a href=#91 id=91 data-nosnippet>91</a>                        <span class="macro">eprintln!</span>(<span class="string">"Writeable: try_new: forced async: {}"</span>, path.display())
+<a href=#92 id=92 data-nosnippet>92</a>                    }
+<a href=#93 id=93 data-nosnippet>93</a>
+<a href=#94 id=94 data-nosnippet>94</a>                    create_file(<span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+<a href=#95 id=95 data-nosnippet>95</a>                    <span class="kw">let </span>path = std::fs::canonicalize(<span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+<a href=#96 id=96 data-nosnippet>96</a>
+<a href=#97 id=97 data-nosnippet>97</a>                    ensure_not_mapped(<span class="kw-2">&amp;</span>path.metadata()<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a>                    <span class="kw">let </span>path = <span class="macro">format!</span>(
+<a href=#100 id=100 data-nosnippet>100</a>                        <span class="string">"file://{}"</span>,
+<a href=#101 id=101 data-nosnippet>101</a>                        <span class="kw">if </span><span class="macro">cfg!</span>(target_family = <span class="string">"windows"</span>) {
+<a href=#102 id=102 data-nosnippet>102</a>                            path.to_str().unwrap().strip_prefix(<span class="string">r#"\\?\"#</span>).unwrap()
+<a href=#103 id=103 data-nosnippet>103</a>                        } <span class="kw">else </span>{
+<a href=#104 id=104 data-nosnippet>104</a>                            path.to_str().unwrap()
+<a href=#105 id=105 data-nosnippet>105</a>                        }
+<a href=#106 id=106 data-nosnippet>106</a>                    );
+<a href=#107 id=107 data-nosnippet>107</a>
+<a href=#108 id=108 data-nosnippet>108</a>                    <span class="kw">if </span>verbose {
+<a href=#109 id=109 data-nosnippet>109</a>                        <span class="macro">eprintln!</span>(<span class="string">"Writeable: try_new: forced async converted path: {path}"</span>)
+<a href=#110 id=110 data-nosnippet>110</a>                    }
+<a href=#111 id=111 data-nosnippet>111</a>
+<a href=#112 id=112 data-nosnippet>112</a>                    <span class="kw">let </span>writer = <span class="kw">crate</span>::pl_async::get_runtime()
+<a href=#113 id=113 data-nosnippet>113</a>                        .block_in_place_on(BlockingCloudWriter::new(<span class="kw-2">&amp;</span>path, cloud_options))<span class="question-mark">?</span>;
+<a href=#114 id=114 data-nosnippet>114</a>                    <span class="prelude-val">Ok</span>(<span class="self">Self</span>::Cloud(writer))
+<a href=#115 id=115 data-nosnippet>115</a>                })
+<a href=#116 id=116 data-nosnippet>116</a>            },
+<a href=#117 id=117 data-nosnippet>117</a>            PlPathRef::Local(path) =&gt; {
+<a href=#118 id=118 data-nosnippet>118</a>                <span class="kw">let </span>path = resolve_homedir(<span class="kw-2">&amp;</span>path);
+<a href=#119 id=119 data-nosnippet>119</a>                create_file(<span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>                <span class="comment">// Note: `canonicalize` does not work on some systems.
+<a href=#122 id=122 data-nosnippet>122</a>
+<a href=#123 id=123 data-nosnippet>123</a>                </span><span class="kw">if </span>verbose {
+<a href=#124 id=124 data-nosnippet>124</a>                    <span class="macro">eprintln!</span>(
+<a href=#125 id=125 data-nosnippet>125</a>                        <span class="string">"Writeable: try_new: local: {} (canonicalize: {:?})"</span>,
+<a href=#126 id=126 data-nosnippet>126</a>                        path.display(),
+<a href=#127 id=127 data-nosnippet>127</a>                        std::fs::canonicalize(<span class="kw-2">&amp;</span>path)
+<a href=#128 id=128 data-nosnippet>128</a>                    )
+<a href=#129 id=129 data-nosnippet>129</a>                }
+<a href=#130 id=130 data-nosnippet>130</a>
+<a href=#131 id=131 data-nosnippet>131</a>                <span class="prelude-val">Ok</span>(<span class="self">Self</span>::Local(polars_utils::open_file_write(<span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>))
+<a href=#132 id=132 data-nosnippet>132</a>            },
+<a href=#133 id=133 data-nosnippet>133</a>        }
+<a href=#134 id=134 data-nosnippet>134</a>    }
+<a href=#135 id=135 data-nosnippet>135</a>
+<a href=#136 id=136 data-nosnippet>136</a>    <span class="doccomment">/// This returns `Result&lt;&gt;` - if a write was performed before calling this,
+<a href=#137 id=137 data-nosnippet>137</a>    /// `CloudWriter` can be in an Err(_) state.
+<a href=#138 id=138 data-nosnippet>138</a>    </span><span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#139 id=139 data-nosnippet>139</a>    </span><span class="kw">pub fn </span>try_into_async_writeable(<span class="self">self</span>) -&gt; PolarsResult&lt;AsyncWriteable&gt; {
+<a href=#140 id=140 data-nosnippet>140</a>        <span class="kw">use </span><span class="self">self</span>::async_writeable::AsyncDynWriteable;
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>        <span class="kw">match </span><span class="self">self </span>{
+<a href=#143 id=143 data-nosnippet>143</a>            <span class="self">Self</span>::Dyn(v) =&gt; <span class="prelude-val">Ok</span>(AsyncWriteable::Dyn(AsyncDynWriteable(v))),
+<a href=#144 id=144 data-nosnippet>144</a>            <span class="self">Self</span>::Local(v) =&gt; <span class="prelude-val">Ok</span>(AsyncWriteable::Local(tokio::fs::File::from_std(v))),
+<a href=#145 id=145 data-nosnippet>145</a>            <span class="comment">// Moves the `BufWriter` out of the `BlockingCloudWriter` wrapper, as
+<a href=#146 id=146 data-nosnippet>146</a>            // `BlockingCloudWriter` has a `Drop` impl that we don't want.
+<a href=#147 id=147 data-nosnippet>147</a>            </span><span class="self">Self</span>::Cloud(v) =&gt; v
+<a href=#148 id=148 data-nosnippet>148</a>                .try_into_inner()
+<a href=#149 id=149 data-nosnippet>149</a>                .map(AsyncWriteable::Cloud)
+<a href=#150 id=150 data-nosnippet>150</a>                .map_err(PolarsError::from),
+<a href=#151 id=151 data-nosnippet>151</a>        }
+<a href=#152 id=152 data-nosnippet>152</a>    }
+<a href=#153 id=153 data-nosnippet>153</a>
+<a href=#154 id=154 data-nosnippet>154</a>    <span class="kw">pub fn </span>sync_on_close(<span class="kw-2">&amp;mut </span><span class="self">self</span>, sync_on_close: SyncOnCloseType) -&gt; std::io::Result&lt;()&gt; {
+<a href=#155 id=155 data-nosnippet>155</a>        <span class="kw">match </span><span class="self">self </span>{
+<a href=#156 id=156 data-nosnippet>156</a>            Writeable::Dyn(d) =&gt; d.sync_on_close(sync_on_close),
+<a href=#157 id=157 data-nosnippet>157</a>            Writeable::Local(file) =&gt; {
+<a href=#158 id=158 data-nosnippet>158</a>                <span class="kw">crate</span>::utils::sync_on_close::sync_on_close(sync_on_close, file)
+<a href=#159 id=159 data-nosnippet>159</a>            },
+<a href=#160 id=160 data-nosnippet>160</a>            <span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#161 id=161 data-nosnippet>161</a>            </span>Writeable::Cloud(<span class="kw">_</span>) =&gt; <span class="prelude-val">Ok</span>(()),
+<a href=#162 id=162 data-nosnippet>162</a>        }
+<a href=#163 id=163 data-nosnippet>163</a>    }
+<a href=#164 id=164 data-nosnippet>164</a>
+<a href=#165 id=165 data-nosnippet>165</a>    <span class="kw">pub fn </span>close(<span class="self">self</span>) -&gt; std::io::Result&lt;()&gt; {
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="kw">match </span><span class="self">self </span>{
+<a href=#167 id=167 data-nosnippet>167</a>            <span class="self">Self</span>::Dyn(v) =&gt; v.close(),
+<a href=#168 id=168 data-nosnippet>168</a>            <span class="self">Self</span>::Local(v) =&gt; ClosableFile::from(v).close(),
+<a href=#169 id=169 data-nosnippet>169</a>            <span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#170 id=170 data-nosnippet>170</a>            </span><span class="self">Self</span>::Cloud(<span class="kw-2">mut </span>v) =&gt; v.close(),
+<a href=#171 id=171 data-nosnippet>171</a>        }
+<a href=#172 id=172 data-nosnippet>172</a>    }
+<a href=#173 id=173 data-nosnippet>173</a>}
+<a href=#174 id=174 data-nosnippet>174</a>
+<a href=#175 id=175 data-nosnippet>175</a><span class="kw">impl </span>Deref <span class="kw">for </span>Writeable {
+<a href=#176 id=176 data-nosnippet>176</a>    <span class="kw">type </span>Target = <span class="kw">dyn </span>io::Write + Send;
+<a href=#177 id=177 data-nosnippet>177</a>
+<a href=#178 id=178 data-nosnippet>178</a>    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Target {
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">match </span><span class="self">self </span>{
+<a href=#180 id=180 data-nosnippet>180</a>            <span class="self">Self</span>::Dyn(v) =&gt; v.as_dyn_write(),
+<a href=#181 id=181 data-nosnippet>181</a>            <span class="self">Self</span>::Local(v) =&gt; v,
+<a href=#182 id=182 data-nosnippet>182</a>            <span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#183 id=183 data-nosnippet>183</a>            </span><span class="self">Self</span>::Cloud(v) =&gt; v,
+<a href=#184 id=184 data-nosnippet>184</a>        }
+<a href=#185 id=185 data-nosnippet>185</a>    }
+<a href=#186 id=186 data-nosnippet>186</a>}
+<a href=#187 id=187 data-nosnippet>187</a>
+<a href=#188 id=188 data-nosnippet>188</a><span class="kw">impl </span>DerefMut <span class="kw">for </span>Writeable {
+<a href=#189 id=189 data-nosnippet>189</a>    <span class="kw">fn </span>deref_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Target {
+<a href=#190 id=190 data-nosnippet>190</a>        <span class="kw">match </span><span class="self">self </span>{
+<a href=#191 id=191 data-nosnippet>191</a>            <span class="self">Self</span>::Dyn(v) =&gt; v.as_mut_dyn_write(),
+<a href=#192 id=192 data-nosnippet>192</a>            <span class="self">Self</span>::Local(v) =&gt; v,
+<a href=#193 id=193 data-nosnippet>193</a>            <span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#194 id=194 data-nosnippet>194</a>            </span><span class="self">Self</span>::Cloud(v) =&gt; v,
+<a href=#195 id=195 data-nosnippet>195</a>        }
+<a href=#196 id=196 data-nosnippet>196</a>    }
+<a href=#197 id=197 data-nosnippet>197</a>}
+<a href=#198 id=198 data-nosnippet>198</a>
+<a href=#199 id=199 data-nosnippet>199</a><span class="doccomment">/// Note: Prefer using [`Writeable`] / [`Writeable::try_new`] where possible.
+<a href=#200 id=200 data-nosnippet>200</a>///
+<a href=#201 id=201 data-nosnippet>201</a>/// Open a path for writing. Supports cloud paths.
+<a href=#202 id=202 data-nosnippet>202</a></span><span class="kw">pub fn </span>try_get_writeable(
+<a href=#203 id=203 data-nosnippet>203</a>    addr: PlPathRef&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#204 id=204 data-nosnippet>204</a>    cloud_options: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>CloudOptions&gt;,
+<a href=#205 id=205 data-nosnippet>205</a>) -&gt; PolarsResult&lt;Box&lt;<span class="kw">dyn </span>WriteClose + Send&gt;&gt; {
+<a href=#206 id=206 data-nosnippet>206</a>    Writeable::try_new(addr, cloud_options).map(|x| <span class="kw">match </span>x {
+<a href=#207 id=207 data-nosnippet>207</a>        Writeable::Dyn(<span class="kw">_</span>) =&gt; <span class="macro">unreachable!</span>(),
+<a href=#208 id=208 data-nosnippet>208</a>        Writeable::Local(v) =&gt; Box::new(ClosableFile::from(v)) <span class="kw">as </span>Box&lt;<span class="kw">dyn </span>WriteClose + Send&gt;,
+<a href=#209 id=209 data-nosnippet>209</a>        <span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#210 id=210 data-nosnippet>210</a>        </span>Writeable::Cloud(v) =&gt; Box::new(v) <span class="kw">as </span>Box&lt;<span class="kw">dyn </span>WriteClose + Send&gt;,
+<a href=#211 id=211 data-nosnippet>211</a>    })
+<a href=#212 id=212 data-nosnippet>212</a>}
+<a href=#213 id=213 data-nosnippet>213</a>
+<a href=#214 id=214 data-nosnippet>214</a><span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+<a href=#215 id=215 data-nosnippet>215</a></span><span class="kw">mod </span>async_writeable {
+<a href=#216 id=216 data-nosnippet>216</a>    <span class="kw">use </span>std::io;
+<a href=#217 id=217 data-nosnippet>217</a>    <span class="kw">use </span>std::ops::{Deref, DerefMut};
+<a href=#218 id=218 data-nosnippet>218</a>    <span class="kw">use </span>std::pin::Pin;
+<a href=#219 id=219 data-nosnippet>219</a>    <span class="kw">use </span>std::task::{Context, Poll};
+<a href=#220 id=220 data-nosnippet>220</a>
+<a href=#221 id=221 data-nosnippet>221</a>    <span class="kw">use </span>polars_error::{PolarsError, PolarsResult};
+<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">use </span>polars_utils::file::ClosableFile;
+<a href=#223 id=223 data-nosnippet>223</a>    <span class="kw">use </span>polars_utils::plpath::PlPathRef;
+<a href=#224 id=224 data-nosnippet>224</a>    <span class="kw">use </span>tokio::io::AsyncWriteExt;
+<a href=#225 id=225 data-nosnippet>225</a>    <span class="kw">use </span>tokio::task;
+<a href=#226 id=226 data-nosnippet>226</a>
+<a href=#227 id=227 data-nosnippet>227</a>    <span class="kw">use super</span>::{DynWriteable, Writeable};
+<a href=#228 id=228 data-nosnippet>228</a>    <span class="kw">use </span><span class="kw">crate</span>::cloud::CloudOptions;
+<a href=#229 id=229 data-nosnippet>229</a>    <span class="kw">use </span><span class="kw">crate</span>::utils::sync_on_close::SyncOnCloseType;
+<a href=#230 id=230 data-nosnippet>230</a>
+<a href=#231 id=231 data-nosnippet>231</a>    <span class="doccomment">/// Turn an abstract io::Write into an abstract tokio::io::AsyncWrite.
+<a href=#232 id=232 data-nosnippet>232</a>    </span><span class="kw">pub struct </span>AsyncDynWriteable(<span class="kw">pub </span>Box&lt;<span class="kw">dyn </span>DynWriteable&gt;);
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">impl </span>tokio::io::AsyncWrite <span class="kw">for </span>AsyncDynWriteable {
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw">fn </span>poll_write(
+<a href=#236 id=236 data-nosnippet>236</a>            <span class="self">self</span>: Pin&lt;<span class="kw-2">&amp;mut </span><span class="self">Self</span>&gt;,
+<a href=#237 id=237 data-nosnippet>237</a>            _cx: <span class="kw-2">&amp;mut </span>Context&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#238 id=238 data-nosnippet>238</a>            buf: <span class="kw-2">&amp;</span>[u8],
+<a href=#239 id=239 data-nosnippet>239</a>        ) -&gt; Poll&lt;io::Result&lt;usize&gt;&gt; {
+<a href=#240 id=240 data-nosnippet>240</a>            <span class="kw">let </span>result = task::block_in_place(|| <span class="self">self</span>.get_mut().<span class="number">0</span>.write(buf));
+<a href=#241 id=241 data-nosnippet>241</a>            Poll::Ready(result)
+<a href=#242 id=242 data-nosnippet>242</a>        }
+<a href=#243 id=243 data-nosnippet>243</a>
+<a href=#244 id=244 data-nosnippet>244</a>        <span class="kw">fn </span>poll_flush(<span class="self">self</span>: Pin&lt;<span class="kw-2">&amp;mut </span><span class="self">Self</span>&gt;, _cx: <span class="kw-2">&amp;mut </span>Context&lt;<span class="lifetime">'_</span>&gt;) -&gt; Poll&lt;io::Result&lt;()&gt;&gt; {
+<a href=#245 id=245 data-nosnippet>245</a>            <span class="kw">let </span>result = task::block_in_place(|| <span class="self">self</span>.get_mut().<span class="number">0</span>.flush());
+<a href=#246 id=246 data-nosnippet>246</a>            Poll::Ready(result)
+<a href=#247 id=247 data-nosnippet>247</a>        }
+<a href=#248 id=248 data-nosnippet>248</a>
+<a href=#249 id=249 data-nosnippet>249</a>        <span class="kw">fn </span>poll_shutdown(<span class="self">self</span>: Pin&lt;<span class="kw-2">&amp;mut </span><span class="self">Self</span>&gt;, cx: <span class="kw-2">&amp;mut </span>Context&lt;<span class="lifetime">'_</span>&gt;) -&gt; Poll&lt;io::Result&lt;()&gt;&gt; {
+<a href=#250 id=250 data-nosnippet>250</a>            <span class="self">self</span>.poll_flush(cx)
+<a href=#251 id=251 data-nosnippet>251</a>        }
+<a href=#252 id=252 data-nosnippet>252</a>    }
+<a href=#253 id=253 data-nosnippet>253</a>
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="doccomment">/// Holds an async writeable file, abstracted over local files or cloud files.
+<a href=#255 id=255 data-nosnippet>255</a>    ///
+<a href=#256 id=256 data-nosnippet>256</a>    /// This implements `DerefMut` to a trait object implementing [`tokio::io::AsyncWrite`].
+<a href=#257 id=257 data-nosnippet>257</a>    ///
+<a href=#258 id=258 data-nosnippet>258</a>    /// Note: It is important that you do not call `shutdown()` on the deref'ed `AsyncWrite` object.
+<a href=#259 id=259 data-nosnippet>259</a>    /// You should instead call the [`AsyncWriteable::close`] at the end.
+<a href=#260 id=260 data-nosnippet>260</a>    </span><span class="kw">pub enum </span>AsyncWriteable {
+<a href=#261 id=261 data-nosnippet>261</a>        Dyn(AsyncDynWriteable),
+<a href=#262 id=262 data-nosnippet>262</a>        Local(tokio::fs::File),
+<a href=#263 id=263 data-nosnippet>263</a>        Cloud(object_store::buffered::BufWriter),
+<a href=#264 id=264 data-nosnippet>264</a>    }
+<a href=#265 id=265 data-nosnippet>265</a>
+<a href=#266 id=266 data-nosnippet>266</a>    <span class="kw">impl </span>AsyncWriteable {
+<a href=#267 id=267 data-nosnippet>267</a>        <span class="kw">pub async fn </span>try_new(
+<a href=#268 id=268 data-nosnippet>268</a>            addr: PlPathRef&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#269 id=269 data-nosnippet>269</a>            cloud_options: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>CloudOptions&gt;,
+<a href=#270 id=270 data-nosnippet>270</a>        ) -&gt; PolarsResult&lt;<span class="self">Self</span>&gt; {
+<a href=#271 id=271 data-nosnippet>271</a>            <span class="comment">// TODO: Native async impl
+<a href=#272 id=272 data-nosnippet>272</a>            </span>Writeable::try_new(addr, cloud_options).and_then(|x| x.try_into_async_writeable())
+<a href=#273 id=273 data-nosnippet>273</a>        }
+<a href=#274 id=274 data-nosnippet>274</a>
+<a href=#275 id=275 data-nosnippet>275</a>        <span class="kw">pub async fn </span>sync_on_close(
+<a href=#276 id=276 data-nosnippet>276</a>            <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#277 id=277 data-nosnippet>277</a>            sync_on_close: SyncOnCloseType,
+<a href=#278 id=278 data-nosnippet>278</a>        ) -&gt; std::io::Result&lt;()&gt; {
+<a href=#279 id=279 data-nosnippet>279</a>            <span class="kw">match </span><span class="self">self </span>{
+<a href=#280 id=280 data-nosnippet>280</a>                <span class="self">Self</span>::Dyn(d) =&gt; task::block_in_place(|| d.<span class="number">0</span>.sync_on_close(sync_on_close)),
+<a href=#281 id=281 data-nosnippet>281</a>                <span class="self">Self</span>::Local(file) =&gt; {
+<a href=#282 id=282 data-nosnippet>282</a>                    <span class="kw">crate</span>::utils::sync_on_close::tokio_sync_on_close(sync_on_close, file).<span class="kw">await
+<a href=#283 id=283 data-nosnippet>283</a>                </span>},
+<a href=#284 id=284 data-nosnippet>284</a>                <span class="self">Self</span>::Cloud(<span class="kw">_</span>) =&gt; <span class="prelude-val">Ok</span>(()),
+<a href=#285 id=285 data-nosnippet>285</a>            }
+<a href=#286 id=286 data-nosnippet>286</a>        }
+<a href=#287 id=287 data-nosnippet>287</a>
+<a href=#288 id=288 data-nosnippet>288</a>        <span class="kw">pub async fn </span>close(<span class="self">self</span>) -&gt; PolarsResult&lt;()&gt; {
+<a href=#289 id=289 data-nosnippet>289</a>            <span class="kw">match </span><span class="self">self </span>{
+<a href=#290 id=290 data-nosnippet>290</a>                <span class="self">Self</span>::Dyn(<span class="kw-2">mut </span>v) =&gt; {
+<a href=#291 id=291 data-nosnippet>291</a>                    v.shutdown().<span class="kw">await</span>.map_err(PolarsError::from)<span class="question-mark">?</span>;
+<a href=#292 id=292 data-nosnippet>292</a>                    <span class="prelude-val">Ok</span>(task::block_in_place(|| v.<span class="number">0</span>.close())<span class="question-mark">?</span>)
+<a href=#293 id=293 data-nosnippet>293</a>                },
+<a href=#294 id=294 data-nosnippet>294</a>                <span class="self">Self</span>::Local(v) =&gt; <span class="kw">async </span>{
+<a href=#295 id=295 data-nosnippet>295</a>                    <span class="kw">let </span>f = v.into_std().<span class="kw">await</span>;
+<a href=#296 id=296 data-nosnippet>296</a>                    ClosableFile::from(f).close()
+<a href=#297 id=297 data-nosnippet>297</a>                }
+<a href=#298 id=298 data-nosnippet>298</a>                .<span class="kw">await
+<a href=#299 id=299 data-nosnippet>299</a>                </span>.map_err(PolarsError::from),
+<a href=#300 id=300 data-nosnippet>300</a>                <span class="self">Self</span>::Cloud(<span class="kw-2">mut </span>v) =&gt; v.shutdown().<span class="kw">await</span>.map_err(PolarsError::from),
+<a href=#301 id=301 data-nosnippet>301</a>            }
+<a href=#302 id=302 data-nosnippet>302</a>        }
+<a href=#303 id=303 data-nosnippet>303</a>    }
+<a href=#304 id=304 data-nosnippet>304</a>
+<a href=#305 id=305 data-nosnippet>305</a>    <span class="kw">impl </span>Deref <span class="kw">for </span>AsyncWriteable {
+<a href=#306 id=306 data-nosnippet>306</a>        <span class="kw">type </span>Target = <span class="kw">dyn </span>tokio::io::AsyncWrite + Send + Unpin;
+<a href=#307 id=307 data-nosnippet>307</a>
+<a href=#308 id=308 data-nosnippet>308</a>        <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Target {
+<a href=#309 id=309 data-nosnippet>309</a>            <span class="kw">match </span><span class="self">self </span>{
+<a href=#310 id=310 data-nosnippet>310</a>                <span class="self">Self</span>::Dyn(v) =&gt; v,
+<a href=#311 id=311 data-nosnippet>311</a>                <span class="self">Self</span>::Local(v) =&gt; v,
+<a href=#312 id=312 data-nosnippet>312</a>                <span class="self">Self</span>::Cloud(v) =&gt; v,
+<a href=#313 id=313 data-nosnippet>313</a>            }
+<a href=#314 id=314 data-nosnippet>314</a>        }
+<a href=#315 id=315 data-nosnippet>315</a>    }
+<a href=#316 id=316 data-nosnippet>316</a>
+<a href=#317 id=317 data-nosnippet>317</a>    <span class="kw">impl </span>DerefMut <span class="kw">for </span>AsyncWriteable {
+<a href=#318 id=318 data-nosnippet>318</a>        <span class="kw">fn </span>deref_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Target {
+<a href=#319 id=319 data-nosnippet>319</a>            <span class="kw">match </span><span class="self">self </span>{
+<a href=#320 id=320 data-nosnippet>320</a>                <span class="self">Self</span>::Dyn(v) =&gt; v,
+<a href=#321 id=321 data-nosnippet>321</a>                <span class="self">Self</span>::Local(v) =&gt; v,
+<a href=#322 id=322 data-nosnippet>322</a>                <span class="self">Self</span>::Cloud(v) =&gt; v,
+<a href=#323 id=323 data-nosnippet>323</a>            }
+<a href=#324 id=324 data-nosnippet>324</a>        }
+<a href=#325 id=325 data-nosnippet>325</a>    }
+<a href=#326 id=326 data-nosnippet>326</a>}</code></pre></div></section></main></body></html>
