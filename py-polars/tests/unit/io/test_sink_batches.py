@@ -1,9 +1,14 @@
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
-from polars._typing import EngineType
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
