@@ -3660,8 +3660,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if not lazy:
             ldf = ldf.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf)
-            ldf.collect(engine=engine)
+            lf = LazyFrame._from_pyldf(ldf)
+            lf.collect(engine=engine)
             return None
         return LazyFrame._from_pyldf(ldf)
 
@@ -3718,7 +3718,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             import threading
             from queue import Queue
 
-            q = Queue(maxsize=1)
+            q: Queue = Queue(maxsize=1)
 
             def task() -> None:
                 def _wrap(df: DataFrame) -> bool | None:
