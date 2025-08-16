@@ -3574,6 +3574,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         function: Callable[[DataFrame], bool | None],
         *,
+        chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: Literal[False],
         engine: EngineType = "auto",
@@ -3584,6 +3585,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         function: Callable[[DataFrame], bool | None],
         *,
+        chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: Literal[True],
         engine: EngineType = "auto",
@@ -3709,7 +3711,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> for df in lf.sink_generator():
-        ...     print(df)
+        ...     print(df)  # doctest: +SKIP
         """
 
         def batch_generator() -> Iterable[DataFrame]:
