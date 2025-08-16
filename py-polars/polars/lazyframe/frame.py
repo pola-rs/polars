@@ -3718,7 +3718,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             import threading
             from queue import Queue
 
-            q: Queue = Queue(maxsize=1)
+            q: Queue[pl.DataFrame | None] = Queue(maxsize=1)
 
             def task() -> None:
                 def _wrap(df: DataFrame) -> bool | None:
