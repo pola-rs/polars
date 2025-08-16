@@ -7,7 +7,7 @@ use polars_dtype::categorical::{CategoricalPhysical, Categories, FrozenCategorie
 use polars_utils::pl_str::PlSmallStr;
 use proptest::prelude::*;
 
-use super::super::{DataType, Field, TimeUnit};
+use crate::prelude::{DataType, Field, TimeUnit};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
