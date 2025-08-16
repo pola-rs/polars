@@ -1,9 +1,19 @@
 mod binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+mod datetime;
 mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
 use binary::process_binary;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use datetime::{coerce_dt, update_date_range_types, update_datetime_range_types};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -70,6 +80,12 @@ fn get_aexpr_and_type<'a>(
         ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
             .ok()?,
     ))
+}
+
+fn try_get_dtype(expr_arena: &Arena<AExpr>, e: Node, schema: &Schema) -> PolarsResult<DataType> {
+    expr_arena
+        .get(e)
+        .to_dtype(&ToFieldContext::new(expr_arena, schema))
 }
 
 fn materialize(aexpr: &AExpr) -> Option<AExpr> {
@@ -945,6 +961,90 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     input,
                     options,
                 })
+            },
+            #[cfg(all(feature = "range", feature = "dtype-date"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRange {
+                        interval: _,
+                        closed: _,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DateRanges {
+                        interval: _,
+                        closed: _,
+                    }),
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+                let function = function.clone();
+
+                let (from_types, to_types) =
+                    update_date_range_types(&mut input, expr_arena, schema)?;
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
+                let mut modified = false;
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if from_dtype != to_dtype {
+                        modified = true;
+                        coerce_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
+            },
+            #[cfg(all(feature = "range", feature = "dtype-datetime"))]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRange {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                    })
+                    | ref function @ IRFunctionExpr::Range(IRRangeFunction::DatetimeRanges {
+                        ref interval,
+                        closed: _,
+                        time_unit: ref tu,
+                        time_zone: ref tz,
+                    }),
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+                let function = function.clone();
+
+                let (from_types, to_types) =
+                    update_datetime_range_types(&mut input, expr_arena, schema, interval, tu, tz)?;
+
+                let from_iter = from_types.into_iter();
+                let to_iter = to_types.into_iter();
+                let mut modified = false;
+                for (i, (from_dtype, to_dtype)) in from_iter.zip(to_iter).enumerate() {
+                    if from_dtype != to_dtype {
+                        modified = true;
+                        coerce_dt(&from_dtype, &to_dtype, &mut input[i], expr_arena)?;
+                    }
+                }
+
+                if modified {
+                    Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    })
+                } else {
+                    return Ok(None);
+                }
             },
             AExpr::Slice { offset, length, .. } => {
                 let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
