@@ -21,6 +21,7 @@ use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_i
 use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, unique_column_name};
@@ -112,6 +113,27 @@ fn build_filter_stream(
         expr_cache,
         ctx,
     )
+}
+
+/// Creates a new PhysStream with row index attached with the given name.
+pub fn build_row_idx_stream(
+    input: PhysStream,
+    name: PlSmallStr,
+    offset: Option<IdxSize>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+) -> PhysStream {
+    let input_schema = &phys_sm[input.node].output_schema;
+    let mut output_schema = (**input_schema).clone();
+    output_schema
+        .insert_at_index(0, name.clone(), DataType::IDX_DTYPE)
+        .unwrap();
+    let kind = PhysNodeKind::WithRowIndex {
+        input,
+        name,
+        offset,
+    };
+    let with_row_idx_node_key = phys_sm.insert(PhysNode::new(Arc::new(output_schema), kind));
+    PhysStream::first(with_row_idx_node_key)
 }
 
 #[derive(Debug, Clone, Copy)]

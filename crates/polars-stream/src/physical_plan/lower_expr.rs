@@ -23,6 +23,7 @@ use slotmap::SlotMap;
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::physical_plan::lower_ir::build_row_idx_stream;
 
 type ExprNodeKey = Node;
 
@@ -1453,24 +1454,11 @@ fn lower_exprs_with_ctx(
             } =>
             {
                 let out_name = unique_column_name();
-                let input_schema = &ctx.phys_sm[input.node].output_schema;
-                let mut output_schema = (**input_schema).clone();
-                output_schema
-                    .insert_at_index(0, out_name.clone(), DataType::IDX_DTYPE)
-                    .unwrap();
-                let kind = PhysNodeKind::WithRowIndex {
-                    input,
-                    name: out_name.clone(),
-                    offset: None,
-                };
-                let with_row_idx_node_key = ctx
-                    .phys_sm
-                    .insert(PhysNode::new(Arc::new(output_schema), kind));
                 let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
                 let row_idx_col_expr_ir =
-                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name));
+                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
                 let row_idx_stream = build_select_stream_with_ctx(
-                    PhysStream::first(with_row_idx_node_key),
+                    build_row_idx_stream(input, out_name, None, ctx.phys_sm),
                     &[row_idx_col_expr_ir],
                     ctx,
                 )?;
