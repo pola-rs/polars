@@ -26,3 +26,13 @@ def test_sink_batches_early_stop() -> None:
         return False
 
     df.lazy().sink_batches(cb)
+
+
+def test_sink_generator() -> None:
+    df = pl.DataFrame({"a": range(100)})
+    frames = []
+
+    for f in df.lazy().sink_generator():
+        frames += [f]
+
+    assert_frame_equal(pl.concat(frames), df)
