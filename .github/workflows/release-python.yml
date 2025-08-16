@@ -335,29 +335,37 @@ jobs:
           sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
 
-      - name: Setup emsdk
-        uses: mymindstorm/setup-emsdk@v14
-        with:
-          # This should match the exact version of Emscripten used by Pyodide
-          # UPDATE; set to latest due to breaking build
-          version: latest
-
       - name: Set CFLAGS and RUSTFLAGS for wasm32
         run: |
             echo "CFLAGS=-fPIC" >> $GITHUB_ENV
             echo "RUSTFLAGS=-C link-self-contained=no" >> $GITHUB_ENV
 
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
+      - name: Check out Emscripten v4.0.9 patches for Pyodide
+        uses: actions/checkout@v4
         with:
-          command: build
-          target: wasm32-unknown-emscripten
-          args: >
-            --profile dist-release
-            --manifest-path py-polars/Cargo.toml
-            --interpreter python3.10
-            --out wasm-dist
-          maturin-version: 1.8.3
+          ref: 0.28.1
+          path: pyodide-patches
+          repository: pyodide/pyodide
+          sparse-checkout: |
+            emsdk/patches/
+
+      - name: Build Pyodide wheel
+        uses: agriyakhetarpal/cibuildwheel@bump-dependencies
+        with:
+          package-dir: py-polars
+          output-dir: wasm-dist
+          # TODO: Add back cp312-pyodide_wasm32?
+          only: cp313-pyodide_wasm32
+        env:
+          CIBW_BEFORE_BUILD: |
+            # Apply Emscripten patches for Pyodide
+            for patch in pyodide-patches/emsdk/patches/*.patch; do
+              patch -p1 --verbose -d /home/runner/.cache/cibuildwheel/emsdk-4.0.9/emsdk-4.0.9/upstream/emscripten/ < "$patch"
+            done
+
+            # Add Rust target
+            rustup target add wasm32-unknown-emscripten
+          CIBW_CONFIG_SETTINGS_PYODIDE: "build-args=--profile=dist-release build-args=--manifest-path=Cargo.toml"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
