@@ -146,7 +146,7 @@ pub fn datetime_ranges(
     ))
 }
 
-/// Generate a time range.
+/// Create a time range from `start` and `end` expression.
 #[cfg(feature = "dtype-time")]
 pub fn time_range(
     start: Expr,
@@ -164,7 +164,7 @@ pub fn time_range(
     ))
 }
 
-/// Create a column of time ranges from a `start` and `stop` expression.
+/// Create a column of time ranges from `start` and `end` expression.
 #[cfg(feature = "dtype-time")]
 pub fn time_ranges(
     start: Expr,
