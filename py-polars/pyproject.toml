@@ -87,6 +87,9 @@ all = [
 [tool.maturin]
 include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 
+[tool.pyodide.build]
+rust_emscripten_target_url = "https://github.com/pyodide/rust-emscripten-wasm-eh-sysroot/releases/download/emcc-4.0.9_nightly-2025-06-27/emcc-4.0.9_nightly-2025-06-27.tar.bz2"
+
 [tool.mypy]
 files = ["polars", "tests"]
 strict = true

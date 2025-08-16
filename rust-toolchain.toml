@@ -1,2 +1,5 @@
 [toolchain]
+# When updating, also update the [tool.pyodide.build] section in py-polars/pyproject.toml
+# to match the version of the Emscripten sysroot, and ask to create a new release in
+# https://github.com/pyodide/rust-emscripten-wasm-eh-sysroot/ if it doesn't exist.
 channel = "nightly-2025-06-27"
