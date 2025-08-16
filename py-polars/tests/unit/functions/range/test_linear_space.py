@@ -157,19 +157,19 @@ def test_linear_space_temporal(dtype: PolarsDataType) -> None:
 @pytest.mark.parametrize(
     ("dtype1", "dtype2", "str1", "str2"),
     [
-        (pl.Date, pl.Datetime("ms"), "Date", "Datetime(Milliseconds, None)"),
+        (pl.Date, pl.Datetime("ms"), "Date", "Datetime('ms')"),
         (
             pl.Datetime("ms"),
             pl.Datetime("ns"),
-            "Datetime(Milliseconds, None)",
-            "Datetime(Nanoseconds, None)",
+            "Datetime('ms')",
+            "Datetime('ns')",
         ),
-        (pl.Datetime("us"), pl.Time, "Datetime(Microseconds, None)", "Time"),
+        (pl.Datetime("us"), pl.Time, "Datetime('μs')", "Time"),
         (
             pl.Duration("us"),
             pl.Duration("ms"),
-            "Duration(Microseconds)",
-            "Duration(Milliseconds)",
+            "Duration('μs')",
+            "Duration('ms')",
         ),
         (pl.Int32, pl.String, "Int32", "String"),
     ],
@@ -566,19 +566,19 @@ def test_linear_spaces_temporal(dtype: PolarsDataType) -> None:
 @pytest.mark.parametrize(
     ("dtype1", "dtype2", "str1", "str2"),
     [
-        (pl.Date, pl.Datetime("ms"), "Date", "Datetime(Milliseconds, None)"),
+        (pl.Date, pl.Datetime("ms"), "Date", "Datetime('ms')"),
         (
             pl.Datetime("ms"),
             pl.Datetime("ns"),
-            "Datetime(Milliseconds, None)",
-            "Datetime(Nanoseconds, None)",
+            "Datetime('ms')",
+            "Datetime('ns')",
         ),
-        (pl.Datetime("us"), pl.Time, "Datetime(Microseconds, None)", "Time"),
+        (pl.Datetime("us"), pl.Time, "Datetime('μs')", "Time"),
         (
             pl.Duration("us"),
             pl.Duration("ms"),
-            "Duration(Microseconds)",
-            "Duration(Milliseconds)",
+            "Duration('μs')",
+            "Duration('ms')",
         ),
         (pl.Int32, pl.String, "Int32", "String"),
     ],

@@ -632,7 +632,7 @@ def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(
         InvalidOperationError,
-        match="casting from Time to Datetime\\(Microseconds, None\\) not supported; consider using `dt.combine`",
+        match="casting from Time to Datetime\\('μs'\\) not supported; consider using `dt.combine`",
     ):
         s.cast(pl.Datetime)
 
